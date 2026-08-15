@@ -31,7 +31,8 @@ def _native_no_replace(temporary: Path, destination: Path) -> bool:
     library = ctypes.CDLL(None, use_errno=True)
     source = os.fsencode(temporary)
     target = os.fsencode(destination)
-    if sys.platform == "darwin":
+    runtime_platform = sys.platform
+    if runtime_platform == "darwin":
         try:
             operation = library.renamex_np
         except AttributeError:
@@ -39,7 +40,7 @@ def _native_no_replace(temporary: Path, destination: Path) -> bool:
         operation.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
         operation.restype = ctypes.c_int
         result = operation(source, target, RENAME_EXCL)
-    elif sys.platform.startswith("linux"):
+    elif runtime_platform.startswith("linux"):
         try:
             operation = library.renameat2
         except AttributeError:

@@ -315,7 +315,8 @@ def _mutation() -> None:
         RuntimeError: If invoked on native Windows without process-fork support.
 
     """
-    if sys.platform == "win32":
+    runtime_platform = sys.platform
+    if runtime_platform == "win32":
         message = (
             "mutation testing requires process fork support; run this task under "
             "WSL or on Linux/macOS"

@@ -309,6 +309,8 @@ class RepositoryHygieneTests(unittest.TestCase):
         self.assertTrue(any("not UTF-8 text" in item for item in _messages(audit)))
 
     def test_non_regular_public_artifact_and_kind_labels(self) -> None:
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("os.mkfifo is unavailable")
         with tempfile.TemporaryDirectory() as directory:
             root = _root(directory)
             fifo = root / "src" / "public-pipe"

@@ -44,6 +44,9 @@ def _replace_entry(base: Path, entry: Path, entry_kind: str) -> None:
     if entry_kind == "directory":
         entry.mkdir()
     elif entry_kind == "fifo":
+        if not hasattr(os, "mkfifo"):
+            message = "FIFO fixtures require os.mkfifo"
+            raise RuntimeError(message)
         os.mkfifo(entry)
     else:
         victim = base / "public-victim"
