@@ -14,12 +14,24 @@ EXPECTED_PYTHON_JOBS: Final = {
     "quality.yml": frozenset({"quality"}),
     "release.yml": frozenset({"build", "mutation", "publish", "qualify"}),
 }
+EXPECTED_LOCKED_SYNCS: Final = {
+    "hypothesis.yml": 1,
+    "mutation.yml": 1,
+    "quality.yml": 1,
+    "release.yml": 3,
+}
 JOB_HEADER: Final = re.compile(r"^  (?P<name>[A-Za-z0-9_-]+):$")
 PYTHON_USE: Final = re.compile(
     r"(?:\bCPython\b|\bpython(?:-version|3(?:\.\d+)*)?\b|\buv run\b)",
     re.IGNORECASE,
 )
 BYTECODE_SETTING: Final = '      PYTHONDONTWRITEBYTECODE: "1"'
+LOCKED_SYNC: Final = re.compile(
+    r"      - name: Install locked development dependencies\n"
+    r"        run: uv sync --locked --group dev --python [^\n]+\n"
+    r"        env:\n"
+    r"          PYTHONWARNINGS: default(?:\n|$)",
+)
 
 
 def _workflow_job_blocks(path: Path) -> dict[str, str]:
@@ -73,3 +85,13 @@ def test_every_python_job_disables_bytecode_at_job_scope() -> None:
         for job_name in _python_jobs(blocks):
             setting_count = blocks[job_name].splitlines().count(BYTECODE_SETTING)
             assert setting_count == 1, f"{workflow_name}:{job_name}"
+
+
+def test_dependency_installation_does_not_promote_third_party_warnings() -> None:
+    """Keep warnings strict for project checks without breaking dependency builds."""
+    for workflow_name, expected_count in EXPECTED_LOCKED_SYNCS.items():
+        workflow = (WORKFLOW_DIRECTORY / workflow_name).read_text(encoding="utf-8")
+        assert workflow.count("- name: Install locked development dependencies") == (
+            expected_count
+        )
+        assert len(LOCKED_SYNC.findall(workflow)) == expected_count

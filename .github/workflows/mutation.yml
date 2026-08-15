@@ -35,6 +35,8 @@ jobs:
           enable-cache: true
       - name: Install locked development dependencies
         run: uv sync --locked --group dev --python 3.14.7
+        env:
+          PYTHONWARNINGS: default
       - name: Run a fresh 100% actionable mutation campaign
         run: uv run python tools/tasks.py mutation
       - name: Preserve machine-readable mutation results
