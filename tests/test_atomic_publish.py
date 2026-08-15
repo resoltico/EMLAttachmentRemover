@@ -34,7 +34,7 @@ def test_darwin_native_no_replace_uses_exclusive_atomic_rename() -> None:
     library = _native_operation(0)
     with (
         patch.object(sys, "platform", new="darwin"),
-        patch.object(ctypes, "CDLL", return_value=library),
+        patch.object(ctypes, "CDLL", return_value=library) as load_library,
     ):
         published = atomic_publish._native_no_replace(
             Path("temporary.eml"),
@@ -42,7 +42,12 @@ def test_darwin_native_no_replace_uses_exclusive_atomic_rename() -> None:
         )
 
     assert published
-    assert library.renamex_np.call_args.args[-1] == atomic_publish.RENAME_EXCL
+    load_library.assert_called_once_with(None, use_errno=True)
+    assert library.renamex_np.call_args.args == (
+        b"temporary.eml",
+        b"destination.eml",
+        atomic_publish.RENAME_EXCL,
+    )
 
 
 def test_linux_native_no_replace_uses_renameat2_when_available() -> None:

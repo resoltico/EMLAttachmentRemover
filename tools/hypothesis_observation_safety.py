@@ -93,13 +93,14 @@ def _replace_prefix(value: str, prefix: str, replacement: str) -> str:
         Text with every matching prefix replaced.
 
     """
-    flags = re.IGNORECASE if WINDOWS_PREFIX.match(prefix) is not None else 0
-    return re.sub(
-        re.escape(prefix),
-        lambda _match: replacement,
-        value,
-        flags=flags,
-    )
+    if WINDOWS_PREFIX.match(prefix) is not None:
+        return re.sub(
+            re.escape(prefix),
+            lambda _match: replacement,
+            value,
+            flags=re.IGNORECASE,
+        )
+    return value.replace(prefix, replacement)
 
 
 def public_text(value: str, replacements: tuple[tuple[str, str], ...]) -> str:
@@ -118,9 +119,7 @@ def public_text(value: str, replacements: tuple[tuple[str, str], ...]) -> str:
     for raw_line in value.splitlines(keepends=True):
         public_line = raw_line
         if any(placeholder in public_line for placeholder in path_placeholders):
-            while "\\\\" in public_line:
-                public_line = public_line.replace("\\\\", "\\")
-            public_line = public_line.replace("\\", "/")
+            public_line = re.sub(r"\\+", "/", public_line)
         lines.append(public_line)
     return "".join(lines)
 
@@ -136,12 +135,9 @@ def private_prefix_remains(
 
     """
     return any(
-        re.search(
-            re.escape(prefix),
-            value,
-            flags=re.IGNORECASE if WINDOWS_PREFIX.match(prefix) is not None else 0,
-        )
-        is not None
+        prefix.casefold() in value.casefold()
+        if WINDOWS_PREFIX.match(prefix) is not None
+        else prefix in value
         for prefix, _replacement in replacements
     )
 

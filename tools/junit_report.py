@@ -12,13 +12,21 @@ import sys
 import tempfile
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final
 
 from defusedxml import ElementTree
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from xml.etree.ElementTree import Element
+
+    from tools import hypothesis_observation_safety as path_safety
+else:
+    path_safety = importlib.import_module(
+        "tools.hypothesis_observation_safety"
+        if __package__
+        else "hypothesis_observation_safety"
+    )
 
 REPORT_NAME: Final = "test-results.xml"
 UTF8: Final = "utf-8"
@@ -35,11 +43,6 @@ HYPOTHESIS_STATISTICS_NAMESPACE: Final = "hypothesis-statistics"
 HYPOTHESIS_PROPERTY_ATTRIBUTES: Final = frozenset({"name", "value"})
 policy = importlib.import_module(
     "tools.repository_hygiene_policy" if __package__ else "repository_hygiene_policy"
-)
-path_safety = importlib.import_module(
-    "tools.hypothesis_observation_safety"
-    if __package__
-    else "hypothesis_observation_safety"
 )
 xunit_schema = importlib.import_module(
     f"{'tools.' if __package__ else ''}junit_xunit2_schema"
@@ -133,7 +136,7 @@ def _public_text(
 
     """
     replacement_tuple = tuple(replacements)
-    public = cast("str", path_safety.public_text(value, replacement_tuple))
+    public = path_safety.public_text(value, replacement_tuple)
     if path_safety.private_prefix_remains(public, replacement_tuple):
         message = f"private path remains in JUnit report {source}"
         raise JunitReportError(message)

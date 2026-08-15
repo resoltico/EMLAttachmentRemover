@@ -30,6 +30,36 @@ class ArtifactMutationContracts(unittest.TestCase):
             {r"C:\private\project", "C:/private/project", r"C:\\private\\project"},
         )
 
+    def test_public_path_replacement_has_explicit_platform_semantics(self) -> None:
+        replacements = (
+            ("/private/project", "<posix-root>"),
+            (r"C:\Private\Project", "<windows-root>"),
+        )
+        value = (
+            "/private/project\\child\n"
+            "/PRIVATE/PROJECT\\case-sensitive\n"
+            r"c:\private\PROJECT\\\\nested"
+        )
+
+        self.assertEqual(
+            observation_safety.public_text(value, replacements),
+            "<posix-root>/child\n"
+            "/PRIVATE/PROJECT\\case-sensitive\n"
+            "<windows-root>/nested",
+        )
+        self.assertTrue(
+            observation_safety.private_prefix_remains(
+                r"retained c:\private\PROJECT\mail.eml",
+                ((r"C:\Private\Project", "<windows-root>"),),
+            )
+        )
+        self.assertFalse(
+            observation_safety.private_prefix_remains(
+                "/PRIVATE/PROJECT/mail.eml",
+                (("/private/project", "<posix-root>"),),
+            )
+        )
+
     def test_replacement_prefixes_omit_a_resolved_filesystem_root(self) -> None:
         with patch.object(
             Path,
