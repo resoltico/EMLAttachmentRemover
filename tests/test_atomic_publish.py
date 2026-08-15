@@ -118,6 +118,27 @@ def test_native_existing_destination_is_conflict() -> None:
     )
 
 
+def test_successful_native_publication_bypasses_hardlink_fallback() -> None:
+    temporary = Path("temporary.eml")
+    destination = Path("destination.eml")
+    with (
+        patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
+        patch.object(
+            atomic_publish,
+            "_native_no_replace",
+            return_value=True,
+        ) as native_no_replace,
+        patch.object(
+            atomic_publish,
+            "_link_and_remove_temporary",
+        ) as link_and_remove,
+    ):
+        atomic_publish.publish_without_clobber(temporary, destination)
+
+    native_no_replace.assert_called_once_with(temporary, destination)
+    link_and_remove.assert_not_called()
+
+
 def test_native_unexpected_failure_retains_write_error_when_target_is_absent() -> None:
     library = _native_operation(-1)
     with (

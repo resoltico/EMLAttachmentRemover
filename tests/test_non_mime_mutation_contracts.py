@@ -177,6 +177,14 @@ class TestNonMimeMutationContracts(unittest.TestCase):
         write_paths.assert_called_once_with([], [], nul_terminated=False)
         write_failures.assert_called_once_with(())
 
+        with (
+            patch.object(cli, "_write_paths") as write_paths,
+            patch.object(cli, "_write_failures") as write_failures,
+        ):
+            cli._report_outcome(outcome, models.OutputFormat.PATHS0, multiple=True)
+        write_paths.assert_called_once_with([], [], nul_terminated=True)
+        write_failures.assert_called_once_with(())
+
         with patch.object(cli, "_write_human_batch") as write_human:
             cli._report_outcome(outcome, models.OutputFormat.HUMAN, multiple=True)
         write_human.assert_called_once_with([], [], [], multiple=True)

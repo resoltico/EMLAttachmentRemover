@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -104,6 +105,32 @@ def test_write_error_has_one_stable_machine_readable_prefix() -> None:
 
     assert stream.getvalue() == (
         "remove-eml-attachments: error[PARSE_ERROR:5]: public malformed MIME\n"
+    )
+
+
+def test_nul_terminated_paths_use_exact_filesystem_bytes() -> None:
+    """Write every successful or skipped path with one NUL byte separator."""
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="utf-8")
+    result = _process_result("public.eml", "public-output.eml")
+    skip = models.BatchSkip(Path("skipped.eml"), Path("skipped-output.eml"))
+    actual = b""
+    try:
+        with patch.object(sys, "stdout", stream):
+            reporting._write_paths(  # ruff: ignore[private-member-access]
+                [result],
+                [skip],
+                nul_terminated=True,
+            )
+        actual = raw.getvalue()
+    finally:
+        stream.close()
+
+    assert actual == (
+        os.fsencode(Path("public-output.eml"))
+        + b"\0"
+        + os.fsencode(Path("skipped-output.eml"))
+        + b"\0"
     )
 
 

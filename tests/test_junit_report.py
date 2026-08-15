@@ -237,12 +237,20 @@ class JunitReportPublicationTests(unittest.TestCase):
             )
 
     def test_replacement_prefixes_never_include_the_filesystem_root(self) -> None:
-        with patch("tools.junit_report.socket.gethostname", return_value=""):
+        with (
+            patch.object(
+                Path,
+                "resolve",
+                autospec=True,
+                return_value=Path(os.sep),
+            ),
+            patch("tools.junit_report.socket.gethostname", return_value=""),
+        ):
             replacements = junit_report._replacements(  # ruff: ignore[private-member-access]
-                Path("/report.xml"),
-                Path("/"),
+                Path("report.xml"),
+                Path("project"),
             )
-        self.assertNotIn(os.sep, dict(replacements))
+        self.assertEqual(replacements, ())
 
     def test_destination_and_parent_must_not_be_symbolic_or_nonregular(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

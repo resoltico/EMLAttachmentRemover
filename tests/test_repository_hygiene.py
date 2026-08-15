@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import os
 import stat
 import tempfile
 import tomllib
@@ -308,15 +307,28 @@ class RepositoryHygieneTests(unittest.TestCase):
 
         self.assertTrue(any("not UTF-8 text" in item for item in _messages(audit)))
 
-    def test_non_regular_public_artifact_and_kind_labels(self) -> None:
-        if not hasattr(os, "mkfifo"):
-            self.skipTest("os.mkfifo is unavailable")
+    def test_non_regular_public_artifact_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = _root(directory)
-            fifo = root / "src" / "public-pipe"
-            os.mkfifo(fifo)
-            audit = hygiene.audit_repository(root)
-        self.assertTrue(any("FIFO" in message for message in _messages(audit)))
+            unsupported = root / "src" / "public-node"
+            unsupported.write_text("PUBLIC", encoding="utf-8")
+            original_lstat = Path.lstat
+
+            def report_socket(path: Path) -> stat_result:
+                if path == unsupported:
+                    return stat_result((stat.S_IFSOCK, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+                return original_lstat(path)
+
+            with patch.object(Path, "lstat", report_socket):
+                audit = hygiene.audit_repository(root)
+
+        self.assertNotIn(unsupported, audit.public_files)
+        self.assertEqual(
+            [issue.message for issue in audit.issues if issue.path == unsupported],
+            ["unsupported public artifact type 'socket'; use a regular file"],
+        )
+
+    def test_kind_labels_are_platform_independent(self) -> None:
         modes = (
             (stat.S_IFLNK, "symbolic link"),
             (stat.S_IFIFO, "FIFO"),

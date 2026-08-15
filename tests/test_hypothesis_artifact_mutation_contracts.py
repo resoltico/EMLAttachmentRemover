@@ -12,12 +12,35 @@ from pathlib import Path
 from unittest.mock import call, patch
 
 from tools import finalize_hypothesis_artifacts as artifacts
+from tools import hypothesis_observation_safety as observation_safety
 
 from tests.hypothesis_artifact_support import write_observations
 
 
 class ArtifactMutationContracts(unittest.TestCase):
     """Pin observable defaults, diagnostics, and public serialization."""
+
+    def test_path_prefix_spellings_cover_posix_and_windows_forms(self) -> None:
+        self.assertEqual(
+            observation_safety.path_prefix_variants("/private/project"),
+            ("/private/project",),
+        )
+        self.assertEqual(
+            set(observation_safety.path_prefix_variants(r"C:\private\project")),
+            {r"C:\private\project", "C:/private/project", r"C:\\private\\project"},
+        )
+
+    def test_replacement_prefixes_omit_a_resolved_filesystem_root(self) -> None:
+        with patch.object(
+            Path,
+            "resolve",
+            autospec=True,
+            return_value=Path(os.sep),
+        ):
+            self.assertEqual(
+                observation_safety.replacement_prefixes(Path("project")),
+                (),
+            )
 
     def test_default_finalize_removes_local_data_without_publishing_observations(
         self,
