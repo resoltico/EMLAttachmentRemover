@@ -258,6 +258,9 @@ class ArchiveContract:
                 )
                 raise DistributionArchiveError(message)
         expected_description = self.public_sources[self.readme.as_posix()].read_bytes()
+        expected_description = expected_description.replace(b"\r\n", b"\n").replace(
+            b"\r", b"\n"
+        )
         actual_description = metadata.get_payload(decode=True)
         if actual_description != expected_description:
             message = "generated metadata description does not match the public README"

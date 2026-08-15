@@ -82,14 +82,28 @@ class ArtifactMutationContracts(unittest.TestCase):
         with patch.object(
             Path, "resolve", autospec=True, side_effect=lambda path: path
         ):
-            replacements = dict(
-                artifacts._replacement_prefixes(  # ruff: ignore[private-member-access]
-                    root
-                )
+            replacement_items = artifacts._replacement_prefixes(  # ruff: ignore[private-member-access]
+                root
             )
+            replacements = dict(replacement_items)
 
         self.assertEqual(replacements[r"C:\public-project"], "<project-root>")
         self.assertEqual(replacements["C:/public-project"], "<project-root>")
+        self.assertEqual(replacements[r"C:\\public-project"], "<project-root>")
+        self.assertEqual(
+            artifacts._public_value(  # ruff: ignore[private-member-access]
+                r"c:\\PUBLIC-PROJECT\\tests\\test_public.py",
+                replacement_items,
+            ),
+            "<project-root>/tests/test_public.py",
+        )
+        self.assertEqual(
+            artifacts._public_value(  # ruff: ignore[private-member-access]
+                r"public\literal",
+                replacement_items,
+            ),
+            r"public\literal",
+        )
 
     def test_nested_nonmetadata_is_retained_and_jsonl_is_canonical_ascii(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

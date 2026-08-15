@@ -46,6 +46,21 @@ class MutationManifestContracts(unittest.TestCase):
             "5fefb360:90b9247e:6b6e8974:f685e2d8:1603c688:69c06f4e:ca9d8259:c92c344f",
         )
 
+    def test_source_digest_canonicalizes_platform_line_endings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source"
+            source.mkdir()
+            path = source / "public.py"
+            path.write_bytes(b"FIRST = 1\nSECOND = 2\n")
+            line_feed_digest = mutation_manifest.source_sha256(source)
+            path.write_bytes(b"FIRST = 1\r\nSECOND = 2\r\n")
+            carriage_return_line_feed_digest = mutation_manifest.source_sha256(source)
+            path.write_bytes(b"FIRST = 1\rSECOND = 2\r")
+            carriage_return_digest = mutation_manifest.source_sha256(source)
+
+        self.assertEqual(carriage_return_line_feed_digest, line_feed_digest)
+        self.assertEqual(carriage_return_digest, line_feed_digest)
+
     def test_evidence_reader_explicitly_requests_utf8(self) -> None:
         real_read_text = Path.read_text
         with tempfile.TemporaryDirectory() as directory:

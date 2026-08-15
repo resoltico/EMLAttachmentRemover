@@ -155,7 +155,7 @@ def main() -> int:
     ]
     for violation in violations:
         relative_path = violation.path.relative_to(PROJECT_ROOT)
-        print(f"{relative_path}: {violation.message}", file=sys.stderr)
+        print(f"{relative_path.as_posix()}: {violation.message}", file=sys.stderr)
     return int(bool(violations))
 
 

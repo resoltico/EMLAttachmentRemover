@@ -71,14 +71,26 @@ class JunitReportMutationContracts(unittest.TestCase):
             patch.object(Path, "resolve", autospec=True, side_effect=lambda path: path),
             patch.object(socket, "gethostname", return_value=""),
         ):
-            replacements = dict(
-                junit_report._replacements(  # ruff: ignore[private-member-access]
-                    source,
-                    project,
-                )
+            replacement_items = junit_report._replacements(  # ruff: ignore[private-member-access]
+                source,
+                project,
             )
+            replacements = dict(replacement_items)
         self.assertEqual(replacements[r"C:\project"], "PROJECT_ROOT")
         self.assertEqual(replacements["C:/project"], "PROJECT_ROOT")
+        self.assertEqual(replacements[r"C:\\project"], "PROJECT_ROOT")
+        project_replacements = tuple(
+            item for item in replacement_items if item[1] == "PROJECT_ROOT"
+        )
+        self.assertEqual(
+            junit_report._public_text(  # ruff: ignore[private-member-access]
+                r"c:\\PROJECT\\tests\\test_public.py",
+                project_replacements,
+                Path("public-report.xml"),
+                "JUnit XML text",
+            ),
+            "PROJECT_ROOT/tests/test_public.py",
+        )
 
     def test_source_contract_has_exact_contextual_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -104,7 +104,7 @@ def require_fields(
 
 
 def source_sha256(source_roots: Path | Sequence[Path]) -> str:
-    """Hash sorted production Python roots and bytes with explicit boundaries.
+    """Hash sorted production Python roots and canonical source bytes.
 
     Returns:
         A deterministic lower-case SHA-256 digest for all production source roots.
@@ -142,6 +142,7 @@ def source_sha256(source_roots: Path | Sequence[Path]) -> str:
             except OSError as error:
                 message = f"cannot read production source {path}: {error}"
                 raise MutationResultsError(message) from error
+            content = content.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
             digest.update(len(relative).to_bytes(BOUNDARY_BYTES))
             digest.update(relative)
             digest.update(len(content).to_bytes(BOUNDARY_BYTES))

@@ -166,11 +166,17 @@ class FilesystemWriteEdgeCaseTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, models.ExitCode.OUTPUT_CONFLICT)
 
     def test_atomic_publication_error_is_write_error(self) -> None:
-        with patch.object(Path, "hardlink_to", side_effect=OSError("blocked")):
+        temporary = Path("temporary.eml")
+        destination = Path("destination.eml")
+        with (
+            patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
+            patch.object(atomic_publish, "_native_no_replace", return_value=False),
+            patch.object(Path, "hardlink_to", side_effect=OSError("blocked")),
+        ):
             with self.assertRaises(models.CliError) as raised:
                 output_commit._publish_without_clobber(
-                    Path("temporary.eml"),
-                    Path("destination.eml"),
+                    temporary,
+                    destination,
                 )
 
         self.assertEqual(raised.exception.code, models.ExitCode.WRITE_ERROR)
@@ -235,6 +241,7 @@ class FilesystemWriteEdgeCaseTests(unittest.TestCase):
             temporary = base / "temporary.eml"
             temporary.write_bytes(b"temporary")
             with (
+                patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
                 patch.object(
                     atomic_publish,
                     "_native_no_replace",

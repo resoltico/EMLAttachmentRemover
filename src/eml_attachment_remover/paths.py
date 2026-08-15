@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ntpath
 import os
 import platform
 import stat
@@ -247,8 +248,11 @@ def _path_collision_key(path: Path) -> str:
         A normalized path string suitable for conservative collision checks.
 
     """
-    value = os.path.normcase(str(path))
-    if platform.system() == "Darwin":
+    value = str(path)
+    runtime_platform = platform.system()
+    if runtime_platform == "Windows":
+        return ntpath.normcase(value)
+    if runtime_platform == "Darwin":
         return unicodedata.normalize("NFD", value).casefold()
     return value
 

@@ -25,6 +25,7 @@ ABSOLUTE_WINDOWS_PATH: Final = re.compile(
 FILE_URI_PATH: Final = re.compile(r"(?i)file:(?://)?(?:/|[a-z]:[\\/]|\\\\)")
 PUBLIC_WEB_URL: Final = re.compile(r"(?i)https?://[^\s'\"<>]+")
 SAFE_FIELD_NAME: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+WINDOWS_PREFIX: Final = re.compile(r"(?i)^(?:[a-z]:[\\/]|\\\\)")
 REDACTED_ARGUMENT: Final = "<redacted>"
 REDACTED_REPRESENTATION: Final = "<redacted; structured argument names retained>"
 RAW_OBSERVATION_FIELDS: Final = frozenset({"arguments", "representation"})
@@ -35,6 +36,19 @@ type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
 
 class HypothesisArtifactError(ValueError):
     """Report unsafe, corrupt, or unpublishable Hypothesis artifacts."""
+
+
+def path_prefix_variants(prefix: str) -> tuple[str, ...]:
+    """Return native, slash-normalized, and escaped path-prefix spellings.
+
+    Returns:
+        Deterministically ordered spellings found in raw and represented text.
+
+    """
+    variants = {prefix, prefix.replace("\\", "/")}
+    if "\\" in prefix:
+        variants.add(prefix.replace("\\", "\\\\"))
+    return tuple(sorted(variants))
 
 
 def replacement_prefixes(
@@ -57,21 +71,79 @@ def replacement_prefixes(
     replacements: dict[str, str] = {}
     for prefix, replacement in candidates:
         if prefix != os.sep:
-            replacements.setdefault(prefix, replacement)
-            replacements.setdefault(prefix.replace("\\", "/"), replacement)
+            for variant in path_prefix_variants(prefix):
+                replacements.setdefault(variant, replacement)
     return tuple(sorted(replacements.items(), key=lambda item: (-len(item[0]), item)))
 
 
-def _public_text(value: str, replacements: tuple[tuple[str, str], ...]) -> str:
+def _path_prefix(prefix: str) -> bool:
+    """Return whether a replacement prefix denotes an absolute path.
+
+    Returns:
+        Whether the prefix is an absolute POSIX, drive-letter, or UNC path.
+
+    """
+    return prefix.startswith("/") or WINDOWS_PREFIX.match(prefix) is not None
+
+
+def _replace_prefix(value: str, prefix: str, replacement: str) -> str:
+    """Replace one prefix, case-insensitively for Windows path spellings.
+
+    Returns:
+        Text with every matching prefix replaced.
+
+    """
+    flags = re.IGNORECASE if WINDOWS_PREFIX.match(prefix) is not None else 0
+    return re.sub(
+        re.escape(prefix),
+        lambda _match: replacement,
+        value,
+        flags=flags,
+    )
+
+
+def public_text(value: str, replacements: tuple[tuple[str, str], ...]) -> str:
     """Return text with known private path prefixes replaced.
 
     Returns:
-        Portable public observation text.
+        Portable public observation text with forward-slash placeholder paths.
 
     """
     for prefix, replacement in replacements:
-        value = value.replace(prefix, replacement)
-    return value
+        value = _replace_prefix(value, prefix, replacement)
+    path_placeholders = frozenset(
+        replacement for prefix, replacement in replacements if _path_prefix(prefix)
+    )
+    lines: list[str] = []
+    for raw_line in value.splitlines(keepends=True):
+        public_line = raw_line
+        if any(placeholder in public_line for placeholder in path_placeholders):
+            while "\\\\" in public_line:
+                public_line = public_line.replace("\\\\", "\\")
+            public_line = public_line.replace("\\", "/")
+        lines.append(public_line)
+    return "".join(lines)
+
+
+def private_prefix_remains(
+    value: str,
+    replacements: tuple[tuple[str, str], ...],
+) -> bool:
+    """Return whether any known private prefix remains after sanitization.
+
+    Returns:
+        Whether sanitized public text still contains a private prefix.
+
+    """
+    return any(
+        re.search(
+            re.escape(prefix),
+            value,
+            flags=re.IGNORECASE if WINDOWS_PREFIX.match(prefix) is not None else 0,
+        )
+        is not None
+        for prefix, _replacement in replacements
+    )
 
 
 def contains_absolute_path(value: str) -> bool:
@@ -130,7 +202,7 @@ def public_value(
 
     """
     if isinstance(value, str):
-        return _public_text(value, replacements)
+        return public_text(value, replacements)
     if isinstance(value, list):
         return [public_value(item, replacements) for item in value]
     if not isinstance(value, dict):
@@ -142,7 +214,7 @@ def public_value(
             if handled:
                 public[key] = root_value
                 continue
-        public[_public_text(key, replacements)] = public_value(item, replacements)
+        public[public_text(key, replacements)] = public_value(item, replacements)
     return public
 
 
@@ -184,5 +256,5 @@ def _redacted_raw_field(
     if key == "representation":
         return REDACTED_REPRESENTATION
     if isinstance(value, dict):
-        return {_public_text(name, replacements): REDACTED_ARGUMENT for name in value}
+        return {public_text(name, replacements): REDACTED_ARGUMENT for name in value}
     return REDACTED_ARGUMENT

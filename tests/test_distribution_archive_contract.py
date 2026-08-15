@@ -153,6 +153,8 @@ class ArchiveContractTests(unittest.TestCase):
                     "Repository, https://example.test/public-project.git",
                 ),
             )
+            readme = distribution.root / declared.readme
+            readme.write_bytes(b"Public synthetic README\r\n")
             metadata = BytesParser(policy=policy.compat32).parsebytes(
                 distribution.metadata,
             )

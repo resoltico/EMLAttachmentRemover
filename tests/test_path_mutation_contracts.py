@@ -166,6 +166,7 @@ class AtomicPlacementContractTests(unittest.TestCase):
         temporary = Path("synthetic-temporary.eml")
         destination = Path("synthetic-output.eml")
         with (
+            patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
             patch.object(atomic_publish, "_native_no_replace", return_value=False),
             patch.object(Path, "hardlink_to") as hardlink,
             patch.object(Path, "unlink") as unlink,
@@ -178,6 +179,7 @@ class AtomicPlacementContractTests(unittest.TestCase):
         temporary = Path("synthetic-temporary.eml")
         destination = Path("synthetic-output.eml")
         with (
+            patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
             patch.object(atomic_publish, "_native_no_replace", return_value=False),
             patch.object(
                 Path,
@@ -194,6 +196,7 @@ class AtomicPlacementContractTests(unittest.TestCase):
         )
 
         with (
+            patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
             patch.object(atomic_publish, "_native_no_replace", return_value=False),
             patch.object(Path, "hardlink_to", side_effect=OSError("publish blocked")),
         ):
@@ -213,6 +216,7 @@ class AtomicPlacementContractTests(unittest.TestCase):
             temporary.write_bytes(b"PUBLIC DERIVED")
             destination.write_bytes(b"PUBLIC RACE WINNER")
             with (
+                patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
                 patch.object(
                     atomic_publish,
                     "_native_no_replace",
@@ -286,6 +290,7 @@ class AtomicPlacementContractTests(unittest.TestCase):
                 original_hardlink(link, target)
 
             with (
+                patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
                 patch.object(
                     atomic_publish,
                     "_native_no_replace",
@@ -341,6 +346,7 @@ class AtomicPlacementContractTests(unittest.TestCase):
             source.write_bytes(b"PUBLIC SOURCE")
             temporary.write_bytes(b"PUBLIC DERIVED")
             with (
+                patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
                 patch.object(atomic_publish, "_native_no_replace", return_value=False),
                 patch.object(Path, "hardlink_to", side_effect=OSError("link blocked")),
                 patch.object(Path, "unlink") as unlink,

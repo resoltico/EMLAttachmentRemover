@@ -12,7 +12,7 @@ import sys
 import tempfile
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, cast
 
 from defusedxml import ElementTree
 
@@ -107,8 +107,8 @@ def _replacements(
     for path, replacement in path_candidates:
         prefix = str(path.resolve())
         if prefix != os.sep:
-            replacements.setdefault(prefix, replacement)
-            replacements.setdefault(prefix.replace("\\", "/"), replacement)
+            for variant in path_safety.path_prefix_variants(prefix):
+                replacements.setdefault(variant, replacement)
     hostname = socket.gethostname()
     if hostname:
         replacements.setdefault(hostname, HOST_PLACEHOLDER)
@@ -132,10 +132,9 @@ def _public_text(
         JunitReportError: If the value retains private or absolute content.
 
     """
-    public = value
-    for prefix, replacement in replacements:
-        public = public.replace(prefix, replacement)
-    if any(prefix in public for prefix, _replacement in replacements):
+    replacement_tuple = tuple(replacements)
+    public = cast("str", path_safety.public_text(value, replacement_tuple))
+    if path_safety.private_prefix_remains(public, replacement_tuple):
         message = f"private path remains in JUnit report {source}"
         raise JunitReportError(message)
     privacy_issues = policy.public_content_messages(public)

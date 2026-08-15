@@ -36,6 +36,7 @@ class TaskMutationBoundaryTests(unittest.TestCase):
                 selector_preserving_environment(controlled_environment),
                 clear=True,
             ),
+            patch.object(sys, "platform", "linux"),
             patch.object(tasks, "_mutation_paths", return_value=path_bundle),
             patch.object(tasks, "_run") as run,
             patch.object(

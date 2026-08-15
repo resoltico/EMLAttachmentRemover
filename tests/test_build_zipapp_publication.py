@@ -153,12 +153,13 @@ class ZipappPublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "nested" / "public.pyz"
             built = build_zipapp.build_zipapp(target, verify=False)
-            mode = built.stat().st_mode
             self.assertEqual(built, target.resolve())
             self.assertTrue(zipfile.is_zipfile(built))
-            self.assertTrue(mode & stat.S_IXUSR)
-            self.assertTrue(mode & stat.S_IXGRP)
-            self.assertTrue(mode & stat.S_IXOTH)
+            if os.name == "posix":
+                mode = built.stat().st_mode
+                self.assertTrue(mode & stat.S_IXUSR)
+                self.assertTrue(mode & stat.S_IXGRP)
+                self.assertTrue(mode & stat.S_IXOTH)
 
     def test_build_failure_removes_the_reserved_temporary_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

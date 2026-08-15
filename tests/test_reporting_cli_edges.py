@@ -73,6 +73,12 @@ class ReportingAndCliEdgeCaseTests(unittest.TestCase):
 
         self.assertEqual(key, "Public")
 
+    def test_windows_collision_key_is_case_insensitive_and_normalized(self) -> None:
+        with patch.object(platform, "system", return_value="Windows"):
+            key = paths._path_collision_key(Path("Public") / "Child")
+
+        self.assertEqual(key, r"public\child")
+
     def test_human_batch_writes_single_result_without_source_header(self) -> None:
         result = _process_result()
         with patch.object(reporting, "_write_line") as write_line:

@@ -99,16 +99,18 @@ def test_unsupported_native_operation_requests_hardlink_fallback(
 
 
 def test_native_existing_destination_is_conflict() -> None:
-    with patch.object(
-        atomic_publish,
-        "_native_no_replace",
-        side_effect=FileExistsError("PUBLIC OCCUPIED"),
+    temporary = Path("temporary.eml")
+    destination = Path("destination.eml")
+    with (
+        patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
+        patch.object(
+            atomic_publish,
+            "_native_no_replace",
+            side_effect=FileExistsError("PUBLIC OCCUPIED"),
+        ),
     ):
         with pytest.raises(models.CliError) as raised:
-            atomic_publish.publish_without_clobber(
-                Path("temporary.eml"),
-                Path("destination.eml"),
-            )
+            atomic_publish.publish_without_clobber(temporary, destination)
 
     assert raised.value.code is models.ExitCode.OUTPUT_CONFLICT
     assert raised.value.message == (
@@ -134,18 +136,22 @@ def test_native_unexpected_failure_retains_write_error_when_target_is_absent() -
 def test_publication_os_error_is_classified_by_the_final_target(
     target_state: str,
 ) -> None:
+    temporary = Path("temporary.eml")
     destination = MagicMock(spec=Path)
     if target_state == "present":
         destination.lstat.return_value = MagicMock()
     else:
         destination.lstat.side_effect = OSError("PUBLIC ABSENT")
-    with patch.object(
-        atomic_publish,
-        "_native_no_replace",
-        side_effect=OSError("PUBLIC FAILURE"),
+    with (
+        patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
+        patch.object(
+            atomic_publish,
+            "_native_no_replace",
+            side_effect=OSError("PUBLIC FAILURE"),
+        ),
     ):
         with pytest.raises(models.CliError) as raised:
-            atomic_publish.publish_without_clobber(Path("temporary.eml"), destination)
+            atomic_publish.publish_without_clobber(temporary, destination)
 
     expected = (
         models.ExitCode.OUTPUT_CONFLICT

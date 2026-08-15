@@ -36,6 +36,7 @@ class MutationTaskTests(unittest.TestCase):
                     "COVERAGE_UNRECOGNIZED_INPUT": "ambient future override",
                 },
             ),
+            patch.object(sys, "platform", "linux"),
             patch.object(tasks, "_coverage") as coverage,
             patch.object(tasks, "_remove_mutation_workspace"),
             patch.object(
@@ -68,11 +69,11 @@ class MutationTaskTests(unittest.TestCase):
             run.call_args_list[0].kwargs["environment_updates"]["COVERAGE_RCFILE"],
             str(tasks.PROJECT_ROOT / "tools" / "mutmut.coveragerc"),
         )
-        mutation_coverage = str(
-            Path(run.call_args_list[0].kwargs["environment_updates"]["COVERAGE_FILE"])
+        mutation_coverage = Path(
+            run.call_args_list[0].kwargs["environment_updates"]["COVERAGE_FILE"]
         )
-        self.assertTrue(mutation_coverage.endswith("/.mutmut-coverage"))
-        self.assertNotIn(str(tasks.PROJECT_ROOT), mutation_coverage)
+        self.assertEqual(mutation_coverage.name, ".mutmut-coverage")
+        self.assertNotIn(tasks.PROJECT_ROOT, mutation_coverage.parents)
         removals = run.call_args_list[0].kwargs["environment_removals"]
         self.assertIn("COVERAGE_PROCESS_START", removals)
         self.assertIn("COVERAGE_UNRECOGNIZED_INPUT", removals)
@@ -133,6 +134,7 @@ class MutationTaskTests(unittest.TestCase):
                 patch.object(tasks, "PROJECT_ROOT", root),
                 patch.object(tasks, "MUTATION_STATISTICS", statistics),
                 patch.object(tasks, "MUTATION_RESULTS", results),
+                patch.object(sys, "platform", "linux"),
                 patch.object(tasks, "_coverage", side_effect=record_coverage),
                 patch.object(
                     tasks,

@@ -170,10 +170,9 @@ def _sanitize_observation_file(
         f"{json.dumps(item, sort_keys=True, separators=(',', ':'))}\n"
         for item in public
     )
-    for prefix, _replacement in replacements:
-        if prefix in content:
-            message = f"private path remains in Hypothesis observations {path}"
-            raise HypothesisArtifactError(message)
+    if observation_safety.private_prefix_remains(content, replacements):
+        message = f"private path remains in Hypothesis observations {path}"
+        raise HypothesisArtifactError(message)
     _atomic_write(path, content)
     return len(public)
 

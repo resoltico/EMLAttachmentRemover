@@ -349,7 +349,7 @@ def _verify_distribution_files(
     )
     if remaining_issues:
         diagnostics = "\n".join(
-            f"{issue.path.relative_to(PROJECT_ROOT)}: {issue.message}"
+            f"{issue.path.relative_to(PROJECT_ROOT).as_posix()}: {issue.message}"
             for issue in remaining_issues
         )
         message = f"repository changed during release build:\n{diagnostics}"
@@ -417,7 +417,7 @@ def main(argv: list[str] | None = None) -> int:
         else qualify_release(arguments.output_directory)
     )
     for path in paths:
-        print(path)
+        print(path.as_posix())
     return 0
 
 

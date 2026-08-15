@@ -150,20 +150,21 @@ def test_build_forwards_verification_and_applies_all_executable_bits() -> None:
             "MIT",
             "CPython",
         )
+        original_mode = temporary.stat().st_mode
         with (
             patch.object(build_zipapp, "_temporary_path", return_value=temporary),
             patch.object(build_zipapp, "_project_metadata", return_value=metadata),
             patch.object(build_zipapp, "_write_archive"),
             patch.object(build_zipapp, "_verify_archive") as verify,
+            patch.object(Path, "chmod") as chmod,
         ):
             built = build_zipapp.build_zipapp(target, verify=True)
 
         verify.assert_called_once_with(temporary, metadata, execute=True)
+        chmod.assert_called_once_with(
+            original_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+        )
         assert built == target.parent.resolve() / target.name
-        mode = built.stat().st_mode
-        assert mode & stat.S_IXUSR
-        assert mode & stat.S_IXGRP
-        assert mode & stat.S_IXOTH
 
 
 def test_smoke_fixture_has_exact_wire_and_attachment_contract() -> None:

@@ -205,6 +205,7 @@ class TaskRunnerTests(unittest.TestCase):
                 patch.object(tasks, "PROJECT_ROOT", Path(directory)),
                 patch.object(tasks, "MUTATION_STATISTICS", statistics),
                 patch.object(tasks, "MUTATION_RESULTS", results),
+                patch.object(sys, "platform", "linux"),
                 patch.object(tasks, "_capture_mutation_results"),
                 patch.object(
                     tasks.hypothesis_runner,

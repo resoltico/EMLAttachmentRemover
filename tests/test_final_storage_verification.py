@@ -144,6 +144,7 @@ def test_post_publication_cleanup_failure_reports_private_temp_path() -> None:
     temporary = Path("public-temporary.eml")
     destination = Path("public-output.eml")
     with (
+        patch.object(atomic_publish.os, "name", new="posix"),  # type: ignore[attr-defined]
         patch.object(atomic_publish, "_native_no_replace", return_value=False),
         patch.object(Path, "hardlink_to"),
         patch.object(Path, "unlink", side_effect=OSError("PUBLIC CLEANUP BLOCKED")),
