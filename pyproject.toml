@@ -74,6 +74,7 @@ path = "tools/hatch_build.py"
 [tool.hatch.build.targets.sdist]
 include = [
   "/.github",
+  "/.gitattributes",
   "/.gitignore",
   "/.python-version",
   "/CHANGELOG.md",
@@ -216,6 +217,7 @@ tools = ["tools", "*/mutants/tools"]
 [tool.mutmut]
 also_copy = [
   ".github",
+  ".gitattributes",
   ".gitignore",
   ".python-version",
   "CHANGELOG.md",

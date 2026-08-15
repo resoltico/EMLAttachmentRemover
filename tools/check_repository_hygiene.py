@@ -35,6 +35,7 @@ path_policy = importlib.import_module(
 
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
 PUBLIC_ROOT_FILES: Final = frozenset({
+    ".gitattributes",
     ".gitignore",
     ".python-version",
     "CHANGELOG.md",
