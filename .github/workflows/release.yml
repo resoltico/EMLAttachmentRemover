@@ -1,0 +1,244 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    name: Qualify ${{ matrix.os }} / CPython ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      PYTHONDEVMODE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+      PYTHONWARNINGS: error
+      RELEASE_TAG: ${{ github.ref_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: 3.14.7
+          - os: macos-latest
+            python: 3.14.7
+          - os: windows-latest
+            python: 3.14.7
+          - os: ubuntu-latest
+            python: 3.14.7t
+          - os: macos-latest
+            python: 3.14.7t
+          - os: windows-latest
+            python: 3.14.7t
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and CPython
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.5
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev --python ${{ matrix.python }}
+      - name: Validate the release tag
+        shell: bash
+        run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
+      - name: Require the POSIX integration environment
+        if: runner.os != 'Windows'
+        shell: bash
+        run: test -x /bin/sh
+      - name: Run the complete quality gate
+        run: uv run python tools/tasks.py quality
+
+  mutation:
+    name: Qualify mutation results for the tagged source
+    needs: qualify
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    env:
+      PYTHONDEVMODE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+      PYTHONWARNINGS: error
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and canonical CPython
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.5
+          python-version: 3.14.7
+          enable-cache: true
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev --python 3.14.7
+      - name: Validate the release tag
+        shell: bash
+        run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
+      - name: Run a fresh 100% actionable mutation campaign
+        run: uv run python tools/tasks.py mutation
+      - name: Preserve tagged mutation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-mutation-${{ github.run_id }}
+          path: |
+            mutants/mutmut-cicd-stats.json
+            build/mutmut-results.txt
+            build/coverage.xml
+            build/test-results-project-ci.xml
+            tools/equivalent_mutants.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  build:
+    name: Build release assets
+    needs:
+      - qualify
+      - mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      PYTHONDEVMODE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+      PYTHONWARNINGS: error
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and canonical CPython
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.5
+          python-version: 3.14.7
+          enable-cache: false
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev --python 3.14.7
+      - name: Validate the release tag
+        shell: bash
+        run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
+      - name: Build and qualify the exact release artifact set
+        run: uv run python tools/tasks.py release
+      - name: Upload release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-dist
+          path: |
+            release-dist/*.pyz
+            release-dist/*.whl
+            release-dist/*.tar.gz
+            release-dist/SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    name: Attest and publish release assets
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and canonical CPython
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.5
+          python-version: 3.14.7
+          enable-cache: false
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: release-dist
+      - name: Reverify the downloaded exact artifact set
+        run: >-
+          uv run --no-project --python 3.14.7 python
+          tools/qualify_release.py --verify-directory release-dist
+      - name: Identify the verified checksum manifest
+        id: checksum-manifest
+        shell: bash
+        run: |
+          manifest_digest=$(sha256sum release-dist/SHA256SUMS)
+          manifest_digest=${manifest_digest%% *}
+          if [[ ! "$manifest_digest" =~ ^[0-9a-f]{64}$ ]]; then
+            exit 1
+          fi
+          printf 'digest=sha256:%s\n' "$manifest_digest" >> "$GITHUB_OUTPUT"
+      - name: Attest checksummed release assets
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: release-dist/SHA256SUMS
+      - name: Attest the checksum manifest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: SHA256SUMS
+          subject-digest: ${{ steps.checksum-manifest.outputs.digest }}
+      - name: Create the GitHub release
+        shell: bash
+        run: |
+          read -r object_type object_sha < <(
+            gh api \
+              --header "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
+              --jq '.object | [.type, .sha] | @tsv'
+          )
+          for _ in 1 2 3 4; do
+            if [[ "$object_type" == "commit" ]]; then
+              break
+            fi
+            if [[ "$object_type" != "tag" ]]; then
+              exit 1
+            fi
+            read -r object_type object_sha < <(
+              gh api \
+                --header "X-GitHub-Api-Version: 2026-03-10" \
+                "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" \
+                --jq '.object | [.type, .sha] | @tsv'
+            )
+          done
+          if [[ "$object_type" != "commit" || "$object_sha" != "$GITHUB_SHA" ]]; then
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            release-dist/*.pyz \
+            release-dist/*.whl \
+            release-dist/*.tar.gz \
+            release-dist/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$RELEASE_TAG" \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}

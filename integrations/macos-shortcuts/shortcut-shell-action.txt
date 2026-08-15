@@ -1,0 +1,1 @@
+/bin/sh "$HOME/Library/Application Support/EML Attachment Remover/run-from-finder.sh" "$@"

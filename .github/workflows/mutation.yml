@@ -1,0 +1,52 @@
+name: Mutation testing
+
+on:
+  schedule:
+    - cron: "41 3 * * 4"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mutation:
+    name: CPython 3.14.7 mutation gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONDEVMODE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+      PYTHONWARNINGS: error
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and CPython
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.5
+          python-version: 3.14.7
+          enable-cache: true
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev --python 3.14.7
+      - name: Run a fresh 100% actionable mutation campaign
+        run: uv run python tools/tasks.py mutation
+      - name: Preserve machine-readable mutation results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-results-${{ github.run_id }}
+          path: |
+            mutants/mutmut-cicd-stats.json
+            build/mutmut-results.txt
+            build/coverage.xml
+            build/test-results-project-ci.xml
+            tools/equivalent_mutants.json
+          if-no-files-found: warn
+          retention-days: 30

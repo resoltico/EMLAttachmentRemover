@@ -1,0 +1,5 @@
+[run]
+# Mutmut 3.7 resolves its copied source files by absolute path while gathering
+# its test-to-mutant map.  Keep this dedicated measurement absolute; the
+# separately enforced public coverage report remains relative and reproducible.
+relative_files = false

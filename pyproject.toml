@@ -1,0 +1,232 @@
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eml-attachment-remover"
+version = "1.0.0"
+description = "Remove EML file attachments while preserving inline message-body resources"
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Ervins Strauhmanis" },
+]
+keywords = ["email", "eml", "mime", "attachments", "shortcuts", "macos"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Topic :: Communications :: Email",
+  "Topic :: Utilities",
+  "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/resoltico/EMLAttachmentRemover"
+Repository = "https://github.com/resoltico/EMLAttachmentRemover"
+Issues = "https://github.com/resoltico/EMLAttachmentRemover/issues"
+Changelog = "https://github.com/resoltico/EMLAttachmentRemover/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+dev = [
+  "actionlint-py==1.7.12.24",
+  "coverage==7.15.4",
+  "defusedxml==0.7.1",
+  "detect-secrets==1.5.0",
+  "hatchling==1.32.0",
+  "hypothesis==6.165.8",
+  "mypy==2.3.0",
+  "mutmut==3.7.0",
+  "pyflakes==3.4.0",
+  "pytest==9.1.1",
+  "ruff==0.16.3",
+  "shellcheck-py==0.11.0.1",
+  "types-defusedxml==0.7.0.20260504",
+]
+
+[project.scripts]
+remove-eml-attachments = "eml_attachment_remover.runtime:main"
+
+[tool.eml-attachment-remover.runtime]
+implementation = "CPython"
+
+[tool.hatch.build]
+exclude = ["**/*.py.meta", "**/*.py.spans"]
+reproducible = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eml_attachment_remover"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "tools/hatch_build.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/.github",
+  "/.gitignore",
+  "/.python-version",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/QA.md",
+  "/README.md",
+  "/integrations",
+  "/pyproject.toml",
+  "/src",
+  "/tests",
+  "/tools",
+  "/uv.lock",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+preview = true
+src = ["src", "tests", "tools"]
+exclude = [".venv", "dist", "mutants"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "missing-copyright-notice",
+  "incorrect-blank-line-before-class",
+  "missing-trailing-comma",
+  "multi-line-summary-second-line",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
+[tool.ruff.lint.pylint]
+max-args = 5
+max-bool-expr = 5
+max-branches = 10
+max-locals = 12
+max-nested-blocks = 3
+max-returns = 6
+max-statements = 40
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = [
+  "assert",
+  "docstring-extraneous-exception",
+  "docstring-missing-exception",
+  "f-string-in-exception",
+  "magic-value-comparison",
+  "multiple-with-statements",
+  "pytest-unittest-assertion",
+  "pytest-unittest-raises-assertion",
+  "raise-vanilla-args",
+  "subprocess-without-shell-equals-true",
+  "suspicious-subprocess-import",
+  "undocumented-public-class",
+  "undocumented-public-function",
+  "undocumented-public-method",
+]
+"tests/test_filesystem_edges.py" = ["private-member-access"]
+"tests/test_build_zipapp_publication.py" = ["private-member-access"]
+"tests/test_coverage_contract_edges.py" = ["private-member-access"]
+"tests/test_hypothesis_properties.py" = ["private-member-access"]
+"tests/test_mime_contracts.py" = ["no-self-use", "private-member-access"]
+"tests/test_mime_mutation_contracts.py" = ["private-member-access"]
+"tests/test_mime_edges.py" = ["private-member-access"]
+"tests/test_module_design_tool.py" = ["private-member-access"]
+"tests/test_reporting_cli_edges.py" = ["private-member-access"]
+"tests/test_release_process_tool.py" = ["no-self-use", "private-member-access"]
+"tests/test_release_publication_tool.py" = ["private-member-access"]
+"tests/test_task_command_contracts.py" = ["private-member-access"]
+"tests/test_task_mutation_boundary.py" = ["private-member-access"]
+"tests/test_tasks_mutation.py" = ["private-member-access"]
+"tests/test_tools.py" = ["private-member-access"]
+"tests/test_version.py" = ["import-private-name", "private-member-access"]
+"tools/*.py" = [
+  "print",
+  "subprocess-without-shell-equals-true",
+  "suspicious-subprocess-import",
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+files = ["src", "tests", "tools"]
+python_version = "3.14"
+strict = true
+disallow_any_decorated = true
+disallow_any_unimported = true
+disallow_untyped_globals = true
+enable_error_code = ["deprecated"]
+extra_checks = true
+local_partial_types = true
+strict_bytes = true
+strict_equality_for_none = true
+warn_incomplete_stub = true
+warn_unused_configs = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = [
+  "tests.test_hypothesis_configuration",
+  "tests.test_hypothesis_console_safety",
+  "tests.test_hypothesis_mime_trees",
+  "tests.test_hypothesis_properties",
+  "tests.test_hypothesis_raw_wire",
+  "tests.test_hypothesis_references",
+  "tests.test_hypothesis_stateful",
+  "tests.test_css_reference_safety",
+  "tests.test_mime_location_resolution",
+]
+# Hypothesis's typed decorators intentionally return Callable[..., None].
+disallow_any_decorated = false
+
+[tool.pytest.ini_options]
+addopts = ["--runxfail", "--strict-config", "--strict-markers"]
+filterwarnings = ["error"]
+junit_family = "xunit2"
+minversion = "9.1"
+required_plugins = ["hypothesis==6.165.8"]
+testpaths = ["tests"]
+xfail_strict = true
+
+[tool.coverage.run]
+branch = true
+parallel = true
+patch = ["subprocess"]
+relative_files = true
+source = ["src/eml_attachment_remover", "tools"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+
+[tool.coverage.paths]
+source = ["src/eml_attachment_remover", "*/mutants/src/eml_attachment_remover"]
+tools = ["tools", "*/mutants/tools"]
+
+[tool.mutmut]
+also_copy = [
+  ".github",
+  ".gitignore",
+  ".python-version",
+  "CHANGELOG.md",
+  "LICENSE",
+  "QA.md",
+  "README.md",
+  "integrations",
+]
+mutate_only_covered_lines = true
+pytest_add_cli_args = ["-q", "-p", "no:cacheprovider"]
+pytest_add_cli_args_test_selection = ["tests"]
+source_paths = ["src/eml_attachment_remover", "tools"]
+use_git_change_detection = false
+use_setproctitle = false

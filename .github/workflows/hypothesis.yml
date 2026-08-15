@@ -1,0 +1,76 @@
+name: Hypothesis exploration
+
+on:
+  schedule:
+    - cron: "23 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hypothesis-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  explore:
+    name: Randomized ${{ matrix.os }} / CPython ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      PYTHONDEVMODE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+      PYTHONWARNINGS: error
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: 3.14.7
+          - os: macos-latest
+            python: 3.14.7
+          - os: windows-latest
+            python: 3.14.7
+          - os: ubuntu-latest
+            python: 3.14.7t
+          - os: macos-latest
+            python: 3.14.7t
+          - os: windows-latest
+            python: 3.14.7t
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and CPython
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.5
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev --python ${{ matrix.python }}
+      - name: Require the POSIX integration environment
+        if: runner.os != 'Windows'
+        shell: bash
+        run: test -x /bin/sh
+      - name: Run randomized property exploration
+        run: >-
+          uv run python tools/tasks.py thorough
+          --observable --timeout-seconds 3300
+      - name: Finalize public Hypothesis evidence
+        id: finalize_hypothesis
+        if: always()
+        run: >-
+          uv run python tools/finalize_hypothesis_artifacts.py
+          --observations
+      - name: Publish sanitized Hypothesis observations
+        if: always() && steps.finalize_hypothesis.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hypothesis-observations-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}
+          path: .hypothesis/observed/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
