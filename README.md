@@ -1,13 +1,14 @@
 # EML Attachment Remover
 
-`remove-eml-attachments` creates a smaller, derived EML copy with downloadable file
-attachments removed while preserving the resources needed to render the message
-body—especially inline company logos, social icons, and other email-signature images.
+`remove-eml-attachments` creates a verified text-only EML working copy. It selects a
+safe plain-text body, discards unselected HTML representations together with their
+embedded resources, and removes ordinary file attachments elsewhere.
 
 It uses Python's standard-library MIME parser rather than regular expressions.
-Removal decisions use MIME structure, metadata, and body-resource references—not
-payload-content inspection. Payloads are still decoded to validate transfer encoding
-and fingerprint every retained part before an output is published.
+The selection is based on MIME structure and dependency references, not filenames,
+image recognition, sender rules, or payload-content heuristics. Payloads are decoded
+only to validate transfer encoding and bind the transformation to cryptographic
+fingerprints before an output is published.
 
 > **Back up EML files before processing them.** This application is designed never
 > to overwrite an input and writes a derived copy instead, but an independent backup
@@ -17,24 +18,35 @@ and fingerprint every retained part before an output is published.
 
 - CPython 3.14.x baseline; no third-party runtime dependencies.
 - One file or a whole Finder selection can be processed in one command.
-- Outputs default to `SOURCE.attachments-removed.eml` beside each source.
-- Explicit file attachments, attached images, and attached EML messages are removed.
-- Inline resources, referenced Content-IDs, Content-Locations, and
-  `multipart/related` resources are preserved.
-- Outside opaque cryptographic MIME, a part labelled `attachment` is retained only
-  when the body actually references its Content-ID or Content-Location. This covers
-  malformed-but-rendered signature graphics without retaining unrelated image
-  attachments; protected content remains opaque.
+- Outputs default to `SOURCE.text-only.eml` beside each source.
+- Exactly one safe plain-text body representation is selected for the derived
+  message.
+- Whenever transformation is required, that representation is promoted to a
+  wrapper-free, non-multipart root `text/plain` entity for mail-client interoperability.
+  An already-canonical root plain message is copied byte-for-byte.
+- Unselected HTML representations are discarded atomically with their complete
+  `cid:`, Content-Location, and `multipart/related` resource closure.
+- Explicit file attachments, attached images, and attached EML messages are removed
+  outside discarded body representations.
+- If a safe text-only representation cannot be proven—including HTML-only input or
+  protected content needed by the selected body—the input fails without an output.
+- The complete transformation is planned at immutable source-tree MIME paths before
+  any part is discarded.
 - The original EML is never overwritten, directly or through a hard link or symbolic
   link.
-- Output is written through a temporary file, flushed, reparsed, and checked against
-  SHA-256 fingerprints of every retained MIME payload before atomic placement.
+- The selected decoded text is bound to its source by SHA-256 after canonical newline
+  normalization. Output is written through a temporary file, flushed, reparsed, and
+  required to match the retained root's leaf fingerprint and structure; a second
+  text-only planning pass must be a complete no-op, proving the stored message is
+  canonical root `text/plain`, before atomic placement.
 - Existing DKIM and ARC transport signatures are left as historical headers, but a
   warning is issued because changing the body invalidates them.
-- Encrypted MIME remains opaque. The program refuses operations that would require
-  reserialising `multipart/signed` content after an attachment removal.
+- Signed, encrypted, and opaque security MIME is never guessed at or partially
+  rewritten. A protected subtree needed by the selected body, or whose role is
+  ambiguous, makes the transformation unavailable; an explicit attachment or
+  unselected protected subtree may instead be discarded atomically.
 
-The attachment-removed file is a **working copy**, not a replacement for the evidential
+The text-only file is a **working copy**, not a replacement for the evidential
 original.
 
 ## Zero-install use
@@ -71,7 +83,7 @@ python3.14 remove-eml-attachments.pyz --version
 The default output is:
 
 ```text
-message.attachments-removed.eml
+message.text-only.eml
 ```
 
 The archive is portable across macOS, Linux, and Windows when that interpreter is
@@ -135,6 +147,8 @@ remove-eml-attachments --force -- "one.eml" "two.eml"
 ```
 
 `--force` can replace outputs but can never overwrite any selected source file.
+`--skip-existing` leaves the existing destination untouched and does not inspect or
+verify it; reports identify it as skipped rather than as a newly verified output.
 
 ### Inspect without writing
 
@@ -163,7 +177,11 @@ remove-eml-attachments --output-format paths0 -- "one.eml" "two.eml"
 ```
 
 Diagnostics remain on standard error for `paths` and `paths0`. JSON includes both
-successful and failed items in the document.
+successful and failed items in the document. Its top level declares
+`"schema_version": 2` and `"scope": "text-only"`. Each successful result reports
+`selected_plain_text_bodies`, `discarded_body_representations`,
+`discarded_body_resources`, and `removed_attachments`; discarded resources include
+the ordered source MIME paths that referenced them.
 
 ## macOS Finder and Shortcuts
 
@@ -179,7 +197,7 @@ copies it with the launcher. To copy a verified official release archive instead
 set `EML_REMOVER_ZIPAPP` to that downloaded `.pyz`; set `EML_REMOVER_PYTHON` when
 your CPython 3.14 command is not named `python3.14`.
 
-Then create a Finder Quick Action in **Shortcuts** named **Remove EML Attachments**.
+Then create a Finder Quick Action in **Shortcuts** named **Create Text-Only EML Copy**.
 Configure it to receive **Files** from Finder, add **Run Shell Script**, set the
 action's **Input** to **Shortcut Input**, and set **Pass Input** to **as arguments**.
 Paste the exact command printed by the installer. For the default installation,
@@ -194,23 +212,35 @@ restricted `PATH`, produces outputs beside the sources, and reveals completed fi
 in Finder. Detailed instructions and optional settings are in
 [`integrations/macos-shortcuts/README.md`](integrations/macos-shortcuts/README.md).
 
-## What is preserved
+## What text-only means
 
-The default policy retains a non-text MIME part when one or more of these conditions
-apply:
+A successful modified output is one non-multipart root `text/plain` entity, without
+the source's `multipart/mixed`, `multipart/alternative`, or `multipart/related`
+wrappers. This canonical shape is intentionally suitable for mail clients and file
+previewers such as Apple Mail and Quick Look. The selected content-transfer encoding,
+encoded payload, and applicable `Content-*` representation headers are promoted to
+the root. Safe message and envelope headers remain in their original order; invalidated
+size/attachment markers and wrapper preamble or epilogue text are removed. A source
+that is already canonical root plain text requires no rewrite and is copied
+byte-for-byte.
 
-- the HTML body references its `Content-ID` through a `cid:` URI;
-- the HTML body references its `Content-Location`;
-- it has `Content-Disposition: inline`;
-- it is a non-attachment resource under `multipart/related`;
-- it carries Content-ID or Content-Location metadata and is not explicitly an
-  attachment;
-- it is protected cryptographic MIME content.
+The selected decoded content remains exact after canonical MIME newline normalization
+(`CRLF`, `CR`, and `LF` become `LF`) and is bound by SHA-256 during verification. The
+output contains no unselected HTML body, dependent embedded body resource, ordinary
+attachment, or redundant MIME wrapper. Reported MIME paths continue to identify the
+source tree, before promotion; they are audit locations, not the derived root path.
 
-The program does not use image recognition to decide whether an image is a
-"signature". It preserves body resources based on MIME structure and actual body
-references. That is more predictable and avoids deleting legitimate rendered
-content.
+An image uploaded through an email editor can be declared `inline`, placed below
+`multipart/related`, and referenced from HTML with `cid:` even when a person thinks
+of it as an attachment. MIME provides no reliable bit that distinguishes such an
+image from a signature logo. When the message also supplies a safe plain-text
+alternative, the application therefore discards the whole unselected HTML
+representation and its resource closure instead of guessing image-by-image.
+
+The application does not convert arbitrary HTML to text, fetch remote content,
+perform OCR, or inspect an image semantically. If the source offers no safe
+resource-free plain-text representation, processing fails closed and publishes
+nothing.
 
 ## Exit codes
 
@@ -221,7 +251,7 @@ content.
 | 3 | Input file error |
 | 4 | Output conflict or unsafe source/output alias |
 | 5 | Unsafe or malformed MIME / transfer encoding |
-| 6 | Signed or otherwise protected MIME cannot be safely rewritten |
+| 6 | A verified text-only transformation is unavailable |
 | 7 | Output write or directory error |
 | 8 | Generated EML failed post-write verification |
 | 9 | At least one item failed in a multi-file batch |

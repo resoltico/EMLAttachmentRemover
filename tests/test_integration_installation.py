@@ -101,7 +101,10 @@ class IntegrationOwnershipTests(unittest.TestCase):
                 f"{shlex.quote(str(installation.resolve() / 'run-from-finder.sh'))} "
                 '"$@"'
             )
-            self.assertIn("Name the shortcut: Remove EML Attachments", installed.stdout)
+            self.assertIn(
+                "Name the shortcut: Create Text-Only EML Copy",
+                installed.stdout,
+            )
             self.assertIn(expected_command, installed.stdout)
             self.assertIn("'Input' to 'Shortcut Input'", installed.stdout)
             self.assertTrue((installation / MARKER_NAME).is_file())
@@ -238,9 +241,12 @@ class IntegrationDocumentationTests(unittest.TestCase):
     def test_guide_names_and_fully_uninstalls_the_shortcut(self) -> None:
         guide = (INSTALLER.parent / "README.md").read_text(encoding="utf-8")
 
-        self.assertIn("Name it **Remove EML Attachments**", guide)
+        self.assertIn("Name it **Create Text-Only EML Copy**", guide)
         self.assertIn("command printed by the installer", guide)
         self.assertIn("**Input** to **Shortcut Input**", guide)
         self.assertIn("confirm that it still", guide)
-        self.assertIn("find **Remove EML Attachments**, choose **Delete**", guide)
+        self.assertIn(
+            "find **Create Text-Only EML Copy**, choose **Delete**",
+            guide,
+        )
         self.assertIn("reacquire the same release", guide)

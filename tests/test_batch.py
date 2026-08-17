@@ -25,8 +25,8 @@ class BatchTests(unittest.TestCase):
             self.assertEqual(
                 paths,
                 [
-                    base.resolve() / "first.attachments-removed.eml",
-                    base.resolve() / "second.attachments-removed.eml",
+                    base.resolve() / "first.text-only.eml",
+                    base.resolve() / "second.text-only.eml",
                 ],
             )
             self.assertTrue(all(path.is_file() for path in paths))
@@ -39,7 +39,7 @@ class BatchTests(unittest.TestCase):
             valid.write_bytes(simple_message().as_bytes())
             result = run_cli(str(valid), str(missing))
             self.assertEqual(result.returncode, 9)
-            self.assertTrue((base / "valid.attachments-removed.eml").is_file())
+            self.assertTrue((base / "valid.text-only.eml").is_file())
             self.assertIn("error[INPUT_ERROR:3]", result.stderr)
 
     def test_fail_fast_returns_specific_code_and_stops(self) -> None:
@@ -50,7 +50,7 @@ class BatchTests(unittest.TestCase):
             valid.write_bytes(simple_message().as_bytes())
             result = run_cli("--fail-fast", str(missing), str(valid))
             self.assertEqual(result.returncode, 3)
-            self.assertFalse((base / "valid.attachments-removed.eml").exists())
+            self.assertFalse((base / "valid.text-only.eml").exists())
 
     def test_explicit_output_with_multiple_sources_is_usage_error(self) -> None:
         result = run_cli("-o", "out.eml", "one.eml", "two.eml")
@@ -70,6 +70,8 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         report = json.loads(result.stdout)
         self.assertFalse(report["ok"])
+        self.assertEqual(report["schema_version"], 2)
+        self.assertEqual(report["scope"], "text-only")
         self.assertEqual(report["errors"][0]["error"]["code"], 2)
 
     def test_output_directory_collision_is_rejected_before_writing(self) -> None:
@@ -114,7 +116,7 @@ class BatchTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
                 sorted(path.name for path in output_directory.iterdir()),
-                ["first.attachments-removed.eml", "second.attachments-removed.eml"],
+                ["first.text-only.eml", "second.text-only.eml"],
             )
 
     def test_json_report_contains_successes_and_errors(self) -> None:
@@ -127,6 +129,8 @@ class BatchTests(unittest.TestCase):
             self.assertEqual(result.returncode, 9)
             report = json.loads(result.stdout)
             self.assertFalse(report["ok"])
+            self.assertEqual(report["schema_version"], 2)
+            self.assertEqual(report["scope"], "text-only")
             self.assertEqual(len(report["results"]), 1)
             self.assertEqual(len(report["errors"]), 1)
             self.assertEqual(report["errors"][0]["error"]["code"], 3)
@@ -135,7 +139,7 @@ class BatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             source = base / "source.eml"
-            output = base / "source.attachments-removed.eml"
+            output = base / "source.text-only.eml"
             source.write_bytes(simple_message().as_bytes())
             output.write_bytes(b"existing")
             result = run_cli(
@@ -158,8 +162,6 @@ class BatchTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr.decode())
             self.assertEqual(
                 result.stdout,
-                os.fsencode(
-                    base.resolve() / "line one\nline two.attachments-removed.eml"
-                )
+                os.fsencode(base.resolve() / "line one\nline two.text-only.eml")
                 + b"\0",
             )

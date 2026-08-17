@@ -1,9 +1,9 @@
 # macOS Finder and Shortcuts integration
 
 The launcher in this directory is deliberately separate from the portable MIME
-processor. The processor remains operating-system neutral; this wrapper only handles
-Finder input, Python discovery, Shortcuts-friendly reporting, and revealing the
-created files in Finder.
+processor. The processor creates verified text-only EML working copies and remains
+operating-system neutral; this wrapper only handles Finder input, Python discovery,
+Shortcuts-friendly reporting, and revealing the created files in Finder.
 
 ## Install the launcher
 
@@ -53,7 +53,7 @@ custom path and passes the same directory to the launcher.
 ## Create the Shortcut
 
 1. Open **Shortcuts** and create a new shortcut.
-2. Name it **Remove EML Attachments**.
+2. Name it **Create Text-Only EML Copy**.
 3. Open the shortcut details and enable **Use as Quick Action**.
 4. Enable **Finder** and configure the shortcut to receive **Files**.
 5. Add **Run Shell Script**.
@@ -69,9 +69,10 @@ custom path and passes the same directory to the launcher.
 ```
 
 The Quick Action then appears in Finder's context menu. It accepts multiple selected
-EML files in one invocation and creates each output beside its source. By default it
-asks Finder to reveal each created or retained output; after a batch, Finder normally
-leaves the last output selected.
+EML files in one invocation and creates each `*.text-only.eml` output beside its
+source. By default it asks Finder to reveal each created output or unverified existing
+output explicitly skipped by the user; after a batch, Finder normally leaves the
+last output selected.
 
 Before relying on it, close and reopen the shortcut once and confirm that it still
 shows **Receive Files**, **Input: Shortcut Input**, and **Pass Input: as arguments**.
@@ -80,12 +81,12 @@ inert Finder action.
 
 ## Existing outputs
 
-The safe default is to refuse to replace an existing `*.attachments-removed.eml` file. The
+The safe default is to refuse to replace an existing `*.text-only.eml` file. The
 wrapper recognises an optional environment variable:
 
 ```text
 EML_REMOVER_EXISTING=error   refuse replacement; default
-EML_REMOVER_EXISTING=skip    retain and report existing outputs
+EML_REMOVER_EXISTING=skip    retain and report existing outputs without verifying them
 EML_REMOVER_EXISTING=force   replace existing outputs, never a selected source
 ```
 
@@ -129,7 +130,7 @@ inside a protected location.
 The payload uninstaller cannot delete a shortcut from the Shortcuts library. Remove
 both pieces explicitly:
 
-1. In **Shortcuts**, find **Remove EML Attachments**, choose **Delete**, and confirm the
+1. In **Shortcuts**, find **Create Text-Only EML Copy**, choose **Delete**, and confirm the
    deletion. If Shortcuts uses iCloud, that confirmation also removes this shortcut
    from your other synced devices.
 2. From the retained project directory, or the same release extracted again, run:

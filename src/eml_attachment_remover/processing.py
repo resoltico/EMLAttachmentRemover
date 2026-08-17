@@ -7,16 +7,15 @@ import stat
 from email.message import Message
 from typing import TYPE_CHECKING, Final
 
-from .mime_policy import _remove_attachments
-from .mime_references import _collect_references
 from .mime_serialization import _parse_message
+from .mime_text_execution import _verify_plan_binding, execute_text_only_plan
+from .mime_text_only import _plan_text_only
 from .models import (
     CliError,
     ExitCode,
     MimePath,
     OutputPlan,
     ProcessResult,
-    RemovedPart,
     _format_mime_path,
 )
 from .paths import _default_destination, _validate_paths, _validate_source
@@ -102,14 +101,14 @@ def _transport_signature_warning(
     )
 
 
-def _path_changed(path: MimePath, removed: list[RemovedPart]) -> bool:
+def _path_changed(path: MimePath, changed_paths: tuple[MimePath, ...]) -> bool:
     """Return whether removal changed this entity or one of its descendants.
 
     Returns:
         ``True`` when at least one removed path begins with this part path.
 
     """
-    return any(part.path[: len(path)] == path for part in removed)
+    return any(changed[: len(path)] == path for changed in changed_paths)
 
 
 def _require_regular_source(input_file: BinaryIO, source: Path) -> None:
@@ -153,23 +152,18 @@ def _read_source(source: Path) -> bytes:
 
 def _removal_warnings(
     located_parts: tuple[LocatedPart, ...],
-    protected_types: set[str],
     parse_warnings: tuple[str, ...],
-    removed: list[RemovedPart],
+    changed_paths: tuple[MimePath, ...],
 ) -> list[str]:
-    """Collect parser, protected-content, and signature warnings.
+    """Collect parser and transport-signature warnings.
 
     Returns:
         The warnings that apply to this processing result.
 
     """
     warnings = list(parse_warnings)
-    if protected_types:
-        warnings.append(
-            f"protected MIME entity left intact: {', '.join(sorted(protected_types))}",
-        )
     for path, parent_type, part in located_parts:
-        if not _path_changed(path, removed):
+        if not _path_changed(path, changed_paths):
             continue
         _remove_stale_root_headers(part)
         is_logical_message = not path or (
@@ -208,15 +202,15 @@ def process_file(
     raw = _read_source(source)
     message, parse_warnings = _parse_message(raw, str(source))
     located_parts = _located_parts(message)
-    state = _remove_attachments(message, _collect_references(message))
+    plan = _plan_text_only(message)
+    execute_text_only_plan(message, plan)
+    _verify_plan_binding(message, plan)
     warnings = _removal_warnings(
         located_parts,
-        state.protected_types,
         parse_warnings,
-        state.removed,
+        plan.changed_paths,
     )
-    removed = tuple(state.removed)
-    preserved = tuple(state.preserved_file_parts)
+    removed = plan.removed_attachments
     if dry_run:
         return ProcessResult(
             source=source,
@@ -224,8 +218,10 @@ def process_file(
             source_size=len(raw),
             output_size=None,
             dry_run=True,
-            removed=removed,
-            preserved_file_parts=preserved,
+            removed_attachments=removed,
+            selected_plain_text_bodies=(plan.selected_body,),
+            discarded_body_representations=plan.discarded_representations,
+            discarded_body_resources=plan.discarded_resources,
             warnings=tuple(warnings),
         )
     output_size, mode_warning = _produce_output(
@@ -234,7 +230,7 @@ def process_file(
             destination=requested_destination,
             message=message,
             raw=raw,
-            modified=bool(state.removed),
+            modified=plan.modified,
             force=force,
         ),
     )
@@ -246,7 +242,9 @@ def process_file(
         source_size=len(raw),
         output_size=output_size,
         dry_run=False,
-        removed=removed,
-        preserved_file_parts=preserved,
+        removed_attachments=removed,
+        selected_plain_text_bodies=(plan.selected_body,),
+        discarded_body_representations=plan.discarded_representations,
+        discarded_body_resources=plan.discarded_resources,
         warnings=tuple(warnings),
     )

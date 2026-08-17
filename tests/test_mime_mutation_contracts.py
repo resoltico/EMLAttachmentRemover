@@ -10,7 +10,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from unittest.mock import call, patch
 
-from eml_attachment_remover import mime_locations, mime_references, mime_serialization
+from eml_attachment_remover import mime_references, mime_serialization
 from eml_attachment_remover.models import CliError, ExitCode, ReferenceIndex
 
 
@@ -39,14 +39,12 @@ class ReferenceMutationContracts(unittest.TestCase):
             "cid:public@example.test",
         )
 
-    def test_normalizers_do_not_discard_unrelated_x_characters(self) -> None:
+    def test_content_id_normalizer_does_not_discard_unrelated_x_characters(
+        self,
+    ) -> None:
         self.assertEqual(
             mime_references._normalize_content_id_header("Xpublic-idX"),
             "Xpublic-idX",
-        )
-        self.assertEqual(
-            mime_locations._normalize_content_location_header("Xpublic.pngX"),
-            "Xpublic.pngX",
         )
 
     def test_plain_text_markup_does_not_create_html_references(self) -> None:
@@ -97,15 +95,9 @@ class SerializationMutationContracts(unittest.TestCase):
 
         self.assertIs(raised.exception.code, ExitCode.PARSE_ERROR)
 
-    def test_multipart_root_is_never_reported_as_a_root_attachment(self) -> None:
+    def test_verification_passes_the_actual_temporary_path_to_parser(self) -> None:
         body = EmailMessage()
         body.set_content("public body")
-
-        self.assertIsNone(
-            mime_serialization._remaining_removable_part(_mixed(body)),
-        )
-
-    def test_verification_passes_the_actual_temporary_path_to_parser(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory) / "public-output.eml"
             temporary.write_bytes(b"public")
@@ -113,17 +105,12 @@ class SerializationMutationContracts(unittest.TestCase):
                 patch.object(
                     mime_serialization,
                     "_parse_message",
-                    return_value=(EmailMessage(), ()),
+                    return_value=(body, ()),
                 ) as parse_message,
                 patch.object(
                     mime_serialization,
                     "_leaf_fingerprints",
                     return_value=Counter(),
-                ),
-                patch.object(
-                    mime_serialization,
-                    "_remaining_removable_part",
-                    return_value=None,
                 ),
             ):
                 mime_serialization._verify_serialized_message(

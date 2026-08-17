@@ -65,7 +65,7 @@ def test_symbolic_parent_duplicate_outputs_are_rejected_when_supported() -> None
                 patch.object(
                     paths,
                     "_output_collision_path",
-                    return_value=real / "same.attachments-removed.eml",
+                    return_value=real / "same.text-only.eml",
                 ),
                 pytest.raises(models.CliError),
             ):
@@ -188,7 +188,7 @@ def test_skip_existing_never_conceals_an_invalid_source(source_kind: str) -> Non
         source = base / "source.eml"
         if source_kind == "directory":
             source.mkdir()
-        destination = base / "source.attachments-removed.eml"
+        destination = base / "source.text-only.eml"
         destination.write_bytes(b"PUBLIC EXISTING")
 
         outcome = cli._execute_plans(

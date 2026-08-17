@@ -53,7 +53,7 @@ class OutputStateMachine(RuleBasedStateMachine):
         self.source_raw = _source_bytes()
         self.source.write_bytes(self.source_raw)
         self.outputs: dict[OutputSlot, Path] = {
-            "default": root / "source.attachments-removed.eml",
+            "default": root / "source.text-only.eml",
             "explicit": root / "explicit-output.eml",
         }
         self.expected: dict[OutputSlot, bytes | None] = {
@@ -107,7 +107,9 @@ class OutputStateMachine(RuleBasedStateMachine):
                 force=False,
                 dry_run=False,
             )
-            assert [part.filename for part in result.removed] == ["stateful.bin"]
+            assert [part.filename for part in result.removed_attachments] == [
+                "stateful.bin"
+            ]
             self._record_output(slot)
             event(f"stateful-create={slot}")
             return
@@ -131,7 +133,9 @@ class OutputStateMachine(RuleBasedStateMachine):
             force=True,
             dry_run=False,
         )
-        assert [part.filename for part in result.removed] == ["stateful.bin"]
+        assert [part.filename for part in result.removed_attachments] == [
+            "stateful.bin"
+        ]
         self._record_output(slot)
         event(f"stateful-force={slot}")
 
@@ -147,7 +151,9 @@ class OutputStateMachine(RuleBasedStateMachine):
         )
         assert result.dry_run
         assert result.destination is None
-        assert [part.filename for part in result.removed] == ["stateful.bin"]
+        assert [part.filename for part in result.removed_attachments] == [
+            "stateful.bin"
+        ]
         actual = (
             self.outputs[slot].read_bytes() if self.outputs[slot].exists() else None
         )

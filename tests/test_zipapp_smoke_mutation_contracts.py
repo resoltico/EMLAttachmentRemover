@@ -167,18 +167,24 @@ def test_build_forwards_verification_and_applies_all_executable_bits() -> None:
         assert built == target.parent.resolve() / target.name
 
 
-def test_smoke_fixture_has_exact_wire_and_attachment_contract() -> None:
-    """Generate SMTP wire bytes with the intended public attachment type."""
+def test_smoke_fixture_has_exact_text_only_transformation_contract() -> None:
+    """Generate SMTP wire bytes with an alternative resource and attachment."""
     wire = smoke_distribution._fixture()
     parsed = BytesParser(policy=policy.default).parsebytes(wire)
     attachment = next(parsed.iter_attachments())
+    resource = next(
+        part for part in parsed.walk() if part.get_content_disposition() == "inline"
+    )
 
     assert b"\r\n" in wire
     assert b"\n\n" not in wire
     assert parsed["Subject"] == smoke_distribution.EXPECTED_SUBJECT
     assert attachment.get_content_type() == "application/octet-stream"
     assert attachment.get_filename() == "public.bin"
-    assert attachment.get_payload(decode=True) == b"public attachment"
+    assert attachment.get_payload(decode=True) == smoke_distribution.ATTACHMENT_PAYLOAD
+    assert resource.get_content_type() == "image/jpeg"
+    assert resource.get_filename() == "public-image.jpg"
+    assert resource.get_payload(decode=True) == smoke_distribution.BODY_RESOURCE
 
 
 def test_smoke_environment_is_exact_with_and_without_pythonpath() -> None:

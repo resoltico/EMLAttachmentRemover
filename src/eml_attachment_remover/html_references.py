@@ -58,7 +58,6 @@ HTML_VOID_ELEMENTS: Final = frozenset({
 })
 type NamespaceFrame = tuple[str, dict[str, str | None]]
 MAX_MSO_CONDITIONAL_COMMENT_LENGTH: Final = 65_536
-MAX_MSO_CONDITIONAL_DEPTH: Final = 4
 QUALIFIED_NAME_COMPONENTS: Final = 2
 EMPTY_ATTRIBUTE_VALUE: Final = ""
 STYLE_INSIDE: Final = object()
@@ -142,7 +141,6 @@ class _ReferenceValueParser(HTMLParser):
     def __init__(
         self,
         *,
-        conditional_ancestors: tuple[str, ...] = (),
         namespace_bindings: dict[str, str] | None = None,
     ) -> None:
         """Initialize empty value collections with HTML entity decoding enabled."""
@@ -154,7 +152,6 @@ class _ReferenceValueParser(HTMLParser):
         self.base_href: str | None = None
         self._style_state: set[object] = set()
         self._template_depth = 0
-        self._conditional_ancestors = conditional_ancestors
         self._namespace_bindings = dict(namespace_bindings or {})
         self._namespace_frames: list[NamespaceFrame] = []
 
@@ -293,7 +290,7 @@ class _ReferenceValueParser(HTMLParser):
         folded_tag = tag.casefold()
         if folded_tag == "template" and self._template_depth:
             self._template_depth -= 1
-        elif folded_tag == "style" and not self._template_depth:
+        if folded_tag == "style":
             self._style_state.discard(STYLE_INSIDE)
         self._leave_namespace_scope(folded_tag)
 
@@ -307,7 +304,6 @@ class _ReferenceValueParser(HTMLParser):
         if (
             self._template_depth
             or STYLE_INSIDE in self._style_state
-            or len(self._conditional_ancestors) >= MAX_MSO_CONDITIONAL_DEPTH
             or len(data) > MAX_MSO_CONDITIONAL_COMMENT_LENGTH
         ):
             return
@@ -315,7 +311,6 @@ class _ReferenceValueParser(HTMLParser):
         if match is None:
             return
         nested = _ReferenceValueParser(
-            conditional_ancestors=(*self._conditional_ancestors, data),
             namespace_bindings=self._namespace_bindings,
         )
         nested.feed(match.group(1))

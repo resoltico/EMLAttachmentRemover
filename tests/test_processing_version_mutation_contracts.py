@@ -23,10 +23,13 @@ def _root_attachment() -> EmailMessage:
 
     """
     message = EmailMessage()
-    message["Content-Type"] = 'application/pdf; name="public.pdf"'
-    message["Content-Disposition"] = 'attachment; filename="public.pdf"'
-    message["Content-Transfer-Encoding"] = "base64"
-    message.set_payload("UFVCTElD")
+    message.set_content("PUBLIC BODY")
+    message.add_attachment(
+        b"PUBLIC",
+        maintype="application",
+        subtype="pdf",
+        filename="public.pdf",
+    )
     return message
 
 
@@ -110,20 +113,21 @@ class ProcessingDiagnosticContractTests(unittest.TestCase):
             f"could not parse {source.absolute()}: synthetic parse failure",
         )
 
-    def test_opaque_content_reports_the_exact_protected_type(self) -> None:
+    def test_opaque_content_fails_as_transformation_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "opaque.eml"
             raw = _opaque_message().as_bytes(policy=policy.SMTP)
             source.write_bytes(raw)
-            result = processing.process_file(
-                source,
-                None,
-                force=False,
-                dry_run=True,
-            )
+            with self.assertRaises(models.CliError) as raised:
+                processing.process_file(
+                    source,
+                    None,
+                    force=False,
+                    dry_run=True,
+                )
         self.assertEqual(
-            result.warnings,
-            ("protected MIME entity left intact: application/pkcs7-mime",),
+            raised.exception.code,
+            models.ExitCode.TRANSFORMATION_UNAVAILABLE,
         )
 
 
@@ -147,10 +151,15 @@ class ProcessResultContractTests(unittest.TestCase):
         self.assertIsNone(result.output_size)
         self.assertTrue(result.dry_run)
         self.assertEqual(
-            result.removed,
-            (models.RemovedPart((), "application/pdf", "public.pdf", "attachment"),),
+            result.removed_attachments,
+            (models.RemovedPart((1,), "application/pdf", "public.pdf", "attachment"),),
         )
-        self.assertEqual(result.preserved_file_parts, ())
+        self.assertEqual(
+            result.selected_plain_text_bodies,
+            (models.SelectedPlainTextBody((0,), "text/plain"),),
+        )
+        self.assertEqual(result.discarded_body_representations, ())
+        self.assertEqual(result.discarded_body_resources, ())
         self.assertEqual(result.warnings, ())
 
     def test_written_result_reports_exact_paths_sizes_and_mode(self) -> None:
@@ -178,8 +187,13 @@ class ProcessResultContractTests(unittest.TestCase):
         self.assertEqual(result.output_size, len(raw))
         self.assertIsInstance(result.dry_run, bool)
         self.assertFalse(result.dry_run)
-        self.assertEqual(result.removed, ())
-        self.assertEqual(result.preserved_file_parts, ())
+        self.assertEqual(result.removed_attachments, ())
+        self.assertEqual(
+            result.selected_plain_text_bodies,
+            (models.SelectedPlainTextBody((), "text/plain"),),
+        )
+        self.assertEqual(result.discarded_body_representations, ())
+        self.assertEqual(result.discarded_body_resources, ())
         self.assertEqual(result.warnings, ())
 
 

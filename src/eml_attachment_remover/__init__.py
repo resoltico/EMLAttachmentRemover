@@ -1,4 +1,4 @@
-"""Remove file attachments from EML messages while preserving body resources."""
+"""Create verified text-only EML working copies without ordinary attachments."""
 
 from __future__ import annotations
 

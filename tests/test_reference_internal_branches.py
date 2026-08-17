@@ -4,13 +4,11 @@
 from __future__ import annotations
 
 from email.message import EmailMessage
-from unittest.mock import MagicMock
 
 from eml_attachment_remover import (
     css_references,
     html_references,
     mime_locations,
-    mime_references,
 )
 
 
@@ -89,18 +87,9 @@ def test_dot_segment_normalizer_covers_every_rfc_transition() -> None:
     assert mime_locations._normalize_path("../..") == "../.."
 
 
-def test_empty_location_and_payload_fallbacks_are_stable() -> None:
-    """Return no empty resource label and tolerate unusual payload objects."""
+def test_empty_location_is_not_a_resource_label() -> None:
+    """Return no resource identity for an empty normalized location."""
     assert mime_locations._canonical_location("   ") is None
-    bytes_payload = MagicMock()
-    bytes_payload.get_payload.side_effect = [None, b"public"]
-    bytes_payload.get_content_charset.return_value = "utf-8"
-    object_payload = MagicMock()
-    object_payload.get_payload.side_effect = [None, object()]
-    object_payload.get_content_charset.return_value = "utf-8"
-
-    assert mime_references._decode_text_payload(bytes_payload) == "public"
-    assert not mime_references._decode_text_payload(object_payload)
 
 
 def test_malformed_uri_and_non_scheme_values_remain_stable() -> None:

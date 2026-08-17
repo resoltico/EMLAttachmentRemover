@@ -16,11 +16,6 @@ EXPECTED_CONDITIONAL_TESTS: Final = frozenset({
     "tests/test_macos_finder_reporting.py:skipUnless:POSIX_REASON",
     "tests/test_macos_installation_safety.py:skipUnless:POSIX_REASON",
     "tests/test_macos_uninstallation_safety.py:skipUnless:POSIX_REASON",
-    (
-        "tests/test_synthetic_processing.py:skipIf:"
-        "control characters are not portable Windows filenames"
-    ),
-    "tests/test_synthetic_processing.py:skipIf:POSIX mode bits differ on Windows",
 })
 
 
@@ -217,7 +212,7 @@ class QaInfrastructureContractTests(unittest.TestCase):
         )
         pytest_config = configuration["tool"]["pytest"]["ini_options"]
         self.assertEqual(pytest_config["filterwarnings"], ["error"])
-        self.assertEqual(pytest_config["required_plugins"], ["hypothesis==6.165.8"])
+        self.assertEqual(pytest_config["required_plugins"], ["hypothesis==6.165.10"])
         self.assertTrue(pytest_config["xfail_strict"])
         self.assertTrue(
             {"--runxfail", "--strict-config", "--strict-markers"}.issubset(

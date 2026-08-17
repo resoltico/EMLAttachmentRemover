@@ -10,7 +10,7 @@ from urllib.parse import unquote, urljoin
 
 from .css_references import _css_reference_values
 from .html_references import _reference_values
-from .mime_body import ATTACHMENT_DISPOSITION, _is_retained_body_text
+from .mime_body import ATTACHMENT_DISPOSITION, INLINE_DISPOSITION
 from .mime_locations import (
     _content_location_base,
     _html_mime_base,
@@ -42,16 +42,14 @@ def _is_email_message_list(value: object) -> TypeGuard[list[EmailMessage]]:
     )
 
 
-def _canonical_content_id(value: str) -> str | None:
-    """Canonicalize one already-decoded Content-ID value.
+def _canonical_cid_uri(value: str) -> str | None:
+    """Canonicalize one already-decoded CID URI.
 
     Returns:
-        The exact identifier without URI or angle-bracket syntax, or ``None``.
+        The exact identifier without CID or angle-bracket syntax, or ``None``.
 
     """
-    normalized = value.strip()
-    if normalized.casefold().startswith(CID_SCHEME):
-        normalized = normalized[len(CID_SCHEME) :].strip()
+    normalized = value.strip()[len(CID_SCHEME) :].strip()
     if normalized.startswith("<") and normalized.endswith(">"):
         normalized = normalized[1:-1].strip()
     return normalized or None
@@ -155,16 +153,9 @@ def _decode_text_payload(part: EmailMessage) -> str:
 
     """
     decoded = part.get_payload(decode=True)
-    if isinstance(decoded, bytes):
-        raw = decoded
-    else:
-        payload = part.get_payload()
-        if isinstance(payload, bytes):
-            raw = payload
-        elif isinstance(payload, str):
-            raw = payload.encode(errors="surrogateescape")
-        else:
-            raw = b""
+    if not isinstance(decoded, bytes):
+        return ""
+    raw = decoded
     charset = part.get_content_charset() or sys.getdefaultencoding()
     try:
         return raw.decode(charset, errors="replace")
@@ -181,7 +172,7 @@ def _record_uri_reference(
     """Add one represented URI to the appropriate reference collection."""
     represented = represented_value.strip()
     if represented.casefold().startswith(CID_SCHEME):
-        normalized_cid = _canonical_content_id(unquote(represented_value))
+        normalized_cid = _canonical_cid_uri(unquote(represented_value))
         if normalized_cid is not None:
             content_ids.add(normalized_cid)
         return
@@ -276,7 +267,6 @@ def _body_part_references(
     parent_type: str | None,
     inherited_base: str | None,
     *,
-    under_related: bool,
     is_root: bool,
 ) -> ReferenceIndex:
     """Return references contributed by one eligible HTML body entity.
@@ -285,11 +275,14 @@ def _body_part_references(
         Its references, or an empty index when the leaf is not body HTML.
 
     """
-    if part.get_content_type() != "text/html" or not _is_retained_body_text(
-        part,
-        parent_type,
-        under_related=under_related,
-        is_root=is_root,
+    if part.get_content_type() != "text/html":
+        return ReferenceIndex(frozenset(), frozenset())
+    disposition = part.get_content_disposition()
+    if (
+        not is_root
+        and part.get_filename() is not None
+        and disposition != INLINE_DISPOSITION
+        and parent_type != "multipart/alternative"
     ):
         return ReferenceIndex(frozenset(), frozenset())
     return _references_from_html(
@@ -334,7 +327,6 @@ def _collect_references(
                     part,
                     parent_type,
                     inherited_base,
-                    under_related="multipart/related" in ancestor_types,
                     is_root=is_root,
                 ),
             )

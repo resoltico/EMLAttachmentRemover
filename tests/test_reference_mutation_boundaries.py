@@ -173,19 +173,3 @@ def test_mso_exact_size_and_nested_base_contracts_are_observable() -> None:
     assert mime_references._references_from_html(
         "<!--[if mso]><!-- ordinary <![endif]-->",
     ) == ReferenceIndex(frozenset(), frozenset())
-
-
-def test_mso_conditional_nesting_advances_one_level_per_fragment() -> None:
-    """Retain content through the allowed depth and reject one level beyond it."""
-    accepted = html_references._ReferenceValueParser(
-        conditional_ancestors=("ancestor",)
-        * (html_references.MAX_MSO_CONDITIONAL_DEPTH - 1),
-    )
-    accepted.handle_comment('[if mso]><img src="public.png"><![endif]')
-    rejected = html_references._ReferenceValueParser(
-        conditional_ancestors=("ancestor",) * html_references.MAX_MSO_CONDITIONAL_DEPTH,
-    )
-    rejected.handle_comment('[if mso]><img src="decoy.png"><![endif]')
-
-    assert accepted.uris == ["public.png"]
-    assert rejected.uris == []

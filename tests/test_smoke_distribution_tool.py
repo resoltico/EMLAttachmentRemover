@@ -8,7 +8,6 @@ import tempfile
 import unittest
 from email import policy
 from email.message import EmailMessage
-from email.parser import BytesParser
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,6 +19,8 @@ def _message_bytes(
     subject: str = smoke_distribution.EXPECTED_SUBJECT,
     body: str | None = smoke_distribution.EXPECTED_BODY,
     attachment: bool = False,
+    filename: bool = False,
+    content_id: bool = False,
 ) -> bytes:
     """Return a configurable public EML for semantic-failure tests.
 
@@ -31,6 +32,10 @@ def _message_bytes(
     message["Subject"] = subject
     if body is not None:
         message.set_content(body)
+    if filename:
+        message.set_param("name", "public.txt", header="Content-Type")
+    if content_id:
+        message["Content-ID"] = "<public-body@example.test>"
     if attachment:
         message.add_attachment(
             b"public attachment",
@@ -43,23 +48,6 @@ def _message_bytes(
 
 class SmokeProcessTests(unittest.TestCase):
     """Exercise fixture generation, command discovery, and bounded execution."""
-
-    def test_fixture_contains_the_documented_public_semantics(self) -> None:
-        content = smoke_distribution._fixture()  # ruff: ignore[private-member-access]
-        self.assertIn(b"Subject: Installed distribution smoke test\r\n", content)
-        self.assertIn(b"Content-Type: application/octet-stream\r\n", content)
-        self.assertIn(b"\r\n", content)
-        self.assertNotIn(b"\n\n", content)
-        parsed = BytesParser(policy=policy.default).parsebytes(content)
-        attachments = [
-            part
-            for part in parsed.walk()
-            if part.get_content_disposition() == "attachment"
-        ]
-        self.assertIn(b"Installed distribution smoke test", content)
-        self.assertEqual(len(attachments), 1)
-        self.assertEqual(attachments[0].get_filename(), "public.bin")
-        self.assertEqual(attachments[0].get_payload(decode=True), b"public attachment")
 
     def test_environment_removes_import_overrides_and_enables_strictness(self) -> None:
         with patch.dict(os.environ, {"PYTHONPATH": "private", "PUBLIC": "value"}):
@@ -234,6 +222,8 @@ class SmokeOutputTests(unittest.TestCase):
             "body": _message_bytes(body="Unexpected body"),
             "missing_body": _message_bytes(body=None),
             "attachment": _message_bytes(attachment=True),
+            "filename": _message_bytes(filename=True),
+            "content_id": _message_bytes(content_id=True),
             "defect": (
                 b"Subject: Installed distribution smoke test\r\n"
                 b"Content-Type: multipart/mixed; boundary=public\r\n\r\n"
@@ -257,7 +247,7 @@ class SmokeOutputTests(unittest.TestCase):
                     )
                 self.assertEqual(
                     str(raised.exception),
-                    "installed command did not preserve the expected EML semantics",
+                    "installed command did not produce the expected text-only EML",
                 )
 
 
