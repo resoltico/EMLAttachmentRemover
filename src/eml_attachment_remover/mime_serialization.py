@@ -10,19 +10,13 @@ from email.parser import BytesParser
 from typing import TYPE_CHECKING, BinaryIO, Final
 
 from .mime_locations import CONTENT_LOCATION_HEADER
-from .mime_policy import _first_removable_in_subtree, _root_is_removable
-from .mime_references import (
-    CONTENT_ID_HEADER,
-    _collect_references,
-)
+from .mime_references import CONTENT_ID_HEADER
+from .mime_text_only import _plan_text_only
 from .models import (
     CliError,
     ExitCode,
     LeafFingerprint,
     MimePath,
-    PartContext,
-    ReferenceIndex,
-    RemovedPart,
     _format_mime_path,
 )
 
@@ -276,40 +270,6 @@ def _serialize_to_stream(message: EmailMessage, output: BinaryIO) -> None:
     )
 
 
-def _root_context(references: ReferenceIndex) -> PartContext:
-    """Return a root traversal context for output verification.
-
-    Returns:
-        The root context containing the supplied body references.
-
-    """
-    return PartContext(
-        (),
-        None,
-        under_related=False,
-        references=references,
-        is_root=True,
-    )
-
-
-def _remaining_removable_part(message: EmailMessage) -> RemovedPart | None:
-    """Return a remaining attachment record when verification finds one.
-
-    Returns:
-        The first remaining removable part, or ``None``.
-
-    """
-    references = _collect_references(message)
-    if _root_is_removable(message, references):
-        return RemovedPart(
-            path=(),
-            content_type=message.get_content_type(),
-            filename=message.get_filename(),
-            disposition=message.get_content_disposition(),
-        )
-    return _first_removable_in_subtree(message, _root_context(references))
-
-
 def _verify_serialized_message(
     temporary: Path,
     expected_fingerprints: Counter[LeafFingerprint],
@@ -348,11 +308,15 @@ def _verify_serialized_message(
             ExitCode.VERIFICATION_ERROR,
             "generated EML did not preserve the retained MIME structure and headers",
         )
-    found = _remaining_removable_part(message)
-    if found is None:
-        return
-    name = found.filename or "unnamed MIME entity"
-    raise CliError(
-        ExitCode.VERIFICATION_ERROR,
-        f"generated EML still contains removable attachment {name!r}",
-    )
+    try:
+        text_only_plan = _plan_text_only(message)
+    except CliError as exc:
+        raise CliError(
+            ExitCode.VERIFICATION_ERROR,
+            f"generated EML is not a safe text-only message: {exc.message}",
+        ) from exc
+    if text_only_plan.modified:
+        raise CliError(
+            ExitCode.VERIFICATION_ERROR,
+            "generated EML is not a canonical root text/plain message",
+        )

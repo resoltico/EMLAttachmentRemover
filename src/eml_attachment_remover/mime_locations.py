@@ -207,18 +207,6 @@ def _canonical_location(value: str) -> str | None:
     return _restore_empty_delimiters(normalized, rebuilt, parts)
 
 
-def _normalize_content_location_header(value: object | None) -> str | None:
-    """Normalize a raw Content-Location header without decoding HTML entities.
-
-    Returns:
-        A URI-syntax-normalized location without HTML decoding, or ``None``.
-
-    """
-    if value is None:
-        return None
-    return _canonical_location(str(value))
-
-
 def _location_variants(
     value: str,
     base: str | None,

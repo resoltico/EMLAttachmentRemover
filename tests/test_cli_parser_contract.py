@@ -22,8 +22,9 @@ usage: remove-eml-attachments [-h] [-o OUTPUT | --output-dir OUTPUT_DIR] [-f |
                               [--version]
                               source [source ...]
 
-Remove ordinary file attachments from EML messages while preserving inline
-images and other message-body resources.
+Create verified text-only EML working copies by retaining a safe plain-text
+body and discarding HTML alternatives, embedded body resources, and ordinary
+attachments.
 
 positional arguments:
   source                one or more source EML files
@@ -37,8 +38,8 @@ options:
                         source file
   --skip-existing       leave existing destination files unchanged and report
                         them as skipped
-  --dry-run             report what would be removed without writing output
-                        files
+  --dry-run             report the text-only transformation plan without
+                        writing output files
   --fail-fast           stop at the first failed input instead of completing
                         the batch
   --output-format {human,json,paths,paths0}
@@ -47,9 +48,9 @@ options:
   --version             show program's version number and exit
 
 Exit codes: 0 success; 2 usage; 3 input; 4 output conflict; 5 MIME parse; 6
-signed/protected content; 7 write; 8 verification; 9 partial batch failure; 70
-internal; 130 interrupted. For a filename beginning with '-', place '--'
-before the filenames.
+text-only transformation unavailable; 7 write; 8 verification; 9 partial batch
+failure; 70 internal; 130 interrupted. For a filename beginning with '-',
+place '--' before the filenames.
 """
 
 
@@ -345,8 +346,10 @@ def test_execute_plans_preserves_arguments_results_skips_and_failures() -> None:
         destination=destinations[0],
         source_size=10,
         output_size=5,
-        removed=(),
-        preserved_file_parts=(),
+        removed_attachments=(),
+        selected_plain_text_bodies=(),
+        discarded_body_representations=(),
+        discarded_body_resources=(),
         warnings=(),
         dry_run=False,
     )

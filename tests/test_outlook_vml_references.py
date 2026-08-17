@@ -48,19 +48,20 @@ def _resource(kind: ReferenceKind) -> EmailMessage:
 
 
 def _message(markup: str, kind: ReferenceKind) -> EmailMessage:
-    """Return a mixed message with HTML and one explicit resource.
+    """Return a related plain/HTML body with one explicit resource.
 
     Returns:
         The configured public MIME tree.
 
     """
-    html = EmailMessage()
-    html.set_content(markup, subtype="html")
     message = EmailMessage()
-    message.make_mixed()
-    message.attach(html)
-    message.attach(_resource(kind))
-    return message
+    message.set_content("PUBLIC PLAIN BODY")
+    message.add_alternative(markup, subtype="html")
+    related = EmailMessage()
+    related.make_related()
+    related.attach(message)
+    related.attach(_resource(kind))
+    return related
 
 
 def _parse(path: Path) -> EmailMessage:
@@ -102,11 +103,11 @@ def test_outlook_vml_source_is_a_rendering_reference(
 
 
 @pytest.mark.parametrize("kind", ["cid", "location"])
-def test_outlook_vml_resource_is_preserved_end_to_end(
+def test_outlook_vml_resource_is_audited_and_discarded_end_to_end(
     tmp_path: Path,
     kind: ReferenceKind,
 ) -> None:
-    """Preserve an explicit resource loaded by a real VML image-data element."""
+    """Audit and discard a resource loaded by a VML image-data element."""
     reference = _reference_value(kind)
     message = _message(
         '<html xmlns:v="urn:schemas-microsoft-com:vml">'
@@ -120,9 +121,9 @@ def test_outlook_vml_resource_is_preserved_end_to_end(
     result = process_file(source, destination, force=False, dry_run=False)
     output = _parse(destination)
 
-    assert not result.removed
-    assert [part.filename for part in result.preserved_file_parts] == ["secret.bin"]
-    assert any(part.get_filename() == "secret.bin" for part in output.walk())
+    assert not result.removed_attachments
+    assert [part.filename for part in result.discarded_body_resources] == ["secret.bin"]
+    assert not any(part.get_filename() == "secret.bin" for part in output.walk())
 
 
 def test_vml_like_decoy_elements_and_attributes_are_not_references() -> None:
@@ -186,11 +187,11 @@ def test_outer_html_base_precedes_a_conditional_fragment_base() -> None:
 
 
 @pytest.mark.parametrize("kind", ["cid", "location"])
-def test_hidden_mso_conditional_resource_is_preserved_end_to_end(
+def test_hidden_mso_conditional_resource_is_discarded_end_to_end(
     tmp_path: Path,
     kind: ReferenceKind,
 ) -> None:
-    """Retain a resource loaded only by bounded Outlook conditional VML."""
+    """Audit and discard a resource loaded only by conditional VML."""
     reference = _reference_value(kind)
     message = _message(
         '<html xmlns:v="urn:schemas-microsoft-com:vml">'
@@ -205,9 +206,9 @@ def test_hidden_mso_conditional_resource_is_preserved_end_to_end(
     result = process_file(source, destination, force=False, dry_run=False)
     output = _parse(destination)
 
-    assert not result.removed
-    assert [part.filename for part in result.preserved_file_parts] == ["secret.bin"]
-    assert any(part.get_filename() == "secret.bin" for part in output.walk())
+    assert not result.removed_attachments
+    assert [part.filename for part in result.discarded_body_resources] == ["secret.bin"]
+    assert not any(part.get_filename() == "secret.bin" for part in output.walk())
 
 
 @pytest.mark.parametrize(
@@ -254,17 +255,3 @@ def test_oversized_mso_conditional_comment_is_a_decoy() -> None:
     )
 
     assert references == ReferenceIndex(frozenset(), frozenset())
-
-
-def test_mso_conditional_nesting_depth_is_bounded() -> None:
-    """Refuse recursive conditional parsing at the explicit depth ceiling."""
-    parser = html_references._ReferenceValueParser(
-        conditional_ancestors=("ancestor",) * html_references.MAX_MSO_CONDITIONAL_DEPTH,
-        namespace_bindings={"v": html_references.VML_NAMESPACE},
-    )
-    parser.feed(
-        '<!--[if mso]><v:fill src="cid:decoy@example.test" /><![endif]-->',
-    )
-    parser.close()
-
-    assert not parser.uris

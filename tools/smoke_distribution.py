@@ -18,25 +18,56 @@ COMMAND_NAME: Final = "remove-eml-attachments"
 SUBPROCESS_TIMEOUT_SECONDS: Final = 30
 EXPECTED_SUBJECT: Final = "Installed distribution smoke test"
 EXPECTED_BODY: Final = "Public body"
+HTML_BODY: Final = (
+    '<html><body>Public HTML<img src="cid:public-image@example.test"></body></html>'
+)
+BODY_RESOURCE: Final = b"PUBLIC-BODY-RESOURCE"
+BODY_RESOURCE_MAIN_TYPE: Final = "image"
+BODY_RESOURCE_SUBTYPE: Final = "jpeg"
+BODY_RESOURCE_CONTENT_ID: Final = "<public-image@example.test>"
+BODY_RESOURCE_FILENAME: Final = "public-image.jpg"
+BODY_RESOURCE_DISPOSITION: Final = "inline"
+ATTACHMENT_PAYLOAD: Final = b"public attachment"
 SUBJECT_HEADER: Final = "Subject"
 ATTACHMENT_MAIN_TYPE: Final = "application"
 ATTACHMENT_SUBTYPE: Final = "octet-stream"
 SOURCE_FILE_NAME: Final = "source.eml"
 OUTPUT_FILE_NAME: Final = "output.eml"
+CONTENT_ID_HEADER: Final = "Content-ID"
 
 
 def _fixture() -> bytes:
-    """Return a public message with one removable attachment.
+    """Return a public message exercising the complete text-only contract.
 
     Returns:
         Serialized synthetic EML bytes.
+
+    Raises:
+        TypeError: If the standard-library builder produces an unexpected tree.
 
     """
     message = EmailMessage()
     message[SUBJECT_HEADER] = EXPECTED_SUBJECT
     message.set_content(EXPECTED_BODY)
+    message.add_alternative(HTML_BODY, subtype="html")
+    payload = message.get_payload()
+    if not isinstance(payload, list):
+        detail = "synthetic alternative payload was not multipart"
+        raise TypeError(detail)
+    html = payload[1]
+    if not isinstance(html, EmailMessage):
+        detail = "synthetic HTML alternative was not an email entity"
+        raise TypeError(detail)
+    html.add_related(
+        BODY_RESOURCE,
+        maintype=BODY_RESOURCE_MAIN_TYPE,
+        subtype=BODY_RESOURCE_SUBTYPE,
+        cid=BODY_RESOURCE_CONTENT_ID,
+        filename=BODY_RESOURCE_FILENAME,
+        disposition=BODY_RESOURCE_DISPOSITION,
+    )
     message.add_attachment(
-        b"public attachment",
+        ATTACHMENT_PAYLOAD,
         maintype=ATTACHMENT_MAIN_TYPE,
         subtype=ATTACHMENT_SUBTYPE,
         filename="public.bin",
@@ -120,19 +151,20 @@ def _verify_output(source: Path, destination: Path, original: bytes) -> None:
     parsed = BytesParser(policy=policy.default).parsebytes(destination.read_bytes())
     body = parsed.get_body(preferencelist=("plain",))
     body_text = body.get_content().strip() if body is not None else None
-    remaining_attachments = [
-        part.get_filename()
-        for part in parsed.walk()
-        if part.get_content_disposition() == "attachment"
-    ]
+    leaves = [part for part in parsed.walk() if not part.is_multipart()]
     defects = [defect for part in parsed.walk() for defect in part.defects]
+    invalid_metadata = any(
+        part.get_filename() is not None or part.get(CONTENT_ID_HEADER) is not None
+        for part in leaves
+    )
     if (
         parsed[SUBJECT_HEADER] != EXPECTED_SUBJECT
         or body_text != EXPECTED_BODY
-        or remaining_attachments
+        or len(leaves) != 1
+        or invalid_metadata
         or defects
     ):
-        message = "installed command did not preserve the expected EML semantics"
+        message = "installed command did not produce the expected text-only EML"
         raise RuntimeError(message)
 
 

@@ -1,21 +1,40 @@
-"""Black-box MIME policy regression tests using public synthetic messages."""
+"""Black-box synthetic contracts for the text-only EML transformation."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
-import os
 import tempfile
 import unittest
 from email import policy
 from email.message import EmailMessage
 from pathlib import Path
 
-from tests.test_support import decoded_hash, parse, run_cli, simple_message
+import pytest
+
+from eml_attachment_remover import process_file
+from eml_attachment_remover.models import CliError, ExitCode
+from tests.test_support import parse, run_cli, simple_message
+
+
+def _plain_html_message() -> EmailMessage:
+    """Return one conventional plain/HTML alternative message.
+
+    Returns:
+        The synthetic alternative body.
+
+    """
+    message = EmailMessage()
+    message["Subject"] = "Synthetic text-only body"
+    message.set_content("PUBLIC PLAIN BODY")
+    message.add_alternative("<p>PUBLIC HTML BODY</p>", subtype="html")
+    return message
 
 
 class SyntheticTests(unittest.TestCase):
-    def test_image_attachment_is_removed_but_inline_signature_is_preserved(
+    """Exercise public processing and CLI boundaries with synthetic messages."""
+
+    def test_html_resources_and_ordinary_attachments_are_separately_audited(
         self,
     ) -> None:
         message = simple_message()
@@ -29,55 +48,51 @@ class SyntheticTests(unittest.TestCase):
             source = Path(directory) / "source.eml"
             output = Path(directory) / "output.eml"
             source.write_bytes(message.as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            parsed = parse(output)
-            self.assertFalse(
-                any(part.get_filename() == "damage photo.jpg" for part in parsed.walk())
-            )
-            signature = next(part for part in parsed.walk() if part.get("Content-ID"))
-            self.assertEqual(signature.get_filename(), "signature.png")
-            self.assertEqual(
-                decoded_hash(signature),
-                hashlib.sha256(b"PNG-SIGNATURE").hexdigest(),
-            )
 
-    def test_content_location_body_resource_is_preserved(self) -> None:
-        message = EmailMessage()
-        message["Subject"] = "Content-Location resource"
-        message.set_content(
-            '<html><body><img src="logo.png"></body></html>',
-            subtype="html",
+            result = process_file(source, output, force=False, dry_run=False)
+            parsed = parse(output)
+
+        self.assertEqual(
+            [part.filename for part in result.discarded_body_resources],
+            ["signature.png"],
         )
-        message.make_related()
+        self.assertEqual(
+            [part.filename for part in result.removed_attachments],
+            ["invoice.pdf", "damage photo.jpg"],
+        )
+        leaves = [part for part in parsed.walk() if not part.is_multipart()]
+        self.assertEqual([part.get_content_type() for part in leaves], ["text/plain"])
+
+    def test_related_outer_shape_discards_content_location_resource(self) -> None:
+        message = _plain_html_message()
+        payload = message.get_payload()
+        assert isinstance(payload, list)
+        html = payload[1]
+        assert isinstance(html, EmailMessage)
+        html.set_content('<img src="logo.png">', subtype="html")
+        related = EmailMessage()
+        related.make_related()
+        related.attach(message)
         logo = EmailMessage()
         logo["Content-Type"] = 'image/png; name="logo.png"'
         logo["Content-Location"] = "logo.png"
         logo["Content-Transfer-Encoding"] = "base64"
         logo.set_payload(base64.b64encode(b"PNG-LOGO").decode("ascii"))
-        message.attach(logo)
-        message.make_mixed()
-        message.add_attachment(
-            b"FILE",
-            maintype="application",
-            subtype="octet-stream",
-            filename="file.bin",
-        )
+        related.attach(logo)
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.eml"
             output = Path(directory) / "output.eml"
-            source.write_bytes(message.as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            parsed = parse(output)
-            self.assertTrue(
-                any(
-                    part.get("Content-Location") == "logo.png" for part in parsed.walk()
-                )
-            )
-            self.assertFalse(
-                any(part.get_filename() == "file.bin" for part in parsed.walk())
-            )
+            source.write_bytes(related.as_bytes(policy=policy.SMTP))
+
+            result = process_file(source, output, force=False, dry_run=False)
+            output_types = [part.get_content_type() for part in parse(output).walk()]
+
+        self.assertEqual(result.discarded_body_resources[0].filename, "logo.png")
+        self.assertEqual(result.discarded_body_resources[0].referenced_by, ((0, 1),))
+        self.assertEqual(
+            output_types,
+            ["text/plain"],
+        )
 
     def test_unicode_spaces_quotes_and_emoji_in_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -85,102 +100,21 @@ class SyntheticTests(unittest.TestCase):
             source = base / "- žą  'truck' 🚚.eml"
             destination = base / "результат žą 🚚.eml"
             source.write_bytes(simple_message().as_bytes(policy=policy.SMTP))
+
             result = run_cli("-o", str(destination), "--", str(source))
+
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertTrue(destination.is_file())
-            output = parse(destination)
             self.assertEqual(
                 [
-                    part.get_filename()
-                    for part in output.walk()
-                    if part.get_content_disposition() == "attachment"
+                    part.get_content_type()
+                    for part in parse(destination).walk()
+                    if not part.is_multipart()
                 ],
-                [],
-            )
-            self.assertEqual(
-                [
-                    part.get_filename()
-                    for part in output.walk()
-                    if part.get("Content-ID")
-                ],
-                ["signature.png"],
+                ["text/plain"],
             )
 
-    def test_cid_image_is_preserved_even_if_disposition_says_attachment(self) -> None:
-        message = simple_message()
-        inline = next(part for part in message.walk() if part.get("Content-ID"))
-        inline.replace_header(
-            "Content-Disposition",
-            'attachment; filename="signature.png"',
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "source.eml"
-            output = Path(directory) / "output.eml"
-            source.write_bytes(message.as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            parsed = parse(output)
-            kept = [part for part in parsed.walk() if part.get("Content-ID")]
-            self.assertEqual(len(kept), 1)
-            self.assertEqual(
-                decoded_hash(kept[0]),
-                hashlib.sha256(b"PNG-SIGNATURE").hexdigest(),
-            )
-
-    def test_unreferenced_cid_image_marked_attachment_is_removed(self) -> None:
-        message = EmailMessage()
-        message["Subject"] = "Unreferenced CID attachment"
-        message.set_content("Body without an image reference")
-        message.add_attachment(
-            b"PNG-ATTACHMENT",
-            maintype="image",
-            subtype="png",
-            filename="photo.png",
-        )
-        attachment = next(
-            part
-            for part in message.walk()
-            if part.get_content_disposition() == "attachment"
-        )
-        attachment["Content-ID"] = "<unreferenced@example.test>"
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "source.eml"
-            output = Path(directory) / "output.eml"
-            source.write_bytes(message.as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertFalse(
-                any(
-                    part.get_filename() == "photo.png" for part in parse(output).walk()
-                ),
-            )
-
-    def test_legacy_named_part_without_disposition_is_removed(self) -> None:
-        message = EmailMessage()
-        message["Subject"] = "Legacy attachment"
-        message.set_content("Body")
-        message.make_mixed()
-        legacy = EmailMessage()
-        legacy["Content-Type"] = 'application/octet-stream; name="legacy.bin"'
-        legacy["Content-Transfer-Encoding"] = "base64"
-        legacy.set_payload(base64.b64encode(b"legacy-binary").decode("ascii"))
-        message.attach(legacy)
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "source.eml"
-            output = Path(directory) / "output.eml"
-            source.write_bytes(message.as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertNotIn(
-                "legacy.bin",
-                [part.get_filename() for part in parse(output).walk()],
-            )
-
-    def test_named_alternative_body_is_preserved(self) -> None:
-        message = EmailMessage()
-        message["Subject"] = "Named body"
-        message.set_content("Body text")
-        message.add_alternative("<p>Body HTML</p>", subtype="html")
+    def test_named_plain_alternative_fails_closed_without_output(self) -> None:
+        message = _plain_html_message()
         payload = message.get_payload()
         assert isinstance(payload, list)
         plain = payload[0]
@@ -190,35 +124,32 @@ class SyntheticTests(unittest.TestCase):
             source = Path(directory) / "source.eml"
             output = Path(directory) / "output.eml"
             source.write_bytes(message.as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            parsed = parse(output)
-            self.assertEqual(
-                len([
-                    part
-                    for part in parsed.walk()
-                    if part.get_content_type() == "text/plain"
-                ]),
-                1,
-            )
 
-    def test_no_attachment_produces_byte_exact_copy(self) -> None:
+            result = run_cli("-o", str(output), str(source))
+
+            self.assertEqual(result.returncode, ExitCode.TRANSFORMATION_UNAVAILABLE)
+            self.assertFalse(output.exists())
+
+    def test_plain_only_message_produces_a_byte_exact_copy(self) -> None:
         message = EmailMessage()
-        message["Subject"] = "No attachment"
-        message.set_content("Body")
+        message["Subject"] = "No transformation"
+        message.set_content("PUBLIC BODY")
         raw = message.as_bytes(policy=policy.SMTP)
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.eml"
             output = Path(directory) / "output.eml"
             source.write_bytes(raw)
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(output.read_bytes(), raw)
 
-    def test_opaque_encrypted_root_produces_byte_exact_copy(self) -> None:
+            result = process_file(source, output, force=False, dry_run=False)
+
+            self.assertEqual(output.read_bytes(), raw)
+            self.assertFalse(result.discarded_body_representations)
+            self.assertFalse(result.discarded_body_resources)
+            self.assertFalse(result.removed_attachments)
+
+    def test_protected_root_fails_closed_and_preserves_source(self) -> None:
         message = EmailMessage()
-        message["Subject"] = "Opaque S/MIME"
-        message["Content-Type"] = "application/pkcs7-mime; smime-type=enveloped-data"
+        message["Content-Type"] = "application/pkcs7-mime"
         message["Content-Transfer-Encoding"] = "base64"
         message.set_payload(base64.b64encode(b"opaque-ciphertext").decode("ascii"))
         raw = message.as_bytes(policy=policy.SMTP)
@@ -226,185 +157,76 @@ class SyntheticTests(unittest.TestCase):
             source = Path(directory) / "source.eml"
             output = Path(directory) / "output.eml"
             source.write_bytes(raw)
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(output.read_bytes(), raw)
-            self.assertIn("protected MIME entity left intact", result.stdout)
 
-    def test_message_rfc822_attachment_is_removed_as_one_entity(self) -> None:
-        inner = EmailMessage()
-        inner["From"] = "inner@example.test"
-        inner["To"] = "recipient@example.test"
-        inner["Subject"] = "Forwarded"
-        inner.set_content("Forwarded body")
+            with pytest.raises(CliError) as raised:
+                process_file(source, output, force=False, dry_run=False)
+
+            self.assertEqual(raised.value.code, ExitCode.TRANSFORMATION_UNAVAILABLE)
+            self.assertEqual(source.read_bytes(), raw)
+            self.assertFalse(output.exists())
+
+    def test_protected_attachment_sibling_is_removed_atomically(self) -> None:
+        protected = EmailMessage()
+        protected["Content-Type"] = "application/pkcs7-mime"
+        protected["Content-Disposition"] = 'attachment; filename="opaque.p7m"'
+        protected.set_payload("PUBLIC OPAQUE BYTES")
         message = EmailMessage()
-        message["Subject"] = "Outer"
-        message.set_content("Outer body")
-        message.add_attachment(inner, filename="forwarded.eml")
+        message.make_mixed()
+        body = EmailMessage()
+        body.set_content("PUBLIC BODY")
+        message.attach(body)
+        message.attach(protected)
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.eml"
             output = Path(directory) / "output.eml"
             source.write_bytes(message.as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertFalse(
-                any(
-                    part.get_filename() == "forwarded.eml"
-                    for part in parse(output).walk()
-                )
-            )
 
-    def test_root_attachment_is_replaced_with_notice(self) -> None:
+            result = process_file(source, output, force=False, dry_run=False)
+            output_types = [part.get_content_type() for part in parse(output).walk()]
+
+        self.assertEqual(
+            [part.filename for part in result.removed_attachments],
+            ["opaque.p7m"],
+        )
+        self.assertEqual(
+            output_types,
+            ["text/plain"],
+        )
+
+    def test_root_attachment_has_no_invented_body_and_fails_closed(self) -> None:
         message = EmailMessage()
-        message["Subject"] = "Root attachment"
         message["Content-Type"] = 'application/pdf; name="root.pdf"'
         message["Content-Disposition"] = 'attachment; filename="root.pdf"'
-        message["Content-Transfer-Encoding"] = "base64"
         message.set_payload(base64.b64encode(b"%PDF-root").decode("ascii"))
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.eml"
             output = Path(directory) / "output.eml"
             source.write_bytes(message.as_bytes(policy=policy.SMTP))
+
             result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            parsed = parse(output)
-            self.assertEqual(parsed.get_content_type(), "text/plain")
-            self.assertIn("root attachment was removed", parsed.get_content())
 
-    def test_attachment_inside_multipart_signed_returns_code_6(self) -> None:
-        signed_content = EmailMessage()
-        signed_content.set_content("Signed body")
-        signed_content.add_attachment(
-            b"protected",
-            maintype="application",
-            subtype="octet-stream",
-            filename="protected.bin",
-        )
-        signature = EmailMessage()
-        signature["Content-Type"] = 'application/pgp-signature; name="signature.asc"'
-        signature["Content-Disposition"] = 'attachment; filename="signature.asc"'
-        signature.set_payload("fake-signature")
-        message = EmailMessage()
-        message["Subject"] = "Signed"
-        message["Content-Type"] = (
-            'multipart/signed; protocol="application/pgp-signature"; '
-            'boundary="signed-boundary"'
-        )
-        message.set_payload([signed_content, signature])
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "signed.eml"
-            output = Path(directory) / "output.eml"
-            source.write_bytes(message.as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 6)
-            self.assertIn("multipart/signed", result.stderr)
-            self.assertFalse(output.exists())
+        self.assertEqual(result.returncode, ExitCode.TRANSFORMATION_UNAVAILABLE)
+        self.assertFalse(output.exists())
 
-    def test_outer_attachment_is_removed_while_encrypted_body_is_preserved(
-        self,
-    ) -> None:
-        encrypted = EmailMessage()
-        encrypted["Content-Type"] = (
-            'multipart/encrypted; protocol="application/pgp-encrypted"'
-        )
-        control = EmailMessage()
-        control.set_type("application/pgp-encrypted")
-        control.set_payload("Version: 1")
-        payload = EmailMessage()
-        payload.set_type("application/octet-stream")
-        payload.set_payload("opaque-ciphertext")
-        encrypted.set_payload([control, payload])
-        message = EmailMessage()
-        message["Subject"] = "Encrypted plus attachment"
-        message.make_mixed()
-        message.attach(encrypted)
-        message.add_attachment(
-            b"%PDF",
-            maintype="application",
-            subtype="pdf",
-            filename="outer.pdf",
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "source.eml"
-            output = Path(directory) / "output.eml"
-            source.write_bytes(message.as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            parsed = parse(output)
-            self.assertTrue(
-                any(
-                    part.get_content_type() == "multipart/encrypted"
-                    for part in parsed.walk()
-                )
-            )
-            self.assertFalse(
-                any(part.get_filename() == "outer.pdf" for part in parsed.walk())
-            )
-
-    def test_outer_attachment_with_signed_body_returns_code_6(self) -> None:
-        signed_body = EmailMessage()
-        signed_body.set_content("Signed body only")
-        signature = EmailMessage()
-        signature["Content-Type"] = "application/pgp-signature"
-        signature.set_payload("fake-signature")
-        signed = EmailMessage()
-        signed["Content-Type"] = (
-            'multipart/signed; protocol="application/pgp-signature"; '
-            'boundary="signed-boundary"'
-        )
-        signed.set_payload([signed_body, signature])
-        message = EmailMessage()
-        message["Subject"] = "Signed body plus outer attachment"
-        message.make_mixed()
-        message.attach(signed)
-        message.add_attachment(
-            b"OUTER",
-            maintype="application",
-            subtype="pdf",
-            filename="outer.pdf",
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "source.eml"
-            output = Path(directory) / "output.eml"
-            source.write_bytes(message.as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 6)
-            self.assertFalse(output.exists())
-            self.assertIn("multipart/signed", result.stderr)
-
-    @unittest.skipIf(
-        os.name == "nt",
-        "control characters are not portable Windows filenames",
-    )
-    def test_console_escapes_control_characters_in_paths(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            source = base / "source.eml"
-            destination = base / "output\n\x1b[31m.eml"
-            source.write_bytes(simple_message().as_bytes(policy=policy.SMTP))
-            result = run_cli("-o", str(destination), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertNotIn("\x1b", result.stdout)
-            self.assertIn("\\x0a", result.stdout)
-            self.assertIn("\\x1b", result.stdout)
-
-    @unittest.skipIf(os.name == "nt", "POSIX mode bits differ on Windows")
-    def test_source_permission_bits_are_copied(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "source.eml"
-            output = Path(directory) / "output.eml"
-            source.write_bytes(simple_message().as_bytes(policy=policy.SMTP))
-            source.chmod(0o640)
-            result = run_cli("-o", str(output), str(source))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(output.stat().st_mode & 0o777, 0o640)
-
-    def test_uppercase_eml_uses_non_destructive_default_name(self) -> None:
+    def test_default_output_preserves_case_and_uses_text_only_suffix(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "MESSAGE.EML"
-            source.write_bytes(simple_message().as_bytes(policy=policy.SMTP))
+            source.write_bytes(_plain_html_message().as_bytes(policy=policy.SMTP))
+
             result = run_cli(str(source))
+
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertTrue(
-                (Path(directory) / "MESSAGE.attachments-removed.EML").is_file()
-            )
+            self.assertTrue((Path(directory) / "MESSAGE.text-only.EML").is_file())
+
+    def test_original_hash_remains_stable_after_transformation(self) -> None:
+        message = simple_message()
+        raw = message.as_bytes(policy=policy.SMTP)
+        expected = hashlib.sha256(raw).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.eml"
+            output = Path(directory) / "output.eml"
+            source.write_bytes(raw)
+
+            process_file(source, output, force=False, dry_run=False)
+
+            self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), expected)

@@ -21,8 +21,9 @@ SUBPROCESS_TIMEOUT_SECONDS = 30
 EXPECTED_NO_ARGUMENTS = """\
 EML Attachment Remover
 
-Remove ordinary file attachments from EML messages while preserving
-inline images and other message-body resources.
+Create verified text-only EML working copies.
+Retain a safe plain-text body; discard HTML alternatives, embedded body
+resources, and ordinary attachments. The original EML is never changed.
 
 Error: no source files were provided.
 

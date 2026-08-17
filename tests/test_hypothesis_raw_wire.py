@@ -143,16 +143,6 @@ def _wire_bytes(case: WireCase, *, close_boundary: bool = True) -> bytes:
     ).encode("ascii")
 
 
-def _normalized_auxiliary(value: str | None) -> str | None:
-    """Normalize transport line endings in MIME preamble or epilogue text.
-
-    Returns:
-        Semantically comparable auxiliary text.
-
-    """
-    return None if value is None else value.replace("\r\n", "\n").replace("\r", "\n")
-
-
 @given(case=WIRE_CASES)
 def test_noncanonical_wire_message_removes_only_the_attachment(
     case: WireCase,
@@ -179,14 +169,13 @@ def test_noncanonical_wire_message_removes_only_the_attachment(
             if part.get_content_type() == "text/plain"
         )
         assert source.read_bytes() == raw
-        assert [part.filename for part in result.removed] == ["public-file.bin"]
+        assert [part.filename for part in result.removed_attachments] == [
+            "public-file.bin"
+        ]
         assert decoded_hash(body) == decoded_hash(source_body)
-        assert _normalized_auxiliary(output.preamble) == _normalized_auxiliary(
-            source_message.preamble
-        )
-        assert _normalized_auxiliary(output.epilogue) == _normalized_auxiliary(
-            source_message.epilogue
-        )
+        assert body is output
+        assert output.preamble is None
+        assert output.epilogue is None
 
 
 @given(case=MALFORMED_WIRE_CASES)

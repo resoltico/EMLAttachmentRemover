@@ -20,8 +20,8 @@ def _default_destination(source: Path) -> Path:
 
     """
     if source.suffix.casefold() == ".eml":
-        return source.with_name(f"{source.stem}.attachments-removed{source.suffix}")
-    return source.with_name(f"{source.name}.attachments-removed.eml")
+        return source.with_name(f"{source.stem}.text-only{source.suffix}")
+    return source.with_name(f"{source.name}.text-only.eml")
 
 
 def _absolute_path(path: Path) -> Path:

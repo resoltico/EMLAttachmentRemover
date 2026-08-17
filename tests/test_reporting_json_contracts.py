@@ -7,7 +7,12 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from eml_attachment_remover import PROGRAM_VERSION, models, reporting
+from eml_attachment_remover import (
+    PROGRAM_VERSION,
+    models,
+    reporting,
+    transformation_models,
+)
 
 
 def _records() -> tuple[
@@ -26,20 +31,30 @@ def _records() -> tuple[
         destination=Path("public-output.eml"),
         source_size=123,
         output_size=45,
-        removed=(
+        removed_attachments=(
             models.RemovedPart(
-                path=(0, 2),
+                path=(2,),
                 content_type="application/octet-stream",
                 filename=None,
                 disposition="attachment",
             ),
         ),
-        preserved_file_parts=(
-            models.PreservedFilePart(
-                path=(1,),
-                content_type="application/pkcs7-mime",
-                filename="public-signature.p7m",
-                reason=models.KeepReason.SECURITY_ENTITY,
+        selected_plain_text_bodies=(
+            transformation_models.SelectedPlainTextBody((0,), "text/plain"),
+        ),
+        discarded_body_representations=(
+            transformation_models.DiscardedBodyRepresentation(
+                (1,),
+                "multipart/related",
+            ),
+        ),
+        discarded_body_resources=(
+            transformation_models.DiscardedBodyResource(
+                path=(1, 1),
+                referenced_by=((1, 0),),
+                content_type="image/jpeg",
+                filename="public-image.jpg",
+                disposition="inline",
             ),
         ),
         warnings=("public warning",),
@@ -58,38 +73,58 @@ def test_json_record_converters_preserve_every_exact_field() -> None:
     """Require exact nested keys and values before serialization."""
     result, skip, failure = _records()
 
-    assert reporting._removed_part_data(result.removed[0]) == {  # ruff: ignore[private-member-access]
+    assert reporting._removed_part_data(result.removed_attachments[0]) == {  # ruff: ignore[private-member-access]
         "content_type": "application/octet-stream",
         "disposition": "attachment",
         "filename": None,
-        "mime_path": "1.3",
+        "mime_path": "3",
     }
-    assert reporting._preserved_part_data(  # ruff: ignore[private-member-access]
-        result.preserved_file_parts[0]
+    assert reporting._body_record_data(  # ruff: ignore[private-member-access]
+        result.selected_plain_text_bodies[0]
     ) == {
-        "content_type": "application/pkcs7-mime",
-        "filename": "public-signature.p7m",
-        "mime_path": "2",
-        "reason": "cryptographic MIME entity",
+        "content_type": "text/plain",
+        "mime_path": "1",
+    }
+    assert reporting._discarded_resource_data(  # ruff: ignore[private-member-access]
+        result.discarded_body_resources[0]
+    ) == {
+        "content_type": "image/jpeg",
+        "disposition": "inline",
+        "filename": "public-image.jpg",
+        "mime_path": "2.2",
+        "referenced_by": ["2.1"],
     }
     assert reporting._result_data(result) == {  # ruff: ignore[private-member-access]
         "destination": "public-output.eml",
         "dry_run": False,
         "output_size": 45,
-        "preserved": [
+        "discarded_body_representations": [
             {
-                "content_type": "application/pkcs7-mime",
-                "filename": "public-signature.p7m",
+                "content_type": "multipart/related",
                 "mime_path": "2",
-                "reason": "cryptographic MIME entity",
             }
         ],
-        "removed": [
+        "discarded_body_resources": [
+            {
+                "content_type": "image/jpeg",
+                "disposition": "inline",
+                "filename": "public-image.jpg",
+                "mime_path": "2.2",
+                "referenced_by": ["2.1"],
+            }
+        ],
+        "removed_attachments": [
             {
                 "content_type": "application/octet-stream",
                 "disposition": "attachment",
                 "filename": None,
-                "mime_path": "1.3",
+                "mime_path": "3",
+            }
+        ],
+        "selected_plain_text_bodies": [
+            {
+                "content_type": "text/plain",
+                "mime_path": "1",
             }
         ],
         "source": "public-source.eml",
@@ -117,6 +152,8 @@ def test_json_batch_report_is_canonical_and_complete() -> None:
     """Require stable ordering, indentation, ASCII escaping, and a final newline."""
     result, skip, failure = _records()
     expected = {
+        "schema_version": 2,
+        "scope": "text-only",
         "version": PROGRAM_VERSION,
         "skipped": [reporting._skip_data(skip)],  # ruff: ignore[private-member-access]
         "results": [reporting._result_data(result)],  # ruff: ignore[private-member-access]
@@ -143,6 +180,8 @@ def test_json_cli_error_is_canonical_and_complete() -> None:
     """Require the exact batch-shaped JSON schema for a command-level error."""
     error = models.CliError(models.ExitCode.USAGE, "public usage ž")
     expected = {
+        "schema_version": 2,
+        "scope": "text-only",
         "version": PROGRAM_VERSION,
         "skipped": [],
         "results": [],

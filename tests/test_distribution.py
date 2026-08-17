@@ -98,7 +98,7 @@ def _integration_environment(**updates: str) -> dict[str, str]:
 
 
 def message_bytes() -> bytes:
-    """Create a small EML containing one body and one attachment.
+    """Create a small EML exercising the complete text-only transformation.
 
     Returns:
         Serialized synthetic EML bytes.
@@ -107,6 +107,22 @@ def message_bytes() -> bytes:
     message = EmailMessage()
     message["Subject"] = "Distribution test"
     message.set_content("Body")
+    message.add_alternative(
+        '<html><body>HTML<img src="cid:public-resource@example.test"></body></html>',
+        subtype="html",
+    )
+    payload = message.get_payload()
+    assert isinstance(payload, list)
+    html = payload[1]
+    assert isinstance(html, EmailMessage)
+    html.add_related(
+        b"PUBLIC-RESOURCE",
+        maintype="image",
+        subtype="jpeg",
+        cid="<public-resource@example.test>",
+        filename="public-resource.jpg",
+        disposition="inline",
+    )
     message.add_attachment(
         b"attachment",
         maintype="application",
@@ -153,7 +169,7 @@ class DistributionTests(unittest.TestCase):
         destination: Path,
         original: bytes,
     ) -> None:
-        """Assert that processing preserved the source and retained body."""
+        """Assert that processing preserved the source and selected plain body."""
         self.assertEqual(source.read_bytes(), original)
         self.assertGreater(destination.stat().st_size, 0)
         output = parse(destination)
@@ -162,6 +178,11 @@ class DistributionTests(unittest.TestCase):
         self.assertIsNotNone(body)
         assert body is not None
         self.assertEqual(body.get_content().strip(), "Body")
+        leaves = [part for part in output.walk() if not part.is_multipart()]
+        self.assertEqual(
+            [part.get_content_type() for part in leaves],
+            ["text/plain"],
+        )
         self.assertFalse(
             any(
                 part.get_content_disposition() == "attachment" for part in output.walk()
@@ -222,7 +243,7 @@ class DistributionTests(unittest.TestCase):
         source.write_bytes(original)
         result = _run_python(self.zipapp, str(source))
         self.assertEqual(result.returncode, 0, result.stderr)
-        destination = self.base / "zipapp source.attachments-removed.eml"
+        destination = self.base / "zipapp source.text-only.eml"
         self._assert_semantic_output(source, destination, original)
 
     @unittest.skipUnless(POSIX_SHELL_AVAILABLE, POSIX_ONLY)
@@ -253,11 +274,9 @@ class DistributionTests(unittest.TestCase):
             environment=environment,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(
-            "Created or retained 2 attachment-removed EML file(s)", result.stdout
-        )
-        self.assertTrue((self.base / "one žą 🚚.attachments-removed.eml").is_file())
-        self.assertTrue((self.base / "two 'quoted'.attachments-removed.eml").is_file())
+        self.assertIn("Created 2 verified text-only EML files:", result.stdout)
+        self.assertTrue((self.base / "one žą 🚚.text-only.eml").is_file())
+        self.assertTrue((self.base / "two 'quoted'.text-only.eml").is_file())
 
     @unittest.skipUnless(POSIX_SHELL_AVAILABLE, POSIX_ONLY)
     def test_installer_uses_user_application_support_without_admin(self) -> None:
@@ -281,6 +300,7 @@ class DistributionTests(unittest.TestCase):
             )
             self.assertTrue((install_directory / "run-from-finder.sh").is_file())
             self.assertIn("Pass Input", result.stdout)
+            self.assertIn("Name the shortcut: Create Text-Only EML Copy", result.stdout)
 
     @unittest.skipUnless(POSIX_SHELL_AVAILABLE, POSIX_ONLY)
     def test_finder_wrapper_rejects_an_empty_invocation(self) -> None:
@@ -369,12 +389,18 @@ class DistributionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(result.stdout)
         self.assertTrue(report["ok"])
+        self.assertEqual(report["schema_version"], 2)
+        self.assertEqual(report["scope"], "text-only")
         self.assertEqual(len(report["results"]), 1)
         self.assertEqual(
-            report["results"][0]["removed"][0]["filename"],
+            report["results"][0]["removed_attachments"][0]["filename"],
             "file.bin",
         )
-        destination = self.base / "json source.attachments-removed.eml"
+        self.assertEqual(
+            report["results"][0]["discarded_body_resources"][0]["filename"],
+            "public-resource.jpg",
+        )
+        destination = self.base / "json source.text-only.eml"
         self._assert_semantic_output(source, destination, original)
 
     def test_release_tag_must_match_the_project_version(self) -> None:

@@ -9,14 +9,16 @@ from ._version import PROGRAM_VERSION
 from .models import PROGRAM_NAME, ArgumentParser, CliError, ExitCode, OutputFormat
 
 APPLICATION_DESCRIPTION: Final = (
-    "Remove ordinary file attachments from EML messages while preserving "
-    "inline images and other message-body resources."
+    "Create verified text-only EML working copies by retaining a safe plain-text "
+    "body and discarding HTML alternatives, embedded body resources, and ordinary "
+    "attachments."
 )
 NO_ARGUMENTS_LINES: Final = (
     "EML Attachment Remover",
     "",
-    "Remove ordinary file attachments from EML messages while preserving",
-    "inline images and other message-body resources.",
+    "Create verified text-only EML working copies.",
+    "Retain a safe plain-text body; discard HTML alternatives, embedded body",
+    "resources, and ordinary attachments. The original EML is never changed.",
     "",
     "Error: no source files were provided.",
     "",
@@ -43,7 +45,7 @@ def build_parser() -> ArgumentParser:
         description=APPLICATION_DESCRIPTION,
         epilog=(
             "Exit codes: 0 success; 2 usage; 3 input; 4 output conflict; "
-            "5 MIME parse; 6 signed/protected content; 7 write; "
+            "5 MIME parse; 6 text-only transformation unavailable; 7 write; "
             "8 verification; 9 partial batch failure; 70 internal; "
             "130 interrupted. For a filename beginning with '-', place '--' "
             "before the filenames."
@@ -82,7 +84,7 @@ def build_parser() -> ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="report what would be removed without writing output files",
+        help="report the text-only transformation plan without writing output files",
     )
     parser.add_argument(
         "--fail-fast",

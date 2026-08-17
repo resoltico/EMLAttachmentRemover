@@ -50,7 +50,7 @@ def test_batch_output_alias_diagnostic_names_the_selected_source() -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         source = root / "message.eml"
-        selected_output = root / "message.attachments-removed.eml"
+        selected_output = root / "message.text-only.eml"
         source.write_bytes(b"PUBLIC SOURCE")
         selected_output.write_bytes(b"PUBLIC SELECTED OUTPUT")
         canonical_output = selected_output.parent.resolve() / selected_output.name

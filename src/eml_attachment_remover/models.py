@@ -5,9 +5,36 @@ from __future__ import annotations
 import argparse
 import sys
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from typing import TYPE_CHECKING, Final, Never, TextIO, override
+
+from .transformation_models import (
+    DiscardedBodyRepresentation,
+    DiscardedBodyResource,
+    MimePath,
+    SelectedPlainTextBody,
+)
+
+__all__ = (
+    "PROGRAM_NAME",
+    "ArgumentParser",
+    "BatchFailure",
+    "BatchOutcome",
+    "BatchSkip",
+    "CliError",
+    "DiscardedBodyRepresentation",
+    "DiscardedBodyResource",
+    "ExitCode",
+    "LeafFingerprint",
+    "MimePath",
+    "OutputFormat",
+    "OutputPlan",
+    "ProcessResult",
+    "ReferenceIndex",
+    "RemovedPart",
+    "SelectedPlainTextBody",
+)
 
 if TYPE_CHECKING:
     from email.message import EmailMessage
@@ -18,7 +45,6 @@ SHORT_ESCAPE_BITS: Final = 8
 UNICODE_ESCAPE_BITS: Final = 16
 UNSAFE_DISPLAY_CATEGORIES: Final = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
-type MimePath = tuple[int, ...]
 type LeafFingerprint = tuple[
     MimePath,
     str,
@@ -37,24 +63,12 @@ class ExitCode(IntEnum):
     INPUT_ERROR = 3
     OUTPUT_CONFLICT = 4
     PARSE_ERROR = 5
-    PROTECTED_MESSAGE = 6
+    TRANSFORMATION_UNAVAILABLE = 6
     WRITE_ERROR = 7
     VERIFICATION_ERROR = 8
     BATCH_FAILURE = 9
     INTERNAL_ERROR = 70
     INTERRUPTED = 130
-
-
-class KeepReason(StrEnum):
-    """Describe why a file-like MIME entity is retained."""
-
-    BODY_CID_REFERENCE = "referenced by cid: from the message body"
-    BODY_LOCATION_REFERENCE = "referenced by Content-Location from the message body"
-    CONTENT_ID = "Content-ID"
-    CONTENT_LOCATION = "Content-Location"
-    INLINE_DISPOSITION = "inline disposition"
-    RELATED_RESOURCE = "multipart/related resource"
-    SECURITY_ENTITY = "cryptographic MIME entity"
 
 
 class OutputFormat(StrEnum):
@@ -75,18 +89,6 @@ class ReferenceIndex:
 
 
 @dataclass(frozen=True, slots=True)
-class PartContext:
-    """Store the structural context of one MIME entity."""
-
-    path: MimePath
-    parent_type: str | None
-    under_related: bool
-    references: ReferenceIndex
-    location_base: str | None = None
-    is_root: bool = False
-
-
-@dataclass(frozen=True, slots=True)
 class RemovedPart:
     """Store metadata for a MIME entity deleted from the derived message."""
 
@@ -97,25 +99,6 @@ class RemovedPart:
 
 
 @dataclass(frozen=True, slots=True)
-class PreservedFilePart:
-    """Store metadata for a file-like MIME entity kept as body content."""
-
-    path: MimePath
-    content_type: str
-    filename: str | None
-    reason: KeepReason
-
-
-@dataclass(slots=True)
-class RemovalState:
-    """Accumulate state while traversing a MIME tree."""
-
-    removed: list[RemovedPart] = field(default_factory=list)
-    preserved_file_parts: list[PreservedFilePart] = field(default_factory=list)
-    protected_types: set[str] = field(default_factory=set)
-
-
-@dataclass(frozen=True, slots=True)
 class ProcessResult:
     """Describe the outcome of processing one EML file."""
 
@@ -123,8 +106,10 @@ class ProcessResult:
     destination: Path | None
     source_size: int
     output_size: int | None
-    removed: tuple[RemovedPart, ...]
-    preserved_file_parts: tuple[PreservedFilePart, ...]
+    removed_attachments: tuple[RemovedPart, ...]
+    selected_plain_text_bodies: tuple[SelectedPlainTextBody, ...]
+    discarded_body_representations: tuple[DiscardedBodyRepresentation, ...]
+    discarded_body_resources: tuple[DiscardedBodyResource, ...]
     warnings: tuple[str, ...]
     dry_run: bool
 

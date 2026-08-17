@@ -17,8 +17,53 @@ contract.
 - The project is MIT-licensed and attributed to Ervins Strauhmanis, using the same
   ASCII spelling in project metadata and `LICENSE`.
 - Tests and examples contain only public, synthetic data. Test messages use reserved
-  `example.test` identities and generated payloads. Personal or production messages
-  are never test inputs; generated Hypothesis evidence is sanitized before upload.
+  `example.test` identities and generated payloads. Private field-test messages stay
+  outside the repository and every generated report or uploaded artifact; generated
+  Hypothesis evidence is sanitized before upload.
+
+## Text-only transformation contract
+
+The sole processing scope is `text-only`. A successful plan selects a safe
+resource-free `text/plain` body, discards every unselected alternative body as one
+atomic subtree with its complete dependent-resource closure, and removes ordinary
+attachments elsewhere. Reported MIME paths are bound to the pre-transformation
+source tree. The selected decoded text remains identical after canonical MIME newline
+normalization (`CRLF`, `CR`, and `LF` become `LF`) and is bound to the source by
+SHA-256. If the selected body is nested, execution promotes its content-transfer
+encoding, encoded payload, and applicable `Content-*` representation headers into a
+non-multipart root `text/plain` entity. It retains ordered root message/envelope
+headers, removes invalidated size/attachment markers, clears wrapper preamble and
+epilogue text, and discards the wrapper tree. A safe root plain message with no action
+is instead copied byte-for-byte.
+
+After the immutable source-path action plan executes, the temporary output is reparsed
+and must match the retained root's leaf fingerprint and structure. A second text-only
+planning pass must report `modified == false`, proving that no discard or body-promotion
+action remains and that every modified result is wrapper-free root `text/plain`. The
+original remains byte-identical, and the verified derived output is published
+atomically.
+Discarded subtrees are verified by source-path removal and that second-pass invariant,
+not by requiring their payload hashes to be globally absent: selected and discarded
+parts may legitimately contain identical bytes.
+
+The planner fails closed when no safe text-only representation can be proven. It
+does not convert arbitrary HTML, fetch content, perform OCR, classify images, or use
+sender, filename, size, or media-content heuristics. Signed, encrypted, and opaque
+security content needed by the selected body, or with an ambiguous structural role,
+cannot satisfy the invariant and produces no output. An explicit attachment or
+unselected protected subtree can be discarded atomically without semantic
+interpretation or partial rewriting, after global MIME and transfer-encoding
+validation.
+
+Machine-readable command reports use exact schema version `2` and scope
+`text-only`. Successful result objects separately report selected plain-text bodies,
+discarded body representations, discarded body resources, and removed ordinary
+attachments. Each discarded resource exposes the ordered, possibly empty list of
+source body MIME paths that referenced it. The selected-body path likewise remains a
+source audit path even though a modified derived message promotes that body to its
+root. Finder validates the schema and scope before displaying or revealing any path.
+An existing output accepted through `--skip-existing` is explicitly unverified and
+must not be described as a newly verified output.
 
 ## Canonical local qualification
 
@@ -119,11 +164,14 @@ filesystem and subprocess work. Bounded task and job timeouts prevent hangs inst
 - GitHub release publishing: 15 minutes.
 
 Generated properties do useful oracle work rather than merely executing lines. They
-compare complete retained-leaf metadata and decoded payload hashes, preserve body
-parts exactly, isolate attached-message references, generate adversarial CID and
-Content-Location representations, exercise valid and malformed transfer encodings,
-and model create/conflict/replace/dry-run/source-alias state transitions. Events and
-targets describe the shapes, encodings, sizes, depths, and transitions explored.
+compare the complete immutable transformation plan with the serialized result,
+preserve selected decoded text exactly after canonical newline normalization, require
+the serialized result to satisfy the second-pass text-only invariant, isolate
+attached-message references, generate adversarial CID and Content-Location dependency
+closures, exercise valid and malformed transfer encodings, and model
+create/conflict/replace/dry-run/source-alias state transitions.
+Events and targets describe the shapes, encodings, sizes, depths, selections, and
+transitions explored.
 
 Configuration regression tests inspect every effective profile with ambient CI both
 set and absent. Another subprocess test deliberately fails a property, verifies
@@ -183,7 +231,7 @@ The `check` task runs repository hygiene before any recursive analyzer, then:
 
 - Ruff formatter verification and all-rule preview linting with narrow documented
   compatibility and test-framework exceptions;
-- Mypy 2.3.0 in strict mode across `src`, `tests`, and `tools`, with its extra,
+- Mypy 2.3.1 in strict mode across `src`, `tests`, and `tools`, with its extra,
   unreachable-code, strict-bytes, and strict-`None`-equality checks enabled;
 - a no-exceptions module-design gate across those same trees: at most 450 physical
   lines, 400 substantive (nonblank, non-comment-only) lines, 20 top-level
@@ -266,7 +314,9 @@ timeouts.
 - `release.yml` runs only for tags. It first requires the full quality matrix and an
   exact match between the tag and `pyproject.toml` version, then requires a fresh
   same-tag mutation result, builds, redownloads and reverifies the exact artifacts,
-  attests, and publishes from canonical Linux CPython.
+  attests, and publishes from canonical Linux CPython. Publication also requires the
+  exact tag-named `.github/release-notes/vVERSION.md` file and binds both the release
+  title and body to that validated version.
 
 Remote status, scheduled execution, release publication, and provenance attestations
 exist only after this source is hosted on GitHub with Actions enabled.
@@ -278,9 +328,9 @@ metadata, and permissions; writes through a same-directory temporary file; valid
 ZIP integrity and its exact member surface; derives Name, Version, Summary,
 Requires-Python, License-Expression, runtime guard, and license payload from public
 project sources; executes `--version`; and atomically installs the result. Its tests
-also process public synthetic mail through
-the built archive, verify semantic output, and confirm that the source remains
-unchanged.
+also process a public synthetic plain/HTML-related message through the built archive,
+verify that the plain body alone remains while the HTML resource closure and ordinary
+attachment are absent, and confirm that the source remains unchanged.
 
 Official release construction begins only after the tag qualification matrix passes.
 The build job:
@@ -308,7 +358,9 @@ The build job:
 9. creates GitHub provenance attestations for the three checksummed artifacts and a
    separate attestation for `SHA256SUMS` itself;
 10. peels the live tag and requires it still targets the exact triggering commit;
-11. publishes only from that existing tag, which exactly matches `[project].version`.
+11. requires a regular, non-symbolic release-notes file named for that exact tag,
+    checks its heading against the version-derived release title, and publishes that
+    reviewed body only from the existing tag matching `[project].version`.
 
 `gh release create --verify-tag` checks tag existence; the separate API check prevents
 a moved or replaced tag from redirecting the release after qualification. This
@@ -328,5 +380,8 @@ connects the asset digest to this repository's release workflow.
 ## Platform boundary
 
 The Finder/Shortcuts installer and launcher are POSIX shell-checked and tested where
-`/bin/sh` is available. Creating the Shortcuts UI action and Finder's macOS-specific
-reveal behaviour remain manual integration checks.
+`/bin/sh` is available. Creating the **Create Text-Only EML Copy** action, exercising
+it on disposable copies of the external field corpus, opening the generated EML, and
+confirming Finder's reveal behaviour remain manual integration checks. Private field
+messages, filenames, payloads, and observations are never copied into the repository
+or uploaded as evidence.

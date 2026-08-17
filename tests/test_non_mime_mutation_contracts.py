@@ -315,7 +315,7 @@ class TestNonMimeMutationContracts(unittest.TestCase):
         assert alias.call_args == call(Path("first.out"), Path("second.out"))
         assert collision.value.message == (
             "multiple inputs resolve to the same output path: "
-            "first.out and second.attachments-removed.eml"
+            "first.out and second.text-only.eml"
         )
 
     def test_source_reader_uses_exact_portable_flags_and_source(self) -> None:
@@ -341,23 +341,17 @@ class TestNonMimeMutationContracts(unittest.TestCase):
             assert processing._read_source(source) == b"PUBLIC"
         require_regular.assert_called_once_with(input_file, source)
 
-    def test_removal_warnings_preserve_separator_and_parent_guard(self) -> None:
+    def test_removal_warnings_preserve_parser_warnings_and_parent_guard(self) -> None:
         part = EmailMessage()
-        removed = [models.RemovedPart((0,), "application/pdf", "public.pdf", None)]
+        changed_paths = ((0,),)
 
         warnings = processing._removal_warnings(
             (((0,), None, part),),
-            {"application/pkcs7-mime", "multipart/signed"},
-            (),
-            removed,
+            ("PUBLIC PARSER WARNING",),
+            changed_paths,
         )
 
-        assert warnings == [
-            (
-                "protected MIME entity left intact: application/pkcs7-mime, "
-                "multipart/signed"
-            )
-        ]
+        assert warnings == ["PUBLIC PARSER WARNING"]
 
     def test_storage_forwards_structure_and_reports_cleanup_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -19,8 +19,10 @@ def _process_result() -> models.ProcessResult:
         destination=Path("output.eml"),
         source_size=1,
         output_size=1,
-        removed=(),
-        preserved_file_parts=(),
+        removed_attachments=(),
+        selected_plain_text_bodies=(),
+        discarded_body_representations=(),
+        discarded_body_resources=(),
         warnings=(),
         dry_run=False,
     )
@@ -46,13 +48,13 @@ class ReportingAndCliEdgeCaseTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, models.ExitCode.USAGE)
 
-    def test_result_writer_emits_removal_summary(self) -> None:
+    def test_result_writer_emits_text_only_summary(self) -> None:
         stream = io.StringIO()
         with patch.object(reporting, "_write_line") as write_line:
             reporting._write_result(stream, _process_result())
 
         self.assertIn(
-            call(stream, "Removed 0 attachment(s)."),
+            call(stream, "Removed ordinary attachments: 0"),
             write_line.call_args_list,
         )
 
@@ -110,7 +112,7 @@ class ReportingAndCliEdgeCaseTests(unittest.TestCase):
             write_line.call_args_list[0],
             call(
                 sys.stdout,
-                "Skipped existing output for source.eml: destination.eml",
+                "Skipped unverified existing output for source.eml: destination.eml",
             ),
         )
 

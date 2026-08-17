@@ -213,6 +213,15 @@ jobs:
       - name: Create the GitHub release
         shell: bash
         run: |
+          release_version=${RELEASE_TAG#v}
+          release_notes=".github/release-notes/$RELEASE_TAG.md"
+          if [[ ! -f "$release_notes" || -L "$release_notes" ]]; then
+            exit 1
+          fi
+          IFS= read -r release_heading < "$release_notes"
+          if [[ "$release_heading" != "# EML Attachment Remover $release_version" ]]; then
+            exit 1
+          fi
           read -r object_type object_sha < <(
             gh api \
               --header "X-GitHub-Api-Version: 2026-03-10" \
@@ -243,8 +252,8 @@ jobs:
             release-dist/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --title "$RELEASE_TAG" \
-            --generate-notes
+            --title "EML Attachment Remover $release_version" \
+            --notes-file "$release_notes"
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}

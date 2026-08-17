@@ -9,7 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import call, patch
 
-from eml_attachment_remover import models, reporting
+from eml_attachment_remover import models, reporting, transformation_models
 
 
 def _process_result(
@@ -21,7 +21,7 @@ def _process_result(
     """Return one complete public synthetic processing result.
 
     Returns:
-        A result containing removal, preservation, size, and warning details.
+        A result containing every text-only plan, size, and warning detail.
 
     """
     return models.ProcessResult(
@@ -29,20 +29,30 @@ def _process_result(
         destination=None if destination is None else Path(destination),
         source_size=1_234,
         output_size=None if destination is None else 56,
-        removed=(
+        removed_attachments=(
             models.RemovedPart(
-                path=(0, 2),
+                path=(2,),
                 content_type="application/octet-stream",
                 filename="public.bin",
                 disposition="attachment",
             ),
         ),
-        preserved_file_parts=(
-            models.PreservedFilePart(
-                path=(1,),
-                content_type="image/png",
-                filename=None,
-                reason=models.KeepReason.INLINE_DISPOSITION,
+        selected_plain_text_bodies=(
+            transformation_models.SelectedPlainTextBody((0,), "text/plain"),
+        ),
+        discarded_body_representations=(
+            transformation_models.DiscardedBodyRepresentation(
+                (1,),
+                "multipart/related",
+            ),
+        ),
+        discarded_body_resources=(
+            transformation_models.DiscardedBodyResource(
+                path=(1, 1),
+                referenced_by=((1, 0),),
+                content_type="image/jpeg",
+                filename="public-image.jpg",
+                disposition="inline",
             ),
         ),
         warnings=("public warning",),
@@ -135,7 +145,7 @@ def test_nul_terminated_paths_use_exact_filesystem_bytes() -> None:
 
 
 def test_human_result_report_is_exact_for_a_written_output() -> None:
-    """Render removal, retention, size, destination, and warning details exactly."""
+    """Render the complete text-only plan and write details exactly."""
     stream = io.StringIO()
 
     reporting._write_result(  # ruff: ignore[private-member-access]
@@ -144,10 +154,15 @@ def test_human_result_report_is_exact_for_a_written_output() -> None:
     )
 
     assert stream.getvalue() == (
-        "Removed 1 attachment(s).\n"
-        "  - public.bin [application/octet-stream; MIME path 1.3]\n"
-        "Preserved 1 inline/protected file part(s).\n"
-        "  - (unnamed MIME entity) [image/png; inline disposition; MIME path 2]\n"
+        "Text-only transformation complete.\n"
+        "Selected plain-text bodies: 1\n"
+        "  - text/plain [MIME path 1]\n"
+        "Discarded body representations: 1\n"
+        "  - multipart/related [MIME path 2]\n"
+        "Discarded body resources: 1\n"
+        "  - public-image.jpg [image/jpeg; body references 2.1; MIME path 2.2]\n"
+        "Removed ordinary attachments: 1\n"
+        "  - public.bin [application/octet-stream; MIME path 3]\n"
         "Wrote: public-output.eml\n"
         "Size: 1,234 -> 56 bytes\n"
         "Warning: public warning\n"
@@ -164,13 +179,49 @@ def test_human_result_report_is_exact_for_a_dry_run() -> None:
     )
 
     assert stream.getvalue() == (
-        "Would remove 1 attachment(s).\n"
-        "  - public.bin [application/octet-stream; MIME path 1.3]\n"
-        "Preserved 1 inline/protected file part(s).\n"
-        "  - (unnamed MIME entity) [image/png; inline disposition; MIME path 2]\n"
+        "Text-only transformation plan.\n"
+        "Selected plain-text bodies: 1\n"
+        "  - text/plain [MIME path 1]\n"
+        "Discarded body representations: 1\n"
+        "  - multipart/related [MIME path 2]\n"
+        "Discarded body resources: 1\n"
+        "  - public-image.jpg [image/jpeg; body references 2.1; MIME path 2.2]\n"
+        "Removed ordinary attachments: 1\n"
+        "  - public.bin [application/octet-stream; MIME path 3]\n"
         "Dry run: no output file was written.\n"
         "Warning: public warning\n"
     )
+
+
+def test_human_discarded_resource_reports_an_empty_reference_set() -> None:
+    """Distinguish related membership from an explicit body reference."""
+    complete = _process_result("public.eml", "public-output.eml")
+    resource = replace(complete.discarded_body_resources[0], referenced_by=())
+    result = replace(complete, discarded_body_resources=(resource,))
+    stream = io.StringIO()
+
+    reporting._write_result(stream, result)  # ruff: ignore[private-member-access]
+
+    assert "body references none; MIME path 2.2" in stream.getvalue()
+
+
+def test_human_discarded_resource_reports_unnamed_and_multiple_references() -> None:
+    """Render the exact fallback label and deterministic reference separator."""
+    complete = _process_result("public.eml", "public-output.eml")
+    resource = replace(
+        complete.discarded_body_resources[0],
+        filename=None,
+        referenced_by=((0,), (1, 2)),
+    )
+    result = replace(complete, discarded_body_resources=(resource,))
+    stream = io.StringIO()
+
+    reporting._write_result(stream, result)  # ruff: ignore[private-member-access]
+
+    assert (
+        "  - (unnamed MIME entity) [image/jpeg; body references 1, 2.3; "
+        "MIME path 2.2]\n"
+    ) in stream.getvalue()
 
 
 def test_human_result_requires_complete_output_metadata_for_write_details() -> None:
@@ -236,12 +287,12 @@ def test_human_batch_preserves_section_order_and_separators() -> None:
         call(sys.stdout, ""),
         call(
             sys.stdout,
-            "Skipped existing output for three.eml: three-output.eml",
+            "Skipped unverified existing output for three.eml: three-output.eml",
         ),
         call(sys.stdout, ""),
         call(
             sys.stdout,
-            "Skipped existing output for four.eml: four-output.eml",
+            "Skipped unverified existing output for four.eml: four-output.eml",
         ),
     ]
     assert write_result.call_args_list == [

@@ -13,10 +13,10 @@ from tests.test_support import leaf_rows, parse, run_cli
 
 
 def public_outlook_style_message() -> EmailMessage:
-    """Create a non-sensitive EML fixture with resources and an attachment.
+    """Create a synthetic field-shape fixture with resources and an attachment.
 
     Returns:
-        A synthetic message with a removable PDF and three inline image resources.
+        A message with a removable PDF and eight HTML-dependent image resources.
 
     """
     message = EmailMessage()
@@ -25,26 +25,24 @@ def public_outlook_style_message() -> EmailMessage:
     message["Subject"] = "Public Outlook-style fixture"
     message["X-MS-Has-Attach"] = "yes"
     message.set_content("Public plain-text body")
+    references = "".join(
+        f'<img src="cid:public-evidence-{index}@example.test">' for index in range(1, 9)
+    )
     message.add_alternative(
-        """<html><body>
-        <p>Public HTML body</p>
-        <img src="cid:public-logo@example.test">
-        <img src="cid:public-social@example.test">
-        <img src="cid:public-banner@example.test">
-        </body></html>""",
+        f"<html><body><p>Public HTML body</p>{references}</body></html>",
         subtype="html",
     )
     payload = message.get_payload()
     assert isinstance(payload, list)
     html = payload[1]
     assert isinstance(html, EmailMessage)
-    for name in ("logo", "social", "banner"):
+    for index in range(1, 9):
         html.add_related(
-            f"PUBLIC-{name.upper()}-PNG".encode(),
-            maintype="image",
-            subtype="png",
-            cid=f"<public-{name}@example.test>",
-            filename=f"public-{name}.png",
+            b"\xff\xd8\xff\xe0" + f"PUBLIC-JPEG-{index}".encode() + b"\xff\xd9",
+            maintype="application",
+            subtype="octet-stream",
+            cid=f"<public-evidence-{index}@example.test>",
+            filename=f"public-evidence-{index}.jpg",
             disposition="inline",
         )
     message.add_attachment(
@@ -71,7 +69,7 @@ class PublicEmlFixtureTests(unittest.TestCase):
         source.write_bytes(public_outlook_style_message().as_bytes(policy=policy.SMTP))
         return source
 
-    def test_public_fixture_removes_pdf_and_preserves_inline_images(self) -> None:
+    def test_public_fixture_creates_audited_text_only_copy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source_path = self._write_fixture(directory)
             destination = Path(directory) / "result.eml"
@@ -95,18 +93,28 @@ class PublicEmlFixtureTests(unittest.TestCase):
                 [(row[2], row[0]) for row in output_rows if row[1] == "attachment"],
                 [],
             )
-            source_inline = sorted(
-                row for row in source_rows if row[1] == "inline" or row[3]
+            source_inline = [row for row in source_rows if row[1] == "inline"]
+            self.assertEqual(len(source_inline), 8)
+            self.assertEqual(len(output_rows), 1)
+            self.assertEqual(output_rows[0][0], "text/plain")
+            self.assertIsNone(output_rows[0][1])
+            self.assertIsNone(output_rows[0][2])
+            self.assertIsNone(output_rows[0][3])
+            self.assertEqual(
+                output_rows[0][4],
+                next(row[4] for row in source_rows if row[0] == "text/plain"),
             )
-            output_inline = sorted(
-                row for row in output_rows if row[1] == "inline" or row[3]
+            discarded_hashes = {row[4] for row in source_rows if row[0] != "text/plain"}
+            self.assertTrue(
+                discarded_hashes.isdisjoint({row[4] for row in output_rows})
             )
-            self.assertEqual(source_inline, output_inline)
-            self.assertEqual(len(output_inline), 3)
             self.assertEqual(parse(source_path)["Subject"], output["Subject"])
             self.assertEqual(parse(source_path)["From"], output["From"])
             self.assertEqual(parse(source_path)["To"], output["To"])
             self.assertIsNone(output["X-MS-Has-Attach"])
+            self.assertIn("Discarded body representations: 1", result.stdout)
+            self.assertIn("Discarded body resources: 8", result.stdout)
+            self.assertIn("Removed ordinary attachments: 1", result.stdout)
             self.assertEqual(
                 [defect for part in output.walk() for defect in part.defects],
                 [],
@@ -119,10 +127,12 @@ class PublicEmlFixtureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = self._write_fixture(directory)
             default_output = source.with_name(
-                f"{source.stem}.attachments-removed{source.suffix}",
+                f"{source.stem}.text-only{source.suffix}",
             )
             default_output.write_bytes(b"existing")
             result = run_cli("--dry-run", "--", str(source))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(default_output.read_bytes(), b"existing")
-            self.assertIn("Would remove 1 attachment(s).", result.stdout)
+            self.assertIn("Text-only transformation plan.", result.stdout)
+            self.assertIn("Discarded body resources: 8", result.stdout)
+            self.assertIn("Removed ordinary attachments: 1", result.stdout)

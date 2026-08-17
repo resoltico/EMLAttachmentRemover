@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from typing import TextIO
+from typing import Final, TextIO
 
 from ._version import PROGRAM_VERSION
 from .models import (
@@ -13,37 +13,94 @@ from .models import (
     BatchFailure,
     BatchSkip,
     CliError,
-    PreservedFilePart,
     ProcessResult,
     RemovedPart,
     _format_mime_path,
     _write_error,
     _write_line,
 )
+from .transformation_models import (
+    DiscardedBodyRepresentation,
+    DiscardedBodyResource,
+    SelectedPlainTextBody,
+)
+
+REPORT_SCHEMA_VERSION: Final = 2
+REPORT_SCOPE: Final = "text-only"
+type BodyRecord = SelectedPlainTextBody | DiscardedBodyRepresentation
+
+
+def _write_body_records(
+    stream: TextIO,
+    label: str,
+    records: tuple[BodyRecord, ...],
+) -> None:
+    """Write a count and source MIME path for body-level plan records."""
+    _write_line(stream, f"{label}: {len(records)}")
+    for record in records:
+        _write_line(
+            stream,
+            f"  - {record.content_type} [MIME path {_format_mime_path(record.path)}]",
+        )
+
+
+def _write_file_records(
+    stream: TextIO,
+    label: str,
+    records: tuple[RemovedPart, ...],
+) -> None:
+    """Write a count and source metadata for file-level plan records."""
+    _write_line(stream, f"{label}: {len(records)}")
+    for record in records:
+        name = record.filename or "(unnamed MIME entity)"
+        _write_line(
+            stream,
+            f"  - {name} [{record.content_type}; "
+            f"MIME path {_format_mime_path(record.path)}]",
+        )
+
+
+def _write_discarded_resources(
+    stream: TextIO,
+    records: tuple[DiscardedBodyResource, ...],
+) -> None:
+    """Write discarded resource metadata and all source-body references."""
+    _write_line(stream, f"Discarded body resources: {len(records)}")
+    for record in records:
+        name = record.filename or "(unnamed MIME entity)"
+        references = ", ".join(_format_mime_path(path) for path in record.referenced_by)
+        reference_text = references or "none"
+        _write_line(
+            stream,
+            f"  - {name} [{record.content_type}; body references {reference_text}; "
+            f"MIME path {_format_mime_path(record.path)}]",
+        )
 
 
 def _write_result(stream: TextIO, result: ProcessResult) -> None:
     """Write a concise human-readable report for one successful input."""
-    action = "Would remove" if result.dry_run else "Removed"
-    _write_line(stream, f"{action} {len(result.removed)} attachment(s).")
-    for removed in result.removed:
-        name = removed.filename or "(unnamed MIME entity)"
-        _write_line(
-            stream,
-            f"  - {name} [{removed.content_type}; "
-            f"MIME path {_format_mime_path(removed.path)}]",
-        )
-    _write_line(
-        stream,
-        f"Preserved {len(result.preserved_file_parts)} inline/protected file part(s).",
+    heading = (
+        "Text-only transformation plan."
+        if result.dry_run
+        else "Text-only transformation complete."
     )
-    for preserved in result.preserved_file_parts:
-        name = preserved.filename or "(unnamed MIME entity)"
-        _write_line(
-            stream,
-            f"  - {name} [{preserved.content_type}; {preserved.reason}; "
-            f"MIME path {_format_mime_path(preserved.path)}]",
-        )
+    _write_line(stream, heading)
+    _write_body_records(
+        stream,
+        "Selected plain-text bodies",
+        result.selected_plain_text_bodies,
+    )
+    _write_body_records(
+        stream,
+        "Discarded body representations",
+        result.discarded_body_representations,
+    )
+    _write_discarded_resources(stream, result.discarded_body_resources)
+    _write_file_records(
+        stream,
+        "Removed ordinary attachments",
+        result.removed_attachments,
+    )
     if result.dry_run:
         _write_line(stream, "Dry run: no output file was written.")
     elif result.destination is not None and result.output_size is not None:
@@ -71,18 +128,32 @@ def _removed_part_data(part: RemovedPart) -> dict[str, object]:
     }
 
 
-def _preserved_part_data(part: PreservedFilePart) -> dict[str, object]:
-    """Convert one preserved-part record to JSON-compatible data.
+def _body_record_data(part: BodyRecord) -> dict[str, object]:
+    """Convert one body-plan record to JSON-compatible data.
 
     Returns:
-        A dictionary containing MIME metadata and its retention reason.
+        A dictionary containing stable source MIME metadata.
 
     """
     return {
         "content_type": part.content_type,
+        "mime_path": _format_mime_path(part.path),
+    }
+
+
+def _discarded_resource_data(part: DiscardedBodyResource) -> dict[str, object]:
+    """Convert one discarded body resource to JSON-compatible data.
+
+    Returns:
+        A dictionary containing stable source MIME metadata.
+
+    """
+    return {
+        "content_type": part.content_type,
+        "disposition": part.disposition,
         "filename": part.filename,
         "mime_path": _format_mime_path(part.path),
-        "reason": str(part.reason),
+        "referenced_by": [_format_mime_path(path) for path in part.referenced_by],
     }
 
 
@@ -99,10 +170,18 @@ def _result_data(result: ProcessResult) -> dict[str, object]:
         ),
         "dry_run": result.dry_run,
         "output_size": result.output_size,
-        "preserved": [
-            _preserved_part_data(part) for part in result.preserved_file_parts
+        "discarded_body_representations": [
+            _body_record_data(part) for part in result.discarded_body_representations
         ],
-        "removed": [_removed_part_data(part) for part in result.removed],
+        "discarded_body_resources": [
+            _discarded_resource_data(part) for part in result.discarded_body_resources
+        ],
+        "removed_attachments": [
+            _removed_part_data(part) for part in result.removed_attachments
+        ],
+        "selected_plain_text_bodies": [
+            _body_record_data(part) for part in result.selected_plain_text_bodies
+        ],
         "source": str(result.source),
         "source_size": result.source_size,
         "status": "ok",
@@ -159,6 +238,8 @@ def _write_json_report(
 ) -> None:
     """Write one machine-readable batch report to standard output."""
     payload = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "scope": REPORT_SCOPE,
         "program": PROGRAM_NAME,
         "version": PROGRAM_VERSION,
         "ok": not failures,
@@ -173,6 +254,8 @@ def _write_json_report(
 def _write_json_error(error: CliError) -> None:
     """Write one batch-level failure as a machine-readable JSON document."""
     payload = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "scope": REPORT_SCOPE,
         "program": PROGRAM_NAME,
         "version": PROGRAM_VERSION,
         "ok": False,
@@ -234,7 +317,7 @@ def _write_human_batch(
             _write_line(sys.stdout, "")
         _write_line(
             sys.stdout,
-            f"Skipped existing output for {skip.source}: {skip.destination}",
+            f"Skipped unverified existing output for {skip.source}: {skip.destination}",
         )
     for failure in failures:
         _write_error(

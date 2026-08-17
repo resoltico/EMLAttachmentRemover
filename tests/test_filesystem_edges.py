@@ -27,7 +27,7 @@ class PathValidationEdgeCaseTests(unittest.TestCase):
     def test_default_destination_marks_derived_eml(self) -> None:
         self.assertEqual(
             paths._default_destination(Path("public")),
-            Path("public.attachments-removed.eml"),
+            Path("public.text-only.eml"),
         )
 
     def test_destination_inspection_error_is_write_error(self) -> None:

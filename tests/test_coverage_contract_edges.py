@@ -24,8 +24,10 @@ class ReportingBranchTests(unittest.TestCase):
             destination=None,
             source_size=1,
             output_size=None,
-            removed=(),
-            preserved_file_parts=(),
+            removed_attachments=(),
+            selected_plain_text_bodies=(),
+            discarded_body_representations=(),
+            discarded_body_resources=(),
             warnings=("public warning",),
             dry_run=False,
         )
@@ -49,8 +51,10 @@ class ReportingBranchTests(unittest.TestCase):
             destination=Path("output.eml"),
             source_size=1,
             output_size=1,
-            removed=(),
-            preserved_file_parts=(),
+            removed_attachments=(),
+            selected_plain_text_bodies=(),
+            discarded_body_representations=(),
+            discarded_body_resources=(),
             warnings=(),
             dry_run=False,
         )
@@ -60,7 +64,7 @@ class ReportingBranchTests(unittest.TestCase):
 
         skip_call = call(
             sys.stdout,
-            "Skipped existing output for second.eml: second-output.eml",
+            "Skipped unverified existing output for second.eml: second-output.eml",
         )
         skip_index = write_line.call_args_list.index(skip_call)
         self.assertEqual(

@@ -34,13 +34,14 @@ def _nested_message() -> EmailMessage:
     wrapper = EmailMessage()
     wrapper.set_type("message/rfc822")
     wrapper.set_payload([inner])
+    wrapper.add_header("Content-Disposition", "attachment", filename="forwarded.eml")
     for header in STALE_ROOT_HEADERS:
         wrapper[header] = "public stale value"
     return wrapper
 
 
-def test_nested_message_removal_warns_and_clears_changed_boundaries() -> None:
-    """Warn for a changed inner signature and clear every affected boundary."""
+def test_nested_message_attachment_is_discarded_atomically() -> None:
+    """Discard an attached logical message without traversing signed descendants."""
     message = EmailMessage()
     message.set_content("Outer public body")
     message.make_mixed()
@@ -56,19 +57,7 @@ def test_nested_message_removal_warns_and_clears_changed_boundaries() -> None:
         result = process_file(source, destination, force=False, dry_run=False)
         output = parse(destination)
 
-    assert [part.filename for part in result.removed] == ["nested.pdf"]
-    expected_warning = (
-        "rewriting nested message at MIME path 2.1 invalidates existing "
-        "transport signatures (DKIM-Signature); the original EML remains unchanged"
-    )
-    assert result.warnings == (expected_warning,)
-    changed_parts = [
-        part
-        for part in output.walk()
-        if part is output
-        or part.get_content_type() == "message/rfc822"
-        or part["Subject"] == "Nested public message"
-    ]
-    assert len(changed_parts) == 3
-    for part in changed_parts:
-        assert all(part[header] is None for header in STALE_ROOT_HEADERS)
+    assert [part.filename for part in result.removed_attachments] == ["forwarded.eml"]
+    assert result.warnings == ()
+    assert all(part.get_content_type() != "message/rfc822" for part in output.walk())
+    assert all(output[header] is None for header in STALE_ROOT_HEADERS)

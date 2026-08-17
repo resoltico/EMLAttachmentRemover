@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from tests import macos_integration_support
 from tests.test_support import SUBPROCESS_TIMEOUT_SECONDS, subprocess_environment
 
 if TYPE_CHECKING:
@@ -62,46 +63,36 @@ def _environment(home: Path, processor: Path, **updates: str) -> dict[str, str]:
     return environment
 
 
-def _temporary_mode_processor_source() -> str:
-    """Return a processor that records launcher temporary-file modes.
-
-    Returns:
-        Synthetic Python source for the public test processor.
-
-    """
-    return (
-        "import json, os, pathlib, stat\n"
-        "entries = sorted(pathlib.Path(os.environ['TMPDIR']).iterdir())\n"
-        "modes = [stat.S_IMODE(entry.stat().st_mode) for entry in entries]\n"
-        "pathlib.Path(os.environ['PUBLIC_MODE_LOG']).write_text(json.dumps(modes))\n"
-        "print(json.dumps({'ok': True, 'program': 'p', 'version': 'v', "
-        "'results': [], 'skipped': [], 'errors': []}))\n"
-    )
-
-
 @unittest.skipUnless(POSIX_AVAILABLE, POSIX_REASON)
 class FinderReportSafetyTests(unittest.TestCase):
     """Treat processor diagnostics and JSON values as untrusted terminal text."""
 
-    def test_report_and_diagnostics_escape_controls_but_preserve_unicode(self) -> None:
+    def test_v2_report_is_sanitized_summarized_and_status_preserved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             processor = base / "public-processor.pyz"
-            processor.write_text(
-                "import json, sys\n"
-                "print('diagnostic ž\\x1b[31m\\rline', file=sys.stderr)\n"
-                "print(json.dumps({\n"
-                " 'ok': False, 'program': 'remove-eml-attachments', "
-                "'version': '9.8.7',\n"
-                " 'results': [{'source': 'public-source.eml', 'status': 'ok', "
-                "'destination': 'public-ž\\x1b[32m\\noutput.eml'}],\n"
-                " 'skipped': [],\n"
-                " 'errors': [{'source': 'public\\nsource.eml', 'status': 'error', "
-                "'error': "
-                "{'name': 'INPUT', 'code': 3, 'message': 'bad\\x1b[2Jž'}}],\n"
-                "}))\n"
-                "sys.exit(9)\n",
-                encoding="utf-8",
+            error: dict[str, object] = {
+                "error": {
+                    "code": 3,
+                    "message": "bad\x1b[2Jž",
+                    "name": "INPUT_ERROR",
+                },
+                "source": "public\nsource.eml",
+                "status": "error",
+            }
+            success = macos_integration_support.valid_finder_result(
+                "public-ž\x1b[32m\noutput.text-only.eml"
+            )
+            success["warnings"] = ["transport warning\x1b[33m"]
+            report = macos_integration_support.valid_finder_report(
+                results=[success],
+                errors=[error],
+            )
+            macos_integration_support.write_report_processor(
+                processor,
+                report,
+                status=9,
+                diagnostics="diagnostic ž\x1b[31m\rline",
             )
             home = base / "public-home"
             home.mkdir()
@@ -111,115 +102,97 @@ class FinderReportSafetyTests(unittest.TestCase):
             self.assertEqual(result.returncode, 9, result.stderr)
             self.assertNotIn("\x1b", result.stdout + result.stderr)
             self.assertNotIn("\r", result.stdout + result.stderr)
-            self.assertIn("public-ž\\x1b[32m\\x0aoutput.eml", result.stdout)
+            self.assertIn("Created 1 verified text-only EML file:", result.stdout)
+            self.assertIn(
+                "public-ž\\x1b[32m\\x0aoutput.text-only.eml",
+                result.stdout,
+            )
+            self.assertIn("Discarded body resources: 1", result.stdout)
+            self.assertIn("Removed ordinary attachments: 1", result.stdout)
             self.assertIn("diagnostic ž\\x1b[31m\\x0dline\n", result.stderr)
+            self.assertIn("1 processing warning:", result.stderr)
+            self.assertIn(
+                "public-source.eml: transport warning\\x1b[33m",
+                result.stderr,
+            )
             self.assertIn("public\\x0asource.eml", result.stderr)
             self.assertIn("bad\\x1b[2Jž", result.stderr)
 
-    def test_invalid_report_is_generic_and_changes_success_to_internal_error(
-        self,
-    ) -> None:
+    def test_created_and_skipped_outputs_are_reported_separately(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
-            processor = base / "public-invalid.pyz"
-            processor.write_text("print('{not-json}')\n", encoding="utf-8")
-            home = base / "public-home"
-            home.mkdir()
-
-            result = _run(_environment(home, processor), "public-source.eml")
-
-            self.assertEqual(result.returncode, 70)
-            self.assertIn("report was invalid", result.stderr)
-            self.assertNotIn("Traceback", result.stderr)
-
-    def test_invalid_report_diagnostics_are_sanitized_without_raw_controls(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            processor = base / "public-invalid-diagnostic.pyz"
-            processor.write_text(
-                "import sys\n"
-                "print('public ž\\x1b[2J', file=sys.stderr)\n"
-                "print('{invalid')\n",
-                encoding="utf-8",
+            processor = base / "public-processor.pyz"
+            skipped: dict[str, object] = {
+                "destination": "existing.text-only.eml",
+                "source": "existing.eml",
+                "status": "skipped",
+            }
+            macos_integration_support.write_report_processor(
+                processor,
+                macos_integration_support.valid_finder_report(
+                    results=[macos_integration_support.valid_finder_result()],
+                    skipped=[skipped],
+                ),
             )
             home = base / "public-home"
             home.mkdir()
 
             result = _run(_environment(home, processor), "public-source.eml")
 
-            self.assertEqual(result.returncode, 70)
-            self.assertNotIn("\x1b", result.stderr)
-            self.assertIn("public ž\\x1b[2J\n", result.stderr)
-            self.assertIn("report was invalid", result.stderr)
-
-    def test_empty_report_preserves_processor_failure_status_and_sanitizes_stderr(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            processor = base / "public-empty.pyz"
-            processor.write_text(
-                "import sys\nprint('bad\\x1b[2Jž', file=sys.stderr)\nsys.exit(5)\n",
-                encoding="utf-8",
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Created 1 verified text-only EML file:", result.stdout)
+            self.assertIn(
+                "Skipped 1 existing output without changing or verifying it:",
+                result.stdout,
             )
-            home = base / "public-home"
-            home.mkdir()
+            self.assertNotIn("created or retained", result.stdout.casefold())
 
-            result = _run(_environment(home, processor), "public-source.eml")
-
-            self.assertEqual(result.returncode, 70)
-            self.assertNotIn("\x1b", result.stderr)
-            self.assertIn("bad\\x1b[2Jž\n", result.stderr)
-            self.assertIn("produced no report", result.stderr)
-
-    def test_report_and_processor_status_must_agree(self) -> None:
-        cases = {
-            "errors-with-success": (
-                {
-                    "errors": [
-                        {
-                            "error": {
-                                "code": 3,
-                                "message": "bad",
-                                "name": "INPUT",
-                            },
-                            "source": "public.eml",
-                            "status": "error",
-                        }
-                    ],
-                    "ok": False,
-                    "program": "p",
-                    "results": [],
-                    "skipped": [],
-                    "version": "v",
-                },
-                0,
-            ),
-            "success-with-failure": (
-                {
-                    "errors": [],
-                    "ok": True,
-                    "program": "p",
-                    "results": [],
-                    "skipped": [],
-                    "version": "v",
-                },
-                5,
-            ),
+    def test_invalid_or_empty_reports_become_internal_errors(self) -> None:
+        sources = {
+            "invalid": "print('{not-json}')\n",
+            "empty": "import sys\nprint('bad\\x1b[2Jž', file=sys.stderr)\n",
         }
-        for name, (payload, processor_status) in cases.items():
+        for name, source in sources.items():
             with self.subTest(name=name):
                 with tempfile.TemporaryDirectory() as directory:
                     base = Path(directory)
+                    processor = base / "public-invalid.pyz"
+                    processor.write_text(source, encoding="utf-8")
+                    home = base / "public-home"
+                    home.mkdir()
+
+                    result = _run(
+                        _environment(home, processor),
+                        "public-source.eml",
+                    )
+
+                    self.assertEqual(result.returncode, 70)
+                    self.assertNotIn("\x1b", result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    self.assertTrue(
+                        "report was invalid" in result.stderr
+                        or "produced no report" in result.stderr
+                    )
+
+    def test_report_and_processor_status_must_agree(self) -> None:
+        failure: dict[str, object] = {
+            "error": {"code": 3, "message": "bad", "name": "INPUT_ERROR"},
+            "source": "public.eml",
+            "status": "error",
+        }
+        cases = (
+            (macos_integration_support.valid_finder_report(errors=[failure]), 0),
+            (macos_integration_support.valid_finder_report(), 5),
+        )
+        for payload, processor_status in cases:
+            with self.subTest(processor_status=processor_status):
+                with tempfile.TemporaryDirectory() as directory:
+                    base = Path(directory)
                     processor = base / "public-status-mismatch.pyz"
-                    serialized = json.dumps(payload)
-                    processor.write_text(
-                        "import sys\n"
-                        f"print({serialized!r})\n"
-                        f"sys.exit({processor_status})\n",
-                        encoding="utf-8",
+                    macos_integration_support.write_report_processor(
+                        processor,
+                        payload,
+                        status=processor_status,
                     )
                     home = base / "public-home"
                     home.mkdir()
@@ -233,104 +206,89 @@ class FinderReportSafetyTests(unittest.TestCase):
                     self.assertEqual(result.stdout, "")
                     self.assertIn("report was invalid", result.stderr)
 
-    def test_malformed_item_schema_fails_before_any_result_is_displayed(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            processor = base / "public-malformed.pyz"
-            processor.write_text(
-                "import json\nprint(json.dumps({'ok': True, 'program': 'p', "
-                "'version': 'v', 'results': [{'destination': 'unsafe'}], "
-                "'skipped': [], 'errors': []}))\n",
-                encoding="utf-8",
-            )
-            home = base / "public-home"
-            home.mkdir()
-
-            result = _run(_environment(home, processor), "public-source.eml")
-
-            self.assertEqual(result.returncode, 70)
-            self.assertEqual(result.stdout, "")
-            self.assertIn("report was invalid", result.stderr)
-
-    def test_all_malformed_report_shapes_fail_before_display(self) -> None:
-        valid_error = {
-            "error": {"code": 3, "message": "bad", "name": "INPUT"},
-            "source": "public.eml",
-            "status": "error",
-        }
+    def test_schema_scope_and_every_nested_shape_are_validated_before_display(
+        self,
+    ) -> None:
+        base = macos_integration_support.valid_finder_report(
+            results=[macos_integration_support.valid_finder_result()]
+        )
         cases: dict[str, object] = {
             "outer-list": [],
-            "results-mapping": {
-                "errors": [],
-                "ok": True,
-                "program": "p",
-                "results": {},
-                "skipped": [],
-                "version": "v",
-            },
-            "bad-destination": {
-                "errors": [],
-                "ok": True,
-                "program": "p",
-                "results": [{"destination": 7, "source": "public.eml", "status": "ok"}],
-                "skipped": [],
-                "version": "v",
-            },
-            "unencodable-destination": {
-                "errors": [],
-                "ok": True,
-                "program": "p",
-                "results": [
+            "v1-schema": {**base, "schema_version": 1},
+            "wrong-scope": {**base, "scope": "attachment-preserving"},
+            "wrong-program": {**base, "program": "public-decoy"},
+            "results-mapping": {**base, "results": {}},
+            "wrong-suffix": macos_integration_support.replace_result_field(
+                base,
+                "destination",
+                "public-output.eml",
+            ),
+            "no-selected-body": macos_integration_support.replace_result_field(
+                base,
+                "selected_plain_text_bodies",
+                [],
+            ),
+            "two-selected-bodies": macos_integration_support.replace_result_field(
+                base,
+                "selected_plain_text_bodies",
+                [
                     {
-                        "destination": "public-\ud800.eml",
-                        "source": "public.eml",
-                        "status": "ok",
-                    }
-                ],
-                "skipped": [],
-                "version": "v",
-            },
-            "bad-error": {
-                "errors": [{**valid_error, "error": "invalid"}],
-                "ok": False,
-                "program": "p",
-                "results": [],
-                "skipped": [],
-                "version": "v",
-            },
-            "bool-error-code": {
-                "errors": [
+                        "content_type": "text/plain",
+                        "mime_path": "root",
+                    },
                     {
-                        **valid_error,
-                        "error": {"code": True, "message": "bad", "name": "INPUT"},
-                    }
+                        "content_type": "text/plain",
+                        "mime_path": "2",
+                    },
                 ],
-                "ok": False,
-                "program": "p",
-                "results": [],
-                "skipped": [],
-                "version": "v",
-            },
-            "inconsistent-ok": {
-                "errors": [valid_error],
-                "ok": True,
-                "program": "p",
-                "results": [],
-                "skipped": [],
-                "version": "v",
-            },
+            ),
+            "zero-mime-path": macos_integration_support.replace_record_field(
+                base,
+                "selected_plain_text_bodies",
+                "mime_path",
+                "0.1",
+            ),
+            "empty-content-type": macos_integration_support.replace_record_field(
+                base,
+                "selected_plain_text_bodies",
+                "content_type",
+                "",
+            ),
+            "selected-html": macos_integration_support.replace_record_field(
+                base,
+                "selected_plain_text_bodies",
+                "content_type",
+                "text/html",
+            ),
+            "invalid-reference-path": macos_integration_support.replace_record_field(
+                base,
+                "discarded_body_resources",
+                "referenced_by",
+                ["2.0"],
+            ),
         }
+        cases["bad-destination"] = macos_integration_support.replace_result_field(
+            base, "destination", 7
+        )
+        cases["bad-resource"] = macos_integration_support.replace_result_field(
+            base,
+            "discarded_body_resources",
+            [{"content_type": "image/jpeg", "mime_path": "2.2"}],
+        )
+        extra_result_key = macos_integration_support.replace_result_field(
+            base, "preserved", []
+        )
+        cases["v1-result-key"] = extra_result_key
         for name, payload in cases.items():
             with self.subTest(name=name):
                 with tempfile.TemporaryDirectory() as directory:
-                    base = Path(directory)
-                    processor = base / "public-malformed.pyz"
-                    serialized = json.dumps(payload)
-                    processor.write_text(
-                        f"print({serialized!r})\n",
-                        encoding="utf-8",
+                    path = Path(directory)
+                    processor = path / "public-malformed.pyz"
+                    macos_integration_support.write_report_processor(
+                        processor,
+                        payload,
                     )
-                    home = base / "public-home"
+                    home = path / "public-home"
                     home.mkdir()
 
                     result = _run(
@@ -347,6 +305,7 @@ class FinderReportSafetyTests(unittest.TestCase):
             base = Path(directory)
             processor = base / "public-arguments.pyz"
             argument_log = base / "public-arguments.json"
+            report = json.dumps(macos_integration_support.valid_finder_report())
             processor.write_text(
                 "import json, os, sys\n"
                 "argument_log = open("
@@ -354,9 +313,7 @@ class FinderReportSafetyTests(unittest.TestCase):
                 ")\n"
                 "argument_log.write(json.dumps(sys.argv[1:]))\n"
                 "argument_log.close()\n"
-                "print(json.dumps({'ok': True, "
-                "'program': 'remove-eml-attachments', 'version': '9.8.7', "
-                "'results': [], 'skipped': [], 'errors': []}))\n",
+                f"print({report!r})\n",
                 encoding="utf-8",
             )
             home = base / "public-home"
@@ -387,7 +344,7 @@ class FinderReportSafetyTests(unittest.TestCase):
             base = Path(directory)
             processor = base / "public-mode.pyz"
             processor.write_text(
-                _temporary_mode_processor_source(),
+                macos_integration_support.temporary_mode_processor_source(),
                 encoding="utf-8",
             )
             home = base / "public-home"
