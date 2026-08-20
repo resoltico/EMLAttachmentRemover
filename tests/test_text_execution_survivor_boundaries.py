@@ -11,6 +11,7 @@ from email.message import EmailMessage
 import pytest
 
 from eml_attachment_remover import mime_text_execution, mime_text_only
+from eml_attachment_remover.mime_text_plan import TextProjection
 from eml_attachment_remover.models import CliError, ExitCode, SelectedPlainTextBody
 
 
@@ -65,15 +66,23 @@ def test_binding_ignores_nonplain_leaves_and_has_an_exact_failure() -> None:
         mime_text_execution.canonical_text_payload(plain)
     ).hexdigest()
     plan = mime_text_only.TextOnlyPlan(
-        selected_body=SelectedPlainTextBody((0,), "text/plain"),
-        selected_payload_sha256=digest,
+        projection=TextProjection(
+            selected_body=SelectedPlainTextBody((0,), "text/plain"),
+            selected_payload_sha256=digest,
+        ),
     )
 
     mime_text_execution._verify_plan_binding(message, plan)
     with pytest.raises(CliError) as raised:
         mime_text_execution._verify_plan_binding(
             message,
-            replace(plan, selected_payload_sha256="0" * 64),
+            replace(
+                plan,
+                projection=replace(
+                    plan.projection,
+                    selected_payload_sha256="0" * 64,
+                ),
+            ),
         )
 
     assert raised.value.code is ExitCode.VERIFICATION_ERROR

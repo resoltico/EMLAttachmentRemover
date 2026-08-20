@@ -77,8 +77,8 @@ def test_current_release_notes_are_exactly_version_bound_and_complete() -> None:
     lines = notes.splitlines()
     assert lines[0] == f"# EML Attachment Remover {version}"
     assert notes.endswith("\n")
-    assert "intentional clean break" in notes
-    assert "There is no v1 compatibility mode" in notes
+    assert "readable text-only rendering" in notes
+    assert "original message unchanged" in notes
     for expected in (
         "remove-eml-attachments.pyz",
         f"eml_attachment_remover-{version}-cp314-none-any.whl",
@@ -95,7 +95,7 @@ def test_current_release_notes_are_exactly_version_bound_and_complete() -> None:
     ):
         assert expected in notes
     compare_url = (
-        f"https://github.com/resoltico/EMLAttachmentRemover/compare/v1.0.0...{tag}"
+        "https://github.com/resoltico/EMLAttachmentRemover/compare/v2.0.0...v2.0.1"
     )
     assert notes.count(compare_url) == 1
     assert re.search(r"(?m)^## Verify the download$", notes) is not None

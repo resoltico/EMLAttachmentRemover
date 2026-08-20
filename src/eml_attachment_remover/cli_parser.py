@@ -9,16 +9,16 @@ from ._version import PROGRAM_VERSION
 from .models import PROGRAM_NAME, ArgumentParser, CliError, ExitCode, OutputFormat
 
 APPLICATION_DESCRIPTION: Final = (
-    "Create verified text-only EML working copies by retaining a safe plain-text "
-    "body and discarding HTML alternatives, embedded body resources, and ordinary "
-    "attachments."
+    "Create verified text-only EML working copies from a safe plain-text body. "
+    "An equivalent local HTML alternative may restore readable layout; its embedded "
+    "resources and ordinary attachments are discarded."
 )
 NO_ARGUMENTS_LINES: Final = (
     "EML Attachment Remover",
     "",
     "Create verified text-only EML working copies.",
-    "Retain a safe plain-text body; discard HTML alternatives, embedded body",
-    "resources, and ordinary attachments. The original EML is never changed.",
+    "Retain a safe plain-text body. An equivalent local HTML alternative may",
+    "restore readable layout; resources and ordinary attachments are discarded.",
     "",
     "Error: no source files were provided.",
     "",

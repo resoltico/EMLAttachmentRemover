@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
-import hashlib
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
+from .html_text import equivalent_html_layout_source
 from .mime_body import ATTACHMENT_DISPOSITION, INLINE_DISPOSITION
-from .mime_locations import (
-    CONTENT_LOCATION_HEADER,
-    _content_location_base,
+from .mime_locations import CONTENT_LOCATION_HEADER, _content_location_base
+from .mime_references import CONTENT_ID_HEADER, _is_email_message_list
+from .mime_text_plan import TextOnlyPlan, transformation_unavailable
+from .mime_text_plan import (
+    extend_plan as _extend_plan,
 )
-from .mime_references import (
-    CONTENT_ID_HEADER,
-    _is_email_message_list,
+from .mime_text_plan import (
+    selected_plain as _selected_plain,
 )
-from .mime_text_execution import canonical_text_payload
+from .mime_text_plan import (
+    sorted_plan as _sorted_plan,
+)
+from .mime_text_plan import (
+    with_html_layout as _with_html_layout,
+)
 from .mime_text_resources import (
     PROTECTED_MIME_TYPES,
     ReferenceSource,
@@ -43,108 +48,51 @@ from .mime_text_selection import (
     related_root_index as _related_root_index,
 )
 from .models import (
-    CliError,
     DiscardedBodyRepresentation,
-    DiscardedBodyResource,
-    ExitCode,
     MimePath,
     RemovedPart,
-    SelectedPlainTextBody,
-    _format_mime_path,
 )
 
 if TYPE_CHECKING:
     from email.message import EmailMessage
 
 
-@dataclass(frozen=True, slots=True)
-class TextOnlyPlan:
-    """Store the complete immutable transformation plan at source-tree paths."""
+__all__ = ["TextOnlyPlan"]
 
-    selected_body: SelectedPlainTextBody
-    selected_payload_sha256: str
-    removed_attachments: tuple[RemovedPart, ...] = ()
-    discarded_representations: tuple[DiscardedBodyRepresentation, ...] = ()
-    discarded_resources: tuple[DiscardedBodyResource, ...] = ()
-    discard_paths: tuple[MimePath, ...] = ()
-
-    @property
-    def modified(self) -> bool:
-        """Whether execution must rewrite the root message.
-
-        Returns:
-            ``True`` for body promotion or any planned discard.
-
-        """
-        return bool(self.selected_body.path or self.discard_paths)
-
-    @property
-    def changed_paths(self) -> tuple[MimePath, ...]:
-        """Every source path proving that the root message changed.
-
-        Returns:
-            Discard roots plus the promoted body path when it was nested.
-
-        """
-        if not self.selected_body.path:
-            return self.discard_paths
-        return (*self.discard_paths, self.selected_body.path)
+_transformation_unavailable = transformation_unavailable
 
 
-def _transformation_unavailable(path: MimePath, detail: str) -> CliError:
-    """Return the stable fail-closed text-only transformation error.
+def _raise_unavailable(path: MimePath, detail: str) -> NoReturn:
+    """Raise one stable fail-closed text-only transformation error.
 
-    Returns:
-        An expected exit-code-six error naming the unsafe MIME path.
+    Raises:
+        transformation_unavailable: Always, with an exit-code-six diagnostic.
 
     """
-    return CliError(
-        ExitCode.TRANSFORMATION_UNAVAILABLE,
-        "cannot produce a text-only EML: "
-        f"{detail} at MIME path {_format_mime_path(path)}",
-    )
+    raise transformation_unavailable(path, detail)
 
 
-def _selected_plain(part: EmailMessage, path: MimePath) -> TextOnlyPlan:
-    """Bind one selected plain-text leaf to its original decoded payload.
+def html_representation_text(part: EmailMessage) -> str | None:
+    """Return decoded HTML from one direct or related body representation.
 
     Returns:
-        A plan containing its public identity and private SHA-256 precondition.
+        Text only when the representation resolves to one safe HTML body.
 
     """
-    return TextOnlyPlan(
-        selected_body=SelectedPlainTextBody(path, part.get_content_type()),
-        selected_payload_sha256=hashlib.sha256(
-            canonical_text_payload(part),
-        ).hexdigest(),
-    )
-
-
-def _extend_plan(
-    plan: TextOnlyPlan,
-    *,
-    attachments: tuple[RemovedPart, ...] = (),
-    representations: tuple[DiscardedBodyRepresentation, ...] = (),
-    resources: tuple[DiscardedBodyResource, ...] = (),
-    discard_paths: tuple[MimePath, ...] = (),
-) -> TextOnlyPlan:
-    """Return a plan extended with complete immutable discard actions.
-
-    Returns:
-        A new plan preserving every action and audit category.
-
-    """
-    return TextOnlyPlan(
-        selected_body=plan.selected_body,
-        selected_payload_sha256=plan.selected_payload_sha256,
-        removed_attachments=(*plan.removed_attachments, *attachments),
-        discarded_representations=(
-            *plan.discarded_representations,
-            *representations,
-        ),
-        discarded_resources=(*plan.discarded_resources, *resources),
-        discard_paths=(*plan.discard_paths, *discard_paths),
-    )
+    if part.get_content_type() == "text/html" and _is_safe_body_container(part):
+        text = part.get_content()
+        return text if isinstance(text, str) else None
+    if part.get_content_type() != "multipart/related" or not _is_safe_body_container(
+        part,
+    ):
+        return None
+    payload = part.get_payload()
+    if not _is_email_message_list(payload):
+        return None
+    root_index = _related_root_index(part, payload)
+    if root_index is None:
+        return None
+    return html_representation_text(payload[root_index])
 
 
 def _plan_alternative(
@@ -157,14 +105,10 @@ def _plan_alternative(
     Returns:
         The complete plan for this alternative aggregate.
 
-    Raises:
-        _transformation_unavailable: If there is not exactly one eligible plain
-            representation.
-
     """
     payload = part.get_payload()
     if not _is_email_message_list(payload):
-        raise _transformation_unavailable(
+        _raise_unavailable(
             path,
             "multipart/alternative has no traversable representations",
         )
@@ -172,14 +116,32 @@ def _plan_alternative(
         index for index, child in enumerate(payload) if _is_resource_free_plain(child)
     ]
     if len(candidates) != 1:
-        raise _transformation_unavailable(
+        _raise_unavailable(
             path,
             "multipart/alternative does not contain exactly one resource-free "
             "text/plain representation",
         )
     selected_index = candidates[0]
-    selected_path = (*path, selected_index)
-    plan = _selected_plain(payload[selected_index], selected_path)
+    plan = _selected_plain(payload[selected_index], (*path, selected_index))
+    plain_text = payload[selected_index].get_content()
+    html_bodies = tuple(
+        ((*path, index), text)
+        for index, part in enumerate(payload)
+        if index != selected_index
+        and (text := html_representation_text(part)) is not None
+    )
+    layout = (
+        equivalent_html_layout_source(plain_text, html_bodies)
+        if isinstance(plain_text, str)
+        else None
+    )
+    if layout is not None:
+        layout_path, rendered_text = layout
+        plan = _with_html_layout(
+            plan,
+            source=layout_path,
+            rendered_text=rendered_text,
+        )
     child_base = _content_location_base(part, inherited_base)
     for index, child in enumerate(payload):
         if index == selected_index:
@@ -216,20 +178,16 @@ def _plan_related(
     Returns:
         The body plan extended with every related sibling resource.
 
-    Raises:
-        _transformation_unavailable: If the related aggregate has no resolvable
-            root.
-
     """
     payload = part.get_payload()
     if not _is_email_message_list(payload):
-        raise _transformation_unavailable(
+        _raise_unavailable(
             path,
             "multipart/related has no traversable root entity",
         )
     root_index = _related_root_index(part, payload)
     if root_index is None:
-        raise _transformation_unavailable(
+        _raise_unavailable(
             path,
             "multipart/related does not resolve one unique root entity",
         )
@@ -239,7 +197,7 @@ def _plan_related(
     if declared_type is not None and str(declared_type).casefold() != (
         root.get_content_type().casefold()
     ):
-        raise _transformation_unavailable(
+        _raise_unavailable(
             path,
             "multipart/related type does not match its resolved root entity",
         )
@@ -277,9 +235,6 @@ def _plan_mixed_sibling(
 
     Returns:
         The plan extended with one atomic sibling discard.
-
-    Raises:
-        _transformation_unavailable: If the sibling's role is ambiguous.
 
     """
     disposition = child.get_content_disposition()
@@ -331,7 +286,7 @@ def _plan_mixed_sibling(
             ),
             discard_paths=(path,),
         )
-    raise _transformation_unavailable(
+    _raise_unavailable(
         path,
         f"{child.get_content_type()} has an ambiguous non-body role",
     )
@@ -347,14 +302,10 @@ def _plan_mixed(
     Returns:
         A whole-container plan with no unclassified retained sibling.
 
-    Raises:
-        _transformation_unavailable: If a unique body cannot be selected or a
-            sibling role is ambiguous.
-
     """
     payload = part.get_payload()
     if not _is_email_message_list(payload):
-        raise _transformation_unavailable(
+        _raise_unavailable(
             path,
             "multipart/mixed has no traversable body entity",
         )
@@ -362,7 +313,7 @@ def _plan_mixed(
         index for index, child in enumerate(payload) if _can_select_plain(child)
     ]
     if len(candidates) != 1:
-        raise _transformation_unavailable(
+        _raise_unavailable(
             path,
             "multipart/mixed does not contain one unique plain-text body",
         )
@@ -396,16 +347,12 @@ def _plan_body(
     Returns:
         One immutable whole-transformation plan.
 
-    Raises:
-        _transformation_unavailable: If the body cannot reduce safely to plain
-            text.
-
     """
     if _is_resource_free_plain(part):
         return _selected_plain(part, path)
     content_type = part.get_content_type()
     if not _is_safe_body_container(part):
-        raise _transformation_unavailable(
+        _raise_unavailable(
             path,
             f"{content_type} body container has file-like metadata",
         )
@@ -416,7 +363,7 @@ def _plan_body(
     if content_type == "multipart/mixed":
         return _plan_mixed(part, path, inherited_base)
     protected = "protected " if content_type in PROTECTED_MIME_TYPES else ""
-    raise _transformation_unavailable(
+    _raise_unavailable(
         path,
         f"{protected}MIME entity {content_type!r} is not a safe plain-text body",
     )
@@ -429,18 +376,4 @@ def _plan_text_only(message: EmailMessage) -> TextOnlyPlan:
         A source-path-sorted immutable plan covering the entire transformation.
 
     """
-    plan = _plan_body(message, (), None)
-    return TextOnlyPlan(
-        selected_body=plan.selected_body,
-        selected_payload_sha256=plan.selected_payload_sha256,
-        removed_attachments=tuple(
-            sorted(plan.removed_attachments, key=lambda item: item.path),
-        ),
-        discarded_representations=tuple(
-            sorted(plan.discarded_representations, key=lambda item: item.path),
-        ),
-        discarded_resources=tuple(
-            sorted(plan.discarded_resources, key=lambda item: item.path),
-        ),
-        discard_paths=tuple(sorted(plan.discard_paths)),
-    )
+    return _sorted_plan(_plan_body(message, (), None))
