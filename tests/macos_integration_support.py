@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast
 
+from eml_attachment_remover import PROGRAM_VERSION
 from tests.test_support import SUBPROCESS_TIMEOUT_SECONDS, subprocess_environment
 
 if TYPE_CHECKING:
@@ -91,7 +92,7 @@ def valid_finder_report(
         "schema_version": 2,
         "scope": "text-only",
         "skipped": [] if skipped is None else skipped,
-        "version": "2.0.0",
+        "version": PROGRAM_VERSION,
     }
 
 

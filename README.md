@@ -1,8 +1,10 @@
 # EML Attachment Remover
 
-`remove-eml-attachments` creates a verified text-only EML working copy. It selects a
-safe plain-text body, discards unselected HTML representations together with their
-embedded resources, and removes ordinary file attachments elsewhere.
+`remove-eml-attachments` creates a verified text-only EML working copy. It binds the
+sender's safe plain-text body as the content source and, only when an HTML alternative
+has exactly the same non-whitespace text, uses that local HTML structure to restore
+readable paragraphs and lists. It discards the HTML representation with its embedded
+resources and removes ordinary file attachments elsewhere.
 
 It uses Python's standard-library MIME parser rather than regular expressions.
 The selection is based on MIME structure and dependency references, not filenames,
@@ -19,9 +21,12 @@ fingerprints before an output is published.
 - CPython 3.14.x baseline; no third-party runtime dependencies.
 - One file or a whole Finder selection can be processed in one command.
 - Outputs default to `SOURCE.text-only.eml` beside each source.
-- Exactly one safe plain-text body representation is selected for the derived
-  message.
-- Whenever transformation is required, that representation is promoted to a
+- Exactly one safe plain-text body representation anchors the source-content
+  precondition for the derived message.
+- When one unselected HTML representation has identical non-whitespace text, its
+  local paragraph, list, table, and quote structure is projected into canonical plain
+  text. Otherwise the selected plain body is retained as-is.
+- Whenever transformation is required, the verified text is promoted to a
   wrapper-free, non-multipart root `text/plain` entity for mail-client interoperability.
   An already-canonical root plain message is copied byte-for-byte.
 - Unselected HTML representations are discarded atomically with their complete
@@ -35,8 +40,9 @@ fingerprints before an output is published.
 - The original EML is never overwritten, directly or through a hard link or symbolic
   link.
 - The selected decoded text is bound to its source by SHA-256 after canonical newline
-  normalization. Output is written through a temporary file, flushed, reparsed, and
-  required to match the retained root's leaf fingerprint and structure; a second
+  normalization. Any eligible HTML layout projection is separately bound as the exact
+  expected output text. Output is written through a temporary file, flushed, reparsed,
+  and required to match the retained root's leaf fingerprint and structure; a second
   text-only planning pass must be a complete no-op, proving the stored message is
   canonical root `text/plain`, before atomic placement.
 - Existing DKIM and ARC transport signatures are left as historical headers, but a
@@ -217,18 +223,21 @@ in Finder. Detailed instructions and optional settings are in
 A successful modified output is one non-multipart root `text/plain` entity, without
 the source's `multipart/mixed`, `multipart/alternative`, or `multipart/related`
 wrappers. This canonical shape is intentionally suitable for mail clients and file
-previewers such as Apple Mail and Quick Look. The selected content-transfer encoding,
-encoded payload, and applicable `Content-*` representation headers are promoted to
-the root. Safe message and envelope headers remain in their original order; invalidated
-size/attachment markers and wrapper preamble or epilogue text are removed. A source
-that is already canonical root plain text requires no rewrite and is copied
-byte-for-byte.
+previewers such as Apple Mail and Quick Look. When no equivalent HTML formatting is
+available, the selected content-transfer encoding, encoded payload, and applicable
+`Content-*` representation headers are promoted to the root. An equivalent HTML layout
+projection instead becomes canonical UTF-8 plain text. Safe message and envelope
+headers remain in their original order; invalidated size/attachment markers and wrapper
+preamble or epilogue text are removed. A source that is already canonical root plain
+text requires no rewrite and is copied byte-for-byte.
 
 The selected decoded content remains exact after canonical MIME newline normalization
-(`CRLF`, `CR`, and `LF` become `LF`) and is bound by SHA-256 during verification. The
-output contains no unselected HTML body, dependent embedded body resource, ordinary
-attachment, or redundant MIME wrapper. Reported MIME paths continue to identify the
-source tree, before promotion; they are audit locations, not the derived root path.
+(`CRLF`, `CR`, and `LF` become `LF`) and is bound by SHA-256 during verification. An
+eligible HTML projection must have identical non-whitespace text and is bound as the
+expected stored payload. The output contains no unselected HTML body, dependent embedded
+body resource, ordinary attachment, or redundant MIME wrapper. Reported MIME paths
+continue to identify the source tree, before promotion; they are audit locations, not
+the derived root path.
 
 An image uploaded through an email editor can be declared `inline`, placed below
 `multipart/related`, and referenced from HTML with `cid:` even when a person thinks
@@ -237,10 +246,11 @@ image from a signature logo. When the message also supplies a safe plain-text
 alternative, the application therefore discards the whole unselected HTML
 representation and its resource closure instead of guessing image-by-image.
 
-The application does not convert arbitrary HTML to text, fetch remote content,
-perform OCR, or inspect an image semantically. If the source offers no safe
-resource-free plain-text representation, processing fails closed and publishes
-nothing.
+The application never trusts arbitrary HTML as a content source. It uses HTML only as
+a local formatting projection after proving exact non-whitespace equality with the
+safe plain-text source; it never fetches remote content, performs OCR, or inspects an
+image semantically. If the source offers no safe resource-free plain-text
+representation, processing fails closed and publishes nothing.
 
 ## Exit codes
 

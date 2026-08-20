@@ -22,8 +22,8 @@ EXPECTED_NO_ARGUMENTS = """\
 EML Attachment Remover
 
 Create verified text-only EML working copies.
-Retain a safe plain-text body; discard HTML alternatives, embedded body
-resources, and ordinary attachments. The original EML is never changed.
+Retain a safe plain-text body. An equivalent local HTML alternative may
+restore readable layout; resources and ordinary attachments are discarded.
 
 Error: no source files were provided.
 

@@ -22,9 +22,9 @@ usage: remove-eml-attachments [-h] [-o OUTPUT | --output-dir OUTPUT_DIR] [-f |
                               [--version]
                               source [source ...]
 
-Create verified text-only EML working copies by retaining a safe plain-text
-body and discarding HTML alternatives, embedded body resources, and ordinary
-attachments.
+Create verified text-only EML working copies from a safe plain-text body. An
+equivalent local HTML alternative may restore readable layout; its embedded
+resources and ordinary attachments are discarded.
 
 positional arguments:
   source                one or more source EML files

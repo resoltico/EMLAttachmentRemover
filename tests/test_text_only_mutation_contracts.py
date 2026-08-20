@@ -9,6 +9,7 @@ from unittest.mock import call, patch
 import pytest
 
 from eml_attachment_remover import mime_text_only
+from eml_attachment_remover.mime_text_plan import TextProjection
 from eml_attachment_remover.mime_text_resources import ResourceScan, RootInclusion
 from eml_attachment_remover.models import (
     CliError,
@@ -81,8 +82,10 @@ def _seed_plan(path: tuple[int, ...] = (9,)) -> mime_text_only.TextOnlyPlan:
 
     """
     return mime_text_only.TextOnlyPlan(
-        selected_body=SelectedPlainTextBody(path, "text/plain"),
-        selected_payload_sha256="0" * 64,
+        projection=TextProjection(
+            selected_body=SelectedPlainTextBody(path, "text/plain"),
+            selected_payload_sha256="0" * 64,
+        ),
     )
 
 

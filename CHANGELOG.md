@@ -4,6 +4,15 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-08-20
+
+### Fixed
+
+- Equivalent plain/HTML alternatives now retain readable paragraph, list, and
+  quotation boundaries in the canonical text-only output. The selected plain
+  body remains the source-content precondition; HTML is used only as a local
+  formatting projection after exact non-whitespace text equality is proven.
+
 ## [2.0.0] - 2026-08-17
 
 ### Changed
@@ -28,6 +37,7 @@ Notable changes to this project are documented in this file. The format is based
 
 - First public release.
 
-[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/resoltico/EMLAttachmentRemover/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v1.0.0

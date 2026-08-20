@@ -26,15 +26,18 @@ contract.
 The sole processing scope is `text-only`. A successful plan selects a safe
 resource-free `text/plain` body, discards every unselected alternative body as one
 atomic subtree with its complete dependent-resource closure, and removes ordinary
-attachments elsewhere. Reported MIME paths are bound to the pre-transformation
-source tree. The selected decoded text remains identical after canonical MIME newline
+attachments elsewhere. Reported MIME paths are bound to the pre-transformation source
+tree. The selected decoded text remains identical after canonical MIME newline
 normalization (`CRLF`, `CR`, and `LF` become `LF`) and is bound to the source by
-SHA-256. If the selected body is nested, execution promotes its content-transfer
-encoding, encoded payload, and applicable `Content-*` representation headers into a
-non-multipart root `text/plain` entity. It retains ordered root message/envelope
-headers, removes invalidated size/attachment markers, clears wrapper preamble and
-epilogue text, and discards the wrapper tree. A safe root plain message with no action
-is instead copied byte-for-byte.
+SHA-256. A sole unselected HTML representation may supply only local layout when its
+visible projection has exactly the same non-whitespace text; that projection is bound
+as the expected output payload. If the selected body is nested, execution promotes the
+verified text to a non-multipart root `text/plain` entity. Plain-only promotion retains
+the selected content-transfer encoding, encoded payload, and applicable `Content-*`
+headers; projected text uses canonical UTF-8 plain text. Ordered root message/envelope
+headers remain, while invalidated size/attachment markers and wrapper preamble and
+epilogue text are removed. A safe root plain message with no action is copied
+byte-for-byte.
 
 After the immutable source-path action plan executes, the temporary output is reparsed
 and must match the retained root's leaf fingerprint and structure. A second text-only
@@ -46,14 +49,15 @@ Discarded subtrees are verified by source-path removal and that second-pass inva
 not by requiring their payload hashes to be globally absent: selected and discarded
 parts may legitimately contain identical bytes.
 
-The planner fails closed when no safe text-only representation can be proven. It
-does not convert arbitrary HTML, fetch content, perform OCR, classify images, or use
-sender, filename, size, or media-content heuristics. Signed, encrypted, and opaque
-security content needed by the selected body, or with an ambiguous structural role,
-cannot satisfy the invariant and produces no output. An explicit attachment or
-unselected protected subtree can be discarded atomically without semantic
-interpretation or partial rewriting, after global MIME and transfer-encoding
-validation.
+The planner fails closed when no safe text-only representation can be proven. It never
+uses arbitrary HTML as a content source: a local formatting projection is permitted
+only after exact non-whitespace equality with the selected plain body. It does not
+fetch content, perform OCR, classify images, or use sender, filename, size, or
+media-content heuristics. Signed, encrypted, and opaque security content needed by the
+selected body, or with an ambiguous structural role, cannot satisfy the invariant and
+produces no output. An explicit attachment or unselected protected subtree can be
+discarded atomically without semantic interpretation or partial rewriting, after
+global MIME and transfer-encoding validation.
 
 Machine-readable command reports use exact schema version `2` and scope
 `text-only`. Successful result objects separately report selected plain-text bodies,
