@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import pytest
@@ -20,12 +21,23 @@ from eml_attachment_remover.native_paths import (
 
 def test_default_destination_replaces_only_a_terminal_eml_suffix() -> None:
     """Derived names retain their requested parent and use the v3 suffix."""
-    assert default_destination("folder/Message.EML") == "folder/Message.mime-pruned.eml"
-    assert default_destination("folder/message") == "folder/message.mime-pruned.eml"
+    separator = "\\" if os.name == "nt" else "/"
+    assert default_destination("folder/Message.EML") == (
+        f"folder{separator}Message.mime-pruned.eml"
+    )
+    assert default_destination("folder/message") == (
+        f"folder{separator}message.mime-pruned.eml"
+    )
 
 
 def test_source_binding_keeps_kernel_symlink_dotdot_semantics(tmp_path: Path) -> None:
     """A literal intermediate-link/.. expression opens the kernel-selected file."""
+    if os.name == "nt":
+        source = tmp_path / "source.eml"
+        source.write_bytes(b"ordinary-windows-source")
+        snapshot = read_source(str(source))
+        assert snapshot.raw == b"ordinary-windows-source"
+        return
     left = tmp_path / "left"
     target = tmp_path / "target"
     nested = target / "nested"

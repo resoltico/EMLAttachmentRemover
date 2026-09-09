@@ -299,7 +299,9 @@ def test_signal_deferral_and_parent_binding_fail_closed(
         masks.append(operation)
         return set()
 
-    monkeypatch.setattr(signal, "pthread_sigmask", mask)
+    monkeypatch.setattr(signal, "pthread_sigmask", mask, raising=False)
+    monkeypatch.setitem(signal.__dict__, "SIG_BLOCK", 1)
+    monkeypatch.setitem(signal.__dict__, "SIG_SETMASK", 2)
     with staged_output._defer_signals():  # ruff: ignore[private-member-access] - direct signal-shield contract.
         pass
     monkeypatch.delattr(signal, "SIGHUP")
@@ -433,7 +435,8 @@ def test_deferred_interrupt_after_publication_is_not_created(
             raise KeyboardInterrupt
         return set()
 
-    monkeypatch.setattr(signal, "pthread_sigmask", mask)
+    monkeypatch.setattr(signal, "pthread_sigmask", mask, raising=False)
+    monkeypatch.setitem(signal.__dict__, "SIG_SETMASK", 2)
     with pytest.raises(PublishedWithError) as raised:
         publish(bind_destination(str(destination)), b"shielded")
     assert isinstance(raised.value.cause, KeyboardInterrupt)

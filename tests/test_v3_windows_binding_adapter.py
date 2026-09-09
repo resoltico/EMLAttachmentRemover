@@ -192,7 +192,9 @@ def test_windows_binding_reads_and_publishes_through_fake_handles(
 def test_windows_binding_rejects_missing_or_reparse_destinations(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
-    descriptor = os.open(tmp_path, os.O_RDONLY)
+    source = tmp_path / "source.eml"
+    source.write_bytes(b"body")
+    descriptor = os.open(source, os.O_RDONLY)
     api = BindingApi(descriptor, 0, reparse=True)
     _use_api(monkeypatch, api)
     directory = native_windows_binding.open_bound_destination(_destination())
@@ -245,7 +247,9 @@ def test_windows_binding_exercises_expected_failure_and_stability_edges(
 def test_windows_binding_rejects_nonregular_source_and_existing_output(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
-    descriptor = os.open(tmp_path, os.O_RDONLY)
+    source = tmp_path / "source.eml"
+    source.write_bytes(b"body")
+    descriptor = os.open(source, os.O_RDONLY)
     api = BindingApi(descriptor, 0, directory_child=True)
     _use_api(monkeypatch, api)
     with pytest.raises(AppError) as source_error:
