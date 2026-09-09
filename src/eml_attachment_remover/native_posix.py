@@ -22,7 +22,7 @@ from .native_values import MAX_RAW_BYTES, path_value
 _CWD_FLAGS: Final = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
 )
-_START_CWD_FD: Final = os.open(b".", _CWD_FLAGS)
+_START_CWD_FD: Final = os.open(b".", _CWD_FLAGS) if os.name != "nt" else -1
 
 
 def _identity(metadata: os.stat_result) -> FileIdentity:
