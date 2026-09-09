@@ -173,11 +173,11 @@ def _close_directory(directory: BoundDirectoryHandle) -> BaseException | None:
     return None
 
 
-def _remaining_after_write(remaining: memoryview, written: int) -> memoryview:
-    """Return the unwritten candidate bytes after one proven-progress native write."""  # ruff: ignore[docstring-missing-returns,docstring-missing-exception] - internal slice contract.
-    if not 0 < written <= len(remaining):
+def _advanced_write_position(position: int, written: int, size: int) -> int:
+    """Return the exact next offset after one bounded native write."""  # ruff: ignore[docstring-missing-returns,docstring-missing-exception] - internal progress transition.
+    if not 0 < written <= size - position:
         raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
-    return remaining[written:]
+    return position + written
 
 
 def _verify_staged(state: _PublicationState) -> None:
@@ -191,13 +191,14 @@ def _verify_staged(state: _PublicationState) -> None:
     parent = state.parent
     if stage is None or parent is None:
         raise AppError(ExitCode.INTERNAL_ERROR, "staging file was not created")
-    remaining = memoryview(state.candidate)
-    while remaining:
-        previous_length = len(remaining)
-        written = os.write(stage.descriptor, remaining)
-        remaining = _remaining_after_write(remaining, written)
-        if len(remaining) != previous_length - written:
-            raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
+    position = 0
+    for _attempt in range(len(state.candidate) + 1):
+        if position == len(state.candidate):
+            break
+        written = os.write(stage.descriptor, state.candidate[position:])
+        position = _advanced_write_position(position, written, len(state.candidate))
+    else:
+        raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
     os.fsync(stage.descriptor)
     if not parent.windows:
         os.fchmod(stage.descriptor, 0o600)

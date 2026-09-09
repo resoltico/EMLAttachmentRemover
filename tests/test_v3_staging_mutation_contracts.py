@@ -50,10 +50,17 @@ def test_staged_write_rejects_nonprogress_and_impossible_progress(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A native write result must consume a nonempty proper slice of the candidate."""
-    assert bytes(staged_output._remaining_after_write(memoryview(b"two"), 1)) == b"wo"  # ruff: ignore[private-member-access] - exact remaining-candidate slice.
-    for reported in (-1, 0, 4):
+    assert (
+        staged_output._advanced_write_position(  # ruff: ignore[private-member-access] - exact write offset.
+            0, 1, 2
+        )
+        == 1
+    )
+    for reported in (-1, 0, 3):
         with pytest.raises(AppError) as captured:
-            staged_output._remaining_after_write(memoryview(b"two"), reported)  # ruff: ignore[private-member-access] - direct native-write progress validation.
+            staged_output._advanced_write_position(  # ruff: ignore[private-member-access] - direct native-write progress validation.
+                0, reported, 2
+            )
         assert captured.value == AppError(
             ExitCode.WRITE_ERROR, "short write while staging candidate"
         )
@@ -69,13 +76,15 @@ def test_staged_write_rejects_nonprogress_and_impossible_progress(
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - owned stage cleanup.
 
 
-def test_staged_write_rejects_a_nonadvancing_helper_result(
+def test_staged_write_rejects_a_nonadvancing_position_transition(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A helper result must prove that each accepted native write consumed bytes."""
+    """A bounded write loop fails closed when its advancement transition regresses."""
     state = _state(tmp_path, b"two")
     monkeypatch.setattr(
-        staged_output, "_remaining_after_write", lambda remaining, _written: remaining
+        staged_output,
+        "_advanced_write_position",
+        lambda position, _written, _size: position,
     )
     with pytest.raises(AppError) as captured:
         staged_output._verify_staged(state)  # ruff: ignore[private-member-access] - defensive helper-progress invariant.
