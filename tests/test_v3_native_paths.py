@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from base64 import b64decode
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
@@ -12,7 +13,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from eml_attachment_remover import native_values
-from eml_attachment_remover.domain import AppError
+from eml_attachment_remover.domain import AppError, ExitCode
 from eml_attachment_remover.native_paths import (
     default_destination,
     read_source,
@@ -116,6 +117,33 @@ def test_native_value_paths_cover_posix_and_handle_backend_boundaries(
     monkeypatch.setitem(native_values.__dict__, "WindowsApi", MissingApi)
     with pytest.raises(AppError):
         native_values.require_native_backend()
+
+
+def test_path_value_and_native_length_limits_are_exact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Require lossless native evidence and exact inclusive path budgets."""
+    value = native_values.path_value("odd\nπ")
+    assert value.native_base64 is not None
+    assert b64decode(value.native_base64) == os.fsencode("odd\nπ")
+    assert value.display == "odd\\u000aπ"
+    with monkeypatch.context() as context:
+        context.setattr(native_values, "MAX_PATH_BYTES", 4)
+        native_values._validate_posix("abcd")  # ruff: ignore[private-member-access] - exact POSIX byte ceiling.
+        with pytest.raises(AppError) as captured:
+            native_values._validate_posix("abcde")  # ruff: ignore[private-member-access] - over-limit POSIX byte ceiling.
+        assert captured.value == AppError(
+            ExitCode.INPUT_ERROR, "path exceeds the 32 KiB native-path limit"
+        )
+    with monkeypatch.context() as context:
+        context.setattr(native_values.__dict__["os"], "name", "nt")
+        context.setattr(native_values, "MAX_PATH_BYTES", 8)
+        windows = native_values.path_value("C:\\x")
+        assert windows.native_utf16le_base64 is not None
+        assert b64decode(windows.native_utf16le_base64).decode("utf-16-le") == "C:\\x"
+        native_values.validate_windows_argument("C:\\x")
+        with pytest.raises(AppError):
+            native_values.validate_windows_argument("C:\\xy")
 
 
 def test_native_value_validation_covers_platform_specific_boundary_forms(
