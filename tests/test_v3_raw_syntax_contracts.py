@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from eml_attachment_remover import mime_headers, mime_identifiers, mime_validation
-from eml_attachment_remover.domain import AppError
+from eml_attachment_remover.domain import AppError, ExitCode
 from eml_attachment_remover.mime_headers import Header
 
 
@@ -38,6 +38,20 @@ def test_header_parser_preserves_mbox_and_folded_fields(
         context.setattr(mime_headers, "MAX_HEADERS", 0)
         with pytest.raises(AppError):
             mime_headers.parse_headers(b"Subject: one\r\n", 0, 14)
+
+
+def test_header_parser_rejects_a_nonadvancing_wire_cursor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail closed rather than spin when a mutated wire cursor regresses."""
+    monkeypatch.setattr(
+        mime_headers, "line_end", lambda _raw, position, _end: position
+    )
+    with pytest.raises(AppError) as captured:
+        mime_headers.parse_headers(b"Subject: one\r\n", 0, 14)
+    assert captured.value == AppError(
+        ExitCode.PARSE_ERROR, "MIME header cursor did not advance"
+    )
     with monkeypatch.context() as context:
         context.setattr(mime_headers, "MAX_HEADER_BYTES", 0)
         with pytest.raises(AppError):
