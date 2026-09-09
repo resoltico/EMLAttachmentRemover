@@ -61,6 +61,23 @@ def test_parser_usage_and_postparse_safety_combinations_are_typed() -> None:
     validate_arguments(parser.parse_args(["one.eml"]))
 
 
+def test_parser_surface_preserves_exact_v3_defaults_and_choices() -> None:
+    """Keep the breaking CLI contract observable beyond parsed happy paths."""
+    parser = build_parser()
+    namespace = parser.parse_args(["--existing", "verify", "one.eml"])
+    assert parser.prog == "remove-eml-attachments"
+    assert parser.allow_abbrev is False
+    assert (namespace.source, namespace.existing, namespace.output_format) == (
+        ["one.eml"],
+        "verify",
+        "human",
+    )
+    actions = {action.dest: action for action in parser._actions}  # ruff: ignore[private-member-access] - parser metadata is public CLI surface.
+    assert actions["source"].nargs == "+"
+    assert actions["existing"].choices == ("error", "verify")
+    assert actions["output_format"].choices == ("human", "json", "paths0")
+
+
 def test_domain_error_and_single_terminal_ledger_rules_are_enforced() -> None:
     error = AppError(ExitCode.PARSE_ERROR, "bad message")
     assert str(error) == "bad message"
