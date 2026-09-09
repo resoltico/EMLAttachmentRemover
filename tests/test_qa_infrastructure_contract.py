@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Final
 
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
-EXPECTED_CONDITIONAL_TESTS: Final = frozenset()
+EXPECTED_CONDITIONAL_TESTS: Final[frozenset[str]] = frozenset()
 
 
 def _decorator_name(call: ast.Call) -> str | None:
