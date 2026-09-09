@@ -12,11 +12,9 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from eml_attachment_remover import native_windows
+from eml_attachment_remover.native_paths import MAX_PATH_BYTES
 from eml_attachment_remover.native_windows import WindowsApi
-from eml_attachment_remover.native_windows_abi import (
-    FILE_WRITE_DATA,
-    MAX_RENAME_BUFFER_BYTES,
-)
+from eml_attachment_remover.native_windows_abi import FILE_WRITE_DATA
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -173,9 +171,9 @@ def test_windows_adapter_uses_rooted_nt_open_identity_and_no_replace_rename(
     assert ntdll.NtSetInformationFile.calls
     rename_buffer = ctypes.cast(
         cast("int", ntdll.NtSetInformationFile.calls[0][2]),
-        ctypes.POINTER(ctypes.c_ubyte * MAX_RENAME_BUFFER_BYTES),
+        ctypes.POINTER(ctypes.c_ubyte * (MAX_PATH_BYTES + 24)),
     ).contents
-    assert len(rename_buffer) == MAX_RENAME_BUFFER_BYTES
+    assert len(rename_buffer) == MAX_PATH_BYTES + 24
 
 
 def test_windows_adapter_surfaces_no_replace_collision_and_native_failures(
