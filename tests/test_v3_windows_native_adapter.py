@@ -59,6 +59,7 @@ class Ntdll:
     """The exact ntdll entry-point surface consumed by ``WindowsApi``."""
 
     NtCreateFile: NativeCall
+    NtSetInformationFile: NativeCall
     RtlNtStatusToDosError: NativeCall
 
 
@@ -99,7 +100,11 @@ def _adapter(monkeypatch: MonkeyPatch) -> tuple[WindowsApi, Kernel, Ntdll]:
         NativeCall(lambda *_arguments: 1),
         NativeCall(lambda *_arguments: 1),
     )
-    ntdll = Ntdll(NativeCall(_open_relative), NativeCall(lambda *_arguments: 5))
+    ntdll = Ntdll(
+        NativeCall(_open_relative),
+        NativeCall(lambda *_arguments: 0),
+        NativeCall(lambda *_arguments: 5),
+    )
     libraries = iter((kernel, ntdll))
     monkeypatch.setattr(os, "name", "nt")
     monkeypatch.setitem(
@@ -147,7 +152,7 @@ def _final_path(*arguments: object) -> int:
 def test_windows_adapter_uses_rooted_nt_open_identity_and_no_replace_rename(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    api, kernel, ntdll = _adapter(monkeypatch)
+    api, _kernel, ntdll = _adapter(monkeypatch)
     assert api.open_directory("C:\\parent", None) == 11
     assert api.open_child(11, "source.eml") == 23
     assert api.create_child(11, "stage.tmp") == 23
@@ -159,18 +164,17 @@ def test_windows_adapter_uses_rooted_nt_open_identity_and_no_replace_rename(
     api.discard_private_stage(23)
     api.sync_directory(11)
     assert ntdll.NtCreateFile.calls
-    assert kernel.SetFileInformationByHandle.calls
+    assert ntdll.NtSetInformationFile.calls
 
 
 def test_windows_adapter_surfaces_no_replace_collision_and_native_failures(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    api, kernel, _ntdll = _adapter(monkeypatch)
-    kernel.SetFileInformationByHandle.response = lambda *_arguments: 0
-    monkeypatch.setitem(native_windows.__dict__, "_last_error", lambda: 80)
+    api, kernel, ntdll = _adapter(monkeypatch)
+    ntdll.NtSetInformationFile.response = lambda *_arguments: -1
+    ntdll.RtlNtStatusToDosError.response = lambda _status: 80
     with pytest.raises(FileExistsError):
         api.publish_no_replace(23, 11, "final.eml")
-    kernel.SetFileInformationByHandle.response = lambda *_arguments: 1
     kernel.CloseHandle.response = lambda *_arguments: 0
     with pytest.raises(OSError, match="denied"):
         api.close(23)
@@ -242,16 +246,17 @@ def test_windows_adapter_covers_dynamic_ctypes_and_native_null_handle(
 def test_windows_adapter_covers_normal_and_noncollision_error_edges(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    api, kernel, _ntdll = _adapter(monkeypatch)
+    api, kernel, ntdll = _adapter(monkeypatch)
     api.close(23)
     assert api.open_directory("relative", 11) == 23
-    kernel.SetFileInformationByHandle.response = lambda *_arguments: 0
+    ntdll.NtSetInformationFile.response = lambda *_arguments: -1
+    ntdll.RtlNtStatusToDosError.response = lambda _status: 5
     monkeypatch.setitem(native_windows.__dict__, "_last_error", lambda: 5)
     with pytest.raises(OSError, match="publish"):
         api.publish_no_replace(23, 11, "final.eml")
+    kernel.SetFileInformationByHandle.response = lambda *_arguments: 0
     with pytest.raises(OSError, match="staging"):
         api.discard_private_stage(23)
-    kernel.SetFileInformationByHandle.response = lambda *_arguments: 1
     kernel.GetFileInformationByHandleEx.response = lambda *_arguments: 0
     with pytest.raises(OSError, match="identity"):
         api.info(23)

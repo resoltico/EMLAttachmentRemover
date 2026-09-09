@@ -29,7 +29,7 @@ from .native_windows_abi import (
     FILE_OPEN_REPARSE_POINT,
     FILE_READ_ATTRIBUTES,
     FILE_READ_DATA,
-    FILE_RENAME_INFO,
+    FILE_RENAME_INFORMATION_EX,
     FILE_SHARE_ALL,
     FILE_STANDARD_INFO,
     FILE_SYNCHRONOUS_IO_NONALERT,
@@ -183,6 +183,14 @@ class WindowsApi:
             ctypes.c_ulong,
         ]
         self.ntdll.NtCreateFile.restype = ctypes.c_long
+        self.ntdll.NtSetInformationFile.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(_IoStatusBlock),
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+        ]
+        self.ntdll.NtSetInformationFile.restype = ctypes.c_long
         self.ntdll.RtlNtStatusToDosError.argtypes = [ctypes.c_long]
         self.ntdll.RtlNtStatusToDosError.restype = ctypes.c_ulong
 
@@ -326,7 +334,7 @@ class WindowsApi:
 
         """
         encoded = _utf16(name)
-        size = max(24, 22 + len(encoded))
+        size = max(24, 20 + len(encoded))
         buffer = (ctypes.c_ubyte * size)()
         ctypes.memset(buffer, 0, size)
         ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ulong))[0] = 0
@@ -337,11 +345,17 @@ class WindowsApi:
             encoded
         )
         ctypes.memmove(ctypes.byref(buffer, 20), encoded, len(encoded))
-        if self.kernel32.SetFileInformationByHandle(
-            ctypes.c_void_p(stage), FILE_RENAME_INFO, ctypes.byref(buffer), size
-        ):
+        status = _IoStatusBlock()
+        result = self.ntdll.NtSetInformationFile(
+            ctypes.c_void_p(stage),
+            ctypes.byref(status),
+            ctypes.byref(buffer),
+            size,
+            FILE_RENAME_INFORMATION_EX,
+        )
+        if result >= 0:
             return
-        error = _last_error()
+        error = self.ntdll.RtlNtStatusToDosError(result)
         if error in {ERROR_FILE_EXISTS, ERROR_ALREADY_EXISTS}:
             raise FileExistsError(error, "destination already exists", name)
         self._raise_last("could not publish candidate")
