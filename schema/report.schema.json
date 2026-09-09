@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/resoltico/EMLAttachmentRemover/schema/report.schema.json",
+  "title": "EML Attachment Remover schema 3 report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scope", "program", "version", "mode", "ok", "exit_code", "interrupted", "interruption", "batch_error", "summary", "items"],
+  "properties": {
+    "schema_version": {"const": 3},
+    "scope": {"const": "mime-pruned"},
+    "program": {"const": "remove-eml-attachments"},
+    "version": {"type": "string"},
+    "mode": {"enum": ["apply", "dry-run"]},
+    "ok": {"type": "boolean"},
+    "exit_code": {"type": "integer"},
+    "interrupted": {"type": "boolean"},
+    "interruption": {"type": ["object", "null"]},
+    "batch_error": {"type": ["object", "null"]},
+    "summary": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "items": {"type": "array", "items": {"$ref": "#/$defs/item"}}
+  },
+  "$defs": {
+    "path": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "display", "native_base64", "native_utf16le_base64"],
+      "properties": {
+        "text": {"type": ["string", "null"]},
+        "display": {"type": "string"},
+        "native_base64": {"type": ["string", "null"]},
+        "native_utf16le_base64": {"type": ["string", "null"]}
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "phase", "status", "terminalized", "source_request", "destination_request", "source", "destination", "transformation", "verification", "publication", "warnings", "error"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "phase": {"enum": ["requested", "inventoried", "bound", "parsed", "classified", "candidate", "staged", "published"]},
+        "status": {"enum": ["created", "existing_verified", "would_create", "failed", "cancelled", "not_run", "published_with_error"]},
+        "terminalized": {"const": true},
+        "source_request": {"$ref": "#/$defs/path"},
+        "destination_request": {"anyOf": [{"$ref": "#/$defs/path"}, {"type": "null"}]},
+        "source": {"type": ["object", "null"]},
+        "destination": {"type": ["object", "null"]},
+        "transformation": {"type": ["object", "null"]},
+        "verification": {"type": ["object", "null"]},
+        "publication": {"type": ["object", "null"]},
+        "warnings": {"type": "array"},
+        "error": {"type": ["object", "null"]}
+      }
+    }
+  }
+}

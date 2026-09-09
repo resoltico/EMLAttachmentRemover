@@ -1,10 +1,7 @@
-"""Expose the small public application interface."""
+"""Application facade kept deliberately thinner than the CLI boundary."""
 
 from __future__ import annotations
 
-from ._version import PROGRAM_VERSION
 from .cli import main
-from .models import ProcessResult
-from .processing import process_file
 
-__all__ = ["PROGRAM_VERSION", "ProcessResult", "main", "process_file"]
+__all__ = ["main"]

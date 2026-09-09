@@ -47,6 +47,9 @@ policy = importlib.import_module(
 xunit_schema = importlib.import_module(
     f"{'tools.' if __package__ else ''}junit_xunit2_schema"
 )
+node_id = importlib.import_module(
+    "tools.junit_node_id" if __package__ else "junit_node_id"
+)
 
 
 class JunitReportError(ValueError):
@@ -144,6 +147,8 @@ def _public_text(
     if privacy_issues:
         message = f"JUnit report contains private content: {'; '.join(privacy_issues)}"
         raise JunitReportError(message)
+    if pytest_node_id:
+        public = node_id.redact(public)
     path_value = public.replace("\\\\", "\\") if pytest_node_id else public
     if path_safety.contains_absolute_path(path_value):
         message = f"machine-specific absolute path remains in {label} from {source}"
@@ -157,12 +162,6 @@ def _validate_xml_name(
     source: Path,
     label: str,
 ) -> None:
-    """Reject XML names that would require privacy-changing renaming.
-
-    Raises:
-        JunitReportError: If retaining the name would retain a private prefix.
-
-    """
     if _public_text(name, replacements, source, label) != name:
         message = f"private prefix appears in {label} from {source}"
         raise JunitReportError(message)
@@ -420,7 +419,11 @@ def publish(source: Path, destination: Path, project_root: Path) -> Path:
     content = _sanitize(
         _regular_source(source), _replacements(source, project_root), source
     )
-    destination.parent.mkdir(exist_ok=True)
+    try:
+        destination.parent.mkdir(exist_ok=True)
+    except OSError as error:
+        message = f"cannot prepare JUnit report directory {destination.parent}: {error}"
+        raise JunitReportError(message) from error
     _validate_destination(destination)
     try:
         descriptor, temporary_name = tempfile.mkstemp(

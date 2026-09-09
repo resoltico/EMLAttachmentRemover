@@ -37,7 +37,7 @@ CONTENT_ID_HEADER: Final = "Content-ID"
 
 
 def _fixture() -> bytes:
-    """Return a public message exercising the complete text-only contract.
+    """Return a public message exercising the complete MIME-pruned contract.
 
     Returns:
         Serialized synthetic EML bytes.
@@ -153,18 +153,23 @@ def _verify_output(source: Path, destination: Path, original: bytes) -> None:
     body_text = body.get_content().strip() if body is not None else None
     leaves = [part for part in parsed.walk() if not part.is_multipart()]
     defects = [defect for part in parsed.walk() for defect in part.defects]
-    invalid_metadata = any(
-        part.get_filename() is not None or part.get(CONTENT_ID_HEADER) is not None
-        for part in leaves
+    content_types = [part.get_content_type() for part in leaves]
+    attachment_remains = any(
+        part.get_content_disposition() == "attachment" for part in leaves
     )
-    if (
-        parsed[SUBJECT_HEADER] != EXPECTED_SUBJECT
-        or body_text != EXPECTED_BODY
-        or len(leaves) != 1
-        or invalid_metadata
-        or defects
-    ):
-        message = "installed command did not produce the expected text-only EML"
+    resource_remains = BODY_RESOURCE_CONTENT_ID in {
+        part.get(CONTENT_ID_HEADER) for part in leaves
+    }
+    expected_output = (
+        parsed[SUBJECT_HEADER] == EXPECTED_SUBJECT,
+        body_text == EXPECTED_BODY,
+        content_types == ["text/plain", "text/html"],
+        not attachment_remains,
+        not resource_remains,
+        not defects,
+    )
+    if not all(expected_output):
+        message = "installed command did not produce the expected MIME-pruned EML"
         raise RuntimeError(message)
 
 

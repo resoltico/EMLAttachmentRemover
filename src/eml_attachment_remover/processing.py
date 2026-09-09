@@ -1,250 +1,33 @@
-"""Coordinate MIME processing for one source EML file."""
+"""Public single-file facade over the v3 batch implementation."""
 
 from __future__ import annotations
 
-import os
-import stat
-from email.message import Message
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
-from .mime_serialization import _parse_message
-from .mime_text_execution import _verify_plan_binding, execute_text_only_plan
-from .mime_text_only import _plan_text_only
-from .models import (
-    CliError,
-    ExitCode,
-    MimePath,
-    OutputPlan,
-    ProcessResult,
-    _format_mime_path,
-)
-from .paths import _default_destination, _validate_paths, _validate_source
-from .storage import _produce_output
+from .batch import BatchOptions, execute
 
 if TYPE_CHECKING:
-    from pathlib import Path
-    from typing import BinaryIO
-
-STALE_ROOT_HEADERS: Final = (
-    "Content-Length",
-    "Lines",
-    "X-MS-Has-Attach",
-)
-TRANSPORT_SIGNATURE_HEADERS: Final = (
-    "ARC-Message-Signature",
-    "ARC-Seal",
-    "DKIM-Signature",
-    "DomainKey-Signature",
-)
-type LocatedPart = tuple[MimePath, str | None, Message[str, str]]
-
-
-def _located_parts(
-    part: Message[str, str],
-    path: MimePath = (),
-    parent_type: str | None = None,
-) -> tuple[LocatedPart, ...]:
-    """Snapshot MIME entities with their stable pre-mutation paths.
-
-    Returns:
-        The complete depth-first part inventory.
-
-    Raises:
-        TypeError: If a multipart payload contains a non-message entity.
-
-    """
-    located: list[LocatedPart] = [(path, parent_type, part)]
-    payload = part.get_payload()
-    if not isinstance(payload, list):
-        return tuple(located)
-    for index, raw_child in enumerate(payload):
-        if not isinstance(raw_child, Message):
-            raise TypeError
-        located.extend(
-            _located_parts(
-                raw_child,
-                (*path, index),
-                part.get_content_type(),
-            ),
-        )
-    return tuple(located)
-
-
-def _remove_stale_root_headers(message: Message[str, str]) -> None:
-    """Delete root headers whose values become false after removal."""
-    for header in STALE_ROOT_HEADERS:
-        if header in message:
-            del message[header]
-
-
-def _transport_signature_warning(
-    message: Message[str, str],
-    path: MimePath = (),
-) -> str | None:
-    """Return a warning for transport signatures invalidated by rewriting.
-
-    Returns:
-        A warning listing affected headers, or ``None`` when none are present.
-
-    """
-    present = [header for header in TRANSPORT_SIGNATURE_HEADERS if header in message]
-    if not present:
-        return None
-    subject = (
-        "the message"
-        if not path
-        else f"nested message at MIME path {_format_mime_path(path)}"
-    )
-    return (
-        f"rewriting {subject} invalidates existing transport signatures "
-        f"({', '.join(present)}); the original EML remains unchanged"
-    )
-
-
-def _path_changed(path: MimePath, changed_paths: tuple[MimePath, ...]) -> bool:
-    """Return whether removal changed this entity or one of its descendants.
-
-    Returns:
-        ``True`` when at least one removed path begins with this part path.
-
-    """
-    return any(changed[: len(path)] == path for changed in changed_paths)
-
-
-def _require_regular_source(input_file: BinaryIO, source: Path) -> None:
-    """Require the opened source descriptor itself to be a regular file.
-
-    Raises:
-        CliError: If a path race selected a special file for reading.
-
-    """
-    if not stat.S_ISREG(os.fstat(input_file.fileno()).st_mode):
-        raise CliError(
-            ExitCode.INPUT_ERROR,
-            f"input path is not a regular file at read time: {source}",
-        )
-
-
-def _read_source(source: Path) -> bytes:
-    """Read a regular source through one inspected file descriptor.
-
-    Returns:
-        The source EML bytes.
-
-    Raises:
-        CliError: If the source cannot be read.
-
-    """
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
-    try:
-        descriptor = os.open(source, flags)
-        with os.fdopen(descriptor, "rb") as input_file:
-            _require_regular_source(input_file, source)
-            return input_file.read()
-    except CliError:
-        raise
-    except OSError as exc:
-        raise CliError(
-            ExitCode.INPUT_ERROR,
-            f"could not read input file {source}: {exc}",
-        ) from exc
-
-
-def _removal_warnings(
-    located_parts: tuple[LocatedPart, ...],
-    parse_warnings: tuple[str, ...],
-    changed_paths: tuple[MimePath, ...],
-) -> list[str]:
-    """Collect parser and transport-signature warnings.
-
-    Returns:
-        The warnings that apply to this processing result.
-
-    """
-    warnings = list(parse_warnings)
-    for path, parent_type, part in located_parts:
-        if not _path_changed(path, changed_paths):
-            continue
-        _remove_stale_root_headers(part)
-        is_logical_message = not path or (
-            parent_type is not None and parent_type.startswith("message/")
-        )
-        if not is_logical_message:
-            continue
-        signature_warning = _transport_signature_warning(part, path)
-        if signature_warning is not None:
-            warnings.append(signature_warning)
-    return warnings
+    from .domain import BatchLedger
 
 
 def process_file(
-    source: Path,
-    destination: Path | None,
+    source: str,
+    destination: str | None = None,
     *,
-    force: bool,
-    dry_run: bool,
-) -> ProcessResult:
-    """Remove attachments from one EML and return a verified result.
+    existing: str = "error",
+    dry_run: bool = False,
+) -> BatchLedger:
+    """Process one path through the exact same candidate pipeline as the CLI.
 
     Returns:
-        The complete processing report.
+        The complete single-item ledger, including candidate and publication evidence.
 
     """
-    requested_destination = destination or _default_destination(source)
-    if dry_run:
-        source = _validate_source(source)
-    else:
-        source, requested_destination = _validate_paths(
-            source,
-            requested_destination,
-            force=force,
-        )
-    raw = _read_source(source)
-    message, parse_warnings = _parse_message(raw, str(source))
-    located_parts = _located_parts(message)
-    plan = _plan_text_only(message)
-    execute_text_only_plan(message, plan)
-    _verify_plan_binding(message, plan)
-    warnings = _removal_warnings(
-        located_parts,
-        parse_warnings,
-        plan.changed_paths,
+    options = BatchOptions(
+        dry_run=dry_run,
+        existing=existing,
+        fail_fast=False,
+        output=destination,
+        output_dir=None,
     )
-    removed = plan.removed_attachments
-    if dry_run:
-        return ProcessResult(
-            source=source,
-            destination=None,
-            source_size=len(raw),
-            output_size=None,
-            dry_run=True,
-            removed_attachments=removed,
-            selected_plain_text_bodies=(plan.selected_body,),
-            discarded_body_representations=plan.discarded_representations,
-            discarded_body_resources=plan.discarded_resources,
-            warnings=tuple(warnings),
-        )
-    output_size, mode_warning = _produce_output(
-        OutputPlan(
-            source=source,
-            destination=requested_destination,
-            message=message,
-            raw=raw,
-            modified=plan.modified,
-            force=force,
-        ),
-    )
-    if mode_warning is not None:
-        warnings.append(mode_warning)
-    return ProcessResult(
-        source=source,
-        destination=requested_destination,
-        source_size=len(raw),
-        output_size=output_size,
-        dry_run=False,
-        removed_attachments=removed,
-        selected_plain_text_bodies=(plan.selected_body,),
-        discarded_body_representations=plan.discarded_representations,
-        discarded_body_resources=plan.discarded_resources,
-        warnings=tuple(warnings),
-    )
+    return execute([source], options)

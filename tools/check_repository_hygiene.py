@@ -48,6 +48,7 @@ PUBLIC_ROOT_FILES: Final = frozenset({
 PUBLIC_ROOT_DIRECTORIES: Final = frozenset({
     ".github",
     "integrations",
+    "schema",
     "src",
     "tests",
     "tools",

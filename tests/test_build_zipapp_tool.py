@@ -249,7 +249,10 @@ class ZipappSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             missing = Path(directory) / "LICENSE"
             with patch.object(build_zipapp, "LICENSE_FILE", missing):
-                with self.assertRaisesRegex(FileNotFoundError, "license file"):
+                with self.assertRaisesRegex(
+                    FileNotFoundError,
+                    "license or schema file",
+                ):
                     build_zipapp._archive_members(PUBLIC_METADATA)  # ruff: ignore[private-member-access]
 
 

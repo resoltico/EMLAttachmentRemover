@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "eml-attachment-remover"
-version = "2.0.1"
-description = "Create verified text-only EML working copies without attachments"
+version = "3.0.0"
+description = "Create structurally verified MIME-pruned EML working copies"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
 license = "MIT"
@@ -81,6 +81,7 @@ include = [
   "/LICENSE",
   "/QA.md",
   "/README.md",
+  "/schema",
   "/integrations",
   "/pyproject.toml",
   "/src",
@@ -147,6 +148,9 @@ max-statements = 40
 "tests/test_tasks_mutation.py" = ["private-member-access"]
 "tests/test_tools.py" = ["private-member-access"]
 "tests/test_version.py" = ["import-private-name", "private-member-access"]
+"tests/test_v3_release_contract.py" = ["private-member-access"]
+"tests/test_v3_tool_junit_contracts.py" = ["private-member-access"]
+"tests/test_v3_tool_zipapp.py" = ["private-member-access"]
 "tools/*.py" = [
   "print",
   "subprocess-without-shell-equals-true",
@@ -172,16 +176,6 @@ warn_incomplete_stub = true
 warn_unused_configs = true
 warn_unreachable = true
 
-[[tool.mypy.overrides]]
-module = [
-  "tests.test_hypothesis_configuration",
-  "tests.test_hypothesis_console_safety",
-  "tests.test_hypothesis_raw_wire",
-  "tests.test_hypothesis_stateful",
-]
-# Hypothesis's typed decorators intentionally return Callable[..., None].
-disallow_any_decorated = false
-
 [tool.pytest.ini_options]
 addopts = ["--runxfail", "--strict-config", "--strict-markers"]
 filterwarnings = ["error"]
@@ -189,6 +183,7 @@ junit_family = "xunit2"
 minversion = "9.1"
 required_plugins = ["hypothesis==6.165.10"]
 testpaths = ["tests"]
+pythonpath = [".", "src"]
 xfail_strict = true
 
 [tool.coverage.run]

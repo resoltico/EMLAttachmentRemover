@@ -137,10 +137,6 @@ class JunitReportMutationContracts(unittest.TestCase):
         node_id = "/unknown/tests/test_public.py::test_public"
         node_statistics = _encoded(_statistics_text("public", suffix=node_id))
         errors = {
-            "statistics-name": (
-                "machine-specific absolute path remains in Hypothesis statistics "
-                f"property name from {source}"
-            ),
             "statistics-body": (
                 "machine-specific absolute path remains in encoded Hypothesis "
                 f"statistics from {source}"
@@ -198,10 +194,6 @@ class JunitReportMutationContracts(unittest.TestCase):
                 f"invalid Hypothesis statistics base64 in {source}",
             ),
             (
-                _statistics_xml(node_statistics, suffix=node_id),
-                errors["statistics-name"],
-            ),
-            (
                 _statistics_xml(_encoded(_statistics_text("/unknown/statistics/path"))),
                 errors["statistics-body"],
             ),
@@ -221,35 +213,43 @@ class JunitReportMutationContracts(unittest.TestCase):
                         source,
                     )
                 self.assertEqual(str(raised.exception), expected)
+        sanitized_statistics = junit_report._sanitize(  # ruff: ignore[private-member-access]
+            _statistics_xml(node_statistics, suffix=node_id),
+            (),
+            source,
+        )
+        self.assertIn(b"redacted-absolute-node-id-", sanitized_statistics)
 
-    def test_pytest_node_id_normalization_is_narrow_and_unc_safe(self) -> None:
+    def test_pytest_node_id_normalization_redacts_only_node_ids(self) -> None:
         source = Path("exact-public-report.xml")
         backslash = chr(92)
         escaped_unc = backslash * 4 + "public-server" + backslash * 2 + "share"
         raw_unc = backslash * 2 + "public-server" + backslash + "share"
-        cases = (
-            ("name", escaped_unc),
-            ("classname", raw_unc),
+        node_id = (
+            "<testsuites><testsuite><testcase "
+            f"name='{escaped_unc}'/></testsuite></testsuites>"
+        ).encode()
+        sanitized = junit_report._sanitize(  # ruff: ignore[private-member-access]
+            node_id,
+            (),
+            source,
         )
-        for attribute, value in cases:
-            content = (
-                "<testsuites><testsuite><testcase "
-                f"{attribute}='{value}'/></testsuite></testsuites>"
-            ).encode()
-            with (
-                self.subTest(attribute=attribute),
-                self.assertRaises(junit_report.JunitReportError) as raised,
-            ):
-                junit_report._sanitize(  # ruff: ignore[private-member-access]
-                    content,
-                    (),
-                    source,
-                )
-            self.assertEqual(
-                str(raised.exception),
-                "machine-specific absolute path remains in JUnit XML attribute "
-                f"value from {source}",
+        self.assertIn(b"redacted-absolute-node-id-", sanitized)
+        classname = (
+            "<testsuites><testsuite><testcase "
+            f"classname='{raw_unc}'/></testsuite></testsuites>"
+        ).encode()
+        with self.assertRaises(junit_report.JunitReportError) as raised:
+            junit_report._sanitize(  # ruff: ignore[private-member-access]
+                classname,
+                (),
+                source,
             )
+        self.assertEqual(
+            str(raised.exception),
+            "machine-specific absolute path remains in JUnit XML attribute "
+            f"value from {source}",
+        )
 
     def test_serialization_is_exact_canonical_utf8(self) -> None:
         content = (

@@ -9,14 +9,7 @@ from pathlib import Path
 from typing import Final
 
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
-EXPECTED_CONDITIONAL_TESTS: Final = frozenset({
-    "tests/test_batch.py:skipIf:newline filenames are not portable to Windows",
-    "tests/test_distribution.py:skipUnless:POSIX_ONLY",
-    "tests/test_integration_installation.py:skipUnless:POSIX_REASON",
-    "tests/test_macos_finder_reporting.py:skipUnless:POSIX_REASON",
-    "tests/test_macos_installation_safety.py:skipUnless:POSIX_REASON",
-    "tests/test_macos_uninstallation_safety.py:skipUnless:POSIX_REASON",
-})
+EXPECTED_CONDITIONAL_TESTS: Final = frozenset()
 
 
 def _decorator_name(call: ast.Call) -> str | None:
