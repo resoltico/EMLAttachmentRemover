@@ -144,7 +144,7 @@ def _display(value: str) -> str:
 
 def _validate_posix(value: str) -> None:
     raw = os.fsencode(value)
-    basename = raw.rsplit(b"/", 1)[-1]
+    _parent, _separator, basename = raw.rpartition(b"/")
     if b"\x00" in raw or not basename or value.endswith("/"):
         raise AppError(ExitCode.INPUT_ERROR, "path has an empty basename")
     if basename in {b".", b".."}:
@@ -161,5 +161,5 @@ def _validate_windows_components(tail: str) -> None:
             continue
         if component[-1] in {".", " "}:
             raise AppError(ExitCode.INPUT_ERROR, "path has a trailing dot or space")
-        if component.split(".", 1)[0].upper() in _WINDOWS_RESERVED:
+        if component.partition(".")[0].upper() in _WINDOWS_RESERVED:
             raise AppError(ExitCode.INPUT_ERROR, "path contains a reserved DOS name")
