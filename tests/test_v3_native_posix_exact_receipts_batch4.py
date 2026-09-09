@@ -132,7 +132,9 @@ def test_posix_inspection_and_read_use_exact_optional_open_flags_and_close_zero(
     close_on_exec = 0x2000
     monkeypatch.setattr(native_posix, "_parent", parent)
     monkeypatch.setattr(native_posix.__dict__["os"], "O_RDONLY", 0x40)
-    monkeypatch.setattr(native_posix.__dict__["os"], "O_NONBLOCK", nonblocking)
+    monkeypatch.setattr(
+        native_posix.__dict__["os"], "O_NONBLOCK", nonblocking, raising=False
+    )
     monkeypatch.setattr(native_posix.__dict__["os"], "O_CLOEXEC", close_on_exec)
     monkeypatch.setattr(native_posix.__dict__["os"], "open", open_file)
     monkeypatch.setattr(native_posix.__dict__["os"], "fstat", lambda _fd: metadata)
@@ -209,7 +211,7 @@ def test_posix_nofollow_open_preserves_nonzero_native_flag_value(
         return 13
 
     monkeypatch.setattr(native_posix.__dict__["os"], "O_RDONLY", 0x40)
-    monkeypatch.setattr(native_posix.__dict__["os"], "O_NOFOLLOW", 0x800)
+    monkeypatch.setattr(native_posix.__dict__["os"], "O_NOFOLLOW", 0x800, raising=False)
     monkeypatch.setattr(native_posix.__dict__["os"], "open", open_file)
 
     # ruff: ignore[private-member-access] - output reads must request O_NOFOLLOW exactly.
