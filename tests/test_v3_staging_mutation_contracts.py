@@ -69,6 +69,22 @@ def test_staged_write_rejects_nonprogress_and_impossible_progress(
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - owned stage cleanup.
 
 
+def test_staged_write_rejects_a_nonadvancing_helper_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A helper result must prove that each accepted native write consumed bytes."""
+    state = _state(tmp_path, b"two")
+    monkeypatch.setattr(
+        staged_output, "_remaining_after_write", lambda remaining, _written: remaining
+    )
+    with pytest.raises(AppError) as captured:
+        staged_output._verify_staged(state)  # ruff: ignore[private-member-access] - defensive helper-progress invariant.
+    assert captured.value == AppError(
+        ExitCode.WRITE_ERROR, "short write while staging candidate"
+    )
+    staged_output._cleanup(state)  # ruff: ignore[private-member-access] - owned stage cleanup.
+
+
 def test_reconciliation_records_every_unproven_receipt_field(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
