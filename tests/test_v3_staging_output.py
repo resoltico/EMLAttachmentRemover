@@ -50,7 +50,8 @@ def test_publish_readdresses_live_final_handle_and_digest(tmp_path: Path) -> Non
     assert receipt.identity.inode == metadata.st_ino
     assert receipt.digest == hashlib.sha256(candidate).hexdigest()
     assert destination.read_bytes() == candidate
-    assert stat_mode(destination) == 0o600
+    if os.name != "nt":
+        assert stat_mode(destination) == 0o600
     assert _temporary_names(tmp_path) == []
 
 
@@ -437,6 +438,7 @@ def test_deferred_interrupt_after_publication_is_not_created(
         return set()
 
     monkeypatch.setattr(signal, "pthread_sigmask", mask, raising=False)
+    monkeypatch.setitem(signal.__dict__, "SIG_BLOCK", 1)
     monkeypatch.setitem(signal.__dict__, "SIG_SETMASK", 2)
     with pytest.raises(PublishedWithError) as raised:
         publish(bind_destination(str(destination)), b"shielded")

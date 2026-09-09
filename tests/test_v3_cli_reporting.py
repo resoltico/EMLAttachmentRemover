@@ -82,11 +82,12 @@ def test_requested_json_usage_failure_has_batch_error_and_source_request(
 def test_paths0_emits_only_exact_accepted_destination_bytes(
     tmp_path: Path, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    source = tmp_path / "odd\nname.eml"
+    source_name = "odd-unicode-π.eml" if os.name == "nt" else "odd\nname.eml"
+    source = tmp_path / source_name
     source.write_bytes(b"Content-Type: text/plain\r\n\r\nbody\r\n")
     assert main(["--output-format=paths0", str(source)]) == 0
     output, _errors = capfd.readouterr()
-    expected = os.fsencode(str(tmp_path / "odd\nname.mime-pruned.eml")) + b"\0"
+    expected = os.fsencode(str(source.with_suffix(".mime-pruned.eml"))) + b"\0"
     assert output.encode() == expected
 
 

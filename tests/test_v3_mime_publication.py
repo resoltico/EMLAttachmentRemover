@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
-import os
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import pytest
 
 from eml_attachment_remover import batch as batch_module
+from eml_attachment_remover import native_binding, staged_output
 from eml_attachment_remover.batch import BatchOptions, execute
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.cli import exit_code
 from eml_attachment_remover.domain import (
     AppError,
     BatchLedger,
+    BoundDirectory,
     ExitCode,
     FileIdentity,
     ItemPhase,
@@ -21,9 +23,16 @@ from eml_attachment_remover.domain import (
     LedgerItem,
     PublicationReceipt,
 )
-from eml_attachment_remover.native_paths import path_value
+from eml_attachment_remover.native_paths import (
+    BoundDirectoryHandle,
+    path_value,
+    publish_stage_no_replace,
+)
 from eml_attachment_remover.reporting_v3 import report
-from eml_attachment_remover.staged_output import PublishedWithError
+from eml_attachment_remover.staged_output import (
+    PublishedWithError,
+    _PublicationState,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -45,17 +54,29 @@ def test_visible_post_link_fault_is_never_recorded_as_cancelled_or_failed(
 ) -> None:
     source = tmp_path / "message.eml"
     source.write_bytes(b"Content-Type: text/plain\r\n\r\nbody\r\n")
-    real_unlink = os.unlink
+    original_remove = staged_output._remove_stage_entry  # ruff: ignore[private-member-access] - post-edge cleanup fault injection.
     injected = False
 
-    def interrupt_first_unlink(path: str | bytes, *, dir_fd: int | None = None) -> None:
+    def publish_as_link(
+        directory: BoundDirectoryHandle,
+        descriptor: int,
+        stage_name: bytes | str,
+        destination_name: bytes | str,
+    ) -> bool:
+        publish_stage_no_replace(directory, descriptor, stage_name, destination_name)
+        return True
+
+    def interrupt_first_link_cleanup(state: _PublicationState) -> BaseException | None:
         nonlocal injected
         if not injected:
             injected = True
             raise fault
-        real_unlink(path, dir_fd=dir_fd)
+        return original_remove(state)
 
-    monkeypatch.setattr(os, "unlink", interrupt_first_unlink)
+    monkeypatch.setattr(staged_output, "publish_stage_no_replace", publish_as_link)
+    monkeypatch.setattr(
+        staged_output, "_remove_stage_entry", interrupt_first_link_cleanup
+    )
     ledger = execute([str(source)], _options())
     item = ledger.items[0]
     assert item.status is ItemStatus.PUBLISHED_WITH_ERROR
@@ -71,23 +92,15 @@ def test_existing_verify_rejects_final_entry_replacement_race(
     source.write_bytes(b"Content-Type: text/plain\r\n\r\nbody\r\n")
     first = execute([str(source)], _options())
     assert first.items[0].status is ItemStatus.CREATED
-    destination = tmp_path / "message.mime-pruned.eml"
-    real_stat = os.stat
+    real_child_lstat = native_binding._child_lstat  # ruff: ignore[private-member-access] - final-entry race injection.
 
     def swapped_entry(
-        path: str | bytes,
-        *,
-        dir_fd: int | None = None,
-        follow_symlinks: bool = True,
-    ) -> os.stat_result:
-        result = real_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
-        if path == os.fsencode(destination.name) and dir_fd is not None:
-            values = list(result)
-            values[1] += 1
-            return os.stat_result(tuple(values))
-        return result
+        directory: BoundDirectory, name: bytes | str
+    ) -> FileIdentity | None:
+        identity = real_child_lstat(directory, name)
+        return None if identity is None else replace(identity, inode=identity.inode + 1)
 
-    monkeypatch.setattr(os, "stat", swapped_entry)
+    monkeypatch.setattr(native_binding, "_child_lstat", swapped_entry)
     raced = execute([str(source)], _options(existing="verify"))
     assert raced.items[0].status is ItemStatus.FAILED
 

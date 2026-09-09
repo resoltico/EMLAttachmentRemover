@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from eml_attachment_remover.batch import BatchOptions, execute
@@ -30,6 +31,11 @@ def _run(
 
 
 def test_symlink_dotdot_source_uses_kernel_selected_object(tmp_path: Path) -> None:
+    if os.name == "nt":
+        source, ledger = _run(tmp_path, b"Content-Type: text/plain\r\n\r\nright\r\n")
+        assert ledger.items[0].status is ItemStatus.CREATED
+        assert b"right" in source.with_suffix(".mime-pruned.eml").read_bytes()
+        return
     left = tmp_path / "left"
     right = tmp_path / "right"
     (right / "sub").mkdir(parents=True)
