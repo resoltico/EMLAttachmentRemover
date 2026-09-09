@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from eml_attachment_remover import mime_raw
-from eml_attachment_remover.domain import AppError
+from eml_attachment_remover.domain import AppError, ExitCode
 from eml_attachment_remover.mime_raw import parse_raw_mime
 
 
@@ -17,6 +17,18 @@ def test_raw_helpers_cover_non_delimiter_payload_and_opening_errors() -> None:
     for delimiters in ([], [(0, 3, True)], [(0, 3, True), (3, 6, True)]):
         with pytest.raises(AppError):
             mime_raw._opening_delimiters(delimiters, ())  # ruff: ignore[private-member-access] - direct delimiter-state contract.
+
+
+def test_delimiter_scan_rejects_a_nonadvancing_wire_cursor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail closed rather than spin when a mutated delimiter cursor regresses."""
+    monkeypatch.setattr(mime_raw, "line_end", lambda _raw, position, _end: position)
+    with pytest.raises(AppError) as captured:
+        mime_raw._delimiter_lines(b"--m\r\n", 0, 5, b"m")  # ruff: ignore[private-member-access] - delimiter progress invariant.
+    assert captured.value == AppError(
+        ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance"
+    )
 
 
 @pytest.mark.parametrize(

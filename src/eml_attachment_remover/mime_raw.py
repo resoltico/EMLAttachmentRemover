@@ -103,12 +103,19 @@ def _delimiter_lines(
     Returns:
         Source spans and closing markers for recognized delimiter lines.
 
+    Raises:
+        AppError: If a physical delimiter cursor does not make progress.
+
     """
     prefix = b"--" + boundary
     result: list[tuple[int, int, bool]] = []
     position = start
     while position < end:
         end_of_line = line_end(raw, position, end)
+        if end_of_line <= position:
+            raise AppError(
+                ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance"
+            )
         line = raw[position:end_of_line].rstrip(b"\r\n")
         if line.startswith(prefix):
             tail = line[len(prefix) :]
