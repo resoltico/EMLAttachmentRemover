@@ -1,9 +1,4 @@
-"""Small ctypes adapter for Windows handle-rooted file operations.
-
-The adapter intentionally exposes handles rather than rebuilding paths.  Windows
-callers bind a directory once, address children through ``RootDirectory``, and use
-the same live directory handle for the no-replace rename edge.
-"""
+"""ctypes adapter for Windows handle-rooted file operations."""
 
 from __future__ import annotations
 
@@ -88,13 +83,9 @@ def _format_error(value: int) -> str:
 
 
 class _Msvcrt(Protocol):
-    """The two CPython CRT bridge functions required for existing fd consumers."""
+    def get_osfhandle(self, descriptor: int) -> int: ...
 
-    def get_osfhandle(self, descriptor: int) -> int:
-        """Return the OS handle owned by one CRT descriptor."""
-
-    def open_osfhandle(self, handle: int, flags: int) -> int:
-        """Transfer a native handle into a CRT descriptor."""
+    def open_osfhandle(self, handle: int, flags: int) -> int: ...
 
 
 def _msvcrt() -> _Msvcrt:
@@ -118,7 +109,7 @@ class WindowsApi:
     """Typed ctypes adapter for handle-rooted Windows file operations."""
 
     def __init__(self) -> None:
-        """Load the required kernel and ntdll entry points.
+        """Load required kernel and ntdll entry points.
 
         Raises:
             OSError: If the current platform is not Windows.
@@ -333,7 +324,7 @@ class WindowsApi:
             FileExistsError: If the destination name is already occupied.
 
         """
-        encoded = _utf16(name)
+        encoded = name.encode("utf-16-le", "strict")
         size = max(24, 20 + len(encoded))
         buffer = (ctypes.c_ubyte * size)()
         ctypes.memset(buffer, 0, size)
@@ -397,7 +388,7 @@ class WindowsApi:
         create: bool,
     ) -> int:
         buffer = ctypes.create_unicode_buffer(name)
-        encoded = _utf16(name)
+        encoded = name.encode("utf-16-le", "strict")
         string = _UnicodeString(len(encoded), len(encoded), ctypes.addressof(buffer))
         attributes = _ObjectAttributes(
             ctypes.sizeof(_ObjectAttributes),
@@ -450,10 +441,6 @@ class WindowsApi:
     def _raise_last(message: str) -> NoReturn:
         error = _last_error()
         raise OSError(error, f"{message}: {_format_error(error)}")
-
-
-def _utf16(value: str) -> bytes:
-    return value.encode("utf-16-le", "strict")
 
 
 def _is_absolute(value: str) -> bool:
