@@ -37,6 +37,7 @@ O_BINARY: Final = 0x8000
 O_READ_ONLY: Final = 0
 O_READ_WRITE: Final = 2
 MIN_DRIVE_ABSOLUTE_LENGTH: Final = 3
+MAX_RENAME_BUFFER_BYTES: Final = 32 * 1024 + 24
 
 
 class UnicodeString(ctypes.Structure):

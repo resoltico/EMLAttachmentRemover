@@ -33,6 +33,7 @@ from .native_windows_abi import (
     FILE_WRITE_ATTRIBUTES,
     FILE_WRITE_DATA,
     INVALID_HANDLE_VALUE,
+    MAX_RENAME_BUFFER_BYTES,
     O_BINARY,
     O_READ_ONLY,
     O_READ_WRITE,
@@ -325,7 +326,7 @@ class WindowsApi:
         """
         encoded = name.encode("utf-16-le", "strict")
         size = max(24, 20 + len(encoded))
-        buffer = (ctypes.c_ubyte * size)()
+        buffer = (ctypes.c_ubyte * MAX_RENAME_BUFFER_BYTES)()
         ctypes.memset(buffer, 0, size)
         ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ulong))[0] = 0
         ctypes.cast(ctypes.byref(buffer, 8), ctypes.POINTER(ctypes.c_void_p))[0] = (
