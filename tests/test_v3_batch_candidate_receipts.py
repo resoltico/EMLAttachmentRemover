@@ -87,3 +87,27 @@ def test_candidate_records_each_opaque_charset_warning_without_codec_lookup(
             "message": "charset label was preserved without codec lookup",
         }
     ]
+
+
+def test_candidate_warns_when_related_resource_removal_may_break_cid_links(
+    tmp_path: Path,
+) -> None:
+    """A related resource is removed with one explicit retained-HTML warning."""
+    source = tmp_path / "related.eml"
+    source.write_bytes(
+        b'Content-Type: multipart/related; boundary=r; start="<root@x>"\r\n\r\n'
+        b"--r\r\nContent-Type: text/html\r\nContent-ID: <root@x>\r\n\r\n"
+        b'<img src="cid:image@x">\r\n'
+        b"--r\r\nContent-Type: image/png\r\nContent-ID: <image@x>\r\n\r\n"
+        b"bytes\r\n--r--\r\n"
+    )
+    item = BatchLedger.from_requests([path_value(str(source))]).items[0]
+    batch._candidate(  # ruff: ignore[private-member-access] - related warning receipt.
+        item, inspect_source_identity(str(source))
+    )
+    assert item.warnings == [
+        {
+            "code": "RELATED_REFERENCES_MAY_BE_UNRESOLVED",
+            "message": "retained HTML may reference removed related components",
+        }
+    ]
