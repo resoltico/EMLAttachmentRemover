@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -147,3 +148,19 @@ def test_native_value_validation_covers_platform_specific_boundary_forms(
     native_values._validate_windows_components(  # ruff: ignore[private-member-access] - Windows component empty-segment boundary.
         ""
     )
+    with monkeypatch.context() as context:
+        context.setattr(
+            native_values,
+            "os",
+            SimpleNamespace(
+                name="posix",
+                fsencode=os.fsencode,
+                fspath=os.fspath,
+                path=os.path,
+            ),
+        )
+        context.setattr(native_values, "MAX_PATH_BYTES", 32 * 1024)
+        assert native_values.validate_argument("ordinary") == "ordinary"
+        assert native_values.default_destination("parent/message.eml")
+    with pytest.raises(AppError):
+        native_values._validate_posix(".")  # ruff: ignore[private-member-access] - POSIX dot-basename boundary.

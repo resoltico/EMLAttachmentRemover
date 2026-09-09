@@ -32,6 +32,8 @@ def test_cancellation_fallback_and_installed_handler_restore(
     monkeypatch.setattr(os, "name", "nt")
     assert watched() == (signal.SIGINT,)
     monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setitem(signal.__dict__, "SIGHUP", signal.SIGINT)
+    assert watched() == (signal.SIGINT, signal.SIGTERM, signal.SIGINT)
     monkeypatch.delattr(signal, "SIGHUP", raising=False)
     assert watched() == (signal.SIGINT, signal.SIGTERM)
 

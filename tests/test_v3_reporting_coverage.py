@@ -34,6 +34,7 @@ def test_report_rejects_nonterminal_items_and_serializes_windows_basename() -> N
         "basename_base64": None,
         "basename_utf16le_base64": b64encode("name".encode("utf-16-le")).decode(),
     }
+    assert reporting_v3._basename(b"name")["basename_base64"] == "bmFtZQ=="  # ruff: ignore[private-member-access] - POSIX native report encoding contract.
     interrupted = _ledger(ItemStatus.CREATED)
     interrupted.record_interruption("SIGTERM", "report")
     document = reporting_v3.report(interrupted, "apply", ExitCode.INTERRUPTED)

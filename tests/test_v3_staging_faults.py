@@ -302,6 +302,13 @@ def test_receipt_close_and_publish_edge_faults_are_truthful(
     mode_parent.windows = True
     staged_output._verify_staged(mode_state)  # ruff: ignore[private-member-access] - Windows ACL-mode branch contract.
     mode_parent.windows = False
+    stage = mode_state.stage
+    assert stage is not None
+    os.ftruncate(stage.descriptor, 0)
+    os.lseek(stage.descriptor, 0, os.SEEK_SET)
+    with monkeypatch.context() as context:
+        context.setattr(os, "fchmod", lambda *_args: None, raising=False)
+        staged_output._verify_staged(mode_state)  # ruff: ignore[private-member-access] - POSIX private-mode branch contract.
     staged_output._cleanup(mode_state)  # ruff: ignore[private-member-access] - explicit test cleanup.
     mismatch_case = tmp_path / "mismatch"
     mismatch_case.mkdir()
