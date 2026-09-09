@@ -6,19 +6,41 @@ the source byte spans.  It never regenerates body text or decodes character sets
 
 from __future__ import annotations
 
-import string
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from .domain import AppError, ExitCode
 from .mime_headers import TOKEN_RE, Header
 from .mime_identifiers import parse_message_identifier
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 BACKSLASH: Final = ord("\\")
 DOUBLE_QUOTE: Final = ord('"')
 SEMICOLON: Final = ord(";")
 PERCENT: Final = ord("%")
 MIN_QUOTED_BYTES: Final = 2
+ASCII_DIGIT_START: Final = ord("0")
+ASCII_DIGIT_END: Final = ord("9")
+ASCII_UPPER_START: Final = ord("A")
+ASCII_UPPER_END: Final = ord("Z")
+ASCII_LOWER_START: Final = ord("a")
+ASCII_LOWER_END: Final = ord("z")
+RFC2231_ATTR_PUNCTUATION: Final = frozenset({
+    33,
+    35,
+    36,
+    38,
+    43,
+    45,
+    46,
+    94,
+    95,
+    96,
+    124,
+    126,
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,18 +63,18 @@ def _split_semicolons(value: bytes) -> list[bytes]:
     """
     pieces: list[bytes] = []
     current = bytearray()
-    quoted = False
-    escaped = False
+    quoted = 0
+    escaped = 0
     for byte in value:
         if escaped:
             current.append(byte)
-            escaped = False
+            escaped = 0
         elif quoted and byte == BACKSLASH:
             current.append(byte)
-            escaped = True
+            escaped = 1
         elif byte == DOUBLE_QUOTE:
             current.append(byte)
-            quoted = not quoted
+            quoted ^= 1
         elif byte == SEMICOLON and not quoted:
             pieces.append(bytes(current).strip())
             current.clear()
@@ -128,9 +150,6 @@ def _extended_parameter(value: bytes, *, initial: bool) -> bytes:
 
     """
     payload = _extended_payload(value) if initial else value
-    allowed = (
-        b"!#$&+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-    )
     for position, byte in enumerate(payload):
         if byte == PERCENT:
             if position + 2 >= len(payload) or any(
@@ -138,11 +157,26 @@ def _extended_parameter(value: bytes, *, initial: bool) -> bytes:
                 for digit in payload[position + 1 : position + 3]
             ):
                 raise AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 escape")
-        elif byte in allowed:
+        elif _is_rfc2231_attr_char(byte):
             continue
         else:
             raise AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 parameter")
     return value
+
+
+def _is_rfc2231_attr_char(byte: int) -> bool:
+    """Return whether one byte is a permitted RFC 2231 attribute character.
+
+    Returns:
+        Whether the byte belongs to the RFC 2231 attr-char alphabet.
+
+    """
+    return (
+        ASCII_DIGIT_START <= byte <= ASCII_DIGIT_END
+        or ASCII_UPPER_START <= byte <= ASCII_UPPER_END
+        or ASCII_LOWER_START <= byte <= ASCII_LOWER_END
+        or byte in RFC2231_ATTR_PUNCTUATION
+    )
 
 
 def _extended_payload(value: bytes) -> bytes:
@@ -157,7 +191,12 @@ def _extended_payload(value: bytes) -> bytes:
     """
     charset, first_quote, remainder = value.partition(b"'")
     language, second_quote, payload = remainder.partition(b"'")
-    language_bytes = (string.digits + string.ascii_letters + "-").encode("ascii")
+    language_bytes = (
+        bytes(range(48, 58))
+        + bytes(range(65, 91))
+        + bytes(range(97, 123))
+        + bytes((45,))
+    )
     if not first_quote or not second_quote or not TOKEN_RE.fullmatch(charset):
         raise AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 extended parameter")
     if language and not all(byte in language_bytes for byte in language):
@@ -165,7 +204,7 @@ def _extended_payload(value: bytes) -> bytes:
     return payload
 
 
-def _structured(value: bytes, *, media: bool) -> ContentSpec:
+def _structured(value: bytes, token_validator: Callable[[bytes], bytes]) -> ContentSpec:
     """Parse a closed token-and-parameter MIME field.
 
     Returns:
@@ -173,27 +212,39 @@ def _structured(value: bytes, *, media: bool) -> ContentSpec:
 
     """
     pieces = _split_semicolons(value)
-    token = _structured_token(pieces[0], media=media)
+    token = token_validator(pieces[0])
     parameters = _structured_parameters(pieces[1:])
     return ContentSpec(_ascii_token(token), parameters)
 
 
-def _structured_token(value: bytes, *, media: bool) -> bytes:
+def _structured_token(value: bytes) -> bytes:
     """Validate the primary token in a structured MIME field.
 
     Returns:
         The lower-case primary token.
 
     Raises:
-        AppError: If the token is malformed for a media or disposition field.
+        AppError: If the token is malformed for a MIME structured field.
 
     """
     token = value.lower()
     if not token or not TOKEN_RE.fullmatch(token.replace(b"/", b"")):
         raise AppError(ExitCode.PARSE_ERROR, "malformed MIME structured header")
-    if media and (
-        token.count(b"/") != 1 or any(not side for side in token.split(b"/"))
-    ):
+    return token
+
+
+def _media_token(value: bytes) -> bytes:
+    """Validate the primary token for a Content-Type field.
+
+    Returns:
+        The lower-case type/subtype token.
+
+    Raises:
+        AppError: If the token does not have exactly one nonempty slash separator.
+
+    """
+    token = _structured_token(value)
+    if token.count(b"/") != 1 or any(not side for side in token.split(b"/")):
         raise AppError(ExitCode.PARSE_ERROR, "malformed MIME media type")
     return token
 
@@ -307,10 +358,9 @@ def _ascii_token(token: bytes) -> str:
         AppError: If the raw token nonetheless contains non-ASCII octets.
 
     """
-    try:
-        return token.decode("ascii")
-    except UnicodeDecodeError as exc:
-        raise AppError(ExitCode.PARSE_ERROR, "non-ASCII MIME token") from exc
+    if not token.isascii():
+        raise AppError(ExitCode.PARSE_ERROR, "non-ASCII MIME token")
+    return token.decode()
 
 
 def _header_value(headers: tuple[Header, ...], name: bytes) -> bytes | None:
@@ -340,10 +390,14 @@ def content_specs(
     """
     raw_type = _header_value(headers, b"content-type")
     content_type = (
-        _structured(raw_type, media=True) if raw_type else ContentSpec("text/plain", {})
+        _structured(raw_type, _media_token)
+        if raw_type
+        else ContentSpec("text/plain", {})
     )
     raw_disposition = _header_value(headers, b"content-disposition")
-    disposition = _structured(raw_disposition, media=False) if raw_disposition else None
+    disposition = (
+        _structured(raw_disposition, _structured_token) if raw_disposition else None
+    )
     raw_cte = _header_value(headers, b"content-transfer-encoding")
     _validate_content_id(_header_value(headers, b"content-id"))
     if raw_cte is None:
@@ -351,7 +405,7 @@ def content_specs(
     cte = raw_cte.strip().lower()
     if not TOKEN_RE.fullmatch(cte):
         raise AppError(ExitCode.PARSE_ERROR, "malformed Content-Transfer-Encoding")
-    return content_type, disposition, cte.decode("ascii")
+    return content_type, disposition, cte.decode()
 
 
 def _validate_content_id(value: bytes | None) -> None:

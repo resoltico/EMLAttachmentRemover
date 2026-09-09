@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import codecs
 import ctypes
 import os
 import struct
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NoReturn, Protocol, cast
+from typing import TYPE_CHECKING, NoReturn
 
 from .native_windows_abi import (
     DELETE,
@@ -62,35 +63,31 @@ from .native_windows_abi import (
 from .native_windows_abi import (
     UnicodeString as _UnicodeString,
 )
+from .native_windows_runtime import (
+    Msvcrt as _Msvcrt,
+)
+from .native_windows_runtime import (
+    ctypes_attribute as _ctypes_attribute,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-def _ctypes_attribute(name: str) -> object:
-    return getattr(ctypes, name)
-
-
 def _win_dll() -> Callable[..., ctypes.CDLL]:
-    return cast("Callable[..., ctypes.CDLL]", _ctypes_attribute("WinDLL"))
+    return _ctypes_attribute("WinDLL")
 
 
 def _last_error() -> int:
-    return cast("Callable[[], int]", _ctypes_attribute("get_last_error"))()
+    return _ctypes_attribute("get_last_error")()
 
 
 def _format_error(value: int) -> str:
-    return cast("Callable[[int], str]", _ctypes_attribute("FormatError"))(value)
-
-
-class _Msvcrt(Protocol):
-    def get_osfhandle(self, descriptor: int) -> int: ...
-
-    def open_osfhandle(self, handle: int, flags: int) -> int: ...
+    return _ctypes_attribute("FormatError")(value)
 
 
 def _msvcrt() -> _Msvcrt:
-    return cast("_Msvcrt", __import__("msvcrt"))
+    return _Msvcrt()
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,7 +323,7 @@ class WindowsApi:
             OSError: If the native rename fails for another reason.
 
         """
-        encoded = name.encode("utf-16-le", "strict")
+        encoded = codecs.utf_16_le_encode(name)[0]
         size = max(24, 20 + len(encoded))
         buffer = bytearray(MAX_RENAME_BUFFER_BYTES)
         struct.pack_into("<I", buffer, 0, 0)
@@ -386,7 +383,7 @@ class WindowsApi:
         create: bool,
     ) -> int:
         buffer = ctypes.create_unicode_buffer(name)
-        encoded = name.encode("utf-16-le", "strict")
+        encoded = codecs.utf_16_le_encode(name)[0]
         string = _UnicodeString(len(encoded), len(encoded), ctypes.addressof(buffer))
         attributes = _ObjectAttributes(
             ctypes.sizeof(_ObjectAttributes),

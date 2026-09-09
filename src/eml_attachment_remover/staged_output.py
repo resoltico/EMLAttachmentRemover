@@ -113,7 +113,6 @@ def _create_stage(  # ruff: ignore[complex-structure] - immediate ownership pres
     parent = state.parent
     if parent is None:
         raise AppError(ExitCode.INTERNAL_ERROR, "destination directory was not bound")
-    descriptor = -1
     for _attempt in range(16):
         name = private_stage_name()
         try:
@@ -192,13 +191,14 @@ def _verify_staged(state: _PublicationState) -> None:
     if stage is None or parent is None:
         raise AppError(ExitCode.INTERNAL_ERROR, "staging file was not created")
     position = 0
-    for _attempt in range(len(state.candidate) + 1):
-        if position == len(state.candidate):
-            break
+    while position < len(state.candidate):
         written = os.write(stage.descriptor, state.candidate[position:])
-        position = _advanced_write_position(position, written, len(state.candidate))
-    else:
-        raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
+        next_position = _advanced_write_position(
+            position, written, len(state.candidate)
+        )
+        if next_position <= position:
+            raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
+        position = next_position
     os.fsync(stage.descriptor)
     if not parent.windows:
         os.fchmod(stage.descriptor, 0o600)

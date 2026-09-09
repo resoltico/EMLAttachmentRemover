@@ -93,18 +93,10 @@ def test_unquote_preserves_unquoted_and_decodes_every_quoted_pair_once() -> None
 
 def test_structured_token_and_parameter_values_preserve_their_forms() -> None:
     """Media token normalization and parameter syntaxes remain independently closed."""
-    assert (
-        mime_validation._structured_token(  # ruff: ignore[private-member-access] - direct media-token receipt.
-            b"Application/JSON", media=True
-        )
-        == b"application/json"
-    )
-    assert (
-        mime_validation._structured_token(  # ruff: ignore[private-member-access] - direct disposition-token receipt.
-            b"Attachment", media=False
-        )
-        == b"attachment"
-    )
+    media_token = mime_validation._media_token  # ruff: ignore[private-member-access] - direct media-token grammar.
+    structured_token = mime_validation._structured_token  # ruff: ignore[private-member-access] - direct structured-token grammar.
+    assert media_token(b"Application/JSON") == b"application/json"
+    assert structured_token(b"Attachment") == b"attachment"
     assert (
         mime_validation._parameter_value(  # ruff: ignore[private-member-access] - plain token parameter receipt.
             b"atom", encoded=False, initial=False
@@ -124,15 +116,21 @@ def test_structured_token_and_parameter_values_preserve_their_forms() -> None:
         )
         == extended
     )
-    for value, media, message in [
-        (b"text/plain/extra", True, "malformed MIME media type"),
-        (b"text/", True, "malformed MIME media type"),
-        (b" space", False, "malformed MIME structured header"),
+    for value, validator, message in [
+        (
+            b"text/plain/extra",
+            media_token,
+            "malformed MIME media type",
+        ),
+        (b"text/", media_token, "malformed MIME media type"),
+        (
+            b" space",
+            structured_token,
+            "malformed MIME structured header",
+        ),
     ]:
         with pytest.raises(AppError, match=message) as error:
-            mime_validation._structured_token(  # ruff: ignore[private-member-access] - direct structured-token grammar.
-                value, media=media
-            )
+            validator(value)
         assert error.value.code is ExitCode.PARSE_ERROR
     for value, encoded, initial, message in [
         (b"space value", False, False, "malformed MIME parameter value"),
@@ -230,18 +228,20 @@ def test_finish_continuations_rejects_every_gapped_sequence(
 
 def test_structured_field_and_content_specs_return_complete_raw_receipts() -> None:
     """All MIME controls retain their normalized tokens and raw values together."""
+    media_token = mime_validation._media_token  # ruff: ignore[private-member-access] - direct media structured-field receipt.
+    structured_token = mime_validation._structured_token  # ruff: ignore[private-member-access] - direct disposition structured-field receipt.
     type_value = (
         b"Application/JSON; Charset=US-ASCII; name*0*=utf-8'en'mail%20; name*1*=copy"
     )
     disposition_value = b'Attachment; filename="quarterly; report.eml"; size=42'
     assert mime_validation._structured(  # ruff: ignore[private-member-access] - complete media structured-field receipt.
-        type_value, media=True
+        type_value, media_token
     ) == ContentSpec(
         "application/json",
         {b"charset": b"US-ASCII", b"name": b"utf-8'en'mail%20copy"},
     )
     assert mime_validation._structured(  # ruff: ignore[private-member-access] - complete disposition structured-field receipt.
-        disposition_value, media=False
+        disposition_value, structured_token
     ) == ContentSpec(
         "attachment",
         {b"filename": b"quarterly; report.eml", b"size": b"42"},

@@ -214,7 +214,7 @@ def _candidate(item: LedgerItem, expected_identity: FileIdentity) -> None:
                 item.warnings.append({
                     "code": "CHARSET_PRESERVED_OPAQUE",
                     "mime_path": fingerprint.source_path,
-                    "charset_base64": b64encode(value).decode("ascii"),
+                    "charset_base64": b64encode(value).decode(),
                     "message": "charset label was preserved without codec lookup",
                 })
     item.verification = receipt

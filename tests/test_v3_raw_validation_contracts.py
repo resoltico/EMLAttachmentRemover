@@ -64,7 +64,7 @@ def test_extended_parameter_parser_accepts_escape_and_rejects_language_space() -
 def test_structured_helpers_reject_non_media_and_overlapping_parameters() -> None:
     for value in (b"", b"text", b"text//plain"):
         with pytest.raises(AppError):
-            mime_validation._structured_token(value, media=True)  # ruff: ignore[private-member-access] - media token invariant.
+            mime_validation._media_token(value)  # ruff: ignore[private-member-access] - media token invariant.
     with pytest.raises(AppError):
         mime_validation._parameter_value(b'"quoted"', encoded=True, initial=True)  # ruff: ignore[private-member-access] - encoded quote invariant.
     parameters: dict[bytes, bytes] = {b"x": b"one"}

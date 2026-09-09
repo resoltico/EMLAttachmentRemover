@@ -93,7 +93,7 @@ def _bind_destination(request: str, expanded: str) -> BoundDestination:
 
 def _inspect_source_identity(expanded: str) -> FileIdentity:
     parent, _parent_text, basename = _parent(expanded)
-    handle = -1
+    handle: int | None = None
     try:
         handle = _api().open_child(parent, basename)
         if _api().info(handle).directory:
@@ -106,26 +106,26 @@ def _inspect_source_identity(expanded: str) -> FileIdentity:
             ExitCode.INPUT_ERROR, f"could not inspect source: {exc}"
         ) from exc
     finally:
-        if handle >= 0:
+        if handle is not None:
             _api().close(handle)
         _api().close(parent)
 
 
 def _read_source(request: str, expanded: str) -> SourceSnapshot:
     parent, parent_text, basename = _parent(expanded)
-    handle = -1
-    descriptor = -1
+    handle: int | None = None
+    descriptor: int | None = None
     try:
         handle = _api().open_child(parent, basename)
         descriptor = _api().descriptor_from_handle(handle, read_only=True)
-        handle = -1
+        handle = None
         return _snapshot(request, expanded, parent_text, basename, descriptor)
     except OSError as exc:
         raise AppError(ExitCode.INPUT_ERROR, f"could not read source: {exc}") from exc
     finally:
-        if descriptor >= 0:
+        if descriptor is not None:
             os.close(descriptor)
-        if handle >= 0:
+        if handle is not None:
             _api().close(handle)
         _api().close(parent)
 
@@ -212,7 +212,7 @@ def _publish_stage_no_replace(
 
 
 def _child_lstat(directory: BoundDirectory, name: str) -> FileIdentity | None:
-    handle = -1
+    handle: int | None = None
     try:
         handle = _api().open_child(directory.descriptor, name, no_follow=True)
         info = _api().info(handle)
@@ -224,7 +224,7 @@ def _child_lstat(directory: BoundDirectory, name: str) -> FileIdentity | None:
     except FileNotFoundError:
         return None
     finally:
-        if handle >= 0:
+        if handle is not None:
             _api().close(handle)
 
 

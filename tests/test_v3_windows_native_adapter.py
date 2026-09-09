@@ -275,7 +275,10 @@ def test_windows_adapter_covers_dynamic_ctypes_and_native_null_handle(
 
     monkeypatch.setattr("builtins.__import__", import_fake)
     loader = cast("Callable[[], object]", native_windows.__dict__["_msvcrt"])
-    assert loader() is bridge
+    crt = cast("Msvcrt", loader())
+    assert crt.get_osfhandle(31) == 131
+    assert crt.open_osfhandle(41, 42) == 241
+    assert bridge.opened == [(41, 42)]
     api, _kernel, ntdll = _adapter(monkeypatch)
     ntdll.NtCreateFile.response = lambda *_arguments: 0
     with pytest.raises(OSError, match="null handle"):
