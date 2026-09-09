@@ -51,7 +51,7 @@ def test_stage_creation_owns_every_construction_failure(
     with pytest.raises(AppError) as raised:
         staged_output._create_stage(unbound)  # ruff: ignore[private-member-access] - unbound-stage contract.
     assert raised.value.code is ExitCode.INTERNAL_ERROR
-    state = _bound_state(tmp_path)
+    state = _state(tmp_path)
     staged_output._bind_parent(state)  # ruff: ignore[private-member-access] - construction-fault setup.
 
     def interrupt_owner(_fd: int, _name: bytes | str) -> object:
