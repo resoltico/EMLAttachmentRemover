@@ -27,7 +27,12 @@ class ArtifactMutationContracts(unittest.TestCase):
         )
         self.assertEqual(
             set(observation_safety.path_prefix_variants(r"C:\private\project")),
-            {r"C:\private\project", "C:/private/project", r"C:\\private\\project"},
+            {
+                r"C:\private\project",
+                "C:/private/project",
+                r"C:\\private\\project",
+                r"C:\\\\private\\\\project",
+            },
         )
 
     def test_public_path_replacement_has_explicit_platform_semantics(self) -> None:
