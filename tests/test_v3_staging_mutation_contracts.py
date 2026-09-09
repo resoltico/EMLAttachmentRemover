@@ -1,0 +1,70 @@
+"""Exact mutation-resistant contracts for private staging receipts."""
+
+from __future__ import annotations
+
+import hashlib
+import os
+from typing import TYPE_CHECKING
+
+from eml_attachment_remover import staged_output
+from eml_attachment_remover.domain import FileIdentity
+from eml_attachment_remover.native_paths import bind_destination
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
+
+    from eml_attachment_remover.staged_output import _PublicationState
+
+
+def _state(tmp_path: Path, candidate: bytes) -> _PublicationState:
+    destination = bind_destination(str(tmp_path / "output.eml"))
+    state = staged_output._PublicationState(  # ruff: ignore[private-member-access] - direct lifecycle contract.
+        destination, candidate, hashlib.sha256(candidate).hexdigest()
+    )
+    staged_output._bind_parent(state)  # ruff: ignore[private-member-access] - staged owner setup.
+    staged_output._create_stage(state)  # ruff: ignore[private-member-access] - staged owner setup.
+    return state
+
+
+def test_staged_write_accepts_positive_partial_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Require each positive partial write to advance to a byte-exact stage."""
+    state = _state(tmp_path, b"three")
+    original_write = os.write
+
+    def write_one(descriptor: int, data: bytes) -> int:
+        return original_write(descriptor, data[:1])
+
+    monkeypatch.setattr(os, "write", write_one)
+    staged_output._verify_staged(state)  # ruff: ignore[private-member-access] - positive-progress contract.
+    assert state.stage is not None
+    os.lseek(state.stage.descriptor, 0, os.SEEK_SET)
+    assert os.read(state.stage.descriptor, 16) == b"three"
+    staged_output._cleanup(state)  # ruff: ignore[private-member-access] - owned stage cleanup.
+
+
+def test_reconciliation_records_every_unproven_receipt_field(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Require a failed re-address to retain its complete truthful receipt."""
+    state = _state(tmp_path, b"candidate")
+    identity = FileIdentity(1, 2, "regular", 3)
+    monkeypatch.setattr(
+        staged_output,
+        "_read_final_receipt",
+        lambda _state: (_ for _ in ()).throw(OSError("readdress")),
+    )
+    monkeypatch.setattr(staged_output, "descriptor_identity", lambda _fd: identity)
+    receipt = staged_output._reconcile(state, "unsupported")  # ruff: ignore[private-member-access] - truthful unproven receipt.
+    assert receipt.visibility == "not_proven"
+    assert receipt.identity == identity
+    assert receipt.digest == hashlib.sha256(b"candidate").hexdigest()
+    assert receipt.file_sync == "succeeded"
+    assert receipt.directory_sync == "unsupported"
+    assert receipt.address_verified is False
+    assert receipt.final_address is None
+    assert receipt.temp_cleanup == "pending"
+    staged_output._cleanup(state)  # ruff: ignore[private-member-access] - owned stage cleanup.
