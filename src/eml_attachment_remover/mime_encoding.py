@@ -69,11 +69,13 @@ def _validate_quoted_printable(encoded: bytes) -> None:
     for index, byte in enumerate(encoded):
         if byte != EQUALS:
             continue
-        remainder = encoded[index + 1 :]
-        if remainder.startswith((b"\r\n", b"\n")):
+        next_index = index + 1
+        if encoded.startswith((b"\r\n", b"\n"), next_index):
             continue
-        if len(remainder) >= HEX_PAIR_BYTES and all(
-            byte in b"0123456789abcdefABCDEF" for byte in remainder[:HEX_PAIR_BYTES]
+        if (
+            next_index + HEX_PAIR_BYTES <= len(encoded)
+            and encoded[next_index] in b"0123456789abcdefABCDEF"
+            and encoded[next_index + 1] in b"0123456789abcdefABCDEF"
         ):
             continue
         raise AppError(

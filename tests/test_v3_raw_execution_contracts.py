@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from typing import SupportsIndex, overload
 
 import pytest
 
@@ -12,6 +13,22 @@ from eml_attachment_remover.mime_execution import Candidate, build_candidate
 from eml_attachment_remover.mime_policy import classify
 from eml_attachment_remover.mime_raw import parse_raw_mime
 from eml_attachment_remover.mime_removals import RemovalIndex
+
+
+class _NoSliceBytes(bytes):
+    """A byte sequence that makes accidental per-token tail copies observable."""
+
+    @overload
+    def __getitem__(self, index: SupportsIndex, /) -> int: ...
+
+    @overload
+    def __getitem__(self, index: slice, /) -> bytes: ...
+
+    def __getitem__(self, index: SupportsIndex | slice, /) -> int | bytes:
+        if isinstance(index, slice):
+            message = "quoted-printable validation must not copy a tail slice"
+            raise TypeError(message)
+        return super().__getitem__(index)
 
 
 def _mixed() -> bytes:
@@ -45,6 +62,13 @@ def test_transfer_decoder_preserves_permitted_forms(
 def test_transfer_decoder_rejects_invalid_forms(encoded: bytes, cte: str) -> None:
     with pytest.raises(AppError):
         mime_encoding.decode_payload(encoded, cte)
+
+
+def test_quoted_printable_validation_uses_bounded_indexed_lookahead() -> None:
+    """A repeated legal escape sequence must not allocate one tail per equals sign."""
+    mime_encoding._validate_quoted_printable(  # ruff: ignore[private-member-access] - bounded transfer-encoding scan.
+        _NoSliceBytes(b"=41" * 4096)
+    )
 
 
 def test_execution_rejects_invalid_plan_spans_and_removal_roots() -> None:
