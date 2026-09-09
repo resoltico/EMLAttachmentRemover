@@ -64,6 +64,12 @@ def test_header_parser_rejects_a_nonadvancing_wire_cursor(
     assert captured.value == AppError(
         ExitCode.PARSE_ERROR, "MIME header cursor did not advance"
     )
+    assert mime_headers._advanced_cursor(3, 4) == 4  # ruff: ignore[private-member-access] - direct header progress receipt.
+    with pytest.raises(AppError) as captured:
+        mime_headers._advanced_cursor(4, 4)  # ruff: ignore[private-member-access] - equal header cursor must fail closed.
+    assert captured.value == AppError(
+        ExitCode.PARSE_ERROR, "MIME header cursor did not advance"
+    )
     with monkeypatch.context() as context:
         context.setattr(mime_headers, "MAX_HEADER_BYTES", 0)
         with pytest.raises(AppError):

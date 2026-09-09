@@ -50,6 +50,13 @@ def test_staged_write_rejects_nonprogress_and_impossible_progress(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A native write result must consume a nonempty proper slice of the candidate."""
+    assert bytes(staged_output._remaining_after_write(memoryview(b"two"), 1)) == b"wo"  # ruff: ignore[private-member-access] - exact remaining-candidate slice.
+    for reported in (-1, 0, 4):
+        with pytest.raises(AppError) as captured:
+            staged_output._remaining_after_write(memoryview(b"two"), reported)  # ruff: ignore[private-member-access] - direct native-write progress validation.
+        assert captured.value == AppError(
+            ExitCode.WRITE_ERROR, "short write while staging candidate"
+        )
     state = _state(tmp_path, b"two")
     for reported in (-1, 4):
         with monkeypatch.context() as context:

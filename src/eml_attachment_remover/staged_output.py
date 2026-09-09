@@ -173,6 +173,13 @@ def _close_directory(directory: BoundDirectoryHandle) -> BaseException | None:
     return None
 
 
+def _remaining_after_write(remaining: memoryview, written: int) -> memoryview:
+    """Return the unwritten candidate bytes after one proven-progress native write."""  # ruff: ignore[docstring-missing-returns,docstring-missing-exception] - internal slice contract.
+    if not 0 < written <= len(remaining):
+        raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
+    return remaining[written:]
+
+
 def _verify_staged(state: _PublicationState) -> None:
     """Fsync, mode-check, and reread the still-open staged candidate.
 
@@ -187,9 +194,7 @@ def _verify_staged(state: _PublicationState) -> None:
     remaining = memoryview(state.candidate)
     while remaining:
         written = os.write(stage.descriptor, remaining)
-        if not 0 < written <= len(remaining):
-            raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
-        remaining = remaining[written:]
+        remaining = _remaining_after_write(remaining, written)
     os.fsync(stage.descriptor)
     if not parent.windows:
         os.fchmod(stage.descriptor, 0o600)

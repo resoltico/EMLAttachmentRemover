@@ -60,6 +60,21 @@ def line_end(raw: bytes, position: int, end: int) -> int:
     return newline + 1
 
 
+def _advanced_cursor(position: int, next_position: int) -> int:
+    """Return a strictly advanced header cursor or fail closed.
+
+    Returns:
+        The validated next header offset.
+
+    Raises:
+        AppError: If the proposed offset does not strictly advance.
+
+    """
+    if next_position <= position:
+        raise AppError(ExitCode.PARSE_ERROR, "MIME header cursor did not advance")
+    return next_position
+
+
 def parse_headers(raw: bytes, start: int, separator: int) -> tuple[Header, ...]:
     """Parse physical fields without unfolding or silently repairing them.
 
@@ -75,9 +90,7 @@ def parse_headers(raw: bytes, start: int, separator: int) -> tuple[Header, ...]:
     headers: list[Header] = []
     position = _first_header_offset(raw, start, separator)
     while position < separator:
-        end = line_end(raw, position, separator)
-        if end <= position:
-            raise AppError(ExitCode.PARSE_ERROR, "MIME header cursor did not advance")
+        end = _advanced_cursor(position, line_end(raw, position, separator))
         line = raw[position:end].rstrip(b"\r\n")
         _append_header(headers, line, position, end)
         position = end

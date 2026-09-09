@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import struct
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NoReturn, Protocol, cast
 
@@ -327,21 +328,17 @@ class WindowsApi:
         """
         encoded = name.encode("utf-16-le", "strict")
         size = max(24, 20 + len(encoded))
-        buffer = (ctypes.c_ubyte * MAX_RENAME_BUFFER_BYTES)()
-        ctypes.memset(buffer, 0, size)
-        ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ulong))[0] = 0
-        ctypes.cast(ctypes.byref(buffer, 8), ctypes.POINTER(ctypes.c_void_p))[0] = (
-            ctypes.c_void_p(parent)
-        )
-        ctypes.cast(ctypes.byref(buffer, 16), ctypes.POINTER(ctypes.c_ulong))[0] = len(
-            encoded
-        )
-        ctypes.memmove(ctypes.byref(buffer, 20), encoded, len(encoded))
+        buffer = bytearray(MAX_RENAME_BUFFER_BYTES)
+        struct.pack_into("<I", buffer, 0, 0)
+        struct.pack_into("<Q", buffer, 8, parent)
+        struct.pack_into("<I", buffer, 16, len(encoded))
+        buffer[20 : 20 + len(encoded)] = encoded
+        native_buffer = ctypes.create_string_buffer(bytes(buffer))
         status = _IoStatusBlock()
         result = self.ntdll.NtSetInformationFile(
             ctypes.c_void_p(stage),
             ctypes.byref(status),
-            ctypes.byref(buffer),
+            ctypes.byref(native_buffer),
             size,
             FILE_RENAME_INFORMATION_EX,
         )

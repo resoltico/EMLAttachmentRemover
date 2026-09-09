@@ -122,24 +122,36 @@ def _adapter(monkeypatch: MonkeyPatch) -> tuple[WindowsApi, Kernel, Ntdll]:
 
 
 def _open_relative(*arguments: object) -> int:
-    target = ctypes.cast(
-        cast("ctypes.c_void_p", arguments[0]), ctypes.POINTER(ctypes.c_void_p)
-    )
-    target[0] = ctypes.c_void_p(23)
+    target = getattr(arguments[0], "_obj", None)
+    message = "NtCreateFile target must be the supplied handle referent"
+    if not isinstance(target, ctypes.c_void_p):
+        raise TypeError(message)
+    address = ctypes.cast(cast("ctypes.c_void_p", arguments[0]), ctypes.c_void_p).value
+    if address is None or address != ctypes.addressof(target):
+        raise TypeError(message)
+    target.value = 23
     return 0
 
 
 def _fill_information(*arguments: object) -> int:
     kind = cast("int", arguments[1])
-    target = cast("int", arguments[2])
+    target = getattr(arguments[2], "_obj", None)
+    message = "GetFileInformation target must be the supplied structure referent"
+    if not isinstance(target, ctypes.Structure):
+        raise TypeError(message)
+    address = ctypes.cast(cast("ctypes.c_void_p", arguments[2]), ctypes.c_void_p).value
+    if address is None or address != ctypes.addressof(target):
+        raise TypeError(message)
+    if ctypes.sizeof(target) != cast("int", arguments[3]):
+        raise TypeError(message)
     if kind == 18:
-        ctypes.memmove(target, struct.pack("<Q", 7) + bytes(range(16)), 24)
+        ctypes.memmove(address, struct.pack("<Q", 7) + bytes(range(16)), 24)
     elif kind == 0:
-        ctypes.memmove(target, struct.pack("<qqqqI", 0, 0, 9, 11, 0), 36)
+        ctypes.memmove(address, struct.pack("<qqqqI", 0, 0, 9, 11, 0), 36)
     elif kind == 1:
-        ctypes.memmove(target, struct.pack("<qqIB", 0, 13, 1, 0), 21)
+        ctypes.memmove(address, struct.pack("<qqIB", 0, 13, 1, 0), 21)
     elif kind == 9:
-        ctypes.memmove(target, struct.pack("<II", 0, 0), 8)
+        ctypes.memmove(address, struct.pack("<II", 0, 0), 8)
     return 1
 
 

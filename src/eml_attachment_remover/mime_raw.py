@@ -103,19 +103,12 @@ def _delimiter_lines(
     Returns:
         Source spans and closing markers for recognized delimiter lines.
 
-    Raises:
-        AppError: If a physical delimiter cursor does not make progress.
-
     """
     prefix = b"--" + boundary
     result: list[tuple[int, int, bool]] = []
     position = start
     while position < end:
-        end_of_line = line_end(raw, position, end)
-        if end_of_line <= position:
-            raise AppError(
-                ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance"
-            )
+        end_of_line = _advanced_delimiter_cursor(position, line_end(raw, position, end))
         line = raw[position:end_of_line].rstrip(b"\r\n")
         if line.startswith(prefix):
             tail = line[len(prefix) :]
@@ -126,6 +119,21 @@ def _delimiter_lines(
                 result.append((position, end_of_line, closing))
         position = end_of_line
     return result
+
+
+def _advanced_delimiter_cursor(position: int, next_position: int) -> int:
+    """Return a strictly advanced multipart delimiter cursor or fail closed.
+
+    Returns:
+        The validated next delimiter offset.
+
+    Raises:
+        AppError: If the proposed offset does not strictly advance.
+
+    """
+    if next_position <= position:
+        raise AppError(ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance")
+    return next_position
 
 
 def _payload_end(raw: bytes, boundary_start: int) -> int:
