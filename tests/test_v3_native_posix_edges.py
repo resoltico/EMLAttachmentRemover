@@ -8,7 +8,12 @@ from types import SimpleNamespace
 import pytest
 
 from eml_attachment_remover import native_posix
-from eml_attachment_remover.domain import AppError, BoundDirectory, FileIdentity
+from eml_attachment_remover.domain import (
+    AppError,
+    BoundDirectory,
+    FileIdentity,
+    PathValue,
+)
 
 
 def _metadata(*, size: int = 1, inode: int = 2, mtime: int = 3) -> SimpleNamespace:
@@ -183,6 +188,9 @@ def test_posix_publication_primitives_are_platform_independent(
     bound = native_posix.bind_destination("request", "expanded")
     directory = native_posix.open_bound_destination(bound)
     assert directory == BoundDirectory(7, windows=False)
+    missing_parent = replace(bound, parent=PathValue(None, "none", None))
+    with pytest.raises(AppError):
+        native_posix.open_bound_destination(missing_parent)
     changed = replace(bound, directory_identity=FileIdentity(0, 0, "other", 0))
     with pytest.raises(AppError):
         native_posix.open_bound_destination(changed)

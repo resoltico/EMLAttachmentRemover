@@ -307,6 +307,7 @@ def test_signal_deferral_and_parent_binding_fail_closed(
     monkeypatch.setattr(signal, "pthread_sigmask", mask, raising=False)
     monkeypatch.setitem(signal.__dict__, "SIG_BLOCK", 1)
     monkeypatch.setitem(signal.__dict__, "SIG_SETMASK", 2)
+    monkeypatch.setitem(signal.__dict__, "SIGHUP", signal.SIGINT)
     with staged_output._defer_signals():  # ruff: ignore[private-member-access] - direct signal-shield contract.
         pass
     monkeypatch.delattr(signal, "SIGHUP", raising=False)
