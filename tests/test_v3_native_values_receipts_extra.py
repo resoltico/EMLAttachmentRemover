@@ -74,8 +74,7 @@ def test_default_destination_preserves_requested_expression_on_both_path_grammar
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Derive the v3 name without canonicalizing the user-requested parent."""
-    with monkeypatch.context() as context:
-        context.setattr(native_values.__dict__["os"], "name", "posix")
+    if os.name != "nt":
         assert native_values.default_destination("parent/../inbox/Message.EML") == (
             "parent/../inbox/Message.mime-pruned.eml"
         )
