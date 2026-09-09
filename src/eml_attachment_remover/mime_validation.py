@@ -131,18 +131,15 @@ def _extended_parameter(value: bytes, *, initial: bool) -> bytes:
     allowed = (
         b"!#$&+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
     )
-    position = 0
-    while position < len(payload):
-        byte = payload[position]
+    for position, byte in enumerate(payload):
         if byte == PERCENT:
             if position + 2 >= len(payload) or any(
                 digit not in b"0123456789abcdefABCDEF"
                 for digit in payload[position + 1 : position + 3]
             ):
                 raise AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 escape")
-            position += 3
         elif byte in allowed:
-            position += 1
+            continue
         else:
             raise AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 parameter")
     return value
