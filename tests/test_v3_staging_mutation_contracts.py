@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from eml_attachment_remover import staged_output
+from eml_attachment_remover import staged_output, staged_progress
 from eml_attachment_remover.domain import AppError, ExitCode, FileIdentity
 from eml_attachment_remover.native_paths import bind_destination
 
@@ -44,6 +44,24 @@ def test_staged_write_accepts_positive_partial_progress(
     os.lseek(state.stage.descriptor, 0, os.SEEK_SET)
     assert os.read(state.stage.descriptor, 16) == b"three"
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - owned stage cleanup.
+
+
+def test_staged_write_position_requires_strictly_in_range_native_progress() -> None:
+    """The pure write transition independently checks its arithmetic postcondition."""
+    assert staged_progress.advance_position(1, 1, 3) == 2
+    with pytest.raises(AppError) as captured:
+        staged_progress._validated_next_position(  # ruff: ignore[private-member-access] - independent arithmetic postcondition.
+            1, 0, 3
+        )
+    assert captured.value == AppError(
+        ExitCode.WRITE_ERROR, "short write while staging candidate"
+    )
+    for position, written, size in ((0, -1, 2), (0, 0, 2), (2, 2, 3)):
+        with pytest.raises(AppError) as captured:
+            staged_progress.advance_position(position, written, size)
+        assert captured.value == AppError(
+            ExitCode.WRITE_ERROR, "short write while staging candidate"
+        )
 
 
 def test_staged_write_rejects_nonprogress_and_impossible_progress(

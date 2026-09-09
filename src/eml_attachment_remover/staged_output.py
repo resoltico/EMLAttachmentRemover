@@ -29,6 +29,7 @@ from .native_paths import (
     publish_stage_no_replace,
     sync_bound_directory,
 )
+from .staged_progress import advance_position
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -186,12 +187,7 @@ def _verify_staged(state: _PublicationState) -> None:
     position = 0
     while position < len(state.candidate):
         written = os.write(stage.descriptor, state.candidate[position:])
-        next_position = position + written
-        if next_position == position:
-            raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
-        if not 0 < written <= len(state.candidate) - position:
-            raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
-        position = next_position
+        position = advance_position(position, written, len(state.candidate))
     os.fsync(stage.descriptor)
     if not parent.windows:
         os.fchmod(stage.descriptor, 0o600)
