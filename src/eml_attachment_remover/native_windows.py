@@ -325,7 +325,7 @@ class WindowsApi:
 
         """
         encoded = _utf16(name)
-        size = 20 + len(encoded)
+        size = 24 + len(encoded)
         buffer = (ctypes.c_ubyte * size)()
         ctypes.memset(buffer, 0, size)
         ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ulong))[0] = 0
@@ -337,7 +337,7 @@ class WindowsApi:
         )
         ctypes.memmove(ctypes.byref(buffer, 20), encoded, len(encoded))
         if self.kernel32.SetFileInformationByHandle(
-            ctypes.c_void_p(stage), FILE_RENAME_INFO_EX, buffer, size
+            ctypes.c_void_p(stage), FILE_RENAME_INFO_EX, ctypes.byref(buffer), size
         ):
             return
         error = _last_error()
