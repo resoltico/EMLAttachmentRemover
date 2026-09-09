@@ -322,6 +322,7 @@ class WindowsApi:
 
         Raises:
             FileExistsError: If the destination name is already occupied.
+            OSError: If the native rename fails for another reason.
 
         """
         encoded = name.encode("utf-16-le", "strict")
@@ -349,7 +350,7 @@ class WindowsApi:
         error = self.ntdll.RtlNtStatusToDosError(result)
         if error in {ERROR_FILE_EXISTS, ERROR_ALREADY_EXISTS}:
             raise FileExistsError(error, "destination already exists", name)
-        self._raise_last("could not publish candidate")
+        raise OSError(error, f"could not publish candidate: {_format_error(error)}")
 
     def discard_private_stage(self, handle: int) -> None:
         """Mark one private stage for deletion when its last handle closes."""

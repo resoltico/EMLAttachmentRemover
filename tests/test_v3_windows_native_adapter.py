@@ -262,9 +262,13 @@ def test_windows_adapter_covers_normal_and_noncollision_error_edges(
     assert relative_access & FILE_WRITE_DATA
     ntdll.NtSetInformationFile.response = lambda *_arguments: -1
     ntdll.RtlNtStatusToDosError.response = lambda _status: 5
-    monkeypatch.setitem(native_windows.__dict__, "_last_error", lambda: 5)
-    with pytest.raises(OSError, match="publish"):
+    monkeypatch.setitem(native_windows.__dict__, "_last_error", lambda: 0)
+    monkeypatch.setitem(
+        native_windows.__dict__, "_format_error", lambda value: f"{value}"
+    )
+    with pytest.raises(OSError, match="publish candidate: 5") as raised:
         api.publish_no_replace(23, 11, "final.eml")
+    assert raised.value.errno == 5
     kernel.SetFileInformationByHandle.response = lambda *_arguments: 0
     with pytest.raises(OSError, match="staging"):
         api.discard_private_stage(23)
