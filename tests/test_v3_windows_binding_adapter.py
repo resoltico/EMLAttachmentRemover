@@ -162,7 +162,10 @@ def test_windows_binding_reads_and_publishes_through_fake_handles(
     bound = native_windows_binding.bind_destination(
         "C:\\bound\\out.eml", "C:\\bound\\out.eml"
     )
+    assert bound.request.text == "C:\\bound\\out.eml"
+    assert bound.parent.text == "C:\\bound"
     assert bound.basename == "out.eml"
+    assert bound.directory_identity == FileIdentity(4, 10, "directory", 5)
     assert (
         native_windows_binding.inspect_source_identity("C:\\bound\\message.eml").inode
         == 21
@@ -171,6 +174,9 @@ def test_windows_binding_reads_and_publishes_through_fake_handles(
         "requested.eml", "C:\\bound\\message.eml"
     )
     assert snapshot.raw == b"body"
+    assert snapshot.basename == "message.eml"
+    assert snapshot.identity == FileIdentity(4, 21, "regular", 5)
+    assert snapshot.size == source.stat().st_size
     directory = native_windows_binding.open_bound_destination(_destination())
     stage = native_windows_binding.create_private_stage(directory, "stage.tmp")
     assert stage == descriptor
