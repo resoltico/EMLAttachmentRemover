@@ -160,7 +160,16 @@ def _open_bound_destination(destination: BoundDestination) -> BoundDirectory:
     parent = destination.parent.text
     if parent is None:
         raise AppError(ExitCode.WRITE_ERROR, "destination parent has no native address")
-    handle, _parent_text, _name = _parent(parent)
+    drive, tail = ntpath.splitdrive(parent)
+    absolute = parent.startswith(("\\\\", "//")) or (
+        bool(drive) and tail.startswith(("\\", "/"))
+    )
+    try:
+        handle = _api().open_directory(parent, None if absolute else _cwd())
+    except OSError as exc:
+        raise AppError(
+            ExitCode.WRITE_ERROR, f"could not reopen destination parent: {exc}"
+        ) from exc
     observed = _identity(handle)
     expected = destination.directory_identity
     if (observed.device, observed.inode, observed.file_type) != (

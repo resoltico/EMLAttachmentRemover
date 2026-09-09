@@ -79,7 +79,7 @@ class DecisionAction(StrEnum):
     REJECT = "REJECT"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class AppError(Exception):
     """An expected, source-qualified failure."""
 
