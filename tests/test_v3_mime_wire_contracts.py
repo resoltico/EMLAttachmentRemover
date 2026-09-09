@@ -8,7 +8,13 @@ from typing import TYPE_CHECKING
 import pytest
 
 from eml_attachment_remover.batch import BatchOptions, execute
-from eml_attachment_remover.domain import BatchLedger, ItemStatus
+from eml_attachment_remover.domain import (
+    BatchLedger,
+    DecisionAction,
+    ItemStatus,
+    Removal,
+    RemovalReason,
+)
 from eml_attachment_remover.mime_policy import classify
 from eml_attachment_remover.mime_raw import RawNode, parse_raw_mime
 from eml_attachment_remover.mime_removals import RemovalIndex
@@ -197,6 +203,25 @@ def test_removal_prefix_index_visits_only_retained_source_tree_nodes() -> None:
         (2,),
     ]
     assert index.changed_ancestor_paths(tree.root) == {(), (1,)}
+
+
+def test_mixed_policy_exposes_the_complete_action_and_removal_plan() -> None:
+    """Require mixed classification to retain every observable decision field."""
+    raw = (
+        b"Content-Type: multipart/mixed; boundary=m\r\n\r\n"
+        b"--m\r\nContent-Type: text/plain\r\n\r\nbody\r\n"
+        b"--m\r\nContent-Type: application/octet-stream\r\n"
+        b"Content-Disposition: attachment\r\n\r\nremoved\r\n--m--\r\n"
+    )
+    plan = classify(parse_raw_mime(raw).root)
+    assert plan.actions == {
+        (): DecisionAction.RECURSE,
+        (0,): DecisionAction.KEEP,
+        (1,): DecisionAction.REMOVE_SUBTREE,
+    }
+    assert plan.removals == (
+        Removal((1,), "application/octet-stream", RemovalReason.EXPLICIT_ATTACHMENT),
+    )
 
 
 def test_removal_prefix_index_has_linear_operation_receipt_at_ten_thousand_parts() -> (
