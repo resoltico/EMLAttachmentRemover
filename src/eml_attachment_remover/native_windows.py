@@ -33,7 +33,6 @@ from .native_windows_abi import (
     FILE_WRITE_ATTRIBUTES,
     FILE_WRITE_DATA,
     INVALID_HANDLE_VALUE,
-    MIN_DRIVE_ABSOLUTE_LENGTH,
     O_BINARY,
     O_READ_ONLY,
     O_READ_WRITE,
@@ -367,7 +366,7 @@ class WindowsApi:
     def _create_file_directory(self, expression: str) -> int:
         handle = self.kernel32.CreateFileW(
             expression,
-            FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_DATA | SYNCHRONIZE,
             FILE_SHARE_ALL,
             None,
             OPEN_EXISTING,
@@ -406,7 +405,9 @@ class WindowsApi:
         if no_follow:
             options |= FILE_OPEN_REPARSE_POINT
         access = FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE
-        if create:
+        if directory:
+            access |= FILE_WRITE_DATA
+        elif create:
             access |= FILE_READ_DATA | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | DELETE
         else:
             access |= FILE_READ_DATA
@@ -444,6 +445,4 @@ class WindowsApi:
 
 
 def _is_absolute(value: str) -> bool:
-    return value.startswith(("\\\\", "//")) or (
-        len(value) >= MIN_DRIVE_ABSOLUTE_LENGTH and value[1:3] in {":\\", ":/"}
-    )
+    return value.startswith(("\\\\", "//")) or value[1:3] in {":\\", ":/"}

@@ -18,7 +18,11 @@ import pytest
 
 from eml_attachment_remover import atomic_publish, staged_output
 from eml_attachment_remover.domain import AppError, ExitCode, FileIdentity, PathValue
-from eml_attachment_remover.native_paths import BoundDirectoryHandle, bind_destination
+from eml_attachment_remover.native_paths import (
+    BoundDirectoryHandle,
+    bind_destination,
+    publish_stage_no_replace,
+)
 from eml_attachment_remover.staged_output import PublishedWithError, publish
 
 if TYPE_CHECKING:
@@ -353,9 +357,9 @@ def test_staging_helpers_cover_empty_short_and_collision(
     collision.parent = BoundDirectoryHandle(1, windows=False)
     with monkeypatch.context() as context:
         context.setattr(
-            os,
-            "open",
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(FileExistsError()),
+            staged_output,
+            "create_private_stage",
+            lambda *_args: (_ for _ in ()).throw(FileExistsError()),
         )
         with pytest.raises(AppError):
             staged_output._create_stage(collision)  # ruff: ignore[private-member-access] - bounded collision contract.
@@ -399,18 +403,15 @@ def test_link_fallback_and_finish_matrix(
     staged_output._create_stage(state)  # ruff: ignore[private-member-access] - link fallback contract.
     staged_output._verify_staged(state)  # ruff: ignore[private-member-access] - link fallback contract.
 
+    original_publish = publish_stage_no_replace
+
     def link_edge(
         parent: BoundDirectoryHandle,
         descriptor: int,
         stage: bytes | str,
         final: bytes | str,
     ) -> bool:
-        assert isinstance(stage, bytes)
-        assert isinstance(final, bytes)
-        assert descriptor >= 0
-        os.link(
-            stage, final, src_dir_fd=parent.descriptor, dst_dir_fd=parent.descriptor
-        )
+        original_publish(parent, descriptor, stage, final)
         return True
 
     monkeypatch.setattr(staged_output, "publish_stage_no_replace", link_edge)

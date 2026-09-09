@@ -67,6 +67,7 @@ def validate_windows_argument(value: str) -> None:
     except UnicodeEncodeError as exc:
         message = "path contains an unpaired surrogate"
         raise AppError(ExitCode.INPUT_ERROR, message) from exc
+    _validate_windows_namespace(value)
     drive, tail = ntpath.splitdrive(value)
     basename = ntpath.basename(value)
     if "\x00" in value or not basename or value.endswith(("\\", "/")):
@@ -82,6 +83,23 @@ def validate_windows_argument(value: str) -> None:
             ExitCode.INPUT_ERROR, "path exceeds the 32 KiB native-path limit"
         )
     _validate_windows_components(tail)
+
+
+def _validate_windows_namespace(value: str) -> None:
+    """Reject extended namespace roots other than drive and UNC file paths.
+
+    Raises:
+        AppError: If an extended path names a device-object namespace.
+
+    """
+    prefix = "\\\\?\\"
+    if not value.startswith(prefix):
+        return
+    suffix = value.removeprefix(prefix)
+    drive_path = suffix[1:3] == ":\\"
+    unc_path = suffix.casefold().startswith("unc\\")
+    if not drive_path and not unc_path:
+        raise AppError(ExitCode.INPUT_ERROR, "extended path namespace is unsafe")
 
 
 def default_destination(source: str) -> str:

@@ -13,6 +13,7 @@ import pytest
 
 from eml_attachment_remover import native_windows
 from eml_attachment_remover.native_windows import WindowsApi
+from eml_attachment_remover.native_windows_abi import FILE_WRITE_DATA
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -152,7 +153,7 @@ def _final_path(*arguments: object) -> int:
 def test_windows_adapter_uses_rooted_nt_open_identity_and_no_replace_rename(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    api, _kernel, ntdll = _adapter(monkeypatch)
+    api, kernel, ntdll = _adapter(monkeypatch)
     assert api.open_directory("C:\\parent", None) == 11
     assert api.open_child(11, "source.eml") == 23
     assert api.create_child(11, "stage.tmp") == 23
@@ -163,6 +164,8 @@ def test_windows_adapter_uses_rooted_nt_open_identity_and_no_replace_rename(
     api.publish_no_replace(23, 11, "")
     api.discard_private_stage(23)
     api.sync_directory(11)
+    access = cast("int", kernel.CreateFileW.calls[0][1])
+    assert access & FILE_WRITE_DATA
     assert ntdll.NtCreateFile.calls
     assert ntdll.NtSetInformationFile.calls
 
@@ -249,6 +252,8 @@ def test_windows_adapter_covers_normal_and_noncollision_error_edges(
     api, kernel, ntdll = _adapter(monkeypatch)
     api.close(23)
     assert api.open_directory("relative", 11) == 23
+    relative_access = cast("int", ntdll.NtCreateFile.calls[-1][1])
+    assert relative_access & FILE_WRITE_DATA
     ntdll.NtSetInformationFile.response = lambda *_arguments: -1
     ntdll.RtlNtStatusToDosError.response = lambda _status: 5
     monkeypatch.setitem(native_windows.__dict__, "_last_error", lambda: 5)

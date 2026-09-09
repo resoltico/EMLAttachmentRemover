@@ -208,6 +208,30 @@ def test_windows_binding_rejects_missing_or_reparse_destinations(
     os.close(descriptor)
 
 
+def test_windows_binding_maps_native_no_replace_collisions_to_output_conflicts(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    """Report native rename collisions through the stable application error code."""
+    source = tmp_path / "source.eml"
+    source.write_bytes(b"body")
+    descriptor = os.open(source, os.O_RDONLY)
+    api = BindingApi(descriptor, source.stat().st_size)
+    _use_api(monkeypatch, api)
+    directory = native_windows_binding.open_bound_destination(_destination())
+    monkeypatch.setattr(
+        api,
+        "publish_no_replace",
+        lambda *_args: (_ for _ in ()).throw(FileExistsError()),
+    )
+    with pytest.raises(AppError) as raised:
+        native_windows_binding.publish_stage_no_replace(
+            directory, descriptor, "stage.tmp", "out.eml"
+        )
+    assert raised.value.code is ExitCode.OUTPUT_CONFLICT
+    native_windows_binding.close_bound_directory(directory)
+    os.close(descriptor)
+
+
 def test_windows_binding_exercises_expected_failure_and_stability_edges(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:

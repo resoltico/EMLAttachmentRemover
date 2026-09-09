@@ -200,9 +200,14 @@ def _create_private_stage(directory: BoundDirectory, name: str) -> int:
 def _publish_stage_no_replace(
     directory: BoundDirectory, stage_fd: int, _stage_name: str, destination_name: str
 ) -> bool:
-    _api().publish_no_replace(
-        _api().handle_from_descriptor(stage_fd), directory.descriptor, destination_name
-    )
+    try:
+        _api().publish_no_replace(
+            _api().handle_from_descriptor(stage_fd),
+            directory.descriptor,
+            destination_name,
+        )
+    except FileExistsError as exc:
+        raise AppError(ExitCode.OUTPUT_CONFLICT, "destination already exists") from exc
     return False
 
 

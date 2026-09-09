@@ -61,6 +61,9 @@ def test_source_binding_keeps_kernel_symlink_dotdot_semantics(tmp_path: Path) ->
         "C:\\safe\\COM1.eml",
         "C:\\safe\\mail.eml:stream",
         "C:\\safe\\broken\ud800.eml",
+        "\\\\?\\GLOBALROOT\\Device\\HarddiskVolume1",
+        "\\\\?\\Volume{00000000-0000-0000-0000-000000000000}\\mail.eml",
+        "\\\\?\\pipe\\mail",
     ],
 )
 def test_windows_native_validation_rejects_unsafe_forms(
@@ -69,6 +72,17 @@ def test_windows_native_validation_rejects_unsafe_forms(
     """The Windows validator rejects unsafe forms before any native API invocation."""
     with pytest.raises(AppError):
         validate_windows_argument(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["\\\\?\\C:\\long\\mail.eml", "\\\\?\\UNC\\server\\share\\mail.eml"],
+)
+def test_windows_native_validation_keeps_supported_extended_file_namespaces(
+    path: str,
+) -> None:
+    """Permit only the documented drive and UNC extended-length forms."""
+    validate_windows_argument(path)
 
 
 def test_native_value_paths_cover_posix_and_handle_backend_boundaries(

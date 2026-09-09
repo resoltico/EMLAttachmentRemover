@@ -19,6 +19,7 @@ from eml_attachment_remover.native_paths import (
     BoundDirectoryHandle,
     bind_destination,
     descriptor_identity,
+    publish_stage_no_replace,
 )
 from eml_attachment_remover.staged_output import (
     PublishedWithError,
@@ -42,6 +43,19 @@ def _bound_state(tmp_path: Path, candidate: bytes = b"candidate") -> _Publicatio
     staged_output._create_stage(state)  # ruff: ignore[private-member-access] - direct state-machine fault contract.
     staged_output._verify_staged(state)  # ruff: ignore[private-member-access] - direct state-machine fault contract.
     return state
+
+
+def _publish_visible(state: _PublicationState) -> None:
+    """Cross the native edge without constructing a final receipt."""
+    stage = state.stage
+    parent = state.parent
+    assert stage is not None
+    assert stage.name is not None
+    assert parent is not None
+    publish_stage_no_replace(
+        parent, stage.descriptor, stage.name, state.destination.basename
+    )
+    state.kernel_published = True
 
 
 def test_stage_creation_owns_every_construction_failure(
@@ -292,18 +306,9 @@ def test_receipt_close_and_publish_edge_faults_are_truthful(
     mismatch_case = tmp_path / "mismatch"
     mismatch_case.mkdir()
     mismatch = _bound_state(mismatch_case)
+    _publish_visible(mismatch)
     stage = mismatch.stage
-    parent = mismatch.parent
     assert stage is not None
-    assert parent is not None
-    assert isinstance(stage.name, bytes)
-    assert isinstance(mismatch.destination.basename, bytes)
-    os.link(
-        stage.name,
-        mismatch.destination.basename,
-        src_dir_fd=parent.descriptor,
-        dst_dir_fd=parent.descriptor,
-    )
     expected = descriptor_identity(stage.descriptor)
     changed = FileIdentity(0, 0, "-", 0)
     calls = 0
@@ -326,12 +331,7 @@ def test_link_cleanup_failure_after_visible_edge(
     edge_case = tmp_path / "edge"
     edge_case.mkdir()
     edge = _bound_state(edge_case)
-    edge_stage = edge.stage
-    edge_parent = edge.parent
-    assert edge_stage is not None
-    assert edge_parent is not None
-    assert isinstance(edge_stage.name, bytes)
-    assert isinstance(edge.destination.basename, bytes)
+    original_publish = publish_stage_no_replace
 
     def portable_link(
         directory: BoundDirectoryHandle,
@@ -339,14 +339,7 @@ def test_link_cleanup_failure_after_visible_edge(
         stage_name: bytes | str,
         destination_name: bytes | str,
     ) -> bool:
-        assert isinstance(stage_name, bytes)
-        assert isinstance(destination_name, bytes)
-        os.link(
-            stage_name,
-            destination_name,
-            src_dir_fd=directory.descriptor,
-            dst_dir_fd=directory.descriptor,
-        )
+        original_publish(directory, _descriptor, stage_name, destination_name)
         return True
 
     with monkeypatch.context() as context:
@@ -375,18 +368,7 @@ def test_final_receipt_and_unproven_publish_errors_are_preserved(
     clean_case = tmp_path / "clean"
     clean_case.mkdir()
     clean = _bound_state(clean_case)
-    stage = clean.stage
-    parent = clean.parent
-    assert stage is not None
-    assert parent is not None
-    assert isinstance(stage.name, bytes)
-    assert isinstance(clean.destination.basename, bytes)
-    os.link(
-        stage.name,
-        clean.destination.basename,
-        src_dir_fd=parent.descriptor,
-        dst_dir_fd=parent.descriptor,
-    )
+    _publish_visible(clean)
     original_close = staged_output._close_descriptor  # ruff: ignore[private-member-access] - final-close fault injection.
 
     def close_after_actual(descriptor: int) -> BaseException | None:
@@ -407,12 +389,7 @@ def test_unproven_post_edge_receipt_is_an_error(
     unproven_case = tmp_path / "unproven"
     unproven_case.mkdir()
     unproven = _bound_state(unproven_case)
-    stage = unproven.stage
-    parent = unproven.parent
-    assert stage is not None
-    assert parent is not None
-    assert isinstance(stage.name, bytes)
-    assert isinstance(unproven.destination.basename, bytes)
+    original_publish = publish_stage_no_replace
 
     def link_without_replacement(
         directory: BoundDirectoryHandle,
@@ -420,14 +397,7 @@ def test_unproven_post_edge_receipt_is_an_error(
         stage_name: bytes | str,
         destination_name: bytes | str,
     ) -> bool:
-        assert isinstance(stage_name, bytes)
-        assert isinstance(destination_name, bytes)
-        os.link(
-            stage_name,
-            destination_name,
-            src_dir_fd=directory.descriptor,
-            dst_dir_fd=directory.descriptor,
-        )
+        original_publish(directory, _descriptor, stage_name, destination_name)
         return False
 
     receipt = PublicationReceipt(

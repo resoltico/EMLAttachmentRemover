@@ -44,6 +44,9 @@ The tool preserves kernel path traversal semantics. For example, a path containi
 symlink and `..` opens the object selected by the kernel, not a lexically normalized
 path. Destination publication is same-directory, private-mode staging followed by an
 atomic no-replace operation; v3 never replaces an existing derived file.
+On Windows, the bound destination directory is opened with the write access required
+for its `FlushFileBuffers` durability receipt. If a filesystem still cannot provide
+that receipt, the visible copy is reported as `published_with_error`, never `created`.
 
 ### Destination and existing policy
 
