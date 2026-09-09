@@ -70,6 +70,16 @@ def test_human_reporting_handles_malformed_and_structured_entries(
     assert "request: PARSE_ERROR: bad message" in captured.err
 
 
+def test_json_channel_is_canonical_unicode_and_newline_terminated(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Require the public machine channel's exact canonical wire bytes."""
+    reporting_v3.write_json({"z": "π", "a": 1})
+    captured = capsys.readouterr()
+    assert captured.out == '{"a": 1, "z": "π"}\n'
+    assert not captured.err
+
+
 def test_paths0_uses_native_bytes_fallback_and_reports_errors(
     capfd: pytest.CaptureFixture[str],
 ) -> None:
