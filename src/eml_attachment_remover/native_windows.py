@@ -29,7 +29,7 @@ from .native_windows_abi import (
     FILE_OPEN_REPARSE_POINT,
     FILE_READ_ATTRIBUTES,
     FILE_READ_DATA,
-    FILE_RENAME_INFO_EX,
+    FILE_RENAME_INFO,
     FILE_SHARE_ALL,
     FILE_STANDARD_INFO,
     FILE_SYNCHRONOUS_IO_NONALERT,
@@ -338,7 +338,7 @@ class WindowsApi:
         )
         ctypes.memmove(ctypes.byref(buffer, 20), encoded, len(encoded))
         if self.kernel32.SetFileInformationByHandle(
-            ctypes.c_void_p(stage), FILE_RENAME_INFO_EX, ctypes.byref(buffer), size
+            ctypes.c_void_p(stage), FILE_RENAME_INFO, ctypes.byref(buffer), size
         ):
             return
         error = _last_error()
