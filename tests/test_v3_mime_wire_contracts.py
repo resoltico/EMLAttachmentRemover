@@ -166,6 +166,25 @@ def test_related_cfws_message_identifiers_select_the_exact_root(tmp_path: Path) 
     assert b"image/png" not in output
 
 
+def test_related_policy_exposes_exact_root_and_resource_actions() -> None:
+    """Require related classification to retain only its selected body root."""
+    raw = (
+        b'Content-Type: multipart/related; boundary=r; start="<root@x>"\r\n\r\n'
+        b"--r\r\nContent-Type: text/html\r\nContent-ID: <root@x>\r\n\r\nbody\r\n"
+        b"--r\r\nContent-Type: image/png\r\nContent-ID: <image@x>\r\n\r\nbytes\r\n"
+        b"--r--\r\n"
+    )
+    plan = classify(parse_raw_mime(raw).root)
+    assert plan.actions == {
+        (): DecisionAction.RECURSE,
+        (0,): DecisionAction.KEEP,
+        (1,): DecisionAction.REMOVE_SUBTREE,
+    }
+    assert plan.removals == (
+        Removal((1,), "image/png", RemovalReason.RELATED_NONROOT_COMPONENT),
+    )
+
+
 def test_cr_only_wire_transport_is_indexed_and_pruned_byte_exactly(
     tmp_path: Path,
 ) -> None:
