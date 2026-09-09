@@ -124,8 +124,12 @@ def test_path_value_and_native_length_limits_are_exact(
 ) -> None:
     """Require lossless native evidence and exact inclusive path budgets."""
     value = native_values.path_value("odd\nπ")
-    assert value.native_base64 is not None
-    assert b64decode(value.native_base64) == os.fsencode("odd\nπ")
+    if os.name == "nt":
+        assert value.native_utf16le_base64 is not None
+        assert b64decode(value.native_utf16le_base64).decode("utf-16-le") == "odd\nπ"
+    else:
+        assert value.native_base64 is not None
+        assert b64decode(value.native_base64) == os.fsencode("odd\nπ")
     assert value.display == "odd\\u000aπ"
     with monkeypatch.context() as context:
         context.setattr(native_values, "MAX_PATH_BYTES", 4)
