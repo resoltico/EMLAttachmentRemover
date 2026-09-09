@@ -176,3 +176,18 @@ def test_resource_limited_batch_still_terminalizes_every_preallocated_item() -> 
     ledger = execute(sources, _options())
     assert len(ledger.items) == len(sources)
     assert {item.status for item in ledger.items} == {ItemStatus.NOT_RUN}
+
+
+def test_exact_batch_limit_enters_inventory_before_refusing_the_next_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the public item limit inclusive and avoid an accidental off-by-one."""
+    observed: list[int] = []
+
+    def inventory(_ledger: object, sources: list[str], _options: object) -> None:
+        observed.append(len(sources))
+
+    monkeypatch.setattr(batch_module, "_run_inventory_and_items", inventory)
+    sources = [f"item-{index}.eml" for index in range(batch_module.MAX_BATCH_ITEMS)]
+    execute(sources, _options())
+    assert observed == [batch_module.MAX_BATCH_ITEMS]
