@@ -94,6 +94,25 @@ def test_posix_identity_split_directory_and_read_receipts_are_exact(
     assert native_posix._read_all(23) == b"abc"  # ruff: ignore[private-member-access] - exact raw read assembly.
     assert read_calls == [(23, 4), (23, 2), (23, 1)]
 
+    large_read_calls: list[tuple[int, int]] = []
+
+    def read_large(descriptor: int, requested: int) -> bytes:
+        large_read_calls.append((descriptor, requested))
+        return b""
+
+    monkeypatch.setattr(native_posix, "MAX_RAW_BYTES", 2 * 1024 * 1024)
+    monkeypatch.setattr(native_posix.__dict__["os"], "read", read_large)
+    assert native_posix._read_all(24) == b""  # ruff: ignore[private-member-access] - fixed maximum native read chunk.
+    assert large_read_calls == [(24, 1024 * 1024)]
+
+    monkeypatch.setattr(native_posix, "MAX_RAW_BYTES", 3)
+    monkeypatch.setattr(native_posix.__dict__["os"], "read", lambda *_args: b"four")
+    with pytest.raises(AppError) as captured:
+        native_posix._read_all(25)  # ruff: ignore[private-member-access] - exact over-limit source failure.
+    assert captured.value == AppError(
+        ExitCode.INPUT_ERROR, "source exceeds the 128 MiB raw-size limit"
+    )
+
 
 def test_posix_binding_and_source_open_receipts_close_every_descriptor(
     monkeypatch: pytest.MonkeyPatch,
@@ -122,6 +141,17 @@ def test_posix_binding_and_source_open_receipts_close_every_descriptor(
         _value("parent"),
         b"leaf",
         FileIdentity(11, 12, "directory", 13),
+    )
+    assert closed == [31]
+
+    closed.clear()
+    monkeypatch.setattr(native_posix.__dict__["stat"], "S_ISDIR", lambda _mode: False)
+    with pytest.raises(AppError) as captured:
+        native_posix._bind_destination(  # ruff: ignore[private-member-access] - non-directory parent rejection.
+            "request", "expanded"
+        )
+    assert captured.value == AppError(
+        ExitCode.WRITE_ERROR, "destination parent is not a directory"
     )
     assert closed == [31]
 
@@ -240,6 +270,12 @@ def test_posix_publication_primitives_preserve_exact_kernel_arguments(
         )
     ]
 
+    with monkeypatch.context() as context:
+        context.delattr(native_posix.__dict__["os"], "O_CLOEXEC", raising=False)
+        opens.clear()
+        assert native_posix._create_private_stage(directory, b"portable") == 52  # ruff: ignore[private-member-access] - portable close-on-exec fallback.
+        assert opens == [(b"portable", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600, 51)]
+
     metadata = _metadata()
     stats: list[tuple[object, object, object]] = []
 
@@ -267,3 +303,45 @@ def test_posix_publication_primitives_preserve_exact_kernel_arguments(
     opens.clear()
     assert native_posix._open_child_nofollow(directory, b"final") == 52  # ruff: ignore[private-member-access] - no-follow existing-output read.
     assert opens == [(b"final", os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), None, 51)]
+
+
+def test_posix_bound_directory_failures_preserve_exact_receipts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject incomplete or swapped parents before a publication can proceed."""
+    missing_parent = BoundDestination(
+        _value("request"),
+        PathValue(None, "none", None),
+        b"leaf",
+        FileIdentity(1, 2, "directory", 3),
+    )
+    with pytest.raises(AppError) as captured:
+        native_posix._open_bound_destination(missing_parent)  # ruff: ignore[private-member-access] - parent address is mandatory.
+    assert captured.value == AppError(
+        ExitCode.WRITE_ERROR, "destination parent has no native address"
+    )
+
+    destination = BoundDestination(
+        _value("request"), _value("parent"), b"leaf", FileIdentity(1, 2, "directory", 3)
+    )
+    directories: list[bytes] = []
+    closed: list[int] = []
+
+    def directory(value: bytes) -> int:
+        directories.append(value)
+        return 61
+
+    monkeypatch.setattr(native_posix, "_directory", directory)
+    monkeypatch.setattr(native_posix.__dict__["os"], "fstat", lambda _fd: _metadata())
+    monkeypatch.setattr(
+        native_posix, "_identity", lambda _value: FileIdentity(9, 9, "directory", 9)
+    )
+    monkeypatch.setattr(native_posix, "_same_directory", lambda _left, _right: False)
+    monkeypatch.setattr(native_posix.__dict__["os"], "close", closed.append)
+    with pytest.raises(AppError) as captured:
+        native_posix._open_bound_destination(destination)  # ruff: ignore[private-member-access] - bound parent identity must remain stable.
+    assert captured.value == AppError(
+        ExitCode.OUTPUT_CONFLICT, "destination parent changed after binding"
+    )
+    assert directories == [b"parent"]
+    assert closed == [61]
