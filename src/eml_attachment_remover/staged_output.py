@@ -196,7 +196,7 @@ def _verify_staged(state: _PublicationState) -> None:
         previous_length = len(remaining)
         written = os.write(stage.descriptor, remaining)
         remaining = _remaining_after_write(remaining, written)
-        if len(remaining) >= previous_length:
+        if len(remaining) != previous_length - written:
             raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
     os.fsync(stage.descriptor)
     if not parent.windows:
