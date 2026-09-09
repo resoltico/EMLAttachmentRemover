@@ -40,6 +40,20 @@ def test_header_parser_preserves_mbox_and_folded_fields(
             mime_headers.parse_headers(b"Subject: one\r\n", 0, 14)
 
 
+@pytest.mark.parametrize(
+    ("wire", "expected"),
+    [(b"a\r\nb", 3), (b"a\nb", 2), (b"a\rb", 2), (b"partial", 7)],
+)
+def test_wire_line_end_and_header_spans_are_exact(wire: bytes, expected: int) -> None:
+    """Preserve each recognized transport terminator and physical field span."""
+    assert mime_headers.line_end(wire, 0, len(wire)) == expected
+    raw = b"Subject: a:b\r\n\tcontinued\r\nX-Test: value\r\n"
+    assert mime_headers.parse_headers(raw, 0, len(raw)) == (
+        Header(b"subject", b"a:b\r\n\tcontinued", 0, 26),
+        Header(b"x-test", b"value", 26, len(raw)),
+    )
+
+
 def test_header_parser_rejects_a_nonadvancing_wire_cursor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
