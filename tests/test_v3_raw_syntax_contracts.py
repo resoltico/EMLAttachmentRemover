@@ -113,6 +113,12 @@ def test_identifier_parser_rejects_trailing_non_cfws_text() -> None:
         mime_identifiers.parse_message_identifier(b"<a@x>tail", field="test")
 
 
+def test_folding_whitespace_scan_returns_exact_first_nonwhitespace_offset() -> None:
+    """CFWS scanning preserves the first significant byte and end boundary."""
+    assert mime_identifiers._skip_folding_white_space(b" \t\r\nx", 0) == 4  # ruff: ignore[private-member-access] - finite CFWS scan.
+    assert mime_identifiers._skip_folding_white_space(b"x \t", 1) == 3  # ruff: ignore[private-member-access] - trailing CFWS scan.
+
+
 @pytest.mark.parametrize(
     "value",
     [
