@@ -156,9 +156,8 @@ def test_windows_cleanup_link_and_finish_edge_states(tmp_path: Path) -> None:
         )
 
 
-def test_missing_private_stage_is_recorded_as_already_removed(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+def test_missing_stage_entry_is_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     state = _bound_state(tmp_path)
     assert state.parent is not None
