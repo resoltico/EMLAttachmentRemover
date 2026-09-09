@@ -103,11 +103,16 @@ def _delimiter_lines(
     Returns:
         Source spans and closing markers for recognized delimiter lines.
 
+    Raises:
+        AppError: If a delimiter cursor cannot reach the containing body end.
+
     """
     prefix = b"--" + boundary
     result: list[tuple[int, int, bool]] = []
     position = start
-    while position < end:
+    for _line in range(end - start + 1):
+        if position >= end:
+            break
         end_of_line = _advanced_delimiter_cursor(position, line_end(raw, position, end))
         line = raw[position:end_of_line].rstrip(b"\r\n")
         if line.startswith(prefix):
@@ -118,6 +123,8 @@ def _delimiter_lines(
             if not tail.strip(b" \t"):
                 result.append((position, end_of_line, closing))
         position = end_of_line
+    else:
+        raise AppError(ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance")
     return result
 
 
