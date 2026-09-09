@@ -67,3 +67,23 @@ def test_candidate_records_every_independently_recomputed_fact(tmp_path: Path) -
     assert item.verification == receipt
     assert retained == recomputed
     assert item.warnings == []
+
+
+def test_candidate_records_each_opaque_charset_warning_without_codec_lookup(
+    tmp_path: Path,
+) -> None:
+    """An opaque charset label is retained and reported from raw source bytes only."""
+    source = tmp_path / "charset.eml"
+    source.write_bytes(b"Content-Type: text/plain; charset=x-opaque\r\n\r\nbody\r\n")
+    item = BatchLedger.from_requests([path_value(str(source))]).items[0]
+    batch._candidate(  # ruff: ignore[private-member-access] - exact opaque-charset warning receipt.
+        item, inspect_source_identity(str(source))
+    )
+    assert item.warnings == [
+        {
+            "code": "CHARSET_PRESERVED_OPAQUE",
+            "mime_path": (),
+            "charset_base64": "eC1vcGFxdWU=",
+            "message": "charset label was preserved without codec lookup",
+        }
+    ]
