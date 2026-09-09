@@ -155,6 +155,7 @@ def test_windows_adapter_uses_rooted_nt_open_identity_and_no_replace_rename(
     assert (info.volume_serial, info.size, info.change_time) == (7, 13, 11)
     assert api.final_path(23) == "C:\\x"
     api.publish_no_replace(23, 11, "final.eml")
+    api.publish_no_replace(23, 11, "")
     api.discard_private_stage(23)
     api.sync_directory(11)
     assert ntdll.NtCreateFile.calls

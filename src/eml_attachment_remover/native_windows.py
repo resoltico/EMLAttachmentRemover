@@ -326,7 +326,7 @@ class WindowsApi:
 
         """
         encoded = _utf16(name)
-        size = 24 + len(encoded)
+        size = max(24, 20 + len(encoded))
         buffer = (ctypes.c_ubyte * size)()
         ctypes.memset(buffer, 0, size)
         ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ulong))[0] = 0
