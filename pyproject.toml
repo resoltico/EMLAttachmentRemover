@@ -211,6 +211,7 @@ also_copy = [
   "LICENSE",
   "QA.md",
   "README.md",
+  "schema",
   "integrations",
 ]
 mutate_only_covered_lines = true
