@@ -71,7 +71,7 @@ def _nonoverlapping(edits: list[tuple[int, int]]) -> list[tuple[int, int]]:
     ordered = sorted(edits)
     previous_end = -1
     for start, end in ordered:
-        if start >= end or start < previous_end:
+        if start < 0 or start >= end or start < previous_end:
             raise AppError(ExitCode.VERIFICATION_ERROR, "overlapping raw MIME edits")
         previous_end = end
     return ordered
