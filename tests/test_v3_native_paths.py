@@ -121,6 +121,7 @@ def test_native_value_paths_cover_posix_and_handle_backend_boundaries(
 def test_native_value_validation_covers_platform_specific_boundary_forms(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    runtime_name = os.name
     observed: list[str] = []
     monkeypatch.setattr(native_values.__dict__["os"], "name", "nt")
     windows_value = native_values.path_value("C:\\value")
@@ -148,6 +149,7 @@ def test_native_value_validation_covers_platform_specific_boundary_forms(
     native_values._validate_windows_components(  # ruff: ignore[private-member-access] - Windows component empty-segment boundary.
         ""
     )
+    monkeypatch.setattr(native_values.__dict__["os"], "name", runtime_name)
     with monkeypatch.context() as context:
         context.setattr(
             native_values,
