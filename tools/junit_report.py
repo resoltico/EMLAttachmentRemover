@@ -110,11 +110,20 @@ def _replacements(
         (Path(tempfile.gettempdir()), TEMP_PLACEHOLDER),
     )
     replacements: dict[str, str] = {}
-    for path, replacement in path_candidates:
-        prefix = str(path.resolve())
-        if prefix != os.sep:
-            for variant in path_safety.path_prefix_variants(prefix):
-                replacements.setdefault(variant, replacement)
+    prefixes = (
+        (prefix, replacement)
+        for path, replacement in path_candidates
+        for resolved in [str(path.resolve())]
+        if resolved != os.sep
+        for prefix in {resolved, *([str(path)] if path.is_absolute() else [])}
+    )
+    variants = (
+        (variant, replacement)
+        for prefix, replacement in prefixes
+        for variant in path_safety.path_prefix_variants(prefix)
+    )
+    for variant, replacement in variants:
+        replacements.setdefault(variant, replacement)
     hostname = socket.gethostname()
     if hostname:
         replacements.setdefault(hostname, HOST_PLACEHOLDER)

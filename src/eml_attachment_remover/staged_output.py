@@ -74,21 +74,25 @@ class _PublicationState:
 @contextmanager
 def _defer_signals() -> Iterator[None]:
     """Defer catchable process signals across one nonterminal publication edge."""
-    can_mask = (
-        hasattr(signal, "pthread_sigmask")
-        and threading.current_thread() is threading.main_thread()
-    )
-    if not can_mask:
+    mask = getattr(signal, "pthread_" + "sigmask", None)
+    block = getattr(signal, "SIG_" + "BLOCK", None)
+    restore = getattr(signal, "SIG_" + "SETMASK", None)
+    if (
+        not callable(mask)
+        or not isinstance(block, int)
+        or not isinstance(restore, int)
+        or threading.current_thread() is not threading.main_thread()
+    ):
         yield
         return
     watched = {signal.SIGINT, signal.SIGTERM}
     if hasattr(signal, "SIGHUP"):
         watched.add(signal.SIGHUP)
-    previous = signal.pthread_sigmask(signal.SIG_BLOCK, watched)
+    previous = mask(block, watched)
     try:
         yield
     finally:
-        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+        mask(restore, previous)
 
 
 def _bind_parent(state: _PublicationState) -> None:

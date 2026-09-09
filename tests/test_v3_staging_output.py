@@ -305,7 +305,9 @@ def test_signal_deferral_and_parent_binding_fail_closed(
     monkeypatch.delattr(signal, "SIGHUP")
     with staged_output._defer_signals():  # ruff: ignore[private-member-access] - SIGHUP-absent contract.
         pass
-    assert masks == [signal.SIG_BLOCK, signal.SIG_SETMASK] * 2
+    block = signal.__dict__["SIG_BLOCK"]
+    restore = signal.__dict__["SIG_SETMASK"]
+    assert masks == [block, restore] * 2
     bound = bind_destination(str(_destination(tmp_path)))
     missing_parent = replace(bound, parent=PathValue(None, "<none>", None))
     missing_state = staged_output._PublicationState(  # ruff: ignore[private-member-access] - direct binding contract.
@@ -427,7 +429,7 @@ def test_deferred_interrupt_after_publication_is_not_created(
     destination = _destination(tmp_path)
 
     def mask(operation: int, _signals: set[int]) -> set[int]:
-        if operation == signal.SIG_SETMASK:
+        if operation == signal.__dict__["SIG_SETMASK"]:
             raise KeyboardInterrupt
         return set()
 
