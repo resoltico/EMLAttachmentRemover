@@ -41,7 +41,7 @@ def _combined(errors: list[BaseException]) -> BaseException:
     return BaseExceptionGroup("multiple staging cleanup failures", errors)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class PublishedWithError(Exception):
     """A post-edge failure accompanied by the strongest available receipt."""
 

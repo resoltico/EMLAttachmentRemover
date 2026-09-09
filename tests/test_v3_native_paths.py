@@ -75,7 +75,7 @@ def test_native_value_paths_cover_posix_and_handle_backend_boundaries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     value = native_values.path_value("odd\nname.eml")
-    assert value.native_base64 is not None
+    assert (value.native_base64 is not None) is (os.name != "nt")
     assert "\\u000a" in value.display
     for unsafe in ("", ".", ".."):
         with pytest.raises(AppError):
