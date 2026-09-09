@@ -51,7 +51,7 @@ def test_stage_creation_owns_every_construction_failure(
     with pytest.raises(AppError) as raised:
         staged_output._create_stage(unbound)  # ruff: ignore[private-member-access] - unbound-stage contract.
     assert raised.value.code is ExitCode.INTERNAL_ERROR
-    state = _state(tmp_path)
+    state = _bound_state(tmp_path)
     staged_output._bind_parent(state)  # ruff: ignore[private-member-access] - construction-fault setup.
 
     def interrupt_owner(_fd: int, _name: bytes | str) -> object:
@@ -154,6 +154,22 @@ def test_windows_cleanup_link_and_finish_edge_states(tmp_path: Path) -> None:
         staged_output._finish_or_raise(  # ruff: ignore[private-member-access] - primary-cause contract.
             pre_edge, KeyboardInterrupt(), ("succeeded", None)
         )
+
+
+def test_missing_private_stage_is_recorded_as_already_removed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _bound_state(tmp_path)
+    assert state.parent is not None
+    state.stage = staged_output._Stage(2, "private")  # ruff: ignore[private-member-access] - exact stage-entry cleanup contract.
+
+    def absent(*_arguments: object) -> None:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(staged_output, "discard_private_stage", absent)
+    assert staged_output._remove_stage_entry(state) is None  # ruff: ignore[private-member-access] - exact stage-entry cleanup contract.
+    assert state.stage.name is None
 
 
 def test_constructor_and_receipt_dual_failures_are_preserved(
