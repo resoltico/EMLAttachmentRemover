@@ -184,13 +184,19 @@ def test_windows_adapter_uses_rooted_nt_open_identity_and_no_replace_rename(
     assert access & FILE_WRITE_DATA
     assert ntdll.NtCreateFile.calls
     assert ntdll.NtSetInformationFile.calls
-    rename_buffer = ctypes.cast(
-        cast("int", ntdll.NtSetInformationFile.calls[0][2]),
-        ctypes.POINTER(ctypes.c_ubyte * (MAX_PATH_BYTES + 24)),
-    ).contents
-    assert len(rename_buffer) == MAX_PATH_BYTES + 24
     rename_call = ntdll.NtSetInformationFile.calls[0]
+    rename_argument = rename_call[2]
+    rename_buffer = getattr(rename_argument, "_obj", None)
+    message = "rename information must reference its full owned ctypes buffer"
+    if not isinstance(rename_buffer, ctypes.Array):
+        raise TypeError(message)
+    rename_address = ctypes.cast(
+        cast("ctypes.c_void_p", rename_argument), ctypes.c_void_p
+    ).value
+    if rename_address is None or rename_address != ctypes.addressof(rename_buffer):
+        raise TypeError(message)
     rename_bytes = bytes(rename_buffer)
+    assert len(rename_bytes) == MAX_PATH_BYTES + 25
     assert cast("ctypes.c_void_p", rename_call[0]).value == 23
     assert rename_call[3] == 20 + len("final.eml".encode("utf-16-le"))
     assert rename_call[4] == FILE_RENAME_INFORMATION_EX
