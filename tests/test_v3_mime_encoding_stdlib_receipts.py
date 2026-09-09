@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from email import errors
 from email.message import EmailMessage
 from types import SimpleNamespace
@@ -84,16 +85,16 @@ def test_fingerprints_exclude_containers_and_bind_sorted_source_facts() -> None:
             "text/plain",
             "base64",
             ((b"a", b"first"), (b"z", b"last")),
-            "f631784c0c2f52ce25f9832d84401d587a70756864d8d139788db656913945fc",
-            "8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8",
+            hashlib.sha256(b"YWxwaGE=").hexdigest(),
+            hashlib.sha256(b"alpha").hexdigest(),
         ),
         RetainedFingerprint(
             (1,),
             "text/html",
             "quoted-printable",
             ((b"charset", b"utf-8"),),
-            "47c21fef02a891d1d38f7d29a545d288e066e340054ff41de0fca6013b7a2b95",
-            "8c4908a188605bc8dcd640fd2743b0e02197fb6bd01205edc7b112119628b045",
+            hashlib.sha256(b"be=74a=3D").hexdigest(),
+            hashlib.sha256(b"beta=").hexdigest(),
         ),
     )
 
