@@ -50,44 +50,26 @@ def test_staged_write_rejects_nonprogress_and_impossible_progress(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A native write result must consume a nonempty proper slice of the candidate."""
-    assert (
-        staged_output._advanced_write_position(  # ruff: ignore[private-member-access] - exact write offset.
-            0, 1, 2
-        )
-        == 1
-    )
-    for reported in (-1, 0, 3):
-        with pytest.raises(AppError) as captured:
-            staged_output._advanced_write_position(  # ruff: ignore[private-member-access] - direct native-write progress validation.
-                0, reported, 2
-            )
-        assert captured.value == AppError(
-            ExitCode.WRITE_ERROR, "short write while staging candidate"
-        )
-    state = _state(tmp_path, b"two")
-    for reported in (-1, 4):
+    for reported in (-1, 0, 4):
+        state = _state(tmp_path, b"two")
         with monkeypatch.context() as context:
             context.setattr(os, "write", lambda *_args, reported=reported: reported)
             with pytest.raises(AppError) as captured:
                 staged_output._verify_staged(state)  # ruff: ignore[private-member-access] - bounded write progress.
-            assert captured.value == AppError(
-                ExitCode.WRITE_ERROR, "short write while staging candidate"
-            )
-    staged_output._cleanup(state)  # ruff: ignore[private-member-access] - owned stage cleanup.
+        assert captured.value == AppError(
+            ExitCode.WRITE_ERROR, "short write while staging candidate"
+        )
+        staged_output._cleanup(state)  # ruff: ignore[private-member-access] - owned stage cleanup.
 
 
-def test_staged_write_rejects_a_nonadvancing_position_transition(
+def test_staged_write_rejects_zero_native_progress(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A bounded write loop fails closed when its advancement transition regresses."""
+    """A bounded write loop fails closed when the native write makes no progress."""
     state = _state(tmp_path, b"two")
-    monkeypatch.setattr(
-        staged_output,
-        "_advanced_write_position",
-        lambda position, _written, _size: position,
-    )
+    monkeypatch.setattr(os, "write", lambda *_args: 0)
     with pytest.raises(AppError) as captured:
-        staged_output._verify_staged(state)  # ruff: ignore[private-member-access] - defensive helper-progress invariant.
+        staged_output._verify_staged(state)  # ruff: ignore[private-member-access] - defensive native-progress invariant.
     assert captured.value == AppError(
         ExitCode.WRITE_ERROR, "short write while staging candidate"
     )

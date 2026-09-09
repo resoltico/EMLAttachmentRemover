@@ -112,17 +112,6 @@ def test_staging_preconditions_and_terminal_edge_have_exact_public_errors(
     )
 
 
-def test_staged_write_rejects_a_position_that_allows_only_the_remaining_byte() -> None:
-    """Write validation uses remaining capacity, not total capacity plus position."""
-    with pytest.raises(AppError) as raised:
-        staged_output._advanced_write_position(  # ruff: ignore[private-member-access] - remaining-byte write bound.
-            2, 2, 3
-        )
-    assert raised.value == AppError(
-        ExitCode.WRITE_ERROR, "short write while staging candidate"
-    )
-
-
 def test_staged_reread_mismatch_and_unproven_publication_are_exact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

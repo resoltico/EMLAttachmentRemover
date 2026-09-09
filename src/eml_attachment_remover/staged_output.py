@@ -172,18 +172,11 @@ def _close_directory(directory: BoundDirectoryHandle) -> BaseException | None:
     return None
 
 
-def _advanced_write_position(position: int, written: int, size: int) -> int:
-    """Return the exact next offset after one bounded native write."""  # ruff: ignore[docstring-missing-returns,docstring-missing-exception] - internal progress transition.
-    if not 0 < written <= size - position:
-        raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
-    return position + written
-
-
 def _verify_staged(state: _PublicationState) -> None:
-    """Fsync, mode-check, and reread the still-open staged candidate.
+    """Verify the staged candidate's sync, mode, and reread receipt.
 
     Raises:
-        AppError: If the stage owner is absent or its reread differs from the candidate.
+        AppError: If staging evidence is absent or differs from the candidate.
 
     """
     stage = state.stage
@@ -193,10 +186,12 @@ def _verify_staged(state: _PublicationState) -> None:
     position = 0
     while position < len(state.candidate):
         written = os.write(stage.descriptor, state.candidate[position:])
-        next_position = _advanced_write_position(
-            position, written, len(state.candidate)
-        )
-        if next_position <= position:
+        next_position = position + written
+        if next_position == position:
+            raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
+        if not next_position > position:
+            raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
+        if not 0 < written <= len(state.candidate) - position:
             raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
         position = next_position
     os.fsync(stage.descriptor)

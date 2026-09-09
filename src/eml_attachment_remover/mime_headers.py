@@ -91,7 +91,9 @@ def parse_headers(raw: bytes, start: int, separator: int) -> tuple[Header, ...]:
     position = _first_header_offset(raw, start, separator)
     while position < separator:
         end = _advanced_cursor(position, line_end(raw, position, separator))
-        if end <= position:
+        if end == position:
+            raise AppError(ExitCode.PARSE_ERROR, "MIME header cursor did not advance")
+        if not end > position:
             raise AppError(ExitCode.PARSE_ERROR, "MIME header cursor did not advance")
         line = raw[position:end].rstrip(b"\r\n")
         _append_header(headers, line, position, end)
