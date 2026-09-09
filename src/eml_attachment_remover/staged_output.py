@@ -223,7 +223,7 @@ def _read_final_receipt(  # ruff: ignore[complex-structure] - ordered receipt ch
     try:  # ruff: ignore[too-many-statements-in-try-clause] - receipt checks must share cleanup.
         expected = descriptor_identity(stage.descriptor)
         entry = child_lstat(parent, state.destination.basename)
-        if entry is None or not entry.file_type.startswith("-") or entry != expected:
+        if entry is None or not entry.is_regular() or entry != expected:
             raise AppError(  # ruff: ignore[raise-within-try] - final fd needs common cleanup.
                 ExitCode.WRITE_ERROR, "published destination identity mismatch"
             )

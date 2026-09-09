@@ -110,12 +110,21 @@ class PathValue:
 
 @dataclass(frozen=True, slots=True)
 class FileIdentity:
-    """Stable identity values obtained from an open POSIX descriptor."""
+    """Stable identity values obtained from an open native file handle."""
 
     device: int
     inode: int
     file_type: str
     ctime_ns: int
+
+    def is_regular(self) -> bool:
+        """Report whether the platform's captured type denotes a regular file.
+
+        Returns:
+            ``True`` for the native Windows label or a POSIX regular-file mode.
+
+        """
+        return self.file_type == "regular" or self.file_type.startswith("-")
 
     def as_json(self) -> dict[str, str]:
         """Serialize integers as decimal strings for JavaScript-safe JSON.

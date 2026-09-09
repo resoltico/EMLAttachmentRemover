@@ -23,6 +23,17 @@ def _identity() -> FileIdentity:
     return FileIdentity(1, 2, "regular", 3)
 
 
+@pytest.mark.parametrize(
+    ("file_type", "expected"),
+    [("regular", True), ("-rw-------", True), ("directory", False)],
+)
+def test_file_identity_recognizes_portable_regular_file_labels(
+    file_type: str, *, expected: bool
+) -> None:
+    """Require final-entry proof to accept both platform regular-file labels."""
+    assert FileIdentity(0, 0, file_type, 0).is_regular() is expected
+
+
 def _destination() -> BoundDestination:
     return BoundDestination(
         path_value("out.eml"), path_value("."), b"out.eml", _identity()
