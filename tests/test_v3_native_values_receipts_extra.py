@@ -74,9 +74,11 @@ def test_default_destination_preserves_requested_expression_on_both_path_grammar
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Derive the v3 name without canonicalizing the user-requested parent."""
-    assert native_values.default_destination("parent/../inbox/Message.EML") == (
-        "parent/../inbox/Message.mime-pruned.eml"
-    )
+    with monkeypatch.context() as context:
+        context.setattr(native_values.__dict__["os"], "name", "posix")
+        assert native_values.default_destination("parent/../inbox/Message.EML") == (
+            "parent/../inbox/Message.mime-pruned.eml"
+        )
     with monkeypatch.context() as context:
         context.setattr(native_values.__dict__["os"], "name", "nt")
         assert native_values.default_destination("C:\\in\\..\\Mail.EML") == (
@@ -110,4 +112,11 @@ def test_validate_argument_expands_home_but_preserves_dotdot_expression(
     monkeypatch.setenv("HOME", os.fspath(tmp_path))
     monkeypatch.setenv("USERPROFILE", os.fspath(tmp_path))
     expected = os.fspath(tmp_path / "mail" / ".." / "message.eml")
-    assert native_values.validate_argument("~/mail/../message.eml") == expected
+    if os.name == "nt":
+        with pytest.raises(AppError) as captured:
+            native_values.validate_argument("~/mail/../message.eml")
+        assert captured.value == AppError(
+            ExitCode.INPUT_ERROR, "path has a trailing dot or space"
+        )
+    else:
+        assert native_values.validate_argument("~/mail/../message.eml") == expected
