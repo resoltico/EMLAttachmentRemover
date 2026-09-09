@@ -189,8 +189,6 @@ def _verify_staged(state: _PublicationState) -> None:
         next_position = position + written
         if next_position == position:
             raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
-        if not next_position > position:
-            raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
         if not 0 < written <= len(state.candidate) - position:
             raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
         position = next_position

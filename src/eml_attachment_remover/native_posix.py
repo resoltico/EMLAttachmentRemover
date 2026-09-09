@@ -94,7 +94,7 @@ def _bind_destination(request: str, expanded: str) -> BoundDestination:
 
 def _inspect_source_identity(expanded: str) -> FileIdentity:
     parent, _parent_text, basename = _parent(expanded)
-    descriptor = -1
+    descriptor: int | None = None
     try:
         descriptor = os.open(
             basename,
@@ -112,14 +112,14 @@ def _inspect_source_identity(expanded: str) -> FileIdentity:
             ExitCode.INPUT_ERROR, f"could not inspect source: {exc}"
         ) from exc
     finally:
-        if descriptor >= 0:
+        if descriptor is not None:
             os.close(descriptor)
         os.close(parent)
 
 
 def _read_source(request: str, expanded: str) -> SourceSnapshot:
     parent, parent_text, basename = _parent(expanded)
-    descriptor = -1
+    descriptor: int | None = None
     try:
         descriptor = os.open(
             basename,
@@ -130,7 +130,7 @@ def _read_source(request: str, expanded: str) -> SourceSnapshot:
     except OSError as exc:
         raise AppError(ExitCode.INPUT_ERROR, f"could not read source: {exc}") from exc
     finally:
-        if descriptor >= 0:
+        if descriptor is not None:
             os.close(descriptor)
         os.close(parent)
 

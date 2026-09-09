@@ -67,7 +67,7 @@ def _cid(node: RawNode) -> bytes | None:
         Exact identifier octets, or ``None`` when the node has no Content-ID.
 
     """
-    values = node.header_map.get(b"content-id", [])
+    values = node.header_map.get(b"content-id")
     if not values:
         return None
     return parse_message_identifier(values[0].value, field="Content-ID")

@@ -63,24 +63,24 @@ def _split_semicolons(value: bytes) -> list[bytes]:
     """
     pieces: list[bytes] = []
     current = bytearray()
-    quoted = 0
-    escaped = 0
-    for byte in value:
-        if escaped:
+    quote_position: int | None = None
+    escaped_position: int | None = None
+    for position, byte in enumerate(value):
+        if escaped_position is not None:
             current.append(byte)
-            escaped = 0
-        elif quoted and byte == BACKSLASH:
+            escaped_position = None
+        elif quote_position is not None and byte == BACKSLASH:
             current.append(byte)
-            escaped = 1
+            escaped_position = position
         elif byte == DOUBLE_QUOTE:
             current.append(byte)
-            quoted ^= 1
-        elif byte == SEMICOLON and not quoted:
+            quote_position = position if quote_position is None else None
+        elif byte == SEMICOLON and quote_position is None:
             pieces.append(bytes(current).strip())
             current.clear()
         else:
             current.append(byte)
-    if quoted or escaped:
+    if quote_position is not None or escaped_position is not None:
         raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME quoted parameter")
     pieces.append(bytes(current).strip())
     return pieces
