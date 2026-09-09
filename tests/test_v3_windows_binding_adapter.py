@@ -356,6 +356,9 @@ def test_windows_binding_cache_parent_and_handle_cleanup_edges(
     monkeypatch.setitem(native_windows_binding.__dict__, "_api", parent_api)
     with pytest.raises(AppError):
         native_windows_binding._parent("relative\\message.eml")  # ruff: ignore[private-member-access] - parent native-open context.
+    with pytest.raises(AppError) as reopen_error:
+        native_windows_binding.open_bound_destination(_destination())
+    assert reopen_error.value.code is ExitCode.WRITE_ERROR
 
     source = tmp_path / "message.eml"
     source.write_bytes(b"body")
