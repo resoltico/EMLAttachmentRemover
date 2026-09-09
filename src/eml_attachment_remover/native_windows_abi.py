@@ -8,6 +8,7 @@ from typing import Final
 INVALID_HANDLE_VALUE: Final = ctypes.c_void_p(-1).value
 FILE_READ_DATA: Final = 0x0001
 FILE_WRITE_DATA: Final = 0x0002
+FILE_TRAVERSE: Final = 0x0020
 FILE_READ_ATTRIBUTES: Final = 0x0080
 FILE_WRITE_ATTRIBUTES: Final = 0x0100
 DELETE: Final = 0x0001_0000

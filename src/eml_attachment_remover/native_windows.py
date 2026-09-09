@@ -33,6 +33,7 @@ from .native_windows_abi import (
     FILE_SHARE_ALL,
     FILE_STANDARD_INFO,
     FILE_SYNCHRONOUS_IO_NONALERT,
+    FILE_TRAVERSE,
     FILE_TYPE_DISK,
     FILE_WRITE_ATTRIBUTES,
     FILE_WRITE_DATA,
@@ -361,7 +362,7 @@ class WindowsApi:
     def _create_file_directory(self, expression: str) -> int:
         handle = self.kernel32.CreateFileW(
             expression,
-            FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
             FILE_SHARE_ALL,
             None,
             OPEN_EXISTING,
@@ -399,7 +400,7 @@ class WindowsApi:
             options |= FILE_NON_DIRECTORY_FILE
         if no_follow:
             options |= FILE_OPEN_REPARSE_POINT
-        access = FILE_READ_ATTRIBUTES | SYNCHRONIZE
+        access = FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE
         if create:
             access |= FILE_READ_DATA | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | DELETE
         else:
