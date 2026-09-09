@@ -14,7 +14,10 @@ import pytest
 from eml_attachment_remover import native_windows
 from eml_attachment_remover.native_paths import MAX_PATH_BYTES
 from eml_attachment_remover.native_windows import WindowsApi
-from eml_attachment_remover.native_windows_abi import FILE_WRITE_DATA
+from eml_attachment_remover.native_windows_abi import (
+    FILE_RENAME_INFORMATION_EX,
+    FILE_WRITE_DATA,
+)
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -186,6 +189,15 @@ def test_windows_adapter_uses_rooted_nt_open_identity_and_no_replace_rename(
         ctypes.POINTER(ctypes.c_ubyte * (MAX_PATH_BYTES + 24)),
     ).contents
     assert len(rename_buffer) == MAX_PATH_BYTES + 24
+    rename_call = ntdll.NtSetInformationFile.calls[0]
+    rename_bytes = bytes(rename_buffer)
+    assert cast("ctypes.c_void_p", rename_call[0]).value == 23
+    assert rename_call[3] == 20 + len("final.eml".encode("utf-16-le"))
+    assert rename_call[4] == FILE_RENAME_INFORMATION_EX
+    assert struct.unpack_from("<I", rename_bytes, 0) == (0,)
+    assert struct.unpack_from("<Q", rename_bytes, 8) == (11,)
+    assert struct.unpack_from("<I", rename_bytes, 16) == (18,)
+    assert rename_bytes[20:38] == "final.eml".encode("utf-16-le")
 
 
 def test_windows_adapter_surfaces_no_replace_collision_and_native_failures(
