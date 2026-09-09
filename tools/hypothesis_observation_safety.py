@@ -47,8 +47,7 @@ def path_prefix_variants(prefix: str) -> tuple[str, ...]:
     """
     variants = {prefix, prefix.replace("\\", "/")}
     if "\\" in prefix:
-        variants.add(prefix.replace("\\", "\\\\"))
-        variants.add(prefix.replace("\\", "\\\\\\\\"))
+        variants.update(prefix.replace("\\", "\\" * width) for width in (2, 4, 8))
     return tuple(sorted(variants))
 
 

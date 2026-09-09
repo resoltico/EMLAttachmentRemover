@@ -32,6 +32,7 @@ class ArtifactMutationContracts(unittest.TestCase):
                 "C:/private/project",
                 r"C:\\private\\project",
                 r"C:\\\\private\\\\project",
+                r"C:\\\\\\\\private\\\\\\\\project",
             },
         )
 
