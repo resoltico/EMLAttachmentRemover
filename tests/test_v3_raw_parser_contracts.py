@@ -19,6 +19,17 @@ def test_raw_helpers_cover_non_delimiter_payload_and_opening_errors() -> None:
             mime_raw._opening_delimiters(delimiters, ())  # ruff: ignore[private-member-access] - direct delimiter-state contract.
 
 
+@pytest.mark.parametrize(
+    ("raw", "boundary_start", "expected"),
+    [(b"x\r\n--", 3, 1), (b"x\n--", 2, 1), (b"x\r--", 2, 1), (b"x--", 1, 1)],
+)
+def test_payload_end_removes_only_the_immediate_transport_line_ending(
+    raw: bytes, boundary_start: int, expected: int
+) -> None:
+    """Require exact CRLF/LF/CR payload trimming at a delimiter boundary."""
+    assert mime_raw._payload_end(raw, boundary_start) == expected  # ruff: ignore[private-member-access] - exact payload boundary.
+
+
 def test_raw_parser_rejects_limits_missing_boundary_and_related_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
