@@ -51,7 +51,7 @@ def test_directory_parent_and_read_boundaries_are_contextual(
         open_directory,
     )
     assert native_posix._directory(b"relative") == 8  # ruff: ignore[private-member-access] - captured-CWD descriptor boundary.
-    assert calls[0][0] == b"relative"
+    assert calls == [(b"relative", native_posix._START_CWD_FD)]  # ruff: ignore[private-member-access] - exact bound-CWD open contract.
 
     monkeypatch.setattr(native_posix, "_directory", lambda _expression: _raise_os())
     with pytest.raises(AppError):
