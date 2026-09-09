@@ -189,7 +189,11 @@ def _first_line_is_header_like(raw: bytes, start: int, end: int) -> bool:
 
     """
     first_end = line_end(raw, start, end)
-    first_line = raw[start:first_end].rstrip(b"\r\n")
+    first_line = raw[start:first_end]
+    if first_line.endswith(b"\r\n"):
+        first_line = first_line[:-2]
+    elif first_line.endswith((b"\r", b"\n")):
+        first_line = first_line[:-1]
     name, colon, _value = first_line.partition(b":")
     return bool(colon) and is_header_name(name)
 
@@ -295,10 +299,8 @@ def _shallow_children(
 
     """
     children: list[RawNode] = []
-    next_starts = [entry[0] for entry in delimiters[1:]]
-    for index, ((start, finish, _closing), next_start) in enumerate(
-        zip(normal, next_starts, strict=True)
-    ):
+    for index, (start, finish, _closing) in enumerate(normal):
+        next_start = delimiters[index + 1][0]
         child = _shallow_node(raw, finish, next_start, (*parent.path, index), totals)
         child.delete_start = start
         child.delete_end = next_start

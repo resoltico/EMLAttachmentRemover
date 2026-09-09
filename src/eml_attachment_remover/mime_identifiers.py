@@ -51,13 +51,13 @@ def _skip_comment(value: bytes, position: int) -> int:
 
     """
     depth = 1
-    escaped = False
+    escaped_position: int | None = None
     start = position + 1
     for index, byte in enumerate(value[start:], start):
-        if escaped:
-            escaped = False
+        if escaped_position is not None:
+            escaped_position = None
         elif byte == BACKSLASH:
-            escaped = True
+            escaped_position = index
         elif byte == OPEN_PAREN:
             depth += 1
         elif byte == CLOSE_PAREN:
@@ -93,13 +93,13 @@ def _message_identifier_at(
     """
     if position >= len(value) or value[position] != OPEN_ANGLE:
         raise AppError(ExitCode.PARSE_ERROR, f"malformed {field}")
-    close = value.find(b">", position + 1)
-    if close < 0:
+    after_open = value[position + 1 :]
+    identifier, closing, _remainder = after_open.partition(b">")
+    if not closing:
         raise AppError(ExitCode.PARSE_ERROR, f"malformed {field}")
-    identifier = value[position + 1 : close]
     if not identifier or any(byte in b"<> \t\r\n" for byte in identifier):
         raise AppError(ExitCode.PARSE_ERROR, f"malformed {field}")
-    return identifier, close + 1
+    return identifier, len(value) - len(after_open) + len(identifier) + len(closing)
 
 
 def parse_message_identifier(value: bytes, *, field: str) -> bytes:

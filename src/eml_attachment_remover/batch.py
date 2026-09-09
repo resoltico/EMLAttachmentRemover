@@ -370,11 +370,11 @@ def _run_inventory_and_items(
     all_identities = set(inventory.identities.values())
     for item in ledger.items:
         if _skip_inventory_failure(item, ledger, options):
-            break
+            return
         if item.status is not None:
             continue
         if _run_item(item, ledger, inventory.identities, all_identities, options):
-            break
+            return
 
 
 def _skip_inventory_failure(
@@ -393,8 +393,6 @@ def _run_item(
     all_identities: set[FileIdentity],
     options: BatchOptions,
 ) -> bool:
-    stop = False
-    publication_cause: BaseException | None = None
     try:
         _candidate(item, identities[item.index])
         publication_cause = _existing_or_publish(item, options, all_identities)
@@ -402,23 +400,22 @@ def _run_item(
         _mark(item, exc)
         if exc.code is ExitCode.INTERNAL_ERROR:
             _internal_abort(item, ledger, exc.message, exc.phase or "internal")
-            stop = True
+            return True
+        return _after_item(item, ledger, options, None)
     except (CancellationSignal, KeyboardInterrupt) as cancellation:
         _cancel_active_item(
             item, ledger, _cancellation_name(cancellation), item.phase.value
         )
-        stop = True
+        return True
     except SystemExit:
         _internal_abort(item, ledger, "unexpected SystemExit")
-        stop = True
+        return True
     except MemoryError:
         raise
     except Exception as exc:  # ruff: ignore[blind-except] - batch ledger owns unknown failures.
         _internal_abort(item, ledger, str(exc) or type(exc).__name__)
-        stop = True
-    if not stop:
-        stop = _after_item(item, ledger, options, publication_cause)
-    return stop
+        return True
+    return _after_item(item, ledger, options, publication_cause)
 
 
 def _cancellation_name(cause: CancellationSignal | KeyboardInterrupt) -> str:
