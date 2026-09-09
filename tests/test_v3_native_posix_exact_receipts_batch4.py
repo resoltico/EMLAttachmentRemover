@@ -135,7 +135,9 @@ def test_posix_inspection_and_read_use_exact_optional_open_flags_and_close_zero(
     monkeypatch.setattr(
         native_posix.__dict__["os"], "O_NONBLOCK", nonblocking, raising=False
     )
-    monkeypatch.setattr(native_posix.__dict__["os"], "O_CLOEXEC", close_on_exec)
+    monkeypatch.setattr(
+        native_posix.__dict__["os"], "O_CLOEXEC", close_on_exec, raising=False
+    )
     monkeypatch.setattr(native_posix.__dict__["os"], "open", open_file)
     monkeypatch.setattr(native_posix.__dict__["os"], "fstat", lambda _fd: metadata)
     monkeypatch.setattr(native_posix.__dict__["os"], "close", closes.append)
