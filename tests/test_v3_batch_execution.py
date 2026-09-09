@@ -85,9 +85,21 @@ def test_dry_run_existing_verify_accepts_only_exact_source_candidate(
     existing = tmp_path / "message.mime-pruned.eml"
     existing.write_bytes(source.read_bytes())
     ledger = execute([str(source)], _options(existing="verify"))
-    assert ledger.items[0].status is ItemStatus.EXISTING_VERIFIED
-    assert ledger.items[0].publication is not None
-    assert ledger.items[0].publication.visibility == "existing_verified"
+    item = ledger.items[0]
+    assert item.status is ItemStatus.EXISTING_VERIFIED
+    assert item.publication is not None
+    assert item.transformation is not None
+    assert item.destination is not None
+    assert item.publication == PublicationReceipt(
+        visibility="existing_verified",
+        identity=inspect_source_identity(str(existing)),
+        digest=item.transformation.candidate_sha256,
+        file_sync="not_attempted",
+        directory_sync="not_attempted",
+        address_verified=True,
+        final_address=item.destination.request,
+        temp_cleanup="not_applicable",
+    )
 
 
 def test_dry_run_existing_error_rejects_an_occupied_destination(tmp_path: Path) -> None:
@@ -216,6 +228,22 @@ def test_candidate_publication_requires_a_complete_candidate_plan() -> None:
         batch_module._existing_or_publish(  # ruff: ignore[private-member-access]
             item, _options(), set()
         )
+    assert captured.value.code is ExitCode.INTERNAL_ERROR
+
+
+@pytest.mark.parametrize("missing", ["destination", "transformation"])
+def test_publication_inputs_reject_each_independently_missing_component(
+    tmp_path: Path, missing: str
+) -> None:
+    """Require both candidate facts before entering existing-output handling."""
+    source = _plain(tmp_path / "message.eml")
+    item = BatchLedger.from_requests([path_value(str(source))]).items[0]
+    batch_module._candidate(  # ruff: ignore[private-member-access] - publication input construction.
+        item, inspect_source_identity(str(source))
+    )
+    setattr(item, missing, None)
+    with pytest.raises(AppError) as captured:
+        batch_module._publication_inputs(item)  # ruff: ignore[private-member-access] - independent missing-input contract.
     assert captured.value.code is ExitCode.INTERNAL_ERROR
 
 
