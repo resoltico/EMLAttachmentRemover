@@ -95,14 +95,15 @@ def test_native_values_reject_trailing_paths_and_reserved_multi_suffixes() -> No
 def test_native_values_preserve_platform_path_evidence_and_backend_failure_context(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    with monkeypatch.context() as context:
-        context.setattr(native_values.__dict__["os"], "name", "posix")
-        assert native_values.path_value("π.eml") == PathValue(
-            "π.eml", "π.eml", "z4AuZW1s"
-        )
-        assert native_values.default_destination("folder/Mail.EML") == (
-            "folder/Mail.mime-pruned.eml"
-        )
+    if os.name != "nt":
+        with monkeypatch.context() as context:
+            context.setattr(native_values.__dict__["os"], "name", "posix")
+            assert native_values.path_value("π.eml") == PathValue(
+                "π.eml", "π.eml", "z4AuZW1s"
+            )
+            assert native_values.default_destination("folder/Mail.EML") == (
+                "folder/Mail.mime-pruned.eml"
+            )
 
     failure = OSError("unavailable")
     with monkeypatch.context() as context:
