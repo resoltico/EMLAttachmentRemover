@@ -58,9 +58,7 @@ def test_header_parser_rejects_a_nonadvancing_wire_cursor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Fail closed rather than spin when a mutated wire cursor regresses."""
-    monkeypatch.setattr(
-        mime_headers, "line_end", lambda _raw, position, _end: position
-    )
+    monkeypatch.setattr(mime_headers, "line_end", lambda _raw, position, _end: position)
     with pytest.raises(AppError) as captured:
         mime_headers.parse_headers(b"Subject: one\r\n", 0, 14)
     assert captured.value == AppError(
