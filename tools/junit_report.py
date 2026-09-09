@@ -67,15 +67,6 @@ def temporary_report_path(storage: Path) -> Path:
 
 
 def _regular_source(path: Path) -> bytes:
-    """Read a regular non-symbolic report source.
-
-    Returns:
-        The exact report bytes.
-
-    Raises:
-        JunitReportError: If the source is absent, unsafe, or unreadable.
-
-    """
     try:
         mode = path.lstat().st_mode
     except OSError as error:
@@ -95,12 +86,6 @@ def _replacements(
     source: Path,
     project_root: Path,
 ) -> tuple[tuple[str, str], ...]:
-    """Return longest-first private prefixes and XML-safe placeholders.
-
-    Returns:
-        Every known machine-specific prefix in deterministic order.
-
-    """
     path_candidates = (
         (source.parent, ISOLATED_PLACEHOLDER),
         (project_root, PROJECT_PLACEHOLDER),
