@@ -184,12 +184,12 @@ def _verify_staged(state: _PublicationState) -> None:
     parent = state.parent
     if stage is None or parent is None:
         raise AppError(ExitCode.INTERNAL_ERROR, "staging file was not created")
-    position = 0
-    while position < len(state.candidate):
-        written = os.write(stage.descriptor, state.candidate[position:])
-        if written <= 0:
+    remaining = memoryview(state.candidate)
+    while remaining:
+        written = os.write(stage.descriptor, remaining)
+        if not 0 < written <= len(remaining):
             raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
-        position += written
+        remaining = remaining[written:]
     os.fsync(stage.descriptor)
     if not parent.windows:
         os.fchmod(stage.descriptor, 0o600)

@@ -66,24 +66,19 @@ def _validate_quoted_printable(encoded: bytes) -> None:
         AppError: If any equals sign is not a valid escape or soft break.
 
     """
-    index = 0
-    while index < len(encoded):
-        if encoded[index] != EQUALS:
-            index += 1
+    for index, byte in enumerate(encoded):
+        if byte != EQUALS:
             continue
         remainder = encoded[index + 1 :]
-        if remainder.startswith(b"\r\n"):
-            index += 3
-        elif remainder.startswith(b"\n"):
-            index += 2
-        elif len(remainder) >= HEX_PAIR_BYTES and all(
+        if remainder.startswith((b"\r\n", b"\n")):
+            continue
+        if len(remainder) >= HEX_PAIR_BYTES and all(
             byte in b"0123456789abcdefABCDEF" for byte in remainder[:HEX_PAIR_BYTES]
         ):
-            index += 3
-        else:
-            raise AppError(
-                ExitCode.PARSE_ERROR, "invalid retained quoted-printable payload"
-            )
+            continue
+        raise AppError(
+            ExitCode.PARSE_ERROR, "invalid retained quoted-printable payload"
+        )
 
 
 def fingerprint_retained(

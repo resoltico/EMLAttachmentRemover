@@ -50,24 +50,22 @@ def _skip_comment(value: bytes, position: int) -> int:
 
     """
     depth = 1
-    position += 1
-    while position < len(value) and depth:
-        byte = value[position]
-        if byte == BACKSLASH:
-            position += 2
+    escaped = False
+    start = position + 1
+    for index, byte in enumerate(value[start:], start):
+        if escaped:
+            escaped = False
+        elif byte == BACKSLASH:
+            escaped = True
         elif byte == OPEN_PAREN:
             depth += 1
-            position += 1
         elif byte == CLOSE_PAREN:
             depth -= 1
-            position += 1
+            if depth == 0:
+                return index + 1
         elif byte in b"\r\n":
             raise AppError(ExitCode.PARSE_ERROR, "malformed MIME comment")
-        else:
-            position += 1
-    if depth:
-        raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME comment")
-    return position
+    raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME comment")
 
 
 def first_non_cfws(value: bytes) -> int:

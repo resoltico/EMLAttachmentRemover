@@ -6,14 +6,14 @@ import hashlib
 import os
 from typing import TYPE_CHECKING
 
+import pytest
+
 from eml_attachment_remover import staged_output
-from eml_attachment_remover.domain import FileIdentity
+from eml_attachment_remover.domain import AppError, ExitCode, FileIdentity
 from eml_attachment_remover.native_paths import bind_destination
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
     from eml_attachment_remover.staged_output import _PublicationState
 
@@ -43,6 +43,22 @@ def test_staged_write_accepts_positive_partial_progress(
     assert state.stage is not None
     os.lseek(state.stage.descriptor, 0, os.SEEK_SET)
     assert os.read(state.stage.descriptor, 16) == b"three"
+    staged_output._cleanup(state)  # ruff: ignore[private-member-access] - owned stage cleanup.
+
+
+def test_staged_write_rejects_nonprogress_and_impossible_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A native write result must consume a nonempty proper slice of the candidate."""
+    state = _state(tmp_path, b"two")
+    for reported in (-1, 4):
+        with monkeypatch.context() as context:
+            context.setattr(os, "write", lambda *_args, reported=reported: reported)
+            with pytest.raises(AppError) as captured:
+                staged_output._verify_staged(state)  # ruff: ignore[private-member-access] - bounded write progress.
+            assert captured.value == AppError(
+                ExitCode.WRITE_ERROR, "short write while staging candidate"
+            )
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - owned stage cleanup.
 
 
