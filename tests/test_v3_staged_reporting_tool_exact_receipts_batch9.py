@@ -9,6 +9,7 @@ import pytest
 from tools import hypothesis_observation_safety, junit_report, smoke_distribution
 
 from eml_attachment_remover import cli_parser, staged_output
+from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.native_paths import bind_destination
 
 if TYPE_CHECKING:
@@ -21,7 +22,7 @@ def test_staged_publish_preserves_inner_and_deferred_exit_failures_together(
 ) -> None:
     """Pre-edge and deferred-exit failures remain independently visible."""
     primary = RuntimeError("stage failure")
-    deferred = KeyboardInterrupt()
+    deferred = CancellationSignal(2, "SIGINT")
 
     @contextmanager
     def defer() -> Iterator[None]:

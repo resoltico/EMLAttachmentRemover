@@ -17,6 +17,7 @@ from unittest.mock import Mock
 import pytest
 
 from eml_attachment_remover import atomic_publish, staged_output
+from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import AppError, ExitCode, FileIdentity, PathValue
 from eml_attachment_remover.native_paths import (
     BoundDirectoryHandle,
@@ -118,7 +119,7 @@ def test_nested_cancellation_keeps_primary_and_all_close_failures(
     close_count = 0
 
     def fail_sync(_parent: BoundDirectoryHandle) -> str:
-        raise KeyboardInterrupt
+        raise CancellationSignal(2, "SIGINT")
 
     def close_with_receipt(descriptor: int) -> BaseException | None:
         nonlocal close_count
@@ -142,7 +143,7 @@ def test_nested_cancellation_keeps_primary_and_all_close_failures(
     with pytest.raises(PublishedWithError) as raised:
         publish(bind_destination(str(destination)), candidate)
     error = raised.value
-    assert isinstance(error.cause, KeyboardInterrupt)
+    assert isinstance(error.cause, CancellationSignal)
     assert isinstance(error.cleanup_cause, BaseExceptionGroup)
     assert error.receipt.visibility == "visible"
     assert error.receipt.temp_cleanup == "succeeded"
@@ -156,10 +157,10 @@ def test_stage_owner_construction_interrupt_leaves_no_sensitive_temp(
     destination = _destination(tmp_path)
 
     def interrupt_owner(_descriptor: int, _name: bytes) -> object:
-        raise KeyboardInterrupt
+        raise CancellationSignal(2, "SIGINT")
 
     monkeypatch.setattr(staged_output, "_Stage", interrupt_owner)
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(CancellationSignal):
         publish(bind_destination(str(destination)), b"sensitive staging bytes")
     assert not destination.exists()
     assert _temporary_names(tmp_path) == []
@@ -435,7 +436,7 @@ def test_deferred_interrupt_after_publication_is_not_created(
 
     def mask(operation: int, _signals: set[int]) -> set[int]:
         if operation == signal.__dict__["SIG_SETMASK"]:
-            raise KeyboardInterrupt
+            raise CancellationSignal(2, "SIGINT")
         return set()
 
     monkeypatch.setattr(signal, "pthread_sigmask", mask, raising=False)
@@ -443,6 +444,6 @@ def test_deferred_interrupt_after_publication_is_not_created(
     monkeypatch.setitem(signal.__dict__, "SIG_SETMASK", 2)
     with pytest.raises(PublishedWithError) as raised:
         publish(bind_destination(str(destination)), b"shielded")
-    assert isinstance(raised.value.cause, KeyboardInterrupt)
+    assert isinstance(raised.value.cause, CancellationSignal)
     assert raised.value.receipt.visibility == "visible"
     assert destination.read_bytes() == b"shielded"
