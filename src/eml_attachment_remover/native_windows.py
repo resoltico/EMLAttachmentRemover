@@ -325,8 +325,8 @@ class WindowsApi:
         encoded = codecs.utf_16_le_encode(name)[0]
         size = max(24, 20 + len(encoded))
         buffer = bytearray(MAX_RENAME_BUFFER_BYTES)
-        buffer[8:16] = parent.to_bytes(8, "little", signed=False)
-        buffer[16:20] = len(encoded).to_bytes(4, "little", signed=False)
+        buffer[8:16] = bytes(ctypes.c_uint64(parent))
+        buffer[16:20] = bytes(ctypes.c_uint32(len(encoded)))
         buffer[20 : 20 + len(encoded)] = encoded
         native_buffer = ctypes.create_string_buffer(bytes(buffer))
         status = _IoStatusBlock()
@@ -387,9 +387,6 @@ class WindowsApi:
             Length=ctypes.sizeof(_ObjectAttributes),
             RootDirectory=ctypes.c_void_p(parent),
             ObjectName=ctypes.pointer(string),
-            Attributes=0,
-            SecurityDescriptor=None,
-            SecurityQualityOfService=None,
         )
         handle = ctypes.c_void_p()
         status = _IoStatusBlock()
