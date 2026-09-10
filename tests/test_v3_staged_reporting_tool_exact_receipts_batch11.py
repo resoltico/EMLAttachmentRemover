@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from eml_attachment_remover import cli_parser, staged_output
+from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import BoundDirectory
 from eml_attachment_remover.native_paths import bind_destination
 
@@ -32,13 +33,13 @@ def _state(tmp_path: Path) -> _PublicationState:
     )
 
 
-def test_stage_owner_transfer_preserves_a_lone_keyboard_interrupt_exactly(
+def test_stage_owner_transfer_preserves_a_lone_cancellation_signal_exactly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A clean compensation path must not group or relabel a cancellation signal."""
     state = _state(tmp_path)
     state.parent = BoundDirectory(41, windows=False)
-    interruption = KeyboardInterrupt()
+    interruption = CancellationSignal(2, "SIGINT")
     closed: list[int] = []
     monkeypatch.setattr(staged_output, "private_stage_name", lambda: b"stage")
     monkeypatch.setattr(staged_output, "create_private_stage", lambda *_args: 51)
@@ -54,7 +55,7 @@ def test_stage_owner_transfer_preserves_a_lone_keyboard_interrupt_exactly(
     )
     monkeypatch.setattr(staged_output, "_close_descriptor", closed.append)
 
-    with pytest.raises(KeyboardInterrupt) as raised:
+    with pytest.raises(CancellationSignal) as raised:
         staged_output._create_stage(state)  # ruff: ignore[private-member-access] - cancellation-safe owner transfer.
     assert raised.value is interruption
     assert closed == [51]
