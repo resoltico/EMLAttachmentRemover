@@ -117,13 +117,14 @@ def raw_json_requested(arguments: list[str]) -> bool:
 
     """
     options = _raw_options(arguments)
-    return (
-        any(
-            option == "--output-format=json"
-            or (option == "--output-format" and options[index + 1] == "json")
-            for index, option in enumerate(options[:-1])
+    return any(
+        option == "--output-format=json"
+        or (
+            option == "--output-format"
+            and index + 1 < len(options)
+            and options[index + 1] == "json"
         )
-        or "--output-format=json" in options
+        for index, option in enumerate(options)
     )
 
 
@@ -152,7 +153,7 @@ def _raw_options(arguments: list[str]) -> list[str]:
 
 
 def _removed_existing(argument: str) -> bool:
-    return argument in {"--force", "-f", "--skip-existing"} or argument.startswith((
+    return argument in {"--force", "--skip-existing"} or argument.startswith((
         "--force=",
         "--skip-existing=",
         "-f",
@@ -160,13 +161,14 @@ def _removed_existing(argument: str) -> bool:
 
 
 def _removed_paths(arguments: list[str]) -> bool:
-    return (
-        any(
-            argument == "--output-format=paths"
-            or (argument == "--output-format" and arguments[index + 1] == "paths")
-            for index, argument in enumerate(arguments[:-1])
+    return any(
+        argument == "--output-format=paths"
+        or (
+            argument == "--output-format"
+            and index + 1 < len(arguments)
+            and arguments[index + 1] == "paths"
         )
-        or "--output-format=paths" in arguments
+        for index, argument in enumerate(arguments)
     )
 
 
