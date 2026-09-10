@@ -128,7 +128,7 @@ def _existing_identity(destination: BoundDestination) -> FileIdentity | None:
 
 def _read_existing(destination: BoundDestination) -> ExistingEntry | None:
     directory = _open_bound_destination(destination)
-    descriptor = -1
+    descriptor: int | None = None
     try:
         try:
             descriptor = _open_child_nofollow(directory, destination.basename)
@@ -144,7 +144,7 @@ def _read_existing(destination: BoundDestination) -> ExistingEntry | None:
             )
         return ExistingEntry(before, raw)
     finally:
-        if descriptor >= 0:
+        if descriptor is not None:
             os.close(descriptor)
         _close_bound_directory(directory)
 

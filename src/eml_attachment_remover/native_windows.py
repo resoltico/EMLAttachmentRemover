@@ -5,7 +5,6 @@ from __future__ import annotations
 import codecs
 import ctypes
 import os
-import struct
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NoReturn
 
@@ -326,9 +325,8 @@ class WindowsApi:
         encoded = codecs.utf_16_le_encode(name)[0]
         size = max(24, 20 + len(encoded))
         buffer = bytearray(MAX_RENAME_BUFFER_BYTES)
-        struct.pack_into("<I", buffer, 0, 0)
-        struct.pack_into("<Q", buffer, 8, parent)
-        struct.pack_into("<I", buffer, 16, len(encoded))
+        buffer[8:16] = parent.to_bytes(8, "little", signed=False)
+        buffer[16:20] = len(encoded).to_bytes(4, "little", signed=False)
         buffer[20 : 20 + len(encoded)] = encoded
         native_buffer = ctypes.create_string_buffer(bytes(buffer))
         status = _IoStatusBlock()
@@ -386,12 +384,12 @@ class WindowsApi:
         encoded = codecs.utf_16_le_encode(name)[0]
         string = _UnicodeString(len(encoded), len(encoded), ctypes.addressof(buffer))
         attributes = _ObjectAttributes(
-            ctypes.sizeof(_ObjectAttributes),
-            ctypes.c_void_p(parent),
-            ctypes.pointer(string),
-            0,
-            None,
-            None,
+            Length=ctypes.sizeof(_ObjectAttributes),
+            RootDirectory=ctypes.c_void_p(parent),
+            ObjectName=ctypes.pointer(string),
+            Attributes=0,
+            SecurityDescriptor=None,
+            SecurityQualityOfService=None,
         )
         handle = ctypes.c_void_p()
         status = _IoStatusBlock()

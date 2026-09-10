@@ -8,7 +8,7 @@ import signal
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from .domain import (
     AppError,
@@ -33,6 +33,9 @@ from .staged_progress import advance_position
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+
+type _LifecycleOutcome = tuple[BaseException | None, tuple[str, BaseException | None]]
 
 
 def _combined(errors: list[BaseException]) -> BaseException:
@@ -403,6 +406,26 @@ def _finish_or_raise(
     )
 
 
+def _run_lifecycle(state: _PublicationState) -> _LifecycleOutcome:
+    """Run the publication interior and retain its terminal cleanup outcome.
+
+    Returns:
+        The pre-edge failure, if any, and exact cleanup outcome.
+
+    """
+    primary: BaseException | None = None
+    try:
+        _bind_parent(state)
+        _create_stage(state)
+        _verify_staged(state)
+        _publish_edge(state)
+    except BaseException as exc:  # ruff: ignore[blind-except] - preserve cancellation and exit.
+        primary = exc
+        if state.kernel_published and state.receipt is None:
+            state.receipt = _reconcile(state, "failed")
+    return primary, _cleanup(state)
+
+
 def publish(destination: BoundDestination, candidate: bytes) -> PublicationReceipt:
     """Stage, verify, publish without replacement, and reconcile one candidate.
 
@@ -413,23 +436,15 @@ def publish(destination: BoundDestination, candidate: bytes) -> PublicationRecei
     state = _PublicationState(
         destination, candidate, hashlib.sha256(candidate).hexdigest()
     )
-    primary: BaseException | None = None
-    cleanup: tuple[str, BaseException | None] | None = None
-    try:  # ruff: ignore[too-many-nested-blocks, too-many-statements-in-try-clause] - shields lifecycle.
+    completed: list[_LifecycleOutcome] = []
+    try:
         with _defer_signals():
-            try:
-                _bind_parent(state)
-                _create_stage(state)
-                _verify_staged(state)
-                _publish_edge(state)
-            except BaseException as exc:  # ruff: ignore[blind-except] - preserve cancellation and exit.
-                primary = exc
-                if state.kernel_published and state.receipt is None:
-                    state.receipt = _reconcile(state, "failed")
-            cleanup = _cleanup(state)
-    except BaseException as exc:  # ruff: ignore[blind-except] - deferred signal is post-edge work.
-        primary = exc if primary is None else _combined([primary, exc])
-    if cleanup is None:
-        unshielded_failure = cast("BaseException", primary)
-        raise unshielded_failure
+            completed.append(_run_lifecycle(state))
+    except BaseException as deferred:
+        if not completed:
+            raise
+        primary, cleanup = completed[0]
+        primary = deferred if primary is None else _combined([primary, deferred])
+        return _finish_or_raise(state, primary, cleanup)
+    primary, cleanup = completed[0]
     return _finish_or_raise(state, primary, cleanup)

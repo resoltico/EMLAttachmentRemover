@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import codecs
 import ntpath
 import os
 import pathlib
@@ -19,6 +20,26 @@ _WINDOWS_RESERVED: Final = {"CON", "PRN", "AUX", "NUL"} | {
 }
 
 
+def _base64_text(raw: bytes) -> str:
+    """Encode known ASCII-safe evidence bytes as text.
+
+    Returns:
+        The canonical Base64 text for the supplied binary evidence.
+
+    """
+    return base64.b64encode(raw).decode()
+
+
+def _utf16le(value: str) -> bytes:
+    """Encode one Windows-native name with the codec's strict default policy.
+
+    Returns:
+        The raw UTF-16LE bytes used by native Windows APIs.
+
+    """
+    return codecs.utf_16_le_encode(value)[0]
+
+
 def path_value(value: str) -> PathValue:
     """Return a platform-native, lossless path value for schema serialization.
 
@@ -31,12 +52,12 @@ def path_value(value: str) -> PathValue:
             value,
             _display(value),
             None,
-            base64.b64encode(value.encode("utf-16-le", "strict")).decode("ascii"),
+            _base64_text(_utf16le(value)),
         )
     return PathValue(
         value,
         _display(value),
-        base64.b64encode(os.fsencode(value)).decode("ascii"),
+        _base64_text(os.fsencode(value)),
     )
 
 
@@ -63,7 +84,7 @@ def validate_windows_argument(value: str) -> None:
 
     """
     try:
-        raw = value.encode("utf-16-le", "strict")
+        raw = _utf16le(value)
     except UnicodeEncodeError as exc:
         message = "path contains an unpaired surrogate"
         raise AppError(ExitCode.INPUT_ERROR, message) from exc
@@ -145,7 +166,7 @@ def _display(value: str) -> str:
 def _validate_posix(value: str) -> None:
     raw = os.fsencode(value)
     _parent, _separator, basename = raw.rpartition(b"/")
-    if b"\x00" in raw or not basename or value.endswith("/"):
+    if b"\x00" in raw or not basename:
         raise AppError(ExitCode.INPUT_ERROR, "path has an empty basename")
     if basename in {b".", b".."}:
         raise AppError(ExitCode.INPUT_ERROR, "path basename may not be . or ..")
