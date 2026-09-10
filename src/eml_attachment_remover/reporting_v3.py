@@ -6,7 +6,8 @@ import json
 import os
 import sys
 from base64 import b64decode, b64encode
-from typing import TextIO
+from encodings import utf_8, utf_16_le
+from typing import Final, TextIO
 
 from ._version import PROGRAM_VERSION
 from .domain import (
@@ -20,6 +21,44 @@ from .domain import (
     LedgerItem,
     PathValue,
 )
+
+_UTF8: Final = utf_8.getregentry().name
+
+
+def _base64(value: bytes) -> str:
+    """Return canonical text for binary schema evidence.
+
+    Returns:
+        Canonical UTF-8 text for the Base64 alphabet.
+
+    """
+    return b64encode(value).decode()
+
+
+def _utf16le(value: str) -> bytes:
+    """Return strict UTF-16LE evidence without a mutable codec spelling.
+
+    Returns:
+        The strict UTF-16LE representation of ``value``.
+
+    """
+    return utf_16_le.encode(value)[0]
+
+
+def _canonical_json(document: dict[str, object], *, ensure_ascii: object) -> str:
+    """Serialize one report while enforcing the boolean JSON visibility policy.
+
+    Returns:
+        One canonical JSON document without a trailing newline.
+
+    Raises:
+        TypeError: If the internal JSON visibility setting is not a boolean.
+
+    """
+    if type(ensure_ascii) is not bool:
+        message = "JSON ensure_ascii must be a boolean"
+        raise TypeError(message)
+    return json.dumps(document, ensure_ascii=ensure_ascii, sort_keys=True)
 
 
 def _path(value: PathValue | None) -> dict[str, str | None] | None:
@@ -42,14 +81,12 @@ def _basename(value: bytes | str) -> dict[str, str | None]:
     """
     if isinstance(value, bytes):
         return {
-            "basename_base64": b64encode(value).decode("ascii"),
+            "basename_base64": _base64(value),
             "basename_utf16le_base64": None,
         }
     return {
         "basename_base64": None,
-        "basename_utf16le_base64": b64encode(
-            value.encode("utf-16-le", "strict")
-        ).decode("ascii"),
+        "basename_utf16le_base64": _base64(_utf16le(value)),
     }
 
 
@@ -110,8 +147,8 @@ def _transformation(item: LedgerItem) -> dict[str, object] | None:
                 "cte": fingerprint.cte,
                 "content_type_parameters": [
                     {
-                        "name_base64": b64encode(name).decode("ascii"),
-                        "value_base64": b64encode(value).decode("ascii"),
+                        "name_base64": _base64(name),
+                        "value_base64": _base64(value),
                     }
                     for name, value in fingerprint.content_type_parameters
                 ],
@@ -227,17 +264,13 @@ def report(ledger: BatchLedger, mode: str, exit_code: int) -> dict[str, object]:
 
 def write_json(document: dict[str, object]) -> None:
     """Write exactly one canonical JSON report document."""
-    sys.stdout.write(json.dumps(document, ensure_ascii=False, sort_keys=True) + "\n")
+    sys.stdout.write(_canonical_json(document, ensure_ascii=False) + "\n")
 
 
 def _safe(stream: TextIO, text: str) -> None:
     """Write one display-safe line."""
-    stream.write(
-        text.encode(stream.encoding or "utf-8", "backslashreplace").decode(
-            stream.encoding or "utf-8"
-        )
-        + "\n"
-    )
+    encoding = stream.encoding or _UTF8
+    stream.write(text.encode(encoding, "backslashreplace").decode(encoding) + "\n")
 
 
 def write_human(document: dict[str, object]) -> None:

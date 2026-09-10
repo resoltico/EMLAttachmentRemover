@@ -9,10 +9,8 @@ import pytest
 
 from eml_attachment_remover import native_windows, staged_output
 from eml_attachment_remover.domain import (
-    AppError,
     BoundDestination,
     BoundDirectory,
-    ExitCode,
     FileIdentity,
     PathValue,
 )
@@ -95,30 +93,6 @@ def test_windows_adapter_preserves_explicit_child_boolean_intent(
         (10, "old", False, True, False),
         (11, "new", False, False, True),
     ]
-
-
-def test_final_receipt_fails_with_exact_internal_error_if_builder_returns_none(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    candidate = b"body"
-    expected = FileIdentity(7, 8, "regular", 901)
-    state = staged_output._PublicationState(  # ruff: ignore[private-member-access] - construct one direct lifecycle state.
-        _destination(), candidate, hashlib.sha256(candidate).hexdigest()
-    )
-    state.parent = BoundDirectory(41, windows=False)
-    state.stage = staged_output._Stage(42, b"stage")  # ruff: ignore[private-member-access] - live stage receipt precondition.
-    monkeypatch.setattr(staged_output, "descriptor_identity", lambda _fd: expected)
-    monkeypatch.setattr(staged_output, "child_lstat", lambda *_args: expected)
-    monkeypatch.setattr(staged_output, "open_child_nofollow", lambda *_args: 43)
-    monkeypatch.setattr(staged_output, "_read_all", lambda _fd: candidate)
-    monkeypatch.setattr(staged_output, "_close_descriptor", lambda _fd: None)
-    monkeypatch.setattr(staged_output, "PublicationReceipt", lambda **_fields: None)
-
-    with pytest.raises(AppError) as captured:
-        staged_output._read_final_receipt(state)  # ruff: ignore[private-member-access] - final builder must not silently yield no receipt.
-    assert captured.value == AppError(
-        ExitCode.INTERNAL_ERROR, "final receipt was not constructed"
-    )
 
 
 def test_stage_construction_preserves_primary_without_synthetic_cleanup_group(

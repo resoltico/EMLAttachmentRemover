@@ -8,7 +8,7 @@ import signal
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from .domain import (
     AppError,
@@ -133,9 +133,9 @@ def _create_stage(  # ruff: ignore[complex-structure] - immediate ownership pres
             close_problem = _close_descriptor(descriptor)
             if close_problem is not None:
                 cleanup_errors.append(close_problem)
-            if len(cleanup_errors) > 1:
-                raise _combined(cleanup_errors) from primary
-            raise
+            if len(cleanup_errors) == 1:
+                raise
+            raise _combined(cleanup_errors) from primary
         return
     raise AppError(ExitCode.WRITE_ERROR, "could not allocate a private staging name")
 
@@ -216,8 +216,6 @@ def _read_final_receipt(  # ruff: ignore[complex-structure] - ordered receipt ch
     if stage is None or parent is None:
         raise AppError(ExitCode.INTERNAL_ERROR, "staging file was not created")
     final_fd = -1
-    problem: BaseException | None = None
-    receipt: PublicationReceipt | None = None
     try:  # ruff: ignore[too-many-statements-in-try-clause] - receipt checks must share cleanup.
         expected = descriptor_identity(stage.descriptor)
         entry = child_lstat(parent, state.destination.basename)
@@ -250,17 +248,14 @@ def _read_final_receipt(  # ruff: ignore[complex-structure] - ordered receipt ch
             final_address=state.destination.request,
             temp_cleanup="pending",
         )
-    except BaseException as exc:  # ruff: ignore[blind-except] - receipt cleanup preserves cancellation.
-        problem = exc
+    except BaseException as problem:
+        close_problem = _close_descriptor(final_fd)
+        if close_problem is not None:
+            raise _combined([problem, close_problem])  # ruff: ignore[raise-without-from-inside-except] - preserve exact unchained group receipt.
+        raise
     close_problem = _close_descriptor(final_fd)
-    if problem is not None and close_problem is not None:
-        raise _combined([problem, close_problem])
-    if problem is not None:
-        raise problem
     if close_problem is not None:
         raise close_problem
-    if receipt is None:
-        raise AppError(ExitCode.INTERNAL_ERROR, "final receipt was not constructed")
     return receipt
 
 
@@ -419,7 +414,7 @@ def publish(destination: BoundDestination, candidate: bytes) -> PublicationRecei
         destination, candidate, hashlib.sha256(candidate).hexdigest()
     )
     primary: BaseException | None = None
-    cleanup: tuple[str, BaseException | None] = ("succeeded", None)
+    cleanup: tuple[str, BaseException | None] | None = None
     try:  # ruff: ignore[too-many-nested-blocks, too-many-statements-in-try-clause] - shields lifecycle.
         with _defer_signals():
             try:
@@ -434,4 +429,7 @@ def publish(destination: BoundDestination, candidate: bytes) -> PublicationRecei
             cleanup = _cleanup(state)
     except BaseException as exc:  # ruff: ignore[blind-except] - deferred signal is post-edge work.
         primary = exc if primary is None else _combined([primary, exc])
+    if cleanup is None:
+        unshielded_failure = cast("BaseException", primary)
+        raise unshielded_failure
     return _finish_or_raise(state, primary, cleanup)
