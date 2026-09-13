@@ -226,6 +226,25 @@ def test_private_stage_removal_passes_its_exact_owned_descriptor(
     assert state.stage.name is None
 
 
+def test_unpublished_windows_stage_is_still_removed_by_exact_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows avoids post-publish deletion only after the kernel edge occurred."""
+    state = _state(tmp_path)
+    state.parent = BoundDirectory(41, windows=True)
+    state.stage = staged_output._Stage(51, "stage")  # ruff: ignore[private-member-access] - direct owned Windows entry.
+    calls: list[tuple[BoundDirectory, int, str]] = []
+    monkeypatch.setattr(
+        staged_output,
+        "discard_private_stage",
+        lambda parent, descriptor, name: calls.append((parent, descriptor, name)),
+    )
+
+    assert staged_output._remove_stage_entry(state) is None  # ruff: ignore[private-member-access] - unpublished Windows stage must be discarded.
+    assert calls == [(state.parent, 51, "stage")]
+    assert state.stage.name is None
+
+
 def test_report_requires_terminal_rows_and_accumulates_repeated_statuses() -> None:
     """Reports reject pending ledgers and count every terminal row rather than one."""
     pending = BatchLedger.from_requests([PathValue("one", "one", "b25l")])
