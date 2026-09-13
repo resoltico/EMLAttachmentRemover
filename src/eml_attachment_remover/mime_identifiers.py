@@ -12,7 +12,7 @@ CLOSE_PAREN: Final = ord(")")
 OPEN_ANGLE: Final = ord("<")
 
 
-def _skip_cfws(value: bytes, position: int = 0) -> int:
+def _skip_cfws(value: bytes, position: int) -> int:
     """Advance across RFC comment or folding white space without normalizing tokens.
 
     Returns:
@@ -23,7 +23,9 @@ def _skip_cfws(value: bytes, position: int = 0) -> int:
 
     """
     source_end = len(value)
-    while position < source_end:
+    if position == source_end:
+        return position
+    for _ in value:
         prior_position = position
         position = _skip_folding_white_space(value, position)
         if position < prior_position:
@@ -34,7 +36,7 @@ def _skip_cfws(value: bytes, position: int = 0) -> int:
         if next_position <= position:
             raise AppError(ExitCode.PARSE_ERROR, "malformed MIME comment")
         position = next_position
-    return position
+    raise AppError(ExitCode.PARSE_ERROR, "malformed MIME comment cursor")
 
 
 def _skip_folding_white_space(value: bytes, position: int) -> int:
@@ -83,7 +85,7 @@ def first_non_cfws(value: bytes) -> int:
         The source offset after leading comments and folding white space.
 
     """
-    return _skip_cfws(value)
+    return _skip_cfws(value, 0)
 
 
 def _message_identifier_at(
@@ -119,7 +121,7 @@ def parse_message_identifier(value: bytes, *, field: str) -> bytes:
         AppError: If CFWS or angle-bracket syntax is malformed.
 
     """
-    position = _skip_cfws(value)
+    position = _skip_cfws(value, 0)
     identifier, position = _message_identifier_at(value, position, field=field)
     if _skip_cfws(value, position) != len(value):
         raise AppError(ExitCode.PARSE_ERROR, f"malformed {field}")
@@ -137,11 +139,13 @@ def parse_message_identifier_sequence(value: bytes, *, field: str) -> tuple[byte
 
     """
     result: list[bytes] = []
-    position = _skip_cfws(value)
+    position = _skip_cfws(value, 0)
     while position < len(value):
         identifier, position = _message_identifier_at(value, position, field=field)
         result.append(identifier)
         next_position = _skip_cfws(value, position)
+        if next_position < position:
+            raise AppError(ExitCode.PARSE_ERROR, f"malformed {field}")
         if next_position == position and next_position < len(value):
             raise AppError(ExitCode.PARSE_ERROR, f"malformed {field}")
         position = next_position
