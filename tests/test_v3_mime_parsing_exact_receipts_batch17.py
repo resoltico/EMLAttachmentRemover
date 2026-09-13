@@ -83,6 +83,10 @@ def test_cfws_scanners_stop_at_the_first_non_whitespace_byte() -> None:
         )
         == 2
     )
+    comment = b"(already consumed) \tX"
+    assert mime_identifiers._skip_folding_white_space(  # ruff: ignore[private-member-access] - the cursor must not rescan its consumed prefix.
+        comment, len(b"(already consumed)")
+    ) == len(b"(already consumed) \t")
     assert mime_identifiers.first_non_cfws(b" (comment)\tX") == 11
 
 

@@ -90,15 +90,13 @@ def parse_headers(raw: bytes, start: int, separator: int) -> tuple[Header, ...]:
         raise AppError(ExitCode.PARSE_ERROR, "MIME entity exceeds header-byte limit")
     headers: list[Header] = []
     position = _first_header_offset(raw, start, separator)
-    for _line in range(separator - position):
-        if position >= separator:
-            break
+    while position < separator:
         end = _advanced_cursor(position, line_end(raw, position, separator))
+        if end <= position:
+            raise AppError(ExitCode.PARSE_ERROR, "MIME header cursor did not advance")
         line = raw[position:end].rstrip(b"\r\n")
         _append_header(headers, line, position, end)
         position = end
-    if position < separator:
-        raise AppError(ExitCode.PARSE_ERROR, "MIME header cursor did not advance")
     _validate_header_multiplicity(headers)
     return tuple(headers)
 

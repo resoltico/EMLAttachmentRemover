@@ -36,17 +36,23 @@ def test_delimiter_scan_rejects_a_nonadvancing_wire_cursor(
     assert captured.value == AppError(
         ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance"
     )
+    calls = 0
+
+    def stalled_once(position: int, _next: int) -> int:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return position
+        raise AppError(ExitCode.PARSE_ERROR, "unexpected second delimiter cursor call")
+
     with monkeypatch.context() as context:
-        context.setattr(
-            mime_raw,
-            "_advanced_delimiter_cursor",
-            lambda position, _next: position,
-        )
+        context.setattr(mime_raw, "_advanced_delimiter_cursor", stalled_once)
         with pytest.raises(AppError) as captured:
-            mime_raw._delimiter_lines(b"x", 0, 1, b"m")  # ruff: ignore[private-member-access] - bounded outer scan must also fail closed.
+            mime_raw._delimiter_lines(b"x", 0, 1, b"m")  # ruff: ignore[private-member-access] - caller-side delimiter progress invariant.
     assert captured.value == AppError(
         ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance"
     )
+    assert calls == 1
 
 
 @pytest.mark.parametrize(

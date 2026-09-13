@@ -33,10 +33,7 @@ def _skip_folding_white_space(value: bytes, position: int) -> int:
         The source offset after contiguous white-space bytes.
 
     """
-    for next_position in range(position, len(value)):
-        if value[next_position] not in b" \t\r\n":
-            return next_position
-    return len(value)
+    return len(value) - len(value[position:].lstrip(b" \t\r\n"))
 
 
 def _skip_comment(value: bytes, position: int) -> int:

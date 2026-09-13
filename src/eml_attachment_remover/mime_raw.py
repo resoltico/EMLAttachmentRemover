@@ -110,10 +110,12 @@ def _delimiter_lines(
     prefix = b"--" + boundary
     result: list[tuple[int, int, bool]] = []
     position = start
-    for _line in range(end - start):
-        if position >= end:
-            break
+    while position < end:
         end_of_line = _advanced_delimiter_cursor(position, line_end(raw, position, end))
+        if end_of_line <= position:
+            raise AppError(
+                ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance"
+            )
         line = raw[position:end_of_line].rstrip(b"\r\n")
         if line.startswith(prefix):
             tail = line[len(prefix) :]
@@ -123,8 +125,6 @@ def _delimiter_lines(
             if not tail.strip(b" \t"):
                 result.append((position, end_of_line, closing))
         position = end_of_line
-    if position < end:
-        raise AppError(ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance")
     return result
 
 

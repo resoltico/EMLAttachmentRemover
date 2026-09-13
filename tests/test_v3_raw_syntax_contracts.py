@@ -71,15 +71,23 @@ def test_header_parser_rejects_a_nonadvancing_wire_cursor(
     assert captured.value == AppError(
         ExitCode.PARSE_ERROR, "MIME header cursor did not advance"
     )
+    calls = 0
+
+    def stalled_once(position: int, _next: int) -> int:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return position
+        raise AppError(ExitCode.PARSE_ERROR, "unexpected second header cursor call")
+
     with monkeypatch.context() as context:
-        context.setattr(
-            mime_headers, "_advanced_cursor", lambda position, _next: position
-        )
+        context.setattr(mime_headers, "_advanced_cursor", stalled_once)
         with pytest.raises(AppError) as captured:
             mime_headers.parse_headers(b"\r", 0, 1)
     assert captured.value == AppError(
         ExitCode.PARSE_ERROR, "MIME header cursor did not advance"
     )
+    assert calls == 1
     with monkeypatch.context() as context:
         context.setattr(mime_headers, "MAX_HEADER_BYTES", 0)
         with pytest.raises(AppError):
