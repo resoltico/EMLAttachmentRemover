@@ -12,18 +12,29 @@ CLOSE_PAREN: Final = ord(")")
 OPEN_ANGLE: Final = ord("<")
 
 
-def _skip_cfws(value: bytes, position: int) -> int:
+def _skip_cfws(value: bytes, position: int = 0) -> int:
     """Advance across RFC comment or folding white space without normalizing tokens.
 
     Returns:
         The offset at the first non-CFWS byte or the source end.
 
+    Raises:
+        AppError: If a CFWS scanner fails to advance its bounded cursor.
+
     """
-    while True:
+    source_end = len(value)
+    while position < source_end:
+        prior_position = position
         position = _skip_folding_white_space(value, position)
-        if position == len(value) or value[position] != OPEN_PAREN:
+        if position < prior_position:
+            raise AppError(ExitCode.PARSE_ERROR, "malformed MIME comment")
+        if position == source_end or value[position] != OPEN_PAREN:
             return position
-        position = _skip_comment(value, position)
+        next_position = _skip_comment(value, position)
+        if next_position <= position:
+            raise AppError(ExitCode.PARSE_ERROR, "malformed MIME comment")
+        position = next_position
+    return position
 
 
 def _skip_folding_white_space(value: bytes, position: int) -> int:
@@ -72,7 +83,7 @@ def first_non_cfws(value: bytes) -> int:
         The source offset after leading comments and folding white space.
 
     """
-    return _skip_cfws(value, 0)
+    return _skip_cfws(value)
 
 
 def _message_identifier_at(
@@ -108,7 +119,7 @@ def parse_message_identifier(value: bytes, *, field: str) -> bytes:
         AppError: If CFWS or angle-bracket syntax is malformed.
 
     """
-    position = _skip_cfws(value, 0)
+    position = _skip_cfws(value)
     identifier, position = _message_identifier_at(value, position, field=field)
     if _skip_cfws(value, position) != len(value):
         raise AppError(ExitCode.PARSE_ERROR, f"malformed {field}")
@@ -126,7 +137,7 @@ def parse_message_identifier_sequence(value: bytes, *, field: str) -> tuple[byte
 
     """
     result: list[bytes] = []
-    position = _skip_cfws(value, 0)
+    position = _skip_cfws(value)
     while position < len(value):
         identifier, position = _message_identifier_at(value, position, field=field)
         result.append(identifier)
