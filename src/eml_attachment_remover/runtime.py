@@ -6,6 +6,8 @@ import platform
 import sys
 from typing import Final
 
+from .app import main as application_main
+
 SUPPORTED_IMPLEMENTATION: Final = "CPython"
 SUPPORTED_VERSION: Final = (3, 14)
 UNSUPPORTED_RUNTIME_STATUS: Final = 1
@@ -40,9 +42,5 @@ def main() -> int:
             f"found {implementation} {version[0]}.{version[1]}\n",
         )
         return UNSUPPORTED_RUNTIME_STATUS
-
-    from .app import (  # ruff: ignore[import-outside-top-level]
-        main as application_main,
-    )
 
     return application_main()

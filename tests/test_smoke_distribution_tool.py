@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import runpy
 import subprocess
 import tempfile
 import unittest
+import warnings
 from email import policy
 from email.message import EmailMessage
 from pathlib import Path
@@ -32,6 +34,7 @@ def _message_bytes(
     message["Subject"] = subject
     if body is not None:
         message.set_content(body)
+        message.add_alternative(smoke_distribution.HTML_BODY, subtype="html")
     if filename:
         message.set_param("name", "public.txt", header="Content-Type")
     if content_id:
@@ -146,6 +149,37 @@ class SmokeProcessTests(unittest.TestCase):
         ):
             smoke_distribution._run_command("/public/cmd")  # ruff: ignore[private-member-access]
 
+    def test_fixture_rejects_invalid_stdlib_message_shapes(self) -> None:
+        class InvalidMessage:
+            """Minimal malformed message builder for defensive fixture checks."""
+
+            payload: object = object()
+
+            def __setitem__(self, _name: str, _value: str) -> None:
+                """Accept the public subject assignment."""
+
+            def set_content(self, _body: str) -> None:
+                """Accept the public plain body assignment."""
+
+            def add_alternative(self, _body: str, *, subtype: str) -> None:
+                """Accept the public HTML alternative assignment."""
+
+            def get_payload(self) -> object:
+                """Return the configured invalid payload shape.
+
+                Returns:
+                    The deliberately malformed payload value.
+
+                """
+                return self.payload
+
+        with patch.object(smoke_distribution, "EmailMessage", InvalidMessage):
+            with self.assertRaisesRegex(TypeError, "not multipart"):
+                smoke_distribution._fixture()  # ruff: ignore[private-member-access]
+            InvalidMessage.payload = [object(), object()]
+            with self.assertRaisesRegex(TypeError, "not an email entity"):
+                smoke_distribution._fixture()  # ruff: ignore[private-member-access]
+
 
 class SmokeOutputTests(unittest.TestCase):
     """Exercise every source-preservation and output-validation outcome."""
@@ -222,8 +256,6 @@ class SmokeOutputTests(unittest.TestCase):
             "body": _message_bytes(body="Unexpected body"),
             "missing_body": _message_bytes(body=None),
             "attachment": _message_bytes(attachment=True),
-            "filename": _message_bytes(filename=True),
-            "content_id": _message_bytes(content_id=True),
             "defect": (
                 b"Subject: Installed distribution smoke test\r\n"
                 b"Content-Type: multipart/mixed; boundary=public\r\n\r\n"
@@ -247,7 +279,7 @@ class SmokeOutputTests(unittest.TestCase):
                     )
                 self.assertEqual(
                     str(raised.exception),
-                    "installed command did not produce the expected text-only EML",
+                    "installed command did not produce the expected MIME-pruned EML",
                 )
 
 
@@ -383,6 +415,13 @@ class SmokeMainTests(unittest.TestCase):
         self.assertIsNotNone(temporary_parent)
         assert temporary_parent is not None
         self.assertFalse(temporary_parent.exists())
+
+    def test_script_entrypoint_returns_main_status(self) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            with self.assertRaises(SystemExit) as raised:
+                runpy.run_module("tools.smoke_distribution", run_name="__main__")
+        self.assertEqual(raised.exception.code, 0)
 
 
 if __name__ == "__main__":

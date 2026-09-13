@@ -1,156 +1,181 @@
-"""Define command-line syntax and argument-combination validation."""
+"""The intentionally small, breaking v3 command-line surface."""
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Final
+import argparse
+from typing import Never, override
 
 from ._version import PROGRAM_VERSION
-from .models import PROGRAM_NAME, ArgumentParser, CliError, ExitCode, OutputFormat
+from .domain import PROGRAM_NAME, AppError, ExitCode
 
-APPLICATION_DESCRIPTION: Final = (
-    "Create verified text-only EML working copies from a safe plain-text body. "
-    "An equivalent local HTML alternative may restore readable layout; its embedded "
-    "resources and ordinary attachments are discarded."
+MIGRATION_EXISTING = (
+    "--force and --skip-existing were removed in v3; use "
+    "--existing=error or --existing=verify"
 )
-NO_ARGUMENTS_LINES: Final = (
-    "EML Attachment Remover",
-    "",
-    "Create verified text-only EML working copies.",
-    "Retain a safe plain-text body. An equivalent local HTML alternative may",
-    "restore readable layout; resources and ordinary attachments are discarded.",
-    "",
-    "Error: no source files were provided.",
-    "",
-    "Usage:",
-    f"  {PROGRAM_NAME} [OPTIONS] <SOURCE>...",
-    "",
-    "Example:",
-    f"  {PROGRAM_NAME} message.eml",
-    "",
-    f"Run '{PROGRAM_NAME} --help' to see all options.",
+MIGRATION_PATHS = (
+    "newline-delimited paths was removed in v3; use --output-format=paths0"
 )
 
 
-def build_parser() -> ArgumentParser:
-    """Create the command-line parser.
+class Parser(argparse.ArgumentParser):
+    """Raise a typed usage error instead of exiting from a reusable CLI boundary."""
+
+    @override
+    def error(self, message: str) -> Never:
+        """Raise the parser's stable usage failure.
+
+        Raises:
+            AppError: Always, with the v3 usage exit code.
+
+        """
+        raise AppError(ExitCode.USAGE, message)
+
+
+def build_parser() -> Parser:
+    """Construct help that states the MIME-pruned security boundary.
 
     Returns:
-        The configured argument parser.
+        The fully configured breaking-v3 command-line parser.
 
     """
-    parser = ArgumentParser(
+    parser = Parser(
         prog=PROGRAM_NAME,
         allow_abbrev=False,
-        description=APPLICATION_DESCRIPTION,
-        epilog=(
-            "Exit codes: 0 success; 2 usage; 3 input; 4 output conflict; "
-            "5 MIME parse; 6 text-only transformation unavailable; 7 write; "
-            "8 verification; 9 partial batch failure; 70 internal; "
-            "130 interrupted. For a filename beginning with '-', place '--' "
-            "before the filenames."
+        description=(
+            "Create structurally verified MIME-pruned EML working copies. "
+            "Explicit MIME attachments and non-root multipart/related components are "
+            "removed; retained plain and HTML bodies are preserved as original bytes. "
+            "Retained HTML is not sanitized and may contain unresolved references."
         ),
     )
-    parser.add_argument(
-        "source",
-        nargs="+",
-        type=Path,
-        help="one or more source EML files",
-    )
-    destination_group = parser.add_mutually_exclusive_group()
-    destination_group.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        help="destination EML; valid only with one source",
-    )
-    destination_group.add_argument(
-        "--output-dir",
-        type=Path,
-        help="existing directory for all generated EML files",
-    )
-    existing_group = parser.add_mutually_exclusive_group()
-    existing_group.add_argument(
-        "-f",
-        "--force",
-        action="store_true",
-        help="replace existing destinations, never any selected source file",
-    )
-    existing_group.add_argument(
-        "--skip-existing",
-        action="store_true",
-        help="leave existing destination files unchanged and report them as skipped",
+    parser.add_argument("source", nargs="+", help="one or more source EML files")
+    destination = parser.add_mutually_exclusive_group()
+    destination.add_argument("-o", "--output", help="destination; valid for one source")
+    destination.add_argument(
+        "--output-dir", help="destination directory for all sources"
     )
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="report the text-only transformation plan without writing output files",
+        "--existing",
+        choices=("error", "verify"),
+        default="error",
+        help="existing output policy (default: error)",
     )
     parser.add_argument(
-        "--fail-fast",
-        action="store_true",
-        help="stop at the first failed input instead of completing the batch",
+        "--dry-run", action="store_true", help="build and verify without writing"
+    )
+    parser.add_argument(
+        "--fail-fast", action="store_true", help="stop at first expected failure"
     )
     parser.add_argument(
         "--output-format",
-        choices=tuple(OutputFormat),
-        default=OutputFormat.HUMAN,
-        type=OutputFormat,
-        help=(
-            "report format: human, json, newline-delimited paths, or NUL-delimited "
-            "paths0 (default: human)"
-        ),
+        choices=("human", "json", "paths0"),
+        default="human",
+        help="report format (default: human)",
     )
     parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {PROGRAM_VERSION}",
+        "--version", action="version", version=f"%(prog)s {PROGRAM_VERSION}"
     )
     return parser
 
 
-def validate_cli_arguments(
-    sources: list[Path],
-    explicit_output: Path | None,
-    output_format: OutputFormat,
-    *,
-    dry_run: bool,
-) -> None:
-    """Validate combinations that ``argparse`` cannot express directly.
+def validate_raw_arguments(arguments: list[str]) -> None:
+    """Reject removed v2 spellings before the normal parser sees raw options.
 
     Raises:
-        CliError: If a requested combination is ambiguous or contradictory.
+        AppError: If a removed existing-output or newline-path option is used.
 
     """
-    if explicit_output is not None and len(sources) != 1:
-        raise CliError(
-            ExitCode.USAGE,
-            "--output may be used only when exactly one source file is supplied",
+    option_arguments = _raw_options(arguments)
+    if any(_removed_existing(argument) for argument in option_arguments):
+        raise AppError(ExitCode.USAGE, MIGRATION_EXISTING)
+    if _removed_paths(option_arguments):
+        raise AppError(ExitCode.USAGE, MIGRATION_PATHS)
+
+
+def validate_arguments(namespace: argparse.Namespace) -> None:
+    """Validate combinations whose safety cannot be represented by argparse alone.
+
+    Raises:
+        AppError: If one-source output or dry-run path-channel rules are violated.
+
+    """
+    if namespace.output is not None and len(namespace.source) != 1:
+        raise AppError(
+            ExitCode.USAGE, "--output may be used only with exactly one source"
         )
-    if dry_run and output_format in {OutputFormat.PATHS, OutputFormat.PATHS0}:
-        raise CliError(
-            ExitCode.USAGE,
-            "path-only output formats cannot be combined with --dry-run",
+    if namespace.dry_run and namespace.output_format == "paths0":
+        raise AppError(
+            ExitCode.USAGE, "--output-format=paths0 cannot be used with --dry-run"
         )
 
 
-def json_output_requested(arguments: list[str]) -> bool:
-    """Return whether raw arguments request JSON output.
+def raw_json_requested(arguments: list[str]) -> bool:
+    """Return whether pre-parse options selected the JSON automation channel.
 
     Returns:
-        ``True`` for either accepted spelling of the JSON output option.
+        Whether JSON is selected before an end-of-options marker.
 
     """
-    requested = False
-    argument_iterator = iter(arguments)
-    for argument in argument_iterator:
-        if argument == "--":
-            break
-        if argument.startswith("--output-format="):
-            requested = argument.partition("=")[2] == "json"
-        elif argument == "--output-format":
-            value = next(argument_iterator, None)
-            if value == "--":
-                break
-            requested = value == "json"
-    return requested
+    options = _raw_options(arguments)
+    return any(
+        option == "--output-format=json"
+        or (
+            option == "--output-format"
+            and index + 1 < len(options)
+            and options[index + 1] == "json"
+        )
+        for index, option in enumerate(options)
+    )
+
+
+def raw_source_candidates(arguments: list[str]) -> list[str]:
+    """Conservatively retain raw source candidates for a pre-parse JSON failure.
+
+    Returns:
+        Non-option arguments except values consumed by known value-taking options.
+
+    """
+    candidates: list[str] = []
+    options = _raw_options(arguments)
+    consumed = _consumed_option_values(options)
+    candidates.extend(
+        argument
+        for index, argument in enumerate(options)
+        if index not in consumed and not argument.startswith("-")
+    )
+    if "--" in arguments:
+        candidates.extend(arguments[arguments.index("--") + 1 :])
+    return candidates
+
+
+def _raw_options(arguments: list[str]) -> list[str]:
+    return arguments[: arguments.index("--")] if "--" in arguments else arguments
+
+
+def _removed_existing(argument: str) -> bool:
+    return argument in {"--force", "--skip-existing"} or argument.startswith((
+        "--force=",
+        "--skip-existing=",
+        "-f",
+    ))
+
+
+def _removed_paths(arguments: list[str]) -> bool:
+    return any(
+        argument == "--output-format=paths"
+        or (
+            argument == "--output-format"
+            and index + 1 < len(arguments)
+            and arguments[index + 1] == "paths"
+        )
+        for index, argument in enumerate(arguments)
+    )
+
+
+def _consumed_option_values(arguments: list[str]) -> set[int]:
+    value_options = {"-o", "--output", "--output-dir", "--existing", "--output-format"}
+    return {
+        index + 1
+        for index, argument in enumerate(arguments[:-1])
+        if argument in value_options
+    }

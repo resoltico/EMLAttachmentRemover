@@ -413,7 +413,7 @@ trap - EXIT HUP INT TERM
 
 printf '%s' "Installed to: "
 display_path "$INSTALL_DIR"
-printf '%s\n' "Name the shortcut: Create Text-Only EML Copy"
+printf '%s\n' "Name the shortcut: Create MIME-Pruned EML Copy"
 printf '%s\n' "Paste this into a Shortcuts 'Run Shell Script' action:"
 printf '%s\n' "$SHORTCUT_COMMAND"
 printf '%s\n' "Set 'Input' to 'Shortcut Input' and 'Pass Input' to 'as arguments'."

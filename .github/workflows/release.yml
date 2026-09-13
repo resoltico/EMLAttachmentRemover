@@ -161,7 +161,10 @@ jobs:
 
   publish:
     name: Attest and publish release assets
-    needs: build
+    needs:
+      - qualify
+      - mutation
+      - build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

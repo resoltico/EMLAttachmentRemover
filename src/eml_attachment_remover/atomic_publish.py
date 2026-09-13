@@ -1,125 +1,106 @@
-"""Publish verified files atomically without replacing existing entries."""
+"""Descriptor-relative POSIX no-replace publication primitives."""
 
 from __future__ import annotations
 
 import ctypes
 import errno
 import os
-import sys
-from typing import TYPE_CHECKING, Final
+import platform
+from typing import Final
 
-from .models import CliError, ExitCode
+from .domain import AppError, ExitCode
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-AT_FDCWD: Final = -100
 RENAME_EXCL: Final = 0x00000004
-RENAME_NOREPLACE: Final = 1
+_UNSUPPORTED_DIRECTORY_SYNC_ERRNOS: Final = frozenset({22, 45, 95})
 
 
-def _native_no_replace(temporary: Path, destination: Path) -> bool:
-    """Attempt a platform-native atomic no-replace rename.
-
-    Returns:
-        ``True`` when native publication was attempted, otherwise ``False``.
+def _darwin_rename_exclusive(
+    parent_fd: int, staged_name: bytes, destination_name: bytes
+) -> None:
+    """Move one child name atomically without replacing a destination child.
 
     Raises:
-        OSError: If the native operation fails.
+        AppError: If the destination exists or Darwin's rename primitive fails.
 
     """
     library = ctypes.CDLL(None, use_errno=True)
-    source = os.fsencode(temporary)
-    target = os.fsencode(destination)
-    runtime_platform = sys.platform
-    if runtime_platform == "darwin":
-        try:
-            operation = library.renamex_np
-        except AttributeError:
-            return False
-        operation.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
-        operation.restype = ctypes.c_int
-        result = operation(source, target, RENAME_EXCL)
-    elif runtime_platform.startswith("linux"):
-        try:
-            operation = library.renameat2
-        except AttributeError:
-            return False
-        operation.argtypes = [
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_uint,
-        ]
-        operation.restype = ctypes.c_int
-        result = operation(AT_FDCWD, source, AT_FDCWD, target, RENAME_NOREPLACE)
-    else:
-        return False
+    operation = library.renameatx_np
+    operation.argtypes = [
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    ]
+    operation.restype = ctypes.c_int
+    result = operation(parent_fd, staged_name, parent_fd, destination_name, RENAME_EXCL)
     if result == 0:
-        return True
-    error_number = ctypes.get_errno()
-    if error_number in {errno.ENOSYS, errno.ENOTSUP}:
-        return False
-    raise OSError(error_number, os.strerror(error_number), destination)
+        return
+    failure = ctypes.get_errno()
+    if failure == errno.EEXIST:
+        raise AppError(ExitCode.OUTPUT_CONFLICT, "destination already exists")
+    message = os.strerror(failure)
+    raise AppError(ExitCode.WRITE_ERROR, f"could not publish candidate: {message}")
 
 
-def _link_and_remove_temporary(temporary: Path, destination: Path) -> None:
-    """Hard-link one output and require sensitive temporary-file cleanup.
-
-    Raises:
-        CliError: If the published output exists but temporary cleanup fails.
-
-    """
-    destination.hardlink_to(temporary)
-    try:
-        temporary.unlink()
-    except OSError as exc:
-        raise CliError(
-            ExitCode.WRITE_ERROR,
-            f"published verified output at {destination}, but could not remove "
-            f"sensitive temporary file {temporary}: {exc}",
-        ) from exc
-
-
-def publish_without_clobber(temporary: Path, destination: Path) -> None:
-    """Publish one file atomically without replacing another actor's entry.
+def _link_exclusive(
+    parent_fd: int, staged_name: bytes, destination_name: bytes
+) -> None:
+    """Create a second hard link as a portable no-replace publication edge.
 
     Raises:
-        CliError: If another entry wins the race or publication fails.
+        AppError: If the destination exists or the hard-link operation fails.
 
     """
     try:
-        if os.name == "nt":
-            temporary.rename(destination)
-        elif not _native_no_replace(temporary, destination):
-            _link_and_remove_temporary(temporary, destination)
+        os.link(
+            staged_name,
+            destination_name,
+            src_dir_fd=parent_fd,
+            dst_dir_fd=parent_fd,
+        )
     except FileExistsError as exc:
-        raise CliError(
-            ExitCode.OUTPUT_CONFLICT,
-            f"output was created by another process: {destination}",
-        ) from exc
+        raise AppError(ExitCode.OUTPUT_CONFLICT, "destination already exists") from exc
     except OSError as exc:
-        if _entry_exists(destination):
-            raise CliError(
-                ExitCode.OUTPUT_CONFLICT,
-                f"output was created by another process: {destination}",
-            ) from exc
-        raise CliError(
-            ExitCode.WRITE_ERROR,
-            f"could not publish verified output at {destination}: {exc}",
+        raise AppError(
+            ExitCode.WRITE_ERROR, f"could not publish candidate: {exc}"
         ) from exc
 
 
-def _entry_exists(destination: Path) -> bool:
-    """Return whether an entry exists after a failed publication attempt.
+def publish_no_replace(
+    parent_fd: int, staged_name: bytes, destination_name: bytes
+) -> bool:
+    """Publish a staged child without replacement and return link-cleanup need.
 
     Returns:
-        ``True`` only when the entry can be inspected.
+        Whether the stage name remains linked and must be unlinked after a successful
+        final-address receipt.
+
+    """
+    if platform.system() == "Darwin":
+        _darwin_rename_exclusive(parent_fd, staged_name, destination_name)
+        return False
+    _link_exclusive(parent_fd, staged_name, destination_name)
+    return True
+
+
+def sync_directory(parent_fd: int) -> str:
+    """Return the directory-durability receipt after a visible publication.
+
+    Returns:
+        ``succeeded`` when fsync completes and ``unsupported`` for known platform
+        limitations.
+
+    Raises:
+        AppError: If directory synchronization fails.
 
     """
     try:
-        destination.lstat()
-    except OSError:
-        return False
-    return True
+        os.fsync(parent_fd)
+    except OSError as exc:
+        if exc.errno in _UNSUPPORTED_DIRECTORY_SYNC_ERRNOS:
+            return "unsupported"
+        raise AppError(
+            ExitCode.WRITE_ERROR, f"could not sync destination directory: {exc}"
+        ) from exc
+    return "succeeded"

@@ -25,6 +25,7 @@ PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
 PACKAGE_SOURCE: Final = PROJECT_ROOT / "src" / "eml_attachment_remover"
 PROJECT_CONFIG: Final = PROJECT_ROOT / "pyproject.toml"
 LICENSE_FILE: Final = PROJECT_ROOT / "LICENSE"
+SCHEMA_FILE: Final = PROJECT_ROOT / "schema" / "report.schema.json"
 DEFAULT_TARGET: Final = PROJECT_ROOT / "build" / "remove-eml-attachments.pyz"
 INTERPRETER: Final = "/usr/bin/env python3.14"
 ARCHIVE_MODE: Final = 0o100644 << 16
@@ -195,11 +196,12 @@ def _archive_members(metadata: ProjectMetadata) -> tuple[tuple[str, bytes], ...]
         FileNotFoundError: If the license file is unavailable.
 
     """
-    if not LICENSE_FILE.is_file():
-        message = f"license file not found: {LICENSE_FILE}"
+    if not LICENSE_FILE.is_file() or not SCHEMA_FILE.is_file():
+        message = "zipapp license or schema file is unavailable"
         raise FileNotFoundError(message)
     members = [
         ("LICENSE", LICENSE_FILE.read_bytes()),
+        ("schema/report.schema.json", SCHEMA_FILE.read_bytes()),
         ("__main__.py", _launcher_source(metadata)),
         (
             (

@@ -47,6 +47,9 @@ policy = importlib.import_module(
 xunit_schema = importlib.import_module(
     f"{'tools.' if __package__ else ''}junit_xunit2_schema"
 )
+node_id = importlib.import_module(
+    "tools.junit_node_id" if __package__ else "junit_node_id"
+)
 
 
 class JunitReportError(ValueError):
@@ -64,15 +67,6 @@ def temporary_report_path(storage: Path) -> Path:
 
 
 def _regular_source(path: Path) -> bytes:
-    """Read a regular non-symbolic report source.
-
-    Returns:
-        The exact report bytes.
-
-    Raises:
-        JunitReportError: If the source is absent, unsafe, or unreadable.
-
-    """
     try:
         mode = path.lstat().st_mode
     except OSError as error:
@@ -92,12 +86,6 @@ def _replacements(
     source: Path,
     project_root: Path,
 ) -> tuple[tuple[str, str], ...]:
-    """Return longest-first private prefixes and XML-safe placeholders.
-
-    Returns:
-        Every known machine-specific prefix in deterministic order.
-
-    """
     path_candidates = (
         (source.parent, ISOLATED_PLACEHOLDER),
         (project_root, PROJECT_PLACEHOLDER),
@@ -107,11 +95,20 @@ def _replacements(
         (Path(tempfile.gettempdir()), TEMP_PLACEHOLDER),
     )
     replacements: dict[str, str] = {}
-    for path, replacement in path_candidates:
-        prefix = str(path.resolve())
-        if prefix != os.sep:
-            for variant in path_safety.path_prefix_variants(prefix):
-                replacements.setdefault(variant, replacement)
+    prefixes = (
+        (prefix, replacement)
+        for path, replacement in path_candidates
+        for resolved in [str(path.resolve())]
+        if resolved != os.sep
+        for prefix in {resolved, *([str(path)] if path.is_absolute() else [])}
+    )
+    variants = (
+        (variant, replacement)
+        for prefix, replacement in prefixes
+        for variant in path_safety.path_prefix_variants(prefix)
+    )
+    for variant, replacement in variants:
+        replacements.setdefault(variant, replacement)
     hostname = socket.gethostname()
     if hostname:
         replacements.setdefault(hostname, HOST_PLACEHOLDER)
@@ -144,6 +141,8 @@ def _public_text(
     if privacy_issues:
         message = f"JUnit report contains private content: {'; '.join(privacy_issues)}"
         raise JunitReportError(message)
+    if pytest_node_id:
+        public = node_id.redact(public)
     path_value = public.replace("\\\\", "\\") if pytest_node_id else public
     if path_safety.contains_absolute_path(path_value):
         message = f"machine-specific absolute path remains in {label} from {source}"
@@ -157,12 +156,6 @@ def _validate_xml_name(
     source: Path,
     label: str,
 ) -> None:
-    """Reject XML names that would require privacy-changing renaming.
-
-    Raises:
-        JunitReportError: If retaining the name would retain a private prefix.
-
-    """
     if _public_text(name, replacements, source, label) != name:
         message = f"private prefix appears in {label} from {source}"
         raise JunitReportError(message)
@@ -420,7 +413,11 @@ def publish(source: Path, destination: Path, project_root: Path) -> Path:
     content = _sanitize(
         _regular_source(source), _replacements(source, project_root), source
     )
-    destination.parent.mkdir(exist_ok=True)
+    try:
+        destination.parent.mkdir(exist_ok=True)
+    except OSError as error:
+        message = f"cannot prepare JUnit report directory {destination.parent}: {error}"
+        raise JunitReportError(message) from error
     _validate_destination(destination)
     try:
         descriptor, temporary_name = tempfile.mkstemp(
