@@ -46,9 +46,7 @@ def _parent(path: str) -> tuple[int, str, str]:
     parent, basename = ntpath.split(path)
     parent = parent or "."
     drive, tail = ntpath.splitdrive(parent)
-    absolute = parent.startswith(("\\\\", "//")) or (
-        bool(drive) and tail.startswith(("\\", "/"))
-    )
+    absolute = bool(drive) and tail.startswith(("\\", "/"))
     root = None if absolute else _cwd()
     try:
         return _api().open_directory(parent, root), parent, basename

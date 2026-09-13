@@ -22,7 +22,6 @@ SEMICOLON: Final = ord(";")
 SLASH: Final = ord("/")
 PERCENT: Final = ord("%")
 MIN_QUOTED_BYTES: Final = 2
-NO_POSITION: Final = -1
 ASCII_DIGIT_START: Final = ord("0")
 ASCII_DIGIT_END: Final = ord("9")
 ASCII_UPPER_START: Final = ord("A")
@@ -66,14 +65,17 @@ def _split_semicolons(value: bytes) -> list[bytes]:
     pieces: list[bytes] = []
     current = bytearray()
     quote_position: int | None = None
-    escaped_position = NO_POSITION
-    for position, byte in enumerate(value):
-        if escaped_position != NO_POSITION:
+    iterator = enumerate(value)
+    for position, byte in iterator:
+        if quote_position is not None and byte == BACKSLASH:
             current.append(byte)
-            escaped_position = NO_POSITION
-        elif quote_position is not None and byte == BACKSLASH:
-            current.append(byte)
-            escaped_position = position
+            try:
+                _, escaped_byte = next(iterator)
+            except StopIteration as error:
+                raise AppError(
+                    ExitCode.PARSE_ERROR, "unterminated MIME quoted parameter"
+                ) from error
+            current.append(escaped_byte)
         elif byte == DOUBLE_QUOTE:
             current.append(byte)
             quote_position = position if quote_position is None else None
@@ -82,7 +84,7 @@ def _split_semicolons(value: bytes) -> list[bytes]:
             current.clear()
         else:
             current.append(byte)
-    if quote_position is not None or escaped_position != NO_POSITION:
+    if quote_position is not None:
         raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME quoted parameter")
     pieces.append(bytes(current).strip())
     return pieces
@@ -104,16 +106,18 @@ def _unquote(value: bytes) -> bytes:
         raise AppError(ExitCode.PARSE_ERROR, "malformed MIME quoted parameter")
     result = bytearray()
     body = value[1:-1]
-    position = 0
-    while position < len(body):
-        byte = body[position]
+    iterator = iter(body)
+    for byte in iterator:
         if byte == BACKSLASH:
-            position += 1
-            if position == len(body):
-                raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME quoted-pair")
-            byte = body[position]
-        result.append(byte)
-        position += 1
+            try:
+                escaped_byte = next(iterator)
+            except StopIteration as error:
+                raise AppError(
+                    ExitCode.PARSE_ERROR, "unterminated MIME quoted-pair"
+                ) from error
+            result.append(escaped_byte)
+        else:
+            result.append(byte)
     return bytes(result)
 
 

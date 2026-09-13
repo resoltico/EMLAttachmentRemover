@@ -12,7 +12,7 @@ from eml_attachment_remover.mime_validation import ContentSpec
 
 def test_mbox_header_offset_and_parser_honor_the_callers_entity_end() -> None:
     """An mbox envelope consumes one bounded wire line before fields are parsed."""
-    prefix = b"skip"
+    prefix = b"skip\n"
     envelope = b"From sender@example.test\r\n"
     fields = b"Subject: retained\r\n"
     raw = prefix + envelope + fields + b"outside"
@@ -24,6 +24,40 @@ def test_mbox_header_offset_and_parser_honor_the_callers_entity_end() -> None:
     ) == start + len(envelope)
     assert mime_headers.parse_headers(raw, start, separator) == (
         Header(b"subject", b"retained", start + len(envelope), separator),
+    )
+
+
+def test_mbox_offset_and_parser_forward_the_exact_bounded_entity_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The outer parser forwards its caller's exact entity boundary to mbox parsing."""
+    raw = b"From sender@example.test\r\nSubject: retained\r\noutside"
+    separator = raw.index(b"outside")
+    original = mime_headers._first_header_offset  # ruff: ignore[private-member-access] - bounded mbox collaboration receipt.
+    observed: list[int] = []
+
+    def bounded_offset(source: bytes, start: int, end: int) -> int:
+        observed.append(end)
+        return original(source, start, end)
+
+    monkeypatch.setattr(mime_headers, "_first_header_offset", bounded_offset)
+    assert mime_headers.parse_headers(raw, 0, separator) == (
+        Header(
+            b"subject", b"retained", len(b"From sender@example.test\r\n"), separator
+        ),
+    )
+    assert observed == [separator]
+
+
+def test_mbox_offset_cannot_search_past_its_explicit_entity_end() -> None:
+    """An envelope terminator beyond the entity is unavailable to its header offset."""
+    raw = b"From sender@example.test\r\nSubject: retained\r\n"
+    separator = raw.index(b"\r\n")
+    assert (
+        mime_headers._first_header_offset(  # ruff: ignore[private-member-access] - bounded mbox cursor receipt.
+            raw, 0, separator
+        )
+        == separator
     )
 
 
@@ -66,3 +100,16 @@ def test_shallow_node_honors_its_explicit_entity_end() -> None:
     )
     assert node.disposition is None
     assert node.content_type == ContentSpec("text/plain", {})
+
+
+def test_shallow_node_cannot_borrow_a_body_separator_past_its_entity_end() -> None:
+    """A header-like fragment without its separator is rejected rather than widened."""
+    raw = b"Content-Type: text/plain\r\n\r\nbody"
+    end = raw.index(b"\r\n\r\n")
+    with pytest.raises(AppError) as rejected:
+        mime_raw._shallow_node(  # ruff: ignore[private-member-access] - bounded shallow-node rejection receipt.
+            raw, 0, end, (), [0, 0]
+        )
+    assert rejected.value == AppError(
+        ExitCode.PARSE_ERROR, "header-like MIME entity lacks a body separator"
+    )
