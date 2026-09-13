@@ -11,12 +11,7 @@ def advance_position(position: int, written: int, size: int) -> int:
     Returns:
         The exact next byte offset after the accepted native write.
 
-    Raises:
-        AppError: If the native write did not consume an in-range positive slice.
-
     """
-    if not 0 < written <= size - position:
-        raise AppError(ExitCode.WRITE_ERROR, "short write while staging candidate")
     return _validated_next_position(position, position + written, size)
 
 
