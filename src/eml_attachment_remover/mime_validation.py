@@ -19,8 +19,10 @@ if TYPE_CHECKING:
 BACKSLASH: Final = ord("\\")
 DOUBLE_QUOTE: Final = ord('"')
 SEMICOLON: Final = ord(";")
+SLASH: Final = ord("/")
 PERCENT: Final = ord("%")
 MIN_QUOTED_BYTES: Final = 2
+NO_POSITION: Final = -1
 ASCII_DIGIT_START: Final = ord("0")
 ASCII_DIGIT_END: Final = ord("9")
 ASCII_UPPER_START: Final = ord("A")
@@ -64,11 +66,11 @@ def _split_semicolons(value: bytes) -> list[bytes]:
     pieces: list[bytes] = []
     current = bytearray()
     quote_position: int | None = None
-    escaped_position: int | None = None
+    escaped_position = NO_POSITION
     for position, byte in enumerate(value):
-        if escaped_position is not None:
+        if escaped_position != NO_POSITION:
             current.append(byte)
-            escaped_position = None
+            escaped_position = NO_POSITION
         elif quote_position is not None and byte == BACKSLASH:
             current.append(byte)
             escaped_position = position
@@ -80,7 +82,7 @@ def _split_semicolons(value: bytes) -> list[bytes]:
             current.clear()
         else:
             current.append(byte)
-    if quote_position is not None or escaped_position is not None:
+    if quote_position is not None or escaped_position != NO_POSITION:
         raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME quoted parameter")
     pieces.append(bytes(current).strip())
     return pieces
@@ -101,17 +103,17 @@ def _unquote(value: bytes) -> bytes:
     if len(value) < MIN_QUOTED_BYTES or not value.endswith(b'"'):
         raise AppError(ExitCode.PARSE_ERROR, "malformed MIME quoted parameter")
     result = bytearray()
-    escaped = False
-    for byte in value[1:-1]:
-        if escaped:
-            result.append(byte)
-            escaped = False
-        elif byte == BACKSLASH:
-            escaped = True
-        else:
-            result.append(byte)
-    if escaped:
-        raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME quoted-pair")
+    body = value[1:-1]
+    position = 0
+    while position < len(body):
+        byte = body[position]
+        if byte == BACKSLASH:
+            position += 1
+            if position == len(body):
+                raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME quoted-pair")
+            byte = body[position]
+        result.append(byte)
+        position += 1
     return bytes(result)
 
 
@@ -228,7 +230,11 @@ def _structured_token(value: bytes) -> bytes:
 
     """
     token = value.lower()
-    if not token or not TOKEN_RE.fullmatch(token.replace(b"/", b"")):
+    token_without_slashes = bytearray()
+    for byte in token:
+        if byte != SLASH:
+            token_without_slashes.append(byte)
+    if not token_without_slashes or not TOKEN_RE.fullmatch(token_without_slashes):
         raise AppError(ExitCode.PARSE_ERROR, "malformed MIME structured header")
     return token
 

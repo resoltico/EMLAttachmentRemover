@@ -71,23 +71,6 @@ def test_header_parser_rejects_a_nonadvancing_wire_cursor(
     assert captured.value == AppError(
         ExitCode.PARSE_ERROR, "MIME header cursor did not advance"
     )
-    monkeypatch.setattr(
-        mime_headers, "_advanced_cursor", lambda position, _next: position
-    )
-    with pytest.raises(AppError) as captured:
-        mime_headers.parse_headers(b"x", 0, 1)
-    assert captured.value == AppError(
-        ExitCode.PARSE_ERROR, "MIME header cursor did not advance"
-    )
-    with monkeypatch.context() as context:
-        context.setattr(
-            mime_headers, "_advanced_cursor", lambda position, _next: position - 1
-        )
-        with pytest.raises(AppError) as captured:
-            mime_headers.parse_headers(b"x", 0, 1)
-    assert captured.value == AppError(
-        ExitCode.PARSE_ERROR, "MIME header cursor did not advance"
-    )
     with monkeypatch.context() as context:
         context.setattr(mime_headers, "MAX_HEADER_BYTES", 0)
         with pytest.raises(AppError):

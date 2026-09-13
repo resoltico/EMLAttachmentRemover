@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -54,7 +55,7 @@ def _header_edits(
         for header in node.headers:
             if header.name in allowed:
                 edits.append((header.start, header.end))
-                names.append(header.name.decode("ascii"))
+                names.append(codecs.ascii_decode(header.name)[0])
     return edits, names
 
 
@@ -69,9 +70,13 @@ def _nonoverlapping(edits: list[tuple[int, int]]) -> list[tuple[int, int]]:
 
     """
     ordered = sorted(edits)
-    previous_end = -1
+    previous_end: int | None = None
     for start, end in ordered:
-        if start < 0 or start >= end or start < previous_end:
+        if (
+            start < 0
+            or start >= end
+            or (previous_end is not None and start < previous_end)
+        ):
             raise AppError(ExitCode.VERIFICATION_ERROR, "overlapping raw MIME edits")
         previous_end = end
     return ordered
@@ -84,9 +89,12 @@ def _apply(raw: bytes, edits: list[tuple[int, int]]) -> bytes:
         Candidate bytes built exclusively by source-span deletion.
 
     """
-    pieces: list[bytes] = []
-    position = 0
-    for start, end in edits:
+    if not edits:
+        return raw
+    iterator = iter(edits)
+    first_start, position = next(iterator)
+    pieces = [raw[:first_start]]
+    for start, end in iterator:
         pieces.append(raw[position:start])
         position = end
     pieces.append(raw[position:])

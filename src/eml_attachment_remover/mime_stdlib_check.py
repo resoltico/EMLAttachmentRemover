@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 from dataclasses import dataclass
 from email import errors, policy
 from email.message import EmailMessage
@@ -129,7 +130,7 @@ def _validate_headers(part: EmailMessage) -> None:
 
     """
     for name in part:
-        if getattr(part[name], "defects", ()):
+        if part[name].defects:
             raise AppError(ExitCode.PARSE_ERROR, "MIME header parser reported a defect")
 
 
@@ -141,7 +142,9 @@ def _compare_ownership(part: EmailMessage, node: RawNode) -> None:
 
     """
     raw_names = tuple(header.name for header in node.headers)
-    stdlib_names = tuple(name.lower().encode("ascii") for name, _ in part.raw_items())
+    stdlib_names = tuple(
+        codecs.ascii_encode(name.lower())[0] for name, _ in part.raw_items()
+    )
     if raw_names != stdlib_names:
         raise AppError(
             ExitCode.PARSE_ERROR, "raw MIME header ownership disagrees with stdlib"

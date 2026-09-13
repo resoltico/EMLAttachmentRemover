@@ -19,12 +19,11 @@ def _skip_cfws(value: bytes, position: int) -> int:
         The offset at the first non-CFWS byte or the source end.
 
     """
-    while position < len(value):
+    while True:
         position = _skip_folding_white_space(value, position)
         if position == len(value) or value[position] != OPEN_PAREN:
             return position
         position = _skip_comment(value, position)
-    return position
 
 
 def _skip_folding_white_space(value: bytes, position: int) -> int:

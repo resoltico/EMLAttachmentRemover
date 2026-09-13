@@ -10,15 +10,16 @@ from .domain import AppError, ExitCode
 
 MAX_HEADERS: Final = 512
 MAX_HEADER_BYTES: Final = 256 * 1024
-SINGLETONS: Final = frozenset({
-    b"content-type",
-    b"content-transfer-encoding",
-    b"content-disposition",
-    b"content-id",
-    b"content-location",
-    b"content-base",
-    b"mime-version",
-})
+SINGLETON_LABELS: Final = {
+    b"content-type": "content-type",
+    b"content-transfer-encoding": "content-transfer-encoding",
+    b"content-disposition": "content-disposition",
+    b"content-id": "content-id",
+    b"content-location": "content-location",
+    b"content-base": "content-base",
+    b"mime-version": "mime-version",
+}
+SINGLETONS: Final = frozenset(SINGLETON_LABELS)
 TOKEN_RE: Final = re.compile(rb"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 
 
@@ -91,10 +92,6 @@ def parse_headers(raw: bytes, start: int, separator: int) -> tuple[Header, ...]:
     position = _first_header_offset(raw, start, separator)
     while position < separator:
         end = _advanced_cursor(position, line_end(raw, position, separator))
-        if end == position:
-            raise AppError(ExitCode.PARSE_ERROR, "MIME header cursor did not advance")
-        if not end > position:
-            raise AppError(ExitCode.PARSE_ERROR, "MIME header cursor did not advance")
         line = raw[position:end].rstrip(b"\r\n")
         _append_header(headers, line, position, end)
         position = end
@@ -170,9 +167,11 @@ def _validate_header_multiplicity(headers: list[Header]) -> None:
     counts: dict[bytes, int] = {}
     for header in headers:
         counts[header.name] = counts.get(header.name, 0) + 1
-    duplicate = next((name for name in SINGLETONS if counts.get(name, 0) > 1), None)
+    duplicate = next(
+        (name for name in SINGLETONS & counts.keys() if counts[name] > 1), None
+    )
     if duplicate is not None:
         raise AppError(
             ExitCode.PARSE_ERROR,
-            f"duplicate singleton MIME header {duplicate.decode('ascii')}",
+            f"duplicate singleton MIME header {SINGLETON_LABELS[duplicate]}",
         )

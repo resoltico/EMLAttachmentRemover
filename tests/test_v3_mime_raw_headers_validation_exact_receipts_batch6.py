@@ -67,9 +67,9 @@ def test_multipart_child_limit_accepts_the_exact_configured_ceiling(
     assert [child.path for child in parent.children] == [(7, 0)]
 
 
-def test_stdlib_header_defect_receipt_handles_missing_and_present_defects() -> None:
-    """Absent defect metadata is clean; a populated field produces the exact failure."""
-    clean = cast("EmailMessage", _HeaderPart(SimpleNamespace()))
+def test_stdlib_header_defect_receipt_handles_empty_and_present_defects() -> None:
+    """An empty stdlib defect collection is clean; a populated one fails exactly."""
+    clean = cast("EmailMessage", _HeaderPart(SimpleNamespace(defects=())))
     mime_stdlib_check._validate_headers(clean)  # ruff: ignore[private-member-access] - direct stdlib-header receipt.
     broken = cast("EmailMessage", _HeaderPart(SimpleNamespace(defects=(ValueError(),))))
     with pytest.raises(AppError) as rejected:

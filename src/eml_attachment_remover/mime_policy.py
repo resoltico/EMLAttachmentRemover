@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
@@ -335,7 +336,7 @@ class _Classifier:
         declared_type = node.parameter(b"type")
         if (
             declared_type is not None
-            and declared_type.lower() != root.media_type.encode("ascii")
+            and declared_type.lower() != codecs.ascii_encode(root.media_type)[0]
         ):
             raise AppError(
                 ExitCode.TRANSFORMATION_UNAVAILABLE,

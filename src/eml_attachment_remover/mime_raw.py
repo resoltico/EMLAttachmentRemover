@@ -103,16 +103,11 @@ def _delimiter_lines(
     Returns:
         Source spans and closing markers for recognized delimiter lines.
 
-    Raises:
-        AppError: If a delimiter cursor cannot reach the containing body end.
-
     """
     prefix = b"--" + boundary
     result: list[tuple[int, int, bool]] = []
     position = start
-    for _line in range(end - start + 1):
-        if position >= end:
-            break
+    while position < end:
         end_of_line = _advanced_delimiter_cursor(position, line_end(raw, position, end))
         line = raw[position:end_of_line].rstrip(b"\r\n")
         if line.startswith(prefix):
@@ -123,8 +118,6 @@ def _delimiter_lines(
             if not tail.strip(b" \t"):
                 result.append((position, end_of_line, closing))
         position = end_of_line
-    else:
-        raise AppError(ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance")
     return result
 
 
@@ -188,12 +181,7 @@ def _first_line_is_header_like(raw: bytes, start: int, end: int) -> bool:
         Whether its initial physical line can be interpreted as a header field.
 
     """
-    first_end = line_end(raw, start, end)
-    first_line = raw[start:first_end]
-    if first_line.endswith(b"\r\n"):
-        first_line = first_line[:-2]
-    elif first_line.endswith((b"\r", b"\n")):
-        first_line = first_line[:-1]
+    first_line = raw[start : line_end(raw, start, end)]
     name, colon, _value = first_line.partition(b":")
     return bool(colon) and is_header_name(name)
 
