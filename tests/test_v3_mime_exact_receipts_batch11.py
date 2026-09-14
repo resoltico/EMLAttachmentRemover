@@ -14,6 +14,11 @@ def test_line_end_prefers_the_earliest_physical_newline() -> None:
     assert mime_headers.line_end(b"a\nb\r", 0, 4) == 2
 
 
+def test_line_end_does_not_read_past_the_entity_range_for_a_split_crlf() -> None:
+    """A nested entity ending at CR cannot consume its parent's following LF."""
+    assert mime_headers.line_end(b"x\r\n", 0, 2) == 2
+
+
 def test_delimiter_rejects_suffix_and_separator_requires_a_marker() -> None:
     """Near delimiter text stays payload and a separator absence has an exact error."""
     assert (

@@ -21,6 +21,7 @@ SINGLETON_LABELS: Final = {
 }
 SINGLETONS: Final = frozenset(SINGLETON_LABELS)
 TOKEN_RE: Final = re.compile(rb"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+LINE_BREAK_RE: Final = re.compile(rb"\r\n?|\n")
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,15 +51,10 @@ def line_end(raw: bytes, position: int, end: int) -> int:
         The exclusive wire offset after a CRLF, LF, CR, or final partial line.
 
     """
-    lf = raw.find(b"\n", position, end)
-    cr = raw.find(b"\r", position, end)
-    positions = [line_end for line_end in (lf, cr) if line_end >= 0]
-    if not positions:
+    match = LINE_BREAK_RE.search(raw, position, end)
+    if match is None:
         return end
-    newline = min(positions)
-    if raw[newline : newline + 2] == b"\r\n":
-        return newline + 2
-    return newline + 1
+    return match.end()
 
 
 def _advanced_cursor(position: int, next_position: int) -> int:
