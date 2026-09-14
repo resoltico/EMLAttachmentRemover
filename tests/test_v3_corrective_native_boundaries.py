@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from eml_attachment_remover import native_binding, native_posix, native_values
+from eml_attachment_remover import (
+    mime_validation,
+    native_binding,
+    native_posix,
+    native_values,
+)
 from eml_attachment_remover.domain import (
     AppError,
     BoundDestination,
@@ -134,3 +139,18 @@ def test_existing_output_failures_are_conflicts_and_nonregular_entries_are_rejec
     assert nonregular.value == AppError(
         ExitCode.OUTPUT_CONFLICT, "destination is not a regular file"
     )
+
+
+@pytest.mark.parametrize(
+    "name",
+    [b"filename*" + (b"9" * 5_000), b"filename*512", b"filename*512*"],
+)
+def test_rfc2231_continuation_index_is_bounded_before_integer_conversion(
+    name: bytes,
+) -> None:
+    """An untrusted continuation label is a typed parse failure, never an abort."""
+    with pytest.raises(AppError) as rejected:
+        mime_validation._parameter_name(  # ruff: ignore[private-member-access] - finite RFC 2231 index grammar.
+            name
+        )
+    assert rejected.value.code is ExitCode.PARSE_ERROR
