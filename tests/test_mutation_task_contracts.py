@@ -112,12 +112,13 @@ class MutationTaskContracts(unittest.TestCase):
 
             mutation_task.run_mutation(paths, actions, "python")
 
+        workers = str(mutation_task.mutation_worker_count())
         self.assertEqual(events, ["cleanup", "coverage", "capture"])
         self.assertEqual(
             run_calls,
             [
                 (
-                    ("mutmut", "run", "--max-children", "8"),
+                    ("mutmut", "run", "--max-children", workers),
                     {
                         "profile": "project-mutation",
                         "timeout_seconds": 7_200,
