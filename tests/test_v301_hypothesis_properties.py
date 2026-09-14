@@ -17,10 +17,11 @@ from eml_attachment_remover.domain import (
     Removal,
     RemovalReason,
 )
+from eml_attachment_remover.mime_execution import build_candidate
 from eml_attachment_remover.mime_headers import line_end
 from eml_attachment_remover.mime_raw import parse_raw_mime
 from eml_attachment_remover.mime_verifier_policy import authorize_removals
-from eml_attachment_remover.native_paths import path_value
+from eml_attachment_remover.native_paths import default_destination, path_value
 
 
 @given(
@@ -87,6 +88,43 @@ def test_v301_property_verifier_rejects_each_wrong_attachment_claim_reason(  # t
     assert rejected.value == AppError(
         ExitCode.VERIFICATION_ERROR, "removal authorization mismatch"
     )
+
+
+@given(st.text(alphabet=string.ascii_lowercase, min_size=1, max_size=32))
+def test_v301_property_retained_text_bytes_are_candidate_identical(  # type: ignore[misc]
+    body: str,
+) -> None:
+    """Keep every synthetic retained text octet when no removal is authorized."""
+    raw = b"Content-Type: text/plain\r\n\r\n" + body.encode("ascii") + b"\r\n"
+    tree = parse_raw_mime(raw)
+    assert build_candidate(tree, ()).raw == raw
+
+
+@given(
+    st.lists(
+        st.sampled_from((ItemStatus.FAILED, ItemStatus.NOT_RUN)), min_size=1, max_size=8
+    )
+)
+def test_v301_property_batch_terminal_rows_remain_input_ordered(  # type: ignore[misc]
+    statuses: list[ItemStatus],
+) -> None:
+    """Keep every synthetic batch row terminal and stable in original argument order."""
+    ledger = BatchLedger.from_requests([
+        path_value(f"synthetic-{index}.eml") for index in range(len(statuses))
+    ])
+    for item, status in zip(ledger.items, statuses, strict=True):
+        item.finish(status, AppError(ExitCode.PARSE_ERROR, "synthetic"))
+    assert [item.index for item in ledger.items] == list(range(len(statuses)))
+    assert all(item.terminalized and item.status is not None for item in ledger.items)
+
+
+@given(st.text(alphabet=string.ascii_lowercase, min_size=1, max_size=24))
+def test_v301_property_native_destination_keeps_the_requested_basename(  # type: ignore[misc]
+    basename: str,
+) -> None:
+    """Derive a portable output name without normalizing the request's basename."""
+    destination = default_destination(f"folder/{basename}.eml")
+    assert destination.endswith(f"{basename}.mime-pruned.eml")
 
 
 class _TerminalLedgerMachine(RuleBasedStateMachine):
