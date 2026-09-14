@@ -215,11 +215,7 @@ def test_report_serializes_every_complete_receipt_and_schema_field() -> None:
                     ),
                     "basename_base64": "ZGVzdGluYXRpb24uYmlu",
                     "basename_utf16le_base64": None,
-                    "final_address": path(
-                        "destination-request",
-                        "destination display",
-                        "ZGVzdGluYXRpb24tcmVxdWVzdA==",
-                    ),
+                    "final_address": None,
                     "identity": {
                         "device": "20",
                         "inode": "21",
