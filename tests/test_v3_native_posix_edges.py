@@ -180,17 +180,32 @@ def test_final_address_requires_a_handle_derived_nondeleted_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Both native backends preserve the descriptor and reject unusable addresses."""
+    expected_descriptor = 3
+    expected_command = 50
+    expected_buffer = b"\0" * 1_024
+    unavailable_message = "unavailable"
+
+    def unavailable_fcntl(descriptor: int, command: int, buffer: bytes) -> bytes:
+        assert (descriptor, command, buffer) == (
+            expected_descriptor,
+            expected_command,
+            expected_buffer,
+        )
+        raise OSError(unavailable_message)
+
+    def resolved_fcntl(descriptor: int, command: int, buffer: bytes) -> bytes:
+        assert (descriptor, command, buffer) == (
+            expected_descriptor,
+            expected_command,
+            expected_buffer,
+        )
+        return b"/resolved/file\0trailing\0bytes"
+
     monkeypatch.setattr(native_posix.__dict__["sys"], "platform", "darwin")
-    monkeypatch.setattr(
-        native_posix,
-        "fcntl",
-        lambda *_args: (_ for _ in ()).throw(OSError("unavailable")),
-    )
+    monkeypatch.setattr(native_posix, "fcntl", unavailable_fcntl)
     assert native_posix._final_address(3) is None  # ruff: ignore[private-member-access] - final-address uncertainty receipt.
 
-    monkeypatch.setattr(
-        native_posix, "fcntl", lambda *_args: b"/resolved/file\0trailing\0bytes"
-    )
+    monkeypatch.setattr(native_posix, "fcntl", resolved_fcntl)
     assert native_posix._final_address(3) == path_value("/resolved/file")  # ruff: ignore[private-member-access] - Darwin descriptor address receipt.
 
     monkeypatch.setattr(native_posix.__dict__["sys"], "platform", "linux")

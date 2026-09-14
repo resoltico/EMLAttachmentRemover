@@ -34,10 +34,15 @@ def test_workflow_lanes_invoke_the_matching_quality_mutation_and_release_tasks()
     None
 ):
     quality = (WORKFLOWS / "quality.yml").read_text(encoding="utf-8")
+    hypothesis = (WORKFLOWS / "hypothesis.yml").read_text(encoding="utf-8")
     mutation = (WORKFLOWS / "mutation.yml").read_text(encoding="utf-8")
     release = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
     assert "tools/tasks.py quality" in quality
     assert "tools/tasks.py mutation" in mutation
     assert "tools/tasks.py quality" in release
     assert "tools/tasks.py mutation" in release
+    assert "tools/tasks.py thorough" in hypothesis
+    assert "--observable" in hypothesis
+    assert "tools/tasks.py thorough" in release
+    assert "--observable" in release
     assert "tools/tasks.py release" in release

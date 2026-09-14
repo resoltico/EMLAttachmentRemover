@@ -66,6 +66,76 @@ jobs:
       - name: Run the complete quality gate
         run: uv run python tools/tasks.py quality
 
+  property:
+    name: Property ${{ matrix.os }} / CPython ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      PYTHONDEVMODE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+      PYTHONWARNINGS: error
+      RELEASE_TAG: ${{ github.ref_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: 3.14.7
+          - os: macos-latest
+            python: 3.14.7
+          - os: windows-latest
+            python: 3.14.7
+          - os: ubuntu-latest
+            python: 3.14.7t
+          - os: macos-latest
+            python: 3.14.7t
+          - os: windows-latest
+            python: 3.14.7t
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and CPython
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.5
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev --python ${{ matrix.python }}
+        env:
+          PYTHONWARNINGS: default
+      - name: Validate the release tag
+        shell: bash
+        run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
+      - name: Require the POSIX integration environment
+        if: runner.os != 'Windows'
+        shell: bash
+        run: test -x /bin/sh
+      - name: Run randomized property exploration
+        run: >-
+          uv run python tools/tasks.py thorough
+          --observable --timeout-seconds 3300
+      - name: Finalize public Hypothesis evidence
+        id: finalize_hypothesis
+        if: always()
+        run: >-
+          uv run python tools/finalize_hypothesis_artifacts.py
+          --observations
+      - name: Preserve sanitized property observations
+        if: always() && steps.finalize_hypothesis.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-property-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}
+          path: .hypothesis/observed/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+
   mutation:
     name: Qualify mutation results for the tagged source
     needs: qualify
@@ -117,6 +187,7 @@ jobs:
     name: Build release assets
     needs:
       - qualify
+      - property
       - mutation
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -163,6 +234,7 @@ jobs:
     name: Attest and publish release assets
     needs:
       - qualify
+      - property
       - mutation
       - build
     runs-on: ubuntu-latest
