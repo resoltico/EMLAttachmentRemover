@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import json
 import runpy
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 from tools import check_v301_property_observations as gate
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _manifest(path: Path, families: object) -> Path:
@@ -47,22 +44,23 @@ def test_gate_accepts_one_genuine_passed_record_per_declared_family(
 
 
 @pytest.mark.parametrize(
-    "content",
+    ("content", "message"),
     [
-        "",
-        "[]",
-        '{"schema_version": 0, "families": {}}',
-        '{"schema_version": 1, "families": []}',
+        ("", "cannot load v3 property-family manifest"),
+        ("[]", gate.MANIFEST_ERROR),
+        ('{"schema_version": 0, "families": {}}', gate.MANIFEST_ERROR),
+        ('{"schema_version": 1, "families": []}', gate.MANIFEST_ERROR),
     ],
 )
 def test_manifest_loader_rejects_absent_or_invalid_public_shapes(
-    tmp_path: Path, content: str
+    tmp_path: Path, content: str, message: str
 ) -> None:
     manifest = tmp_path / "families.json"
     if content:
         manifest.write_text(content, encoding="utf-8")
-    with pytest.raises(gate.PropertyObservationError):
+    with pytest.raises(gate.PropertyObservationError) as rejected:
         gate._families(manifest)  # ruff: ignore[private-member-access] - strict manifest parsing.
+    assert str(rejected.value) == message
 
 
 @pytest.mark.parametrize(
@@ -76,8 +74,9 @@ def test_manifest_loader_rejects_absent_or_invalid_public_shapes(
 def test_manifest_loader_rejects_invalid_family_entries(
     tmp_path: Path, families: object
 ) -> None:
-    with pytest.raises(gate.PropertyObservationError):
+    with pytest.raises(gate.PropertyObservationError) as rejected:
         gate._families(_manifest(tmp_path / "families.json", families))  # ruff: ignore[private-member-access] - strict family entry grammar.
+    assert str(rejected.value) == gate.MANIFEST_ERROR
 
 
 @pytest.mark.parametrize(
@@ -91,16 +90,18 @@ def test_observation_loader_rejects_invalid_generated_case_records(
     tmp_path: Path, records: list[object]
 ) -> None:
     observed = _observations(tmp_path / "observed", records)
-    with pytest.raises(gate.PropertyObservationError):
+    with pytest.raises(gate.PropertyObservationError) as rejected:
         gate._observed_properties(observed)  # ruff: ignore[private-member-access] - strict generated record grammar.
+    assert str(rejected.value) == gate.OBSERVATION_ERROR
 
 
 def test_observation_loader_rejects_invalid_json(tmp_path: Path) -> None:
     observed = tmp_path / "observed"
     observed.mkdir()
     (observed / "run_testcases.jsonl").write_text("{\n", encoding="utf-8")
-    with pytest.raises(gate.PropertyObservationError):
+    with pytest.raises(gate.PropertyObservationError) as rejected:
         gate._observed_properties(observed)  # ruff: ignore[private-member-access] - strict JSONL parsing.
+    assert str(rejected.value) == gate.OBSERVATION_ERROR
 
 
 def test_observation_loader_ignores_nonpassed_or_noncase_records(
@@ -118,8 +119,9 @@ def test_gate_reports_each_family_without_a_generated_case(tmp_path: Path) -> No
         tmp_path / "families.json", {"wire": ["wire-id"], "policy": ["policy-id"]}
     )
     observed = _observations(tmp_path / "observed", [_record("wire-id")])
-    with pytest.raises(gate.PropertyObservationError, match="policy"):
+    with pytest.raises(gate.PropertyObservationError) as rejected:
         gate.check(manifest, observed)
+    assert str(rejected.value) == "v3 property families lack observations: policy"
 
 
 def test_main_reports_success_and_failure_from_configured_paths(
@@ -130,10 +132,35 @@ def test_main_reports_success_and_failure_from_configured_paths(
     monkeypatch.setattr(gate, "MANIFEST", manifest)
     monkeypatch.setattr(gate, "OBSERVED", observed)
     assert gate.main() == 0
-    assert "cover every" in capsys.readouterr().out
+    assert (
+        capsys.readouterr().out
+        == "v3 property observations cover every declared family\n"
+    )
     (observed / "run_testcases.jsonl").unlink()
     assert gate.main() == 1
-    assert "absent" in capsys.readouterr().out
+    assert capsys.readouterr().out == "v3 property observations are absent\n"
+
+
+def test_gate_uses_literal_utf8_for_every_public_evidence_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Public manifests and JSONL observations never inherit a locale encoding."""
+    manifest = _manifest(tmp_path / "families.json", {"wire": ["wire-id"]})
+    observed = _observations(tmp_path / "observed", [_record("wire-id")])
+    source = observed / "run_testcases.jsonl"
+    calls: list[str | None] = []
+    original = Path.read_text
+
+    def read_text(
+        path: Path, encoding: str | None = None, errors: str | None = None
+    ) -> str:
+        calls.append(encoding)
+        return original(path, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    assert gate._families(manifest) == {"wire": ("wire-id",)}  # ruff: ignore[private-member-access] - manifest encoding contract.
+    assert gate._properties_in_file(source) == {"wire-id"}  # ruff: ignore[private-member-access] - observation encoding contract.
+    assert calls == ["utf-8", "utf-8"]
 
 
 def test_script_entrypoint_executes_the_documented_main() -> None:
