@@ -147,10 +147,19 @@ def test_final_address_dispatch_uses_the_active_native_backend(
     """A final address is descriptor evidence, not a destination request alias."""
     value = PathValue("final", "final", "ZmluYWw=")
     monkeypatch.setattr(native_binding.__dict__["os"], "name", "nt")
+    windows_descriptors: list[int] = []
+
+    def windows_final_address(descriptor: int) -> PathValue:
+        windows_descriptors.append(descriptor)
+        return value
+
     monkeypatch.setattr(
-        native_binding.__dict__["_windows"], "final_address", lambda _fd: value
+        native_binding.__dict__["_windows"],
+        "final_address",
+        windows_final_address,
     )
     assert native_binding.final_address(9) == value
+    assert windows_descriptors == [9]
     monkeypatch.setattr(native_binding.__dict__["os"], "name", "posix")
     monkeypatch.setattr(
         native_binding.__dict__["_posix"], "final_address", lambda _fd: None

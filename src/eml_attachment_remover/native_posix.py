@@ -181,7 +181,7 @@ def _final_address(descriptor: int) -> PathValue | None:
             resolved = fcntl(descriptor, 50, b"\0" * 1_024)
         except OSError:
             return None
-        address = os.fsdecode(resolved.split(b"\0", 1)[0])
+        address = os.fsdecode(resolved.partition(b"\0")[0])
     else:
         try:
             address = str(Path(f"/proc/self/fd/{descriptor}").readlink())

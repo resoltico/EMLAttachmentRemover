@@ -119,6 +119,11 @@ def test_snapshot_rejects_kind_size_stability_and_final_address_faults(
     with pytest.raises(AppError):
         native_posix._snapshot("r", "e", "p", b"n", 3)  # ruff: ignore[private-member-access] - source-size stability boundary.
 
+
+def test_final_address_requires_a_handle_derived_nondeleted_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both native backends preserve the descriptor and reject unusable addresses."""
     monkeypatch.setattr(native_posix.__dict__["sys"], "platform", "darwin")
     monkeypatch.setattr(
         native_posix,
@@ -127,22 +132,37 @@ def test_snapshot_rejects_kind_size_stability_and_final_address_faults(
     )
     assert native_posix._final_address(3) is None  # ruff: ignore[private-member-access] - final-address uncertainty receipt.
 
-    monkeypatch.setattr(native_posix.__dict__["sys"], "platform", "darwin")
-    monkeypatch.setattr(native_posix, "fcntl", lambda *_args: b"/resolved/file\0")
+    monkeypatch.setattr(
+        native_posix, "fcntl", lambda *_args: b"/resolved/file\0trailing\0bytes"
+    )
     assert native_posix._final_address(3) == path_value("/resolved/file")  # ruff: ignore[private-member-access] - Darwin descriptor address receipt.
 
     monkeypatch.setattr(native_posix.__dict__["sys"], "platform", "linux")
+    proc_paths: list[str] = []
+
+    def proc_path(value: str) -> SimpleNamespace:
+        proc_paths.append(value)
+        return SimpleNamespace(readlink=lambda: "/proc-resolved/file")
+
     monkeypatch.setattr(
         native_posix,
         "Path",
-        lambda _value: SimpleNamespace(readlink=lambda: "/proc-resolved/file"),
+        proc_path,
     )
     assert native_posix._final_address(  # ruff: ignore[private-member-access] - proc descriptor address receipt.
         3
     ) == path_value("/proc-resolved/file")
+    assert proc_paths == ["/proc/self/fd/3"]
 
     monkeypatch.setattr(native_posix, "Path", lambda _value: _raise_os())
     assert native_posix._final_address(3) is None  # ruff: ignore[private-member-access] - unreadable proc link is unproven.
+
+    monkeypatch.setattr(
+        native_posix,
+        "Path",
+        lambda _value: SimpleNamespace(readlink=lambda: "/deleted (deleted)"),
+    )
+    assert native_posix._final_address(3) is None  # ruff: ignore[private-member-access] - deleted descriptor addresses are not reusable evidence.
 
     monkeypatch.setattr(native_posix.__dict__["sys"], "platform", "darwin")
     monkeypatch.setattr(native_posix, "fcntl", lambda *_args: b"\0")
