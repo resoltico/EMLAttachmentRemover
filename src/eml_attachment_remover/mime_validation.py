@@ -28,6 +28,8 @@ ASCII_UPPER_START: Final = ord("A")
 ASCII_UPPER_END: Final = ord("Z")
 ASCII_LOWER_START: Final = ord("a")
 ASCII_LOWER_END: Final = ord("z")
+MAX_RFC2231_SEGMENTS: Final = 512
+MAX_RFC2231_INDEX_DIGITS: Final = 3
 RFC2231_ATTR_PUNCTUATION: Final = frozenset({
     33,
     35,
@@ -140,9 +142,14 @@ def _parameter_name(name: bytes) -> tuple[bytes, int | None, bool]:
         return base, None, True
     encoded = suffix.endswith(b"*")
     index_text = suffix[:-1] if encoded else suffix
-    if not index_text.isdigit():
+    if not index_text.isdigit() or len(index_text) > MAX_RFC2231_INDEX_DIGITS:
         raise AppError(ExitCode.PARSE_ERROR, "malformed MIME parameter extension")
-    return base, int(index_text), encoded
+    index = int(index_text)
+    if index >= MAX_RFC2231_SEGMENTS:
+        raise AppError(
+            ExitCode.PARSE_ERROR, "MIME parameter continuation index exceeds limit"
+        )
+    return base, index, encoded
 
 
 def _extended_parameter(value: bytes, *, initial: bool) -> bytes:
