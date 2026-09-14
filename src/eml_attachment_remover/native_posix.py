@@ -5,6 +5,9 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+import sys
+from fcntl import fcntl
+from pathlib import Path
 from typing import Final
 
 from .atomic_publish import publish_no_replace, sync_directory
@@ -156,7 +159,7 @@ def _snapshot(
         path_value(expanded),
         path_value(parent),
         basename,
-        _final_address(expanded),
+        _final_address(descriptor),
         _identity(before),
         stat.S_IMODE(before.st_mode),
         raw,
@@ -165,11 +168,28 @@ def _snapshot(
     )
 
 
-def _final_address(expanded: str) -> PathValue | None:
-    try:
-        return path_value(os.path.realpath(expanded))
-    except OSError:
+def _final_address(descriptor: int) -> PathValue | None:
+    """Return an address resolved from one open regular-file descriptor.
+
+    Returns:
+        A round-trippable handle-derived address, or ``None`` if this platform
+        cannot prove one without reverting to caller-provided text.
+
+    """
+    if sys.platform == "darwin":
+        try:
+            resolved = fcntl(descriptor, 50, b"\0" * 1_024)
+        except OSError:
+            return None
+        address = os.fsdecode(resolved.split(b"\0", 1)[0])
+    else:
+        try:
+            address = str(Path(f"/proc/self/fd/{descriptor}").readlink())
+        except OSError:
+            return None
+    if not address or address.endswith(" (deleted)"):
         return None
+    return path_value(address)
 
 
 def _open_bound_destination(destination: BoundDestination) -> BoundDirectory:
@@ -266,3 +286,4 @@ child_lstat = _child_lstat
 open_child_nofollow = _open_child_nofollow
 discard_private_stage = _discard_private_stage
 sync_bound_directory = _sync_bound_directory
+final_address = _final_address

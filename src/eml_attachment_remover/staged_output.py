@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import os
-import signal
-import threading
-from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
 
+from . import staged_signals
 from .domain import (
     AppError,
     BoundDestination,
@@ -23,6 +20,7 @@ from .native_paths import (
     create_private_stage,
     descriptor_identity,
     discard_private_stage,
+    final_address,
     open_bound_destination,
     open_child_nofollow,
     private_stage_name,
@@ -31,9 +29,7 @@ from .native_paths import (
 )
 from .staged_progress import advance_position
 
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
+_defer_signals = staged_signals.defer_signals
 
 type _LifecycleOutcome = tuple[BaseException | None, tuple[str, BaseException | None]]
 
@@ -73,30 +69,6 @@ class _PublicationState:
     stage: _Stage | None = None
     kernel_published: bool = False
     receipt: PublicationReceipt | None = None
-
-
-@contextmanager
-def _defer_signals() -> Iterator[None]:
-    """Defer catchable process signals across one nonterminal publication edge."""
-    mask = getattr(signal, "pthread_" + "sigmask", None)
-    block = getattr(signal, "SIG_" + "BLOCK", None)
-    restore = getattr(signal, "SIG_" + "SETMASK", None)
-    if (
-        not callable(mask)
-        or not isinstance(block, int)
-        or not isinstance(restore, int)
-        or threading.current_thread() is not threading.main_thread()
-    ):
-        yield
-        return
-    watched = {signal.SIGINT, signal.SIGTERM}
-    if hasattr(signal, "SIGHUP"):
-        watched.add(signal.SIGHUP)
-    previous = mask(block, watched)
-    try:
-        yield
-    finally:
-        mask(restore, previous)
 
 
 def _bind_parent(state: _PublicationState) -> None:
@@ -241,6 +213,11 @@ def _read_final_receipt(  # ruff: ignore[complex-structure] - ordered receipt ch
             raise AppError(  # ruff: ignore[raise-within-try] - final fd needs common cleanup.
                 ExitCode.WRITE_ERROR, "final destination entry changed"
             )
+        address = final_address(final_fd)
+        if address is None:
+            raise AppError(  # ruff: ignore[raise-within-try] - final descriptor needs shared cleanup.
+                ExitCode.WRITE_ERROR, "could not prove published final address"
+            )
         receipt = PublicationReceipt(
             visibility="visible",
             identity=expected,
@@ -248,7 +225,7 @@ def _read_final_receipt(  # ruff: ignore[complex-structure] - ordered receipt ch
             file_sync="succeeded",
             directory_sync="succeeded",
             address_verified=True,
-            final_address=state.destination.request,
+            final_address=address,
             temp_cleanup="pending",
         )
     except BaseException as problem:

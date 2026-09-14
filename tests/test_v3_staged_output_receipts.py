@@ -13,6 +13,7 @@ from eml_attachment_remover.domain import (
     AppError,
     ExitCode,
     FileIdentity,
+    PathValue,
     PublicationReceipt,
 )
 from eml_attachment_remover.native_paths import BoundDirectoryHandle, bind_destination
@@ -39,7 +40,9 @@ def _state(tmp_path: Path, candidate: bytes = b"candidate") -> _PublicationState
     )
 
 
-def _visible_receipt(state: _PublicationState) -> PublicationReceipt:
+def _visible_receipt(
+    state: _PublicationState, address: PathValue | None = None
+) -> PublicationReceipt:
     """Build the complete receipt expected after a re-addressed publication.
 
     Returns:
@@ -53,7 +56,7 @@ def _visible_receipt(state: _PublicationState) -> PublicationReceipt:
         file_sync="succeeded",
         directory_sync="succeeded",
         address_verified=True,
-        final_address=state.destination.request,
+        final_address=state.destination.request if address is None else address,
         temp_cleanup="pending",
     )
 
@@ -109,10 +112,12 @@ def test_final_receipt_has_a_complete_ordered_live_handle_evidence_chain(
     monkeypatch.setattr(staged_output, "open_child_nofollow", open_final)
     monkeypatch.setattr(staged_output, "_read_all", read_final)
     monkeypatch.setattr(staged_output, "_close_descriptor", close_final)
+    address = PathValue("final", "final", "ZmluYWw=")
+    monkeypatch.setattr(staged_output, "final_address", lambda _descriptor: address)
 
     receipt = staged_output._read_final_receipt(state)  # ruff: ignore[private-member-access] - direct final-address receipt.
 
-    assert receipt == _visible_receipt(state)
+    assert receipt == _visible_receipt(state, address)
     assert calls == [
         ("identity", 12),
         ("lstat", (state.parent, state.destination.basename)),
@@ -123,6 +128,12 @@ def test_final_receipt_has_a_complete_ordered_live_handle_evidence_chain(
         ("lstat", (state.parent, state.destination.basename)),
         ("close", 13),
     ]
+    monkeypatch.setattr(staged_output, "final_address", lambda _descriptor: None)
+    with pytest.raises(AppError) as unproven:
+        staged_output._read_final_receipt(state)  # ruff: ignore[private-member-access] - no request-path fallback.
+    assert unproven.value == AppError(
+        ExitCode.WRITE_ERROR, "could not prove published final address"
+    )
 
 
 def test_stage_creation_retries_exactly_sixteen_collisions_then_preserves_owner(

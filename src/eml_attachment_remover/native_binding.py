@@ -14,6 +14,7 @@ from .domain import (
     ExistingEntry,
     ExitCode,
     FileIdentity,
+    PathValue,
     SourceSnapshot,
 )
 from .native_values import MAX_RAW_BYTES, validate_argument
@@ -118,6 +119,12 @@ def _sync_bound_directory(directory: BoundDirectory) -> str:
     return _posix.sync_bound_directory(directory)
 
 
+def _final_address(descriptor: int) -> PathValue | None:
+    if os.name == "nt":
+        return _windows.final_address(descriptor)
+    return _posix.final_address(descriptor)
+
+
 def _existing_identity(destination: BoundDestination) -> FileIdentity | None:
     directory = _open_bound_destination(destination)
     try:
@@ -185,18 +192,44 @@ def _read_all(descriptor: int) -> bytes:
     return b"".join(chunks)
 
 
-def _byte_name(value: bytes | str) -> bytes:
-    if isinstance(value, bytes):
-        return value
-    message = "POSIX native name must be bytes"
-    raise TypeError(message)
+class _NativeName:
+    """Keep typed native-name validation below the module responsibility budget."""
+
+    @staticmethod
+    def byte(value: bytes | str) -> bytes:
+        """Return one POSIX byte name or reject an incompatible text value.
+
+        Returns:
+            The unchanged native bytes.
+
+        Raises:
+            TypeError: If the supplied name is not bytes.
+
+        """
+        if isinstance(value, bytes):
+            return value
+        message = "POSIX native name must be bytes"
+        raise TypeError(message)
+
+    @staticmethod
+    def unicode(value: bytes | str) -> str:
+        """Return one Windows Unicode name or reject incompatible bytes.
+
+        Returns:
+            The unchanged native Unicode text.
+
+        Raises:
+            TypeError: If the supplied name is not Unicode text.
+
+        """
+        if isinstance(value, str):
+            return value
+        message = "Windows native name must be Unicode"
+        raise TypeError(message)
 
 
-def _unicode_name(value: bytes | str) -> str:
-    if isinstance(value, str):
-        return value
-    message = "Windows native name must be Unicode"
-    raise TypeError(message)
+_byte_name = _NativeName.byte
+_unicode_name = _NativeName.unicode
 
 
 bind_destination = _bind_destination
@@ -212,5 +245,6 @@ child_lstat = _child_lstat
 open_child_nofollow = _open_child_nofollow
 discard_private_stage = _discard_private_stage
 sync_bound_directory = _sync_bound_directory
+final_address = _final_address
 existing_identity = _existing_identity
 read_existing = _read_existing
