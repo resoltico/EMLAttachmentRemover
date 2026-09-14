@@ -14,6 +14,7 @@ SPACE: Final = ord(" ")
 DELETE: Final = 127
 MAX_COMMENT_DEPTH: Final = 8
 _BOUNDARY: Final = b" \t\r\n;=/"
+_CFWS_BYTES: Final = frozenset({b" ", b"\t", b"\r", b"\n"})
 
 
 def without_comments(value: bytes, *, allowed: bool) -> bytes:
@@ -64,7 +65,6 @@ def _copy_quoted(value: bytes, position: int, result: bytearray) -> int:
     result.append(DOUBLE_QUOTE)
     positions = iter(enumerate(memoryview(value)[position + 1 :]))
     for offset, byte in positions:
-        cursor = position + 1 + offset
         if byte == BACKSLASH:
             escaped_position = next(positions, None)
             if escaped_position is None:
@@ -72,10 +72,25 @@ def _copy_quoted(value: bytes, position: int, result: bytearray) -> int:
             result.extend((byte, escaped_position[1]))
         elif byte == DOUBLE_QUOTE:
             result.append(byte)
-            return cursor + 1
+            return _advanced_quoted_cursor(position, position + offset + 2)
         else:
             result.append(byte)
     raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME quoted parameter")
+
+
+def _advanced_quoted_cursor(position: int, next_position: int) -> int:
+    """Require one quoted-string parser completion to advance its caller.
+
+    Returns:
+        The strictly advanced quoted-string completion position.
+
+    Raises:
+        AppError: If a parser implementation proposes a non-advancing cursor.
+
+    """
+    if next_position <= position:
+        raise AppError(ExitCode.PARSE_ERROR, "nonadvancing MIME quoted cursor")
+    return next_position
 
 
 def _remove_comment(
@@ -97,7 +112,7 @@ def _remove_comment(
     end = _comment_end(value, position)
     if not _after_comment_boundary(value, end):
         raise AppError(ExitCode.PARSE_ERROR, "comment occurs inside MIME token")
-    if not result or result[-1] not in b" \t\r\n":
+    if not result or bytes(result[-1:]) not in _CFWS_BYTES:
         result.append(SPACE)
     return end
 

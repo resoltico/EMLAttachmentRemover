@@ -108,19 +108,18 @@ def verify_candidate(
     structure_matches = candidate.raw == independently_rebuilt and _shape(
         expected_nodes
     ) == _shape(actual_nodes)
+    idempotence_error = None
     try:
         authorize_removals(output, ())
-    except AppError:
-        idempotent = False
-    else:
-        idempotent = True
+    except AppError as error:
+        idempotence_error = error
     digest_matches = hashlib.sha256(candidate.raw).hexdigest() == candidate.digest
     receipt = VerificationReceipt(
         authorization_matches=True,
         output_parses=True,
         retained_payloads_match=payloads_match,
         structure_matches=structure_matches,
-        policy_is_idempotent=idempotent,
+        policy_is_idempotent=idempotence_error is None,
         digest_matches=digest_matches,
     )
     if not all((
