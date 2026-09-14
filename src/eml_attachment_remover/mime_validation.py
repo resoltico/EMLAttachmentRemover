@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from .domain import AppError, ExitCode
+from .mime_comments import without_comments
 from .mime_headers import TOKEN_RE, Header
 from .mime_identifiers import parse_message_identifier
 
@@ -54,40 +55,33 @@ class ContentSpec:
     parameters: dict[bytes, bytes]
 
 
-def _split_semicolons(value: bytes) -> list[bytes]:
+def _split_semicolons(value: bytes, *, comments_allowed: bool = False) -> list[bytes]:
     """Split a MIME structured field while respecting quoted strings.
 
     Returns:
         The semicolon-separated field components with outer white space removed.
 
-    Raises:
-        AppError: If a quoted string or quoted pair is unfinished.
-
     """
     pieces: list[bytes] = []
+    value = without_comments(value, allowed=comments_allowed)
     current = bytearray()
-    quote_position: int | None = None
-    iterator = enumerate(value)
-    for position, byte in iterator:
-        if quote_position is not None and byte == BACKSLASH:
+    quoted = False
+    escaped = False
+    for byte in value:
+        if quoted and escaped:
+            escaped = False
             current.append(byte)
-            try:
-                _, escaped_byte = next(iterator)
-            except StopIteration as error:
-                raise AppError(
-                    ExitCode.PARSE_ERROR, "unterminated MIME quoted parameter"
-                ) from error
-            current.append(escaped_byte)
+        elif quoted and byte == BACKSLASH:
+            escaped = True
+            current.append(byte)
         elif byte == DOUBLE_QUOTE:
             current.append(byte)
-            quote_position = position if quote_position is None else None
-        elif byte == SEMICOLON and quote_position is None:
+            quoted = not quoted
+        elif byte == SEMICOLON and not quoted:
             pieces.append(bytes(current).strip())
             current.clear()
         else:
             current.append(byte)
-    if quote_position is not None:
-        raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME quoted parameter")
     pieces.append(bytes(current).strip())
     return pieces
 
@@ -217,14 +211,19 @@ def _extended_payload(value: bytes) -> bytes:
     return payload
 
 
-def _structured(value: bytes, token_validator: Callable[[bytes], bytes]) -> ContentSpec:
+def _structured(
+    value: bytes,
+    token_validator: Callable[[bytes], bytes],
+    *,
+    comments_allowed: bool = False,
+) -> ContentSpec:
     """Parse a closed token-and-parameter MIME field.
 
     Returns:
         The normalized token and unique validated raw parameter values.
 
     """
-    pieces = _split_semicolons(value)
+    pieces = _split_semicolons(value, comments_allowed=comments_allowed)
     token = token_validator(pieces[0])
     parameters = _structured_parameters(pieces[1:])
     return ContentSpec(_ascii_token(token), parameters)
@@ -407,19 +406,21 @@ def content_specs(
     """
     raw_type = _header_value(headers, b"content-type")
     content_type = (
-        _structured(raw_type, _media_token)
+        _structured(raw_type, _media_token, comments_allowed=True)
         if raw_type
         else ContentSpec("text/plain", {})
     )
     raw_disposition = _header_value(headers, b"content-disposition")
     disposition = (
-        _structured(raw_disposition, _structured_token) if raw_disposition else None
+        _structured(raw_disposition, _structured_token, comments_allowed=False)
+        if raw_disposition
+        else None
     )
     raw_cte = _header_value(headers, b"content-transfer-encoding")
     _validate_content_id(_header_value(headers, b"content-id"))
     if raw_cte is None:
         return content_type, disposition, "7bit"
-    cte = raw_cte.strip().lower()
+    cte = without_comments(raw_cte, allowed=True).strip().lower()
     if not TOKEN_RE.fullmatch(cte):
         raise AppError(ExitCode.PARSE_ERROR, "malformed Content-Transfer-Encoding")
     return content_type, disposition, cte.decode()
