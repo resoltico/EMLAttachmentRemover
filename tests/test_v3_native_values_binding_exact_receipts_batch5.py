@@ -161,6 +161,7 @@ def test_native_binding_existing_read_closes_descriptor_zero_and_never_closes_se
     monkeypatch.setattr(native_binding, "_descriptor_identity", lambda _fd: _identity())
     monkeypatch.setattr(native_binding, "_read_all", lambda _fd: b"body")
     monkeypatch.setattr(native_binding, "_child_lstat", lambda *_args: _identity())
+    monkeypatch.setattr(native_binding, "_final_address", lambda _fd: None)
     monkeypatch.setattr(
         native_binding, "_close_bound_directory", directory_closed.append
     )
