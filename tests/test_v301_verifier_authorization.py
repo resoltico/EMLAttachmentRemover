@@ -126,6 +126,32 @@ def test_verifier_rejects_a_nonidempotent_candidate_after_authorization() -> Non
     )
 
 
+def test_verifier_requires_the_independent_idempotence_proof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A source claim cannot substitute for successful output re-authorization."""
+    tree = _mixed()
+    candidate = build_candidate(tree, (_attachment_claim(),))
+    calls = 0
+    original = authorize_removals
+
+    def authorize(source: RawMimeTree, claims: tuple[Removal, ...]) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise AppError(ExitCode.VERIFICATION_ERROR, "independent output policy")
+        original(source, claims)
+
+    monkeypatch.setattr(
+        "eml_attachment_remover.mime_verification.authorize_removals", authorize
+    )
+    with pytest.raises(AppError) as rejected:
+        verify_candidate(tree, candidate, (_attachment_claim(),))
+    assert rejected.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "candidate MIME verification failed"
+    )
+
+
 def test_source_oracle_covers_alternative_and_related_contexts() -> None:
     """Only a related nonroot may be pruned; alternatives retain every branch."""
     alternative = parse_raw_mime(
