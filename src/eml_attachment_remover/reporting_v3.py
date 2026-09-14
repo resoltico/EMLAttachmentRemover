@@ -130,7 +130,7 @@ def _destination(item: LedgerItem) -> dict[str, object] | None:
     return {
         "parent": _path(destination.parent),
         **_basename(destination.basename),
-        "final_address": _path(destination.request),
+        "final_address": None,
         "identity": destination.directory_identity.as_json(),
     }
 
