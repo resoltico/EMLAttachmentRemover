@@ -134,6 +134,18 @@ def test_quoted_and_folded_comment_scans_are_bounded_and_exact() -> None:
     assert escaped.value == AppError(ExitCode.PARSE_ERROR, "unterminated MIME comment")
 
 
+def test_comment_replacement_uses_the_actual_preceding_cfws_byte() -> None:
+    """A comment adds CFWS only after a non-CFWS accumulated byte."""
+    remove_comment = mime_comments._remove_comment  # ruff: ignore[private-member-access] - direct accumulated-byte predicate proof.
+    no_extra_space = bytearray(b"a ")
+    assert remove_comment(b"a (c) ", 2, no_extra_space, allowed=True) == 5
+    assert no_extra_space == b"a "
+    add_space = bytearray(b"aX")
+    assert remove_comment(b"a (c) ", 2, add_space, allowed=True) == 5
+    assert add_space == b"aX "
+    assert mime_comments._folded_comment_cursor(b"\r\n X", 0) == 3  # ruff: ignore[private-member-access] - first non-FWS byte terminates the fold.
+
+
 def test_comment_end_rejects_a_nonadvancing_parser_step(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
