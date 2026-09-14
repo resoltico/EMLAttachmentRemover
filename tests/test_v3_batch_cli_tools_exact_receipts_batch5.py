@@ -88,7 +88,8 @@ def test_run_item_assigns_the_default_internal_phase_exactly(
     assert batch._run_item(  # ruff: ignore[private-member-access] - unphased internal item boundary.
         item, ledger, {0: identity}, {identity}, _options()
     )
-    assert item.error is failure
+    assert item.error == failure
+    assert item.error is not failure
     assert ledger.batch_error == AppError(
         ExitCode.INTERNAL_ERROR, "invariant", phase="internal"
     )

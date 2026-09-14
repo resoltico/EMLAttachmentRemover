@@ -47,7 +47,8 @@ def test_inventory_item_marks_ordinary_input_error_without_stopping(
         item, "one.eml", _options(), inventory, ledger
     )
     assert item.status is ItemStatus.FAILED
-    assert item.error is error
+    assert item.error == error
+    assert item.error is not error
     assert later.status is None
     assert ledger.batch_error is None
 

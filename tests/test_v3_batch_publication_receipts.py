@@ -127,5 +127,6 @@ def test_existing_or_publish_preserves_visible_post_edge_failure_receipt(
         is cause
     )
     assert item.status is ItemStatus.PUBLISHED_WITH_ERROR
-    assert item.error is cause
+    assert item.error == cause
+    assert item.error is not cause
     assert item.publication == receipt
