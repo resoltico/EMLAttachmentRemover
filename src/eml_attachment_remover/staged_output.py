@@ -107,21 +107,20 @@ def _create_stage(
             close_problem = _close_descriptor(descriptor)
             if close_problem is not None:
                 cleanup_errors.append(close_problem)
-            _raise_stage_construction_failures(cleanup_errors, primary)
+            _raise_stage_construction_failures(cleanup_errors)
         return
     raise AppError(ExitCode.WRITE_ERROR, "could not allocate a private staging name")
 
 
-def _raise_stage_construction_failures(
-    errors: list[BaseException], primary: BaseException
-) -> None:
+def _raise_stage_construction_failures(errors: list[BaseException]) -> None:
     """Raise a sole construction failure directly or preserve every extra failure.
 
     Raises:
         _combined: If construction and cleanup fail independently.
 
     """
-    if errors == [primary]:
+    primary = errors[0]
+    if len(errors) == 1:
         raise primary
     raise _combined(errors) from primary
 
