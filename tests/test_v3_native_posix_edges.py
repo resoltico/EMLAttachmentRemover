@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -12,6 +13,7 @@ from eml_attachment_remover import native_posix
 from eml_attachment_remover.domain import (
     AppError,
     BoundDirectory,
+    ExitCode,
     FileIdentity,
     PathValue,
 )
@@ -45,6 +47,45 @@ def test_windows_type_shim_never_exposes_a_posix_fcntl_call(
         with pytest.raises(OSError, match="fcntl is unavailable"):
             fcntl_call(1, 2, b"")
     importlib.reload(native_posix)
+
+
+def test_windows_coverage_can_load_the_posix_fcntl_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The POSIX import branch is represented in Windows coverage by a fake module."""
+    module = SimpleNamespace(fcntl=lambda *_args: b"")
+    with monkeypatch.context() as context:
+        context.setitem(sys.modules, "fcntl", module)
+        context.setattr(_module_value("sys"), "platform", "darwin")
+        importlib.reload(native_posix)
+        fcntl_call = _module_value("fcntl")
+        assert callable(fcntl_call)
+        assert fcntl_call(1, 2, b"") == b""
+    importlib.reload(native_posix)
+
+
+def test_nofollow_open_closes_on_metadata_and_type_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every opened descriptor closes before an inspection or regularity failure."""
+    closed: list[int] = []
+    monkeypatch.setattr(_module_value("os"), "open", lambda *_args, **_kwargs: 41)
+    monkeypatch.setattr(_module_value("os"), "close", closed.append)
+    monkeypatch.setattr(_module_value("os"), "fstat", lambda _fd: _raise_os())
+    with pytest.raises(OSError, match="fault"):
+        native_posix._open_child_nofollow(  # ruff: ignore[private-member-access] - metadata close proof.
+            BoundDirectory(17, windows=False), b"out"
+        )
+    monkeypatch.setattr(_module_value("os"), "fstat", lambda _fd: _metadata())
+    monkeypatch.setattr(_module_value("stat"), "S_ISREG", lambda _mode: False)
+    with pytest.raises(AppError) as rejected:
+        native_posix._open_child_nofollow(  # ruff: ignore[private-member-access] - nonregular close proof.
+            BoundDirectory(17, windows=False), b"out"
+        )
+    assert rejected.value == AppError(
+        ExitCode.OUTPUT_CONFLICT, "destination is not a regular file"
+    )
+    assert closed == [41, 41]
 
 
 def test_directory_parent_and_read_boundaries_are_contextual(
