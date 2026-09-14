@@ -13,7 +13,8 @@ from eml_attachment_remover.domain import AppError
     [(b'one; "two;three"; four', 3), (b'one; escaped="a\\"b"', 2)],
 )
 def test_semicolon_splitter_preserves_quoted_regions(value: bytes, count: int) -> None:
-    assert len(mime_validation._split_semicolons(value)) == count  # ruff: ignore[private-member-access] - direct structured-header tokenizer.
+    splitter = mime_validation._split_semicolons  # ruff: ignore[private-member-access] - direct structured-header tokenizer.
+    assert len(splitter(value, comments_allowed=False)) == count
 
 
 @pytest.mark.parametrize(
