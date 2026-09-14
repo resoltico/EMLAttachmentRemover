@@ -285,20 +285,21 @@ def test_posix_publication_primitives_preserve_exact_kernel_arguments(
         stats.append((name, dir_fd, follow_symlinks))
         return metadata
 
-    monkeypatch.setattr(native_posix.__dict__["os"], "stat", stat_entry)
-    monkeypatch.setattr(
-        native_posix.__dict__["stat"], "filemode", lambda _mode: "-rw-r-----"
-    )
-    assert native_posix._child_lstat(directory, b"final") == FileIdentity(  # ruff: ignore[private-member-access] - lstat child identity receipt.
-        11, 12, "-rw-r-----", 13
-    )
-    assert stats == [(b"final", 51, False)]
-    monkeypatch.setattr(
-        native_posix.__dict__["os"],
-        "stat",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()),
-    )
-    assert native_posix._child_lstat(directory, b"missing") is None  # ruff: ignore[private-member-access] - missing child is not a failure.
+    with monkeypatch.context() as context:
+        context.setattr(native_posix.__dict__["os"], "stat", stat_entry)
+        context.setattr(
+            native_posix.__dict__["stat"], "filemode", lambda _mode: "-rw-r-----"
+        )
+        assert native_posix._child_lstat(directory, b"final") == FileIdentity(  # ruff: ignore[private-member-access] - lstat child identity receipt.
+            11, 12, "-rw-r-----", 13
+        )
+        assert stats == [(b"final", 51, False)]
+        context.setattr(
+            native_posix.__dict__["os"],
+            "stat",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()),
+        )
+        assert native_posix._child_lstat(directory, b"missing") is None  # ruff: ignore[private-member-access] - missing child is not a failure.
 
     opens.clear()
     monkeypatch.setattr(native_posix.__dict__["os"], "fstat", lambda _fd: _metadata())
