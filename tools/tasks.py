@@ -341,6 +341,7 @@ def _mutation() -> None:
             updates = dict(environment_updates or {})
             updates["COVERAGE_FILE"] = str(storage.parent / ".mutmut-coverage")
             updates[hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE] = str(storage)
+            updates["EML_MUTATION_PYTEST_TEMPORARY_ROOT"] = str(storage)
             _run(
                 command,
                 profile=profile,
@@ -349,6 +350,7 @@ def _mutation() -> None:
                 environment_removals=(
                     *OBSERVABILITY_VARIABLES,
                     *coverage_variables,
+                    "PYTEST_ADDOPTS",
                     *environment_removals,
                 ),
             )

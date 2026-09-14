@@ -215,7 +215,7 @@ also_copy = [
   "integrations",
 ]
 mutate_only_covered_lines = true
-pytest_add_cli_args = ["-q", "-p", "no:cacheprovider"]
+pytest_add_cli_args = ["-q", "-p", "no:cacheprovider", "-p", "tools.mutation_pytest_isolation"]
 pytest_add_cli_args_test_selection = ["tests"]
 source_paths = ["src/eml_attachment_remover", "tools"]
 use_git_change_detection = false

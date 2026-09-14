@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -32,6 +33,8 @@ MUTATION_PROFILE: Final = "project-mutation"
 MUTATION_TIMEOUT_SECONDS: Final = 7_200
 EVIDENCE_TIMEOUT_SECONDS: Final = 120
 FAILURE_GROUP_MESSAGE: Final = "mutation gate failed"
+MUTATION_MAX_WORKERS: Final = 8
+MUTATION_RESERVED_CPUS: Final = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +95,19 @@ def mutation_actions(
 
     """
     return MutationActions(coverage, cleanup, capture, run)
+
+
+def mutation_worker_count(cpu_count: int | None = None) -> int:
+    """Return a bounded worker count that leaves capacity for the test host.
+
+    Returns:
+        A positive Mutmut worker count.
+
+    """
+    available = os.cpu_count() if cpu_count is None else cpu_count
+    if available is None:
+        return 1
+    return max(1, min(MUTATION_MAX_WORKERS, available - MUTATION_RESERVED_CPUS))
 
 
 def capture_results(
@@ -173,7 +189,7 @@ def run_mutation(
         (
             "run mutants",
             lambda: actions.run(
-                ("mutmut", "run"),
+                ("mutmut", "run", "--max-children", str(mutation_worker_count())),
                 profile=MUTATION_PROFILE,
                 timeout_seconds=MUTATION_TIMEOUT_SECONDS,
                 environment_updates={

@@ -245,7 +245,7 @@ class TaskRunnerTests(unittest.TestCase):
                 for argument in command
             )
         )
-        self.assertIn(("mutmut", "run"), commands)
+        self.assertIn(("mutmut", "run", "--max-children", "8"), commands)
         self.assertTrue(
             any(
                 "check_mutation_results.py" in argument

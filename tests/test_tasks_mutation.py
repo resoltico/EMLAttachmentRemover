@@ -52,7 +52,7 @@ class MutationTaskTests(unittest.TestCase):
         self.assertEqual(
             [entry.args[0] for entry in run.call_args_list],
             [
-                ("mutmut", "run"),
+                ("mutmut", "run", "--max-children", "8"),
                 ("mutmut", "export-cicd-stats"),
                 (
                     sys.executable,
@@ -172,7 +172,13 @@ class MutationTaskTests(unittest.TestCase):
         )
         self.assertEqual(
             configuration["tool"]["mutmut"]["pytest_add_cli_args"],
-            ["-q", "-p", "no:cacheprovider"],
+            [
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                "-p",
+                "tools.mutation_pytest_isolation",
+            ],
         )
 
     def test_mutation_rejects_missing_or_symlinked_coverage_configuration(self) -> None:

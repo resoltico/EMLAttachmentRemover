@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import unittest
@@ -116,7 +117,7 @@ class MutationTaskContracts(unittest.TestCase):
             run_calls,
             [
                 (
-                    ("mutmut", "run"),
+                    ("mutmut", "run", "--max-children", "8"),
                     {
                         "profile": "project-mutation",
                         "timeout_seconds": 7_200,
@@ -154,6 +155,14 @@ class MutationTaskContracts(unittest.TestCase):
                 ),
             ],
         )
+
+    def test_mutation_worker_count_is_bounded_and_leaves_host_capacity(self) -> None:
+        self.assertEqual(mutation_task.mutation_worker_count(1), 1)
+        self.assertEqual(mutation_task.mutation_worker_count(2), 1)
+        self.assertEqual(mutation_task.mutation_worker_count(10), 8)
+        self.assertEqual(mutation_task.mutation_worker_count(64), 8)
+        with patch.object(os, "cpu_count", return_value=None):
+            self.assertEqual(mutation_task.mutation_worker_count(), 1)
 
     def test_mutation_failure_group_has_exact_public_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
