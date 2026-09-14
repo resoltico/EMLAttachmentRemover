@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -30,6 +31,20 @@ def _metadata(*, size: int = 1, inode: int = 2, mtime: int = 3) -> SimpleNamespa
 
 def _module_value(name: str) -> object:
     return native_posix.__dict__[name]
+
+
+def test_windows_type_shim_never_exposes_a_posix_fcntl_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows imports the POSIX module only to satisfy dispatch typing safely."""
+    with monkeypatch.context() as context:
+        context.setattr(_module_value("sys"), "platform", "win32")
+        importlib.reload(native_posix)
+        fcntl_call = _module_value("fcntl")
+        assert callable(fcntl_call)
+        with pytest.raises(OSError, match="fcntl is unavailable"):
+            fcntl_call(1, 2, b"")
+    importlib.reload(native_posix)
 
 
 def test_directory_parent_and_read_boundaries_are_contextual(
