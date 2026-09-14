@@ -38,6 +38,7 @@ class TaskTestCommands(Protocol):
     ) -> tuple[str, ...]: ...
 
 class MutationTaskModule(Protocol):
+    def mutation_worker_count(self, cpu_count: int | None = None) -> int: ...
     def mutation_paths(
         self,
         project_root: Path,
