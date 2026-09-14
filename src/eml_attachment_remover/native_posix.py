@@ -223,11 +223,25 @@ def _child_lstat(directory: BoundDirectory, name: bytes) -> FileIdentity | None:
 
 
 def _open_child_nofollow(directory: BoundDirectory, name: bytes) -> int:
-    return os.open(
+    descriptor = os.open(
         name,
-        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        (
+            os.O_RDONLY
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+        ),
         dir_fd=directory.descriptor,
     )
+    try:
+        metadata = os.fstat(descriptor)
+    except BaseException:
+        os.close(descriptor)
+        raise
+    if not stat.S_ISREG(metadata.st_mode):
+        os.close(descriptor)
+        raise AppError(ExitCode.OUTPUT_CONFLICT, "destination is not a regular file")
+    return descriptor
 
 
 def _discard_private_stage(

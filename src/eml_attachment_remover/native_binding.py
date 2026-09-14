@@ -127,26 +127,48 @@ def _existing_identity(destination: BoundDestination) -> FileIdentity | None:
 
 
 def _read_existing(destination: BoundDestination) -> ExistingEntry | None:
-    directory = _open_bound_destination(destination)
-    descriptor: int | None = None
     try:
-        try:
-            descriptor = _open_child_nofollow(directory, destination.basename)
-        except FileNotFoundError:
-            return None
-        before = _descriptor_identity(descriptor)
-        raw = _read_all(descriptor)
-        after = _descriptor_identity(descriptor)
-        if before != after or _child_lstat(directory, destination.basename) != before:
-            raise AppError(
-                ExitCode.OUTPUT_CONFLICT,
-                "existing output changed while verified",
-            )
-        return ExistingEntry(before, raw)
+        directory = _open_bound_destination(destination)
+    except OSError as exc:
+        raise AppError(
+            ExitCode.OUTPUT_CONFLICT, f"could not read existing output: {exc}"
+        ) from exc
+    try:
+        return _read_existing_from_directory(directory, destination)
+    except OSError as exc:
+        raise AppError(
+            ExitCode.OUTPUT_CONFLICT, f"could not read existing output: {exc}"
+        ) from exc
     finally:
-        if descriptor is not None:
-            os.close(descriptor)
         _close_bound_directory(directory)
+
+
+def _read_existing_from_directory(
+    directory: BoundDirectory, destination: BoundDestination
+) -> ExistingEntry | None:
+    try:
+        descriptor = _open_child_nofollow(directory, destination.basename)
+    except FileNotFoundError:
+        return None
+    try:
+        return _existing_entry(directory, destination, descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _existing_entry(
+    directory: BoundDirectory, destination: BoundDestination, descriptor: int
+) -> ExistingEntry:
+    before = _descriptor_identity(descriptor)
+    if not before.is_regular():
+        raise AppError(ExitCode.OUTPUT_CONFLICT, "destination is not a regular file")
+    raw = _read_all(descriptor)
+    after = _descriptor_identity(descriptor)
+    if before != after or _child_lstat(directory, destination.basename) != before:
+        raise AppError(
+            ExitCode.OUTPUT_CONFLICT, "existing output changed while verified"
+        )
+    return ExistingEntry(before, raw)
 
 
 def _read_all(descriptor: int) -> bytes:
