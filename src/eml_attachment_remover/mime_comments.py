@@ -62,14 +62,13 @@ def _copy_quoted(value: bytes, position: int, result: bytearray) -> int:
 
     """
     result.append(DOUBLE_QUOTE)
-    positions = iter(range(position + 1, len(value)))
-    for cursor in positions:
-        byte = value[cursor]
+    positions = iter(enumerate(memoryview(value)[position + 1 :], position + 1))
+    for cursor, byte in positions:
         if byte == BACKSLASH:
             escaped_position = next(positions, None)
             if escaped_position is None:
                 break
-            result.extend((byte, value[escaped_position]))
+            result.extend((byte, escaped_position[1]))
         elif byte == DOUBLE_QUOTE:
             result.append(byte)
             return cursor + 1
@@ -136,7 +135,7 @@ def _comment_end(value: bytes, start: int) -> int:
     """
     depth = 1
     position = start + 1
-    while position < len(value):
+    for _step in range(len(value) - position):
         next_position, depth = _comment_step(value, position, depth)
         if next_position <= position:
             raise AppError(ExitCode.PARSE_ERROR, "nonadvancing MIME comment cursor")

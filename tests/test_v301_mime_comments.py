@@ -114,7 +114,7 @@ def test_comment_scanner_rejects_nonfolding_control_and_advances_escapes() -> No
     assert mime_comments._escaped_comment_cursor(b"x\\q", 1) == 3  # ruff: ignore[private-member-access] - exact comment quoted-pair cursor.
     assert mime_comments._folded_comment_cursor(b"\r\n\t x", 0) == 4  # ruff: ignore[private-member-access] - exact CFWS cursor after horizontal white space.
     assert mime_comments.without_comments(b"(X) ", allowed=True) == b"  "
-    for value in (b"\r ", b"\n ", b"\rX"):
+    for value in (b"\r ", b"\n ", b"\rX", b"\rX ", b"\r\nX"):
         with pytest.raises(AppError) as rejected:
             mime_comments._folded_comment_cursor(value, 0)  # ruff: ignore[private-member-access] - direct malformed FWS grammar.
         assert rejected.value == AppError(
