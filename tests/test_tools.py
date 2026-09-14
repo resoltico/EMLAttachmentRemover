@@ -245,7 +245,15 @@ class TaskRunnerTests(unittest.TestCase):
                 for argument in command
             )
         )
-        self.assertIn(("mutmut", "run", "--max-children", "8"), commands)
+        self.assertIn(
+            (
+                "mutmut",
+                "run",
+                "--max-children",
+                str(tasks.mutation_task.mutation_worker_count()),
+            ),
+            commands,
+        )
         self.assertTrue(
             any(
                 "check_mutation_results.py" in argument

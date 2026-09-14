@@ -49,10 +49,11 @@ class MutationTaskTests(unittest.TestCase):
         ):
             tasks._mutation()
         coverage.assert_called_once_with()
+        workers = str(tasks.mutation_task.mutation_worker_count())
         self.assertEqual(
             [entry.args[0] for entry in run.call_args_list],
             [
-                ("mutmut", "run", "--max-children", "8"),
+                ("mutmut", "run", "--max-children", workers),
                 ("mutmut", "export-cicd-stats"),
                 (
                     sys.executable,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -31,7 +32,10 @@ class MutationPytestIsolationTests(unittest.TestCase):
             mutation_pytest_isolation.pytest_load_initial_conftests(
                 plugin_argument, plugin_argument, args
             )
-        self.assertEqual(args, ["-q", "--basetemp", "/private/root/17"])
+        self.assertEqual(
+            args,
+            ["-q", "--basetemp", str(Path("/private/root") / "17")],
+        )
 
     def test_leaves_arguments_unchanged_when_not_enabled(self) -> None:
         args = ["-q"]
