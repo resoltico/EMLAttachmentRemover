@@ -175,7 +175,7 @@ def _existing_entry(
         raise AppError(
             ExitCode.OUTPUT_CONFLICT, "existing output changed while verified"
         )
-    return ExistingEntry(before, raw)
+    return ExistingEntry(before, raw, _final_address(descriptor))
 
 
 def _read_all(descriptor: int) -> bytes:

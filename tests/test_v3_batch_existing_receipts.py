@@ -113,10 +113,11 @@ def test_existing_verify_requires_nonaliased_exact_candidate_and_records_receipt
         assert captured.value == expected
 
     item = _item()
+    address = PathValue("verified.eml", "verified.eml", "dmVyaWZpZWQuZW1s")
     monkeypatch.setattr(
         batch,
         "read_existing",
-        lambda _destination: ExistingEntry(identity, plan.candidate),
+        lambda _destination: ExistingEntry(identity, plan.candidate, address),
     )
     assert batch._verify_existing(  # ruff: ignore[private-member-access] - complete verified receipt.
         item, destination, plan, _options("verify"), set()
@@ -129,6 +130,19 @@ def test_existing_verify_requires_nonaliased_exact_candidate_and_records_receipt
         file_sync="not_attempted",
         directory_sync="not_attempted",
         address_verified=True,
-        final_address=destination.request,
+        final_address=address,
         temp_cleanup="not_applicable",
+    )
+
+    monkeypatch.setattr(
+        batch,
+        "read_existing",
+        lambda _destination: ExistingEntry(identity, plan.candidate),
+    )
+    with pytest.raises(AppError) as unproven:
+        batch._verify_existing(  # ruff: ignore[private-member-access] - existing requests cannot substitute for a final address.
+            _item(), destination, plan, _options("verify"), set()
+        )
+    assert unproven.value == AppError(
+        ExitCode.OUTPUT_CONFLICT, "could not prove existing output address"
     )

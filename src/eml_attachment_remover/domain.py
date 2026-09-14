@@ -181,6 +181,7 @@ class ExistingEntry:
 
     identity: FileIdentity
     raw: bytes = field(repr=False)
+    final_address: PathValue | None = None
 
 
 @dataclass(frozen=True, slots=True)

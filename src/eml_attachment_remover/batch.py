@@ -299,6 +299,10 @@ def _verify_existing(
             ExitCode.OUTPUT_CONFLICT,
             "existing output is not the exact current candidate",
         )
+    if existing.final_address is None:
+        raise AppError(
+            ExitCode.OUTPUT_CONFLICT, "could not prove existing output address"
+        )
     item.publication = PublicationReceipt(
         visibility="existing_verified",
         identity=existing.identity,
@@ -306,7 +310,7 @@ def _verify_existing(
         file_sync="not_attempted",
         directory_sync="not_attempted",
         address_verified=True,
-        final_address=destination.request,
+        final_address=existing.final_address,
         temp_cleanup="not_applicable",
     )
     item.finish(ItemStatus.EXISTING_VERIFIED)
@@ -406,7 +410,12 @@ def _run_item(
         return _after_item(item, ledger, options, None)
     except (CancellationSignal, KeyboardInterrupt) as cancellation:
         _cancel_active_item(
-            item, ledger, _cancellation_name(cancellation), item.phase.value
+            item,
+            ledger,
+            cancellation.name
+            if isinstance(cancellation, CancellationSignal)
+            else "SIGINT",
+            item.phase.value,
         )
         return True
     except SystemExit:
@@ -418,12 +427,6 @@ def _run_item(
         _internal_abort(item, ledger, str(exc) or type(exc).__name__)
         return True
     return _after_item(item, ledger, options, publication_cause)
-
-
-def _cancellation_name(cause: CancellationSignal | KeyboardInterrupt) -> str:
-    if isinstance(cause, CancellationSignal):
-        return cause.name
-    return "SIGINT"
 
 
 def _after_item(
