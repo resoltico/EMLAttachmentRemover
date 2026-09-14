@@ -4,6 +4,9 @@
     "wire_spans": ["tests/test_v301_hypothesis_properties.py::test_v301_property_wire_terminators_keep_exact_bounded_spans"],
     "structured_comments": ["tests/test_v301_hypothesis_properties.py::test_v301_property_structured_comments_preserve_content_type_semantics"],
     "policy_authorization": ["tests/test_v301_hypothesis_properties.py::test_v301_property_verifier_rejects_each_wrong_attachment_claim_reason"],
+    "retained_octets": ["tests/test_v301_hypothesis_properties.py::test_v301_property_retained_text_bytes_are_candidate_identical"],
+    "batch_terminalization": ["tests/test_v301_hypothesis_properties.py::test_v301_property_batch_terminal_rows_remain_input_ordered"],
+    "native_intent": ["tests/test_v301_hypothesis_properties.py::test_v301_property_native_destination_keeps_the_requested_basename"],
     "terminal_ledger": ["tests/test_v301_hypothesis_properties.py::TestV301TerminalLedgerMachine::runTest"]
   }
 }
