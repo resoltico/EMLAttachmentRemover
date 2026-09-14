@@ -12,7 +12,7 @@ from eml_attachment_remover.mime_raw import parse_raw_mime
 def test_raw_helpers_cover_non_delimiter_payload_and_opening_errors() -> None:
     assert mime_raw._payload_end(b"abc--", 3) == 3  # ruff: ignore[private-member-access] - raw delimiter boundary contract.
     assert mime_raw._delimiter_lines(b"--mX\r\n--m--\r\n", 0, 12, b"m") == [  # ruff: ignore[private-member-access] - exact delimiter-token contract.
-        (6, 13, True)
+        (6, 12, True)
     ]
     for delimiters in ([], [(0, 3, True)], [(0, 3, True), (3, 6, True)]):
         with pytest.raises(AppError):
