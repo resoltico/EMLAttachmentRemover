@@ -48,7 +48,7 @@ def test_candidate_records_every_independently_recomputed_fact(tmp_path: Path) -
         tree.raw, list(RemovalIndex.from_roots(roots).retained_nodes(tree.root))
     )
     candidate = build_candidate(tree, policy.removals)
-    receipt, recomputed = verify_candidate(tree, candidate, roots)
+    receipt, recomputed = verify_candidate(tree, candidate, policy.removals)
 
     batch._candidate(  # ruff: ignore[private-member-access] - full batch candidate receipt.
         item, inspect_source_identity(str(source))

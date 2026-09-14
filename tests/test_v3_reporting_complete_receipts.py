@@ -97,6 +97,7 @@ def _complete_ledger() -> BatchLedger:
     created.destination = destination
     created.transformation = plan
     created.verification = VerificationReceipt(
+        authorization_matches=False,
         output_parses=True,
         retained_payloads_match=False,
         structure_matches=True,
@@ -263,6 +264,7 @@ def test_report_serializes_every_complete_receipt_and_schema_field() -> None:
                     "candidate_size": 789,
                 },
                 "verification": {
+                    "authorization_matches": False,
                     "output_parses": True,
                     "retained_payloads_match": False,
                     "structure_matches": True,

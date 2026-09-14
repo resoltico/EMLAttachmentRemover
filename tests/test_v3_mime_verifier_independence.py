@@ -28,4 +28,4 @@ def test_verifier_detects_executor_stale_header_policy_fault(
     )
     candidate = build_candidate(source, plan.removals)
     with pytest.raises(AppError):
-        verify_candidate(source, candidate, {removal.path for removal in plan.removals})
+        verify_candidate(source, candidate, plan.removals)

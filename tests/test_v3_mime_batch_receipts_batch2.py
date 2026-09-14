@@ -202,7 +202,9 @@ def test_executor_and_verifier_strip_each_changed_ancestor_header_exactly() -> N
         assert stale not in candidate.raw
     assert b"X-Root-Keep: retained\r\n" in candidate.raw
     assert b"X-Nested-Keep: retained\r\n" in candidate.raw
-    receipt, retained = mime_verification.verify_candidate(tree, candidate, {(0, 1)})
+    receipt, retained = mime_verification.verify_candidate(
+        tree, candidate, plan.removals
+    )
     assert receipt.digest_matches
     assert receipt.structure_matches
     assert [entry.source_path for entry in retained] == [(0, 0)]
@@ -219,8 +221,9 @@ def test_apply_and_empty_plan_verification_preserve_all_source_bytes() -> None:
     raw = b"X-Keep: value\r\nContent-Type: text/plain\r\n\r\nbody\r\n"
     tree = parse_raw_mime(raw)
     candidate = Candidate(raw, hashlib.sha256(raw).hexdigest(), ())
-    receipt, retained = mime_verification.verify_candidate(tree, candidate, set())
+    receipt, retained = mime_verification.verify_candidate(tree, candidate, ())
     assert receipt == VerificationReceipt(
+        authorization_matches=True,
         output_parses=True,
         retained_payloads_match=True,
         structure_matches=True,

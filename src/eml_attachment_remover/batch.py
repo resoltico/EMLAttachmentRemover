@@ -199,7 +199,9 @@ def _candidate(item: LedgerItem, expected_identity: FileIdentity) -> None:
     retained_nodes = RemovalIndex.from_roots(roots).retained_nodes(tree.root)
     retained = fingerprint_retained(tree.raw, list(retained_nodes))
     candidate = build_candidate(tree, policy.removals)
-    receipt, independently_recomputed = verify_candidate(tree, candidate, roots)
+    receipt, independently_recomputed = verify_candidate(
+        tree, candidate, policy.removals
+    )
     item.transformation = TransformationPlan(
         policy.removals,
         independently_recomputed,

@@ -220,6 +220,7 @@ class TransformationPlan:
 class VerificationReceipt:
     """Mechanical verification facts, not a claim about visual equivalence."""
 
+    authorization_matches: bool
     output_parses: bool
     retained_payloads_match: bool
     structure_matches: bool
