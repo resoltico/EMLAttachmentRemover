@@ -53,7 +53,8 @@ def test_run_item_marks_ordinary_app_errors_but_continues(
         item, ledger, identities, set(identities.values()), _options()
     )
     assert item.status is ItemStatus.FAILED
-    assert item.error is error
+    assert item.error == error
+    assert item.error is not error
     assert later.status is None
     assert ledger.batch_error is None
 

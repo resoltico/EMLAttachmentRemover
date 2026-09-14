@@ -7,7 +7,7 @@ history of earlier publications.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import IntEnum, StrEnum
 from itertools import starmap
 from typing import Final
@@ -280,8 +280,22 @@ class LedgerItem:
         if self.terminalized or self.status is not None:
             raise RuntimeError(DOUBLE_TERMINAL_ERROR)
         self.status = status
-        self.error = error
+        self.error = None if error is None else self._detached_error(error)
+        if self.source is not None:
+            self.source = replace(self.source, raw=b"")
+        if self.transformation is not None:
+            self.transformation = replace(self.transformation, candidate=b"")
         self.terminalized = True
+
+    @staticmethod
+    def _detached_error(error: AppError) -> AppError:
+        """Copy public error facts without retaining a caught exception traceback.
+
+        Returns:
+            A traceback-free expected-error value suitable for a terminal ledger.
+
+        """
+        return AppError(error.code, error.message, error.mime_path, error.phase)
 
 
 @dataclass(slots=True)
