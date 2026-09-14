@@ -62,12 +62,14 @@ class TaskMutationBoundaryTests(unittest.TestCase):
             )
         storage_update = {
             "COVERAGE_FILE": str(storage.parent / ".mutmut-coverage"),
+            "EML_MUTATION_PYTEST_TEMPORARY_ROOT": str(storage),
             tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE: str(storage),
         }
         common_removals = (
             *tasks.OBSERVABILITY_VARIABLES,
             "COVERAGE_Z",
             "COVERAGE_A",
+            "PYTEST_ADDOPTS",
         )
         self.assertEqual(
             run.call_args_list,
