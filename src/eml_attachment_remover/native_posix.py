@@ -6,9 +6,23 @@ import hashlib
 import os
 import stat
 import sys
-from fcntl import fcntl
 from pathlib import Path
-from typing import Final
+from typing import Final, Never
+
+if sys.platform == "win32":
+    _FCNTL_UNAVAILABLE: Final = "fcntl is unavailable on Windows"
+
+    def fcntl(_descriptor: int, _command: int, _argument: bytes) -> Never:
+        """Reject POSIX-only final-address calls when type-checking on Windows.
+
+        Raises:
+            OSError: Always, because Windows has no POSIX fcntl API.
+
+        """
+        raise OSError(_FCNTL_UNAVAILABLE)
+
+else:
+    from fcntl import fcntl
 
 from .atomic_publish import publish_no_replace, sync_directory
 from .domain import (

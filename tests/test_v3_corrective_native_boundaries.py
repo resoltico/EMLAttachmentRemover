@@ -32,7 +32,9 @@ def test_existing_verify_rejects_a_fifo_before_any_blocking_read(
 ) -> None:
     """A named pipe is occupied but can never be an existing verified output."""
     fifo = tmp_path / "candidate.mime-pruned.eml"
-    os.mkfifo(fifo)
+    mkfifo = getattr(os, "mkfifo", None)
+    assert mkfifo is not None
+    mkfifo(fifo)
     destination = native_posix.bind_destination(os.fspath(fifo), os.fspath(fifo))
 
     with pytest.raises(AppError) as rejected:
