@@ -90,10 +90,9 @@ def test_verifier_rejects_digest_and_source_span_tampering() -> None:
     tree = parse_raw_mime(_mixed())
     policy = classify(tree.root)
     candidate = build_candidate(tree, policy.removals)
-    roots = {removal.path for removal in policy.removals}
     digest_bad = Candidate(candidate.raw, "0" * 64, candidate.stripped_headers)
     with pytest.raises(AppError) as raised:
-        mime_verification.verify_candidate(tree, digest_bad, roots)
+        mime_verification.verify_candidate(tree, digest_bad, policy.removals)
     assert raised.value.code is ExitCode.VERIFICATION_ERROR
     tampered = Candidate(
         candidate.raw + b"tamper",
@@ -101,7 +100,7 @@ def test_verifier_rejects_digest_and_source_span_tampering() -> None:
         candidate.stripped_headers,
     )
     with pytest.raises(AppError):
-        mime_verification.verify_candidate(tree, tampered, roots)
+        mime_verification.verify_candidate(tree, tampered, policy.removals)
 
 
 def test_encoding_budget_and_nested_changed_header_contracts(
@@ -125,9 +124,7 @@ def test_encoding_budget_and_nested_changed_header_contracts(
     policy = classify(nested.root)
     candidate = build_candidate(nested, policy.removals)
     assert b"Content-MD5" not in candidate.raw
-    receipt, _ = mime_verification.verify_candidate(
-        nested, candidate, {removal.path for removal in policy.removals}
-    )
+    receipt, _ = mime_verification.verify_candidate(nested, candidate, policy.removals)
     assert receipt.structure_matches
 
 

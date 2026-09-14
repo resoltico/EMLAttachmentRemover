@@ -8,13 +8,14 @@ from typing import TYPE_CHECKING
 from .domain import (
     AppError,
     ExitCode,
+    Removal,
     RetainedFingerprint,
     VerificationReceipt,
 )
 from .mime_encoding import fingerprint_retained
-from .mime_policy import classify
 from .mime_raw import iter_nodes, parse_raw_mime
 from .mime_removals import RemovalIndex
+from .mime_verifier_policy import authorize_removals
 
 if TYPE_CHECKING:
     from .mime_execution import Candidate
@@ -84,7 +85,7 @@ def _fingerprint_shape(
 def verify_candidate(
     source: RawMimeTree,
     candidate: Candidate,
-    removal_roots: set[tuple[int, ...]],
+    removals: tuple[Removal, ...],
 ) -> tuple[VerificationReceipt, tuple[RetainedFingerprint, ...]]:
     """Reparse and verify a candidate without consuming planner-built evidence.
 
@@ -95,6 +96,8 @@ def verify_candidate(
         AppError: If parsing, policy idempotence, structure, or fidelity proof fails.
 
     """
+    authorize_removals(source, removals)
+    removal_roots = {removal.path for removal in removals}
     output = parse_raw_mime(candidate.raw)
     independently_rebuilt = _expected_raw(source, removal_roots)
     expected_nodes = _kept_nodes(source, removal_roots)
@@ -105,10 +108,15 @@ def verify_candidate(
     structure_matches = candidate.raw == independently_rebuilt and _shape(
         expected_nodes
     ) == _shape(actual_nodes)
-    second = classify(output.root)
-    idempotent = not second.removals
+    try:
+        authorize_removals(output, ())
+    except AppError:
+        idempotent = False
+    else:
+        idempotent = True
     digest_matches = hashlib.sha256(candidate.raw).hexdigest() == candidate.digest
     receipt = VerificationReceipt(
+        authorization_matches=True,
         output_parses=True,
         retained_payloads_match=payloads_match,
         structure_matches=structure_matches,
@@ -116,6 +124,7 @@ def verify_candidate(
         digest_matches=digest_matches,
     )
     if not all((
+        receipt.authorization_matches,
         receipt.retained_payloads_match,
         receipt.structure_matches,
         receipt.policy_is_idempotent,

@@ -28,7 +28,7 @@ def test_verifier_rejects_a_digest_that_does_not_bind_candidate_bytes() -> None:
     tree = parse_raw_mime(raw)
     candidate = Candidate(raw, hashlib.sha256(b"different").hexdigest(), ())
     with pytest.raises(AppError) as rejected:
-        mime_verification.verify_candidate(tree, candidate, set())
+        mime_verification.verify_candidate(tree, candidate, ())
     assert rejected.value == AppError(
         ExitCode.VERIFICATION_ERROR, "candidate MIME verification failed"
     )

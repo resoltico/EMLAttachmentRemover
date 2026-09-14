@@ -176,6 +176,7 @@ def _verification(item: LedgerItem) -> dict[str, bool] | None:
     if receipt is None:
         return None
     return {
+        "authorization_matches": receipt.authorization_matches,
         "output_parses": receipt.output_parses,
         "retained_payloads_match": receipt.retained_payloads_match,
         "structure_matches": receipt.structure_matches,

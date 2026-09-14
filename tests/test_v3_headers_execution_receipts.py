@@ -110,14 +110,15 @@ def test_execution_and_verifier_delete_the_same_authorized_wire_spans() -> None:
         )
         == expected
     )
-    receipt, retained = verify_candidate(tree, candidate, roots)
+    receipt, retained = verify_candidate(tree, candidate, plan.removals)
     assert (
+        receipt.authorization_matches,
         receipt.output_parses,
         receipt.retained_payloads_match,
         receipt.structure_matches,
         receipt.policy_is_idempotent,
         receipt.digest_matches,
-    ) == (True, True, True, True, True)
+    ) == (True, True, True, True, True, True)
     assert [(entry.source_path, entry.content_type) for entry in retained] == [
         ((0,), "text/plain")
     ]
