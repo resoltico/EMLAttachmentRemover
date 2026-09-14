@@ -69,6 +69,7 @@ def test_manifest_loader_rejects_absent_or_invalid_public_shapes(
         {"one": "one"},
         {"one": []},
         {"one": [""]},
+        ["not-a-family-mapping"],
     ],
 )
 def test_manifest_loader_rejects_invalid_family_entries(
@@ -122,6 +123,22 @@ def test_gate_reports_each_family_without_a_generated_case(tmp_path: Path) -> No
     with pytest.raises(gate.PropertyObservationError) as rejected:
         gate.check(manifest, observed)
     assert str(rejected.value) == "v3 property families lack observations: policy"
+
+
+def test_gate_joins_multiple_missing_families_with_the_public_separator(
+    tmp_path: Path,
+) -> None:
+    """Every missing property family is visible in one stable diagnostic."""
+    manifest = _manifest(
+        tmp_path / "families.json",
+        {"wire": ["wire-id"], "policy": ["policy-id"], "ledger": ["ledger-id"]},
+    )
+    observed = _observations(tmp_path / "observed", [_record("wire-id")])
+    with pytest.raises(gate.PropertyObservationError) as rejected:
+        gate.check(manifest, observed)
+    assert (
+        str(rejected.value) == "v3 property families lack observations: policy, ledger"
+    )
 
 
 def test_main_reports_success_and_failure_from_configured_paths(

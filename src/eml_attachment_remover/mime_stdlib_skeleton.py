@@ -53,18 +53,8 @@ def _opaque_payload_edits(root: RawNode) -> list[tuple[int, int]]:
     pending = [root]
     while pending:
         parent = pending.pop()
-        opaque_index = (
-            _related_root_index(parent)
-            if parent.media_type == "multipart/related"
-            else -1
-        )
         for index, child in enumerate(parent.children):
-            expected = (
-                index != opaque_index
-                if parent.media_type == "multipart/related"
-                else child.disposition is not None
-                and child.disposition.token == _ATTACHMENT_DISPOSITION
-            )
+            expected = _is_opaque_child(parent, index, child)
             if child.opaque != expected:
                 raise AppError(
                     ExitCode.PARSE_ERROR, "opaque raw-index ownership mismatch"
@@ -74,6 +64,20 @@ def _opaque_payload_edits(root: RawNode) -> list[tuple[int, int]]:
             else:
                 pending.append(child)
     return sorted(edits)
+
+
+def _is_opaque_child(parent: RawNode, index: int, child: RawNode) -> bool:
+    """Return whether direct source policy independently makes a child opaque.
+
+    Returns:
+        Whether the child belongs to an independently derived opaque role.
+
+    """
+    if parent.media_type == "multipart/related":
+        return index != _related_root_index(parent)
+    return child.disposition is not None and (
+        child.disposition.token == _ATTACHMENT_DISPOSITION
+    )
 
 
 def _related_root_index(parent: RawNode) -> int:

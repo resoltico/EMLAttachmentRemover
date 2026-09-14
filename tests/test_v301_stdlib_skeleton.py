@@ -141,3 +141,19 @@ def test_skeleton_preserves_related_identifier_error_contexts() -> None:
     assert content_identifier.value == AppError(
         ExitCode.PARSE_ERROR, "malformed Content-ID"
     )
+
+
+def test_skeleton_rejects_invalid_edit_order_before_replacing_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Independent skeleton edits cannot overlap or run backward."""
+    tree = parse_raw_mime(_mixed())
+    monkeypatch.setattr(
+        "eml_attachment_remover.mime_stdlib_skeleton._opaque_payload_edits",
+        lambda _root: [(2, 1)],
+    )
+    with pytest.raises(AppError) as rejected:
+        build_skeleton(b"abc", tree.root)
+    assert rejected.value == AppError(
+        ExitCode.PARSE_ERROR, "invalid opaque skeleton span"
+    )
