@@ -9,7 +9,7 @@ import pytest
 from eml_attachment_remover.domain import AppError, ExitCode, Removal, RemovalReason
 from eml_attachment_remover.mime_execution import Candidate, build_candidate
 from eml_attachment_remover.mime_headers import Header
-from eml_attachment_remover.mime_raw import RawMimeTree, parse_raw_mime
+from eml_attachment_remover.mime_raw import RawMimeTree, RawNode, parse_raw_mime
 from eml_attachment_remover.mime_validation import ContentSpec
 from eml_attachment_remover.mime_verification import verify_candidate
 from eml_attachment_remover.mime_verifier_policy import authorize_removals
@@ -287,4 +287,39 @@ def test_source_oracle_keeps_filename_and_identifier_fields_distinct() -> None:
         authorize_removals(malformed_identifier, (_related_claim(),))
     assert identifier_error.value == AppError(
         ExitCode.PARSE_ERROR, "malformed Content-ID"
+    )
+
+
+def test_source_oracle_rejects_nested_related_start_and_accepts_casefolded_type() -> (
+    None
+):
+    """Related start chooses direct children; type comparison is ASCII-folded."""
+    nested_start = _related()
+    nested = RawNode(
+        (0, 0),
+        0,
+        0,
+        0,
+        (Header(b"content-id", b"<nested@x>", 0, 0),),
+        ContentSpec("text/plain", {}),
+        None,
+        "7bit",
+    )
+    nested_start.root.children[0].children.append(nested)
+    nested_start.root.content_type.parameters[b"start"] = b"<nested@x>"
+    with pytest.raises(AppError) as non_direct:
+        authorize_removals(nested_start, (_related_claim(),))
+    assert non_direct.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "related start has no direct root"
+    )
+
+    folded_type = _related()
+    folded_type.root.content_type.parameters[b"type"] = b"TEXT/PLAIN"
+    authorize_removals(folded_type, (_related_claim(),))
+    malformed_info = _related()
+    malformed_info.root.content_type.parameters[b"start-info"] = b"<broken"
+    with pytest.raises(AppError) as malformed:
+        authorize_removals(malformed_info, (_related_claim(),))
+    assert malformed.value == AppError(
+        ExitCode.PARSE_ERROR, "malformed related start-info"
     )
