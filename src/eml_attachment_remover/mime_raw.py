@@ -9,6 +9,7 @@ from .domain import AppError, ExitCode, MimePath
 from .mime_headers import Header, is_header_name, line_end, parse_headers
 from .mime_identifiers import parse_message_identifier
 from .mime_stdlib_check import StdlibValidationWork, parse_stdlib, validate_stdlib_tree
+from .mime_stdlib_skeleton import build_skeleton
 from .mime_validation import ContentSpec, content_specs
 
 MAX_NODES: Final = 20_000
@@ -403,7 +404,7 @@ def parse_raw_mime(raw: bytes) -> RawMimeTree:
     root = _parse_node(raw, 0, len(raw), (), [0, 0])
     nodes = iter_nodes(root)
     by_path = {node.path: node for node in nodes}
-    stdlib = parse_stdlib(raw)
+    stdlib = parse_stdlib(build_skeleton(raw, root))
     stdlib_work = validate_stdlib_tree(stdlib, by_path)
     return RawMimeTree(raw, root, nodes, by_path, stdlib_work)
 
