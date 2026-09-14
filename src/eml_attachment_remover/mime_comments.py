@@ -62,8 +62,9 @@ def _copy_quoted(value: bytes, position: int, result: bytearray) -> int:
 
     """
     result.append(DOUBLE_QUOTE)
-    positions = iter(enumerate(memoryview(value)[position + 1 :], position + 1))
-    for cursor, byte in positions:
+    positions = iter(enumerate(memoryview(value)[position + 1 :]))
+    for offset, byte in positions:
+        cursor = position + 1 + offset
         if byte == BACKSLASH:
             escaped_position = next(positions, None)
             if escaped_position is None:
