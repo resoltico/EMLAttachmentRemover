@@ -246,10 +246,14 @@ class TaskCommandContractTests(unittest.TestCase):
                 report_destination=build / "test-results-project-thorough.xml",
             ),
         )
-        self.assertEqual(run.call_args.kwargs["profile"], "project-thorough")
-        self.assertEqual(run.call_args.kwargs["timeout_seconds"], 23)
+        self.assertEqual(run.call_args_list[0].kwargs["profile"], "project-thorough")
+        self.assertEqual(run.call_args_list[0].kwargs["timeout_seconds"], 23)
         self.assertEqual(
-            run.call_args.kwargs["environment_updates"],
+            run.call_args_list[1],
+            call((sys.executable, "tools/check_v301_property_observations.py")),
+        )
+        self.assertEqual(
+            run.call_args_list[0].kwargs["environment_updates"],
             {
                 "HYPOTHESIS_EXPERIMENTAL_OBSERVABILITY": "1",
                 tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE: str(storage),
