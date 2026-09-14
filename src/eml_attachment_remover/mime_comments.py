@@ -112,7 +112,7 @@ def _remove_comment(
     end = _comment_end(value, position)
     if not _after_comment_boundary(value, end):
         raise AppError(ExitCode.PARSE_ERROR, "comment occurs inside MIME token")
-    if not result or bytes(result[-1:]) not in _CFWS_BYTES:
+    if not result or not result.endswith(tuple(_CFWS_BYTES)):
         result.append(SPACE)
     return end
 

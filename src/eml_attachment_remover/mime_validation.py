@@ -47,6 +47,8 @@ RFC2231_ATTR_PUNCTUATION: Final = frozenset({
 })
 _ESCAPE_CLEAR: Final = 0
 _ESCAPE_PENDING: Final = 1
+_QUOTE_CLOSED: Final = 0
+_QUOTE_OPEN: Final = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,19 +69,19 @@ def _split_semicolons(value: bytes, *, comments_allowed: bool) -> list[bytes]:
     pieces: list[bytes] = []
     value = without_comments(value, allowed=comments_allowed)
     current = bytearray()
-    quoted = 0
-    escaped = 0
+    quoted = _QUOTE_CLOSED
+    escaped = _ESCAPE_CLEAR
     for byte in value:
-        if quoted == 1 and escaped == _ESCAPE_PENDING:
+        if quoted == _QUOTE_OPEN and escaped == _ESCAPE_PENDING:
             escaped = _ESCAPE_CLEAR
             current.append(byte)
-        elif quoted == 1 and byte == BACKSLASH:
+        elif quoted == _QUOTE_OPEN and byte == BACKSLASH:
             escaped = _ESCAPE_PENDING
             current.append(byte)
         elif byte == DOUBLE_QUOTE:
             current.append(byte)
-            quoted = 1 - quoted
-        elif byte == SEMICOLON and quoted == 0:
+            quoted = _QUOTE_OPEN if quoted == _QUOTE_CLOSED else _QUOTE_CLOSED
+        elif byte == SEMICOLON and quoted == _QUOTE_CLOSED:
             pieces.append(bytes(current).strip())
             current.clear()
         else:
