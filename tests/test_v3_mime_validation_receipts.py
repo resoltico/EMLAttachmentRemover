@@ -56,6 +56,24 @@ def test_parameter_name_identifies_plain_extended_and_continued_forms() -> None:
     assert mime_validation._parameter_name(b"Name*") == (b"Name", None, True)  # ruff: ignore[private-member-access] - direct extended-name receipt.
     assert mime_validation._parameter_name(b"Name*19") == (b"Name", 19, False)  # ruff: ignore[private-member-access] - direct continuation-name receipt.
     assert mime_validation._parameter_name(b"Name*19*") == (b"Name", 19, True)  # ruff: ignore[private-member-access] - direct extended-continuation receipt.
+    assert mime_validation._parameter_name(b"Name*123") == (b"Name", 123, False)  # ruff: ignore[private-member-access] - three-digit continuation boundary.
+    with pytest.raises(AppError) as limited:
+        mime_validation._parameter_name(b"Name*512")  # ruff: ignore[private-member-access] - continuation count boundary.
+    assert limited.value == AppError(
+        ExitCode.PARSE_ERROR, "MIME parameter continuation index exceeds limit"
+    )
+
+
+def test_structured_defaults_forbid_comments_and_close_empty_quoted_states() -> None:
+    """Only explicit RFC 2045 fields may opt into comments or quoted escapes."""
+    with pytest.raises(AppError) as comments:
+        mime_validation._split_semicolons(b"text/plain (comment)")  # ruff: ignore[private-member-access] - default structured-field grammar.
+    assert comments.value == AppError(
+        ExitCode.PARSE_ERROR, "MIME comments are not permitted"
+    )
+    assert mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - escaped-state default starts false.
+        b'""; next'
+    ) == [b'""', b"next"]
 
 
 @pytest.mark.parametrize(
