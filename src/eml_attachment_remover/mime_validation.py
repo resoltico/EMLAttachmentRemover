@@ -55,7 +55,7 @@ class ContentSpec:
     parameters: dict[bytes, bytes]
 
 
-def _split_semicolons(value: bytes, *, comments_allowed: bool = False) -> list[bytes]:
+def _split_semicolons(value: bytes, *, comments_allowed: bool) -> list[bytes]:
     """Split a MIME structured field while respecting quoted strings.
 
     Returns:
@@ -65,19 +65,19 @@ def _split_semicolons(value: bytes, *, comments_allowed: bool = False) -> list[b
     pieces: list[bytes] = []
     value = without_comments(value, allowed=comments_allowed)
     current = bytearray()
-    quoted = False
-    escaped = False
+    quoted = 0
+    escaped = 0
     for byte in value:
-        if quoted and escaped:
-            escaped = False
+        if quoted == 1 and escaped == 1:
+            escaped = 0
             current.append(byte)
-        elif quoted and byte == BACKSLASH:
-            escaped = True
+        elif quoted == 1 and byte == BACKSLASH:
+            escaped = 1
             current.append(byte)
         elif byte == DOUBLE_QUOTE:
             current.append(byte)
-            quoted = not quoted
-        elif byte == SEMICOLON and not quoted:
+            quoted = 1 - quoted
+        elif byte == SEMICOLON and quoted == 0:
             pieces.append(bytes(current).strip())
             current.clear()
         else:
@@ -215,7 +215,7 @@ def _structured(
     value: bytes,
     token_validator: Callable[[bytes], bytes],
     *,
-    comments_allowed: bool = False,
+    comments_allowed: bool,
 ) -> ContentSpec:
     """Parse a closed token-and-parameter MIME field.
 

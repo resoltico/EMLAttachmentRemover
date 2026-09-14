@@ -69,12 +69,14 @@ def test_parameter_name_identifies_plain_extended_and_continued_forms() -> None:
 def test_structured_defaults_forbid_comments_and_close_empty_quoted_states() -> None:
     """Only explicit RFC 2045 fields may opt into comments or quoted escapes."""
     with pytest.raises(AppError) as comments:
-        mime_validation._split_semicolons(b"text/plain (comment)")  # ruff: ignore[private-member-access] - default structured-field grammar.
+        mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - explicit strict structured-field grammar.
+            b"text/plain (comment)", comments_allowed=False
+        )
     assert comments.value == AppError(
         ExitCode.PARSE_ERROR, "MIME comments are not permitted"
     )
     assert mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - escaped-state default starts false.
-        b'""; next'
+        b'""; next', comments_allowed=False
     ) == [b'""', b"next"]
 
 
@@ -84,8 +86,14 @@ def test_structured_comment_policy_defaults_and_disposition_forwarding_are_exact
     """Comment grammar requires explicit opt-in and stays forbidden for disposition."""
     splitter = mime_validation._split_semicolons  # ruff: ignore[private-member-access] - parser default is a safety contract.
     parser = mime_validation._structured  # ruff: ignore[private-member-access] - parser default is a safety contract.
-    assert inspect.signature(splitter).parameters["comments_allowed"].default is False
-    assert inspect.signature(parser).parameters["comments_allowed"].default is False
+    assert (
+        inspect.signature(splitter).parameters["comments_allowed"].default
+        is inspect.Parameter.empty
+    )
+    assert (
+        inspect.signature(parser).parameters["comments_allowed"].default
+        is inspect.Parameter.empty
+    )
     forwarded: list[bool] = []
 
     def structured(
@@ -282,13 +290,13 @@ def test_structured_field_and_content_specs_return_complete_raw_receipts() -> No
     )
     disposition_value = b'Attachment; filename="quarterly; report.eml"; size=42'
     assert mime_validation._structured(  # ruff: ignore[private-member-access] - complete media structured-field receipt.
-        type_value, media_token
+        type_value, media_token, comments_allowed=False
     ) == ContentSpec(
         "application/json",
         {b"charset": b"US-ASCII", b"name": b"utf-8'en'mail%20copy"},
     )
     assert mime_validation._structured(  # ruff: ignore[private-member-access] - complete disposition structured-field receipt.
-        disposition_value, structured_token
+        disposition_value, structured_token, comments_allowed=False
     ) == ContentSpec(
         "attachment",
         {b"filename": b"quarterly; report.eml", b"size": b"42"},

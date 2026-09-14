@@ -59,12 +59,12 @@ def test_rfc2231_payload_uses_the_first_two_apostrophes_as_its_prefix_boundary()
 def test_semicolon_scanner_preserves_escaped_quote_termination() -> None:
     """Only unquoted semicolons split fields; terminal quote states are closed."""
     assert mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - exact structured-field scanner receipt.
-        b'attachment; filename="semi;quote\\"kept"; size=7'
+        b'attachment; filename="semi;quote\\"kept"; size=7', comments_allowed=False
     ) == [b"attachment", b'filename="semi;quote\\"kept"', b"size=7"]
     for wire_value in (b'filename="unterminated', b'filename="unfinished\\'):
         with pytest.raises(AppError) as rejected:
             mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - exact unterminated scanner receipt.
-                wire_value
+                wire_value, comments_allowed=False
             )
         assert rejected.value == AppError(
             ExitCode.PARSE_ERROR, "unterminated MIME quoted parameter"

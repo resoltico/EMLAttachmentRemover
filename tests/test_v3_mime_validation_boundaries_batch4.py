@@ -37,13 +37,13 @@ def test_extended_payload_rejects_each_gap_outside_the_language_alphabet(
 def test_semicolon_splitter_tracks_quote_and_escape_positions_independently() -> None:
     """A quoted pair preserves its following quote and protects internal semicolons."""
     assert mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - independent quote/escape positions.
-        b'first; name="one\\\\;two"; last'
+        b'first; name="one\\\\;two"; last', comments_allowed=False
     ) == [b"first", b'name="one\\\\;two"', b"last"]
     unfinished = b'first; name="unfinished' + bytes((92,))
     for invalid in (b'first; name="unfinished', unfinished):
         with pytest.raises(AppError) as raised:
             mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - terminal parser-state receipt.
-                invalid
+                invalid, comments_allowed=False
             )
         assert raised.value == AppError(
             ExitCode.PARSE_ERROR, "unterminated MIME quoted parameter"

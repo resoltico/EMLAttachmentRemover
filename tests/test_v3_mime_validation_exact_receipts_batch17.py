@@ -61,5 +61,5 @@ def test_structured_token_ignores_media_separators_but_requires_token_octets() -
 def test_semicolon_scanner_honors_a_delimiter_at_the_first_wire_octet() -> None:
     """An initial separator is an empty first field, not escaped ordinary data."""
     assert mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - initial-delimiter scanner receipt.
-        b"; tail"
+        b"; tail", comments_allowed=False
     ) == [b"", b"tail"]
