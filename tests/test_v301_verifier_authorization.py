@@ -137,21 +137,30 @@ def test_source_oracle_covers_alternative_and_related_contexts() -> None:
     related = _related()
     authorize_removals(related, (_related_claim(),))
     related.root.content_type.parameters[b"type"] = b"text/html"
-    with pytest.raises(AppError, match="related type does not match root"):
+    with pytest.raises(AppError) as mismatched_type:
         authorize_removals(related, (_related_claim(),))
+    assert mismatched_type.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "related type does not match root"
+    )
 
 
 def test_source_oracle_rejects_each_related_selection_and_context_failure() -> None:
     """Related controls cannot swap roots, hide duplicate IDs, or remove the root."""
     no_children = _related()
     no_children.root.children.clear()
-    with pytest.raises(AppError, match="empty multipart/related"):
+    with pytest.raises(AppError) as empty:
         authorize_removals(no_children, ())
+    assert empty.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "empty multipart/related"
+    )
 
     missing_start = _related()
     missing_start.root.content_type.parameters[b"start"] = b"<missing@x>"
-    with pytest.raises(AppError, match="related start has no direct root"):
+    with pytest.raises(AppError) as missing:
         authorize_removals(missing_start, (_related_claim(),))
+    assert missing.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "related start has no direct root"
+    )
 
     literal_start_info = _related()
     literal_start_info.root.content_type.parameters[b"start-info"] = b"literal"
@@ -159,8 +168,12 @@ def test_source_oracle_rejects_each_related_selection_and_context_failure() -> N
 
     removed_start_info = _related()
     removed_start_info.root.content_type.parameters[b"start-info"] = b"<resource@x>"
-    with pytest.raises(AppError, match="related start-info does not target"):
+    with pytest.raises(AppError) as removed:
         authorize_removals(removed_start_info, (_related_claim(),))
+    assert removed.value == AppError(
+        ExitCode.VERIFICATION_ERROR,
+        "related start-info does not target a retained component",
+    )
 
 
 def test_source_oracle_rejects_empty_and_attachment_compound_roles() -> None:
@@ -170,41 +183,59 @@ def test_source_oracle_rejects_empty_and_attachment_compound_roles() -> None:
         b"--m\r\nContent-Type: application/octet-stream\r\n"
         b"Content-Disposition: attachment\r\n\r\nremoved\r\n--m--\r\n"
     )
-    with pytest.raises(AppError, match="no supported body remains"):
+    with pytest.raises(AppError) as only_attachment_error:
         authorize_removals(only_attachment, (_attachment_claim(),))
+    assert only_attachment_error.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "no supported body remains"
+    )
 
     alternative = parse_raw_mime(
         b"Content-Type: multipart/alternative; boundary=a\r\n\r\n"
         b"--a\r\nContent-Type: text/plain\r\n\r\nbody\r\n--a--\r\n"
     )
     alternative.root.disposition = ContentSpec("attachment", {})
-    with pytest.raises(AppError, match="attachment alternative role conflict"):
+    with pytest.raises(AppError) as alternative_attachment_error:
         authorize_removals(alternative, ())
+    assert alternative_attachment_error.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "attachment alternative role conflict"
+    )
 
     empty_alternative = parse_raw_mime(
         b"Content-Type: multipart/alternative; boundary=a\r\n\r\n"
         b"--a\r\nContent-Type: text/plain\r\n\r\nbody\r\n--a--\r\n"
     )
     empty_alternative.root.children.clear()
-    with pytest.raises(AppError, match="empty multipart/alternative"):
+    with pytest.raises(AppError) as empty_alternative_error:
         authorize_removals(empty_alternative, ())
+    assert empty_alternative_error.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "empty multipart/alternative"
+    )
 
     unsupported_alternative = parse_raw_mime(
         b"Content-Type: multipart/alternative; boundary=a\r\n\r\n"
         b"--a\r\nContent-Type: application/json\r\n\r\n{}\r\n--a--\r\n"
     )
-    with pytest.raises(AppError, match="unsupported multipart/alternative branch"):
+    with pytest.raises(AppError) as unsupported_alternative_error:
         authorize_removals(unsupported_alternative, ())
+    assert unsupported_alternative_error.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "unsupported multipart/alternative branch"
+    )
 
     mixed_attachment = _mixed()
     mixed_attachment.root.disposition = ContentSpec("attachment", {})
-    with pytest.raises(AppError, match="attachment mixed role conflict"):
+    with pytest.raises(AppError) as mixed_attachment_error:
         authorize_removals(mixed_attachment, ())
+    assert mixed_attachment_error.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "attachment mixed role conflict"
+    )
 
     related_attachment = _related()
     related_attachment.root.disposition = ContentSpec("attachment", {})
-    with pytest.raises(AppError, match="attachment related role conflict"):
+    with pytest.raises(AppError) as related_attachment_error:
         authorize_removals(related_attachment, ())
+    assert related_attachment_error.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "attachment related role conflict"
+    )
 
 
 def test_source_oracle_rejects_duplicate_related_identifiers() -> None:
@@ -215,5 +246,45 @@ def test_source_oracle_rejects_duplicate_related_identifiers() -> None:
         Header(b"content-type", b"image/png", 0, 0),
         Header(b"content-id", b"<root@x>", 0, 0),
     )
-    with pytest.raises(AppError, match="duplicate canonical Content-ID"):
+    with pytest.raises(AppError) as rejected:
         authorize_removals(duplicate, (_related_claim(),))
+    assert rejected.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "duplicate canonical Content-ID"
+    )
+
+
+def test_source_oracle_keeps_filename_and_identifier_fields_distinct() -> None:
+    """Name/filename and Content-ID/start labels have independent exact contracts."""
+    inline_filename = parse_raw_mime(
+        b"Content-Type: text/plain\r\n"
+        b"Content-Disposition: inline; filename=body.txt\r\n\r\nbody"
+    )
+    authorize_removals(inline_filename, ())
+    filename_only = parse_raw_mime(
+        b"Content-Type: text/plain\r\n"
+        b"Content-Disposition: attachment; filename=body.txt\r\n\r\nbody"
+    )
+    with pytest.raises(AppError) as filename_error:
+        authorize_removals(filename_only, ())
+    assert filename_error.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "filename-only body role is ambiguous"
+    )
+
+    malformed_start = _related()
+    malformed_start.root.content_type.parameters[b"start"] = b"<broken"
+    with pytest.raises(AppError) as start_error:
+        authorize_removals(malformed_start, (_related_claim(),))
+    assert start_error.value == AppError(
+        ExitCode.PARSE_ERROR, "malformed multipart/related start"
+    )
+
+    malformed_identifier = _related()
+    malformed_identifier.root.content_type.parameters[b"start"] = b"<root@x>"
+    malformed_identifier.root.children[0].headers = (
+        Header(b"content-id", b"<broken", 0, 0),
+    )
+    with pytest.raises(AppError) as identifier_error:
+        authorize_removals(malformed_identifier, (_related_claim(),))
+    assert identifier_error.value == AppError(
+        ExitCode.PARSE_ERROR, "malformed Content-ID"
+    )
