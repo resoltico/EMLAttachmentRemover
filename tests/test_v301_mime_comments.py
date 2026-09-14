@@ -132,6 +132,11 @@ def test_quoted_and_folded_comment_scans_are_bounded_and_exact() -> None:
     with pytest.raises(AppError) as escaped:
         mime_comments._escaped_comment_cursor(b"\\", 0)  # ruff: ignore[private-member-access] - terminal quoted-pair fault.
     assert escaped.value == AppError(ExitCode.PARSE_ERROR, "unterminated MIME comment")
+    with pytest.raises(AppError) as nonadvancing:
+        mime_comments._advanced_quoted_cursor(2, 2)  # ruff: ignore[private-member-access] - quoted completion must advance.
+    assert nonadvancing.value == AppError(
+        ExitCode.PARSE_ERROR, "nonadvancing MIME quoted cursor"
+    )
 
 
 def test_comment_replacement_uses_the_actual_preceding_cfws_byte() -> None:

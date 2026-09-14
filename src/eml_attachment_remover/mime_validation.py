@@ -45,6 +45,8 @@ RFC2231_ATTR_PUNCTUATION: Final = frozenset({
     124,
     126,
 })
+_ESCAPE_CLEAR: Final = 0
+_ESCAPE_PENDING: Final = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,11 +70,11 @@ def _split_semicolons(value: bytes, *, comments_allowed: bool) -> list[bytes]:
     quoted = 0
     escaped = 0
     for byte in value:
-        if quoted == 1 and escaped == 1:
-            escaped = 0
+        if quoted == 1 and escaped == _ESCAPE_PENDING:
+            escaped = _ESCAPE_CLEAR
             current.append(byte)
         elif quoted == 1 and byte == BACKSLASH:
-            escaped = 1
+            escaped = _ESCAPE_PENDING
             current.append(byte)
         elif byte == DOUBLE_QUOTE:
             current.append(byte)
