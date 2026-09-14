@@ -76,14 +76,13 @@ def _bind_parent(state: _PublicationState) -> None:
     state.parent = open_bound_destination(state.destination)
 
 
-def _create_stage(  # ruff: ignore[complex-structure] - immediate ownership preserves cleanup.
+def _create_stage(
     state: _PublicationState,
 ) -> None:
     """Create an exclusive stage and transfer cleanup ownership before returning.
 
     Raises:
         AppError: If every bounded unpredictable staging-name attempt collides.
-        _combined: If object construction and its immediate cleanup both fail.
 
     """
     parent = state.parent
@@ -97,7 +96,7 @@ def _create_stage(  # ruff: ignore[complex-structure] - immediate ownership pres
             continue
         try:
             state.stage = _Stage(descriptor, name)
-        except BaseException as primary:
+        except BaseException as primary:  # ruff: ignore[blind-except] - preserve cancellation during ownership transfer.
             cleanup_errors = [primary]
             try:
                 discard_private_stage(parent, descriptor, name)
@@ -108,11 +107,23 @@ def _create_stage(  # ruff: ignore[complex-structure] - immediate ownership pres
             close_problem = _close_descriptor(descriptor)
             if close_problem is not None:
                 cleanup_errors.append(close_problem)
-            if len(cleanup_errors) == 1:
-                raise
-            raise _combined(cleanup_errors) from primary
+            _raise_stage_construction_failures(cleanup_errors, primary)
         return
     raise AppError(ExitCode.WRITE_ERROR, "could not allocate a private staging name")
+
+
+def _raise_stage_construction_failures(
+    errors: list[BaseException], primary: BaseException
+) -> None:
+    """Raise a sole construction failure directly or preserve every extra failure.
+
+    Raises:
+        _combined: If construction and cleanup fail independently.
+
+    """
+    if errors == [primary]:
+        raise primary
+    raise _combined(errors) from primary
 
 
 def _read_all(descriptor: int) -> bytes:

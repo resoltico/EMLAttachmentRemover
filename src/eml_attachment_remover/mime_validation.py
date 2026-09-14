@@ -13,6 +13,13 @@ from .domain import AppError, ExitCode
 from .mime_comments import without_comments
 from .mime_headers import TOKEN_RE, Header
 from .mime_identifiers import parse_message_identifier
+from .mime_quote_state import (
+    ESCAPE_CLEAR,
+    ESCAPE_PENDING,
+    QUOTE_CLOSED,
+    QUOTE_OPEN,
+    validated_escape_state,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -45,10 +52,6 @@ RFC2231_ATTR_PUNCTUATION: Final = frozenset({
     124,
     126,
 })
-_ESCAPE_CLEAR: Final = 0
-_ESCAPE_PENDING: Final = 1
-_QUOTE_CLOSED: Final = 0
-_QUOTE_OPEN: Final = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,19 +72,20 @@ def _split_semicolons(value: bytes, *, comments_allowed: bool) -> list[bytes]:
     pieces: list[bytes] = []
     value = without_comments(value, allowed=comments_allowed)
     current = bytearray()
-    quoted = _QUOTE_CLOSED
-    escaped = _ESCAPE_CLEAR
+    quoted = QUOTE_CLOSED
+    escaped = ESCAPE_CLEAR
     for byte in value:
-        if quoted == _QUOTE_OPEN and escaped == _ESCAPE_PENDING:
-            escaped = _ESCAPE_CLEAR
+        escaped = validated_escape_state(escaped)
+        if quoted == QUOTE_OPEN and escaped == ESCAPE_PENDING:
+            escaped = ESCAPE_CLEAR
             current.append(byte)
-        elif quoted == _QUOTE_OPEN and byte == BACKSLASH:
-            escaped = _ESCAPE_PENDING
+        elif quoted == QUOTE_OPEN and byte == BACKSLASH:
+            escaped = ESCAPE_PENDING
             current.append(byte)
         elif byte == DOUBLE_QUOTE:
             current.append(byte)
-            quoted = _QUOTE_OPEN if quoted == _QUOTE_CLOSED else _QUOTE_CLOSED
-        elif byte == SEMICOLON and quoted == _QUOTE_CLOSED:
+            quoted = QUOTE_OPEN if quoted == QUOTE_CLOSED else QUOTE_CLOSED
+        elif byte == SEMICOLON and quoted == QUOTE_CLOSED:
             pieces.append(bytes(current).strip())
             current.clear()
         else:

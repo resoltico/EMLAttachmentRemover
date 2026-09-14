@@ -6,7 +6,7 @@ import inspect
 
 import pytest
 
-from eml_attachment_remover import mime_validation
+from eml_attachment_remover import mime_quote_state, mime_validation
 from eml_attachment_remover.domain import AppError, ExitCode
 from eml_attachment_remover.mime_headers import Header
 from eml_attachment_remover.mime_validation import ContentSpec
@@ -78,6 +78,11 @@ def test_structured_defaults_forbid_comments_and_close_empty_quoted_states() -> 
     assert mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - escaped-state default starts false.
         b'""; next', comments_allowed=False
     ) == [b'""', b"next"]
+    with pytest.raises(AppError) as invalid_escape:
+        mime_quote_state.validated_escape_state(None)
+    assert invalid_escape.value == AppError(
+        ExitCode.PARSE_ERROR, "invalid MIME quoted escape state"
+    )
 
 
 def test_structured_comment_policy_defaults_and_disposition_forwarding_are_exact(
