@@ -87,7 +87,8 @@ def test_paths0_emits_only_exact_accepted_destination_bytes(
     source.write_bytes(b"Content-Type: text/plain\r\n\r\nbody\r\n")
     assert main(["--output-format=paths0", str(source)]) == 0
     output, _errors = capfd.readouterr()
-    expected = os.fsencode(str(source.with_suffix(".mime-pruned.eml"))) + b"\0"
+    destination = str(source.with_suffix(".mime-pruned.eml"))
+    expected = os.fsencode(("\\\\?\\" if os.name == "nt" else "") + destination) + b"\0"
     assert output.encode() == expected
 
 
