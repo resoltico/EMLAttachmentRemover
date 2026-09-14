@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import cast
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from tools import hypothesis_publication
 
@@ -346,6 +346,21 @@ class HypothesisPublicationAtomicityTests(unittest.TestCase):
                     ValueError("promotion failed"),
                 )
         self.assertEqual(replace.call_count, 0)
+
+    def test_restore_replaces_an_absent_destination_from_the_prior_entry(self) -> None:
+        """A failed promotion restores the prior public observations exactly once."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            previous = root / hypothesis_publication.PREVIOUS_OBSERVATIONS_NAME
+            destination = root / hypothesis_publication.OBSERVATION_DIRECTORY
+            previous.mkdir()
+            with patch.object(Path, "replace", autospec=True) as replace:
+                hypothesis_publication._restore_previous(  # ruff: ignore[private-member-access] - promotion-recovery contract.
+                    previous,
+                    destination,
+                    ValueError("promotion failed"),
+                )
+        self.assertEqual(replace.call_args_list, [call(previous, destination)])
 
     def test_staging_copy_and_cleanup_failures_preserve_both_causes(self) -> None:
         cases: tuple[tuple[BaseException, type[BaseExceptionGroup]], ...] = (
