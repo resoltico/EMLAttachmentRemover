@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from eml_attachment_remover import mime_validation
@@ -74,6 +76,33 @@ def test_structured_defaults_forbid_comments_and_close_empty_quoted_states() -> 
     assert mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - escaped-state default starts false.
         b'""; next'
     ) == [b'""', b"next"]
+
+
+def test_structured_comment_policy_defaults_and_disposition_forwarding_are_exact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Comment grammar requires explicit opt-in and stays forbidden for disposition."""
+    splitter = mime_validation._split_semicolons  # ruff: ignore[private-member-access] - parser default is a safety contract.
+    parser = mime_validation._structured  # ruff: ignore[private-member-access] - parser default is a safety contract.
+    assert inspect.signature(splitter).parameters["comments_allowed"].default is False
+    assert inspect.signature(parser).parameters["comments_allowed"].default is False
+    forwarded: list[bool] = []
+
+    def structured(
+        value: bytes,
+        validator: object,
+        *,
+        comments_allowed: bool = False,
+    ) -> ContentSpec:
+        del value, validator
+        forwarded.append(comments_allowed)
+        return ContentSpec("attachment", {})
+
+    monkeypatch.setattr(mime_validation, "_structured", structured)
+    mime_validation.content_specs((
+        Header(b"content-disposition", b"attachment", 0, 1),
+    ))
+    assert forwarded == [False]
 
 
 @pytest.mark.parametrize(
