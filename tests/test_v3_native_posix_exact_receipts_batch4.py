@@ -214,14 +214,21 @@ def test_posix_nofollow_open_preserves_nonzero_native_flag_value(
 
     monkeypatch.setattr(native_posix.__dict__["os"], "O_RDONLY", 0x40)
     monkeypatch.setattr(native_posix.__dict__["os"], "O_NOFOLLOW", 0x800, raising=False)
+    monkeypatch.setattr(native_posix.__dict__["os"], "O_NONBLOCK", 0x400, raising=False)
+    monkeypatch.setattr(native_posix.__dict__["os"], "O_CLOEXEC", 0x200, raising=False)
     monkeypatch.setattr(native_posix.__dict__["os"], "open", open_file)
+    monkeypatch.setattr(
+        native_posix.__dict__["os"],
+        "fstat",
+        lambda _descriptor: Metadata(7, 8, stat.S_IFREG | 0o600, 901, 902, 0),
+    )
 
-    # ruff: ignore[private-member-access] - output reads must request O_NOFOLLOW exactly.
+    # ruff: ignore[private-member-access] - output reads must be nonblocking, nofollow, cloexec regular-file opens.
     assert (
         native_posix._open_child_nofollow(BoundDirectory(17, windows=False), b"out")
         == 13
     )
-    assert calls == [(b"out", 0x840, 17)]
+    assert calls == [(b"out", 0xE40, 17)]
 
 
 def test_posix_parent_open_failure_keeps_exact_input_error_context(

@@ -301,8 +301,19 @@ def test_posix_publication_primitives_preserve_exact_kernel_arguments(
     assert native_posix._child_lstat(directory, b"missing") is None  # ruff: ignore[private-member-access] - missing child is not a failure.
 
     opens.clear()
+    monkeypatch.setattr(native_posix.__dict__["os"], "fstat", lambda _fd: _metadata())
     assert native_posix._open_child_nofollow(directory, b"final") == 52  # ruff: ignore[private-member-access] - no-follow existing-output read.
-    assert opens == [(b"final", os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), None, 51)]
+    assert opens == [
+        (
+            b"final",
+            os.O_RDONLY
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0),
+            None,
+            51,
+        )
+    ]
 
 
 def test_posix_bound_directory_failures_preserve_exact_receipts(

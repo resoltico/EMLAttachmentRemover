@@ -6,7 +6,6 @@ import base64
 import codecs
 import ntpath
 import os
-import pathlib
 import unicodedata
 from typing import Final
 
@@ -68,12 +67,18 @@ def validate_argument(value: str) -> str:
         The expanded form that preserves all ordinary path traversal components.
 
     """
-    expanded = os.fspath(pathlib.Path(value).expanduser())
-    if os.name == "nt":
-        validate_windows_argument(expanded)
-    else:
-        _validate_posix(expanded)
+    _validate_file_argument(value)
+    expanded = os.path.expanduser(value)  # ruff: ignore[os-path-expanduser] - Path normalizes terminal syntax before validation.
+    _validate_file_argument(expanded)
     return expanded
+
+
+def _validate_file_argument(value: str) -> None:
+    """Validate one file-address spelling before any expansion can erase syntax."""
+    if os.name == "nt":
+        validate_windows_argument(value)
+    else:
+        _validate_posix(value)
 
 
 def validate_windows_argument(value: str) -> None:
@@ -135,7 +140,7 @@ def default_destination(source: str) -> str:
     suffix = stem + ".mime-pruned.eml"
     if os.name == "nt":
         return ntpath.join(parent, suffix)
-    return os.fspath(pathlib.Path(parent) / suffix)
+    return f"{parent}/{suffix}" if parent else suffix
 
 
 def require_native_backend() -> None:

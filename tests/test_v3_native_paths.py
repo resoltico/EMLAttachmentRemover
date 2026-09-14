@@ -161,7 +161,9 @@ def test_native_value_validation_covers_platform_specific_boundary_forms(
     assert windows_value.native_utf16le_base64 is not None
     monkeypatch.setattr(native_values, "validate_windows_argument", observed.append)
     assert native_values.validate_argument("value") == "value"
-    assert observed == ["value"]
+    # Validate both the literal request and the expanded value: expansion must not
+    # erase a terminal separator, dot component, or other unsafe spelling first.
+    assert observed == ["value", "value"]
 
     monkeypatch.undo()
     for invalid in ("", "."):
