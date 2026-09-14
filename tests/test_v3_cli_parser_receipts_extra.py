@@ -55,7 +55,7 @@ options:
     assert version_exit.value.code == 0
     version_output = capsys.readouterr()
     assert (version_output.out, version_output.err) == (
-        "remove-eml-attachments 3.0.0\n",
+        "remove-eml-attachments 3.0.1\n",
         "",
     )
 
@@ -205,7 +205,7 @@ def test_every_parser_action_and_exclusive_group_has_an_exact_receipt() -> None:
             False,
             "show program's version number and exit",
             None,
-            "%(prog)s 3.0.0",
+            "%(prog)s 3.0.1",
         ),
     ]
     groups = parser._mutually_exclusive_groups  # ruff: ignore[private-member-access] - group topology is public CLI behavior.

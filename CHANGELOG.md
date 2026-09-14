@@ -4,6 +4,18 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-09-14
+
+### Fixed
+
+- Hardened MIME comment, RFC 2231, related-resource, and independent verifier
+  parsing against malformed state and ambiguous ownership.
+- Strengthened native publication receipts, existing-output verification, and
+  generated-property evidence; macOS Finder guidance now requires a visible
+  Quick Action result.
+- Added bounded, process-isolated mutation execution and complete behavioral
+  qualification for every actionable mutant.
+
 ## [3.0.0] - 2026-09-09
 
 ### Security
@@ -54,7 +66,8 @@ Notable changes to this project are documented in this file. The format is based
 
 - First public release.
 
-[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v2.0.1...v3.0.0
 [2.0.1]: https://github.com/resoltico/EMLAttachmentRemover/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v1.0.0...v2.0.0
