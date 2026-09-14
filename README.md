@@ -80,7 +80,9 @@ contents.
 ## Finder Quick Action
 
 Install `integrations/macos-shortcuts/install.sh`, then create a Shortcuts Finder
-Quick Action named **Create MIME-Pruned EML Copy**. The launcher defaults to
+Quick Action named **Create MIME-Pruned EML Copy**. Configure its shell step with
+`|| :`, then add **Show Result** immediately after it so failed and mixed batches
+remain visible in Finder. The launcher defaults to
 `--existing=verify`, validates schema 3, forwards cancellation to the processor, and
 reveals only `created` or `existing_verified` outputs with a final address receipt.
 See [the Finder instructions](integrations/macos-shortcuts/README.md).
