@@ -141,6 +141,23 @@ def test_existing_output_failures_are_conflicts_and_nonregular_entries_are_rejec
     )
 
 
+def test_final_address_dispatch_uses_the_active_native_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A final address is descriptor evidence, not a destination request alias."""
+    value = PathValue("final", "final", "ZmluYWw=")
+    monkeypatch.setattr(native_binding.__dict__["os"], "name", "nt")
+    monkeypatch.setattr(
+        native_binding.__dict__["_windows"], "final_address", lambda _fd: value
+    )
+    assert native_binding.final_address(9) == value
+    monkeypatch.setattr(native_binding.__dict__["os"], "name", "posix")
+    monkeypatch.setattr(
+        native_binding.__dict__["_posix"], "final_address", lambda _fd: None
+    )
+    assert native_binding.final_address(9) is None
+
+
 @pytest.mark.parametrize(
     "name",
     [b"filename*" + (b"9" * 5_000), b"filename*512", b"filename*512*"],

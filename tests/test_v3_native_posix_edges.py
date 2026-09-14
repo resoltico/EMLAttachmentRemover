@@ -14,6 +14,7 @@ from eml_attachment_remover.domain import (
     FileIdentity,
     PathValue,
 )
+from eml_attachment_remover.native_values import path_value
 
 
 def _metadata(*, size: int = 1, inode: int = 2, mtime: int = 3) -> SimpleNamespace:
@@ -118,10 +119,34 @@ def test_snapshot_rejects_kind_size_stability_and_final_address_faults(
     with pytest.raises(AppError):
         native_posix._snapshot("r", "e", "p", b"n", 3)  # ruff: ignore[private-member-access] - source-size stability boundary.
 
+    monkeypatch.setattr(native_posix.__dict__["sys"], "platform", "darwin")
     monkeypatch.setattr(
-        _module_value("os"), "path", SimpleNamespace(realpath=_raise_os)
+        native_posix,
+        "fcntl",
+        lambda *_args: (_ for _ in ()).throw(OSError("unavailable")),
     )
-    assert native_posix._final_address("expanded") is None  # ruff: ignore[private-member-access] - final-address uncertainty receipt.
+    assert native_posix._final_address(3) is None  # ruff: ignore[private-member-access] - final-address uncertainty receipt.
+
+    monkeypatch.setattr(native_posix.__dict__["sys"], "platform", "darwin")
+    monkeypatch.setattr(native_posix, "fcntl", lambda *_args: b"/resolved/file\0")
+    assert native_posix._final_address(3) == path_value("/resolved/file")  # ruff: ignore[private-member-access] - Darwin descriptor address receipt.
+
+    monkeypatch.setattr(native_posix.__dict__["sys"], "platform", "linux")
+    monkeypatch.setattr(
+        native_posix,
+        "Path",
+        lambda _value: SimpleNamespace(readlink=lambda: "/proc-resolved/file"),
+    )
+    assert native_posix._final_address(  # ruff: ignore[private-member-access] - proc descriptor address receipt.
+        3
+    ) == path_value("/proc-resolved/file")
+
+    monkeypatch.setattr(native_posix, "Path", lambda _value: _raise_os())
+    assert native_posix._final_address(3) is None  # ruff: ignore[private-member-access] - unreadable proc link is unproven.
+
+    monkeypatch.setattr(native_posix.__dict__["sys"], "platform", "darwin")
+    monkeypatch.setattr(native_posix, "fcntl", lambda *_args: b"\0")
+    assert native_posix._final_address(3) is None  # ruff: ignore[private-member-access] - empty kernel address is unproven.
 
 
 def _successful_posix_backend(

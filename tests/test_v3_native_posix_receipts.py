@@ -218,7 +218,7 @@ def test_posix_snapshot_and_source_read_receipts_are_complete(
     assert result.expanded == _value("expanded")
     assert result.parent == _value("parent")
     assert result.basename == b"leaf"
-    assert result.final_address == _value("final:expanded")
+    assert result.final_address == _value("final:44")
     assert result.identity == FileIdentity(11, 12, "-rw-r-----", 13)
     assert result.mode == 0o640
     assert result.raw == b"raw"

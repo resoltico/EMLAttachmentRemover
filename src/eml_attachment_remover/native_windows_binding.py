@@ -7,6 +7,7 @@ import ntpath
 import os
 from functools import cache
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from .domain import (
     AppError,
@@ -14,10 +15,14 @@ from .domain import (
     BoundDirectory,
     ExitCode,
     FileIdentity,
+    PathValue,
     SourceSnapshot,
 )
 from .native_values import MAX_RAW_BYTES, path_value
 from .native_windows import WindowsApi
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @cache
@@ -266,3 +271,12 @@ child_lstat = _child_lstat
 open_child_nofollow = _open_child_nofollow
 discard_private_stage = _discard_private_stage
 sync_bound_directory = _sync_bound_directory
+final_address = cast(
+    "Callable[[int], PathValue | None]",
+    lambda descriptor: (
+        None
+        if (path := _api().final_path(_api().handle_from_descriptor(descriptor)))
+        is None
+        else path_value(path)
+    ),
+)

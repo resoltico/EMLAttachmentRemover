@@ -26,7 +26,7 @@ from eml_attachment_remover.native_paths import path_value
 @given(
     st.lists(st.sampled_from((b"\r\n", b"\n", b"\r", b"x")), min_size=1, max_size=32),
 )
-def test_v301_property_wire_terminators_keep_exact_bounded_spans(
+def test_v301_property_wire_terminators_keep_exact_bounded_spans(  # type: ignore[misc]
     pieces: list[bytes],
 ) -> None:
     """The scanner's output is the independently selected first line boundary."""
@@ -46,7 +46,7 @@ def test_v301_property_wire_terminators_keep_exact_bounded_spans(
 
 
 @given(st.text(alphabet=string.ascii_lowercase, min_size=1, max_size=12))
-def test_v301_property_structured_comments_preserve_content_type_semantics(
+def test_v301_property_structured_comments_preserve_content_type_semantics(  # type: ignore[misc]
     label: str,
 ) -> None:
     """Permitted trailing comments do not change a synthetic Content-Type token."""
@@ -64,7 +64,7 @@ def test_v301_property_structured_comments_preserve_content_type_semantics(
         RemovalReason.RELATED_NONROOT_COMPONENT,
     ))
 )
-def test_v301_property_verifier_rejects_each_wrong_attachment_claim_reason(
+def test_v301_property_verifier_rejects_each_wrong_attachment_claim_reason(  # type: ignore[misc]
     reason: RemovalReason,
 ) -> None:
     """Reject an attachment claim with an independently wrong reason."""
@@ -97,7 +97,7 @@ class _TerminalLedgerMachine(RuleBasedStateMachine):
         self.ledger = BatchLedger.from_requests([path_value("synthetic.eml")])
 
     @rule(status=st.sampled_from((ItemStatus.FAILED, ItemStatus.NOT_RUN)))
-    def terminalize_once(self, status: ItemStatus) -> None:
+    def terminalize_once(self, status: ItemStatus) -> None:  # type: ignore[misc]
         """Terminalize the preallocated synthetic item at most once."""
         item = self.ledger.items[0]
         if item.status is None:
