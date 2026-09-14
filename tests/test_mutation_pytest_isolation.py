@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 from tools import mutation_pytest_isolation
 
+from tests.mutmut_environment_support import selector_preserving_environment
+
 
 class MutationPytestIsolationTests(unittest.TestCase):
     """Verify the early pytest hook adds only a private process directory."""
@@ -17,7 +19,13 @@ class MutationPytestIsolationTests(unittest.TestCase):
         args = ["-q"]
         plugin_argument: Any = object()
         with (
-            patch.object(os.environ, "get", return_value="/private/root"),
+            patch.dict(
+                os.environ,
+                selector_preserving_environment({
+                    mutation_pytest_isolation.TEMPORARY_ROOT_VARIABLE: "/private/root"
+                }),
+                clear=True,
+            ),
             patch.object(os, "getpid", return_value=17),
         ):
             mutation_pytest_isolation.pytest_load_initial_conftests(
@@ -28,7 +36,11 @@ class MutationPytestIsolationTests(unittest.TestCase):
     def test_leaves_arguments_unchanged_when_not_enabled(self) -> None:
         args = ["-q"]
         plugin_argument: Any = object()
-        with patch.object(os.environ, "get", return_value=None):
+        with patch.dict(
+            os.environ,
+            selector_preserving_environment({}),
+            clear=True,
+        ):
             mutation_pytest_isolation.pytest_load_initial_conftests(
                 plugin_argument, plugin_argument, args
             )

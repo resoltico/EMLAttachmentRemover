@@ -62,19 +62,19 @@ def _copy_quoted(value: bytes, position: int, result: bytearray) -> int:
 
     """
     result.append(DOUBLE_QUOTE)
-    position += 1
-    while position < len(value):
-        byte = value[position]
+    positions = iter(range(position + 1, len(value)))
+    for cursor in positions:
+        byte = value[cursor]
         if byte == BACKSLASH:
-            if position + 1 == len(value):
+            escaped_position = next(positions, None)
+            if escaped_position is None:
                 break
-            result.extend(value[position : position + 2])
-            position += 2
+            result.extend((byte, value[escaped_position]))
+        elif byte == DOUBLE_QUOTE:
+            result.append(byte)
+            return cursor + 1
         else:
             result.append(byte)
-            position += 1
-            if byte == DOUBLE_QUOTE:
-                return position
     raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME quoted parameter")
 
 
@@ -137,7 +137,10 @@ def _comment_end(value: bytes, start: int) -> int:
     depth = 1
     position = start + 1
     while position < len(value):
-        position, depth = _comment_step(value, position, depth)
+        next_position, depth = _comment_step(value, position, depth)
+        if next_position <= position:
+            raise AppError(ExitCode.PARSE_ERROR, "nonadvancing MIME comment cursor")
+        position = next_position
         if depth == 0:
             return position
     raise AppError(ExitCode.PARSE_ERROR, "unterminated MIME comment")
@@ -194,15 +197,14 @@ def _folded_comment_cursor(value: bytes, position: int) -> int:
         AppError: If the line break is not folding white space.
 
     """
-    next_position = position + 1
+    next_position = position + 2
     if (
-        value[position] == ord("\r")
-        and next_position < len(value)
-        and value[next_position] == ord("\n")
+        value[position:next_position] != b"\r\n"
+        or next_position == len(value)
+        or value[next_position] not in b" \t"
     ):
-        next_position += 1
-    if next_position == len(value) or value[next_position] not in b" \t":
         raise AppError(ExitCode.PARSE_ERROR, "malformed MIME comment")
-    while next_position < len(value) and value[next_position] in b" \t":
-        next_position += 1
-    return next_position
+    for cursor in range(next_position, len(value)):
+        if value[cursor] not in b" \t":
+            return cursor
+    return len(value)
