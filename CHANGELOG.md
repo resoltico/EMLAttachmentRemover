@@ -4,6 +4,15 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-09-14
+
+### Fixed
+
+- Corrected the portable Darwin descriptor-address qualification contract so every
+  supported platform proves the exact native address query before release.
+- Made generated Hypothesis evidence a six-platform pull-request and tagged-release
+  prerequisite, in addition to its scheduled exploration.
+
 ## [3.0.1] - 2026-09-14
 
 ### Fixed
@@ -66,7 +75,8 @@ Notable changes to this project are documented in this file. The format is based
 
 - First public release.
 
-[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.1...HEAD
+[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.2...HEAD
+[3.0.2]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v2.0.1...v3.0.0
 [2.0.1]: https://github.com/resoltico/EMLAttachmentRemover/compare/v2.0.0...v2.0.1

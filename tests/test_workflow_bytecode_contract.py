@@ -12,13 +12,13 @@ EXPECTED_PYTHON_JOBS: Final = {
     "hypothesis.yml": frozenset({"explore"}),
     "mutation.yml": frozenset({"mutation"}),
     "quality.yml": frozenset({"quality"}),
-    "release.yml": frozenset({"build", "mutation", "publish", "qualify"}),
+    "release.yml": frozenset({"build", "mutation", "property", "publish", "qualify"}),
 }
 EXPECTED_LOCKED_SYNCS: Final = {
     "hypothesis.yml": 1,
     "mutation.yml": 1,
     "quality.yml": 1,
-    "release.yml": 3,
+    "release.yml": 4,
 }
 JOB_HEADER: Final = re.compile(r"^  (?P<name>[A-Za-z0-9_-]+):$")
 PYTHON_USE: Final = re.compile(
