@@ -90,6 +90,7 @@ def test_dry_run_existing_verify_accepts_only_exact_source_candidate(
     assert item.publication is not None
     assert item.transformation is not None
     assert item.destination is not None
+    final_text = ("\\\\?\\" if os.name == "nt" else "") + str(existing)
     assert item.publication == PublicationReceipt(
         visibility="existing_verified",
         identity=inspect_source_identity(str(existing)),
@@ -97,7 +98,7 @@ def test_dry_run_existing_verify_accepts_only_exact_source_candidate(
         file_sync="not_attempted",
         directory_sync="not_attempted",
         address_verified=True,
-        final_address=item.destination.request,
+        final_address=path_value(final_text),
         temp_cleanup="not_applicable",
     )
 

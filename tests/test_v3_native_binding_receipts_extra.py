@@ -272,6 +272,7 @@ def test_binding_existing_read_keeps_every_stability_receipt_independent(
             "_child_lstat",
             partial(_record_child, calls, child),
         )
+        monkeypatch.setattr(native_binding, "_final_address", lambda _fd: None)
         monkeypatch.setattr(native_binding.__dict__["os"], "close", closed.append)
         monkeypatch.setattr(
             native_binding,

@@ -46,7 +46,8 @@ def test_publish_readdresses_live_final_handle_and_digest(tmp_path: Path) -> Non
     assert receipt.visibility == "visible"
     assert receipt.address_verified is True
     assert receipt.final_address is not None
-    assert receipt.final_address.text == str(destination)
+    expected_address = ("\\\\?\\" if os.name == "nt" else "") + str(destination)
+    assert receipt.final_address.text == expected_address
     assert receipt.identity is not None
     assert receipt.identity.inode == metadata.st_ino
     assert receipt.digest == hashlib.sha256(candidate).hexdigest()
