@@ -53,7 +53,11 @@ def _opaque_payload_edits(root: RawNode) -> list[tuple[int, int]]:
     pending = [root]
     while pending:
         parent = pending.pop()
-        opaque_index = _related_root_index(parent)
+        opaque_index = (
+            _related_root_index(parent)
+            if parent.media_type == "multipart/related"
+            else -1
+        )
         for index, child in enumerate(parent.children):
             expected = (
                 index != opaque_index
@@ -82,8 +86,6 @@ def _related_root_index(parent: RawNode) -> int:
         AppError: If a declared start identifier is not one unique direct child.
 
     """
-    if parent.media_type != "multipart/related":
-        return 0
     start = parent.parameter(b"start")
     if start is None:
         return 0
