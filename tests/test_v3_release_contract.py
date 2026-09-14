@@ -19,8 +19,8 @@ def test_release_artifact_names_are_v3_and_include_all_public_distribution_forms
     None
 ):
     names = (
-        "eml_attachment_remover-3.0.0-cp314-none-any.whl",
-        "eml_attachment_remover-3.0.0.tar.gz",
+        "eml_attachment_remover-3.0.1-cp314-none-any.whl",
+        "eml_attachment_remover-3.0.1.tar.gz",
         "remove-eml-attachments.pyz",
     )
     assert names == tuple(sorted(names))
@@ -49,16 +49,16 @@ def test_release_tag_is_derived_only_from_current_project_metadata(
 def test_release_tag_script_entrypoint_uses_the_same_version_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(sys, "argv", [str(RELEASE_TAG_TOOL), "v3.0.0"])
+    monkeypatch.setattr(sys, "argv", [str(RELEASE_TAG_TOOL), "v3.0.1"])
     with pytest.raises(SystemExit) as result:
         runpy.run_path(str(RELEASE_TAG_TOOL), run_name="__main__")
     assert result.value.code == 0
 
 
 def test_v3_release_notes_describe_the_corrected_mime_pruned_boundary() -> None:
-    notes = PROJECT_ROOT / ".github" / "release-notes" / "v3.0.0.md"
+    notes = PROJECT_ROOT / ".github" / "release-notes" / "v3.0.1.md"
     content = notes.read_text(encoding="utf-8")
-    assert content.startswith("# EML Attachment Remover 3.0.0\n")
+    assert content.startswith("# EML Attachment Remover 3.0.1\n")
     assert "MIME-pruned" in content
     assert "regenerate any v2-derived files" in content
     assert "attestation" in content

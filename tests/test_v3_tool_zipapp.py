@@ -51,7 +51,7 @@ def test_built_zipapp_has_exact_source_members_and_normalized_metadata(
         assert "eml_attachment_remover/html_text.py" not in names
         assert "eml_attachment_remover/mime_text_only.py" not in names
         assert archive.read("schema/report.schema.json") == SCHEMA_FILE.read_bytes()
-        assert b"Version: 3.0.0\n" in archive.read(metadata_name)
+        assert b"Version: 3.0.1\n" in archive.read(metadata_name)
         launcher = archive.read("__main__.py")
     assert b"eml_attachment_remover.app" in launcher
     assert b"3.14" in launcher
@@ -63,4 +63,4 @@ def test_built_zipapp_has_exact_source_members_and_normalized_metadata(
         capture_output=True,
     )
     assert version.returncode == 0, version.stderr
-    assert version.stdout.strip() == "remove-eml-attachments 3.0.0"
+    assert version.stdout.strip() == "remove-eml-attachments 3.0.1"
