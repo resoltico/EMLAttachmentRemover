@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_validation
+from eml_attachment_remover import mime_comments, mime_validation
 from eml_attachment_remover.domain import AppError, ExitCode
 from eml_attachment_remover.mime_headers import Header
 from eml_attachment_remover.mime_validation import ContentSpec
@@ -94,3 +94,57 @@ def test_comments_accept_structured_delimiter_and_folding_boundaries() -> None:
     assert mime_validation._split_semicolons(  # ruff: ignore[private-member-access] - semicolon and CRLF are semantic boundaries.
         b"text/plain;(comment\r\n folded) charset=utf-8", comments_allowed=True
     ) == [b"text/plain", b"charset=utf-8"]
+
+
+def test_comment_scanner_preserves_exact_cfws_replacement_boundaries() -> None:
+    """Leading, adjacent, and whitespace-adjacent comments retain exact spacing."""
+    assert (
+        mime_comments.without_comments(b"(comment); text", allowed=True) == b" ; text"
+    )
+    assert (
+        mime_comments.without_comments(b"a (comment) text", allowed=True) == b"a  text"
+    )
+    assert (
+        mime_comments.without_comments(b"a;(comment) text", allowed=True) == b"a;  text"
+    )
+
+
+def test_comment_scanner_rejects_nonfolding_control_and_advances_escapes() -> None:
+    """Only CRLF FWS is legal, and escaped comment octets consume exactly two bytes."""
+    assert mime_comments._escaped_comment_cursor(b"x\\q", 1) == 3  # ruff: ignore[private-member-access] - exact comment quoted-pair cursor.
+    assert mime_comments._folded_comment_cursor(b"\r\n\t x", 0) == 4  # ruff: ignore[private-member-access] - exact CFWS cursor after horizontal white space.
+    assert mime_comments.without_comments(b"(X) ", allowed=True) == b"  "
+    for value in (b"\r ", b"\n ", b"\rX"):
+        with pytest.raises(AppError) as rejected:
+            mime_comments._folded_comment_cursor(value, 0)  # ruff: ignore[private-member-access] - direct malformed FWS grammar.
+        assert rejected.value == AppError(
+            ExitCode.PARSE_ERROR, "malformed MIME comment"
+        )
+
+
+def test_quoted_and_folded_comment_scans_are_bounded_and_exact() -> None:
+    """Quoted strings and trailing FWS cannot skip, stall, or consume extra bytes."""
+    quoted = b'xx"a\\b"'
+    result = bytearray()
+    assert mime_comments._copy_quoted(quoted, 2, result) == len(quoted)  # ruff: ignore[private-member-access] - direct quoted-string cursor contract.
+    assert bytes(result) == b'"a\\b"'
+    assert mime_comments._folded_comment_cursor(b"\r\n \t", 0) == 4  # ruff: ignore[private-member-access] - terminal FWS is consumed exactly.
+    with pytest.raises(AppError) as escaped:
+        mime_comments._escaped_comment_cursor(b"\\", 0)  # ruff: ignore[private-member-access] - terminal quoted-pair fault.
+    assert escaped.value == AppError(ExitCode.PARSE_ERROR, "unterminated MIME comment")
+
+
+def test_comment_end_rejects_a_nonadvancing_parser_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bounded scanner rejects a faulty cursor before it can loop forever."""
+
+    def stalled(_value: bytes, position: int, depth: int) -> tuple[int, int]:
+        return position, depth
+
+    monkeypatch.setattr(mime_comments, "_comment_step", stalled)
+    with pytest.raises(AppError) as rejected:
+        mime_comments._comment_end(b"()", 0)  # ruff: ignore[private-member-access] - progress invariant belongs to the raw comment scanner.
+    assert rejected.value == AppError(
+        ExitCode.PARSE_ERROR, "nonadvancing MIME comment cursor"
+    )
