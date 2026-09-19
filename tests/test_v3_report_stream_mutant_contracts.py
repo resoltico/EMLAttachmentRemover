@@ -115,7 +115,8 @@ def test_emergency_boolean_guards_reject_each_independent_mismatch() -> None:
     ledger.report_spool_failed = True
     emergency = cast("report_spool.ReportSpool", ledger.emergency_report_spool)
     try:
-        original = next(emergency.records())
+        records = tuple(emergency.records())
+        original = records[0]
         malformed = json.loads(original)
         malformed["source_request"] = None
         emergency.path.write_text(json.dumps(malformed) + "\n", encoding="utf-8")
@@ -276,7 +277,8 @@ def test_emergency_index_mismatch_is_not_masked_by_other_valid_fields() -> None:
     ledger.report_spool_failed = True
     emergency = cast("report_spool.ReportSpool", ledger.emergency_report_spool)
     try:
-        raw = json.loads(next(emergency.records()))
+        records = tuple(emergency.records())
+        raw = json.loads(records[0])
         raw["index"] = 1
         emergency.path.write_text(json.dumps(raw) + "\n", encoding="utf-8")
         with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):

@@ -59,6 +59,15 @@ def _write_all(descriptor: int, payload: bytes) -> None:
             return
 
 
+def _truncate_or_raise(descriptor: int, offset: int) -> None:
+    """Restore an interrupted append to its exact prior byte length."""
+    try:
+        os.ftruncate(descriptor, offset)
+    except OSError as error:
+        message = "terminal report spool could not recover a partial record"
+        raise ReportSpoolError(message) from error
+
+
 @dataclass(slots=True)
 class ReportSpool:
     """Own one private line-delimited terminal-report spool outside the repository."""
@@ -121,13 +130,11 @@ class ReportSpool:
             message = "terminal report spool write failed"
             raise ReportSpoolError(message) from error
         finally:
-            if not committed:
-                try:
-                    os.ftruncate(descriptor, self.bytes_written)
-                except OSError as error:
-                    message = "terminal report spool could not recover a partial record"
-                    raise ReportSpoolError(message) from error
-            os.close(descriptor)
+            try:
+                if not committed:
+                    _truncate_or_raise(descriptor, self.bytes_written)
+            finally:
+                os.close(descriptor)
         self.bytes_written += len(payload)
         self.record_count += 1
 
