@@ -143,7 +143,7 @@ class ReportSpool:
         self.bytes_written += len(payload)
         self.record_count += 1
 
-    def records(self) -> Generator[bytes, None, None]:
+    def records(self) -> Generator[bytes]:
         """Yield every complete bounded record after validating the spool shape.
 
         Yields:
