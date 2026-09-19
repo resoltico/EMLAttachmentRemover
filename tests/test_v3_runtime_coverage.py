@@ -59,7 +59,7 @@ def test_source_version_uses_metadata_and_fallback(monkeypatch: MonkeyPatch) -> 
     version_module = importlib.import_module("eml_attachment_remover._version")
     project = cast("Callable[[], str]", version_module.__dict__["_project_version"])
     resolved = cast("Callable[[], str]", version_module.__dict__["_resolved_version"])
-    assert project() == "3.0.2"
+    assert project() == "3.0.3"
     monkeypatch.setitem(
         version_module.__dict__, "distribution_version", lambda _name: "9.9.9"
     )

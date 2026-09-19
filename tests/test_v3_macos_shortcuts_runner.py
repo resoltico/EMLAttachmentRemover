@@ -75,7 +75,7 @@ def _report(items: list[dict[str, object]], status: int) -> dict[str, object]:
         "schema_version": 3,
         "scope": "mime-pruned",
         "program": "remove-eml-attachments",
-        "version": "3.0.2",
+        "version": "3.0.3",
         "mode": "apply",
         "ok": False,
         "exit_code": status,
