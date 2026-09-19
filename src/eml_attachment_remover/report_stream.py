@@ -232,7 +232,15 @@ def _emergency_records(ledger: BatchLedger) -> Iterator[dict[str, object]]:
     pairs = zip(records, ledger.items, strict=True)
 
     def render() -> Iterator[dict[str, object]]:
-        """Validate and render one closed-owner emergency record stream."""
+        """Validate and render one closed-owner emergency record stream.
+
+        Yields:
+            Complete emergency status records in input order.
+
+        Raises:
+            ReportSpoolError: If a reservation record is malformed or inconsistent.
+
+        """
         for index, (raw, item) in enumerate(pairs):
             try:
                 reservation = json.loads(raw)
