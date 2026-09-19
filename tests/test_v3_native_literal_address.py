@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -189,6 +190,37 @@ def test_literal_address_rejects_missing_text_and_dispatches_to_windows(
             == 44
         )
     assert calls == ["C:\\mail.eml"]
+
+
+def test_literal_address_dispatches_to_posix_without_host_platform_dependence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The POSIX literal boundary remains covered even on a Windows test host."""
+    calls: list[tuple[bytes, int]] = []
+
+    def open_posix(path: bytes, flags: int) -> int:
+        calls.append((path, flags))
+        return 45
+
+    with monkeypatch.context() as context:
+        module_os = native_literal_address.__dict__["os"]
+        context.setattr(module_os, "name", "posix")
+        context.setattr(module_os, "open", open_posix)
+        assert (
+            native_literal_address.open_final_address(
+                PathValue("/mail.eml", "mail", None)
+            )
+            == 45
+        )
+    assert calls == [
+        (
+            b"/mail.eml",
+            os.O_RDONLY
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0),
+        )
+    ]
 
 
 def test_windows_literal_address_reopens_parent_or_rejects_an_absent_basename(
