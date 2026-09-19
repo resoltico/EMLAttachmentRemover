@@ -108,5 +108,5 @@ def test_main_version_uses_argparse_success_without_a_source(
         cli.main(["--version"])
     assert raised.value.code == 0
     captured = capsys.readouterr()
-    assert captured.out == "remove-eml-attachments 3.0.3\n"
+    assert captured.out == "remove-eml-attachments 3.0.4\n"
     assert not captured.err

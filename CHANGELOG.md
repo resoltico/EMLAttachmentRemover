@@ -4,6 +4,13 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+## [3.0.4] - 2026-09-20
+
+### Fixed
+
+- Re-reviewed and rebound every source-location-sensitive equivalent mutant after
+  the v3.0.3 tagged mutation campaign updated report-spool iterator ownership.
+
 ## [3.0.3] - 2026-09-19
 
 ### Fixed
@@ -89,7 +96,8 @@ Notable changes to this project are documented in this file. The format is based
 
 - First public release.
 
-[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.3...HEAD
+[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.4...HEAD
+[3.0.4]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.3...v3.0.4
 [3.0.3]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.0...v3.0.1
