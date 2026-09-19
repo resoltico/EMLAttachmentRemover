@@ -177,6 +177,7 @@ def test_existing_entry_handles_missing_changes_and_cleanup(
     monkeypatch.setattr(native_binding, "_open_child_nofollow", lambda *_args: 7)
     monkeypatch.setattr(native_binding, "_descriptor_identity", lambda _fd: _identity())
     monkeypatch.setattr(native_binding, "_read_all", lambda _fd: b"candidate")
+    monkeypatch.setattr(native_binding, "_final_address", lambda _fd: None)
     monkeypatch.setattr(_module_value("os"), "close", _record_close(closed))
     existing = native_binding.read_existing(destination)
     assert existing is not None

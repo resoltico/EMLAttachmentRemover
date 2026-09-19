@@ -111,8 +111,9 @@ def _run(
         "FINDER_REPORT": json.dumps(report),
         "FINDER_STATUS": str(status),
     }
+    shell = "/bin/sh" if os.name != "nt" else "sh"
     return subprocess.run(
-        ["/bin/sh", str(RUNNER), str(source)],
+        [shell, str(RUNNER), str(source)],
         check=False,
         capture_output=True,
         cwd=tmp_path,

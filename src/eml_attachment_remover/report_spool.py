@@ -105,7 +105,11 @@ class ReportSpool:
             message = "terminal report spool exceeds its bounded capacity"
             raise ReportSpoolError(message)
         descriptor = os.open(
-            self.path, os.O_WRONLY | os.O_APPEND | getattr(os, "O_CLOEXEC", 0)
+            self.path,
+            os.O_WRONLY
+            | os.O_APPEND
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_CLOEXEC", 0),
         )
         committed = False
         try:
