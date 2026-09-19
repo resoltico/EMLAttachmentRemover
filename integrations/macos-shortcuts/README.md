@@ -27,10 +27,13 @@ Terminal and automation callers.
 The launcher defaults to `EML_REMOVER_EXISTING=verify`, so repeat use accepts only a
 destination whose exact bytes equal the current verified candidate. It also accepts
 `error`; removed values `skip` and `force` produce migration diagnostics. It forwards
-HUP/INT/TERM to its child, waits for cleanup/reporting, validates schema 3, and reveals
-only `created` or `existing_verified` paths whose address receipt succeeded. Its
-output summarizes accepted, failed, not-run, and published-with-error outcomes; do
-not substitute Quick Look for the required Apple Mail field check.
+HUP/INT/TERM to its child, waits for cleanup/reporting, validates the complete
+schema-3 terminal receipt/count/exit contract, and reveals only `created` or
+`existing_verified` paths whose address receipt succeeded. Its visible Shortcuts
+result always shows created, existing-verified, failed, not-run,
+published-with-error, and cancelled totals, followed by bounded source-qualified
+errors, warnings, batch errors, and interruption details. Do not substitute Quick
+Look for the required Apple Mail field check.
 
 Retained HTML is not sanitized. A related component can be removed while retained HTML
 still references it; Apple Mail may show a missing-resource placeholder. This is an

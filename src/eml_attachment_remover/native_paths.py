@@ -21,6 +21,7 @@ from .native_binding import (
     read_source,
     sync_bound_directory,
 )
+from .native_literal_address import open_final_address
 from .native_values import (
     MAX_PATH_BYTES,
     MAX_RAW_BYTES,
@@ -47,6 +48,7 @@ __all__ = [
     "inspect_source_identity",
     "open_bound_destination",
     "open_child_nofollow",
+    "open_final_address",
     "path_value",
     "private_stage_name",
     "publish_stage_no_replace",

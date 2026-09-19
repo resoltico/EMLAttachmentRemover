@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import sys
+import tempfile
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from typing import Final
 
+from . import report_stream
 from .batch import BatchOptions, execute
 from .cancellation import CancellationSignal, install_cancellation_handlers
 from .cli_parser import (
@@ -24,6 +27,7 @@ from .domain import (
     LedgerItem,
 )
 from .native_paths import path_value
+from .report_spool import private_temp_root
 from .reporting_v3 import report, write_human, write_json, write_paths0
 
 ACCEPTED: Final = frozenset({
@@ -47,6 +51,8 @@ def exit_code(ledger: BatchLedger) -> int:
     """
     if _is_interrupted(ledger):
         return int(ExitCode.INTERRUPTED)
+    if ledger.batch_error is not None:
+        return int(ledger.batch_error.code)
     if _has_publication_error(ledger, ExitCode.INTERNAL_ERROR):
         return int(ExitCode.INTERNAL_ERROR)
     if _has_status(ledger, ItemStatus.PUBLISHED_WITH_ERROR):
@@ -173,11 +179,18 @@ def _cancelled(
     if state.ledger.interruption is None:
         state.ledger.record_interruption(cancellation.name, "report")
     status = int(ExitCode.INTERRUPTED)
-    document = report(state.ledger, "apply", status)
-    if raw_json_requested(raw):
-        write_json(document)
-    else:
-        write_human(document)
+    _write_then_close(
+        "json" if raw_json_requested(raw) else "human",
+        state.ledger,
+        BatchOptions(
+            dry_run=False,
+            existing="error",
+            fail_fast=False,
+            output=None,
+            output_dir=None,
+        ),
+        status,
+    )
     return status
 
 
@@ -210,17 +223,72 @@ def _run(raw: list[str], state: _RunState) -> int:
         ledger = execute(list(namespace.source), options)
         state.ledger = ledger
         status = exit_code(ledger)
-        _write_selected(namespace.output_format, ledger, options, status)
+        _write_then_close(namespace.output_format, ledger, options, status)
     return status
 
 
 def _write_selected(
     output_format: str, ledger: BatchLedger, options: BatchOptions, status: int
 ) -> None:
-    document = report(ledger, "dry-run" if options.dry_run else "apply", status)
-    if output_format == "json":
-        write_json(document)
+    if ledger.report_spool is None:
+        document = report(ledger, "dry-run" if options.dry_run else "apply", status)
+        if output_format == "json":
+            write_json(document)
+        elif output_format == "paths0":
+            write_paths0(ledger)
+        else:
+            write_human(document)
+    elif output_format == "json":
+        report_stream.write_json(
+            ledger, "dry-run" if options.dry_run else "apply", status
+        )
     elif output_format == "paths0":
-        write_paths0(ledger)
+        report_stream.write_paths0(ledger)
     else:
-        write_human(document)
+        report_stream.write_human(ledger)
+
+
+def _copy_text(source: object, destination: object) -> None:
+    """Copy bounded staged text to one already-selected real output channel."""
+    while chunk := source.read(1024 * 1024):  # type: ignore[attr-defined]
+        destination.write(chunk)  # type: ignore[attr-defined]
+
+
+def _copy_bytes(source: object, destination: object) -> None:
+    """Copy bounded staged binary output to one already-selected real channel."""
+    while chunk := source.read(1024 * 1024):  # type: ignore[attr-defined]
+        destination.write(chunk)  # type: ignore[attr-defined]
+
+
+def _write_then_close(
+    output_format: str, ledger: BatchLedger, options: BatchOptions, status: int
+) -> None:
+    """Stage a spooled report, clean its private receipt, then publish output once."""
+    if ledger.report_spool is None:
+        _write_selected(output_format, ledger, options, status)
+        return
+    closed = False
+    try:
+        with (
+            tempfile.TemporaryFile(
+                mode="w+", encoding="utf-8", newline="", dir=private_temp_root()
+            ) as staged_out,
+            tempfile.TemporaryFile(
+                mode="w+", encoding="utf-8", newline="", dir=private_temp_root()
+            ) as staged_err,
+        ):
+            with redirect_stdout(staged_out), redirect_stderr(staged_err):
+                _write_selected(output_format, ledger, options, status)
+            closed = True
+            report_stream.close(ledger)
+            staged_err.seek(0)
+            _copy_text(staged_err, sys.stderr)
+            staged_out.flush()
+            staged_out.seek(0)
+            if output_format == "paths0":
+                _copy_bytes(staged_out.buffer, sys.stdout.buffer)
+            else:
+                _copy_text(staged_out, sys.stdout)
+    finally:
+        if not closed:
+            report_stream.close(ledger)

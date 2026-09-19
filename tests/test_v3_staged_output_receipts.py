@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from eml_attachment_remover import staged_output
+from eml_attachment_remover import native_literal_address, staged_output, staged_receipt
 from eml_attachment_remover.domain import (
     AppError,
+    BoundDestination,
     ExitCode,
     FileIdentity,
     PathValue,
@@ -107,6 +108,10 @@ def test_final_receipt_has_a_complete_ordered_live_handle_evidence_chain(
         calls.append(("close", descriptor))
         return None
 
+    def open_literal(observed_address: PathValue) -> int:
+        calls.append(("open-literal", observed_address))
+        return 14
+
     monkeypatch.setattr(staged_output, "descriptor_identity", identity)
     monkeypatch.setattr(staged_output, "child_lstat", lstat)
     monkeypatch.setattr(staged_output, "open_child_nofollow", open_final)
@@ -114,6 +119,7 @@ def test_final_receipt_has_a_complete_ordered_live_handle_evidence_chain(
     monkeypatch.setattr(staged_output, "_close_descriptor", close_final)
     address = PathValue("final", "final", "ZmluYWw=")
     monkeypatch.setattr(staged_output, "final_address", lambda _descriptor: address)
+    monkeypatch.setattr(native_literal_address, "open_final_address", open_literal)
 
     receipt = staged_output._read_final_receipt(state)  # ruff: ignore[private-member-access] - direct final-address receipt.
 
@@ -126,6 +132,11 @@ def test_final_receipt_has_a_complete_ordered_live_handle_evidence_chain(
         ("read", 13),
         ("identity", 13),
         ("lstat", (state.parent, state.destination.basename)),
+        ("open-literal", address),
+        ("identity", 14),
+        ("read", 14),
+        ("lstat", (state.parent, state.destination.basename)),
+        ("close", 14),
         ("close", 13),
     ]
     monkeypatch.setattr(staged_output, "final_address", lambda _descriptor: None)
@@ -134,6 +145,59 @@ def test_final_receipt_has_a_complete_ordered_live_handle_evidence_chain(
     assert unproven.value == AppError(
         ExitCode.WRITE_ERROR, "could not prove published final address"
     )
+
+
+def test_literal_receipt_preserves_primary_and_close_failures() -> None:
+    """A literal address mismatch keeps its primary proof and close failures visible."""
+    destination = BoundDestination(
+        PathValue("out", "out", "b3V0"),
+        PathValue("parent", "parent", "cGFyZW50"),
+        b"out",
+        FileIdentity(1, 2, "directory", 3),
+    )
+    expected = FileIdentity(1, 2, "regular", 3)
+    changed = FileIdentity(1, 4, "regular", 3)
+    address = PathValue("final", "final", "ZmluYWw=")
+    parent = BoundDirectoryHandle(7, windows=False)
+
+    def operations(close: object) -> staged_receipt.ReceiptOperations:
+        return staged_receipt.ReceiptOperations(
+            descriptor_identity=lambda _fd: changed,
+            child_lstat=lambda *_args: expected,
+            open_child_nofollow=lambda *_args: 0,
+            final_address=lambda _fd: address,
+            open_final_address=lambda _address: 9,
+            read_all=lambda _fd: b"candidate",
+            close_descriptor=close,  # type: ignore[arg-type]
+        )
+
+    context = staged_receipt._ReceiptContext(  # ruff: ignore[private-member-access] - literal proof context.
+        parent,
+        destination,
+        expected,
+        hashlib.sha256(b"candidate").hexdigest(),
+        operations(lambda _fd: None),
+    )
+    with pytest.raises(AppError) as mismatch:
+        staged_receipt._verify_literal_address(  # ruff: ignore[private-member-access] - literal close boundary.
+            address, context
+        )
+    assert mismatch.value == AppError(
+        ExitCode.VERIFICATION_ERROR,
+        "final address did not resolve to published destination",
+    )
+
+    context = staged_receipt._ReceiptContext(  # ruff: ignore[private-member-access] - dual failure context.
+        parent,
+        destination,
+        expected,
+        hashlib.sha256(b"candidate").hexdigest(),
+        operations(lambda _fd: OSError("close")),
+    )
+    with pytest.raises(BaseExceptionGroup):
+        staged_receipt._verify_literal_address(  # ruff: ignore[private-member-access] - dual proof/close boundary.
+            address, context
+        )
 
 
 def test_stage_creation_retries_exactly_sixteen_collisions_then_preserves_owner(

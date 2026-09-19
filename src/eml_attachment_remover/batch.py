@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from . import batch_terminal, report_stream
 from .cancellation import CancellationSignal, install_cancellation_handlers
 from .domain import (
     AppError,
@@ -349,21 +350,26 @@ def execute(sources: list[str], options: BatchOptions) -> BatchLedger:
 
     """
     ledger = BatchLedger.from_requests([path_value(source) for source in sources])
+    if not report_stream.start_or_fail(ledger):
+        return ledger
     argument_bytes = sum(len(os.fsencode(source)) for source in sources)
     if (
         len(sources) > MAX_BATCH_ITEMS
         or argument_bytes > MAX_CUMULATIVE_NATIVE_ARGUMENT_BYTES
     ):
         ledger.finalize_not_run("batch exceeds native argument resource limit")
-        return ledger
-    with install_cancellation_handlers():
-        try:
-            _run_inventory_and_items(ledger, sources, options)
-        except CancellationSignal as cancellation:
-            ledger.record_interruption(cancellation.name, ItemPhase.INVENTORIED.value)
-        except KeyboardInterrupt:
-            ledger.record_interruption("SIGINT", ItemPhase.INVENTORIED.value)
+    else:
+        with install_cancellation_handlers():
+            try:
+                _run_inventory_and_items(ledger, sources, options)
+            except CancellationSignal as cancellation:
+                ledger.record_interruption(
+                    cancellation.name, ItemPhase.INVENTORIED.value
+                )
+            except KeyboardInterrupt:
+                ledger.record_interruption("SIGINT", ItemPhase.INVENTORIED.value)
     ledger.finalize_not_run("not run")
+    report_stream.archive_or_recover(ledger)
     return ledger
 
 
@@ -373,23 +379,18 @@ def _run_inventory_and_items(
     inventory = _inventory(ledger, sources, options)
     if inventory is None:
         return
+    if not report_stream.archive_or_recover(ledger):
+        return
     all_identities = set(inventory.identities.values())
     for item in ledger.items:
-        if _skip_inventory_failure(item, ledger, options):
+        if batch_terminal.skip_inventory_failure(
+            item, ledger, fail_fast=options.fail_fast
+        ):
             return
         if item.status is not None:
             continue
         if _run_item(item, ledger, inventory.identities, all_identities, options):
             return
-
-
-def _skip_inventory_failure(
-    item: LedgerItem, ledger: BatchLedger, options: BatchOptions
-) -> bool:
-    if item.status is None or not options.fail_fast:
-        return False
-    ledger.finalize_not_run("not run after fail-fast failure")
-    return True
 
 
 def _run_item(
@@ -435,16 +436,10 @@ def _after_item(
     options: BatchOptions,
     publication_cause: BaseException | None,
 ) -> bool:
-    if isinstance(publication_cause, CancellationSignal):
-        ledger.record_interruption(publication_cause.name, ItemPhase.PUBLISHED.value)
-        return True
-    if isinstance(publication_cause, KeyboardInterrupt):
-        ledger.record_interruption("SIGINT", ItemPhase.PUBLISHED.value)
-        return True
-    if isinstance(publication_cause, SystemExit):
-        _internal_abort(item, ledger, "unexpected SystemExit after publication")
-        return True
-    if item.status is ItemStatus.FAILED and options.fail_fast:
-        ledger.finalize_not_run("not run after fail-fast failure")
-        return True
-    return False
+    return batch_terminal.after_item(
+        item,
+        ledger,
+        fail_fast=options.fail_fast,
+        publication_cause=publication_cause,
+        internal_abort=lambda message: _internal_abort(item, ledger, message),
+    )

@@ -1,12 +1,36 @@
 {
   "schema_version": 1,
   "families": {
-    "wire_spans": ["tests/test_v301_hypothesis_properties.py::test_v301_property_wire_terminators_keep_exact_bounded_spans"],
-    "structured_comments": ["tests/test_v301_hypothesis_properties.py::test_v301_property_structured_comments_preserve_content_type_semantics"],
-    "policy_authorization": ["tests/test_v301_hypothesis_properties.py::test_v301_property_verifier_rejects_each_wrong_attachment_claim_reason"],
-    "retained_octets": ["tests/test_v301_hypothesis_properties.py::test_v301_property_retained_text_bytes_are_candidate_identical"],
-    "batch_terminalization": ["tests/test_v301_hypothesis_properties.py::test_v301_property_batch_terminal_rows_remain_input_ordered"],
-    "native_intent": ["tests/test_v301_hypothesis_properties.py::test_v301_property_native_destination_keeps_the_requested_basename"],
-    "terminal_ledger": ["tests/test_v301_hypothesis_properties.py::TestV301TerminalLedgerMachine::runTest"]
+    "wire_span_edits": [
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_wire_terminators_keep_exact_bounded_spans",
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_multipart_span_edits_keep_wire_bytes_exact"
+    ],
+    "structured_grammar": [
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_structured_comments_preserve_content_type_semantics",
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_structured_grammar_keeps_comments_and_rejects_splices"
+    ],
+    "contextual_policy_authorization": [
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_verifier_rejects_each_wrong_attachment_claim_reason",
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_source_policy_rejects_forged_attachment_paths"
+    ],
+    "retained_octet_structure": [
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_retained_text_bytes_are_candidate_identical",
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_retained_octets_and_structure_survive_attachment_removal"
+    ],
+    "related_and_rfc2231": [
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_related_root_keeps_only_the_declared_representation",
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_rfc2231_continuations_are_contiguous_or_rejected"
+    ],
+    "batch_existing_idempotence": [
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_batch_good_bad_good_and_existing_idempotence"
+    ],
+    "identity_no_replace": [
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_native_destination_keeps_the_requested_basename",
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_no_replace_publication_keeps_one_regular_identity"
+    ],
+    "terminal_liveness_work": [
+      "tests/test_v301_hypothesis_properties.py::test_v301_property_terminal_receipts_release_active_payloads",
+      "tests/test_v301_hypothesis_properties.py::TestV301TerminalLedgerMachine::runTest"
+    ]
   }
 }

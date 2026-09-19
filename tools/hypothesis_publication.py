@@ -174,8 +174,7 @@ def _promote_observations(
 ) -> None:
     """Promote a complete staged set while preserving the prior publication."""
     previous = staging_root / PREVIOUS_OBSERVATIONS_NAME
-    destination_exists = _directory_exists(destination, PUBLIC_OBSERVATIONS_LABEL)
-    if destination_exists:
+    if _directory_exists(destination, PUBLIC_OBSERVATIONS_LABEL):
         destination.replace(previous)
     try:
         staged.replace(destination)

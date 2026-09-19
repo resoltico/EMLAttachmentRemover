@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from typing import TYPE_CHECKING
 
 import pytest
 
 from eml_attachment_remover import batch as batch_module
+from eml_attachment_remover import report_stream
 from eml_attachment_remover.batch import BatchOptions, execute
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import (
@@ -88,13 +90,14 @@ def test_dry_run_existing_verify_accepts_only_exact_source_candidate(
     item = ledger.items[0]
     assert item.status is ItemStatus.EXISTING_VERIFIED
     assert item.publication is not None
-    assert item.transformation is not None
+    assert item.transformation is None
+    assert item.archived
     assert item.destination is not None
     final_text = ("\\\\?\\" if os.name == "nt" else "") + str(existing)
     assert item.publication == PublicationReceipt(
         visibility="existing_verified",
         identity=inspect_source_identity(str(existing)),
-        digest=item.transformation.candidate_sha256,
+        digest=hashlib.sha256(existing.read_bytes()).hexdigest(),
         file_sync="not_attempted",
         directory_sync="not_attempted",
         address_verified=True,
@@ -173,6 +176,37 @@ def test_outer_keyboard_interrupt_terminalizes_unstarted_ledger_rows(
     assert ledger.items[0].status is ItemStatus.NOT_RUN
     assert ledger.interruption is not None
     assert ledger.interruption.signal == "SIGINT"
+
+
+def test_report_reservation_and_inventory_spool_failures_stop_before_work(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Each false report-capacity decision leaves a complete no-work ledger."""
+
+    def reservation_failure(ledger: BatchLedger) -> bool:
+        ledger.batch_error = AppError(ExitCode.WRITE_ERROR, "report reservation")
+        ledger.finalize_not_run("report reservation")
+        return False
+
+    monkeypatch.setattr(report_stream, "start_or_fail", reservation_failure)
+    reservation = execute(["one.eml"], _options())
+    assert reservation.items[0].status is ItemStatus.NOT_RUN
+
+    monkeypatch.undo()
+
+    def archive_failure(ledger: BatchLedger, _item: LedgerItem | None = None) -> bool:
+        report_stream.recover(ledger)
+        return False
+
+    monkeypatch.setattr(report_stream, "archive_or_recover", archive_failure)
+    source = _plain(tmp_path / "one.eml")
+    inventory = execute([str(source)], _options())
+    try:
+        assert inventory.items[0].status is ItemStatus.NOT_RUN
+        assert inventory.batch_error is not None
+    finally:
+        report_stream.close(inventory)
 
 
 def test_cancel_receipt_keeps_an_already_terminal_item_unchanged() -> None:

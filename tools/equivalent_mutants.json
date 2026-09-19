@@ -1,5 +1,78 @@
 {
     "schema_version": 1,
-    "source_sha256": "7f90cbd5:5cc5b506:17b7a475:fb901885:023fbb83:944222e7:cf415e56:8d5ac6c2",
-    "equivalents": []
+    "source_sha256": "4d623e4b:56ef3ab9:2302e673:9c29d003:b29a7612:4ae80290:3ec8104d:1e18a7ed",
+    "equivalents": [
+        {
+            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_10",
+            "rationale": "The closed flag is only tested for truthiness before any true assignment, so False and None select the identical cleanup path."
+        },
+        {
+            "mutant": "eml_attachment_remover.native_binding.x__existing_entry__mutmut_34",
+            "rationale": "Omitting an explicit trailing None passes the same final_address value to ExistingEntry."
+        },
+        {
+            "mutant": "eml_attachment_remover.native_windows_binding.x__open_child_nofollow__mutmut_11",
+            "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
+        },
+        {
+            "mutant": "eml_attachment_remover.native_windows_binding.x__open_child_nofollow__mutmut_8",
+            "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_15",
+            "rationale": "The prevalidated equal record count makes zip strict=None observationally identical for emergency records."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_18",
+            "rationale": "The prevalidated equal record count makes an omitted zip strict argument observationally identical for emergency records."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_19",
+            "rationale": "The prevalidated equal record count makes zip strict=False observationally identical for emergency records."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_27",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_31",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_32",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__reservation__mutmut_14",
+            "rationale": "Python's UTF-8 codec lookup is case-insensitive, so UTF-8 and utf-8 encode identical bytes."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_11",
+            "rationale": "json.dumps treats ensure_ascii=None exactly as false for these JSON values."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_7",
+            "rationale": "json.dumps treats ensure_ascii=None exactly as false for these JSON values."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_20",
+            "rationale": "Python's UTF-8 codec lookup is case-insensitive, so UTF-8 and utf-8 encode identical bytes."
+        },
+        {
+            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_19",
+            "rationale": "After the descriptor is closed the exception is immediately reraised, so its sentinel reassignment is unreachable to later behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_20",
+            "rationale": "After the descriptor is closed the exception is immediately reraised, so its sentinel reassignment is unreachable to later behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_21",
+            "rationale": "After the descriptor is closed the exception is immediately reraised, so its sentinel reassignment is unreachable to later behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.staged_receipt.x_read_final_receipt__mutmut_123",
+            "rationale": "After the descriptor is closed the exception is immediately reraised, so its sentinel reassignment is unreachable to later behavior."
+        }
+    ]
 }

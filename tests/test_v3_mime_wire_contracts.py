@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from eml_attachment_remover import report_stream
 from eml_attachment_remover.batch import BatchOptions, execute
 from eml_attachment_remover.domain import BatchLedger, ItemStatus
 from eml_attachment_remover.mime_policy import classify
@@ -46,9 +47,15 @@ def test_leaf_payload_fingerprint_excludes_multipart_delimiter_line(
         b"Content-Disposition: attachment\r\n\r\nremove\r\n--m--\r\n"
     )
     _source, ledger = _run(tmp_path, raw)
-    retained = ledger.items[0].transformation
-    assert retained is not None
-    assert retained.retained[0].decoded_sha256 == hashlib.sha256(b"body").hexdigest()
+    try:
+        records = tuple(report_stream._records(ledger))  # ruff: ignore[private-member-access] - terminal-spool receipt contract.
+        transformation = records[0]["transformation"]
+        assert isinstance(transformation, dict)
+        retained = transformation["retained"]
+        assert isinstance(retained, list)
+        assert retained[0]["decoded_sha256"] == hashlib.sha256(b"body").hexdigest()
+    finally:
+        report_stream.close(ledger)
 
 
 @pytest.mark.parametrize(
