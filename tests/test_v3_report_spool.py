@@ -27,7 +27,8 @@ def test_private_spool_preserves_order_and_removes_only_its_owned_path() -> None
     """Terminal records use a mode-0600 external file and exact owned cleanup."""
     spool = report_spool.ReportSpool.create()
     try:
-        assert spool.path.stat().st_mode & 0o777 == 0o600
+        if os.name == "posix":
+            assert spool.path.stat().st_mode & 0o777 == 0o600
         spool.append(b'{"index":0}')
         spool.append(b'{"index":1}')
         assert tuple(spool.records()) == (b'{"index":0}', b'{"index":1}')
@@ -162,7 +163,8 @@ def test_reserved_emergency_status_spool_exists_before_any_item_is_terminal() ->
     report_stream.start(ledger)
     try:
         emergency = cast("report_spool.ReportSpool", ledger.emergency_report_spool)
-        assert emergency.path.stat().st_mode & 0o777 == 0o600
+        if os.name == "posix":
+            assert emergency.path.stat().st_mode & 0o777 == 0o600
         assert emergency.record_count == 2
         assert [
             record["index"]
