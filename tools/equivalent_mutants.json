@@ -19,27 +19,31 @@
             "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_15",
+            "mutant": "eml_attachment_remover.report_spool.x__truncate_or_raise__mutmut_6",
+            "rationale": "Changing only the exception cause sentinel after ftruncate has already failed cannot alter the raised ReportSpoolError's public message or recovery outcome."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_16",
             "rationale": "The prevalidated equal record count makes zip strict=None observationally identical for emergency records."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_18",
+            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_19",
             "rationale": "The prevalidated equal record count makes an omitted zip strict argument observationally identical for emergency records."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_19",
+            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_20",
             "rationale": "The prevalidated equal record count makes zip strict=False observationally identical for emergency records."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_27",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_31",
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_28",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
         },
         {
             "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_32",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_33",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
         },
         {
