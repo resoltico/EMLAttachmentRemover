@@ -230,43 +230,33 @@ def _emergency_records(ledger: BatchLedger) -> Iterator[dict[str, object]]:
         raise ReportSpoolError(message)
     records = spool.records()
     pairs = zip(records, ledger.items, strict=True)
+
+    def render() -> Iterator[dict[str, object]]:
+        """Validate and render one closed-owner emergency record stream."""
+        for index, (raw, item) in enumerate(pairs):
+            try:
+                reservation = json.loads(raw)
+            except json.JSONDecodeError as error:
+                message = "terminal emergency report spool is corrupt"
+                raise ReportSpoolError(message) from error
+            if (
+                not isinstance(reservation, dict)
+                or reservation.get("index") != index
+                or reservation.get("source_request")
+                != reporting_v3._path(item.source_request)  # ruff: ignore[private-member-access] - canonical path serializer owner.
+                or not item.terminalized
+            ):
+                message = "terminal emergency report spool is corrupt"
+                raise ReportSpoolError(message)
+            record = reporting_v3.item_json(item)
+            record["transformation"] = None
+            record["warnings"] = []
+            yield record
+
     try:
-        yield from _emergency_record_pairs(pairs)
+        yield from render()
     finally:
         records.close()
-
-
-def _emergency_record_pairs(
-    pairs: Iterator[tuple[bytes, LedgerItem]],
-) -> Iterator[dict[str, object]]:
-    """Validate and render one closed-owner emergency record stream.
-
-    Yields:
-        Complete emergency status records in input order.
-
-    Raises:
-        ReportSpoolError: If a reservation record is malformed or inconsistent.
-
-    """
-    for index, (raw, item) in enumerate(pairs):
-        try:
-            reservation = json.loads(raw)
-        except json.JSONDecodeError as error:
-            message = "terminal emergency report spool is corrupt"
-            raise ReportSpoolError(message) from error
-        if (
-            not isinstance(reservation, dict)
-            or reservation.get("index") != index
-            or reservation.get("source_request")
-            != reporting_v3._path(item.source_request)  # ruff: ignore[private-member-access] - canonical path serializer owner.
-            or not item.terminalized
-        ):
-            message = "terminal emergency report spool is corrupt"
-            raise ReportSpoolError(message)
-        record = reporting_v3.item_json(item)
-        record["transformation"] = None
-        record["warnings"] = []
-        yield record
 
 
 def _summary(ledger: BatchLedger) -> dict[str, int]:
