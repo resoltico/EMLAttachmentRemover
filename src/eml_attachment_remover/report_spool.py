@@ -60,7 +60,12 @@ def _write_all(descriptor: int, payload: bytes) -> None:
 
 
 def _truncate_or_raise(descriptor: int, offset: int) -> None:
-    """Restore an interrupted append to its exact prior byte length."""
+    """Restore an interrupted append to its exact prior byte length.
+
+    Raises:
+        ReportSpoolError: If the prior length cannot be restored.
+
+    """
     try:
         os.ftruncate(descriptor, offset)
     except OSError as error:
