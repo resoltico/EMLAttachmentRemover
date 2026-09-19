@@ -398,11 +398,13 @@ def test_final_receipt_and_unproven_publish_errors_are_preserved(
     clean = _bound_state(clean_case)
     _publish_visible(clean)
     original_close = staged_output._close_descriptor  # ruff: ignore[private-member-access] - final-close fault injection.
+    close_count = 0
 
     def close_after_actual(descriptor: int) -> BaseException | None:
-        actual = original_close(descriptor)
-        assert actual is None
-        return OSError("close")
+        nonlocal close_count
+        close_count += 1
+        assert original_close(descriptor) is None
+        return None if close_count == 1 else OSError("close")
 
     with monkeypatch.context() as context:
         context.setattr(staged_output, "_close_descriptor", close_after_actual)

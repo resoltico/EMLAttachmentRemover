@@ -231,7 +231,18 @@ def _child_lstat(directory: BoundDirectory, name: str) -> FileIdentity | None:
             _api().close(handle)
 
 
-def _open_child_nofollow(directory: BoundDirectory, name: str) -> int:
+def _open_child_nofollow(
+    directory: BoundDirectory | str, name: str | None = None
+) -> int:
+    if isinstance(directory, str):
+        parent, _parent_text, basename = _parent(directory)
+        try:
+            return _open_child_nofollow(BoundDirectory(parent, windows=True), basename)
+        finally:
+            _api().close(parent)
+    if name is None:
+        message = "Windows final address has no basename"
+        raise OSError(message)
     handle = _api().open_child(directory.descriptor, name, no_follow=True)
     try:
         _require_regular(handle)
@@ -269,6 +280,7 @@ create_private_stage = _create_private_stage
 publish_stage_no_replace = _publish_stage_no_replace
 child_lstat = _child_lstat
 open_child_nofollow = _open_child_nofollow
+open_final_address = _open_child_nofollow
 discard_private_stage = _discard_private_stage
 sync_bound_directory = _sync_bound_directory
 final_address = cast(

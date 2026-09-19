@@ -269,6 +269,7 @@ class LedgerItem:
     publication: PublicationReceipt | None = None
     warnings: list[dict[str, object]] = field(default_factory=list)
     error: AppError | None = None
+    archived: bool = False
 
     def finish(self, status: ItemStatus, error: AppError | None = None) -> None:
         """Set the sole terminal state exactly once.
@@ -286,6 +287,27 @@ class LedgerItem:
         if self.transformation is not None:
             self.transformation = replace(self.transformation, candidate=b"")
         self.terminalized = True
+
+    def correct_report_failure(self, error: AppError) -> None:
+        """Record a report-persistence failure learned after terminalization.
+
+        A created file remains visible when its terminal evidence cannot be
+        persisted, so it is reported as ``published_with_error`` rather than
+        incorrectly as a failed publication.  Entries which were not created
+        by this invocation are ordinary failures of this invocation's report.
+
+        Raises:
+            RuntimeError: If called before an item has a terminal receipt.
+
+        """
+        if not self.terminalized or self.status is None:
+            raise RuntimeError(DOUBLE_TERMINAL_ERROR)
+        self.error = self._detached_error(error)
+        self.status = (
+            ItemStatus.PUBLISHED_WITH_ERROR
+            if self.status is ItemStatus.CREATED
+            else ItemStatus.FAILED
+        )
 
     @staticmethod
     def _detached_error(error: AppError) -> AppError:
@@ -305,6 +327,9 @@ class BatchLedger:
     items: list[LedgerItem]
     interruption: InterruptionRecord | None = None
     batch_error: AppError | None = None
+    report_spool: object | None = field(default=None, repr=False)
+    emergency_report_spool: object | None = field(default=None, repr=False)
+    report_spool_failed: bool = False
 
     @classmethod
     def from_requests(cls, requests: list[PathValue]) -> BatchLedger:

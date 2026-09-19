@@ -6,7 +6,7 @@ import hashlib
 import os
 from dataclasses import dataclass, replace
 
-from . import staged_signals
+from . import native_literal_address, staged_receipt, staged_signals
 from .domain import (
     AppError,
     BoundDestination,
@@ -183,70 +183,25 @@ def _verify_staged(state: _PublicationState) -> None:
         )
 
 
-def _read_final_receipt(  # ruff: ignore[complex-structure] - ordered receipt checks are the contract.
-    state: _PublicationState,
-) -> PublicationReceipt:
-    """Re-address the final entry through live handles and verify its digest.
+def _read_final_receipt(state: _PublicationState) -> PublicationReceipt:
+    """Delegate final-address proof while retaining this lifecycle's live operations.
 
     Returns:
-        A receipt tied to a freshly opened final-address descriptor.
-
-    Raises:
-        AppError: If the final entry or descriptor does not match the staged candidate.
-        _combined: If independent final-descriptor close cleanup also fails.
+        The complete visible final receipt.
 
     """
-    stage = state.stage
-    parent = state.parent
-    if stage is None or parent is None:
-        raise AppError(ExitCode.INTERNAL_ERROR, "staging file was not created")
-    final_fd = -1
-    try:  # ruff: ignore[too-many-statements-in-try-clause] - receipt checks must share cleanup.
-        expected = descriptor_identity(stage.descriptor)
-        entry = child_lstat(parent, state.destination.basename)
-        if entry is None or not entry.is_regular() or entry != expected:
-            raise AppError(  # ruff: ignore[raise-within-try] - final fd needs common cleanup.
-                ExitCode.WRITE_ERROR, "published destination identity mismatch"
-            )
-        final_fd = open_child_nofollow(parent, state.destination.basename)
-        if descriptor_identity(final_fd) != expected:
-            raise AppError(  # ruff: ignore[raise-within-try] - final fd needs common cleanup.
-                ExitCode.WRITE_ERROR, "final destination handle changed"
-            )
-        observed = hashlib.sha256(_read_all(final_fd)).hexdigest()
-        if descriptor_identity(final_fd) != expected or observed != state.digest:
-            raise AppError(  # ruff: ignore[raise-within-try] - final fd needs common cleanup.
-                ExitCode.VERIFICATION_ERROR, "final destination changed"
-            )
-        final_entry = child_lstat(parent, state.destination.basename)
-        if final_entry != expected:
-            raise AppError(  # ruff: ignore[raise-within-try] - final fd needs common cleanup.
-                ExitCode.WRITE_ERROR, "final destination entry changed"
-            )
-        address = final_address(final_fd)
-        if address is None:
-            raise AppError(  # ruff: ignore[raise-within-try] - final descriptor needs shared cleanup.
-                ExitCode.WRITE_ERROR, "could not prove published final address"
-            )
-        receipt = PublicationReceipt(
-            visibility="visible",
-            identity=expected,
-            digest=observed,
-            file_sync="succeeded",
-            directory_sync="succeeded",
-            address_verified=True,
-            final_address=address,
-            temp_cleanup="pending",
-        )
-    except BaseException as problem:
-        close_problem = _close_descriptor(final_fd)
-        if close_problem is not None:
-            raise _combined([problem, close_problem])  # ruff: ignore[raise-without-from-inside-except] - preserve exact unchained group receipt.
-        raise
-    close_problem = _close_descriptor(final_fd)
-    if close_problem is not None:
-        raise close_problem
-    return receipt
+    return staged_receipt.read_final_receipt(
+        state,
+        staged_receipt.ReceiptOperations(
+            descriptor_identity,
+            child_lstat,
+            open_child_nofollow,
+            final_address,
+            native_literal_address.open_final_address,
+            _read_all,
+            _close_descriptor,
+        ),
+    )
 
 
 def _reconcile(state: _PublicationState, directory_sync: str) -> PublicationReceipt:

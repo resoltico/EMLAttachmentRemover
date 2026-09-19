@@ -107,7 +107,7 @@ def _property_in_record(line: str) -> set[str]:
 
 
 def check(manifest: Path = MANIFEST, observed: Path = OBSERVED) -> None:
-    """Require one passed generated case for each declared v3 property family.
+    """Require every declared generated case for each v3 property family.
 
     Raises:
         PropertyObservationError: If any declared family lacks observation evidence.
@@ -117,7 +117,7 @@ def check(manifest: Path = MANIFEST, observed: Path = OBSERVED) -> None:
     missing = [
         name
         for name, identifiers in _families(manifest).items()
-        if not any(identifier in properties for identifier in identifiers)
+        if not all(identifier in properties for identifier in identifiers)
     ]
     if missing:
         message = f"v3 property families lack observations: {', '.join(missing)}"

@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from eml_attachment_remover import batch
+from eml_attachment_remover import batch, batch_terminal, report_stream
 from eml_attachment_remover.batch import BatchOptions
 from eml_attachment_remover.cancellation import CancellationSignal
-from eml_attachment_remover.domain import AppError, BatchLedger, ExitCode, ItemStatus
+from eml_attachment_remover.domain import (
+    AppError,
+    BatchLedger,
+    ExitCode,
+    FileIdentity,
+    ItemStatus,
+)
 from eml_attachment_remover.native_paths import path_value
 
 if TYPE_CHECKING:
+    import pytest
+
     from eml_attachment_remover.domain import LedgerItem
 
 
@@ -82,3 +91,44 @@ def test_after_item_preserves_internal_and_fail_fast_terminalization() -> None:
         item, ledger, _options(fail_fast=False), None
     )
     assert later.status is None
+
+
+def test_after_item_stops_when_terminal_archive_recovery_reports_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed terminal archive must prevent any later batch work from starting."""
+    ledger, item, later = _ledger()
+    item.finish(ItemStatus.FAILED, AppError(ExitCode.PARSE_ERROR, "bad source"))
+    monkeypatch.setattr(report_stream, "archive_or_recover", lambda *_args: False)
+    assert batch._after_item(  # ruff: ignore[private-member-access] - report recovery stop.
+        item, ledger, _options(fail_fast=False), None
+    )
+    assert later.status is None
+
+
+def test_inventory_passes_the_exact_fail_fast_boolean_to_terminal_control(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The inventory loop cannot silently downgrade fail-fast to a falsey sentinel."""
+    ledger = BatchLedger.from_requests([path_value("one.eml")])
+    identity = FileIdentity(1, 2, "regular", 3)
+    observed: list[bool] = []
+
+    monkeypatch.setattr(
+        batch,
+        "_inventory",
+        lambda *_args: SimpleNamespace(identities={0: identity}),
+    )
+    monkeypatch.setattr(report_stream, "archive_or_recover", lambda *_args: True)
+
+    def skip(_item: object, _ledger: object, *, fail_fast: bool) -> bool:
+        observed.append(fail_fast)
+        return True
+
+    monkeypatch.setattr(batch_terminal, "skip_inventory_failure", skip)
+    batch._run_inventory_and_items(  # ruff: ignore[private-member-access] - exact terminal-control argument.
+        ledger,
+        ["one.eml"],
+        _options(fail_fast=True),
+    )
+    assert observed == [True]

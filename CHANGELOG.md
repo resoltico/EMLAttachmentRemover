@@ -10,8 +10,14 @@ Notable changes to this project are documented in this file. The format is based
 
 - Corrected the portable Darwin descriptor-address qualification contract so every
   supported platform proves the exact native address query before release.
-- Made generated Hypothesis evidence a six-platform pull-request and tagged-release
-  prerequisite, in addition to its scheduled exploration.
+- Re-opened each reported final address literally through the native no-follow path
+  before a copy can be reported usable.
+- Made generated Hypothesis evidence—including related-root and RFC 2231 continuation
+  contracts—a six-platform pull-request and tagged-release prerequisite.
+- Streamed terminal reports through bounded private spools, with a pre-reserved
+  complete status-recovery path for a post-publication report-spool failure.
+- Made the Finder Quick Action show every terminal category and bounded safe details
+  instead of silently hiding failed or mixed processing.
 
 ## [3.0.1] - 2026-09-14
 

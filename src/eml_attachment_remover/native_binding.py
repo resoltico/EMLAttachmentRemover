@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import secrets
+from hashlib import sha256
 
+from . import native_literal_address
 from . import native_posix as _posix
 from . import native_windows_binding as _windows
 from .domain import (
@@ -175,7 +177,26 @@ def _existing_entry(
         raise AppError(
             ExitCode.OUTPUT_CONFLICT, "existing output changed while verified"
         )
-    return ExistingEntry(before, raw, _final_address(descriptor))
+    address = _final_address(descriptor)
+    if address is None:
+        return ExistingEntry(before, raw, None)
+    literal_descriptor = native_literal_address.open_final_address(address)
+    try:
+        literal_identity = _descriptor_identity(literal_descriptor)
+        literal_digest = sha256(_read_all(literal_descriptor)).hexdigest()
+        if (
+            not literal_identity.is_regular()
+            or literal_identity != before
+            or literal_digest != sha256(raw).hexdigest()
+            or _child_lstat(directory, destination.basename) != before
+        ):
+            raise AppError(
+                ExitCode.OUTPUT_CONFLICT,
+                "final address did not resolve to verified output",
+            )
+    finally:
+        os.close(literal_descriptor)
+    return ExistingEntry(before, raw, address)
 
 
 def _read_all(descriptor: int) -> bytes:

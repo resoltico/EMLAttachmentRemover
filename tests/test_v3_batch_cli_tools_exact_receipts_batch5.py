@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import batch, cli, processing
+from eml_attachment_remover import batch, batch_terminal, cli, processing
 from eml_attachment_remover.batch import BatchOptions
 from eml_attachment_remover.domain import (
     AppError,
@@ -56,8 +56,8 @@ def test_fail_fast_skip_terminalizes_later_rows_with_the_exact_reason() -> None:
     ledger, item, later = _ledger()
     item.finish(ItemStatus.FAILED, AppError(ExitCode.PARSE_ERROR, "bad MIME"))
 
-    assert batch._skip_inventory_failure(  # ruff: ignore[private-member-access] - direct fail-fast boundary.
-        item, ledger, _options(fail_fast=True)
+    assert batch_terminal.skip_inventory_failure(
+        item, ledger, fail_fast=_options(fail_fast=True).fail_fast
     )
     assert later.status is ItemStatus.NOT_RUN
     assert later.error == AppError(
@@ -66,8 +66,8 @@ def test_fail_fast_skip_terminalizes_later_rows_with_the_exact_reason() -> None:
 
     ledger, item, later = _ledger()
     item.finish(ItemStatus.FAILED, AppError(ExitCode.PARSE_ERROR, "bad MIME"))
-    assert not batch._skip_inventory_failure(  # ruff: ignore[private-member-access] - non-fail-fast continuation.
-        item, ledger, _options(fail_fast=False)
+    assert not batch_terminal.skip_inventory_failure(
+        item, ledger, fail_fast=_options(fail_fast=False).fail_fast
     )
     assert later.status is None
 

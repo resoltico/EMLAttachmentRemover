@@ -117,19 +117,17 @@ def test_nested_cancellation_keeps_primary_and_all_close_failures(
     candidate = b"interrupted-after-edge"
     original_close = staged_output._close_descriptor  # ruff: ignore[private-member-access] - direct cleanup fault injection.
     original_directory_close = staged_output._close_directory  # ruff: ignore[private-member-access] - direct cleanup fault injection.
-    close_count = 0
+    cleanup_started = False
 
     def fail_sync(_parent: BoundDirectoryHandle) -> str:
+        nonlocal cleanup_started
+        cleanup_started = True
         raise CancellationSignal(2, "SIGINT")
 
     def close_with_receipt(descriptor: int) -> BaseException | None:
-        nonlocal close_count
-        close_count += 1
         actual = original_close(descriptor)
         assert actual is None
-        if close_count > 2:
-            return OSError(f"injected close {close_count}")
-        return None
+        return OSError("injected close") if cleanup_started else None
 
     def directory_close_with_receipt(
         directory: BoundDirectoryHandle,
@@ -146,7 +144,7 @@ def test_nested_cancellation_keeps_primary_and_all_close_failures(
     error = raised.value
     assert isinstance(error.cause, CancellationSignal)
     assert isinstance(error.cleanup_cause, BaseExceptionGroup)
-    assert error.receipt.visibility == "visible"
+    assert error.receipt.visibility == "not_proven"
     assert error.receipt.temp_cleanup == "succeeded"
     assert destination.read_bytes() == candidate
     assert _temporary_names(tmp_path) == []

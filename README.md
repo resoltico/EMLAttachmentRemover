@@ -75,7 +75,9 @@ JSON is one schema-3 report document. Its checked-in contract is
 [`schema/report.schema.json`](schema/report.schema.json); it reports every input in
 order, source-bound retained payload hashes, removal reasons, candidate digest,
 verification evidence, and truthful publication receipts. It never reports body
-contents.
+contents. During processing, terminal evidence is streamed through bounded private
+spools; if normal report persistence fails after a visible publication, the command
+returns a complete status-preserving recovery report rather than claiming success.
 
 ## Finder Quick Action
 

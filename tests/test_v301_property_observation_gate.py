@@ -125,6 +125,19 @@ def test_gate_reports_each_family_without_a_generated_case(tmp_path: Path) -> No
     assert str(rejected.value) == "v3 property families lack observations: policy"
 
 
+def test_gate_requires_every_declared_generated_case_within_a_family(
+    tmp_path: Path,
+) -> None:
+    """One observed property cannot mask a missing sibling safety contract."""
+    manifest = _manifest(
+        tmp_path / "families.json", {"wire": ["first-wire-id", "second-wire-id"]}
+    )
+    observed = _observations(tmp_path / "observed", [_record("first-wire-id")])
+    with pytest.raises(gate.PropertyObservationError) as rejected:
+        gate.check(manifest, observed)
+    assert str(rejected.value) == "v3 property families lack observations: wire"
+
+
 def test_gate_joins_multiple_missing_families_with_the_public_separator(
     tmp_path: Path,
 ) -> None:

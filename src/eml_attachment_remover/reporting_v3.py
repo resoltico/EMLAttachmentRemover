@@ -253,7 +253,8 @@ def report(ledger: BatchLedger, mode: str, exit_code: int) -> dict[str, object]:
         "program": PROGRAM_NAME,
         "version": PROGRAM_VERSION,
         "mode": mode,
-        "ok": all(item.status in accepted for item in ledger.items),
+        "ok": ledger.batch_error is None
+        and all(item.status in accepted for item in ledger.items),
         "exit_code": exit_code,
         "interrupted": ledger.interruption is not None,
         "interruption": _interruption(ledger.interruption),
