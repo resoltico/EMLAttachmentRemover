@@ -185,16 +185,20 @@ def _records(ledger: BatchLedger) -> Iterator[dict[str, object]]:
     if not isinstance(spool, ReportSpool):
         message = "terminal report spool has an invalid owner"
         raise ReportSpoolError(message)
-    for index, raw in enumerate(spool.records()):
-        try:
-            record = json.loads(raw)
-        except json.JSONDecodeError as error:
-            message = "terminal report spool is corrupt"
-            raise ReportSpoolError(message) from error
-        if not isinstance(record, dict) or record.get("index") != index:
-            message = "terminal report spool records are unordered"
-            raise ReportSpoolError(message)
-        yield cast("dict[str, object]", record)
+    records = spool.records()
+    try:
+        for index, raw in enumerate(records):
+            try:
+                record = json.loads(raw)
+            except json.JSONDecodeError as error:
+                message = "terminal report spool is corrupt"
+                raise ReportSpoolError(message) from error
+            if not isinstance(record, dict) or record.get("index") != index:
+                message = "terminal report spool records are unordered"
+                raise ReportSpoolError(message)
+            yield cast("dict[str, object]", record)
+    finally:
+        records.close()
     if spool.record_count != len(ledger.items) or not all(
         item.archived for item in ledger.items
     ):
@@ -224,7 +228,26 @@ def _emergency_records(ledger: BatchLedger) -> Iterator[dict[str, object]]:
     if spool.record_count != len(ledger.items):
         message = "terminal emergency report spool is incomplete"
         raise ReportSpoolError(message)
-    pairs = zip(spool.records(), ledger.items, strict=True)
+    records = spool.records()
+    pairs = zip(records, ledger.items, strict=True)
+    try:
+        yield from _emergency_record_pairs(pairs)
+    finally:
+        records.close()
+
+
+def _emergency_record_pairs(
+    pairs: Iterator[tuple[bytes, LedgerItem]],
+) -> Iterator[dict[str, object]]:
+    """Validate and render one closed-owner emergency record stream.
+
+    Yields:
+        Complete emergency status records in input order.
+
+    Raises:
+        ReportSpoolError: If a reservation record is malformed or inconsistent.
+
+    """
     for index, (raw, item) in enumerate(pairs):
         try:
             reservation = json.loads(raw)

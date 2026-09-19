@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
 
 MAX_RECORD_BYTES: Final = 1024 * 1024
 MAX_SPOOL_BYTES: Final = 64 * 1024 * 1024
@@ -143,7 +143,7 @@ class ReportSpool:
         self.bytes_written += len(payload)
         self.record_count += 1
 
-    def records(self) -> Iterator[bytes]:
+    def records(self) -> Generator[bytes, None, None]:
         """Yield every complete bounded record after validating the spool shape.
 
         Yields:
