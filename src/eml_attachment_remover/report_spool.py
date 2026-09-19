@@ -104,7 +104,9 @@ class ReportSpool:
         if self.bytes_written + len(payload) > MAX_SPOOL_BYTES:
             message = "terminal report spool exceeds its bounded capacity"
             raise ReportSpoolError(message)
-        descriptor = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CLOEXEC)
+        descriptor = os.open(
+            self.path, os.O_WRONLY | os.O_APPEND | getattr(os, "O_CLOEXEC", 0)
+        )
         committed = False
         try:
             _write_all(descriptor, payload)
