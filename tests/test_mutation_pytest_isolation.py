@@ -102,7 +102,10 @@ class MutationPytestIsolationTests(unittest.TestCase):
         generated = workspace / "tools" / "mutation_pytest_isolation.py"
         if not generated.is_file():
             self.skipTest("mutation hook source is unavailable")
-        interpreter = Path(os.environ.get("VIRTUAL_ENV", sys.prefix)) / "bin" / "python"
+        virtual_environment = Path(os.environ.get("VIRTUAL_ENV", sys.prefix))
+        interpreter = virtual_environment / (
+            "Scripts/python.exe" if os.name == "nt" else "bin/python"
+        )
         environment = os.environ.copy()
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         environment.setdefault(
