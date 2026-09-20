@@ -7,6 +7,7 @@ import importlib
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast
 
@@ -58,7 +59,6 @@ task_test_commands = cast(
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
 BUILD_TARGET: Final = PROJECT_ROOT / "build" / "remove-eml-attachments.pyz"
 BUILD_DIRECTORY: Final = PROJECT_ROOT / "build"
-RELEASE_DIRECTORY: Final = PROJECT_ROOT / "release-dist"
 MUTATION_STATISTICS: Final = PROJECT_ROOT / "mutants" / "mutmut-cicd-stats.json"
 MUTATION_RESULTS: Final = BUILD_DIRECTORY / "mutmut-results.txt"
 MUTATION_EQUIVALENTS: Final = PROJECT_ROOT / "tools" / "equivalent_mutants.json"
@@ -375,13 +375,15 @@ def _build_zipapp() -> None:
 
 
 def _qualify_release() -> None:
-    """Build and qualify the complete explicitly local release-candidate set."""
+    """Build and qualify release candidates outside the repository checkout."""
+    output_directory = Path(tempfile.mkdtemp(prefix="eml-attachment-remover-release-"))
     _run((
         sys.executable,
         "tools/qualify_release.py",
         "--output-directory",
-        str(RELEASE_DIRECTORY),
+        str(output_directory),
     ))
+    print(f"qualified release candidates: {output_directory}")
 
 
 def _quality() -> None:

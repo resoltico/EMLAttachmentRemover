@@ -12,16 +12,14 @@ Everything else is kept or rejected. In particular, filenames, media types,
 position are never used as weaker evidence that content is disposable. Originals are
 never modified.
 
-## Important v3 boundary
+## Rendering boundary
 
-Version 3 is a hard break from the unsafe v2 text-only product. Do not rely on v2.0.1
-derived files as faithful copies: retain original EML files and regenerate from those
-originals. v3 does not convert HTML to text, infer semantic equivalence, fetch remote
+The tool does not convert HTML to text, infer semantic equivalence, fetch remote
 resources, parse or sanitize HTML/CSS, or promise identical rendered appearance.
 
 Retained HTML remains byte-for-byte source content. It can include data URIs, remote
-URLs, scripts, styles, tracking markup, or references to related components that v3
-removed. Mail-client security and rendering choices remain the mail client's job;
+URLs, scripts, styles, tracking markup, or references to related components that are
+not retained. Mail-client security and rendering choices remain the mail client's job;
 missing related-media placeholders are expected.
 
 ## Use
@@ -43,7 +41,7 @@ original.mime-pruned.eml
 The tool preserves kernel path traversal semantics. For example, a path containing a
 symlink and `..` opens the object selected by the kernel, not a lexically normalized
 path. Destination publication is same-directory, private-mode staging followed by an
-atomic no-replace operation; v3 never replaces an existing derived file.
+atomic no-replace operation; the program never replaces an existing derived file.
 On Windows, the bound destination directory is opened with the write access required
 for its `FlushFileBuffers` durability receipt. If a filesystem still cannot provide
 that receipt, the visible copy is reported as `published_with_error`, never `created`.
@@ -62,9 +60,9 @@ when its regular-file bytes exactly equal the freshly built, independently verif
 candidate for the current source. A dirty, attachment-bearing, truncated, changing,
 symbolic, special, or source-aliasing entry is never returned as usable.
 
-`--force`, `--skip-existing`, and newline-delimited `--output-format=paths` were
-removed. v3 provides `human`, `json`, and raw NUL-delimited `paths0`; `paths0` is not
-available with `--dry-run` and emits only `created` or `existing_verified` paths.
+The supported report formats are `human`, `json`, and raw NUL-delimited `paths0`.
+`paths0` is not available with `--dry-run` and emits only `created` or
+`existing_verified` paths.
 
 ```sh
 remove-eml-attachments --output-format=json -- "one.eml" "two.eml"
@@ -83,8 +81,8 @@ returns a complete status-preserving recovery report rather than claiming succes
 
 Install `integrations/macos-shortcuts/install.sh`, then create a Shortcuts Finder
 Quick Action named **Create MIME-Pruned EML Copy**. Configure its shell step with
-`|| :`, then add **Show Result** immediately after it so failed and mixed batches
-remain visible in Finder. The launcher defaults to
+`|| :`, then add the current **Show Content** action immediately after it so failed
+and mixed batches remain visible in Finder. The launcher defaults to
 `--existing=verify`, validates schema 3, forwards cancellation to the processor, and
 reveals only `created` or `existing_verified` outputs with a final address receipt.
 See [the Finder instructions](integrations/macos-shortcuts/README.md).
@@ -102,3 +100,6 @@ python3.14 remove-eml-attachments.pyz --version
 
 The private field corpus is never part of the repository, report, test fixtures, or
 release artifacts. Quality and release procedures are documented in [QA.md](QA.md).
+`uv run python tools/tasks.py release` writes its local qualified candidates to a new
+external temporary directory and prints that directory; GitHub releases are the
+authoritative public artifacts.

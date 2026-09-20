@@ -19,6 +19,22 @@ from tools import tasks
 class MutationTaskTests(unittest.TestCase):
     """Verify mutation evidence capture, failure aggregation, and cleanup."""
 
+    def test_release_candidates_default_outside_the_checkout(self) -> None:
+        """Local release qualification never leaves a stale release-dist directory."""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "qualified-release"
+            with (
+                patch("tools.tasks.tempfile.mkdtemp", return_value=str(output)) as make,
+                patch.object(tasks, "_run") as run,
+                patch("builtins.print") as printed,
+            ):
+                tasks._qualify_release()
+        command = run.call_args.args[0]
+        make.assert_called_once_with(prefix="eml-attachment-remover-release-")
+        self.assertEqual(command[-1], str(output))
+        self.assertNotIn(tasks.PROJECT_ROOT, output.parents)
+        printed.assert_called_once_with(f"qualified release candidates: {output}")
+
     def test_mutation_aggregates_failures_after_exporting_evidence(self) -> None:
         failures = (
             CalledProcessError(1, ("mutmut", "run")),
