@@ -298,17 +298,21 @@ class TaskRunnerTests(unittest.TestCase):
         )
 
     def test_release_task_runs_portable_qualification_tool(self) -> None:
-        with patch.object(tasks, "_run") as run:
-            tasks._qualify_release()
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "release"
+            with (
+                patch("tools.tasks.tempfile.mkdtemp", return_value=str(output)),
+                patch.object(tasks, "_run") as run,
+            ):
+                tasks._qualify_release()
         self.assertEqual(run.call_count, 1)
-        run.assert_called_once_with(
-            (
-                sys.executable,
-                "tools/qualify_release.py",
-                "--output-directory",
-                str(tasks.RELEASE_DIRECTORY),
-            ),
-        )
+        run.assert_called_once_with((
+            sys.executable,
+            "tools/qualify_release.py",
+            "--output-directory",
+            str(output),
+        ))
+        self.assertNotIn(tasks.PROJECT_ROOT, output.parents)
 
     def test_mutation_result_capture_delegates_canonical_inputs(self) -> None:
         paths = object()

@@ -370,9 +370,14 @@ class TaskCommandContractTests(unittest.TestCase):
         )
 
     def test_build_and_release_tasks_use_exact_public_boundaries(self) -> None:
-        with patch.object(tasks, "_run") as run:
-            tasks._build_zipapp()
-            tasks._qualify_release()
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "release"
+            with (
+                patch("tools.tasks.tempfile.mkdtemp", return_value=str(output)),
+                patch.object(tasks, "_run") as run,
+            ):
+                tasks._build_zipapp()
+                tasks._qualify_release()
 
         self.assertEqual(
             run.call_args_list,
@@ -388,7 +393,7 @@ class TaskCommandContractTests(unittest.TestCase):
                         sys.executable,
                         "tools/qualify_release.py",
                         "--output-directory",
-                        str(tasks.RELEASE_DIRECTORY),
+                        str(output),
                     ),
                 ),
             ],
