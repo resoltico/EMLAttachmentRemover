@@ -1,6 +1,6 @@
 {
     "schema_version": 1,
-    "source_sha256": "d2466e02:dda244c5:712f21ac:aa39586e:912514ba:7cc4727b:db1be5ad:bf255a82",
+    "source_sha256": "24d1c78f:8a5c258d:0be57b84:d21293fa:5b64acd4:ecf3fe79:8804ea35:0aa5db8c",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_10",
@@ -77,6 +77,210 @@
         {
             "mutant": "eml_attachment_remover.staged_receipt.x_read_final_receipt__mutmut_123",
             "rationale": "After the descriptor is closed the exception is immediately reraised, so its sentinel reassignment is unreachable to later behavior."
+        },
+        {
+            "mutant": "tools.changelog.x__outside_fences__mutmut_1",
+            "rationale": "Before a fence opens, None and the empty string select the same false branch; thereafter active is assigned only a fence string or the empty string."
+        },
+        {
+            "mutant": "tools.changelog.x__outside_fences__mutmut_12",
+            "rationale": "A valid fence token is one repeated delimiter character, so its first and second marker bytes are identical."
+        },
+        {
+            "mutant": "tools.changelog.x__outside_fences__mutmut_14",
+            "rationale": "A valid fence token is one repeated delimiter character, so its first and second marker bytes are identical."
+        },
+        {
+            "mutant": "tools.changelog.x__outside_fences__mutmut_16",
+            "rationale": "After fence closure the active marker is used only for truthiness, so None and the empty string are observationally identical."
+        },
+        {
+            "mutant": "tools.changelog.x__outside_fences__mutmut_27",
+            "rationale": "The fence regex captures one repeated delimiter character at least three times, so its first and second marker bytes are identical."
+        },
+        {
+            "mutant": "tools.changelog.x__section__mutmut_41",
+            "rationale": "A release heading with a present date capture always contains its required ten date characters, so the fallback expression is unreachable."
+        },
+        {
+            "mutant": "tools.changelog.x__structure__mutmut_14",
+            "rationale": "Every reference label undergoes the same deterministic normalization before equality comparison, so changing its internal join separator preserves duplicate detection."
+        },
+        {
+            "mutant": "tools.github_release_api.x__records__mutmut_13",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated collection."
+        },
+        {
+            "mutant": "tools.github_release_api.x__records__mutmut_14",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated collection."
+        },
+        {
+            "mutant": "tools.github_release_api.x__records__mutmut_9",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated collection."
+        },
+        {
+            "mutant": "tools.github_release_api.x_run__mutmut_28",
+            "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 encode identical bytes."
+        },
+        {
+            "mutant": "tools.github_release_api.x_run__mutmut_47",
+            "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode identical bytes."
+        },
+        {
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_24",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
+        },
+        {
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_28",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
+        },
+        {
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_29",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
+        },
+        {
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_35",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
+        },
+        {
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_39",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
+        },
+        {
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_40",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
+        },
+        {
+            "mutant": "tools.mutation_pytest_isolation.x_pytest_load_initial_conftests__mutmut_19",
+            "rationale": "Omitting getattr's explicit final None default produces the same None value when the preloaded package has no __path__ attribute."
+        },
+        {
+            "mutant": "tools.publish_release.x__context__mutmut_123",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event tag string."
+        },
+        {
+            "mutant": "tools.publish_release.x__context__mutmut_127",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event tag string."
+        },
+        {
+            "mutant": "tools.publish_release.x__context__mutmut_128",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event tag string."
+        },
+        {
+            "mutant": "tools.publish_release.x__context__mutmut_129",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event commit string."
+        },
+        {
+            "mutant": "tools.publish_release.x__context__mutmut_133",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event commit string."
+        },
+        {
+            "mutant": "tools.publish_release.x__context__mutmut_134",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event commit string."
+        },
+        {
+            "mutant": "tools.publish_release.x__context__mutmut_29",
+            "rationale": "The non-empty repository precondition rejects both None and the empty-string default before the value can be used or returned."
+        },
+        {
+            "mutant": "tools.publish_release.x__context__mutmut_31",
+            "rationale": "Omitting the default produces the same None value as an absent repository; the non-empty repository precondition rejects it before use."
+        },
+        {
+            "mutant": "tools.publish_release.x_main__mutmut_29",
+            "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode the same committed metadata bytes."
+        },
+        {
+            "mutant": "tools.publish_release.x_main__mutmut_41",
+            "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode the same committed changelog bytes."
+        },
+        {
+            "mutant": "tools.publish_release.x_project_version__mutmut_21",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated project version."
+        },
+        {
+            "mutant": "tools.publish_release.x_project_version__mutmut_25",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated project version."
+        },
+        {
+            "mutant": "tools.publish_release.x_project_version__mutmut_26",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated project version."
+        },
+        {
+            "mutant": "tools.release_publication.x__metadata__mutmut_70",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated draft flag."
+        },
+        {
+            "mutant": "tools.release_publication.x__metadata__mutmut_74",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated draft flag."
+        },
+        {
+            "mutant": "tools.release_publication.x__metadata__mutmut_75",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated draft flag."
+        },
+        {
+            "mutant": "tools.release_publication.x__missing_assets__mutmut_100",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset name."
+        },
+        {
+            "mutant": "tools.release_publication.x__missing_assets__mutmut_101",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset name recorded as seen."
+        },
+        {
+            "mutant": "tools.release_publication.x__missing_assets__mutmut_41",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset lookup."
+        },
+        {
+            "mutant": "tools.release_publication.x__missing_assets__mutmut_45",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset lookup."
+        },
+        {
+            "mutant": "tools.release_publication.x__missing_assets__mutmut_46",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset lookup."
+        },
+        {
+            "mutant": "tools.release_publication.x__missing_assets__mutmut_71",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated plain integer asset size."
+        },
+        {
+            "mutant": "tools.release_publication.x__missing_assets__mutmut_75",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated plain integer asset size."
+        },
+        {
+            "mutant": "tools.release_publication.x__missing_assets__mutmut_76",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated plain integer asset size."
+        },
+        {
+            "mutant": "tools.release_publication.x__missing_assets__mutmut_96",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset name recorded as seen."
+        },
+        {
+            "mutant": "tools.release_publication.x_identifier__mutmut_17",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated positive release identifier."
+        },
+        {
+            "mutant": "tools.release_publication.x_identifier__mutmut_21",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated positive release identifier."
+        },
+        {
+            "mutant": "tools.release_publication.x_identifier__mutmut_22",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated positive release identifier."
+        },
+        {
+            "mutant": "tools.release_publication.x_record__mutmut_13",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
+        },
+        {
+            "mutant": "tools.release_publication.x_record__mutmut_14",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
+        },
+        {
+            "mutant": "tools.release_publication.x_record__mutmut_15",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
+        },
+        {
+            "mutant": "tools.release_publication.x_record__mutmut_9",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
         }
     ]
 }

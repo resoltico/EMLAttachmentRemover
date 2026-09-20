@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import runpy
 import subprocess
 import sys
@@ -9,21 +10,23 @@ import tomllib
 from pathlib import Path
 
 import pytest
-from tools import check_release_tag
+from tools import check_release_tag, qualify_release
+from tools.changelog import extract_release
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_TAG_TOOL = PROJECT_ROOT / "tools" / "check_release_tag.py"
 
 
-def test_release_artifact_names_are_v3_and_include_all_public_distribution_forms() -> (
-    None
-):
-    names = (
-        "eml_attachment_remover-3.0.4-cp314-none-any.whl",
-        "eml_attachment_remover-3.0.4.tar.gz",
+def test_release_artifact_names_come_from_the_actual_producer() -> None:
+    with (PROJECT_ROOT / "pyproject.toml").open("rb") as project_file:
+        project = tomllib.load(project_file)["project"]
+    name, version = str(project["name"]), str(project["version"])
+    normalized = re.sub(r"[-_.]+", "_", name)
+    assert set(qualify_release._artifact_names(name, version)) == {
+        f"{normalized}-{version}-cp314-none-any.whl",
+        f"{normalized}-{version}.tar.gz",
         "remove-eml-attachments.pyz",
-    )
-    assert names == tuple(sorted(names))
+    }
 
 
 def test_release_tag_is_derived_only_from_current_project_metadata(
@@ -49,19 +52,23 @@ def test_release_tag_is_derived_only_from_current_project_metadata(
 def test_release_tag_script_entrypoint_uses_the_same_version_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(sys, "argv", [str(RELEASE_TAG_TOOL), "v3.0.4"])
+    with (PROJECT_ROOT / "pyproject.toml").open("rb") as project_file:
+        version = str(tomllib.load(project_file)["project"]["version"])
+    monkeypatch.setattr(sys, "argv", [str(RELEASE_TAG_TOOL), f"v{version}"])
     with pytest.raises(SystemExit) as result:
         runpy.run_path(str(RELEASE_TAG_TOOL), run_name="__main__")
     assert result.value.code == 0
 
 
-def test_v3_release_notes_describe_the_corrected_mime_pruned_boundary() -> None:
-    notes = PROJECT_ROOT / ".github" / "release-notes" / "v3.0.4.md"
-    content = notes.read_text(encoding="utf-8")
-    assert content.startswith("# EML Attachment Remover 3.0.4\n")
-    assert "MIME-pruned" in content
-    assert "regenerate any v2-derived files" in content
-    assert "attestation" in content
+def test_current_changelog_is_the_release_prose_source() -> None:
+    with (PROJECT_ROOT / "pyproject.toml").open("rb") as project_file:
+        version = str(tomllib.load(project_file)["project"]["version"])
+    body = extract_release(
+        (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), version
+    )
+    assert not body.startswith(f"## [{version}] - ")
+    assert body.startswith("### Changed\n")
+    assert body.endswith("\n")
 
 
 def test_release_workflow_requires_all_qualification_jobs_before_publication() -> None:
@@ -74,7 +81,9 @@ def test_release_workflow_requires_all_qualification_jobs_before_publication() -
     assert required_needs in workflow
     assert "tools/tasks.py thorough" in workflow
     assert "--observable --timeout-seconds 3300" in workflow
-    assert "tools/tasks.py release" in workflow
+    assert "tools/qualify_release.py" in workflow
+    assert "--output-directory release-dist" in workflow
     assert "--verify-directory release-dist" in workflow
     assert "subject-checksums: release-dist/SHA256SUMS" in workflow
-    assert "--verify-tag" in workflow
+    assert "-m tools.publish_release --assets-directory release-dist" in workflow
+    assert "release-notes" not in workflow

@@ -4,6 +4,19 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+## [3.0.5] - 2026-09-20
+
+### Changed
+
+- Replaced maintained per-release GitHub note files with a changelog-bound,
+  immutable release publisher. GitHub release bodies now contain the exact
+  categorized Markdown beneath the tagged version heading.
+
+### Fixed
+
+- Validate tag targets, draft metadata, verified asset identities, publication
+  read-back, and concurrent-writer reconciliation before public publication.
+
 ## [3.0.4] - 2026-09-20
 
 ### Fixed

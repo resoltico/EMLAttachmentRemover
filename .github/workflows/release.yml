@@ -218,7 +218,12 @@ jobs:
         shell: bash
         run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
       - name: Build and qualify the exact release artifact set
-        run: uv run python tools/tasks.py release
+        # `release-dist` is ephemeral CI artifact staging, not a maintained checkout
+        # distribution directory. Local `tasks.py release` continues to use an
+        # external temporary directory.
+        run: >-
+          uv run python tools/qualify_release.py
+          --output-directory release-dist
       - name: Upload release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -285,50 +290,9 @@ jobs:
         with:
           subject-name: SHA256SUMS
           subject-digest: ${{ steps.checksum-manifest.outputs.digest }}
-      - name: Create the GitHub release
-        shell: bash
-        run: |
-          release_version=${RELEASE_TAG#v}
-          release_notes=".github/release-notes/$RELEASE_TAG.md"
-          if [[ ! -f "$release_notes" || -L "$release_notes" ]]; then
-            exit 1
-          fi
-          IFS= read -r release_heading < "$release_notes"
-          if [[ "$release_heading" != "# EML Attachment Remover $release_version" ]]; then
-            exit 1
-          fi
-          read -r object_type object_sha < <(
-            gh api \
-              --header "X-GitHub-Api-Version: 2026-03-10" \
-              "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
-              --jq '.object | [.type, .sha] | @tsv'
-          )
-          for _ in 1 2 3 4; do
-            if [[ "$object_type" == "commit" ]]; then
-              break
-            fi
-            if [[ "$object_type" != "tag" ]]; then
-              exit 1
-            fi
-            read -r object_type object_sha < <(
-              gh api \
-                --header "X-GitHub-Api-Version: 2026-03-10" \
-                "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" \
-                --jq '.object | [.type, .sha] | @tsv'
-            )
-          done
-          if [[ "$object_type" != "commit" || "$object_sha" != "$GITHUB_SHA" ]]; then
-            exit 1
-          fi
-          gh release create "$RELEASE_TAG" \
-            release-dist/*.pyz \
-            release-dist/*.whl \
-            release-dist/*.tar.gz \
-            release-dist/SHA256SUMS \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "EML Attachment Remover $release_version" \
-            --notes-file "$release_notes"
+      - name: Publish and verify the changelog-bound release
+        run: >-
+          uv run --no-project --python 3.14.7 python -B
+          -m tools.publish_release --assets-directory release-dist
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}

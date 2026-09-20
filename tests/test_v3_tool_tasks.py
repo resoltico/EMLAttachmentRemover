@@ -45,4 +45,5 @@ def test_workflow_lanes_invoke_the_matching_quality_mutation_and_release_tasks()
     assert "--observable" in hypothesis
     assert "tools/tasks.py thorough" in release
     assert "--observable" in release
-    assert "tools/tasks.py release" in release
+    assert "tools/qualify_release.py" in release
+    assert "--output-directory release-dist" in release
