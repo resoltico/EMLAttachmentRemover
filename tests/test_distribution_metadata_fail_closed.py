@@ -47,6 +47,35 @@ class GeneratedMetadataFailClosedTests(unittest.TestCase):
             "generated metadata contains unsupported fields: ['X-Public']",
         )
 
+    @staticmethod
+    def test_readme_description_normalizes_each_public_line_ending() -> None:
+        """A generated LF metadata description matches a CR-only public README."""
+        with tempfile.TemporaryDirectory() as directory:
+            distribution = create_distribution(Path(directory))
+            (distribution.root / "README.md").write_bytes(
+                b"Public\rsynthetic\rREADME\r\r"
+            )
+            metadata_bytes = distribution.metadata.replace(
+                b"Public synthetic README", b"Public\nsynthetic\nREADME\n"
+            )
+            metadata = BytesParser(policy=policy.compat32).parsebytes(metadata_bytes)
+            distribution.contract.verify_metadata(metadata)
+
+    def test_readme_description_error_is_an_exact_public_diagnostic(self) -> None:
+        """A changed public description identifies the exact release-contract fault."""
+        with tempfile.TemporaryDirectory() as directory:
+            distribution = create_distribution(Path(directory))
+            metadata_bytes = distribution.metadata.replace(
+                b"Public synthetic README", b"Changed public README"
+            )
+            metadata = BytesParser(policy=policy.compat32).parsebytes(metadata_bytes)
+            with self.assertRaises(DistributionArchiveError) as raised:
+                distribution.contract.verify_metadata(metadata)
+        self.assertEqual(
+            str(raised.exception),
+            "generated metadata description does not match the public README",
+        )
+
     def test_project_urls_reject_wrong_missing_extra_and_duplicate_values(self) -> None:
         expected = (
             "Homepage, https://example.test/public-project",
