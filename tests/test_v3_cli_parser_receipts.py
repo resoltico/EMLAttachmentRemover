@@ -94,6 +94,7 @@ def test_parser_receives_every_supported_value_and_boolean_option() -> None:
     ("arguments", "message"),
     [
         (["--out", "copy.eml", "source.eml"], "unrecognized arguments: --out"),
+        (["--force", "source.eml"], "unrecognized arguments: --force"),
         (
             ["--existing", "old", "source.eml"],
             (
