@@ -135,6 +135,9 @@ def test_spool_uses_zero_for_unavailable_platform_open_flags(
     spool.path.write_bytes(b"x" * report_spool.MAX_RECORD_BYTES)
     with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
         tuple(spool.records())
+    spool.path.write_bytes(b"x" * report_spool.MAX_RECORD_BYTES + b"\n")
+    spool.bytes_written = report_spool.MAX_RECORD_BYTES + 1
+    assert tuple(spool.records()) == (b"x" * report_spool.MAX_RECORD_BYTES,)
 
 
 def test_summary_counts_repeated_statuses_and_batch_error_rejects_ok() -> None:
