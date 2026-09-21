@@ -82,8 +82,11 @@ def test_execution_rejects_invalid_plan_spans_and_removal_roots() -> None:
     for removal in (root, absent):
         with pytest.raises(AppError):
             build_candidate(tree, (removal,))
-    with pytest.raises(AppError):
+    with pytest.raises(AppError) as overlapping:
         RemovalIndex.from_roots({(1,), (1, 0)})
+    assert overlapping.value == AppError(
+        ExitCode.VERIFICATION_ERROR, "overlapping MIME removal roots"
+    )
 
 
 def test_verifier_rejects_digest_and_source_span_tampering() -> None:

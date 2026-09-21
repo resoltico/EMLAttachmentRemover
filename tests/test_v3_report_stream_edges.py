@@ -389,10 +389,16 @@ def test_report_stream_recovers_idempotently_and_attempts_every_owned_close(
 
 def test_terminal_receipt_reclassifies_for_report_failure() -> None:
     """Only a terminal created/existing receipt can be corrected for report loss."""
-    item = LedgerItem(0, path_value("one.eml"))
     error = AppError(ExitCode.WRITE_ERROR, "report failure", phase="report")
-    with pytest.raises(RuntimeError):
-        item.correct_report_failure(error)
+    for item in (
+        LedgerItem(0, path_value("unstarted.eml")),
+        LedgerItem(1, path_value("missing-status.eml"), terminalized=True),
+    ):
+        with pytest.raises(
+            RuntimeError, match="attempted to terminalize a ledger item twice"
+        ):
+            item.correct_report_failure(error)
+    item = LedgerItem(2, path_value("one.eml"))
     item.finish(ItemStatus.EXISTING_VERIFIED)
     item.correct_report_failure(error)
     assert item.status is ItemStatus.FAILED

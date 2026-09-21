@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 from tests.distribution_archive_support import create_distribution
@@ -39,3 +40,4 @@ def test_distribution_metadata_and_wheel_text_are_complete() -> None:
         "Root-Is-Purelib: true\n"
         "Tag: cp314-none-any\n"
     )
+    assert replace(declared, keywords=()).expected_metadata()["Keywords"] == ()

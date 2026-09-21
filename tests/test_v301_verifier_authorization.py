@@ -160,6 +160,13 @@ def test_source_oracle_covers_alternative_and_related_contexts() -> None:
         b"--a\r\nContent-Type: text/html\r\n\r\n<html>html</html>\r\n--a--\r\n"
     )
     authorize_removals(alternative, ())
+    nested_alternative = parse_raw_mime(
+        b"Content-Type: multipart/alternative; boundary=outer\r\n\r\n"
+        b"--outer\r\nContent-Type: multipart/alternative; boundary=inner\r\n\r\n"
+        b"--inner\r\nContent-Type: text/plain\r\n\r\nplain\r\n--inner--\r\n"
+        b"--outer\r\nContent-Type: text/html\r\n\r\n<html>html</html>\r\n--outer--\r\n"
+    )
+    authorize_removals(nested_alternative, ())
     related = _related()
     authorize_removals(related, (_related_claim(),))
     related.root.content_type.parameters[b"type"] = b"text/html"
