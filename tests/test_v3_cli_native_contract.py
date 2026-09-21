@@ -67,16 +67,20 @@ def test_domain_error_and_single_terminal_ledger_rules_are_enforced() -> None:
     ledger = BatchLedger.from_requests([path_value("one.eml")])
     item = ledger.items[0]
     item.finish(ItemStatus.FAILED, error)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as duplicate:
         item.finish(ItemStatus.NOT_RUN)
+    assert str(duplicate.value) == "attempted to terminalize a ledger item twice"
     item = BatchLedger.from_requests([path_value("two.eml")]).items[0]
     item.terminalized = True
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as terminal_only:
         item.finish(ItemStatus.NOT_RUN)
+    assert str(terminal_only.value) == "attempted to terminalize a ledger item twice"
     item = BatchLedger.from_requests([path_value("three.eml")]).items[0]
     item.status = ItemStatus.CREATED
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as status_only:
         item.finish(ItemStatus.NOT_RUN)
+    assert str(status_only.value) == "attempted to terminalize a ledger item twice"
     ledger.record_interruption("SIGTERM", "candidate")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as interruption:
         ledger.record_interruption("SIGINT", "report")
+    assert str(interruption.value) == "attempted to record an interruption twice"
