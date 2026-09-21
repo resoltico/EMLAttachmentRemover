@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Final, cast
 
+import pytest
+
 RUNNER: Final = (
     Path(__file__).resolve().parents[1]
     / "integrations"
@@ -189,6 +191,7 @@ def test_finder_launcher_rejects_ok_true_when_a_batch_error_exists(
     assert "report ok value does not match item receipts" in result.stdout
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX native-byte contract")
 def test_finder_launcher_accepts_native_only_posix_output_address(
     tmp_path: Path,
 ) -> None:
