@@ -124,7 +124,6 @@ class ArchiveContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             distribution = create_distribution(Path(directory))
             declared = distribution.contract
-            self.assertEqual(declared.repository_root, distribution.root)
             self.assertEqual(declared.source_root, "public_project-1.2.3")
             self.assertEqual(declared.dist_info, "public_project-1.2.3.dist-info")
             self.assertEqual(
@@ -146,18 +145,6 @@ class ArchiveContractTests(unittest.TestCase):
             self.assertEqual(
                 declared.expected_entry_points(),
                 "[console_scripts]\npublic-command = public_package:main\n",
-            )
-            self.assertEqual(
-                replace(
-                    declared,
-                    scripts={
-                        "public-command": "public_package:main",
-                        "second-command": "public_package:second",
-                    },
-                ).expected_entry_points(),
-                "[console_scripts]\n"
-                "public-command = public_package:main\n"
-                "second-command = public_package:second\n",
             )
             readme = distribution.root / declared.readme
             readme.write_bytes(b"Public synthetic README\r\n")

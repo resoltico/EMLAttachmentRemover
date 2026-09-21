@@ -41,3 +41,22 @@ def test_distribution_metadata_and_wheel_text_are_complete() -> None:
         "Tag: cp314-none-any\n"
     )
     assert replace(declared, keywords=()).expected_metadata()["Keywords"] == ()
+
+
+def test_distribution_contract_keeps_source_root_and_all_entry_points() -> None:
+    """Archive identity includes its source root and every ordered console script."""
+    with tempfile.TemporaryDirectory() as directory:
+        distribution = create_distribution(Path(directory))
+    declared = distribution.contract
+    assert declared.repository_root == distribution.root
+    assert replace(
+        declared,
+        scripts={
+            "public-command": "public_package:main",
+            "second-command": "public_package:second",
+        },
+    ).expected_entry_points() == (
+        "[console_scripts]\n"
+        "public-command = public_package:main\n"
+        "second-command = public_package:second\n"
+    )
