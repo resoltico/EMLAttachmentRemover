@@ -134,6 +134,9 @@ def test_source_alias_inventory_marks_every_duplicate_request(tmp_path: Path) ->
     assert {item.error.code for item in ledger.items if item.error is not None} == {
         ExitCode.INPUT_ERROR
     }
+    assert {item.error.message for item in ledger.items if item.error is not None} == {
+        "selected source aliases another input"
+    }
 
 
 def test_destination_collision_inventory_marks_every_exact_output(
@@ -155,6 +158,9 @@ def test_destination_collision_inventory_marks_every_exact_output(
     assert all(item.error is not None for item in ledger.items)
     assert {item.error.code for item in ledger.items if item.error is not None} == {
         ExitCode.OUTPUT_CONFLICT
+    }
+    assert {item.error.message for item in ledger.items if item.error is not None} == {
+        "two inputs target one destination"
     }
 
 

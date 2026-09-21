@@ -69,6 +69,14 @@ def test_domain_error_and_single_terminal_ledger_rules_are_enforced() -> None:
     item.finish(ItemStatus.FAILED, error)
     with pytest.raises(RuntimeError):
         item.finish(ItemStatus.NOT_RUN)
+    item = BatchLedger.from_requests([path_value("two.eml")]).items[0]
+    item.terminalized = True
+    with pytest.raises(RuntimeError):
+        item.finish(ItemStatus.NOT_RUN)
+    item = BatchLedger.from_requests([path_value("three.eml")]).items[0]
+    item.status = ItemStatus.CREATED
+    with pytest.raises(RuntimeError):
+        item.finish(ItemStatus.NOT_RUN)
     ledger.record_interruption("SIGTERM", "candidate")
     with pytest.raises(RuntimeError):
         ledger.record_interruption("SIGINT", "report")

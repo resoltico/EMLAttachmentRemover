@@ -33,8 +33,14 @@ def test_spool_rejects_unsafe_records_and_nonprogress_writes(
     """Unsafe framing and partial writes never become accepted terminal records."""
     spool = report_spool.ReportSpool.create()
     try:
-        with pytest.raises(report_spool.ReportSpoolError):
-            spool.append(b"")
+        for record in (
+            b"",
+            b'{"index":0}\n',
+            b"x" * (report_spool.MAX_RECORD_BYTES + 1),
+        ):
+            with pytest.raises(report_spool.ReportSpoolError) as unsafe:
+                spool.append(record)
+            assert str(unsafe.value) == "terminal report record is unsafe"
         monkeypatch.setattr(report_spool.__dict__["os"], "write", lambda *_args: 0)
         with pytest.raises(report_spool.ReportSpoolError):
             spool.append(b'{"index":0}')

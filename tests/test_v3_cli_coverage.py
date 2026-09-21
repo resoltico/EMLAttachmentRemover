@@ -59,6 +59,17 @@ def test_exit_code_uses_batch_failure_for_multiple_terminal_failures() -> None:
     assert cli.exit_code(ledger) == ExitCode.BATCH_FAILURE
 
 
+def test_exit_code_uses_batch_failure_for_multiple_incomplete_publications() -> None:
+    """Multiple visible-but-incomplete publications are a batch failure."""
+    ledger = BatchLedger.from_requests([path_value("one.eml"), path_value("two.eml")])
+    for item in ledger.items:
+        item.finish(
+            ItemStatus.PUBLISHED_WITH_ERROR,
+            AppError(ExitCode.WRITE_ERROR, "post-edge evidence failed"),
+        )
+    assert cli.exit_code(ledger) == ExitCode.BATCH_FAILURE
+
+
 def test_internal_item_error_outranks_an_additional_batch_write_error() -> None:
     """A later report failure cannot mask a retained programming failure."""
     ledger = _ledger(ItemStatus.FAILED, AppError(ExitCode.INTERNAL_ERROR, "invariant"))
