@@ -80,7 +80,7 @@ class CoverageXmlDiagnosticContracts(unittest.TestCase):
                 ),
                 "root is not coverage",
             ),
-            (altered(b' version="7.15.4"', b""), "invalid coverage attributes"),
+            (altered(b' version="7.16.1"', b""), "invalid coverage attributes"),
             (altered(b'lines-valid="2"', b'lines-valid="01"'), "invalid lines-valid"),
             (
                 altered(b'lines-covered="1"', b'lines-covered="01"'),
@@ -124,7 +124,7 @@ class CoverageXmlDiagnosticContracts(unittest.TestCase):
                 altered(b'timestamp="1786680000000"', b'timestamp="bad"'),
                 "invalid timestamp",
             ),
-            (altered(b'version="7.15.4"', b'version="7.15.3"'), "invalid version"),
+            (altered(b'version="7.16.1"', b'version="7.16.0"'), "invalid version"),
             (
                 altered(b"  <sources>", b"unexpected\n  <sources>"),
                 "unexpected coverage text",

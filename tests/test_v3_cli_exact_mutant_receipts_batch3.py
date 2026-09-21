@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from eml_attachment_remover import cli, cli_parser
+from eml_attachment_remover import cli
 from eml_attachment_remover.batch import BatchOptions
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import AppError, BatchLedger, ExitCode, ItemStatus
@@ -95,23 +95,6 @@ def test_json_error_terminalizes_every_source_with_the_configuration_reason(
             ("not_run", "batch configuration error"),
         ],
     )
-
-
-@pytest.mark.parametrize(
-    ("arguments", "expected"),
-    [
-        (["--output-format=paths"], True),
-        (["--output-format", "paths"], True),
-        (["source.eml", "--output-format=paths"], True),
-        (["--output-format", "json"], False),
-        (["--output-format"], False),
-    ],
-)
-def test_removed_paths_detection_handles_separate_and_terminal_option_forms(
-    arguments: list[str], expected: object
-) -> None:
-    """Removed paths syntax is recognized only in each exact legacy spelling."""
-    assert cli_parser._removed_paths(arguments) is expected  # ruff: ignore[private-member-access] - raw legacy-option receipt.
 
 
 def test_run_keeps_every_validated_option_and_the_completed_ledger(

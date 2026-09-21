@@ -21,7 +21,7 @@ def _realistic_xml() -> bytes:
 
     """
     return b"""<?xml version="1.0" ?>
-<coverage version="7.15.4" timestamp="1"
+<coverage version="7.16.1" timestamp="1"
  lines-valid="1" lines-covered="1" line-rate="1"
  branches-valid="0" branches-covered="0" branch-rate="1" complexity="0">
   <sources>

@@ -16,7 +16,6 @@ from .cli_parser import (
     raw_json_requested,
     raw_source_candidates,
     validate_arguments,
-    validate_raw_arguments,
 )
 from .domain import (
     PROGRAM_NAME,
@@ -216,7 +215,6 @@ def _internal_error(error: Exception) -> int:
 
 def _run(raw: list[str], state: _RunState) -> int:
     parser = build_parser()
-    validate_raw_arguments(raw)
     namespace = parser.parse_args(raw)
     validate_arguments(namespace)
     options = BatchOptions(

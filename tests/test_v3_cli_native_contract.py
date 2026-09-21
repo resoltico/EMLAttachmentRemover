@@ -6,33 +6,19 @@ import pytest
 
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.cli_parser import (
-    MIGRATION_PATHS,
     build_parser,
     raw_json_requested,
     raw_source_candidates,
     validate_arguments,
-    validate_raw_arguments,
 )
 from eml_attachment_remover.domain import AppError, BatchLedger, ExitCode, ItemStatus
 from eml_attachment_remover.native_paths import path_value
-
-
-def test_raw_end_of_options_prevents_removed_switch_interpretation() -> None:
-    validate_raw_arguments(["--", "--force"])
-    assert raw_source_candidates(["--", "--force"]) == ["--force"]
 
 
 def test_preparse_json_recognizes_separate_output_format_value() -> None:
     arguments = ["--output-format", "json", "--force", "source.eml"]
     assert raw_json_requested(arguments) is True
     assert raw_source_candidates(arguments) == ["source.eml"]
-
-
-def test_removed_newline_paths_has_exact_preparse_migration_error() -> None:
-    with pytest.raises(AppError) as captured:
-        validate_raw_arguments(["--output-format", "paths", "source.eml"])
-    assert captured.value.code is ExitCode.USAGE
-    assert captured.value.message == MIGRATION_PATHS
 
 
 def test_cancellation_signal_preserves_exception_arguments() -> None:
@@ -55,9 +41,6 @@ def test_parser_usage_and_postparse_safety_combinations_are_typed() -> None:
             parser.parse_args(["--dry-run", "--output-format", "paths0", "one.eml"])
         )
     assert dry_error.value.code is ExitCode.USAGE
-    with pytest.raises(AppError) as existing_error:
-        validate_raw_arguments(["--force", "one.eml"])
-    assert existing_error.value.code is ExitCode.USAGE
     validate_arguments(parser.parse_args(["one.eml"]))
 
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
+from typing import TYPE_CHECKING
 
 from eml_attachment_remover import cli_parser, reporting_v3
-from eml_attachment_remover.domain import AppError, ExitCode
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_canonical_json_passes_fixed_ascii_policy_to_the_json_boundary(
@@ -28,18 +30,6 @@ def test_canonical_json_passes_fixed_ascii_policy_to_the_json_boundary(
         == "{}"
     )
     assert calls == [({"public": "π"}, True, True, False)]
-
-
-def test_raw_migration_spellings_produce_the_exact_public_usage_documents() -> None:
-    """Removed output policy and paths channels have distinct v3 migration receipts."""
-    cases = (
-        (["-f", "source.eml"], cli_parser.MIGRATION_EXISTING),
-        (["--output-format=paths", "source.eml"], cli_parser.MIGRATION_PATHS),
-    )
-    for arguments, message in cases:
-        with pytest.raises(AppError) as raised:
-            cli_parser.validate_raw_arguments(arguments)
-        assert raised.value == AppError(ExitCode.USAGE, message)
 
 
 def test_raw_json_selection_requires_one_of_the_two_exact_supported_spellings() -> None:

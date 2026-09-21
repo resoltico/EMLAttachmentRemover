@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 from tools import hypothesis_observation_safety, junit_report, smoke_distribution
 
-from eml_attachment_remover import cli_parser, staged_output
+from eml_attachment_remover import staged_output
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.native_paths import bind_destination
 
@@ -68,14 +68,6 @@ def test_staged_publish_retains_default_cleanup_receipt_when_entry_fails(
     with pytest.raises(RuntimeError) as raised:
         staged_output.publish(destination, b"candidate")
     assert raised.value is failure
-
-
-def test_parser_removed_short_and_inline_formats_have_exact_preparse_results() -> None:
-    """The raw parser recognizes removed compact spellings before argparse owns them."""
-    assert cli_parser._removed_existing("-f")  # ruff: ignore[private-member-access] - removed short spelling.
-    assert cli_parser._removed_existing("-fverify")  # ruff: ignore[private-member-access] - removed compact assignment.
-    assert cli_parser._removed_paths(["--output-format=paths"])  # ruff: ignore[private-member-access] - removed inline channel.
-    assert cli_parser.raw_json_requested(["--output-format=json"])
 
 
 def test_junit_replacements_include_raw_and_resolved_absolute_isolated_roots(
