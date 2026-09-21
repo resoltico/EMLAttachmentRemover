@@ -15,14 +15,9 @@ if TYPE_CHECKING:
     from email.message import EmailMessage
 
 
-def test_line_end_counts_a_newline_at_zero_and_mbox_offset_uses_bounds() -> None:
-    """A physical CRLF at offset zero and a nonzero mbox start remain exact."""
+def test_line_end_counts_a_newline_at_zero_without_generic_envelope_skipping() -> None:
+    """A physical CRLF at offset zero does not alter generic header ownership."""
     assert mime_headers.line_end(b"\r\nbody", 0, 6) == 2
-    prefix = b"skip"
-    raw = prefix + b"From a@x\r\nX: one\r\n"
-    assert mime_headers._first_header_offset(  # ruff: ignore[private-member-access] - exact mbox offset receipt.
-        raw, len(prefix), len(raw)
-    ) == len(prefix) + len(b"From a@x\r\n")
 
 
 def test_header_parser_treats_space_as_continuation_and_x_as_value() -> None:
@@ -38,7 +33,9 @@ def test_entity_headers_do_not_search_beyond_the_bounded_entity() -> None:
     """A header-like partial entity fails instead of borrowing a later separator."""
     raw = b"X: one\r\n\r\nbody"
     with pytest.raises(AppError) as rejected:
-        mime_raw._entity_headers(raw, 0, 6)  # ruff: ignore[private-member-access] - bounded entity separator receipt.
+        mime_raw._entity_headers(  # ruff: ignore[private-member-access] - bounded entity separator receipt.
+            raw, 0, 6, root=False
+        )
     assert rejected.value == AppError(
         ExitCode.PARSE_ERROR, "header-like MIME entity lacks a body separator"
     )

@@ -75,9 +75,9 @@ def test_safe_human_output_preserves_unpaired_surrogates_as_display_escapes() ->
     assert stream.getvalue() == "prefix-\\ud800\n"
 
 
-def test_json_reporting_keeps_unicode_visible_and_writes_one_newline(
+def test_json_reporting_uses_ascii_transport_and_writes_one_newline(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The JSON channel emits a canonical visible-Unicode one-document line."""
+    """The JSON channel emits one portable ASCII document line."""
     reporting_v3.write_json({"z": "π", "a": 1})
-    assert capsys.readouterr().out == '{"a": 1, "z": "π"}\n'
+    assert capsys.readouterr().out == '{"a": 1, "z": "\\u03c0"}\n'

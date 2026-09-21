@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
-from base64 import b64decode, b64encode
+from base64 import b64encode
 from encodings import utf_8, utf_16_le
 from typing import Final, TextIO
 
@@ -21,8 +20,11 @@ from .domain import (
     LedgerItem,
     PathValue,
 )
+from .native_values import report_path_bytes
 
 _UTF8: Final = utf_8.getregentry().name
+_SURROGATE_FIRST: Final = 0xD800
+_SURROGATE_LAST: Final = 0xDFFF
 
 
 def _base64(value: bytes) -> str:
@@ -45,27 +47,26 @@ def _utf16le(value: str) -> bytes:
     return utf_16_le.encode(value)[0]
 
 
-def _canonical_json(document: dict[str, object], *, ensure_ascii: object) -> str:
-    """Serialize one report while enforcing the boolean JSON visibility policy.
+def _canonical_json(document: dict[str, object]) -> str:
+    """Serialize one report through the single portable JSON policy.
 
     Returns:
         One canonical JSON document without a trailing newline.
 
-    Raises:
-        TypeError: If the internal JSON visibility setting is not a boolean.
-
     """
-    if type(ensure_ascii) is not bool:
-        message = "JSON ensure_ascii must be a boolean"
-        raise TypeError(message)
-    return json.dumps(document, ensure_ascii=ensure_ascii, sort_keys=True)
+    return json.dumps(document, ensure_ascii=True, sort_keys=True, allow_nan=False)
 
 
 def _path(value: PathValue | None) -> dict[str, str | None] | None:
     if value is None:
         return None
+    text = value.text
+    if text is not None and any(
+        _SURROGATE_FIRST <= ord(character) <= _SURROGATE_LAST for character in text
+    ):
+        text = None
     return {
-        "text": value.text,
+        "text": text,
         "display": value.display,
         "native_base64": value.native_base64,
         "native_utf16le_base64": value.native_utf16le_base64,
@@ -266,7 +267,12 @@ def report(ledger: BatchLedger, mode: str, exit_code: int) -> dict[str, object]:
 
 def write_json(document: dict[str, object]) -> None:
     """Write exactly one canonical JSON report document."""
-    sys.stdout.write(_canonical_json(document, ensure_ascii=False) + "\n")
+    payload = (_canonical_json(document) + "\n").encode("ascii")
+    binary = getattr(sys.stdout, "buffer", None)
+    if binary is None:
+        sys.stdout.write(payload.decode("ascii"))
+    else:
+        binary.write(payload)
 
 
 def _safe(stream: TextIO, text: str) -> None:
@@ -316,16 +322,8 @@ def write_paths0(ledger: BatchLedger) -> None:
     for item in ledger.items:
         receipt = item.publication
         final_address = None if receipt is None else receipt.final_address
-        if (
-            item.status in accepted
-            and final_address is not None
-            and final_address.text is not None
-        ):
-            native = (
-                b64decode(final_address.native_base64)
-                if final_address.native_base64 is not None
-                else os.fsencode(final_address.text)
-            )
+        if item.status in accepted and final_address is not None:
+            native = report_path_bytes(final_address)
             output.write(native + b"\0")
         if item.error is not None:
             _safe(

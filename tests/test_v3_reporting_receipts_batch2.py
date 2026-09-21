@@ -105,6 +105,54 @@ def test_paths0_uses_text_fallback_only_for_accepted_publications(
     assert errors.writes == []
 
 
+def test_json_and_paths0_keep_native_only_paths_machine_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A surrogate-escaped POSIX address never enters JSON text or loses its bytes."""
+    native = b"native-\xff.eml"
+    encoded = reporting_v3._base64(native)  # ruff: ignore[private-member-access] - exact schema evidence.
+    request = PathValue("source-\udcff", "source-\\udcff", encoded)
+    ledger = BatchLedger.from_requests([request])
+    item = ledger.items[0]
+    item.publication = PublicationReceipt(
+        visibility="visible",
+        identity=None,
+        digest=None,
+        file_sync="succeeded",
+        directory_sync="succeeded",
+        address_verified=True,
+        final_address=PathValue("final-\udcff.eml", "final-\\udcff.eml", encoded),
+        temp_cleanup="succeeded",
+    )
+    item.finish(ItemStatus.CREATED)
+    document = reporting_v3.report(ledger, "apply", 0)
+    items = cast("list[dict[str, object]]", document["items"])
+    source_record = items[0]["source_request"]
+    assert cast("dict[str, object]", source_record)["text"] is None
+    output = io.BytesIO()
+    errors = _RecordingStream("utf-8")
+    stream = type("Out", (), {"buffer": output})()
+    monkeypatch.setattr(sys, "stdout", cast("TextIO", stream))
+    monkeypatch.setattr(sys, "stderr", errors)
+    reporting_v3.write_paths0(ledger)
+    assert output.getvalue() == native + b"\0"
+    assert errors.writes == []
+
+
+def test_json_uses_ascii_binary_bytes_when_stdout_has_a_binary_channel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The JSON wire stays UTF-8-compatible ASCII despite a non-UTF-8 text wrapper."""
+    output = io.BytesIO()
+    monkeypatch.setattr(
+        sys,
+        "stdout",
+        cast("TextIO", type("Out", (), {"buffer": output, "encoding": "utf-16"})()),
+    )
+    reporting_v3.write_json({"display": "Ērvins"})
+    assert output.getvalue() == b'{"display": "\\u0112rvins"}\n'
+
+
 def test_paths0_keeps_failed_item_out_of_binary_output_and_reports_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -62,7 +62,10 @@ symbolic, special, or source-aliasing entry is never returned as usable.
 
 The supported report formats are `human`, `json`, and raw NUL-delimited `paths0`.
 `paths0` is not available with `--dry-run` and emits only `created` or
-`existing_verified` paths.
+`existing_verified` paths. JSON is always canonical ASCII JSON transported through
+the binary stdout channel; `paths0` is always native path bytes followed by NUL.
+Human output uses the final display channel's codec and escapes unrepresentable or
+terminal-unsafe path text.
 
 ```sh
 remove-eml-attachments --output-format=json -- "one.eml" "two.eml"
@@ -76,6 +79,14 @@ verification evidence, and truthful publication receipts. It never reports body
 contents. During processing, terminal evidence is streamed through bounded private
 spools; if normal report persistence fails after a visible publication, the command
 returns a complete status-preserving recovery report rather than claiming success.
+Path `text` is ordinary Unicode only. For a POSIX path containing surrogate-escaped
+native bytes, `text` is `null`, `native_base64` remains authoritative, and `display`
+is safe presentation text. Consumers must not reconstruct a path from `display`.
+
+One physical Unix-From envelope line at the start of one otherwise ordinary message
+is supported and preserved byte-for-byte. This is not mbox import: concatenated
+mailboxes, interior `From ` body lines, and duplicate leading envelopes are not
+treated as a message transport feature.
 
 ## Finder Quick Action
 
@@ -85,6 +96,8 @@ Quick Action named **Create MIME-Pruned EML Copy**. Configure its shell step wit
 and mixed batches remain visible in Finder. The launcher defaults to
 `--existing=verify`, validates schema 3, forwards cancellation to the processor, and
 reveals only `created` or `existing_verified` outputs with a final address receipt.
+For native-only POSIX reports it decodes and validates `native_base64`; it never
+uses the display string as a reveal path.
 See [the Finder instructions](integrations/macos-shortcuts/README.md).
 
 ## Verification and release artifacts

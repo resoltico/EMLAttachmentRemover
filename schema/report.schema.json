@@ -25,10 +25,10 @@
       "additionalProperties": false,
       "required": ["text", "display", "native_base64", "native_utf16le_base64"],
       "properties": {
-        "text": {"type": ["string", "null"]},
-        "display": {"type": "string"},
-        "native_base64": {"type": ["string", "null"]},
-        "native_utf16le_base64": {"type": ["string", "null"]}
+        "text": {"type": ["string", "null"], "description": "Portable Unicode address text, or null when only native evidence is representable."},
+        "display": {"type": "string", "description": "Safe non-authoritative display text; never a filesystem address."},
+        "native_base64": {"type": ["string", "null"], "description": "Authoritative POSIX native address bytes encoded as Base64."},
+        "native_utf16le_base64": {"type": ["string", "null"], "description": "Authoritative Windows UTF-16LE address evidence encoded as Base64."}
       }
     },
     "item": {

@@ -127,6 +127,22 @@ def test_copy_chunks_and_paths0_binary_replay_are_exact(
     cli._write_then_close("paths0", ledger, _options(), 0)  # ruff: ignore[private-member-access] - binary paths0 replay.
     assert captured.getvalue() == b"one\0"
 
+    captured.seek(0)
+    captured.truncate(0)
+    monkeypatch.setattr(
+        cli, "_write_selected", lambda *_args: sys.stdout.buffer.write(b'{"ok":true}\n')
+    )
+    cli._write_then_close("json", ledger, _options(), 0)  # ruff: ignore[private-member-access] - binary JSON replay.
+    assert captured.getvalue() == b'{"ok":true}\n'
+
+    human = StringIO()
+    monkeypatch.setattr(sys, "stdout", human)
+    monkeypatch.setattr(
+        cli, "_write_selected", lambda *_args: sys.stdout.write("human\n")
+    )
+    cli._write_then_close("human", ledger, _options(), 0)  # ruff: ignore[private-member-access] - text human replay.
+    assert human.getvalue() == "human\n"
+
 
 def test_cancelled_constructs_the_canonical_terminal_options(
     monkeypatch: pytest.MonkeyPatch,

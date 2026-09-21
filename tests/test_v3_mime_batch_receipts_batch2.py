@@ -33,29 +33,17 @@ def test_line_end_observes_every_supported_newline_and_a_final_partial_line() ->
     ]
 
 
-def test_header_parser_keeps_envelope_outside_physical_ownership() -> None:
-    """Only fields after an mbox envelope contribute indexed MIME ownership."""
+def test_header_parser_never_skips_an_envelope_outside_root_ownership() -> None:
+    """Generic physical header parsing retains its caller-provided start."""
     envelope = b"From sender@example.test Tue Jan 01 00:00:00 2030\r\n"
     raw = envelope + b"X-First: one \t\r\n\tsecond \t\r\n" + b"X-Second:\t two \t\r\n"
     first_start = len(envelope)
     second_start = raw.index(b"X-Second:")
-    assert (
-        mime_headers._first_header_offset(  # ruff: ignore[private-member-access] - exact mbox-envelope receipt.
-            raw, 0, len(raw)
-        )
-        == first_start
-    )
-    assert mime_headers.parse_headers(raw, 0, len(raw)) == (
+    assert mime_headers.parse_headers(raw, first_start, len(raw)) == (
         mime_headers.Header(
             b"x-first", b"one\r\n\tsecond \t", first_start, second_start
         ),
         mime_headers.Header(b"x-second", b"two", second_start, len(raw)),
-    )
-    assert (
-        mime_headers._first_header_offset(  # ruff: ignore[private-member-access] - non-envelope source must start at its caller-provided offset.
-            b"Fromx: ordinary\r\n", 0, 16
-        )
-        == 0
     )
 
 

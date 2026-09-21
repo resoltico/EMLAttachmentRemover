@@ -87,21 +87,21 @@ def test_primary_and_emergency_spool_failures_have_exact_safe_diagnostics() -> N
         report_stream.close(ledger)
 
 
-def test_json_writers_preserve_unicode_and_sort_nested_mapping_keys(
+def test_json_writers_use_ascii_and_sort_nested_mapping_keys(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Canonical report writers never regress to ASCII escaping or insertion order."""
+    """Canonical report writers retain portable ASCII and sorted nested keys."""
     report_stream._write_pair(  # ruff: ignore[private-member-access] - exact pair encoding.
         "pair", {"z": "ø", "a": "ä"}, terminal=True
     )
-    assert capsys.readouterr().out == '"pair": {"a": "ä", "z": "ø"}'
+    assert capsys.readouterr().out == '"pair": {"a": "\\u00e4", "z": "\\u00f8"}'
 
     ledger = _failed()
     ledger.items[0].source_request = path_value("søurce.eml")
     report_stream._write_item_array(ledger)  # ruff: ignore[private-member-access] - item encoding.
     raw = capsys.readouterr().out
-    assert "søurce.eml" in raw
-    assert "\\u00f8" not in raw
+    assert "s\\u00f8urce.eml" in raw
+    assert "ø" not in raw
     assert (
         json.loads("{" + raw + "}")["items"][0]["source_request"]["text"]
         == "søurce.eml"
@@ -140,13 +140,13 @@ def test_primary_spool_requires_both_count_and_archival_completeness() -> None:
         report_stream.close(ledger)
 
 
-def test_reservation_and_unknown_diagnostic_preserve_exact_unicode_and_label(
+def test_reservation_and_unknown_diagnostic_preserve_ascii_and_label(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Emergency reservations retain Unicode while absent source evidence is stable."""
+    """Emergency reservations use the canonical ASCII transport consistently."""
     ledger = _failed()
     ledger.items[0].source_request = path_value("søurce.eml")
-    assert b"s\xc3\xb8urce.eml" in report_stream._reservation(ledger.items[0])  # ruff: ignore[private-member-access] - reservation UTF-8.
+    assert b"s\\u00f8urce.eml" in report_stream._reservation(ledger.items[0])  # ruff: ignore[private-member-access] - reservation policy.
     report_stream._write_record_diagnostics(  # ruff: ignore[private-member-access] - unknown source diagnostic.
         {"source_request": None, "error": {"code": "E", "message": "bad"}}
     )

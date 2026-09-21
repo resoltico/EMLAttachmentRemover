@@ -85,8 +85,8 @@ def _reservation(item: LedgerItem) -> bytes:
         "source_request": reporting_v3._path(item.source_request),  # ruff: ignore[private-member-access] - canonical path serializer owner.
     }
     return reporting_v3._canonical_json(  # ruff: ignore[private-member-access] - canonical JSON serializer owner.
-        reservation, ensure_ascii=False
-    ).encode("utf-8")
+        reservation
+    ).encode("ascii")
 
 
 def recover(ledger: BatchLedger, item: LedgerItem | None = None) -> None:
@@ -119,8 +119,8 @@ def archive(ledger: BatchLedger, item: LedgerItem) -> None:
         message = "terminal report item cannot be archived"
         raise ReportSpoolError(message)
     record = reporting_v3._canonical_json(  # ruff: ignore[private-member-access] - canonical schema record owner.
-        reporting_v3.item_json(item), ensure_ascii=False
-    ).encode("utf-8")
+        reporting_v3.item_json(item)
+    ).encode("ascii")
     spool.append(record)
     item.transformation = None
     item.warnings.clear()
@@ -328,7 +328,9 @@ def _top_level(ledger: BatchLedger, mode: str, exit_code: int) -> dict[str, obje
 def _write_pair(name: str, value: object, *, terminal: bool) -> None:
     """Write one canonical top-level JSON pair and its required separator."""
     sys.stdout.write(json.dumps(name) + ": ")
-    sys.stdout.write(json.dumps(value, ensure_ascii=False, sort_keys=True))
+    sys.stdout.write(
+        json.dumps(value, ensure_ascii=True, sort_keys=True, allow_nan=False)
+    )
     if not terminal:
         sys.stdout.write(", ")
 
@@ -339,7 +341,9 @@ def _write_item_array(ledger: BatchLedger) -> None:
     for index, record in enumerate(_records(ledger)):
         if index:
             sys.stdout.write(", ")
-        sys.stdout.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
+        sys.stdout.write(
+            json.dumps(record, ensure_ascii=True, sort_keys=True, allow_nan=False)
+        )
     sys.stdout.write("]")
 
 

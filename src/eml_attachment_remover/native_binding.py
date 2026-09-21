@@ -128,9 +128,16 @@ def _final_address(descriptor: int) -> PathValue | None:
 
 
 def _existing_identity(destination: BoundDestination) -> FileIdentity | None:
-    directory = _open_bound_destination(destination)
+    try:
+        directory = _open_bound_destination(destination)
+    except OSError as exc:
+        message = f"could not inspect destination: {exc}"
+        raise AppError(ExitCode.WRITE_ERROR, message) from exc
     try:
         return _child_lstat(directory, destination.basename)
+    except OSError as exc:
+        message = f"could not inspect destination: {exc}"
+        raise AppError(ExitCode.WRITE_ERROR, message) from exc
     finally:
         _close_bound_directory(directory)
 

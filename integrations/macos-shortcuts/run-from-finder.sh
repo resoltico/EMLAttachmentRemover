@@ -66,6 +66,8 @@ CHILD=
 "$PYTHON" - "$REPORT_FILE" "$ERROR_FILE" "${EML_REMOVER_REVEAL:-1}" "$status" <<'PY'
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import subprocess
@@ -129,6 +131,27 @@ def item_display(item: Mapping[str, object]) -> str:
     return safe(source.get("display"))
 
 
+def accepted_path(final: Mapping[str, object]) -> str:
+    native = final.get("native_base64")
+    text = final.get("text")
+    if isinstance(native, str):
+        try:
+            raw = base64.b64decode(native, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("accepted native path is malformed") from exc
+        if b"\0" in raw:
+            raise ValueError("accepted native path contains NUL")
+        address = os.fsdecode(raw)
+        if isinstance(text, str) and os.fsencode(text) != raw:
+            raise ValueError("accepted native/text path evidence disagrees")
+        if text is not None and not isinstance(text, str):
+            raise ValueError("accepted path text is malformed")
+        return address
+    if not isinstance(text, str):
+        raise ValueError("accepted output lacks native path evidence")
+    return text
+
+
 def validate(report: object, status: int) -> tuple[list[str], list[str]]:
     document = mapping(report, "report")
     if set(document) != TOP_LEVEL_FIELDS:
@@ -180,10 +203,10 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
             if (
                 publication.get("visibility") not in {"visible", "existing_verified"}
                 or publication.get("address_verified") is not True
-                or not isinstance(final.get("text"), str)
+                or final.get("native_utf16le_base64") is not None
             ):
                 raise ValueError("accepted output lacks a verified final address")
-            outputs.append(final["text"])
+            outputs.append(accepted_path(final))
     if (
         any(type(summary.get(name)) is not int or summary[name] != counts[name] for name in STATUSES)
         or type(summary.get("total")) is not int
@@ -193,9 +216,12 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
     accepted = {"created", "existing_verified"}
     if document["mode"] == "dry-run":
         accepted.add("would_create")
-    if document["ok"] is not all(item["status"] in accepted for item in (mapping(value, "report item") for value in items)):
-        raise ValueError("report ok value does not match item receipts")
     batch_error = error_detail(document.get("batch_error"), "batch error")
+    if document["ok"] is not (
+        batch_error is None
+        and all(item["status"] in accepted for item in (mapping(value, "report item") for value in items))
+    ):
+        raise ValueError("report ok value does not match item receipts")
     if batch_error is not None:
         details.append(f"Batch: {batch_error[0]}: {batch_error[1]}")
     interrupted = document.get("interrupted")

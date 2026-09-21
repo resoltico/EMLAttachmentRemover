@@ -302,6 +302,8 @@ class LedgerItem:
         """
         if not self.terminalized or self.status is None:
             raise RuntimeError(DOUBLE_TERMINAL_ERROR)
+        if self.status is ItemStatus.PUBLISHED_WITH_ERROR:
+            return
         self.error = self._detached_error(error)
         self.status = (
             ItemStatus.PUBLISHED_WITH_ERROR

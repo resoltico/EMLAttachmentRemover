@@ -24,10 +24,10 @@ def test_header_parser_rejects_orphan_malformed_and_duplicate_controls(
         mime_headers.parse_headers(raw, 0, len(raw))
 
 
-def test_header_parser_preserves_mbox_and_folded_fields(
+def test_header_parser_preserves_folded_fields_without_generic_envelope_skipping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    raw = b"From sender\r\nSubject: first\r\n\tsecond\r\n"
+    raw = b"Subject: first\r\n\tsecond\r\n"
     headers = mime_headers.parse_headers(raw, 0, len(raw))
     assert headers[0].name == b"subject"
     assert b"second" in headers[0].value

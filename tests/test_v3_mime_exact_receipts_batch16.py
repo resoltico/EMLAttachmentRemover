@@ -63,14 +63,13 @@ def test_retained_decoded_budget_allows_exact_cumulative_boundary(
     assert [fingerprint.source_path for fingerprint in fingerprints] == [(), (1,)]
 
 
-def test_header_scanners_keep_zero_newlines_and_bounded_mbox_offsets() -> None:
-    """Wire indices must accept a newline at offset zero and a nonzero entity start."""
+def test_header_scanners_keep_zero_newlines_and_root_only_envelope_offsets() -> None:
+    """Wire indices accept offset zero while non-root From lines remain literal."""
     assert mime_headers.line_end(b"\nbody", 0, 5) == 1
-    prefix = b"prefix"
-    raw = prefix + b"From sender@example.test\r\nX: value\r\n"
-    assert mime_headers._first_header_offset(  # ruff: ignore[private-member-access] - exact bounded mbox-offset receipt.
-        raw, len(prefix), len(raw)
-    ) == len(prefix) + len(b"From sender@example.test\r\n")
+    raw = b"From sender@example.test\r\nX: value\r\n"
+    assert mime_headers.root_header_start(raw, 0, len(raw)) == len(
+        b"From sender@example.test\r\n"
+    )
 
 
 def test_raw_header_probe_never_borrows_bytes_outside_its_entity() -> None:

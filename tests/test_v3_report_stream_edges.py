@@ -377,3 +377,15 @@ def test_terminal_receipt_reclassifies_for_report_failure() -> None:
     item.correct_report_failure(error)
     assert item.status is ItemStatus.FAILED
     assert item.error == error
+
+
+def test_report_failure_never_erases_a_visible_publication_receipt() -> None:
+    """A post-edge report failure retains the published-with-error outcome."""
+    item = LedgerItem(0, path_value("one.eml"))
+    item.finish(
+        ItemStatus.PUBLISHED_WITH_ERROR,
+        AppError(ExitCode.WRITE_ERROR, "post-publication sync failed"),
+    )
+    item.correct_report_failure(AppError(ExitCode.WRITE_ERROR, "report failure"))
+    assert item.status is ItemStatus.PUBLISHED_WITH_ERROR
+    assert item.error == AppError(ExitCode.WRITE_ERROR, "post-publication sync failed")

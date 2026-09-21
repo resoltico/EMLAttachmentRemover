@@ -1,10 +1,18 @@
 {
     "schema_version": 1,
-    "source_sha256": "24d1c78f:8a5c258d:0be57b84:d21293fa:5b64acd4:ecf3fe79:8804ea35:0aa5db8c",
+    "source_sha256": "cc9133d9:0d041efb:8f77d8c0:5f6be3a5:e37ce1f7:b5fd68d1:70f703aa:8cdc4267",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_10",
             "rationale": "The closed flag is only tested for truthiness before any true assignment, so False and None select the identical cleanup path."
+        },
+        {
+            "mutant": "eml_attachment_remover.mime_headers.x_root_header_start__mutmut_6",
+            "rationale": "bytes.startswith treats an omitted start and None start identically as offset zero, which is the only reachable root-envelope start after the preceding guard."
+        },
+        {
+            "mutant": "eml_attachment_remover.mime_headers.x_root_header_start__mutmut_8",
+            "rationale": "bytes.startswith treats an omitted start and None start identically as offset zero, which is the only reachable root-envelope start after the preceding guard."
         },
         {
             "mutant": "eml_attachment_remover.native_binding.x__existing_entry__mutmut_34",
@@ -47,20 +55,36 @@
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__reservation__mutmut_14",
-            "rationale": "Python's UTF-8 codec lookup is case-insensitive, so UTF-8 and utf-8 encode identical bytes."
+            "mutant": "eml_attachment_remover.report_stream.x__reservation__mutmut_10",
+            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_11",
-            "rationale": "json.dumps treats ensure_ascii=None exactly as false for these JSON values."
+            "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_13",
+            "rationale": "json.dumps treats allow_nan=None and allow_nan=False identically because both values are false."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_7",
-            "rationale": "json.dumps treats ensure_ascii=None exactly as false for these JSON values."
+            "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_15",
+            "rationale": "json.dumps defaults ensure_ascii to True, so omitting its explicit True argument preserves canonical ASCII output."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_20",
-            "rationale": "Python's UTF-8 codec lookup is case-insensitive, so UTF-8 and utf-8 encode identical bytes."
+            "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_11",
+            "rationale": "json.dumps defaults ensure_ascii to True, so omitting its explicit True argument preserves canonical ASCII output."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_9",
+            "rationale": "json.dumps treats allow_nan=None and allow_nan=False identically because both values are false."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_16",
+            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
+        },
+        {
+            "mutant": "eml_attachment_remover.reporting_v3.x_write_json__mutmut_20",
+            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii decode the same canonical report bytes."
+        },
+        {
+            "mutant": "eml_attachment_remover.reporting_v3.x_write_json__mutmut_7",
+            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
         },
         {
             "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_19",

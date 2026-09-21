@@ -15,6 +15,7 @@ RUNNER: Final = (
     / "macos-shortcuts"
     / "run-from-finder.sh"
 )
+INSTALLER: Final = RUNNER.with_name("install.sh")
 STATUSES: Final = (
     "created",
     "existing_verified",
@@ -26,11 +27,13 @@ STATUSES: Final = (
 )
 
 
-def _path(display: str, text: str | None = None) -> dict[str, str | None]:
+def _path(
+    display: str, text: str | None = None, native: str | None = None
+) -> dict[str, str | None]:
     return {
         "text": text,
         "display": display,
-        "native_base64": None,
+        "native_base64": native,
         "native_utf16le_base64": None,
     }
 
@@ -171,3 +174,41 @@ def test_finder_launcher_fails_closed_for_summary_exit_and_schema_drift(
     assert not result.stderr
     assert result.stdout.startswith("EML Attachment Remover: invalid processor report:")
     assert "Processor diagnostics were withheld" in result.stdout
+
+
+def test_finder_launcher_rejects_ok_true_when_a_batch_error_exists(
+    tmp_path: Path,
+) -> None:
+    """A batch-wide failure makes the producer's success claim invalid."""
+    report = _report([_item(0, "created")], 7)
+    report["ok"] = True
+    report["interrupted"] = False
+    report["interruption"] = None
+    result = _run(tmp_path, report, 7)
+    assert result.returncode == 70
+    assert "report ok value does not match item receipts" in result.stdout
+
+
+def test_finder_launcher_accepts_native_only_posix_output_address(
+    tmp_path: Path,
+) -> None:
+    """A native-only proven POSIX address is not confused with its display text."""
+    report = _report([_item(0, "created")], 0)
+    report["ok"] = True
+    report["batch_error"] = None
+    report["interrupted"] = False
+    report["interruption"] = None
+    items = cast("list[dict[str, object]]", report["items"])
+    item = items[0]
+    publication = cast("dict[str, object]", item["publication"])
+    publication["final_address"] = _path("native-only", None, "bmF0aXZlLf8uZW1s")
+    result = _run(tmp_path, report, 0)
+    assert result.returncode == 0
+    assert "created 1" in result.stdout
+
+
+def test_installer_prints_the_documented_finder_error_transport() -> None:
+    """The generated Shortcuts command keeps Show Content reachable on failure."""
+    source = INSTALLER.read_text(encoding="utf-8")
+    assert 'f"/bin/sh {shlex.quote(runner)} {arguments} || :"' in source
+    assert 'f"/bin/sh {runner_variable} " + arguments + " || :"' in source
