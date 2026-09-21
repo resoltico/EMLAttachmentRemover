@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Self, cast
 
 import pytest
 
@@ -132,12 +132,35 @@ def test_spool_uses_zero_for_unavailable_platform_open_flags(
     monkeypatch.setattr(report_spool, "_write_all", lambda *_args: None)
     spool.append(b"{}")
     assert calls == [spool_os.O_WRONLY | spool_os.O_APPEND]
-    spool.path.write_bytes(b"x" * report_spool.MAX_RECORD_BYTES)
-    with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
-        tuple(spool.records())
-    spool.path.write_bytes(b"x" * report_spool.MAX_RECORD_BYTES + b"\n")
-    spool.bytes_written = report_spool.MAX_RECORD_BYTES + 1
-    assert tuple(spool.records()) == (b"x" * report_spool.MAX_RECORD_BYTES,)
+
+
+def test_spool_reads_with_the_exact_bounded_record_lookahead(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A spool read requests only one record plus framing and corruption lookahead."""
+    spool = report_spool.ReportSpool(tmp_path / "terminal.jsonl", 3, 1)
+    spool.path.write_bytes(b"{}\n")
+    sizes: list[int | None] = []
+
+    class Source:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def readline(self, size: int | None = None) -> bytes:
+            sizes.append(size)
+            self.calls += 1
+            return b"{}\n" if self.calls == 1 else b""
+
+    monkeypatch.setattr(type(spool.path), "open", lambda *_args, **_kwargs: Source())
+    assert tuple(spool.records()) == (b"{}",)
+    assert sizes == [report_spool.MAX_RECORD_BYTES + 2] * 2
 
 
 def test_summary_counts_repeated_statuses_and_batch_error_rejects_ok() -> None:
