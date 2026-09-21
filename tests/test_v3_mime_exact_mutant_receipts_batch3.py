@@ -48,14 +48,11 @@ def test_header_byte_limit_is_relative_inclusive_and_has_an_exact_receipt(
     )
 
 
-def test_header_parser_uses_mbox_end_and_keeps_trailing_x_value() -> None:
-    """The physical parser needs the provided end and strips no ordinary X bytes."""
-    prefix = b"before"
-    raw = prefix + b"From sender@example.test\r\nX-Token: X\r\n"
-    start = len(prefix)
-    token_start = raw.index(b"X-Token:")
-    assert mime_headers.parse_headers(raw, start, len(raw)) == (
-        mime_headers.Header(b"x-token", b"X", token_start, len(raw)),
+def test_header_parser_keeps_literal_from_line_outside_root_context() -> None:
+    """A generic parser does not treat an interior From line as transport data."""
+    raw = b"X-Token: X\r\n"
+    assert mime_headers.parse_headers(raw, 0, len(raw)) == (
+        mime_headers.Header(b"x-token", b"X", 0, len(raw)),
     )
 
 

@@ -95,7 +95,11 @@ def _read_all(descriptor: int) -> bytes:
 
 
 def _bind_destination(request: str, expanded: str) -> BoundDestination:
-    descriptor, parent, basename = _parent(expanded)
+    try:
+        descriptor, parent, basename = _parent(expanded)
+    except AppError as exc:
+        message = f"could not open destination parent: {exc.message}"
+        raise AppError(ExitCode.WRITE_ERROR, message) from exc
     try:
         metadata = os.fstat(descriptor)
         if not stat.S_ISDIR(metadata.st_mode):

@@ -93,6 +93,19 @@ def test_after_item_preserves_internal_and_fail_fast_terminalization() -> None:
     assert later.status is None
 
 
+def test_after_item_fail_fast_stops_after_an_unsuccessful_publication() -> None:
+    """Fail-fast includes an item that crossed publication but remains unsuccessful."""
+    ledger, item, later = _ledger()
+    item.finish(
+        ItemStatus.PUBLISHED_WITH_ERROR,
+        AppError(ExitCode.WRITE_ERROR, "post-publication receipt failed"),
+    )
+    assert batch._after_item(  # ruff: ignore[private-member-access] - post-edge fail-fast receipt.
+        item, ledger, _options(fail_fast=True), None
+    )
+    assert later.status is ItemStatus.NOT_RUN
+
+
 def test_after_item_stops_when_terminal_archive_recovery_reports_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import cast
+from typing import TYPE_CHECKING, Self, cast
 
 import pytest
 
@@ -26,6 +26,10 @@ from eml_attachment_remover.domain import (
 )
 from eml_attachment_remover.native_paths import path_value
 
+if TYPE_CHECKING:
+    from pathlib import Path
+    from types import ModuleType
+
 
 def _failed(count: int = 1) -> BatchLedger:
     """Build one direct ledger with exactly ``count`` failed input rows.
@@ -40,6 +44,126 @@ def _failed(count: int = 1) -> BatchLedger:
     for item in ledger.items:
         item.finish(ItemStatus.FAILED, AppError(ExitCode.PARSE_ERROR, "bad"))
     return ledger
+
+
+def test_spool_creation_and_append_request_the_exact_private_native_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Private spool ownership uses its stable prefix and every available flag."""
+    descriptor = 71
+    created: dict[str, object] = {}
+    opened: dict[str, object] = {}
+    spool_os = cast("ModuleType", report_spool.__dict__["os"])
+    spool_tempfile = cast("ModuleType", report_spool.__dict__["tempfile"])
+    monkeypatch.setattr(report_spool, "private_temp_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        spool_tempfile,
+        "mkstemp",
+        lambda **keywords: (
+            created.update(keywords) or (descriptor, str(tmp_path / "private"))
+        ),
+    )
+    monkeypatch.setattr(spool_os, "fchmod", lambda *_args: None)
+    monkeypatch.setattr(spool_os, "close", lambda _descriptor: None)
+    spool = report_spool.ReportSpool.create()
+    assert spool.path == tmp_path / "private"
+    assert created == {
+        "prefix": ".eml-attachment-remover-report-",
+        "dir": tmp_path,
+    }
+    assert spool.closed is False
+    assert spool.bytes_written == spool.record_count == 0
+    original_open = spool_os.open
+    monkeypatch.setattr(spool_os, "O_BINARY", 0x40, raising=False)
+    monkeypatch.setattr(spool_os, "O_CLOEXEC", 0x80, raising=False)
+    monkeypatch.setattr(
+        spool_os,
+        "open",
+        lambda path, flags: opened.update(path=path, flags=flags) or descriptor,
+    )
+    monkeypatch.setattr(report_spool, "_write_all", lambda *_args: None)
+    spool.append(b"{}")
+    assert opened == {
+        "path": spool.path,
+        "flags": spool_os.O_WRONLY | spool_os.O_APPEND | 0x40 | 0x80,
+    }
+    monkeypatch.setattr(spool_os, "open", original_open)
+
+
+def test_spool_enforces_exact_record_boundaries_when_reading_and_writing(
+    tmp_path: Path,
+) -> None:
+    """The record limit is inclusive before framing and exclusive after framing."""
+    spool = report_spool.ReportSpool(tmp_path / "terminal.jsonl")
+    spool.path.write_bytes(b"")
+    spool.append(b"x" * report_spool.MAX_RECORD_BYTES)
+    assert spool.record_count == 1
+    with pytest.raises(report_spool.ReportSpoolError, match="unsafe"):
+        spool.append(b"x" * (report_spool.MAX_RECORD_BYTES + 1))
+    spool.path.write_bytes(b"x" * (report_spool.MAX_RECORD_BYTES + 1) + b"\n")
+    spool.record_count = 1
+    spool.bytes_written = report_spool.MAX_RECORD_BYTES + 2
+    with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
+        tuple(spool.records())
+    spool.path.write_bytes(b"x" * report_spool.MAX_RECORD_BYTES + b"\n")
+    spool.bytes_written = report_spool.MAX_RECORD_BYTES + 1
+    assert tuple(spool.records()) == (b"x" * report_spool.MAX_RECORD_BYTES,)
+
+
+def test_spool_uses_zero_for_unavailable_platform_open_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Absent optional OS flags alter neither the requested flags nor append success."""
+    spool = report_spool.ReportSpool(tmp_path / "terminal.jsonl")
+    calls: list[int] = []
+    spool_os = cast("ModuleType", report_spool.__dict__["os"])
+
+    def open_spool(_path: object, flags: int) -> int:
+        calls.append(flags)
+        return 73
+
+    monkeypatch.delattr(spool_os, "O_BINARY", raising=False)
+    monkeypatch.delattr(spool_os, "O_CLOEXEC", raising=False)
+    monkeypatch.setattr(
+        spool_os,
+        "open",
+        open_spool,
+    )
+    monkeypatch.setattr(spool_os, "close", lambda _descriptor: None)
+    monkeypatch.setattr(report_spool, "_write_all", lambda *_args: None)
+    spool.append(b"{}")
+    assert calls == [spool_os.O_WRONLY | spool_os.O_APPEND]
+
+
+def test_spool_reads_with_the_exact_bounded_record_lookahead(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A spool read requests only one record plus framing and corruption lookahead."""
+    spool = report_spool.ReportSpool(tmp_path / "terminal.jsonl", 3, 1)
+    spool.path.write_bytes(b"{}\n")
+    sizes: list[int | None] = []
+
+    class Source:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def readline(self, size: int | None = None) -> bytes:
+            sizes.append(size)
+            self.calls += 1
+            return b"{}\n" if self.calls == 1 else b""
+
+    monkeypatch.setattr(type(spool.path), "open", lambda *_args, **_kwargs: Source())
+    assert tuple(spool.records()) == (b"{}",)
+    assert sizes == [report_spool.MAX_RECORD_BYTES + 2] * 2
 
 
 def test_summary_counts_repeated_statuses_and_batch_error_rejects_ok() -> None:
@@ -87,21 +211,21 @@ def test_primary_and_emergency_spool_failures_have_exact_safe_diagnostics() -> N
         report_stream.close(ledger)
 
 
-def test_json_writers_preserve_unicode_and_sort_nested_mapping_keys(
+def test_json_writers_use_ascii_and_sort_nested_mapping_keys(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Canonical report writers never regress to ASCII escaping or insertion order."""
+    """Canonical report writers retain portable ASCII and sorted nested keys."""
     report_stream._write_pair(  # ruff: ignore[private-member-access] - exact pair encoding.
         "pair", {"z": "ø", "a": "ä"}, terminal=True
     )
-    assert capsys.readouterr().out == '"pair": {"a": "ä", "z": "ø"}'
+    assert capsys.readouterr().out == '"pair": {"a": "\\u00e4", "z": "\\u00f8"}'
 
     ledger = _failed()
     ledger.items[0].source_request = path_value("søurce.eml")
     report_stream._write_item_array(ledger)  # ruff: ignore[private-member-access] - item encoding.
     raw = capsys.readouterr().out
-    assert "søurce.eml" in raw
-    assert "\\u00f8" not in raw
+    assert "s\\u00f8urce.eml" in raw
+    assert "ø" not in raw
     assert (
         json.loads("{" + raw + "}")["items"][0]["source_request"]["text"]
         == "søurce.eml"
@@ -140,13 +264,13 @@ def test_primary_spool_requires_both_count_and_archival_completeness() -> None:
         report_stream.close(ledger)
 
 
-def test_reservation_and_unknown_diagnostic_preserve_exact_unicode_and_label(
+def test_reservation_and_unknown_diagnostic_preserve_ascii_and_label(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Emergency reservations retain Unicode while absent source evidence is stable."""
+    """Emergency reservations use the canonical ASCII transport consistently."""
     ledger = _failed()
     ledger.items[0].source_request = path_value("søurce.eml")
-    assert b"s\xc3\xb8urce.eml" in report_stream._reservation(ledger.items[0])  # ruff: ignore[private-member-access] - reservation UTF-8.
+    assert b"s\\u00f8urce.eml" in report_stream._reservation(ledger.items[0])  # ruff: ignore[private-member-access] - reservation policy.
     report_stream._write_record_diagnostics(  # ruff: ignore[private-member-access] - unknown source diagnostic.
         {"source_request": None, "error": {"code": "E", "message": "bad"}}
     )

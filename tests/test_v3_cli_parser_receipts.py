@@ -5,13 +5,10 @@ from __future__ import annotations
 import pytest
 
 from eml_attachment_remover.cli_parser import (
-    MIGRATION_EXISTING,
-    MIGRATION_PATHS,
     build_parser,
     raw_json_requested,
     raw_source_candidates,
     validate_arguments,
-    validate_raw_arguments,
 )
 from eml_attachment_remover.domain import PROGRAM_NAME, AppError, ExitCode
 
@@ -97,6 +94,7 @@ def test_parser_receives_every_supported_value_and_boolean_option() -> None:
     ("arguments", "message"),
     [
         (["--out", "copy.eml", "source.eml"], "unrecognized arguments: --out"),
+        (["--force", "source.eml"], "unrecognized arguments: --force"),
         (
             ["--existing", "old", "source.eml"],
             (
@@ -118,39 +116,6 @@ def test_parser_rejects_abbreviation_invalid_values_and_competing_outputs(
         parser.parse_args(arguments)
     assert captured.value.code is ExitCode.USAGE
     assert captured.value.message == message
-
-
-def test_removed_spelling_receipts_cover_aliases_assignments_and_marker() -> None:
-    for argument in (
-        "--force",
-        "--force=yes",
-        "-f",
-        "-fanything",
-        "--skip-existing",
-        "--skip-existing=yes",
-    ):
-        with pytest.raises(AppError) as captured:
-            validate_raw_arguments([argument, "source.eml"])
-        assert (captured.value.code, captured.value.message) == (
-            ExitCode.USAGE,
-            MIGRATION_EXISTING,
-        )
-    validate_raw_arguments(["--", "--force", "source.eml"])
-
-
-def test_removed_paths_receipts_distinguish_paths0_and_end_of_options() -> None:
-    for arguments in (
-        ["--output-format=paths", "source.eml"],
-        ["--output-format", "paths", "source.eml"],
-    ):
-        with pytest.raises(AppError) as captured:
-            validate_raw_arguments(arguments)
-        assert (captured.value.code, captured.value.message) == (
-            ExitCode.USAGE,
-            MIGRATION_PATHS,
-        )
-    validate_raw_arguments(["--output-format=paths0", "source.eml"])
-    validate_raw_arguments(["--", "--output-format=paths", "source.eml"])
 
 
 def test_preparse_json_and_source_receipts_honor_consumption_and_marker() -> None:

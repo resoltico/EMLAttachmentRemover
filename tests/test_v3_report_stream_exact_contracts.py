@@ -259,8 +259,8 @@ def test_emergency_and_archive_failures_preserve_exact_terminal_semantics() -> N
         report_stream.close(ledger)
 
 
-def test_archive_spool_uses_literal_utf8_not_an_ascii_projection() -> None:
-    """The private spool preserves canonical UTF-8 evidence before JSON reload."""
+def test_archive_spool_uses_the_ascii_canonical_json_projection() -> None:
+    """The private spool stores the same portable JSON evidence as public output."""
     ledger = BatchLedger.from_requests([path_value("søurce.eml")])
     ledger.items[0].finish(ItemStatus.FAILED, AppError(ExitCode.PARSE_ERROR, "ø"))
     report_stream.start(ledger)
@@ -268,8 +268,8 @@ def test_archive_spool_uses_literal_utf8_not_an_ascii_projection() -> None:
     try:
         report_stream.archive(ledger, ledger.items[0])
         raw = next(spool.records())
-        assert b"s\xc3\xb8urce.eml" in raw
-        assert b"\\u00f8" not in raw
+        assert b"s\\u00f8urce.eml" in raw
+        assert b"\xc3\xb8" not in raw
     finally:
         report_stream.close(ledger)
 
@@ -318,7 +318,7 @@ def test_top_level_and_json_writers_are_exact_for_apply_and_dry_run(
     assert report_stream._top_level(ledger, "dry-run", 0)["ok"] is True  # ruff: ignore[private-member-access] - dry-run acceptance contract.
     report_stream._write_pair("n", {"value": "ü"}, terminal=False)  # ruff: ignore[private-member-access] - JSON pair contract.
     report_stream._write_pair("last", None, terminal=True)  # ruff: ignore[private-member-access] - final JSON pair contract.
-    assert capsys.readouterr().out == '"n": {"value": "ü"}, "last": null'
+    assert capsys.readouterr().out == '"n": {"value": "\\u00fc"}, "last": null'
 
     expected_items = ", ".join(
         json.dumps(reporting_v3.item_json(item), ensure_ascii=False, sort_keys=True)

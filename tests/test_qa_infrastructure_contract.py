@@ -205,7 +205,7 @@ class QaInfrastructureContractTests(unittest.TestCase):
         )
         pytest_config = configuration["tool"]["pytest"]["ini_options"]
         self.assertEqual(pytest_config["filterwarnings"], ["error"])
-        self.assertEqual(pytest_config["required_plugins"], ["hypothesis==6.165.10"])
+        self.assertEqual(pytest_config["required_plugins"], ["hypothesis==6.168.0"])
         self.assertTrue(pytest_config["xfail_strict"])
         self.assertTrue(
             {"--runxfail", "--strict-config", "--strict-markers"}.issubset(

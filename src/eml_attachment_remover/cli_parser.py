@@ -8,14 +8,6 @@ from typing import Never, override
 from ._version import PROGRAM_VERSION
 from .domain import PROGRAM_NAME, AppError, ExitCode
 
-MIGRATION_EXISTING = (
-    "--force and --skip-existing were removed in v3; use "
-    "--existing=error or --existing=verify"
-)
-MIGRATION_PATHS = (
-    "newline-delimited paths was removed in v3; use --output-format=paths0"
-)
-
 
 class Parser(argparse.ArgumentParser):
     """Raise a typed usage error instead of exiting from a reusable CLI boundary."""
@@ -78,20 +70,6 @@ def build_parser() -> Parser:
     return parser
 
 
-def validate_raw_arguments(arguments: list[str]) -> None:
-    """Reject removed v2 spellings before the normal parser sees raw options.
-
-    Raises:
-        AppError: If a removed existing-output or newline-path option is used.
-
-    """
-    option_arguments = _raw_options(arguments)
-    if any(_removed_existing(argument) for argument in option_arguments):
-        raise AppError(ExitCode.USAGE, MIGRATION_EXISTING)
-    if _removed_paths(option_arguments):
-        raise AppError(ExitCode.USAGE, MIGRATION_PATHS)
-
-
 def validate_arguments(namespace: argparse.Namespace) -> None:
     """Validate combinations whose safety cannot be represented by argparse alone.
 
@@ -150,26 +128,6 @@ def raw_source_candidates(arguments: list[str]) -> list[str]:
 
 def _raw_options(arguments: list[str]) -> list[str]:
     return arguments[: arguments.index("--")] if "--" in arguments else arguments
-
-
-def _removed_existing(argument: str) -> bool:
-    return argument in {"--force", "--skip-existing"} or argument.startswith((
-        "--force=",
-        "--skip-existing=",
-        "-f",
-    ))
-
-
-def _removed_paths(arguments: list[str]) -> bool:
-    return any(
-        argument == "--output-format=paths"
-        or (
-            argument == "--output-format"
-            and index + 1 < len(arguments)
-            and arguments[index + 1] == "paths"
-        )
-        for index, argument in enumerate(arguments)
-    )
 
 
 def _consumed_option_values(arguments: list[str]) -> set[int]:

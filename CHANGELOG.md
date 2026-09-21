@@ -4,6 +4,25 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+## [3.0.6] - 2026-09-21
+
+### Changed
+
+- Updated the pinned build and qualification tools: Hatchling 1.32.4, Coverage
+  7.16.1, Hypothesis 6.168.0, Mutmut 3.8.0, and Ruff 0.16.8.
+- Removed the legacy CLI migration layer; unsupported options now receive the
+  standard current-surface parser error with no compatibility guidance.
+
+### Fixed
+
+- Made report path evidence and machine-channel serialization independent of host
+  text codecs, preserving native-only POSIX addresses through reporting and Finder.
+- Preserved post-publication outcomes through report failures, made fail-fast honor
+  unsuccessful publication, and classified destination environmental failures as
+  item-local write errors.
+- Added narrow root Unix-From envelope compatibility without changing MIME removal
+  authorization, retained payload bytes, or nested/body `From ` handling.
+
 ## [3.0.5] - 2026-09-20
 
 ### Changed

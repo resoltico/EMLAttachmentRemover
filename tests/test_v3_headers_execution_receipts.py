@@ -50,11 +50,12 @@ def _attachment_message() -> tuple[bytes, bytes]:
     return source, expected
 
 
-def test_header_parser_preserves_mbox_relative_spans_and_physical_value_bytes() -> None:
-    """The optional envelope is not a header and values lose only horizontal padding."""
-    prefix = b"prefix"
-    raw = prefix + b"From sender@example.test\r\nX-Token:\t value \v \t\r\n"
-    start = len(prefix)
+def test_header_parser_preserves_physical_value_bytes_without_envelope_skipping() -> (
+    None
+):
+    """Generic header ownership begins at its supplied entity offset."""
+    raw = b"X-Token:\t value \v \t\r\n"
+    start = 0
     headers = mime_headers.parse_headers(raw, start, len(raw))
     field_start = raw.index(b"X-Token:")
     assert headers == (

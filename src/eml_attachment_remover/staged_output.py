@@ -361,6 +361,11 @@ def _run_lifecycle(state: _PublicationState) -> _LifecycleOutcome:
         _create_stage(state)
         _verify_staged(state)
         _publish_edge(state)
+    except OSError as exc:
+        message = f"could not stage candidate: {exc}"
+        primary = AppError(ExitCode.WRITE_ERROR, message)
+        if state.kernel_published and state.receipt is None:
+            state.receipt = _reconcile(state, "failed")
     except BaseException as exc:  # ruff: ignore[blind-except] - preserve cancellation and exit.
         primary = exc
         if state.kernel_published and state.receipt is None:

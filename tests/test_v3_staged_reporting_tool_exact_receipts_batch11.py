@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from eml_attachment_remover import cli_parser, staged_output
+from eml_attachment_remover import staged_output
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import BoundDirectory
 from eml_attachment_remover.native_paths import bind_destination
@@ -59,15 +59,3 @@ def test_stage_owner_transfer_preserves_a_lone_cancellation_signal_exactly(
         staged_output._create_stage(state)  # ruff: ignore[private-member-access] - cancellation-safe owner transfer.
     assert raised.value is interruption
     assert closed == [51]
-
-
-def test_raw_parser_detects_removed_formats_without_interpreting_literal_sources() -> (
-    None
-):
-    """Raw option recognition stops exactly at the end-of-options marker."""
-    assert cli_parser._removed_existing("--skip-existing=yes")  # ruff: ignore[private-member-access] - removed long assignment.
-    assert cli_parser._removed_paths(  # ruff: ignore[private-member-access] - split removed output channel.
-        ["--output-format", "paths"]
-    )
-    assert cli_parser.raw_json_requested(["--output-format", "json"])
-    assert not cli_parser.raw_json_requested(["--", "--output-format", "json"])

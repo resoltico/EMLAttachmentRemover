@@ -123,7 +123,7 @@ def test_main_json_usage_excludes_consumed_option_values_from_source_receipts(
         "json",
         "--output",
         "redirected.eml",
-        "--force=legacy",
+        "--unsupported-option",
         "actual.eml",
         "--",
         "-literal.eml",
@@ -135,10 +135,7 @@ def test_main_json_usage_excludes_consumed_option_values_from_source_receipts(
     document = json.loads(captured.out)
     assert document["batch_error"] == {
         "code": "USAGE",
-        "message": (
-            "--force and --skip-existing were removed in v3; use "
-            "--existing=error or --existing=verify"
-        ),
+        "message": "unrecognized arguments: --unsupported-option",
         "mime_path": None,
         "phase": None,
     }

@@ -92,6 +92,29 @@ def test_native_values_reject_trailing_paths_and_reserved_multi_suffixes() -> No
     )
 
 
+def test_existing_destination_lookup_error_keeps_its_contextual_message(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """A child-entry inspection failure remains an actionable write failure."""
+    directory = BoundDirectory(1, windows=False)
+    monkeypatch.setattr(
+        native_binding, "_open_bound_destination", lambda _destination: directory
+    )
+    monkeypatch.setattr(
+        native_binding, "_close_bound_directory", lambda _directory: None
+    )
+    monkeypatch.setattr(
+        native_binding,
+        "_child_lstat",
+        lambda _directory, _name: (_ for _ in ()).throw(PermissionError("denied")),
+    )
+    with pytest.raises(AppError) as rejected:
+        native_binding._existing_identity(_destination())  # ruff: ignore[private-member-access] - child lookup classification.
+    assert rejected.value == AppError(
+        ExitCode.WRITE_ERROR, "could not inspect destination: denied"
+    )
+
+
 def test_native_values_preserve_platform_path_evidence_and_backend_failure_context(
     monkeypatch: MonkeyPatch,
 ) -> None:

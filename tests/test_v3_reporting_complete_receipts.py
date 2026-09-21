@@ -148,7 +148,7 @@ def test_report_serializes_every_complete_receipt_and_schema_field() -> None:
         "schema_version": 3,
         "scope": "mime-pruned",
         "program": "remove-eml-attachments",
-        "version": "3.0.5",
+        "version": "3.0.6",
         "mode": "apply",
         "ok": False,
         "exit_code": 9,
@@ -321,8 +321,8 @@ def test_complete_receipt_uses_canonical_json_and_human_channels(
     reporting_v3.write_json(document)
     encoded = capsys.readouterr()
     assert encoded.out.startswith('{"batch_error":')
-    assert "source π display" in encoded.out
-    assert "\\u03c0" not in encoded.out
+    assert "source \\u03c0 display" in encoded.out
+    assert "π" not in encoded.out
     assert encoded.out.endswith("\n")
     decoded = json.loads(encoded.out)
     assert decoded == json.loads(json.dumps(document))

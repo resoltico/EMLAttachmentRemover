@@ -54,7 +54,10 @@ def after_item(
     if isinstance(publication_cause, SystemExit):
         internal_abort("unexpected SystemExit after publication")
         return True
-    if item.status is ItemStatus.FAILED and fail_fast:
+    if (
+        item.status in {ItemStatus.FAILED, ItemStatus.PUBLISHED_WITH_ERROR}
+        and fail_fast
+    ):
         ledger.finalize_not_run("not run after fail-fast failure")
         return True
     return False

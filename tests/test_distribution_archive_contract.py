@@ -59,8 +59,8 @@ class ArchiveContractTests(unittest.TestCase):
                 "project license-files must be a string list",
             ),
             (
-                '[build-system]\nrequires = ["hatchling==1.32.0"]',
-                '[build-system]\nrequires = "hatchling==1.32.0"',
+                '[build-system]\nrequires = ["hatchling==1.32.4"]',
+                '[build-system]\nrequires = "hatchling==1.32.4"',
                 "project configuration field 'requires' must be a string list",
             ),
             (
@@ -114,7 +114,7 @@ class ArchiveContractTests(unittest.TestCase):
                 distribution.config,
                 distribution.public_files,
             )
-        self.assertEqual(loaded.wheel_generator, "hatchling 1.32.0")
+        self.assertEqual(loaded.wheel_generator, "hatchling 1.32.4")
         self.assertEqual(
             project_metadata.normalized_requirement("<3.15, >=3.14"),
             "<3.15,>=3.14",
@@ -145,13 +145,6 @@ class ArchiveContractTests(unittest.TestCase):
             self.assertEqual(
                 declared.expected_entry_points(),
                 "[console_scripts]\npublic-command = public_package:main\n",
-            )
-            self.assertEqual(
-                declared.expected_metadata()["Project-URL"],
-                (
-                    "Homepage, https://example.test/public-project",
-                    "Repository, https://example.test/public-project.git",
-                ),
             )
             readme = distribution.root / declared.readme
             readme.write_bytes(b"Public synthetic README\r\n")
@@ -300,23 +293,23 @@ class ArchiveContractTests(unittest.TestCase):
                 "release backend must be one exactly pinned Hatchling requirement",
             ),
             (
-                'requires = ["hatchling==1.32.0"]',
+                'requires = ["hatchling==1.32.4"]',
                 'requires = ["public-backend==1.0"]',
                 "release backend must be one exactly pinned Hatchling requirement",
             ),
             (
-                'requires = ["hatchling==1.32.0"]',
-                'requires = ["hatchling>=1.32.0"]',
+                'requires = ["hatchling==1.32.4"]',
+                'requires = ["hatchling>=1.32.4"]',
                 "release backend must be one exactly pinned Hatchling requirement",
             ),
             (
-                'requires = ["hatchling==1.32.0"]',
-                'requires = ["hatchling==1.32.0==unexpected"]',
+                'requires = ["hatchling==1.32.4"]',
+                'requires = ["hatchling==1.32.4==unexpected"]',
                 "release backend must be one exactly pinned Hatchling requirement",
             ),
             (
-                'requires = ["hatchling==1.32.0"]',
-                'requires = ["hatchling==1.32.0", "hatchling==1.31.0"]',
+                'requires = ["hatchling==1.32.4"]',
+                'requires = ["hatchling==1.32.4", "hatchling==1.31.0"]',
                 "release backend must be one exactly pinned Hatchling requirement",
             ),
             (

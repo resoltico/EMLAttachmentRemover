@@ -6,7 +6,13 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from .domain import AppError, ExitCode, MimePath
-from .mime_headers import Header, is_header_name, line_end, parse_headers
+from .mime_headers import (
+    Header,
+    is_header_name,
+    line_end,
+    parse_headers,
+    root_header_start,
+)
 from .mime_identifiers import parse_message_identifier
 from .mime_stdlib_check import StdlibValidationWork, parse_stdlib, validate_stdlib_tree
 from .mime_stdlib_skeleton import build_skeleton
@@ -159,7 +165,7 @@ def _payload_end(raw: bytes, boundary_start: int) -> int:
 
 
 def _entity_headers(
-    raw: bytes, start: int, end: int
+    raw: bytes, start: int, end: int, *, root: bool = False
 ) -> tuple[tuple[Header, ...], int, int]:
     """Return physical headers and exact body start, accepting a headerless entity.
 
@@ -170,15 +176,16 @@ def _entity_headers(
         AppError: If a header-like entity lacks a valid physical separator.
 
     """
-    if not _first_line_is_header_like(raw, start, end):
+    header_start = root_header_start(raw, start, end) if root else start
+    if not _first_line_is_header_like(raw, header_start, end):
         return (), start, 0
     try:
-        separator, separator_length = _find_separator(raw, start, end)
+        separator, separator_length = _find_separator(raw, header_start, end)
     except AppError as exc:
         raise AppError(
             ExitCode.PARSE_ERROR, "header-like MIME entity lacks a body separator"
         ) from exc
-    headers = parse_headers(raw, start, separator)
+    headers = parse_headers(raw, header_start, separator)
     return headers, separator + separator_length, separator - start
 
 
@@ -221,7 +228,9 @@ def _shallow_node(
 
     """
     _count_node(path, totals)
-    headers, body_start, header_bytes = _entity_headers(raw, start, end)
+    headers, body_start, header_bytes = _entity_headers(
+        raw, start, end, root=path == ()
+    )
     totals[1] += header_bytes
     if totals[1] > MAX_TOTAL_HEADERS:
         raise AppError(

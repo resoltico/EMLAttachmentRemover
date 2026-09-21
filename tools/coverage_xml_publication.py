@@ -12,7 +12,7 @@ from typing import Final
 if __package__:
     from tools.coverage_xml_validation import CoverageXmlError, validate
 else:
-    from coverage_xml_validation import CoverageXmlError, validate  # type: ignore[import-not-found,no-redef]  # ruff: ignore[unsorted-imports]
+    from coverage_xml_validation import CoverageXmlError, validate  # type: ignore[import-not-found,no-redef]
 
 TEMPORARY_SUFFIX: Final = ".tmp"
 

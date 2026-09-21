@@ -19,7 +19,7 @@ from typing import Final
 if __package__:
     from tools.mutmut_workspace import generated_sidecar
 else:
-    from mutmut_workspace import generated_sidecar  # type: ignore[import-not-found,no-redef]  # ruff: ignore[unsorted-imports]
+    from mutmut_workspace import generated_sidecar  # type: ignore[import-not-found,no-redef]
 
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
 PACKAGE_SOURCE: Final = PROJECT_ROOT / "src" / "eml_attachment_remover"

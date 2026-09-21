@@ -60,6 +60,29 @@ def path_value(value: str) -> PathValue:
     )
 
 
+def report_path_bytes(value: PathValue) -> bytes:
+    """Return validated POSIX bytes for one proven report path.
+
+    Returns:
+        Exact native bytes for consumer transport.
+
+    Raises:
+        ValueError: If native report evidence is absent or unsafe.
+
+    """
+    if value.native_base64 is not None:
+        native = base64.b64decode(value.native_base64, validate=True)
+    elif value.text is not None:
+        native = os.fsencode(value.text)
+    else:
+        message = "accepted final address lacks native path evidence"
+        raise ValueError(message)
+    if b"\0" in native:
+        message = "accepted final address contains NUL"
+        raise ValueError(message)
+    return native
+
+
 def validate_argument(value: str) -> str:
     """Validate then explicitly expand one raw argv path without normalization.
 

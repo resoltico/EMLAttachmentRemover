@@ -59,6 +59,31 @@ def test_exit_code_uses_batch_failure_for_multiple_terminal_failures() -> None:
     assert cli.exit_code(ledger) == ExitCode.BATCH_FAILURE
 
 
+def test_exit_code_uses_batch_failure_for_multiple_incomplete_publications() -> None:
+    """Multiple visible-but-incomplete publications are a batch failure."""
+    ledger = BatchLedger.from_requests([path_value("one.eml"), path_value("two.eml")])
+    for item in ledger.items:
+        item.finish(
+            ItemStatus.PUBLISHED_WITH_ERROR,
+            AppError(ExitCode.WRITE_ERROR, "post-edge evidence failed"),
+        )
+    assert cli.exit_code(ledger) == ExitCode.BATCH_FAILURE
+
+
+def test_internal_item_error_outranks_an_additional_batch_write_error() -> None:
+    """A later report failure cannot mask a retained programming failure."""
+    ledger = _ledger(ItemStatus.FAILED, AppError(ExitCode.INTERNAL_ERROR, "invariant"))
+    ledger.batch_error = AppError(ExitCode.WRITE_ERROR, "report spool failed")
+    assert cli.exit_code(ledger) == ExitCode.INTERNAL_ERROR
+
+
+def test_ordinary_batch_write_error_keeps_its_write_exit_code() -> None:
+    """The precedence repair does not promote a report write failure to internal."""
+    ledger = _ledger(ItemStatus.CREATED)
+    ledger.batch_error = AppError(ExitCode.WRITE_ERROR, "report spool failed")
+    assert cli.exit_code(ledger) == ExitCode.WRITE_ERROR
+
+
 def test_render_and_application_errors_preserve_the_selected_channel(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

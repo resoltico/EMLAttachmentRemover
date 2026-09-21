@@ -18,23 +18,6 @@ from eml_attachment_remover import cli
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "src"
 SUBPROCESS_TIMEOUT_SECONDS = 30
-EXPECTED_NO_ARGUMENTS = """\
-EML Attachment Remover
-
-Create verified text-only EML working copies.
-Retain a safe plain-text body. An equivalent local HTML alternative may
-restore readable layout; resources and ordinary attachments are discarded.
-
-Error: no source files were provided.
-
-Usage:
-  remove-eml-attachments [OPTIONS] <SOURCE>...
-
-Example:
-  remove-eml-attachments message.eml
-
-Run 'remove-eml-attachments --help' to see all options.
-"""
 
 
 def subprocess_environment(*, source_tree: bool = False) -> dict[str, str]:

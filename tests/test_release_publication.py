@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from copy import deepcopy
 from typing import TYPE_CHECKING
@@ -104,6 +105,12 @@ def desired(tmp_path: Path) -> Release:
 
 def test_create_verify_publish_then_idempotent_noop(desired: Release) -> None:
     api = FakeGitHub(desired)
+    artifact = desired.artifacts[0]
+    assert (
+        artifact.digest
+        == "sha256:" + hashlib.sha256(b"Synthetic qualified artifact 0").hexdigest()
+    )
+    assert artifact.size == len(b"Synthetic qualified artifact 0")
     assert publish_release(api, desired) == 1
     assert api.writes == ["create", "upload", "upload", "publish"]
     assert publish_release(api, desired) == 1
@@ -327,7 +334,7 @@ def test_local_roster_and_file_types_are_checked(
         ):
             publish_release(api, plan)
         assert not api.writes
-    with pytest.raises(ReleaseError):
+    with pytest.raises(ReleaseError, match=r"^Artifact is not a regular file$"):
         Artifact.inspect(tmp_path)
 
 

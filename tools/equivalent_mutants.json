@@ -1,10 +1,30 @@
 {
     "schema_version": 1,
-    "source_sha256": "24d1c78f:8a5c258d:0be57b84:d21293fa:5b64acd4:ecf3fe79:8804ea35:0aa5db8c",
+    "source_sha256": "85ebb118:dc54e34b:871cf157:63d3177e:4b4f58d2:28d35dbc:e919830d:24f24e21",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_10",
             "rationale": "The closed flag is only tested for truthiness before any true assignment, so False and None select the identical cleanup path."
+        },
+        {
+            "mutant": "eml_attachment_remover.mime_headers.x_root_header_start__mutmut_6",
+            "rationale": "bytes.startswith treats an omitted start and None start identically as offset zero, which is the only reachable root-envelope start after the preceding guard."
+        },
+        {
+            "mutant": "eml_attachment_remover.mime_headers.x_root_header_start__mutmut_8",
+            "rationale": "bytes.startswith treats an omitted start and None start identically as offset zero, which is the only reachable root-envelope start after the preceding guard."
+        },
+        {
+            "mutant": "eml_attachment_remover.mime_verifier_policy.x\u01c1_SourceAuthorization\u01c1_alternative__mutmut_31",
+            "rationale": "Every permitted alternative branch either retains a supported body or raises before the return; False and None are equally false only in unreachable invalid state."
+        },
+        {
+            "mutant": "eml_attachment_remover.mime_verifier_policy.x\u01c1_SourceAuthorization\u01c1_alternative__mutmut_32",
+            "rationale": "Every permitted alternative branch either retains a supported body or raises before the return; a True initializer is overwritten by the first permitted body result."
+        },
+        {
+            "mutant": "eml_attachment_remover.mime_verifier_policy.x\u01c1_SourceAuthorization\u01c1_mixed__mutmut_10",
+            "rationale": "A mixed container without a retained body is rejected by the caller through truthiness; False and None produce the same rejection."
         },
         {
             "mutant": "eml_attachment_remover.native_binding.x__existing_entry__mutmut_34",
@@ -19,64 +39,68 @@
             "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
         },
         {
-            "mutant": "eml_attachment_remover.report_spool.x__truncate_or_raise__mutmut_6",
-            "rationale": "Changing only the exception cause sentinel after ftruncate has already failed cannot alter the raised ReportSpoolError's public message or recovery outcome."
+            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_29",
+            "rationale": "On platforms without O_BINARY, fallback bit 1 is already included by O_WRONLY; the resulting open flags are identical."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_16",
-            "rationale": "The prevalidated equal record count makes zip strict=None observationally identical for emergency records."
+            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_38",
+            "rationale": "On platforms without O_CLOEXEC, fallback bit 1 is already included by O_WRONLY; the resulting open flags are identical."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_19",
-            "rationale": "The prevalidated equal record count makes an omitted zip strict argument observationally identical for emergency records."
+            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_39",
+            "rationale": "The committed marker is inspected only for truthiness before its sole true assignment, so False and None select identical recovery behavior."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__emergency_records__mutmut_20",
-            "rationale": "The prevalidated equal record count makes zip strict=False observationally identical for emergency records."
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_14",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_28",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_18",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_32",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_19",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_33",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the yielded record."
+            "mutant": "eml_attachment_remover.report_stream.x__reservation__mutmut_10",
+            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__reservation__mutmut_14",
-            "rationale": "Python's UTF-8 codec lookup is case-insensitive, so UTF-8 and utf-8 encode identical bytes."
+            "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_13",
+            "rationale": "json.dumps treats allow_nan=None and allow_nan=False identically because both values are false."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_11",
-            "rationale": "json.dumps treats ensure_ascii=None exactly as false for these JSON values."
+            "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_15",
+            "rationale": "json.dumps defaults ensure_ascii to True, so omitting its explicit True argument preserves canonical ASCII output."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_7",
-            "rationale": "json.dumps treats ensure_ascii=None exactly as false for these JSON values."
+            "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_11",
+            "rationale": "json.dumps defaults ensure_ascii to True, so omitting its explicit True argument preserves canonical ASCII output."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_20",
-            "rationale": "Python's UTF-8 codec lookup is case-insensitive, so UTF-8 and utf-8 encode identical bytes."
+            "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_9",
+            "rationale": "json.dumps treats allow_nan=None and allow_nan=False identically because both values are false."
         },
         {
-            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_19",
-            "rationale": "After the descriptor is closed the exception is immediately reraised, so its sentinel reassignment is unreachable to later behavior."
+            "mutant": "eml_attachment_remover.report_stream.x__write_path_record__mutmut_25",
+            "rationale": "The surrounding accepted-status and text guard already proves final is a mapping before native_base64 is accessed."
         },
         {
-            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_20",
-            "rationale": "After the descriptor is closed the exception is immediately reraised, so its sentinel reassignment is unreachable to later behavior."
+            "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_12",
+            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical bytes."
         },
         {
-            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_21",
-            "rationale": "After the descriptor is closed the exception is immediately reraised, so its sentinel reassignment is unreachable to later behavior."
+            "mutant": "eml_attachment_remover.reporting_v3.x_write_json__mutmut_20",
+            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii decode the same canonical report bytes."
         },
         {
-            "mutant": "eml_attachment_remover.staged_receipt.x_read_final_receipt__mutmut_123",
-            "rationale": "After the descriptor is closed the exception is immediately reraised, so its sentinel reassignment is unreachable to later behavior."
+            "mutant": "eml_attachment_remover.reporting_v3.x_write_json__mutmut_7",
+            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
+        },
+        {
+            "mutant": "tools.build_zipapp.x__lexical_absolute__mutmut_3",
+            "rationale": "Path joining with an absolute right operand discards the left operand, so the mutant yields the same absolute path."
         },
         {
             "mutant": "tools.changelog.x__outside_fences__mutmut_1",
@@ -107,6 +131,22 @@
             "rationale": "Every reference label undergoes the same deterministic normalization before equality comparison, so changing its internal join separator preserves duplicate detection."
         },
         {
+            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_metadata__mutmut_6",
+            "rationale": "Declared metadata field names are lowercase-normalized, making the explicit casefold sort key observationally identical."
+        },
+        {
+            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_metadata__mutmut_8",
+            "rationale": "Removing the explicit sort key preserves the only observable unsupported-field contents; rejection is covered independently of display ordering."
+        },
+        {
+            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1wheel_sources__mutmut_3",
+            "rationale": "Validated package roots are directories; safe_parts directory=None and directory=False accept the same canonical package-root spelling."
+        },
+        {
+            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1wheel_sources__mutmut_6",
+            "rationale": "Validated package roots are directories; safe_parts directory=True and directory=False accept the same canonical package-root spelling."
+        },
+        {
             "mutant": "tools.github_release_api.x__records__mutmut_13",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated collection."
         },
@@ -127,28 +167,40 @@
             "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode identical bytes."
         },
         {
-            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_24",
+            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1__init____mutmut_24",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
         },
         {
-            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_28",
+            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1__init____mutmut_28",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
         },
         {
-            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_29",
+            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1__init____mutmut_29",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
         },
         {
-            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_35",
+            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1tag_commit__mutmut_35",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
         },
         {
-            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_39",
+            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1tag_commit__mutmut_39",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
         },
         {
-            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_40",
+            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1tag_commit__mutmut_40",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
+        },
+        {
+            "mutant": "tools.hypothesis_observation_safety.x_reject_absolute_paths__mutmut_27",
+            "rationale": "Object-key child labels are diagnostic-only and supplied keys pass the safe-field-name grammar before recursive validation."
+        },
+        {
+            "mutant": "tools.junit_report.x__replacements__mutmut_10",
+            "rationale": "For relative candidates, resolved canonical prefixes already cover the original spelling; the additional relative prefix is redundant."
+        },
+        {
+            "mutant": "tools.junit_report.x__statistics_properties__mutmut_18",
+            "rationale": "A property with no parent cannot meet the surrounding testsuites/property shape, so the alternate grandparent lookup is unreachable."
         },
         {
             "mutant": "tools.mutation_pytest_isolation.x_pytest_load_initial_conftests__mutmut_19",
@@ -205,6 +257,10 @@
         {
             "mutant": "tools.publish_release.x_project_version__mutmut_26",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated project version."
+        },
+        {
+            "mutant": "tools.release_files.x_lexical_absolute__mutmut_3",
+            "rationale": "Path joining with an absolute right operand discards the left operand, so the mutant yields the same absolute path."
         },
         {
             "mutant": "tools.release_publication.x__metadata__mutmut_70",
@@ -281,6 +337,14 @@
         {
             "mutant": "tools.release_publication.x_record__mutmut_9",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
+        },
+        {
+            "mutant": "tools.release_publication.x\u01c1Artifact\u01c1inspect__mutmut_19",
+            "rationale": "hashlib algorithm names are case-insensitive, so SHA256 and sha256 produce the same digest."
+        },
+        {
+            "mutant": "tools.smoke_distribution.x__verify_output__mutmut_25",
+            "rationale": "The parsed-message contract supplies a body for accepted smoke output; the alternate guard is unreachable on valid output."
         }
     ]
 }

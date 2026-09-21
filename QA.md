@@ -59,6 +59,15 @@ no-replace races, mode `0600`, staged-temp cleanup, cancellation, and ledger
 completeness. A multi-input report has one terminal record per argv request in order;
 partial work is never erased by a later malformed input.
 
+Machine JSON is canonical ASCII (`ensure_ascii=true`, sorted keys, no non-finite
+numbers) on a binary channel. Native POSIX path evidence remains Base64-authoritative
+when a path has no portable Unicode text; tests cover direct, streamed, recovery, and
+Finder-consumer behavior under hostile display codecs.
+
+The parser supports one root Unix-From envelope for a single message, preserving its
+bytes and original coordinates. It is not mbox processing and does not reinterpret
+interior `From ` body data.
+
 Before a public release, inspect the schema/Finder consumer and no-replace boundary,
 run packaged artifacts rather than imports alone, and complete the private field
 protocol locally. The release workflow must gate publication on terminal-green

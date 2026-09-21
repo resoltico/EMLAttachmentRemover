@@ -57,6 +57,26 @@ def line_end(raw: bytes, position: int, end: int) -> int:
     return match.end()
 
 
+def root_header_start(raw: bytes, start: int, end: int) -> int:
+    """Return root-header offset after one supported Unix-From envelope.
+
+    Returns:
+        The original root offset or the first MIME-header offset after one envelope.
+
+    Raises:
+        AppError: If two consecutive root envelope lines are ambiguous.
+
+    """
+    if start != 0 or not raw.startswith(b"From ", start):
+        return start
+    envelope_end = line_end(raw, start, end)
+    if raw.startswith(b"From ", envelope_end):
+        raise AppError(ExitCode.PARSE_ERROR, "multiple Unix-From envelope lines")
+    first_line = raw[envelope_end : line_end(raw, envelope_end, end)]
+    name, colon, _value = first_line.partition(b":")
+    return envelope_end if colon and is_header_name(name) else start
+
+
 def _advanced_cursor(position: int, next_position: int) -> int:
     """Return a strictly advanced header cursor or fail closed.
 
@@ -85,7 +105,7 @@ def parse_headers(raw: bytes, start: int, separator: int) -> tuple[Header, ...]:
     if separator - start > MAX_HEADER_BYTES:
         raise AppError(ExitCode.PARSE_ERROR, "MIME entity exceeds header-byte limit")
     headers: list[Header] = []
-    position = _first_header_offset(raw, start, separator)
+    position = start
     while position < separator:
         end = _advanced_cursor(position, line_end(raw, position, separator))
         if end <= position:
@@ -95,16 +115,6 @@ def parse_headers(raw: bytes, start: int, separator: int) -> tuple[Header, ...]:
         position = end
     _validate_header_multiplicity(headers)
     return tuple(headers)
-
-
-def _first_header_offset(raw: bytes, start: int, separator: int) -> int:
-    """Return the first field offset after an optional mbox envelope line.
-
-    Returns:
-        The offset at the first MIME field, after a leading mbox envelope if present.
-
-    """
-    return line_end(raw, start, separator) if raw.startswith(b"From ", start) else start
 
 
 def _append_header(headers: list[Header], line: bytes, start: int, end: int) -> None:

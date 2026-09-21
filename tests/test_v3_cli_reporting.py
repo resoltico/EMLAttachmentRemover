@@ -1,4 +1,4 @@
-"""Schema-3 CLI rendering and migration contracts."""
+"""Schema-3 CLI rendering contracts."""
 
 from __future__ import annotations
 
@@ -54,17 +54,6 @@ def test_dry_run_has_explicit_not_attempted_publication_receipt(
     assert receipt.visibility == "not_attempted"
     assert receipt.file_sync == "not_attempted"
     assert receipt.final_address is None
-
-
-def test_v2_switches_and_newline_paths_return_usage_migration(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    source = tmp_path / "message.eml"
-    source.write_bytes(b"Content-Type: text/plain\r\n\r\nbody\r\n")
-    assert main(["--force", str(source)]) == 2
-    assert "removed in v3" in capsys.readouterr().err
-    assert main(["--output-format=paths", str(source)]) == 2
-    assert "paths0" in capsys.readouterr().err
 
 
 def test_requested_json_usage_failure_has_batch_error_and_source_request(

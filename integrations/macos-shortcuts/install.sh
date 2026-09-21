@@ -91,7 +91,7 @@ unsafe_categories = {"Cc", "Cf", "Cs", "Zl", "Zp"}
 if not any(unicodedata.category(character) in unsafe_categories for character in root):
     print(
         f"EML_REMOVER_HOME={shlex.quote(root)} "
-        f"/bin/sh {shlex.quote(runner)} {arguments}"
+        f"/bin/sh {shlex.quote(runner)} {arguments} || :"
     )
 else:
     def escaped_bytes(value):
@@ -112,7 +112,7 @@ else:
         f"EML_REMOVER_SHORTCUT_RUNNER=$(printf {format_argument} {launcher}); "
         "EML_REMOVER_SHORTCUT_RUNNER=${EML_REMOVER_SHORTCUT_RUNNER%_}; "
         f"EML_REMOVER_HOME={home_variable} "
-        f"/bin/sh {runner_variable} " + arguments
+        f"/bin/sh {runner_variable} " + arguments + " || :"
     )
 ' "$1"
 }

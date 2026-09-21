@@ -16,7 +16,6 @@ from .cli_parser import (
     raw_json_requested,
     raw_source_candidates,
     validate_arguments,
-    validate_raw_arguments,
 )
 from .domain import (
     PROGRAM_NAME,
@@ -51,10 +50,22 @@ def exit_code(ledger: BatchLedger) -> int:
     """
     if _is_interrupted(ledger):
         return int(ExitCode.INTERRUPTED)
+    if (
+        (
+            ledger.batch_error is not None
+            and ledger.batch_error.code is ExitCode.INTERNAL_ERROR
+        )
+        or _has_publication_error(ledger, ExitCode.INTERNAL_ERROR)
+        or any(
+            item.status is ItemStatus.FAILED
+            and item.error is not None
+            and item.error.code is ExitCode.INTERNAL_ERROR
+            for item in ledger.items
+        )
+    ):
+        return int(ExitCode.INTERNAL_ERROR)
     if ledger.batch_error is not None:
         return int(ledger.batch_error.code)
-    if _has_publication_error(ledger, ExitCode.INTERNAL_ERROR):
-        return int(ExitCode.INTERNAL_ERROR)
     if _has_status(ledger, ItemStatus.PUBLISHED_WITH_ERROR):
         return int(
             ExitCode.PUBLICATION_INCOMPLETE
@@ -89,11 +100,6 @@ def _failure_exit(ledger: BatchLedger) -> int:
     failed = [item for item in ledger.items if item.status is ItemStatus.FAILED]
     if not failed:
         return _remaining_exit(ledger)
-    if any(
-        item.error is not None and item.error.code is ExitCode.INTERNAL_ERROR
-        for item in failed
-    ):
-        return int(ExitCode.INTERNAL_ERROR)
     if len(ledger.items) != 1:
         return int(ExitCode.BATCH_FAILURE)
     return _single_failure_exit(failed[0])
@@ -209,7 +215,6 @@ def _internal_error(error: Exception) -> int:
 
 def _run(raw: list[str], state: _RunState) -> int:
     parser = build_parser()
-    validate_raw_arguments(raw)
     namespace = parser.parse_args(raw)
     validate_arguments(namespace)
     options = BatchOptions(
@@ -285,7 +290,7 @@ def _write_then_close(
             _copy_text(staged_err, sys.stderr)
             staged_out.flush()
             staged_out.seek(0)
-            if output_format == "paths0":
+            if output_format in {"json", "paths0"}:
                 _copy_bytes(staged_out.buffer, sys.stdout.buffer)
             else:
                 _copy_text(staged_out, sys.stdout)

@@ -34,6 +34,10 @@ published-with-error, and cancelled totals, followed by bounded source-qualified
 errors, warnings, batch errors, and interruption details. Do not substitute Quick
 Look for the required Apple Mail field check.
 
+The launcher validates ordinary text addresses against their native representation.
+For a POSIX address that cannot be represented as portable Unicode text, it uses the
+strictly decoded `native_base64` value and never falls back to the display string.
+
 Retained HTML is not sanitized. A related component can be removed while retained HTML
 still references it; Apple Mail may show a missing-resource placeholder. This is an
 expected MIME-pruning boundary, not a claim that appearance is unchanged.

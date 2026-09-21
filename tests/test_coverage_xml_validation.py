@@ -75,8 +75,8 @@ class CoverageXmlValidationTests(unittest.TestCase):
             VALID_COVERAGE_XML.replace(b"<coverage ", b"<public ", 1).replace(
                 b"</coverage>", b"</public>"
             ),
-            altered(b' version="7.15.4"', b""),
-            altered(b'<coverage version="7.15.4"', b'<coverage private="1"'),
+            altered(b' version="7.16.1"', b""),
+            altered(b'<coverage version="7.16.1"', b'<coverage private="1"'),
             altered(b'lines-valid="2"', b'lines-valid="01"'),
             altered(b'lines-covered="1"', b'lines-covered="3"'),
             altered(b'branches-valid="2"', b'branches-valid="01"'),
@@ -94,8 +94,8 @@ class CoverageXmlValidationTests(unittest.TestCase):
                 b'branches-covered="1" branch-rate="2" complexity="0">',
             ),
             altered(b'timestamp="1786680000000"', b'timestamp="private"'),
-            altered(b'version="7.15.4"', b'version="public"'),
-            altered(b'version="7.15.4"', b'version="7.15.3"'),
+            altered(b'version="7.16.1"', b'version="public"'),
+            altered(b'version="7.16.1"', b'version="7.16.0"'),
             altered(
                 b'branches-covered="1" branch-rate="0.5" complexity="0">',
                 b'branches-covered="1" branch-rate="0.5" complexity="1">',

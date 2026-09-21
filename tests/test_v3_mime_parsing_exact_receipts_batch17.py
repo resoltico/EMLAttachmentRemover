@@ -10,55 +10,32 @@ from eml_attachment_remover.mime_headers import Header
 from eml_attachment_remover.mime_validation import ContentSpec
 
 
-def test_mbox_header_offset_and_parser_honor_the_callers_entity_end() -> None:
-    """An mbox envelope consumes one bounded wire line before fields are parsed."""
-    prefix = b"skip\n"
+def test_root_envelope_header_offset_and_parser_honor_the_entity_end() -> None:
+    """Only a root envelope consumes one bounded wire line before fields."""
     envelope = b"From sender@example.test\r\n"
     fields = b"Subject: retained\r\n"
-    raw = prefix + envelope + fields + b"outside"
-    start = len(prefix)
-    separator = start + len(envelope) + len(fields)
+    raw = envelope + fields + b"outside"
+    separator = len(envelope) + len(fields)
 
-    assert mime_headers._first_header_offset(  # ruff: ignore[private-member-access] - bounded mbox cursor receipt.
-        raw, start, separator
-    ) == start + len(envelope)
-    assert mime_headers.parse_headers(raw, start, separator) == (
-        Header(b"subject", b"retained", start + len(envelope), separator),
+    assert mime_headers.root_header_start(raw, 0, separator) == len(envelope)
+    assert mime_headers.parse_headers(raw, len(envelope), separator) == (
+        Header(b"subject", b"retained", len(envelope), separator),
     )
 
 
-def test_mbox_offset_and_parser_forward_the_exact_bounded_entity_end(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The outer parser forwards its caller's exact entity boundary to mbox parsing."""
+def test_root_envelope_offset_honors_the_exact_bounded_entity_end() -> None:
+    """A root envelope cannot borrow a header line beyond its entity end."""
     raw = b"From sender@example.test\r\nSubject: retained\r\noutside"
     separator = raw.index(b"outside")
-    original = mime_headers._first_header_offset  # ruff: ignore[private-member-access] - bounded mbox collaboration receipt.
-    observed: list[int] = []
-
-    def bounded_offset(source: bytes, start: int, end: int) -> int:
-        observed.append(end)
-        return original(source, start, end)
-
-    monkeypatch.setattr(mime_headers, "_first_header_offset", bounded_offset)
-    assert mime_headers.parse_headers(raw, 0, separator) == (
-        Header(
-            b"subject", b"retained", len(b"From sender@example.test\r\n"), separator
-        ),
+    assert mime_headers.root_header_start(raw, 0, separator) == len(
+        b"From sender@example.test\r\n"
     )
-    assert observed == [separator]
 
 
-def test_mbox_offset_cannot_search_past_its_explicit_entity_end() -> None:
-    """An envelope terminator beyond the entity is unavailable to its header offset."""
+def test_root_envelope_does_not_apply_outside_root_context() -> None:
+    """Nested or offset entities retain their literal From line."""
     raw = b"From sender@example.test\r\nSubject: retained\r\n"
-    separator = raw.index(b"\r\n")
-    assert (
-        mime_headers._first_header_offset(  # ruff: ignore[private-member-access] - bounded mbox cursor receipt.
-            raw, 0, separator
-        )
-        == separator
-    )
+    assert mime_headers.root_header_start(raw, 1, len(raw)) == 1
 
 
 @pytest.mark.parametrize("name", sorted(mime_headers.SINGLETONS))

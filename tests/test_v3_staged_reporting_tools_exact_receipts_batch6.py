@@ -14,24 +14,15 @@ from tools import (
 )
 
 from eml_attachment_remover import cli_parser
-from eml_attachment_remover.domain import AppError, ExitCode
 
 
-def test_raw_parser_tracks_final_value_options_and_removed_short_spellings() -> None:
-    """Preparse scanning keeps the final option value and rejects exact v2 spellings."""
+def test_raw_parser_tracks_final_value_options() -> None:
+    """Preparse scanning keeps the final option value for the current surface."""
     arguments = ["source.eml", "--output-format", "json"]
     assert cli_parser._consumed_option_values(  # ruff: ignore[private-member-access] - final value ownership.
         arguments
     ) == {2}
     assert cli_parser.raw_json_requested(arguments)
-
-    with pytest.raises(AppError) as force:
-        cli_parser.validate_raw_arguments(["-f", "source.eml"])
-    assert force.value == AppError(ExitCode.USAGE, cli_parser.MIGRATION_EXISTING)
-
-    with pytest.raises(AppError) as paths:
-        cli_parser.validate_raw_arguments(["--output-format=paths", "source.eml"])
-    assert paths.value == AppError(ExitCode.USAGE, cli_parser.MIGRATION_PATHS)
 
 
 def test_raw_parser_preserves_both_json_forms_and_end_of_option_boundaries() -> None:

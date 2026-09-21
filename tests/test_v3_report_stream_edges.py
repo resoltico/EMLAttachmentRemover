@@ -33,8 +33,21 @@ def test_spool_rejects_unsafe_records_and_nonprogress_writes(
     """Unsafe framing and partial writes never become accepted terminal records."""
     spool = report_spool.ReportSpool.create()
     try:
-        with pytest.raises(report_spool.ReportSpoolError):
-            spool.append(b"")
+        for record in (
+            b"",
+            b'{"index":0}\n',
+            b"x" * (report_spool.MAX_RECORD_BYTES + 1),
+        ):
+            with pytest.raises(report_spool.ReportSpoolError) as unsafe:
+                spool.append(record)
+            assert str(unsafe.value) == "terminal report record is unsafe"
+        spool.bytes_written = report_spool.MAX_SPOOL_BYTES - len(b"{}\n")
+        spool.append(b"{}")
+        spool.bytes_written = report_spool.MAX_SPOOL_BYTES - len(b"{}")
+        with pytest.raises(report_spool.ReportSpoolError) as full:
+            spool.append(b"{}")
+        assert str(full.value) == "terminal report spool exceeds its bounded capacity"
+        spool.bytes_written = 0
         monkeypatch.setattr(report_spool.__dict__["os"], "write", lambda *_args: 0)
         with pytest.raises(report_spool.ReportSpoolError):
             spool.append(b'{"index":0}')
@@ -51,6 +64,13 @@ def test_spool_detects_unavailable_corrupt_and_incomplete_cleanup(
     unavailable.close()
     with pytest.raises(report_spool.ReportSpoolError):
         tuple(unavailable.records())
+
+    missing = report_spool.ReportSpool.create()
+    missing.path.unlink()
+    with pytest.raises(report_spool.ReportSpoolError) as absent:
+        tuple(missing.records())
+    assert str(absent.value) == "terminal report spool is unavailable"
+    missing.closed = True
 
     corrupt = report_spool.ReportSpool.create()
     try:
@@ -369,11 +389,29 @@ def test_report_stream_recovers_idempotently_and_attempts_every_owned_close(
 
 def test_terminal_receipt_reclassifies_for_report_failure() -> None:
     """Only a terminal created/existing receipt can be corrected for report loss."""
-    item = LedgerItem(0, path_value("one.eml"))
     error = AppError(ExitCode.WRITE_ERROR, "report failure", phase="report")
-    with pytest.raises(RuntimeError):
-        item.correct_report_failure(error)
+    for item in (
+        LedgerItem(0, path_value("unstarted.eml")),
+        LedgerItem(1, path_value("missing-status.eml"), terminalized=True),
+    ):
+        with pytest.raises(
+            RuntimeError, match="attempted to terminalize a ledger item twice"
+        ):
+            item.correct_report_failure(error)
+    item = LedgerItem(2, path_value("one.eml"))
     item.finish(ItemStatus.EXISTING_VERIFIED)
     item.correct_report_failure(error)
     assert item.status is ItemStatus.FAILED
     assert item.error == error
+
+
+def test_report_failure_never_erases_a_visible_publication_receipt() -> None:
+    """A post-edge report failure retains the published-with-error outcome."""
+    item = LedgerItem(0, path_value("one.eml"))
+    item.finish(
+        ItemStatus.PUBLISHED_WITH_ERROR,
+        AppError(ExitCode.WRITE_ERROR, "post-publication sync failed"),
+    )
+    item.correct_report_failure(AppError(ExitCode.WRITE_ERROR, "report failure"))
+    assert item.status is ItemStatus.PUBLISHED_WITH_ERROR
+    assert item.error == AppError(ExitCode.WRITE_ERROR, "post-publication sync failed")
