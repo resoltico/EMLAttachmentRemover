@@ -16,7 +16,7 @@ if __package__:
         require_relative_path,
     )
 else:
-    from coverage_xml_lines import CoverageTotals, validate_line  # type: ignore[import-not-found,no-redef]  # ruff: ignore[unsorted-imports]
+    from coverage_xml_lines import CoverageTotals, validate_line  # type: ignore[import-not-found,no-redef]
     from coverage_xml_safety import (  # type: ignore[import-not-found,no-redef]
         CoverageXmlError,
         require_public_root,

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Final
 if __package__:
     from tools.coverage_xml_safety import CoverageXmlError
 else:
-    from coverage_xml_safety import CoverageXmlError  # type: ignore[import-not-found,no-redef]  # ruff: ignore[unsorted-imports]
+    from coverage_xml_safety import CoverageXmlError  # type: ignore[import-not-found,no-redef]
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
