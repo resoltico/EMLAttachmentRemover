@@ -67,8 +67,9 @@ def test_spool_creation_and_append_request_the_exact_private_native_flags(
     monkeypatch.setattr(
         report_spool.tempfile,
         "mkstemp",
-        lambda **keywords: created.update(keywords)
-        or (descriptor, str(tmp_path / "private")),
+        lambda **keywords: (
+            created.update(keywords) or (descriptor, str(tmp_path / "private"))
+        ),
     )
     monkeypatch.setattr(report_spool.os, "fchmod", lambda *_args: None)
     monkeypatch.setattr(report_spool.os, "close", lambda _descriptor: None)
@@ -92,10 +93,7 @@ def test_spool_creation_and_append_request_the_exact_private_native_flags(
     spool.append(b"{}")
     assert opened == {
         "path": spool.path,
-        "flags": report_spool.os.O_WRONLY
-        | report_spool.os.O_APPEND
-        | 0x40
-        | 0x80,
+        "flags": report_spool.os.O_WRONLY | report_spool.os.O_APPEND | 0x40 | 0x80,
     }
     monkeypatch.setattr(report_spool.os, "open", original_open)
 
