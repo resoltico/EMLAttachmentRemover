@@ -47,6 +47,7 @@ def test_spool_rejects_unsafe_records_and_nonprogress_writes(
         with pytest.raises(report_spool.ReportSpoolError) as full:
             spool.append(b"{}")
         assert str(full.value) == "terminal report spool exceeds its bounded capacity"
+        spool.bytes_written = 0
         monkeypatch.setattr(report_spool.__dict__["os"], "write", lambda *_args: 0)
         with pytest.raises(report_spool.ReportSpoolError):
             spool.append(b'{"index":0}')
