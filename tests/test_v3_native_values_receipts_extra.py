@@ -78,6 +78,13 @@ def test_default_destination_preserves_requested_expression_on_both_path_grammar
         assert native_values.default_destination("parent/../inbox/Message.EML") == (
             "parent/../inbox/Message.mime-pruned.eml"
         )
+        assert native_values.default_destination("folder\\nested/Message.EML") == (
+            "folder\\nested/Message.mime-pruned.eml"
+        )
+        assert (
+            native_values.default_destination("Message.EML")
+            == "Message.mime-pruned.eml"
+        )
     with monkeypatch.context() as context:
         context.setattr(native_values.__dict__["os"], "name", "nt")
         assert native_values.default_destination("C:\\in\\..\\Mail.EML") == (

@@ -91,6 +91,26 @@ def test_spool_creation_and_append_request_the_exact_private_native_flags(
     monkeypatch.setattr(spool_os, "open", original_open)
 
 
+def test_spool_enforces_exact_record_boundaries_when_reading_and_writing(
+    tmp_path: Path,
+) -> None:
+    """The record limit is inclusive before framing and exclusive after framing."""
+    spool = report_spool.ReportSpool(tmp_path / "terminal.jsonl")
+    spool.path.write_bytes(b"")
+    spool.append(b"x" * report_spool.MAX_RECORD_BYTES)
+    assert spool.record_count == 1
+    with pytest.raises(report_spool.ReportSpoolError, match="unsafe"):
+        spool.append(b"x" * (report_spool.MAX_RECORD_BYTES + 1))
+    spool.path.write_bytes(b"x" * (report_spool.MAX_RECORD_BYTES + 1) + b"\n")
+    spool.record_count = 1
+    spool.bytes_written = report_spool.MAX_RECORD_BYTES + 2
+    with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
+        tuple(spool.records())
+    spool.path.write_bytes(b"x" * report_spool.MAX_RECORD_BYTES)
+    with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
+        tuple(spool.records())
+
+
 def test_summary_counts_repeated_statuses_and_batch_error_rejects_ok() -> None:
     """Counts add rather than overwrite and any batch error makes reports not-ok."""
     ledger = _failed(2)
