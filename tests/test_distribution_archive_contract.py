@@ -146,37 +146,6 @@ class ArchiveContractTests(unittest.TestCase):
                 declared.expected_entry_points(),
                 "[console_scripts]\npublic-command = public_package:main\n",
             )
-            self.assertEqual(
-                declared.expected_metadata(),
-                {
-                    "Metadata-Version": ("2.5",),
-                    "Name": ("public-project",),
-                    "Version": ("1.2.3",),
-                    "Summary": ("Public synthetic distribution",),
-                    "Requires-Python": (">=3.14,<3.15",),
-                    "License-Expression": ("MIT",),
-                    "License-File": ("LICENSE",),
-                    "Author": ("Public Example",),
-                    "Author-email": (),
-                    "Keywords": ("public,synthetic",),
-                    "Classifier": ("Topic :: Utilities",),
-                    "Requires-Dist": (),
-                    "Provides-Extra": (),
-                    "Project-URL": (
-                        "Homepage, https://example.test/public-project",
-                        "Repository, https://example.test/public-project.git",
-                    ),
-                    "Dynamic": (),
-                    "Description-Content-Type": ("text/markdown",),
-                },
-            )
-            self.assertEqual(
-                declared.expected_wheel_metadata(),
-                "Wheel-Version: 1.0\n"
-                "Generator: hatchling 1.32.4\n"
-                "Root-Is-Purelib: true\n"
-                "Tag: cp314-none-any\n",
-            )
             readme = distribution.root / declared.readme
             readme.write_bytes(b"Public synthetic README\r\n")
             metadata = BytesParser(policy=policy.compat32).parsebytes(

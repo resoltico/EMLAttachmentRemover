@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -26,6 +26,10 @@ from eml_attachment_remover.domain import (
 )
 from eml_attachment_remover.native_paths import path_value
 
+if TYPE_CHECKING:
+    from pathlib import Path
+    from types import ModuleType
+
 
 def _failed(count: int = 1) -> BatchLedger:
     """Build one direct ledger with exactly ``count`` failed input rows.
@@ -40,6 +44,51 @@ def _failed(count: int = 1) -> BatchLedger:
     for item in ledger.items:
         item.finish(ItemStatus.FAILED, AppError(ExitCode.PARSE_ERROR, "bad"))
     return ledger
+
+
+def test_spool_creation_and_append_request_the_exact_private_native_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Private spool ownership uses its stable prefix and every available flag."""
+    descriptor = 71
+    created: dict[str, object] = {}
+    opened: dict[str, object] = {}
+    spool_os = cast("ModuleType", report_spool.__dict__["os"])
+    spool_tempfile = cast("ModuleType", report_spool.__dict__["tempfile"])
+    monkeypatch.setattr(report_spool, "private_temp_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        spool_tempfile,
+        "mkstemp",
+        lambda **keywords: (
+            created.update(keywords) or (descriptor, str(tmp_path / "private"))
+        ),
+    )
+    monkeypatch.setattr(spool_os, "fchmod", lambda *_args: None)
+    monkeypatch.setattr(spool_os, "close", lambda _descriptor: None)
+    spool = report_spool.ReportSpool.create()
+    assert spool.path == tmp_path / "private"
+    assert created == {
+        "prefix": ".eml-attachment-remover-report-",
+        "dir": tmp_path,
+    }
+    assert spool.closed is False
+    assert spool.bytes_written == spool.record_count == 0
+    original_open = spool_os.open
+    monkeypatch.setattr(spool_os, "O_BINARY", 0x40, raising=False)
+    monkeypatch.setattr(spool_os, "O_CLOEXEC", 0x80, raising=False)
+    monkeypatch.setattr(
+        spool_os,
+        "open",
+        lambda path, flags: opened.update(path=path, flags=flags) or descriptor,
+    )
+    monkeypatch.setattr(report_spool, "_write_all", lambda *_args: None)
+    spool.append(b"{}")
+    assert opened == {
+        "path": spool.path,
+        "flags": spool_os.O_WRONLY | spool_os.O_APPEND | 0x40 | 0x80,
+    }
+    monkeypatch.setattr(spool_os, "open", original_open)
 
 
 def test_summary_counts_repeated_statuses_and_batch_error_rejects_ok() -> None:
