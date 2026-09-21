@@ -106,6 +106,32 @@ def test_spool_enforces_exact_record_boundaries_when_reading_and_writing(
     spool.bytes_written = report_spool.MAX_RECORD_BYTES + 2
     with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
         tuple(spool.records())
+
+
+def test_spool_uses_zero_for_unavailable_platform_open_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Absent optional OS flags alter neither the requested flags nor append success."""
+    spool = report_spool.ReportSpool(tmp_path / "terminal.jsonl")
+    calls: list[int] = []
+    spool_os = cast("ModuleType", report_spool.__dict__["os"])
+
+    def open_spool(_path: object, flags: int) -> int:
+        calls.append(flags)
+        return 73
+
+    monkeypatch.delattr(spool_os, "O_BINARY", raising=False)
+    monkeypatch.delattr(spool_os, "O_CLOEXEC", raising=False)
+    monkeypatch.setattr(
+        spool_os,
+        "open",
+        open_spool,
+    )
+    monkeypatch.setattr(spool_os, "close", lambda _descriptor: None)
+    monkeypatch.setattr(report_spool, "_write_all", lambda *_args: None)
+    spool.append(b"{}")
+    assert calls == [spool_os.O_WRONLY | spool_os.O_APPEND]
     spool.path.write_bytes(b"x" * report_spool.MAX_RECORD_BYTES)
     with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
         tuple(spool.records())
