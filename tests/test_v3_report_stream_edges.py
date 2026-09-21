@@ -41,11 +41,62 @@ def test_spool_rejects_unsafe_records_and_nonprogress_writes(
             with pytest.raises(report_spool.ReportSpoolError) as unsafe:
                 spool.append(record)
             assert str(unsafe.value) == "terminal report record is unsafe"
+        spool.bytes_written = report_spool.MAX_SPOOL_BYTES - len(b"{}\n")
+        spool.append(b"{}")
+        spool.bytes_written = report_spool.MAX_SPOOL_BYTES - len(b"{}")
+        with pytest.raises(report_spool.ReportSpoolError) as full:
+            spool.append(b"{}")
+        assert str(full.value) == "terminal report spool exceeds its bounded capacity"
         monkeypatch.setattr(report_spool.__dict__["os"], "write", lambda *_args: 0)
         with pytest.raises(report_spool.ReportSpoolError):
             spool.append(b'{"index":0}')
     finally:
         spool.close()
+
+
+def test_spool_creation_and_append_request_the_exact_private_native_flags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Private spool ownership uses its stable prefix and every available flag."""
+    descriptor = 71
+    created: dict[str, object] = {}
+    opened: dict[str, object] = {}
+    monkeypatch.setattr(report_spool, "private_temp_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        report_spool.tempfile,
+        "mkstemp",
+        lambda **keywords: created.update(keywords)
+        or (descriptor, str(tmp_path / "private")),
+    )
+    monkeypatch.setattr(report_spool.os, "fchmod", lambda *_args: None)
+    monkeypatch.setattr(report_spool.os, "close", lambda _descriptor: None)
+    spool = report_spool.ReportSpool.create()
+    assert spool.path == tmp_path / "private"
+    assert created == {
+        "prefix": ".eml-attachment-remover-report-",
+        "dir": tmp_path,
+    }
+    assert spool.closed is False
+    assert spool.bytes_written == spool.record_count == 0
+    original_open = report_spool.os.open
+    monkeypatch.setattr(report_spool.os, "O_BINARY", 0x40, raising=False)
+    monkeypatch.setattr(report_spool.os, "O_CLOEXEC", 0x80, raising=False)
+    monkeypatch.setattr(
+        report_spool.os,
+        "open",
+        lambda path, flags: opened.update(path=path, flags=flags) or descriptor,
+    )
+    monkeypatch.setattr(report_spool, "_write_all", lambda *_args: None)
+    spool.append(b"{}")
+    assert opened == {
+        "path": spool.path,
+        "flags": report_spool.os.O_WRONLY
+        | report_spool.os.O_APPEND
+        | 0x40
+        | 0x80,
+    }
+    monkeypatch.setattr(report_spool.os, "open", original_open)
 
 
 def test_spool_detects_unavailable_corrupt_and_incomplete_cleanup(
@@ -57,6 +108,13 @@ def test_spool_detects_unavailable_corrupt_and_incomplete_cleanup(
     unavailable.close()
     with pytest.raises(report_spool.ReportSpoolError):
         tuple(unavailable.records())
+
+    missing = report_spool.ReportSpool.create()
+    missing.path.unlink()
+    with pytest.raises(report_spool.ReportSpoolError) as absent:
+        tuple(missing.records())
+    assert str(absent.value) == "terminal report spool is unavailable"
+    missing.closed = True
 
     corrupt = report_spool.ReportSpool.create()
     try:
