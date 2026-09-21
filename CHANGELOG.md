@@ -10,6 +10,8 @@ Notable changes to this project are documented in this file. The format is based
 
 - Updated the pinned build and qualification tools: Hatchling 1.32.4, Coverage
   7.16.1, Hypothesis 6.168.0, Mutmut 3.8.0, and Ruff 0.16.8.
+- Removed the legacy CLI migration layer; unsupported options now receive the
+  standard current-surface parser error with no compatibility guidance.
 
 ### Fixed
 
