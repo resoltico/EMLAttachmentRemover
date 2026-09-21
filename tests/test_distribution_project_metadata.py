@@ -174,12 +174,12 @@ class DistributionProjectValueTests(unittest.TestCase):
     def test_every_string_collection_is_runtime_validated(self) -> None:
         cases = (
             (
-                'requires = ["hatchling==1.32.0"]',
+                'requires = ["hatchling==1.32.4"]',
                 'requires = "bad"',
                 "configuration field 'requires'",
             ),
             (
-                'requires = ["hatchling==1.32.0"]',
+                'requires = ["hatchling==1.32.4"]',
                 "requires = [7]",
                 "configuration field 'requires'",
             ),
@@ -316,7 +316,7 @@ class DistributionProjectValueTests(unittest.TestCase):
             distribution = create_distribution(Path(directory))
             _replace(
                 distribution.config,
-                "hatchling==1.32.0",
+                "hatchling==1.32.4",
                 "hatchling==A1",
             )
             loaded = _load(distribution.root)
