@@ -106,6 +106,9 @@ def test_spool_enforces_exact_record_boundaries_when_reading_and_writing(
     spool.bytes_written = report_spool.MAX_RECORD_BYTES + 2
     with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
         tuple(spool.records())
+    spool.path.write_bytes(b"x" * report_spool.MAX_RECORD_BYTES + b"\n")
+    spool.bytes_written = report_spool.MAX_RECORD_BYTES + 1
+    assert tuple(spool.records()) == (b"x" * report_spool.MAX_RECORD_BYTES,)
 
 
 def test_spool_uses_zero_for_unavailable_platform_open_flags(
