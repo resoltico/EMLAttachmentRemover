@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from base64 import b64encode
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -13,6 +13,7 @@ from eml_attachment_remover.domain import AppError, ExitCode, PathValue
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from types import ModuleType
 
 
 @pytest.mark.parametrize(
@@ -85,6 +86,17 @@ def test_default_destination_preserves_requested_expression_on_both_path_grammar
             native_values.default_destination("Message.EML")
             == "Message.mime-pruned.eml"
         )
+        with monkeypatch.context() as context:
+            message = "POSIX destination used Windows parsing"
+            windows_paths = cast("ModuleType", native_values.__dict__["ntpath"])
+
+            def windows_split(_value: str) -> tuple[str, str]:
+                raise AssertionError(message)
+
+            context.setattr(windows_paths, "split", windows_split)
+            assert native_values.default_destination("folder/message.eml") == (
+                "folder/message.mime-pruned.eml"
+            )
     with monkeypatch.context() as context:
         context.setattr(native_values.__dict__["os"], "name", "nt")
         assert native_values.default_destination("C:\\in\\..\\Mail.EML") == (
