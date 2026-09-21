@@ -50,7 +50,7 @@ def create_distribution(root: Path, *, scripts: bool = True) -> SyntheticDistrib
     )
     config.write_text(
         "[build-system]\n"
-        'requires = ["hatchling==1.32.0"]\n'
+        'requires = ["hatchling==1.32.4"]\n'
         'build-backend = "hatchling.build"\n'
         "[project]\n"
         'name = "public-project"\n'
