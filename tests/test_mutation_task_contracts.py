@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import tempfile
@@ -92,6 +93,7 @@ class MutationTaskContracts(unittest.TestCase):
                 environment_updates: Mapping[str, str] | None = None,
                 environment_removals: Sequence[str] = (),
             ) -> None:
+                events.append("run")
                 run_calls.append((
                     tuple(command),
                     {
@@ -113,10 +115,28 @@ class MutationTaskContracts(unittest.TestCase):
             mutation_task.run_mutation(paths, actions, "python")
 
         workers = str(mutation_task.mutation_worker_count())
-        self.assertEqual(events, ["cleanup", "coverage", "capture"])
+        self.assertEqual(
+            events,
+            ["run", "cleanup", "coverage", "run", "capture", "run", "run"],
+        )
         self.assertEqual(
             run_calls,
             [
+                (
+                    (
+                        "python",
+                        "tools/check_mutation_results.py",
+                        "--manifest-only",
+                        "--equivalents",
+                        str(paths.equivalents),
+                    ),
+                    {
+                        "profile": None,
+                        "timeout_seconds": 120,
+                        "environment_updates": None,
+                        "environment_removals": (),
+                    },
+                ),
                 (
                     ("mutmut", "run", "--max-children", workers),
                     {
@@ -162,10 +182,65 @@ class MutationTaskContracts(unittest.TestCase):
         self.assertEqual(mutation_task.mutation_worker_count(2), 1)
         self.assertEqual(mutation_task.mutation_worker_count(10), 8)
         self.assertEqual(mutation_task.mutation_worker_count(64), 8)
-        with patch.object(os, "cpu_count", return_value=10):
+        self.assertEqual(mutation_task.mutation_worker_count(4), 2)
+        with patch.object(os, "process_cpu_count", return_value=10):
             self.assertEqual(mutation_task.mutation_worker_count(), 8)
-        with patch.object(os, "cpu_count", return_value=None):
+        with patch.object(os, "process_cpu_count", return_value=None):
             self.assertEqual(mutation_task.mutation_worker_count(), 1)
+
+    def test_worker_option_accepts_auto_or_a_bounded_count(self) -> None:
+        self.assertIsNone(mutation_task.parse_workers("auto"))
+        self.assertEqual(mutation_task.parse_workers("1"), 1)
+        self.assertEqual(mutation_task.parse_workers("64"), 64)
+        for value in ("0", "65"):
+            with (
+                self.subTest(value=value),
+                self.assertRaises(argparse.ArgumentTypeError) as raised,
+            ):
+                mutation_task.parse_workers(value)
+            self.assertEqual(str(raised.exception), "workers must be auto or 1-64")
+        with self.assertRaises(ValueError):
+            mutation_task.parse_workers("four")
+
+    def test_explicit_workers_and_skipped_preflight_reach_mutmut(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = _paths(Path(directory))
+            commands: list[tuple[str, ...]] = []
+            actions = mutation_task.mutation_actions(
+                lambda: None,
+                lambda: None,
+                lambda: None,
+                lambda command, **_options: commands.append(tuple(command)),
+            )
+            mutation_task.run_mutation(
+                paths,
+                actions,
+                "python",
+                workers=3,
+                preflight=False,
+            )
+        self.assertEqual(commands[0], ("mutmut", "run", "--max-children", "3"))
+        self.assertEqual(len(commands), 3)
+
+    def test_failed_preflight_stops_before_cleanup_or_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = _paths(Path(directory))
+            events: list[str] = []
+
+            def reject(*_args: object, **_kwargs: object) -> None:
+                events.append("preflight")
+                raise subprocess.CalledProcessError(1, "preflight")
+
+            actions = mutation_task.mutation_actions(
+                lambda: events.append("coverage"),
+                lambda: events.append("cleanup"),
+                lambda: events.append("capture"),
+                reject,
+            )
+            with self.assertRaises(subprocess.CalledProcessError):
+                mutation_task.run_mutation(paths, actions, "python")
+            self.assertFalse(paths.build_directory.exists())
+        self.assertEqual(events, ["preflight"])
 
     def test_mutation_failure_group_has_exact_public_message(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -193,12 +268,31 @@ class MutationTaskContracts(unittest.TestCase):
                 fail,
             )
             with self.assertRaises(ExceptionGroup) as raised:
-                mutation_task.run_mutation(paths, actions, "python")
+                mutation_task.run_mutation(paths, actions, "python", preflight=False)
         self.assertEqual(
             str(raised.exception).split(" (3 sub-exceptions)", maxsplit=1)[0],
             "mutation gate failed",
         )
         self.assertEqual(len(raised.exception.exceptions), 3)
+
+
+def _paths(root: Path) -> mutation_task.MutationPaths:
+    """Create canonical mutation paths with a present coverage configuration.
+
+    Returns:
+        The path bundle rooted at ``root``.
+
+    """
+    tools = root / "tools"
+    tools.mkdir()
+    (tools / "mutmut.coveragerc").write_text("[run]\n", encoding="utf-8")
+    return mutation_task.mutation_paths(
+        root,
+        root / "build",
+        root / "mutants" / "stats.json",
+        root / "build" / "results.txt",
+        root / "equivalents.json",
+    )
 
 
 if __name__ == "__main__":

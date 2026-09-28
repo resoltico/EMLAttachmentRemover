@@ -123,6 +123,9 @@ def _register_data_handle(
 def report_coverage(data_file: Path, xml_output: Path) -> float:
     """Print text, write XML, enforce the threshold, and close coverage data.
 
+    The XML is published before the threshold is enforced: a missed threshold is
+    exactly when its missing-line and branch detail is needed for diagnosis.
+
     Returns:
         The measured total percentage when the configured threshold passes.
 
@@ -142,9 +145,6 @@ def report_coverage(data_file: Path, xml_output: Path) -> float:
             total = reporter.report()
         finally:
             _register_data_handle(reporter, close_data, registered)
-        threshold_error = _threshold_error(reporter, total)
-        if threshold_error is not None:
-            raise CoverageThresholdError(str(threshold_error))
         with tempfile.TemporaryDirectory(
             dir=data_file.parent,
             prefix=PRIVATE_XML_PREFIX,
@@ -156,6 +156,9 @@ def report_coverage(data_file: Path, xml_output: Path) -> float:
                 _register_data_handle(reporter, close_data, registered)
             content = coverage_xml.load_validated(staged_xml)
         coverage_xml.publish(content, xml_output)
+        threshold_error = _threshold_error(reporter, total)
+        if threshold_error is not None:
+            raise CoverageThresholdError(str(threshold_error))
         return total
 
 

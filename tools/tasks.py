@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import argparse
 import importlib
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -15,9 +13,13 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from tools.task_interfaces import (
+        CoverageTask,
         HypothesisRunner,
+        LocalCi,
         MutationTaskModule,
         RepositoryHygiene,
+        TaskCli,
+        TaskProcess,
         TaskTestCommands,
         TaskTimeout,
     )
@@ -27,34 +29,25 @@ if TYPE_CHECKING:
 sys.dont_write_bytecode = True
 
 
-check_repository_hygiene = cast(
-    "RepositoryHygiene",
-    importlib.import_module(
-        "tools.check_repository_hygiene" if __package__ else "check_repository_hygiene",
-    ),
-)
-mutation_task = cast(
-    "MutationTaskModule",
-    importlib.import_module(
-        "tools.mutation_task" if __package__ else "mutation_task",
-    ),
-)
-hypothesis_runner = cast(
-    "HypothesisRunner",
-    importlib.import_module(
-        "tools.hypothesis_run" if __package__ else "hypothesis_run",
-    ),
-)
-task_timeout = cast(
-    "TaskTimeout",
-    importlib.import_module("tools.task_timeout" if __package__ else "task_timeout"),
-)
-task_test_commands = cast(
-    "TaskTestCommands",
-    importlib.import_module(
-        "tools.task_test_commands" if __package__ else "task_test_commands"
-    ),
-)
+def _tool(name: str) -> object:
+    """Import one repository tool as a package module or a script sibling.
+
+    Returns:
+        The imported module.
+
+    """
+    return importlib.import_module(f"tools.{name}" if __package__ else name)
+
+
+check_repository_hygiene = cast("RepositoryHygiene", _tool("check_repository_hygiene"))
+mutation_task = cast("MutationTaskModule", _tool("mutation_task"))
+hypothesis_runner = cast("HypothesisRunner", _tool("hypothesis_run"))
+task_timeout = cast("TaskTimeout", _tool("task_timeout"))
+task_test_commands = cast("TaskTestCommands", _tool("task_test_commands"))
+task_process = cast("TaskProcess", _tool("task_process"))
+coverage_task = cast("CoverageTask", _tool("coverage_task"))
+local_ci = cast("LocalCi", _tool("local_ci"))
+task_cli = cast("TaskCli", _tool("task_cli"))
 
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
 BUILD_TARGET: Final = PROJECT_ROOT / "build" / "remove-eml-attachments.pyz"
@@ -117,10 +110,9 @@ def _run(
     environment_updates: Mapping[str, str] | None = None,
     environment_removals: Sequence[str] = (),
 ) -> None:
-    """Run one task command without a shell."""
-    subprocess.run(
+    """Run one task command without a shell, owning its descendants."""
+    task_process.run(
         command,
-        check=True,
         cwd=PROJECT_ROOT,
         env=_task_environment(
             profile=profile,
@@ -234,43 +226,43 @@ def _test(
 
 
 def _coverage() -> None:
-    """Run the branch-coverage gate using the deterministic CI profile."""
+    """Run the branch-coverage gate and report its data even after test failures."""
     BUILD_DIRECTORY.mkdir(exist_ok=True)
 
     def coverage_action(storage: Path) -> None:
         coverage_data = storage.parent / ".coverage"
         coverage_environment = {"COVERAGE_FILE": str(coverage_data)}
-        _isolated_run(
-            storage,
-            (sys.executable, "-m", "coverage", "erase"),
-            environment_updates=coverage_environment,
-        )
-        _isolated_run(
-            storage,
-            task_test_commands.pytest_command(
-                sys.executable,
-                storage.parent / "test-results.xml",
-                coverage=True,
-            ),
-            profile="project-ci",
-            environment_updates=coverage_environment,
-        )
-        _isolated_run(
-            storage,
-            (sys.executable, "-m", "coverage", "combine"),
-            environment_updates=coverage_environment,
-        )
-        _isolated_run(
-            storage,
-            (
+
+        def run(command: Sequence[str], profile: str | None = None) -> None:
+            _isolated_run(
+                storage,
+                command,
+                profile=profile,
+                environment_updates=coverage_environment,
+            )
+
+        def report() -> None:
+            run((sys.executable, "-m", "coverage", "combine"))
+            run((
                 sys.executable,
                 "tools/report_coverage.py",
                 "--data-file",
                 str(coverage_data),
                 "--xml-output",
                 str(BUILD_DIRECTORY / "coverage.xml"),
+            ))
+
+        run((sys.executable, "-m", "coverage", "erase"))
+        coverage_task.measure(
+            lambda: run(
+                task_test_commands.pytest_command(
+                    sys.executable,
+                    storage.parent / "test-results.xml",
+                    coverage=True,
+                ),
+                profile="project-ci",
             ),
-            environment_updates=coverage_environment,
+            report,
         )
 
     hypothesis_runner.run_isolated(
@@ -310,7 +302,7 @@ def _remove_mutation_workspace() -> None:
     mutation_task.remove_workspace(_mutation_paths())
 
 
-def _mutation() -> None:
+def _mutation(*, workers: int | None = None, preflight: bool = True) -> None:
     """Establish coverage and require 100% of actionable mutants to be killed.
 
     Raises:
@@ -364,6 +356,8 @@ def _mutation() -> None:
                 run_mutation_command,
             ),
             sys.executable,
+            workers=workers,
+            preflight=preflight,
         )
 
     hypothesis_runner.run_isolated(mutation_action, PROJECT_ROOT)
@@ -392,6 +386,22 @@ def _quality() -> None:
     _coverage()
 
 
+def _ci(release_tag: str | None, workers: int | None) -> None:
+    """Run every CI gate this host can reproduce, in owned process groups."""
+    local_ci.run_local_ci(
+        PROJECT_ROOT,
+        lambda command, environment, timeout: task_process.run(
+            command,
+            cwd=PROJECT_ROOT,
+            env=_task_environment(environment_updates=environment),
+            timeout=timeout,
+            grace_seconds=local_ci.OWNER_GRACE_SECONDS,
+        ),
+        release_tag=release_tag,
+        workers=mutation_task.AUTOMATIC_WORKERS if workers is None else str(workers),
+    )
+
+
 _positive_timeout = task_timeout.positive_timeout
 
 
@@ -402,36 +412,22 @@ def main(argv: list[str] | None = None) -> int:
         Zero after the selected task succeeds.
 
     """
-    parser = argparse.ArgumentParser(description=__doc__)
-    command_parsers = parser.add_subparsers(dest="task", required=True)
-    for task_name in (
-        "build",
-        "check",
-        "coverage",
-        "mutation",
-        "quality",
-        "release",
-        "test",
-    ):
-        command_parsers.add_parser(task_name)
-    thorough_parser = command_parsers.add_parser("thorough")
-    thorough_parser.add_argument(
-        "--timeout-seconds",
-        type=_positive_timeout,
-        help="whole pytest timeout",
-    )
-    thorough_parser.add_argument(
-        "--observable",
-        action="store_true",
-        help="write public Hypothesis observations",
+    parser = task_cli.build_parser(
+        __doc__,
+        _positive_timeout,
+        mutation_task.parse_workers,
     )
     arguments = parser.parse_args(argv)
     task = arguments.task
     actions: dict[str, Callable[[], None]] = {
         "build": _build_zipapp,
         "check": _check,
+        "ci": lambda: _ci(arguments.release_tag, arguments.workers),
         "coverage": _coverage,
-        "mutation": _mutation,
+        "mutation": lambda: _mutation(
+            workers=arguments.workers,
+            preflight=not arguments.allow_stale_manifest,
+        ),
         "quality": _quality,
         "release": _qualify_release,
         "test": lambda: _test("project-development"),

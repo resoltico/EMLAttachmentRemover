@@ -36,7 +36,7 @@ class TaskRunnerTests(unittest.TestCase):
                     controlled_environment
                 ),
             ),
-            patch("tools.tasks.subprocess.run") as run,
+            patch.object(tasks.task_process, "run") as run,
         ):
             tasks._run(
                 ("public-command",),
@@ -347,7 +347,6 @@ class TaskRunnerTests(unittest.TestCase):
             "build",
             "check",
             "coverage",
-            "mutation",
             "quality",
             "release",
         )
@@ -355,7 +354,6 @@ class TaskRunnerTests(unittest.TestCase):
             "_build_zipapp",
             "_check",
             "_coverage",
-            "_mutation",
             "_quality",
             "_qualify_release",
         )

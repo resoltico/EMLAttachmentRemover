@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "41 3 * * 4"
   workflow_dispatch:
+    inputs:
+      workers:
+        description: Mutmut workers, auto or 1-64 (for runner benchmarking)
+        required: false
+        default: auto
+        type: string
 
 permissions:
   contents: read
@@ -22,6 +28,7 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONNOUSERSITE: "1"
       PYTHONWARNINGS: error
+      MUTATION_WORKERS: ${{ inputs.workers || 'auto' }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,12 +45,12 @@ jobs:
         env:
           PYTHONWARNINGS: default
       - name: Run a fresh 100% actionable mutation campaign
-        run: uv run python tools/tasks.py mutation
+        run: uv run python tools/tasks.py mutation --workers "$MUTATION_WORKERS"
       - name: Preserve machine-readable mutation results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mutation-results-${{ github.run_id }}
+          name: mutation-results-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             mutants/mutmut-cicd-stats.json
             build/mutmut-results.txt

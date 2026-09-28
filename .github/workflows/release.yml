@@ -65,6 +65,16 @@ jobs:
         run: test -x /bin/sh
       - name: Run the complete quality gate
         run: uv run python tools/tasks.py quality
+      - name: Preserve machine-readable quality reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-quality-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/test-results-project-ci.xml
+            build/coverage.xml
+          if-no-files-found: warn
+          retention-days: 30
 
   property:
     name: Property ${{ matrix.os }} / CPython ${{ matrix.python }}
@@ -130,7 +140,7 @@ jobs:
         if: always() && steps.finalize_hypothesis.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-property-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}
+          name: release-property-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .hypothesis/observed/
           if-no-files-found: error
           include-hidden-files: true
@@ -149,6 +159,7 @@ jobs:
       PYTHONNOUSERSITE: "1"
       PYTHONWARNINGS: error
       RELEASE_TAG: ${{ github.ref_name }}
+      MUTATION_WORKERS: auto
     steps:
       - name: Check out the tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -168,12 +179,12 @@ jobs:
         shell: bash
         run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
       - name: Run a fresh 100% actionable mutation campaign
-        run: uv run python tools/tasks.py mutation
+        run: uv run python tools/tasks.py mutation --workers "$MUTATION_WORKERS"
       - name: Preserve tagged mutation evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-mutation-${{ github.run_id }}
+          name: release-mutation-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             mutants/mutmut-cicd-stats.json
             build/mutmut-results.txt

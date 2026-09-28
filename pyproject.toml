@@ -145,6 +145,7 @@ max-statements = 40
 "tests/test_release_publication_tool.py" = ["private-member-access"]
 "tests/test_task_command_contracts.py" = ["private-member-access"]
 "tests/test_task_mutation_boundary.py" = ["private-member-access"]
+"tests/test_task_process.py" = ["private-member-access"]
 "tests/test_tasks_mutation.py" = ["private-member-access"]
 "tests/test_tools.py" = ["private-member-access"]
 "tests/test_version.py" = ["import-private-name", "private-member-access"]

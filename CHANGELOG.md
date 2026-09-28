@@ -4,6 +4,27 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+### Added
+
+- `tasks.py ci` runs every CI gate the host can reproduce (both interpreters,
+  cross-platform type checks, release build and verification, mutation, randomized
+  exploration), and a test fails when a workflow step has no local counterpart.
+  On macOS, mutation runs in CI's Linux runner image through Docker, because mutant
+  IDs and the reviewed equivalents are platform-specific.
+- Mutation campaigns check the equivalence-manifest source binding before any
+  work; `--allow-stale-manifest` and `check_mutation_results.py --source-sha256`
+  document the rebind flow. `--workers` makes Mutmut parallelism benchmarkable.
+
+### Fixed
+
+- Task timeouts and interruptions stop the whole process group, so no test or
+  mutant descendant can outlive its task step and write after evidence capture.
+- Mutation workers remove each pytest session's temporary directory, keeping disk
+  use bounded by live workers rather than completed mutants.
+- Coverage XML is published when tests fail or the threshold is missed.
+- Superseded pull-request exploration runs are cancelled; release qualification
+  keeps its quality reports; artifact names survive workflow re-runs.
+
 ## [3.0.6] - 2026-09-21
 
 ### Changed

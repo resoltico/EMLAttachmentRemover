@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import stat
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -125,6 +126,12 @@ def test_posix_source_read_and_nofollow_open_default_missing_flags_to_zero(
     monkeypatch.delattr(native_posix.__dict__["os"], "O_NOFOLLOW", raising=False)
     monkeypatch.setattr(native_posix.__dict__["os"], "open", open_file)
     monkeypatch.setattr(native_posix.__dict__["os"], "close", closes.append)
+    # The faked descriptor is not open; never inspect whatever the process holds.
+    monkeypatch.setattr(
+        native_posix.__dict__["os"],
+        "fstat",
+        lambda _descriptor: os.stat_result((stat.S_IFREG, *(0,) * 9)),
+    )
     monkeypatch.setattr(native_posix, "_snapshot", lambda *_arguments: marker)
 
     assert native_posix._read_source("request", "mail.eml") is marker  # ruff: ignore[private-member-access] - source read defaults each optional flag.

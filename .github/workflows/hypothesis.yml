@@ -14,7 +14,9 @@ permissions:
 
 concurrency:
   group: hypothesis-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  # A newer PR revision supersedes exploration of the old one; scheduled, push,
+  # and manual campaigns are deliberate and still queue.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   explore:
@@ -75,7 +77,7 @@ jobs:
         if: always() && steps.finalize_hypothesis.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: hypothesis-observations-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}
+          name: hypothesis-observations-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .hypothesis/observed/
           if-no-files-found: error
           include-hidden-files: true

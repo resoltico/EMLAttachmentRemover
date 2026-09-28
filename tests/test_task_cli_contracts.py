@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from tools import tasks
 
@@ -83,10 +83,10 @@ class TaskCliContractTests(unittest.TestCase):
         self.assertEqual(
             " ".join(output.getvalue().split()),
             "usage: tasks.py [-h] "
-            "{build,check,coverage,mutation,quality,release,test,thorough} ... "
+            "{build,check,ci,coverage,mutation,quality,release,test,thorough} ... "
             "Run portable local development and release-preparation tasks. "
             "positional arguments: "
-            "{build,check,coverage,mutation,quality,release,test,thorough} "
+            "{build,check,ci,coverage,mutation,quality,release,test,thorough} "
             "options: -h, --help show this help message and exit",
         )
 
@@ -107,9 +107,45 @@ class TaskCliContractTests(unittest.TestCase):
             "--observable write public Hypothesis observations",
         )
 
+        for task, option_help in (
+            (
+                "mutation",
+                (
+                    "usage: tasks.py mutation [-h] [--allow-stale-manifest] "
+                    "[--workers WORKERS] options: -h, --help show this help message "
+                    "and exit --allow-stale-manifest skip only the equivalence "
+                    "preflight, to gather rebind evidence --workers WORKERS Mutmut "
+                    "workers: auto or 1-64 (default: auto)"
+                ),
+            ),
+            (
+                "ci",
+                (
+                    "usage: tasks.py ci [-h] [--release-tag RELEASE_TAG] "
+                    "[--workers WORKERS] options: -h, --help show this help message "
+                    "and exit --release-tag RELEASE_TAG tag to validate like the "
+                    "release workflow (default: v<version>) --workers WORKERS Mutmut "
+                    "workers: auto or 1-64 (default: auto)"
+                ),
+            ),
+        ):
+            task_output = io.StringIO()
+            with (
+                self.subTest(task=task),
+                patch.object(sys, "argv", ["tasks.py"]),
+                redirect_stdout(task_output),
+                self.assertRaises(SystemExit) as task_help_exit,
+            ):
+                tasks.main([task, "--help"])
+            self.assertEqual(task_help_exit.exception.code, 0)
+            self.assertEqual(" ".join(task_output.getvalue().split()), option_help)
+
         for arguments in (
             ["test", "--observable"],
             ["test", "--timeout-seconds", "1"],
+            ["test", "--workers", "2"],
+            ["quality", "--allow-stale-manifest"],
+            ["build", "--release-tag", "v1"],
         ):
             with self.subTest(arguments=arguments):
                 errors = io.StringIO()
@@ -125,6 +161,40 @@ class TaskCliContractTests(unittest.TestCase):
                     errors.getvalue(),
                 )
                 test.assert_not_called()
+
+    def test_mutation_and_ci_options_reach_their_tasks(self) -> None:
+        with patch.object(tasks, "_mutation") as mutation:
+            self.assertEqual(tasks.main(["mutation"]), 0)
+            self.assertEqual(
+                tasks.main(["mutation", "--workers", "3", "--allow-stale-manifest"]),
+                0,
+            )
+        self.assertEqual(
+            mutation.call_args_list,
+            [call(workers=None, preflight=True), call(workers=3, preflight=False)],
+        )
+        with patch.object(tasks, "_ci") as local_ci:
+            self.assertEqual(tasks.main(["ci"]), 0)
+            self.assertEqual(
+                tasks.main(["ci", "--release-tag", "v9.9.9", "--workers", "2"]),
+                0,
+            )
+        self.assertEqual(
+            local_ci.call_args_list,
+            [call(None, None), call("v9.9.9", 2)],
+        )
+
+    def test_tools_import_as_package_modules_or_script_siblings(self) -> None:
+        self.assertIs(tasks._tool("task_timeout"), tasks.task_timeout)  # ruff: ignore[private-member-access] - import contract.
+        tools_directory = str(tasks.PROJECT_ROOT / "tools")
+        with (
+            patch.object(tasks, "__package__", ""),
+            patch.object(sys, "path", [tools_directory, *sys.path]),
+            patch.dict(sys.modules),
+        ):
+            sibling = tasks._tool("task_timeout")  # ruff: ignore[private-member-access] - import contract.
+            self.assertEqual(getattr(sibling, "__name__", None), "task_timeout")
+            self.assertIsNot(sibling, tasks.task_timeout)
 
     def test_script_entrypoint_exposes_help_without_running_a_task(self) -> None:
         """Exercise the real ``__main__`` branch through a harmless request."""
