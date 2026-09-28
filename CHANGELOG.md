@@ -24,6 +24,9 @@ Notable changes to this project are documented in this file. The format is based
 - Coverage XML is published when tests fail or the threshold is missed.
 - Superseded pull-request exploration runs are cancelled; release qualification
   keeps its quality reports; artifact names survive workflow re-runs.
+- Hypothesis observation finalization replaces both the reported and the resolved
+  spelling of the home, Python prefix, and project paths, so an interpreter or home
+  under a symbolic link (such as macOS `/var`) no longer fails publication.
 
 ## [3.0.6] - 2026-09-21
 
