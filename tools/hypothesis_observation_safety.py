@@ -57,22 +57,32 @@ def replacement_prefixes(
 ) -> tuple[tuple[str, str], ...]:
     """Return longest-first private prefixes and their public placeholders.
 
+    Each absolute prefix contributes both its reported and resolved spelling,
+    because observations record paths unresolved while symbolic links (such as
+    macOS ``/var`` to ``/private/var``) make the resolved spelling differ.
+
     Returns:
         Distinct non-root prefixes in deterministic replacement order.
 
     """
-    candidates = (
-        (str(root.resolve()), PROJECT_PLACEHOLDER),
-        *((str(path.resolve()), replacement) for path, replacement in additional),
-        (str(Path.home().resolve()), HOME_PLACEHOLDER),
-        (str(Path(sys.prefix).resolve()), PYTHON_PLACEHOLDER),
-        (str(Path(sys.base_prefix).resolve()), PYTHON_BASE_PLACEHOLDER),
+    path_candidates = (
+        (root, PROJECT_PLACEHOLDER),
+        *additional,
+        (Path.home(), HOME_PLACEHOLDER),
+        (Path(sys.prefix), PYTHON_PLACEHOLDER),
+        (Path(sys.base_prefix), PYTHON_BASE_PLACEHOLDER),
+    )
+    prefixes = (
+        (prefix, replacement)
+        for path, replacement in path_candidates
+        for resolved in [str(path.resolve())]
+        if resolved != os.sep
+        for prefix in (resolved, *([str(path)] if path.is_absolute() else []))
     )
     replacements: dict[str, str] = {}
-    for prefix, replacement in candidates:
-        if prefix != os.sep:
-            for variant in path_prefix_variants(prefix):
-                replacements.setdefault(variant, replacement)
+    for prefix, replacement in prefixes:
+        for variant in path_prefix_variants(prefix):
+            replacements.setdefault(variant, replacement)
     return tuple(sorted(replacements.items(), key=lambda item: (-len(item[0]), item)))
 
 

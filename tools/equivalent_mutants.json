@@ -1,6 +1,6 @@
 {
     "schema_version": 1,
-    "source_sha256": "ae6ab45c:687f08dc:83a8aa8c:3b4f433b:bd530bb8:0d8f6785:c8a0b376:a31f677b",
+    "source_sha256": "1cb9e866:66c23c3a:d47d6315:e83b0fa9:e4840ed9:0616ba2f:605a46f4:42b49148",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_10",

@@ -135,6 +135,47 @@ class ArtifactMutationContracts(unittest.TestCase):
         self.assertEqual(replacements[str(additional)], "<publication-root>")
         self.assertNotIn(os.sep, replacements)
 
+    def test_replacement_map_includes_reported_and_resolved_link_spellings(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            real_home = base / "real-home"
+            real_python = base / "real-python"
+            for path in (real_home, real_python):
+                path.mkdir()
+            home = base / "linked-home"
+            home.symlink_to(real_home, target_is_directory=True)
+            python_prefix = base / "linked-python"
+            python_prefix.symlink_to(real_python, target_is_directory=True)
+            relative_root = Path("relative-project")
+            with (
+                patch.object(Path, "home", return_value=home),
+                patch.object(sys, "prefix", str(python_prefix)),
+            ):
+                replacement_items = observation_safety.replacement_prefixes(
+                    relative_root
+                )
+        replacements = dict(replacement_items)
+
+        self.assertEqual(replacements[str(home)], "<user-home>")
+        self.assertEqual(replacements[str(real_home)], "<user-home>")
+        self.assertEqual(replacements[str(python_prefix)], "<python-prefix>")
+        self.assertEqual(replacements[str(real_python)], "<python-prefix>")
+        self.assertEqual(
+            replacements[str(relative_root.resolve())],
+            "<project-root>",
+        )
+        self.assertNotIn(str(relative_root), replacements)
+        self.assertEqual(len(replacement_items), len(replacements))
+        self.assertEqual(
+            [len(prefix) for prefix, _replacement in replacement_items],
+            sorted(
+                (len(prefix) for prefix, _replacement in replacement_items),
+                reverse=True,
+            ),
+        )
+
     def test_replacement_map_normalizes_windows_style_prefixes(self) -> None:
         root = Path(r"C:\public-project")
 
