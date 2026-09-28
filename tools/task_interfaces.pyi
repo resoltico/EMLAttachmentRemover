@@ -1,4 +1,5 @@
-from collections.abc import Callable, Mapping
+import argparse
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Protocol
 
@@ -38,7 +39,9 @@ class TaskTestCommands(Protocol):
     ) -> tuple[str, ...]: ...
 
 class MutationTaskModule(Protocol):
+    AUTOMATIC_WORKERS: str
     def mutation_worker_count(self, cpu_count: int | None = None) -> int: ...
+    def parse_workers(self, value: str) -> int | None: ...
     def mutation_paths(
         self,
         project_root: Path,
@@ -61,4 +64,48 @@ class MutationTaskModule(Protocol):
         environment: Mapping[str, str],
     ) -> None: ...
     def remove_workspace(self, paths: object) -> None: ...
-    def run_mutation(self, paths: object, actions: object, executable: str) -> None: ...
+    def run_mutation(
+        self,
+        paths: object,
+        actions: object,
+        executable: str,
+        *,
+        workers: int | None = None,
+        preflight: bool = True,
+    ) -> None: ...
+
+class TaskProcess(Protocol):
+    DEFAULT_GRACE_SECONDS: float
+    def run(
+        self,
+        command: Sequence[str],
+        *,
+        cwd: Path,
+        env: Mapping[str, str],
+        timeout: float | None,
+        grace_seconds: float = ...,
+    ) -> None: ...
+
+class CoverageTask(Protocol):
+    def measure(
+        self, tests: Callable[[], None], report: Callable[[], None]
+    ) -> None: ...
+
+class LocalCi(Protocol):
+    OWNER_GRACE_SECONDS: float
+    def run_local_ci(
+        self,
+        project_root: Path,
+        run_step: Callable[[Sequence[str], Mapping[str, str], float], None],
+        *,
+        release_tag: str | None,
+        workers: str,
+    ) -> None: ...
+
+class TaskCli(Protocol):
+    def build_parser(
+        self,
+        description: str | None,
+        positive_timeout: Callable[[str], float],
+        workers: Callable[[str], int | None],
+    ) -> argparse.ArgumentParser: ...

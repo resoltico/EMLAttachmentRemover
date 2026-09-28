@@ -63,7 +63,7 @@ class MutationTaskTests(unittest.TestCase):
             patch.object(tasks, "_run", side_effect=failures) as run,
             self.assertRaises(ExceptionGroup) as raised,
         ):
-            tasks._mutation()
+            tasks._mutation(preflight=False)
         coverage.assert_called_once_with()
         workers = str(tasks.mutation_task.mutation_worker_count())
         self.assertEqual(
@@ -165,9 +165,23 @@ class MutationTaskTests(unittest.TestCase):
                 ),
                 patch.object(tasks, "_run", side_effect=record_run) as run,
             ):
-                tasks._mutation()
-        self.assertEqual(events[:2], ["cleanup", "coverage"])
-        self.assertEqual(run.call_count, 3)
+                tasks._mutation(workers=5)
+        self.assertEqual(events[:4], ["mutation", "cleanup", "coverage", "mutation"])
+        self.assertEqual(run.call_count, 4)
+        self.assertEqual(
+            run.call_args_list[0].args[0],
+            (
+                sys.executable,
+                "tools/check_mutation_results.py",
+                "--manifest-only",
+                "--equivalents",
+                str(tasks.MUTATION_EQUIVALENTS),
+            ),
+        )
+        self.assertEqual(
+            run.call_args_list[1].args[0],
+            ("mutmut", "run", "--max-children", "5"),
+        )
         self.assertFalse(statistics.exists())
         self.assertFalse(results.exists())
 

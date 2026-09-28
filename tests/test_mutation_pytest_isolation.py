@@ -8,13 +8,36 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
+import pytest
 from tools import mutation_pytest_isolation
 
 from tests.mutmut_environment_support import selector_preserving_environment
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+@contextmanager
+def _marker_environment(marker: str) -> Iterator[None]:
+    """Set a mutant marker with basetemp isolation off, as outside Mutmut.
+
+    Yields:
+        Control while the environment is patched; it is restored afterwards.
+
+    """
+    with patch.dict(
+        os.environ, {mutation_pytest_isolation.MUTANT_MARKER_VARIABLE: marker}
+    ):
+        # A mutation campaign sets this for the whole suite; these tests exercise
+        # import selection only, with no pytest configuration to record into.
+        os.environ.pop(mutation_pytest_isolation.TEMPORARY_ROOT_VARIABLE, None)
+        yield
 
 
 class MutationPytestIsolationTests(unittest.TestCase):
@@ -23,6 +46,7 @@ class MutationPytestIsolationTests(unittest.TestCase):
     def test_uses_process_scoped_base_temp_when_enabled(self) -> None:
         args = ["-q"]
         plugin_argument: Any = object()
+        config: Any = SimpleNamespace(stash=pytest.Stash())
         with (
             patch.dict(
                 os.environ,
@@ -34,13 +58,78 @@ class MutationPytestIsolationTests(unittest.TestCase):
             patch.object(os, "getpid", return_value=17),
         ):
             mutation_pytest_isolation.pytest_load_initial_conftests(
-                plugin_argument, plugin_argument, args
+                config, plugin_argument, args
             )
         self.assertEqual(
             args,
             ["-q", "--basetemp", str(Path("/private/root") / "17")],
         )
+        self.assertEqual(
+            config.stash[mutation_pytest_isolation.BASETEMP_KEY],
+            (Path("/private/root") / "17", 17),
+        )
         self._assert_generated_workspace_hook_is_loaded()
+
+    def test_unconfigure_removes_only_the_creating_process_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            basetemp = Path(directory) / "17"
+            (basetemp / "nested").mkdir(parents=True)
+            config: Any = SimpleNamespace(stash=pytest.Stash())
+            config.stash[mutation_pytest_isolation.BASETEMP_KEY] = (basetemp, 17)
+            with patch.object(os, "getpid", return_value=18):
+                mutation_pytest_isolation.pytest_unconfigure(config)
+            self.assertTrue((basetemp / "nested").is_dir())
+            with patch.object(os, "getpid", return_value=17):
+                mutation_pytest_isolation.pytest_unconfigure(config)
+                self.assertFalse(basetemp.exists())
+                # A directory that is already gone must never fail the session.
+                mutation_pytest_isolation.pytest_unconfigure(config)
+            unrecorded: Any = SimpleNamespace(stash=pytest.Stash())
+            mutation_pytest_isolation.pytest_unconfigure(unrecorded)
+
+    def test_completed_real_sessions_leave_no_private_directories(self) -> None:
+        project = Path(mutation_pytest_isolation.__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "root"
+            suite = base / "suite"
+            root.mkdir()
+            suite.mkdir()
+            # Its own configuration keeps the probe independent of this repository's.
+            (suite / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+            (suite / "test_probe.py").write_text(
+                "def test_probe(tmp_path):\n"
+                "    (tmp_path / 'fixture').write_bytes(bytes(32768))\n",
+                encoding="utf-8",
+            )
+            environment = os.environ.copy()
+            environment["PYTHONPATH"] = str(project)
+            environment[mutation_pytest_isolation.TEMPORARY_ROOT_VARIABLE] = str(root)
+            command = (
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                "-p",
+                "tools.mutation_pytest_isolation",
+                str(suite),
+            )
+            for _session in range(3):
+                # The project root is the cwd so Mutmut's copied plugin finds its
+                # configuration when this runs inside a mutation workspace.
+                completed = subprocess.run(
+                    command,
+                    cwd=project,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(list(root.iterdir()), [])
 
     def test_leaves_arguments_unchanged_when_not_enabled(self) -> None:
         args = ["-q"]
@@ -64,10 +153,7 @@ class MutationPytestIsolationTests(unittest.TestCase):
             args: list[str] = []
             plugin_argument: Any = object()
             with (
-                patch.dict(
-                    os.environ,
-                    {mutation_pytest_isolation.MUTANT_MARKER_VARIABLE: "x__mutmut_1"},
-                ),
+                _marker_environment("x__mutmut_1"),
                 patch.object(sys, "path", []),
                 patch.object(sys.modules["tools"], "__path__", []),
             ):
@@ -111,6 +197,8 @@ class MutationPytestIsolationTests(unittest.TestCase):
         environment.setdefault(
             mutation_pytest_isolation.MUTANT_MARKER_VARIABLE, "probe"
         )
+        # This probe covers import selection only; it passes no pytest config.
+        environment.pop(mutation_pytest_isolation.TEMPORARY_ROOT_VARIABLE, None)
         environment["EML_MUTATION_PROBE_HOOK_PATH"] = str(generated)
         result = subprocess.run(
             [
@@ -208,10 +296,7 @@ class MutationPytestIsolationTests(unittest.TestCase):
             args: list[str] = []
             plugin_argument: Any = object()
             with (
-                patch.dict(
-                    os.environ,
-                    {mutation_pytest_isolation.MUTANT_MARKER_VARIABLE: "x__mutmut_1"},
-                ),
+                _marker_environment("x__mutmut_1"),
                 patch.object(sys, "path", []),
                 patch.object(sys.modules["tools"], "__path__", []),
             ):

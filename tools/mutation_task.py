@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -35,6 +36,8 @@ EVIDENCE_TIMEOUT_SECONDS: Final = 120
 FAILURE_GROUP_MESSAGE: Final = "mutation gate failed"
 MUTATION_MAX_WORKERS: Final = 8
 MUTATION_RESERVED_CPUS: Final = 2
+MUTATION_WORKER_LIMIT: Final = 64
+AUTOMATIC_WORKERS: Final = "auto"
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,10 +107,31 @@ def mutation_worker_count(cpu_count: int | None = None) -> int:
         A positive Mutmut worker count.
 
     """
-    available = os.cpu_count() if cpu_count is None else cpu_count
+    # Typed as int on Linux, but documented to return None when undeterminable.
+    available: int | None = os.process_cpu_count() if cpu_count is None else cpu_count
     if available is None:
         return 1
     return max(1, min(MUTATION_MAX_WORKERS, available - MUTATION_RESERVED_CPUS))
+
+
+def parse_workers(value: str) -> int | None:
+    """Parse an explicit Mutmut worker count, or ``auto`` for the host policy.
+
+    Returns:
+        The explicit worker count, or ``None`` for the automatic policy.
+
+    Raises:
+        argparse.ArgumentTypeError: If an integer value is outside 1-64.
+
+    """
+    if value == AUTOMATIC_WORKERS:
+        return None
+    # A non-integer raises ValueError, which argparse reports as an invalid value.
+    workers = int(value)
+    if not 1 <= workers <= MUTATION_WORKER_LIMIT:
+        message = f"workers must be {AUTOMATIC_WORKERS} or 1-{MUTATION_WORKER_LIMIT}"
+        raise argparse.ArgumentTypeError(message)
+    return workers
 
 
 def capture_results(
@@ -168,9 +192,18 @@ def _collect_failure(
 
 
 def run_mutation(
-    paths: MutationPaths, actions: MutationActions, executable: str
+    paths: MutationPaths,
+    actions: MutationActions,
+    executable: str,
+    *,
+    workers: int | None = None,
+    preflight: bool = True,
 ) -> None:
     """Establish coverage and require 100% of actionable mutants to be killed.
+
+    The equivalence-manifest preflight runs before any workspace is removed or any
+    test runs, so a stale binding fails in seconds. Skipping it (to produce evidence
+    for a rebind review) leaves the final result gate unchanged.
 
     Raises:
         RuntimeError: If the dedicated measurement configuration is unsafe.
@@ -180,6 +213,18 @@ def run_mutation(
     if paths.coverage_config.is_symlink() or not paths.coverage_config.is_file():
         message = f"mutation coverage configuration is unsafe: {paths.coverage_config}"
         raise RuntimeError(message)
+    if preflight:
+        actions.run(
+            (
+                executable,
+                "tools/check_mutation_results.py",
+                "--manifest-only",
+                "--equivalents",
+                str(paths.equivalents),
+            ),
+            timeout_seconds=EVIDENCE_TIMEOUT_SECONDS,
+        )
+    worker_count = mutation_worker_count() if workers is None else workers
     paths.build_directory.mkdir(exist_ok=True)
     actions.cleanup()
     paths.results.unlink(missing_ok=True)
@@ -189,7 +234,7 @@ def run_mutation(
         (
             "run mutants",
             lambda: actions.run(
-                ("mutmut", "run", "--max-children", str(mutation_worker_count())),
+                ("mutmut", "run", "--max-children", str(worker_count)),
                 profile=MUTATION_PROFILE,
                 timeout_seconds=MUTATION_TIMEOUT_SECONDS,
                 environment_updates={

@@ -81,6 +81,11 @@ SUCCESS_PREFIX: Final = "mutation gate passed: actionable_score=100%, "
 STATISTICS_HELP: Final = "mutmut JSON statistics"
 RESULTS_HELP: Final = "normalized full mutmut results"
 EQUIVALENTS_HELP: Final = "reviewed equivalent-mutant manifest"
+MANIFEST_ONLY_HELP: Final = (
+    "validate only the manifest and its source binding (campaign preflight)"
+)
+SOURCE_DIGEST_HELP: Final = "print the source digest a rebound manifest must carry"
+MANIFEST_SUCCESS_PREFIX: Final = "equivalent-mutant manifest matches the source: "
 STATUS_FIELDS: Final = (
     "killed",
     "survived",
@@ -151,6 +156,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_EQUIVALENTS,
         help=f"{EQUIVALENTS_HELP} (default: {DEFAULT_EQUIVALENTS})",
     )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--manifest-only", action="store_true", help=MANIFEST_ONLY_HELP)
+    mode.add_argument("--source-sha256", action="store_true", help=SOURCE_DIGEST_HELP)
     return parser
 
 
@@ -306,7 +314,14 @@ def main(argv: list[str] | None = None) -> int:
 
     """
     arguments = _build_parser().parse_args(argv)
+    if arguments.source_sha256:
+        print(_source_sha256(SOURCE_ROOTS))
+        return 0
     try:
+        if arguments.manifest_only:
+            equivalents = _load_equivalents(arguments.equivalents, SOURCE_ROOTS)
+            print(MANIFEST_SUCCESS_PREFIX + f"equivalent={len(equivalents)}")
+            return 0
         summary = check_mutation_results(
             arguments.statistics,
             arguments.results,

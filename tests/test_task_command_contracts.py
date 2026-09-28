@@ -75,7 +75,7 @@ class TaskCommandContractTests(unittest.TestCase):
                 "_task_environment",
                 return_value=child_environment,
             ) as task_environment,
-            patch("tools.tasks.subprocess.run") as run,
+            patch.object(tasks.task_process, "run") as run,
         ):
             tasks._run(
                 ("public-command", "argument"),
@@ -106,14 +106,12 @@ class TaskCommandContractTests(unittest.TestCase):
             [
                 call(
                     ("public-command", "argument"),
-                    check=True,
                     cwd=tasks.PROJECT_ROOT,
                     env=child_environment,
                     timeout=17,
                 ),
                 call(
                     ("default-command",),
-                    check=True,
                     cwd=tasks.PROJECT_ROOT,
                     env=child_environment,
                     timeout=600,

@@ -1,6 +1,6 @@
 {
     "schema_version": 1,
-    "source_sha256": "85ebb118:dc54e34b:871cf157:63d3177e:4b4f58d2:28d35dbc:e919830d:24f24e21",
+    "source_sha256": "ae6ab45c:687f08dc:83a8aa8c:3b4f433b:bd530bb8:0d8f6785:c8a0b376:a31f677b",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_10",
@@ -39,27 +39,27 @@
             "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
         },
         {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_29",
+            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_37",
             "rationale": "On platforms without O_BINARY, fallback bit 1 is already included by O_WRONLY; the resulting open flags are identical."
         },
         {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_38",
+            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_46",
             "rationale": "On platforms without O_CLOEXEC, fallback bit 1 is already included by O_WRONLY; the resulting open flags are identical."
         },
         {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_39",
+            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_47",
             "rationale": "The committed marker is inspected only for truthiness before its sole true assignment, so False and None select identical recovery behavior."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_14",
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_28",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_18",
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_32",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_19",
+            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_33",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
         },
         {
@@ -87,7 +87,7 @@
             "rationale": "The surrounding accepted-status and text guard already proves final is a mapping before native_base64 is accessed."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_12",
+            "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_16",
             "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical bytes."
         },
         {
@@ -97,6 +97,22 @@
         {
             "mutant": "eml_attachment_remover.reporting_v3.x_write_json__mutmut_7",
             "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
+        },
+        {
+            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_19",
+            "rationale": "After the except path has closed the literal descriptor it always re-raises, so this reassignment is never read and every sentinel value is indistinguishable."
+        },
+        {
+            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_20",
+            "rationale": "After the except path has closed the literal descriptor it always re-raises, so this reassignment is never read and every sentinel value is indistinguishable."
+        },
+        {
+            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_21",
+            "rationale": "After the except path has closed the literal descriptor it always re-raises, so this reassignment is never read and every sentinel value is indistinguishable."
+        },
+        {
+            "mutant": "eml_attachment_remover.staged_receipt.x_read_final_receipt__mutmut_123",
+            "rationale": "After the except path has closed the descriptor, the sentinel is read only by the finally guard descriptor >= 0, which -2 fails exactly like -1."
         },
         {
             "mutant": "tools.build_zipapp.x__lexical_absolute__mutmut_3",

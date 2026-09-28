@@ -220,13 +220,15 @@ class CoverageReportingTests(unittest.TestCase):
         for handle in handles:
             handle.close.assert_called_once_with(force=True)
 
-    def test_reporting_preserves_the_exact_threshold_diagnostic(self) -> None:
+    def test_threshold_miss_publishes_xml_then_raises_the_exact_diagnostic(
+        self,
+    ) -> None:
         reporter, data = _configured_reporter(total=99.0)
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             destination = base / "reports" / "coverage.xml"
             destination.parent.mkdir()
-            destination.write_bytes(_realistic_xml())
+            destination.write_bytes(b"stale report from an earlier run")
             with (
                 patch.object(report_coverage, "Coverage", return_value=reporter),
                 self.assertRaises(report_coverage.CoverageThresholdError) as raised,
@@ -235,13 +237,13 @@ class CoverageReportingTests(unittest.TestCase):
                     base / "data",
                     destination,
                 )
-            preserved = destination.read_bytes()
+            published = destination.read_bytes()
         self.assertEqual(
             str(raised.exception),
             "total of 99 is less than fail-under=100",
         )
-        reporter.xml_report.assert_not_called()
-        self.assertEqual(preserved, _realistic_xml())
+        reporter.xml_report.assert_called_once()
+        self.assertEqual(published, _realistic_xml())
         data.close.assert_called_once_with(force=True)
 
     def test_invalid_private_render_is_cleaned_without_replacing_prior(self) -> None:

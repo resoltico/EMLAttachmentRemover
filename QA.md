@@ -6,31 +6,64 @@ and observations stay outside this repository and public CI artifacts.
 
 ## Required local gates
 
+Run every CI gate this host can reproduce before pushing:
+
 ```sh
-uv lock --check
-uv sync --locked --group dev --python 3.14.7
-uv run ruff format --check src tests tools
-uv run ruff check src tests tools
-uv run mypy --no-incremental --cache-dir /tmp/eml-remover-mypy src
-uv run pytest -p no:cacheprovider
-uv run coverage run -m pytest -p no:cacheprovider
-uv run coverage report --show-missing
-uv run python tools/build_zipapp.py
+uv run python tools/tasks.py ci
 ```
+
+`ci` installs both CI interpreters (CPython 3.14.7 and free-threaded 3.14.7t) into
+private temporary environments from the lockfile, then runs, cheapest first: both
+`quality` lanes, type checks for every CI runner OS, the tag check, the release
+build and its verification, a fresh `mutation` campaign, and both randomized
+`thorough` lanes with observation finalization. Mutation runs natively on Linux and,
+on macOS, through Docker in CI's runner image (Ubuntu 24.04, the pinned uv, and an
+unprivileged user), leaving its evidence in `build/linux-mutation/`; Windows skips
+it, as CI does. Pass `--release-tag vX.Y.Z` before tagging. Windows lanes, Linux-only behavior, artifact
+attestation, and GitHub publication remain CI-only. A test fails when a workflow
+`run:` step has no local counterpart, so the two cannot drift silently.
+
+The component tasks are `uv run python tools/tasks.py check`, `coverage`, `quality`,
+`test`, `thorough`, `mutation`, `build`, and `release`. `quality` uses the
+deterministic Hypothesis profile; `thorough` is the larger randomized exploration
+pass. Tests require the private storage that `tools/tasks.py` provides; running
+`pytest` directly needs an absolute `HYPOTHESIS_STORAGE_DIRECTORY` outside the
+checkout and is a diagnostic aid, not a gate.
 
 The repository gate requires 100% statement and branch coverage. Mutation work is not
 complete until every actionable mutation has been killed or removed as a genuinely
 equivalent surface, and the campaign is rerun fresh against the release source.
-Coverage,
-mutation, static checks, build reproducibility, archive inspection, isolated install,
-workflow checks, secrets/hygiene checks, and platform jobs are release gates—not
-thresholds to weaken.
+Coverage, mutation, static checks, build reproducibility, archive inspection, isolated
+install, workflow checks, secrets/hygiene checks, and platform jobs are release
+gates—not thresholds to weaken. Coverage XML is published even when tests or the
+threshold fail; the failure still fails the gate.
 
-The canonical end-to-end commands are `uv run python tools/tasks.py quality`,
-`thorough`, `mutation`, `build`, and `release`. `quality` uses the deterministic
-Hypothesis profile; `thorough` is the larger randomized exploration pass. Run both
-standard and free-threaded CPython quality lanes locally when the platform supports
-them; Mutmut requires a fork-capable POSIX runtime.
+## Task lifecycle and mutation evidence
+
+Every task command runs in its own POSIX process group. A timeout or Ctrl-C sends the
+group SIGINT, then SIGKILL after a grace period; after a normal exit, leftover group
+members are killed. No descendant can write evidence once its task step returns.
+Mutmut requires a fork-capable POSIX runtime.
+
+Mutant IDs depend on which lines each OS's tests cover, and the reviewed equivalents
+are Linux IDs, so only a Linux campaign is qualifying evidence; a native macOS
+`mutation` run is exploratory.
+
+`mutation` first checks that `tools/equivalent_mutants.json` is bound to the current
+`src/` and `tools/` source, before removing any workspace or running any test. Any
+change to a Python file there invalidates the binding. To rebind after review:
+
+```sh
+uv run python tools/tasks.py mutation --allow-stale-manifest
+uv run python tools/check_mutation_results.py --source-sha256
+uv run python tools/check_mutation_results.py
+```
+
+The first command skips only the preflight; its final result gate still fails on a
+stale manifest. Review every surviving mutant, update the manifest entries and its
+`source_sha256` to the printed digest, then rerun the final check against the same
+evidence. `--workers auto|1-64` selects Mutmut parallelism; worker count never
+changes a verdict.
 
 “JUnit XML” names the conventional xUnit2 interchange format emitted by the
 lockfile-pinned pytest runner and sanitized by `tools/junit_report.py`. The project
