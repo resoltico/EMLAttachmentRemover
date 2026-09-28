@@ -83,7 +83,7 @@ class WorkflowParityTests(unittest.TestCase):
             step
             for host in ("linux", "darwin")
             for step in local_ci.plan(
-                Path("/ci"),
+                Path("/host-ci"),
                 host=host,
                 project_root=Path("/project"),
                 release_tag="v1.2.3",

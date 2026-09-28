@@ -19,13 +19,16 @@ if TYPE_CHECKING:
 
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
 WORKFLOWS: Final = PROJECT_ROOT / ".github" / "workflows"
+# Host paths render natively (``\\`` on Windows); container paths are always POSIX.
+HOST_ROOT: Final = Path("/host-ci")
+HOST_PROJECT: Final = Path("/project")
 
 
 def _lane(python: str) -> dict[str, str]:
     return {
-        "UV_PROJECT_ENVIRONMENT": f"/ci/venv-{python}",
+        "UV_PROJECT_ENVIRONMENT": str(HOST_ROOT / f"venv-{python}"),
         "UV_PYTHON": python,
-        "VIRTUAL_ENV": f"/ci/venv-{python}",
+        "VIRTUAL_ENV": str(HOST_ROOT / f"venv-{python}"),
     }
 
 
@@ -59,14 +62,18 @@ EXPECTED_POSIX_PLAN: Final = (
     ("uv sync --locked --group dev --python 3.14.7", _installer("3.14.7"), 600),
     ("uv run python tools/check_release_tag.py v1.2.3", _lane("3.14.7"), 600),
     (
-        "uv run python tools/qualify_release.py --output-directory /ci/release-dist",
+        (
+            *("uv", "run", "python", "tools/qualify_release.py"),
+            *("--output-directory", str(HOST_ROOT / "release-dist")),
+        ),
         _lane("3.14.7"),
         1_800,
     ),
     (
         (
-            "uv run --no-project --python 3.14.7 python tools/qualify_release.py "
-            "--verify-directory /ci/release-dist"
+            *("uv", "run", "--no-project", "--python", "3.14.7", "python"),
+            *("tools/qualify_release.py", "--verify-directory"),
+            str(HOST_ROOT / "release-dist"),
         ),
         _lane("3.14.7"),
         1_800,
@@ -147,7 +154,8 @@ class PlanTests(unittest.TestCase):
             build.command,
             (
                 *("docker", "build", "--quiet"),
-                *("--tag", "eml-attachment-remover-ci:uv-0.12.5", "/ci/image"),
+                *("--tag", "eml-attachment-remover-ci:uv-0.12.5"),
+                str(HOST_ROOT / "image"),
             ),
         )
         self.assertEqual(
@@ -164,10 +172,10 @@ class PlanTests(unittest.TestCase):
                     "target=/ci/.cache/uv"
                 ),
                 "--mount",
-                "type=bind,source=/project,target=/src,readonly",
+                f"type=bind,source={HOST_PROJECT},target=/src,readonly",
                 "--mount",
                 (
-                    "type=bind,source=/project/build/linux-mutation,"
+                    f"type=bind,source={HOST_PROJECT / 'build' / 'linux-mutation'},"
                     "target=/ci/work/build"
                 ),
                 *("--env", "PYTHONDEVMODE=1"),
@@ -378,9 +386,9 @@ def _project(root: Path) -> Path:
 
 def _plan(host: str) -> tuple[local_ci.Step, ...]:
     return local_ci.plan(
-        Path("/ci"),
+        HOST_ROOT,
         host=host,
-        project_root=Path("/project"),
+        project_root=HOST_PROJECT,
         release_tag="v1.2.3",
         workers="4",
     )

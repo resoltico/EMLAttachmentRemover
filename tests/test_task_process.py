@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 POSIX: Final = os.name != "nt"
+# Built once: patching os.name changes pathlib's flavour for paths made inside.
+PROJECT: Final = Path("/project")
 # A descendant that ignores SIGINT and writes only after its owner has returned.
 LATE_WRITER: Final = textwrap.dedent(
     """
@@ -74,7 +76,7 @@ def _fake_run(
     ):
         task_process.run(
             ("command", "argument"),
-            cwd=Path("/project"),
+            cwd=PROJECT,
             env={"PUBLIC": "1"},
             timeout=timeout,
             grace_seconds=2.5,
@@ -168,7 +170,7 @@ class FakeProcessGroupTests(unittest.TestCase):
         popen, process, signal_group, sleep = _fake_run([False, False, True])
         popen.assert_called_once_with(
             ("command", "argument"),
-            cwd=Path("/project"),
+            cwd=PROJECT,
             env={"PUBLIC": "1"},
             start_new_session=True,
         )
@@ -211,7 +213,7 @@ class FakeProcessGroupTests(unittest.TestCase):
         ):
             task_process.run(
                 ("command",),
-                cwd=Path("/project"),
+                cwd=PROJECT,
                 env={},
                 timeout=3.0,
                 grace_seconds=2.0,
@@ -230,7 +232,7 @@ class FakeProcessGroupTests(unittest.TestCase):
 
     def test_windows_keeps_the_standard_bounded_subprocess_call(self) -> None:
         # Patching os.name changes pathlib's flavour, so build paths beforehand.
-        project = Path("/project")
+        project = PROJECT
         with (
             patch.object(os, "name", "nt"),
             patch.object(subprocess, "run") as run,
