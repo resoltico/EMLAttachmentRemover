@@ -20,7 +20,7 @@ from .domain import (
     LedgerItem,
     PathValue,
 )
-from .native_values import report_path_bytes
+from .native_values import planned_display, report_path_bytes
 
 _UTF8: Final = utf_8.getregentry().name
 _SURROGATE_FIRST: Final = 0xD800
@@ -296,11 +296,33 @@ def write_human(document: dict[str, object]) -> None:
         typed = item if isinstance(item, dict) else {}
         request = typed.get("source_request")
         display = request.get("display") if isinstance(request, dict) else "<unknown>"
-        _safe(sys.stdout, f"{typed.get('status')}: {display}")
+        target = _target_display(typed)
+        arrow = "" if target is None else f" -> {target}"
+        _safe(sys.stdout, f"{typed.get('status')}: {display}{arrow}")
         _write_warnings(display, typed.get("warnings"))
         error = typed.get("error")
         if isinstance(error, dict):
             _safe(sys.stderr, f"{display}: {error.get('code')}: {error.get('message')}")
+
+
+def _target_display(record: dict[str, object]) -> str | None:
+    """Return where an item's copy is, or would be, for human output.
+
+    Returns:
+        The receipt-proven final address, else a dry run's planned destination,
+        else ``None`` when no copy exists or is planned.
+
+    """
+    publication = record.get("publication")
+    final = publication.get("final_address") if isinstance(publication, dict) else None
+    if isinstance(final, dict):
+        return str(final.get("display"))
+    destination = record.get("destination")
+    if record.get("status") != ItemStatus.WOULD_CREATE.value or not isinstance(
+        destination, dict
+    ):
+        return None
+    return planned_display(destination)
 
 
 def _write_warnings(display: object, warnings: object) -> None:

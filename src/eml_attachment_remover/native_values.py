@@ -7,6 +7,7 @@ import codecs
 import ntpath
 import os
 import unicodedata
+from collections.abc import Mapping
 from typing import Final
 
 from .domain import AppError, ExitCode, PathValue
@@ -81,6 +82,45 @@ def report_path_bytes(value: PathValue) -> bytes:
         message = "accepted final address contains NUL"
         raise ValueError(message)
     return native
+
+
+def report_path_value(value: object) -> PathValue | None:
+    """Rebuild a serialized report path so every channel shares one serializer.
+
+    Returns:
+        The path evidence, or ``None`` when the record holds no path.
+
+    """
+    if not isinstance(value, Mapping):
+        return None
+    text = value.get("text")
+    native = value.get("native_base64")
+    utf16 = value.get("native_utf16le_base64")
+    return PathValue(
+        text if isinstance(text, str) else None,
+        str(value.get("display")),
+        native if isinstance(native, str) else None,
+        utf16 if isinstance(utf16, str) else None,
+    )
+
+
+def planned_display(destination: Mapping[str, object]) -> str:
+    """Join a planned destination's parent display and exact native basename.
+
+    Returns:
+        Display text; undecodable POSIX bytes stay escaped by the channel writer.
+
+    """
+    parent = destination.get("parent")
+    folder = str(parent.get("display")) if isinstance(parent, Mapping) else ""
+    posix = destination.get("basename_base64")
+    if isinstance(posix, str):
+        name, separator = os.fsdecode(base64.b64decode(posix)), "/"
+    else:
+        wide = base64.b64decode(str(destination.get("basename_utf16le_base64")))
+        name, separator = wide.decode("utf-16-le", "surrogatepass"), "\\"
+    joined = folder if folder.endswith(("/", "\\")) else folder + separator
+    return joined + name
 
 
 def validate_argument(value: str) -> str:

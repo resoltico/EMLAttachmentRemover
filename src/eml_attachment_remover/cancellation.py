@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
 
 @dataclass
@@ -47,11 +47,11 @@ def cancellation_name(number: int) -> str:
 
 
 @contextmanager
-def install_cancellation_handlers() -> Iterator[None]:
-    """Install and restore main-thread cancellation handlers for batch execution.
+def _handling(handler: Callable[[int, object], None]) -> Iterator[None]:
+    """Route watched main-thread signals to one handler, restoring prior handlers.
 
     Yields:
-        Control while SIGINT and available POSIX termination signals raise receipts.
+        Control while SIGINT and available POSIX termination signals use ``handler``.
 
     """
     if threading.current_thread() is not threading.main_thread():
@@ -63,11 +63,48 @@ def install_cancellation_handlers() -> Iterator[None]:
     }
     try:
         for watched_signal in watched:
-            signal.signal(watched_signal, _raise_cancellation)
+            signal.signal(watched_signal, handler)
         yield
     finally:
-        for watched_signal, handler in previous.items():
-            signal.signal(watched_signal, handler)
+        for watched_signal, handler_before in previous.items():
+            signal.signal(watched_signal, handler_before)
+
+
+@contextmanager
+def install_cancellation_handlers() -> Iterator[None]:
+    """Install and restore main-thread cancellation handlers for batch execution.
+
+    Yields:
+        Control while SIGINT and available POSIX termination signals raise receipts.
+
+    """
+    with _handling(_raise_cancellation):
+        yield
+
+
+@contextmanager
+def defer_cancellation() -> Iterator[None]:
+    """Hold cancellation until an enclosed report delivery has completed.
+
+    A delivery interrupted halfway would leave a truncated document on its channel;
+    holding the signal lets the one selected document finish before it is honored.
+
+    Yields:
+        Control while the first delivered signal is recorded instead of raised.
+
+    Raises:
+        CancellationSignal: After the block, for the first signal it deferred.
+
+    """
+    deferred: list[int] = []
+
+    def record(number: int, _frame: object) -> None:
+        deferred.append(number)
+
+    with _handling(record):
+        yield
+    if deferred:
+        raise CancellationSignal(deferred[0], cancellation_name(deferred[0]))
 
 
 def _watched_signals() -> tuple[int, ...]:

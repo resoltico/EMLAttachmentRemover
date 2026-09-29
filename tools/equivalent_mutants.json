@@ -1,10 +1,38 @@
 {
     "schema_version": 1,
-    "source_sha256": "1cb9e866:66c23c3a:d47d6315:e83b0fa9:e4840ed9:0616ba2f:605a46f4:42b49148",
+    "source_sha256": "38efa7d5:4aae8f72:3a9b64f8:5e8b291e:ab445493:17c264fc:4fa2b0a0:ec797cf4",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_10",
             "rationale": "The closed flag is only tested for truthiness before any true assignment, so False and None select the identical cleanup path."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_14",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_15",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_16",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_2",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_6",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_7",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_8",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
         },
         {
             "mutant": "eml_attachment_remover.mime_headers.x_root_header_start__mutmut_6",
@@ -31,12 +59,32 @@
             "rationale": "Omitting an explicit trailing None passes the same final_address value to ExistingEntry."
         },
         {
+            "mutant": "eml_attachment_remover.native_values.x_planned_display__mutmut_33",
+            "rationale": "Python codec lookup is case-insensitive, so UTF-16-LE and utf-16-le decode identical text."
+        },
+        {
             "mutant": "eml_attachment_remover.native_windows_binding.x__open_child_nofollow__mutmut_11",
             "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
         },
         {
             "mutant": "eml_attachment_remover.native_windows_binding.x__open_child_nofollow__mutmut_8",
             "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_13",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_17",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_18",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_19",
+            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
         },
         {
             "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_37",
@@ -81,10 +129,6 @@
         {
             "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_9",
             "rationale": "json.dumps treats allow_nan=None and allow_nan=False identically because both values are false."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x__write_path_record__mutmut_25",
-            "rationale": "The surrounding accepted-status and text guard already proves final is a mapping before native_base64 is accessed."
         },
         {
             "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_16",

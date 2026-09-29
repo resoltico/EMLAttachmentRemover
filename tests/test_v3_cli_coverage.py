@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TextIO
 
 from eml_attachment_remover import cli
-from eml_attachment_remover.batch import BatchOptions
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import (
     AppError,
@@ -135,16 +134,17 @@ def test_cancelled_renders_preledger_json_and_human_terminal_ledgers(
     signal = CancellationSignal(15, "SIGTERM")
     empty = cli._RunState()  # ruff: ignore[private-member-access] - cancellation state contract.
     monkeypatch.setattr(cli, "_render_error", lambda *_args: 130)
-    assert cli._cancelled([], empty, signal) == 130  # ruff: ignore[private-member-access] - cancellation state contract.
+    assert cli._cancelled(empty, signal) == 130  # ruff: ignore[private-member-access] - cancellation state contract.
 
-    ledger = _ledger(ItemStatus.CREATED)
-    active = cli._RunState(ledger)  # ruff: ignore[private-member-access] - cancellation state contract.
     calls: list[str] = []
     monkeypatch.setattr(cli, "write_json", lambda _document: calls.append("json"))
     monkeypatch.setattr(cli, "write_human", lambda _document: calls.append("human"))
-    assert cli._cancelled(["--output-format=json"], active, signal) == 130  # ruff: ignore[private-member-access] - cancellation state contract.
-    assert cli._cancelled([], active, signal) == 130  # ruff: ignore[private-member-access] - cancellation state contract.
-    assert calls == ["json", "human"]
+    monkeypatch.setattr(cli, "write_paths0", lambda _ledger: calls.append("paths0"))
+    for output_format in ("json", "human", "paths0"):
+        active = cli._RunState(_ledger(ItemStatus.CREATED), output_format)  # ruff: ignore[private-member-access] - cancellation state contract.
+        assert cli._cancelled(active, signal) == 130  # ruff: ignore[private-member-access] - cancellation state contract.
+    # The retained request, never a guess from raw argv, selects the channel.
+    assert calls == ["json", "human", "paths0"]
 
 
 def test_internal_error_and_selected_outputs_cover_all_channels(
@@ -156,20 +156,13 @@ def test_internal_error_and_selected_outputs_cover_all_channels(
     assert rendered[0].message == "Exception"
 
     ledger = _ledger(ItemStatus.CREATED)
-    options = BatchOptions(
-        dry_run=False,
-        existing="error",
-        fail_fast=False,
-        output=None,
-        output_dir=None,
-    )
     channels: list[str] = []
     monkeypatch.setattr(cli, "report", lambda *_args: {"items": []})
     monkeypatch.setattr(cli, "write_json", lambda _document: channels.append("json"))
     monkeypatch.setattr(cli, "write_paths0", lambda _ledger: channels.append("paths0"))
     monkeypatch.setattr(cli, "write_human", lambda _document: channels.append("human"))
     for output_format in ("json", "paths0", "human"):
-        cli._write_selected(output_format, ledger, options, 0)  # ruff: ignore[private-member-access] - selected-channel contract.
+        cli._write_selected(output_format, ledger, "apply", 0)  # ruff: ignore[private-member-access] - selected-channel contract.
     assert channels == ["json", "paths0", "human"]
 
 

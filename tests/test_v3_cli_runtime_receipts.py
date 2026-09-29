@@ -26,9 +26,10 @@ def test_dispatch_cancellation_writes_one_terminal_json_receipt(
     ])
     ledger.items[0].finish(ItemStatus.CREATED)
 
-    def interrupt(raw: list[str], state: cli._RunState) -> int:
+    def interrupt(raw: list[str], state: cli._RunState, _resources: object) -> int:
         assert raw == ["--output-format=json"]
         state.ledger = ledger
+        state.output_format = "json"
         raise CancellationSignal(15, "SIGTERM")
 
     monkeypatch.setattr(cli, "_run", interrupt)

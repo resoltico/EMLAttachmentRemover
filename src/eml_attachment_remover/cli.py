@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import sys
-import tempfile
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, cast
 
 from . import report_stream
 from .batch import BatchOptions, execute
-from .cancellation import CancellationSignal, install_cancellation_handlers
+from .cancellation import (
+    CancellationSignal,
+    defer_cancellation,
+    install_cancellation_handlers,
+)
 from .cli_parser import (
     build_parser,
     raw_json_requested,
@@ -26,7 +29,7 @@ from .domain import (
     LedgerItem,
 )
 from .native_paths import path_value
-from .report_spool import private_temp_root
+from .report_delivery import StagedChannels
 from .reporting_v3 import report, write_human, write_json, write_paths0
 
 ACCEPTED: Final = frozenset({
@@ -38,7 +41,13 @@ ACCEPTED: Final = frozenset({
 
 @dataclass(slots=True)
 class _RunState:
+    """Own one run's retained output request, report staging, and ledger."""
+
     ledger: BatchLedger | None = None
+    output_format: str = "human"
+    mode: str = "apply"
+    staged: StagedChannels | None = None
+    delivery_started: bool = False
 
 
 def exit_code(ledger: BatchLedger) -> int:
@@ -160,10 +169,15 @@ def main(argv: list[str] | None = None) -> int:
 
 def _dispatch(raw: list[str]) -> int:
     state = _RunState()
+    with ExitStack() as resources:
+        return _released(state, _guarded(raw, state, resources))
+
+
+def _guarded(raw: list[str], state: _RunState, resources: ExitStack) -> int:
     try:
-        return _run(raw, state)
+        return _run(raw, state, resources)
     except CancellationSignal as cancellation:
-        return _cancelled(raw, state, cancellation)
+        return _cancelled(state, cancellation)
     except AppError as error:
         return _application_error(raw, error)
     except KeyboardInterrupt:
@@ -174,30 +188,34 @@ def _dispatch(raw: list[str]) -> int:
         return _internal_error(exc)
 
 
-def _cancelled(
-    raw: list[str], state: _RunState, cancellation: CancellationSignal
-) -> int:
-    if state.ledger is None:
-        return _render_error(
-            AppError(ExitCode.INTERRUPTED, f"interrupted by {cancellation.name}"),
-            None,
-        )
+def _released(state: _RunState, status: int) -> int:
+    """Release report spools after every rendering attempt has finished.
+
+    Returns:
+        The run's status; a cleanup failure is diagnosed but never rewrites a report
+        that may already have been delivered.
+
+    """
+    if state.ledger is not None:
+        try:
+            report_stream.close(state.ledger)
+        except OSError as error:
+            _render_error(
+                AppError(ExitCode.INTERNAL_ERROR, f"report cleanup failed: {error}"),
+                None,
+            )
+    return status
+
+
+def _cancelled(state: _RunState, cancellation: CancellationSignal) -> int:
+    status = int(ExitCode.INTERRUPTED)
+    interrupted = AppError(ExitCode.INTERRUPTED, f"interrupted by {cancellation.name}")
+    if state.ledger is None or state.delivery_started:
+        # Once delivery began, a second document would corrupt the channel.
+        return _render_error(interrupted, None)
     if state.ledger.interruption is None:
         state.ledger.record_interruption(cancellation.name, "report")
-    status = int(ExitCode.INTERRUPTED)
-    _write_then_close(
-        "json" if raw_json_requested(raw) else "human",
-        state.ledger,
-        BatchOptions(
-            dry_run=False,
-            existing="error",
-            fail_fast=False,
-            output=None,
-            output_dir=None,
-        ),
-        status,
-    )
-    return status
+    return _write_then_close(state, status)
 
 
 def _application_error(raw: list[str], error: AppError) -> int:
@@ -213,7 +231,7 @@ def _internal_error(error: Exception) -> int:
     return _render_error(AppError(ExitCode.INTERNAL_ERROR, message), None)
 
 
-def _run(raw: list[str], state: _RunState) -> int:
+def _run(raw: list[str], state: _RunState, resources: ExitStack) -> int:
     parser = build_parser()
     namespace = parser.parse_args(raw)
     validate_arguments(namespace)
@@ -224,19 +242,20 @@ def _run(raw: list[str], state: _RunState) -> int:
         namespace.output,
         namespace.output_dir,
     )
+    state.output_format = str(namespace.output_format)
+    state.mode = "dry-run" if options.dry_run else "apply"
+    state.staged = StagedChannels.open(resources, state.output_format)
     with install_cancellation_handlers():
         ledger = execute(list(namespace.source), options)
         state.ledger = ledger
-        status = exit_code(ledger)
-        _write_then_close(namespace.output_format, ledger, options, status)
-    return status
+        return _write_then_close(state, exit_code(ledger))
 
 
 def _write_selected(
-    output_format: str, ledger: BatchLedger, options: BatchOptions, status: int
+    output_format: str, ledger: BatchLedger, mode: str, status: int
 ) -> None:
     if ledger.report_spool is None:
-        document = report(ledger, "dry-run" if options.dry_run else "apply", status)
+        document = report(ledger, mode, status)
         if output_format == "json":
             write_json(document)
         elif output_format == "paths0":
@@ -244,56 +263,40 @@ def _write_selected(
         else:
             write_human(document)
     elif output_format == "json":
-        report_stream.write_json(
-            ledger, "dry-run" if options.dry_run else "apply", status
-        )
+        report_stream.write_json(ledger, mode, status)
     elif output_format == "paths0":
         report_stream.write_paths0(ledger)
     else:
         report_stream.write_human(ledger)
 
 
-def _copy_text(source: object, destination: object) -> None:
-    """Copy bounded staged text to one already-selected real output channel."""
-    while chunk := source.read(1024 * 1024):  # type: ignore[attr-defined]
-        destination.write(chunk)  # type: ignore[attr-defined]
+def _write_then_close(state: _RunState, status: int) -> int:
+    """Stage one complete report, release its receipts, then deliver it once.
 
+    Returns:
+        The delivered report's status, which a staging failure can change.
 
-def _copy_bytes(source: object, destination: object) -> None:
-    """Copy bounded staged binary output to one already-selected real channel."""
-    while chunk := source.read(1024 * 1024):  # type: ignore[attr-defined]
-        destination.write(chunk)  # type: ignore[attr-defined]
-
-
-def _write_then_close(
-    output_format: str, ledger: BatchLedger, options: BatchOptions, status: int
-) -> None:
-    """Stage a spooled report, clean its private receipt, then publish output once."""
+    """
+    ledger = cast("BatchLedger", state.ledger)
+    staged = cast("StagedChannels", state.staged)
     if ledger.report_spool is None:
-        _write_selected(output_format, ledger, options, status)
-        return
-    closed = False
+        state.delivery_started = True
+        _write_selected(state.output_format, ledger, state.mode, status)
+        return status
+    staged.reset()
     try:
-        with (
-            tempfile.TemporaryFile(
-                mode="w+", encoding="utf-8", newline="", dir=private_temp_root()
-            ) as staged_out,
-            tempfile.TemporaryFile(
-                mode="w+", encoding="utf-8", newline="", dir=private_temp_root()
-            ) as staged_err,
-        ):
-            with redirect_stdout(staged_out), redirect_stderr(staged_err):
-                _write_selected(output_format, ledger, options, status)
-            closed = True
-            report_stream.close(ledger)
-            staged_err.seek(0)
-            _copy_text(staged_err, sys.stderr)
-            staged_out.flush()
-            staged_out.seek(0)
-            if output_format in {"json", "paths0"}:
-                _copy_bytes(staged_out.buffer, sys.stdout.buffer)
-            else:
-                _copy_text(staged_out, sys.stdout)
-    finally:
-        if not closed:
-            report_stream.close(ledger)
+        with redirect_stdout(staged.out), redirect_stderr(staged.err):
+            _write_selected(state.output_format, ledger, state.mode, status)
+    except OSError:
+        # Nothing has reached a channel yet: fall back to the reserved status
+        # records rather than losing the outcome of already-published items.
+        report_stream.recover(ledger)
+        recovered = exit_code(ledger)
+        state.delivery_started = True
+        _write_selected(state.output_format, ledger, state.mode, recovered)
+        return recovered
+    report_stream.close(ledger)
+    with defer_cancellation():
+        state.delivery_started = True
+        staged.deliver(state.output_format)
+    return status

@@ -335,7 +335,10 @@ def test_complete_receipt_uses_canonical_json_and_human_channels(
 
     reporting_v3.write_human(document)
     human = capsys.readouterr()
-    assert human.out == "created: source π display\nfailed: failed display\n"
+    # A copy's line names where it is, not only the source it came from.
+    assert human.out == (
+        "created: source π display -> published display\nfailed: failed display\n"
+    )
     assert human.err == (
         "source π display: CREATED_WARN: created warning\n"
         "failed display: FAILED_WARN: failed warning\n"

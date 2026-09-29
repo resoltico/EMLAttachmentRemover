@@ -242,10 +242,10 @@ def test_cli_selects_exact_modes_and_channels_and_main_preserves_argv(
         cli, "write_human", lambda value: channels.append(("human", value))
     )
     cli._write_selected(  # ruff: ignore[private-member-access] - apply JSON selection.
-        "json", ledger, _options(dry_run=False), 7
+        "json", ledger, "apply", 7
     )
     cli._write_selected(  # ruff: ignore[private-member-access] - dry human selection.
-        "human", ledger, _options(dry_run=True), 0
+        "human", ledger, "dry-run", 0
     )
     assert modes == ["apply", "dry-run"]
     assert channels == [("json", document), ("human", document)]
