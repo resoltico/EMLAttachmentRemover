@@ -38,6 +38,14 @@ The default destination is beside the requested source directory entry:
 original.mime-pruned.eml
 ```
 
+When that derived name would exceed the destination directory's filename limit (255
+bytes on most POSIX filesystems, 255 UTF-16 units on Windows), only the derived name
+is shortened: a readable prefix of the source name, a stable 16-hex digest of the
+complete source name, and the usual suffix, for example
+`long-subject-line-c15a952383e18790.mime-pruned.eml`. The digest keeps the name the
+same on every run, so `--existing=verify` finds it again, and keeps different long
+names apart. An explicit `--output` name is never altered.
+
 The tool preserves kernel path traversal semantics. For example, a path containing a
 symlink and `..` opens the object selected by the kernel, not a lexically normalized
 path. Destination publication is same-directory, private-mode staging followed by an

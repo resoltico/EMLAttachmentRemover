@@ -338,10 +338,10 @@ def test_preedge_os_error_never_attempts_postpublication_reconciliation(
     assert calls == []
 
 
-def test_overlong_default_destination_is_item_local_and_later_work_continues(
+def test_overlong_default_destination_is_shortened_and_later_work_continues(
     tmp_path: Path,
 ) -> None:
-    """A filesystem basename limit does not stop unrelated later source work."""
+    """A derived name over the filename limit is fitted; unrelated work continues."""
     long_source = tmp_path / ("a" * 240 + ".eml")
     good_source = tmp_path / "good.eml"
     source_bytes = b"From: a@example.test\r\n\r\nretained\r\n"
@@ -356,22 +356,25 @@ def test_overlong_default_destination_is_item_local_and_later_work_continues(
     )
     ledger = execute([str(long_source), str(good_source)], options)
     assert [item.status for item in ledger.items] == [
-        ItemStatus.FAILED,
+        ItemStatus.CREATED,
         ItemStatus.CREATED,
     ]
-    assert ledger.items[0].error is not None
-    assert ledger.items[0].error.code is ExitCode.WRITE_ERROR
     assert not (tmp_path / ("a" * 240 + ".mime-pruned.eml")).exists()
+    (shortened,) = tmp_path.glob("a*.mime-pruned.eml")
+    assert shortened.name.startswith("a" * 200)
+    assert len(shortened.name) <= 255
+    assert shortened.read_bytes() == source_bytes
     assert (tmp_path / "good.mime-pruned.eml").read_bytes() == source_bytes
 
 
-def test_overlong_default_destination_respects_fail_fast(tmp_path: Path) -> None:
-    """Fail-fast leaves later items not-run after the same local write failure."""
-    long_source = tmp_path / ("b" * 240 + ".eml")
+def test_local_write_failure_respects_fail_fast(tmp_path: Path) -> None:
+    """Fail-fast leaves later items not-run after an item-local output conflict."""
+    source = tmp_path / "first.eml"
     later_source = tmp_path / "later.eml"
     source_bytes = b"From: a@example.test\r\n\r\nretained\r\n"
-    long_source.write_bytes(source_bytes)
+    source.write_bytes(source_bytes)
     later_source.write_bytes(source_bytes)
+    (tmp_path / "first.mime-pruned.eml").write_bytes(b"someone else's file")
     options = BatchOptions(
         dry_run=False,
         existing="error",
@@ -379,9 +382,10 @@ def test_overlong_default_destination_respects_fail_fast(tmp_path: Path) -> None
         output=None,
         output_dir=None,
     )
-    ledger = execute([str(long_source), str(later_source)], options)
+    ledger = execute([str(source), str(later_source)], options)
     assert [item.status for item in ledger.items] == [
         ItemStatus.FAILED,
         ItemStatus.NOT_RUN,
     ]
     assert not (tmp_path / "later.mime-pruned.eml").exists()
+    assert (tmp_path / "first.mime-pruned.eml").read_bytes() == b"someone else's file"

@@ -42,6 +42,10 @@ Notable changes to this project are documented in this file. The format is based
   with an empty body; nested parts still require their separator.
 - Folded headers are accumulated in linear time (128 KiB: about 0.12 s to about
   0.01 s).
+- A derived output name that would exceed the destination directory's filename limit
+  is shortened with a readable prefix and a stable digest of the full source name,
+  instead of failing after the source was read. Explicit `--output` names are never
+  renamed.
 - Task timeouts and interruptions stop the whole process group, so no test or
   mutant descendant can outlive its task step and write after evidence capture.
 - Mutation workers remove each pytest session's temporary directory, keeping disk
