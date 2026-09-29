@@ -88,8 +88,9 @@ def collect(
     entries: list[dict[str, object]] = []
     for number, (mutant, status) in enumerate(survivors[:MAX_MUTANTS], start=1):
         patch, patch_truncated = _patch(mutant, show)
-        name = None if patch is None else f"{number:04d}.diff"
-        if name is not None and patch is not None:
+        name = None
+        if patch is not None:
+            name = f"{number:04d}.diff"
             (output / name).write_bytes(patch)
         mapped = tests.get(mutant.rpartition(MUTANT_SEPARATOR)[0], [])
         entries.append({

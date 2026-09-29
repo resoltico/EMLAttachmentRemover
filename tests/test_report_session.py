@@ -242,7 +242,7 @@ def test_a_stalled_consumer_is_abandoned_once_the_grace_is_spent(
     monkeypatch.setattr(cancellation, "hard_exit", hard_exit)
     monkeypatch.setattr(sys, "stdout", Output())
     ledger = _spooled()
-    timer = threading.Timer(0.1, os.kill, (os.getpid(), signal.SIGTERM))
+    timer = threading.Timer(0.1, os.kill, (os.getpid(), signal.SIGINT))
     timer.start()
     try:
         with ExitStack() as resources:

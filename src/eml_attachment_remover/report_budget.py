@@ -65,12 +65,17 @@ def worst_address() -> PathValue:
     return path_value("\x01" * MAX_ADDRESS_UNITS)
 
 
-def _worst_error(*, minimal: bool) -> AppError:
+def _worst_error() -> AppError:
+    """Build the longest error a terminal record may carry.
+
+    Errors raised after admission come from publication and carry no MIME path.
+
+    Returns:
+        A maximal-message error with the longest code name and phase.
+
+    """
     return AppError(
-        LONGEST_CODE,
-        "\x01" * reporting_v3.MAX_ERROR_MESSAGE,
-        None if minimal else (2**31,) * 64,
-        WORST_WORD,
+        LONGEST_CODE, "\x01" * reporting_v3.MAX_ERROR_MESSAGE, None, WORST_WORD
     )
 
 
@@ -101,7 +106,7 @@ def terminal_size(item: LedgerItem) -> int:
         phase=LONGEST_PHASE,
         terminalized=True,
         publication=_worst_receipt(),
-        error=_worst_error(minimal=False),
+        error=_worst_error(),
     )
     return _size(reporting_v3.item_json(worst))
 
@@ -116,7 +121,7 @@ def minimal_record(item: LedgerItem, *, worst: bool = False) -> dict[str, object
 
     """
     if worst:
-        error: AppError | None = _worst_error(minimal=True)
+        error: AppError | None = _worst_error()
     elif item.error is None:
         error = None
     else:

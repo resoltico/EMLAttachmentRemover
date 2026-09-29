@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from contextlib import ExitStack
-from typing import TYPE_CHECKING, TextIO
+from typing import TextIO
+
+import pytest
 
 from eml_attachment_remover import cli, exit_status, report_session
 from eml_attachment_remover.cancellation import CancellationSignal
@@ -15,9 +17,6 @@ from eml_attachment_remover.domain import (
 )
 from eml_attachment_remover.native_paths import path_value
 from tests.report_session_support import open_session
-
-if TYPE_CHECKING:
-    import pytest
 
 
 def _ledger(status: ItemStatus, error: AppError | None = None) -> BatchLedger:
@@ -208,3 +207,50 @@ def _record_error(rendered: list[AppError]) -> object:
         return 70
 
     return record
+
+
+@pytest.mark.parametrize(
+    ("has_ledger", "has_session", "started", "publishes"),
+    [
+        (False, True, False, False),
+        (True, False, False, False),
+        (True, True, True, False),
+        (True, True, False, True),
+    ],
+)
+def test_cancelled_publishes_only_a_ledger_with_an_undelivered_session(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    has_ledger: bool,
+    has_session: bool,
+    started: bool,
+    publishes: bool,
+) -> None:
+    """Any missing report owner, or a delivery already begun, means diagnostic only."""
+    rendered: list[AppError] = []
+    published: list[int] = []
+
+    def render(error: AppError, _parser: object) -> int:
+        rendered.append(error)
+        return 130
+
+    def publish(
+        _self: report_session.ReportSession, _ledger: BatchLedger, status: int
+    ) -> int:
+        published.append(status)
+        return 0
+
+    monkeypatch.setattr(cli, "_render_error", render)
+    monkeypatch.setattr(report_session.ReportSession, "publish", publish)
+    with ExitStack() as resources:
+        session = open_session(resources) if has_session else None
+        if session is not None:
+            session.delivery_started = started
+        ledger = _ledger(ItemStatus.CREATED) if has_ledger else None
+        state = cli._RunState(ledger, session)  # ruff: ignore[private-member-access] - cancellation state contract.
+        status = cli._cancelled(state, CancellationSignal(2, "SIGINT"))  # ruff: ignore[private-member-access] - cancellation state contract.
+    if publishes:
+        assert (status, published, rendered) == (0, [130], [])
+    else:
+        assert (status, published) == (130, [])
+        assert rendered == [AppError(ExitCode.INTERRUPTED, "interrupted by SIGINT")]

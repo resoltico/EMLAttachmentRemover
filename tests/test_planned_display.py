@@ -32,12 +32,13 @@ def _posix(parent: bytes | None, name: bytes) -> dict[str, object]:
 
 
 def _windows(parent: str, name: str) -> dict[str, object]:
+    codec = "utf-16-le"
     return {
         "parent": {
             "text": parent,
             "display": "ignored display",
             "native_base64": None,
-            "native_utf16le_base64": _b64(parent.encode("utf-16-le")),
+            "native_utf16le_base64": _b64(parent.encode(codec, "surrogatepass")),
         },
         "basename_base64": None,
         "basename_utf16le_base64": _b64(name.encode("utf-16-le")),
@@ -123,3 +124,30 @@ def test_a_dry_run_in_a_backslash_named_directory_keeps_the_separator(
     assert cli.main(["--dry-run", "--output-format=human", "--", str(source)]) == 0
     target = capsys.readouterr().out.split(" -> ")[1].strip()
     assert target.endswith("out\\/a.mime-pruned.eml")
+
+
+def test_utf16_evidence_wins_over_text_and_survives_a_lone_surrogate() -> None:
+    """Windows names are rebuilt from their code units, losslessly."""
+    parent = "C:\\a\ud800"
+    destination = _windows(parent, "n.eml")
+    folder = destination["parent"]
+    assert isinstance(folder, dict)
+    folder["text"] = "C:\\lossy"
+    assert native_values.planned_display(destination) == "C:\\a\\ud800\\n.eml"
+
+
+def test_text_is_used_when_there_is_no_native_evidence_and_beats_the_display() -> None:
+    """Order of evidence: native bytes, native code units, text, then display."""
+    destination = _posix(None, b"a.eml")
+    destination["parent"] = {"text": "/T", "display": "/D"}
+    assert native_values.planned_display(destination) == "/T/a.eml"
+    destination["parent"] = {"display": "/D"}
+    assert native_values.planned_display(destination) == "/D/a.eml"
+    destination["parent"] = {}
+    assert native_values.planned_display(destination) == "/a.eml"
+
+
+def test_address_units_are_whole_numbers() -> None:
+    """A unit count is an integer, never a fraction of a byte."""
+    wide = PathValue(None, "d", None, _b64("ab".encode("utf-16-le")))
+    assert type(native_values.address_units(wide)) is int

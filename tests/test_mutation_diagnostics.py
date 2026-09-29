@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
+import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Final
 from unittest.mock import patch
@@ -216,3 +219,178 @@ def test_a_campaign_without_captured_results_bundles_nothing(tmp_path: Path) -> 
         tmp_path / "missing.txt", tmp_path / "stats.json", output, _show
     )
     assert not output.exists()
+
+
+def test_the_index_is_this_exact_sorted_two_space_json(tmp_path: Path) -> None:
+    """Reviewers and tools diff the index, so its text is part of the contract."""
+    results, stats = _write(
+        tmp_path,
+        "pkg.x_a__mutmut_1: survived\n",
+        {"tests_by_mangled_function_name": {"pkg.x_a": ["t::one"]}},
+    )
+    output = tmp_path / "bundle"
+    mutation_diagnostics.collect(results, stats, output, lambda _mutant: "P")
+    assert (output / "index.json").read_text(encoding="utf-8") == (
+        "{\n"
+        '  "by_status": {\n'
+        '    "survived": 1\n'
+        "  },\n"
+        '  "listed": 1,\n'
+        '  "mutants": [\n'
+        "    {\n"
+        '      "mutant": "pkg.x_a__mutmut_1",\n'
+        '      "patch": "0001.diff",\n'
+        '      "patch_truncated": false,\n'
+        '      "status": "survived",\n'
+        '      "tests": [\n'
+        '        "t::one"\n'
+        "      ],\n"
+        '      "tests_truncated": false\n'
+        "    }\n"
+        "  ],\n"
+        '  "not_killed": 1\n'
+        "}\n"
+    )
+
+
+def test_a_nested_output_directory_is_created(tmp_path: Path) -> None:
+    """The bundle's parents need not exist yet."""
+    results, stats = _write(tmp_path, "pkg.x_a__mutmut_1: survived\n")
+    output = tmp_path / "a" / "b" / "bundle"
+    mutation_diagnostics.collect(results, stats, output, _show)
+    assert (output / "index.json").is_file()
+
+
+def test_a_stats_file_without_the_test_map_maps_no_tests(tmp_path: Path) -> None:
+    """An older or partial stats file only costs the mapping, not the bundle."""
+    results, stats = _write(tmp_path, "pkg.x_a__mutmut_1: survived\n", {"other": 1})
+    output = tmp_path / "bundle"
+    mutation_diagnostics.collect(results, stats, output, _show)
+    assert _entry(output)["tests"] == []
+
+
+def test_names_are_split_at_the_last_separator_and_the_last_colon(
+    tmp_path: Path,
+) -> None:
+    """Split names at the final ``: `` and the final ``__mutmut_``."""
+    results, stats = _write(
+        tmp_path,
+        "odd: name.x_a__mutmut_1__mutmut_2: survived\n",
+        {
+            "tests_by_mangled_function_name": {
+                "odd: name.x_a__mutmut_1": ["right"],
+                "odd": ["wrong"],
+            }
+        },
+    )
+    output = tmp_path / "bundle"
+    mutation_diagnostics.collect(results, stats, output, _show)
+    entry = _entry(output)
+    assert (entry["mutant"], entry["status"]) == (
+        "odd: name.x_a__mutmut_1__mutmut_2",
+        "survived",
+    )
+    assert entry["tests"] == ["right"]
+
+
+def test_an_unavailable_patch_is_not_reported_truncated(tmp_path: Path) -> None:
+    """There is nothing to truncate when nothing could be fetched."""
+    results, stats = _write(tmp_path, "pkg.x_a__mutmut_1: survived\n")
+    output = tmp_path / "bundle"
+
+    def show(_mutant: str) -> str:
+        raise OSError
+
+    mutation_diagnostics.collect(results, stats, output, show)
+    assert _entry(output)["patch_truncated"] is False
+
+
+def test_every_file_is_read_and_written_as_utf8(tmp_path: Path) -> None:
+    """The bundle never depends on the host's locale."""
+    results, stats = _write(
+        tmp_path,
+        "pkg.x_é__mutmut_1: survived\n",
+        {"tests_by_mangled_function_name": {}},
+    )
+    output = tmp_path / "bundle"
+    reads: list[object] = []
+    writes: list[object] = []
+    real_read = Path.read_text
+    real_write = Path.write_text
+
+    def read(self: Path, *args: object, **kwargs: object) -> str:
+        reads.append(kwargs.get("encoding"))
+        return real_read(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    def write(self: Path, data: str, *args: object, **kwargs: object) -> int:
+        writes.append(kwargs.get("encoding"))
+        return real_write(self, data, *args, **kwargs)  # type: ignore[arg-type]
+
+    with (
+        patch.object(Path, "read_text", read),
+        patch.object(Path, "write_text", write),
+    ):
+        mutation_diagnostics.collect(results, stats, output, _show)
+    assert reads == ["utf-8", "utf-8"]
+    assert writes == ["utf-8"]
+
+
+def test_the_task_hands_the_evidence_paths_and_environment_to_the_patch_runner() -> (
+    None
+):
+    """The patch runner gets the canonical paths, this interpreter, and the task env."""
+    seen: list[tuple[object, ...]] = []
+    paths = object()
+
+    def show_mutant(*args: object) -> str:
+        seen.append(args)
+        return "diff"
+
+    def collect(*args: object) -> None:
+        args[3]("mutant")  # type: ignore[operator]
+
+    with (
+        patch.object(tasks, "_mutation_paths", return_value=paths),
+        patch.object(tasks, "_task_environment", return_value={"E": "1"}),
+        patch.object(tasks.mutation_diagnostics, "collect", collect),
+        patch.object(tasks.mutation_task, "show_mutant", show_mutant),
+    ):
+        tasks._capture_mutation_diagnostics()  # ruff: ignore[private-member-access] - task contract.
+    assert len(seen) == 1
+    assert seen[0][0] is paths
+    assert seen[0][1:] == (sys.executable, {"E": "1"}, "mutant")
+
+
+def test_the_mutation_task_registers_the_diagnostics_step() -> None:
+    """The campaign's own action bundle carries the task's diagnostics capture."""
+    registered: list[object] = []
+
+    def run_action(action: object, *_args: object, **_kwargs: object) -> None:
+        action(Path("/private/storage"))  # type: ignore[operator]
+
+    def run_mutation(
+        _paths: object, actions: object, *_args: object, **_kw: object
+    ) -> None:
+        registered.append(actions)
+
+    with (
+        patch.object(sys, "platform", "linux"),
+        patch.object(tasks.hypothesis_runner, "run_isolated", run_action),
+        patch.object(tasks.mutation_task, "run_mutation", run_mutation),
+    ):
+        tasks._mutation()  # ruff: ignore[private-member-access] - task contract.
+    assert registered[0].diagnose is tasks._capture_mutation_diagnostics  # type: ignore[attr-defined]  # ruff: ignore[private-member-access] - task contract.
+
+
+def test_the_quality_task_documents_the_native_option() -> None:
+    """The command-line help says what ``--native`` keeps and skips."""
+    output = io.StringIO()
+    with patch.object(sys, "argv", ["tasks.py"]), redirect_stdout(output):
+        with pytest.raises(SystemExit):
+            tasks.main(["quality", "--help"])
+    assert (
+        " ".join(output.getvalue().split())
+        == "usage: tasks.py quality [-h] [--native] options: -h, --help show this "
+        "help message and exit --native skip the static checks that another lane "
+        "runs; keep audit and coverage"
+    )

@@ -11,6 +11,12 @@ import pytest
 from eml_attachment_remover import cancellation
 
 
+def _deliver(number: int) -> None:
+    """Send a signal only if the guard has taken it over, never to a default handler."""
+    assert signal.getsignal(number) not in {signal.SIG_DFL, signal.SIG_IGN}
+    signal.raise_signal(number)
+
+
 class _Clock:
     """A settable monotonic clock."""
 
@@ -49,8 +55,8 @@ def test_signals_are_recorded_not_raised_and_handlers_are_restored() -> None:
     """A signal during delivery never interrupts it; the caller reads what arrived."""
     before = signal.getsignal(signal.SIGINT)
     with cancellation.delivery_guard() as guard:
-        signal.raise_signal(signal.SIGINT)
-        signal.raise_signal(signal.SIGTERM)
+        _deliver(signal.SIGINT)
+        _deliver(signal.SIGTERM)
     assert guard.signals == [signal.SIGINT, signal.SIGTERM]
     assert signal.getsignal(signal.SIGINT) is before
 
@@ -71,7 +77,7 @@ def test_the_grace_starts_at_the_first_signal_not_at_the_last_output(
     """A consumer stalled before the signal still gets the full grace afterwards."""
     with cancellation.delivery_guard(clock) as guard:
         clock.now += 3 * cancellation.GRACE_SECONDS
-        signal.raise_signal(signal.SIGTERM)
+        _deliver(signal.SIGTERM)
         guard.check()
         assert exits == []
         clock.now += cancellation.GRACE_SECONDS - 0.001
@@ -85,7 +91,7 @@ def test_the_grace_starts_at_the_first_signal_not_at_the_last_output(
 def test_output_progress_restarts_the_grace(clock: _Clock, exits: list[int]) -> None:
     """A slow consumer that keeps accepting output is never cut off."""
     with cancellation.delivery_guard(clock) as guard:
-        signal.raise_signal(signal.SIGINT)
+        _deliver(signal.SIGINT)
         for _ in range(5):
             clock.now += cancellation.GRACE_SECONDS - 1
             guard.note_progress()
@@ -98,10 +104,10 @@ def test_a_repeated_signal_ends_the_process_immediately(
 ) -> None:
     """Pressing the interrupt twice always works, whatever the consumer does."""
     with cancellation.delivery_guard(clock) as guard:
-        signal.raise_signal(signal.SIGINT)
+        _deliver(signal.SIGINT)
         guard.check()
         assert exits == []
-        signal.raise_signal(signal.SIGINT)
+        _deliver(signal.SIGINT)
         guard.check()
     assert exits == [130]
 
