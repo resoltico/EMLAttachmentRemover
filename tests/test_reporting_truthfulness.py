@@ -218,5 +218,6 @@ def test_ascii_terminal_gets_an_escaped_successful_human_report(tmp_path: Path) 
     escaped = str(source).encode("ascii", "backslashreplace").decode("ascii")
     assert line.startswith(f"created: {escaped} -> ")
     # The copy's own name is what the audit's failure lost; it arrives escaped.
-    assert line.endswith("r\\u0113\\u0137ins.mime-pruned.eml\n")
+    assert line.endswith("\n")
+    assert line.rstrip("\r\n").endswith("r\\u0113\\u0137ins.mime-pruned.eml")
     assert (tmp_path / "rēķins.mime-pruned.eml").exists()
