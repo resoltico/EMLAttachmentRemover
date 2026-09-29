@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import ntpath
 import os
+import posixpath
 from pathlib import Path
 from typing import Final
 
@@ -13,7 +14,6 @@ from .native_values import default_destination
 SUFFIX: Final = ".mime-pruned.eml"
 NAME_LIMIT_FALLBACK: Final = 255
 DIGEST_CHARACTERS: Final = 16
-EML_SUFFIX_LENGTH: Final = 4
 UTF16_UNIT_BYTES: Final = 2
 
 
@@ -90,12 +90,9 @@ def fit_name(source_name: str, derived: str, limit: int) -> str:
         return derived
     digest = hashlib.sha256(native_bytes(source_name)).hexdigest()[:DIGEST_CHARACTERS]
     tail = f"-{digest}{SUFFIX}"
-    stem = (
-        source_name[:-EML_SUFFIX_LENGTH]
-        if source_name.lower().endswith(".eml")
-        else source_name
-    )
-    return _prefix(stem, limit - native_length(tail)) + tail
+    # A name only needs shortening when even its stem outgrows the kept prefix, so
+    # the prefix never reaches the source's own extension: no need to strip it.
+    return _prefix(source_name, limit - native_length(tail)) + tail
 
 
 def fitted_default_destination(source: str, output_dir: str | None) -> str:
@@ -109,7 +106,7 @@ def fitted_default_destination(source: str, output_dir: str | None) -> str:
 
     """
     default = default_destination(source)
-    split = ntpath.split if os.name == "nt" else os.path.split
+    split = ntpath.split if os.name == "nt" else posixpath.split
     parent, derived = split(default)
     fitted = fit_name(
         split(source)[1],

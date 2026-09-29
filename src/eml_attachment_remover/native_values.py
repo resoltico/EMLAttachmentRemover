@@ -6,6 +6,7 @@ import base64
 import codecs
 import ntpath
 import os
+import posixpath
 import unicodedata
 from collections.abc import Mapping
 from typing import Final
@@ -198,7 +199,8 @@ def default_destination(source: str) -> str:
         A path retaining the original parent expression and a ``.mime-pruned.eml`` name.
 
     """
-    parent, name = ntpath.split(source) if os.name == "nt" else os.path.split(source)
+    split = ntpath.split if os.name == "nt" else posixpath.split
+    parent, name = split(source)
     stem = name[:-4] if name.lower().endswith(".eml") else name
     suffix = stem + ".mime-pruned.eml"
     if os.name == "nt":

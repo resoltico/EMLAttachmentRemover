@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from eml_attachment_remover import cli, mime_headers, mime_raw
-from eml_attachment_remover.domain import AppError
+from eml_attachment_remover.domain import AppError, ExitCode
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -132,8 +132,9 @@ def test_fields_only_message_is_accepted_end_to_end(
 )
 def test_missing_separator_still_fails_closed(raw: bytes) -> None:
     """Only a complete root message may omit its separator."""
-    with pytest.raises(AppError, match="lacks a body separator"):
+    with pytest.raises(AppError, match="lacks a body separator") as raised:
         mime_raw.parse_raw_mime(raw)
+    assert raised.value.code is ExitCode.PARSE_ERROR
 
 
 @pytest.mark.parametrize(
@@ -171,12 +172,39 @@ def test_extended_values_keep_their_wire_spelling_and_their_meaning() -> None:
     assert root.parameter(b"boundary") == b"B"
 
 
-@pytest.mark.parametrize("parameter", [b"boundary*=utf-8''%C3%A9", b"boundary*=''%00"])
+@pytest.mark.parametrize(
+    "parameter",
+    [
+        b"boundary*=utf-8''%C3%A9",
+        b"boundary*=''%00",
+        b"boundary*=''A%1FB",
+        b"boundary*=''%7F",
+    ],
+)
 def test_decoded_structural_controls_must_be_printable_ascii(parameter: bytes) -> None:
     """An encoded control cannot smuggle non-ASCII or control octets."""
     raw = _mixed(b"--B\r\n\r\nx\r\n", b"B", parameter)
-    with pytest.raises(AppError, match="not printable ASCII"):
+    with pytest.raises(AppError, match="not printable ASCII") as raised:
         mime_raw.parse_raw_mime(raw)
+    assert raised.value == AppError(
+        ExitCode.PARSE_ERROR,
+        "RFC 2231 structural MIME parameter is not printable ASCII",
+        (),
+    )
+
+
+@pytest.mark.parametrize("boundary", [b"A B", b"A~", b"~A", b"A!"])
+def test_the_whole_printable_ascii_range_is_a_valid_decoded_boundary(
+    boundary: bytes,
+) -> None:
+    """Space (0x20) through tilde (0x7E) are inclusive bounds of the range."""
+    encoded = b"boundary*=''" + boundary.replace(b" ", b"%20").replace(b"~", b"%7E")
+    raw = _mixed(
+        b"--" + boundary + b"\r\n\r\nx\r\n--" + boundary + b"\r\n" + ATTACHMENT,
+        boundary,
+        encoded,
+    )
+    assert _child_payloads(raw)[0] == b"x"
 
 
 @pytest.mark.parametrize(
@@ -237,6 +265,8 @@ def test_a_field_is_not_rebuilt_for_each_continuation_line() -> None:
         mime_headers._append_line(  # ruff: ignore[private-member-access] - accumulation architecture
             fields, b" more", 14 * line_number, 14 * line_number + 7
         )
-    assert fields[0].first is first
+    # Only the small record tracks the running end; the value is never re-copied.
+    assert fields[0].first.value is first.value
+    assert (fields[0].first.start, fields[0].first.end) == (0, 14 * 49 + 7)
     assert len(fields[0].continuations) == 49
     assert fields[0].header().value == b"start" + b"\r\n more" * 49

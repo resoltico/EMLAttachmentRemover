@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final
 
 from .domain import AppError, ExitCode
@@ -128,7 +128,6 @@ class _Field:
 
     first: Header
     continuations: list[bytes]
-    end: int
 
     def header(self) -> Header:
         """Return the complete physical field.
@@ -138,7 +137,7 @@ class _Field:
 
         """
         value = b"\r\n".join((self.first.value, *self.continuations))
-        return Header(self.first.name, value, self.first.start, self.end)
+        return replace(self.first, value=value)
 
 
 def _append_line(fields: list[_Field], line: bytes, start: int, end: int) -> None:
@@ -154,9 +153,10 @@ def _append_line(fields: list[_Field], line: bytes, start: int, end: int) -> Non
         if not fields:
             raise AppError(ExitCode.PARSE_ERROR, "orphaned MIME header continuation")
         fields[-1].continuations.append(line)
-        fields[-1].end = end
+        # Only the small header record is replaced; its value is never re-copied.
+        fields[-1].first = replace(fields[-1].first, end=end)
     else:
-        fields.append(_Field(_new_header(line, start, end), [], end))
+        fields.append(_Field(_new_header(line, start, end), []))
     if len(fields) > MAX_HEADERS:
         raise AppError(ExitCode.PARSE_ERROR, "MIME entity exceeds header-count limit")
 

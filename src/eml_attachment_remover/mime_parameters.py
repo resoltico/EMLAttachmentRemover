@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Final
+from urllib.parse import unquote_to_bytes
 
 from .domain import AppError, ExitCode
 from .mime_headers import TOKEN_RE
@@ -226,17 +227,7 @@ def _percent_decoded(value: bytes, *, initial: bool) -> bytes:
         The segment's octets; an initial segment drops its charset/language prefix.
 
     """
-    payload = _extended_payload(value) if initial else value
-    result = bytearray()
-    position = 0
-    while position < len(payload):
-        if payload[position] == PERCENT:
-            result.append(int(payload[position + 1 : position + 3], 16))
-            position += 3
-        else:
-            result.append(payload[position])
-            position += 1
-    return bytes(result)
+    return unquote_to_bytes(_extended_payload(value) if initial else value)
 
 
 def _parameter_value(value: bytes, *, encoded: bool, initial: bool) -> bytes:

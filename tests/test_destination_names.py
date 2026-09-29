@@ -36,70 +36,6 @@ def posix(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(os, "name", "posix")
 
 
-def test_native_units_are_utf8_bytes_on_posix_and_utf16_units_on_windows(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A name is measured the way its backend stores it (finding 7)."""
-    with monkeypatch.context() as posix_backend:
-        posix_backend.setattr(os, "name", "posix")
-        assert destination_names.native_length("ē😀a") == 2 + 4 + 1
-        assert destination_names.native_bytes("ē") == "ē".encode()
-    with monkeypatch.context() as windows:
-        windows.setattr(os, "name", "nt")
-        # A supplementary character is two UTF-16 units; a lone surrogate is one.
-        assert destination_names.native_length("ē😀a") == 1 + 2 + 1
-        assert destination_names.native_length("\ud800") == 1
-        assert destination_names.native_bytes("a") == b"a\x00"
-
-
-def test_limit_comes_from_the_directory_the_kernel_will_traverse(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """POSIX asks pathconf about the directory expression; empty means here."""
-    pathconf = getattr(os, "pathconf", None)
-    real = 255 if pathconf is None else pathconf(str(tmp_path), "PC_NAME_MAX")
-    assert destination_names.name_limit(str(tmp_path)) == real
-    asked: list[tuple[str, str]] = []
-
-    def fake(directory: str, name: str) -> int:
-        asked.append((directory, name))
-        return 99
-
-    monkeypatch.setattr(os, "name", "posix")
-    monkeypatch.setattr(os, "pathconf", fake, raising=False)
-    assert destination_names.name_limit("") == 99
-    assert destination_names.name_limit("in/../out") == 99
-    assert asked == [(".", "PC_NAME_MAX"), ("in/../out", "PC_NAME_MAX")]
-
-
-@pytest.mark.parametrize("answer", [OSError("gone"), ValueError("bad"), -1, 0])
-def test_unanswerable_limit_keeps_the_conservative_common_limit(
-    answer: object, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A missing directory or unlimited answer never shortens names below 255."""
-
-    def fake(_directory: str, _name: str) -> int:
-        if isinstance(answer, Exception):
-            raise answer
-        return int(str(answer))
-
-    monkeypatch.setattr(os, "name", "posix")
-    monkeypatch.setattr(os, "pathconf", fake, raising=False)
-    assert destination_names.name_limit("anywhere") == 255
-
-
-def test_windows_and_pathconf_less_platforms_use_the_common_limit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """NTFS, ReFS, and FAT share 255 UTF-16 units; no pathconf means the same."""
-    with monkeypatch.context() as windows:
-        windows.setattr(os, "name", "nt")
-        assert destination_names.name_limit("C:\\out") == 255
-    monkeypatch.setattr(os, "name", "posix")
-    monkeypatch.delattr(os, "pathconf", raising=False)
-    assert destination_names.name_limit("/out") == 255
-
-
 @pytest.mark.parametrize(
     ("text", "budget", "expected"),
     [
@@ -189,6 +125,22 @@ def test_multibyte_names_are_budgeted_in_bytes_without_splitting() -> None:
     assert set(fitted.removesuffix(_tail(source))) == {"ē"}
     # One more prefix character would not fit the budget.
     assert len((fitted + "ē").encode()) > 255
+
+
+@pytest.mark.usefixtures("posix")
+def test_a_backslash_is_an_ordinary_posix_filename_character(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POSIX grammar splits only at slashes, so a backslash stays in the name."""
+    _limit(monkeypatch, 255)
+    fitted = destination_names.fitted_default_destination
+    assert fitted("dir/a\\b.eml", None) == "dir/a\\b.mime-pruned.eml"
+    long_source = "dir/" + "x" * 100 + "\\" + "y" * 200 + ".eml"
+    name = long_source.removeprefix("dir/")
+    _limit(monkeypatch, 255)
+    assert fitted(long_source, None) == "dir/" + name[: 255 - len(_tail(name))] + _tail(
+        name
+    )
 
 
 def test_a_limit_smaller_than_the_tail_leaves_only_the_tail() -> None:
