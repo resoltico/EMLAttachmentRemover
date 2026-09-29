@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_encoding, mime_headers, mime_raw
+from eml_attachment_remover import (
+    mime_encoding,
+    mime_header_block,
+    mime_headers,
+)
 from eml_attachment_remover.domain import AppError, ExitCode
 
 
 def test_first_header_line_requires_a_token_before_its_first_colon() -> None:
     """The first colon decides header syntax; later colons belong to the value."""
-    assert mime_raw._first_line_is_header_like(  # ruff: ignore[private-member-access] - first-colon receipt.
+    assert mime_header_block._first_line_is_header_like(  # ruff: ignore[private-member-access] - first-colon receipt.
         b"X-Test: one: two\r\n", 0, 19
     )
-    assert not mime_raw._first_line_is_header_like(  # ruff: ignore[private-member-access] - token-before-colon receipt.
+    assert not mime_header_block._first_line_is_header_like(  # ruff: ignore[private-member-access] - token-before-colon receipt.
         b"not a token: value\r\n", 0, 20
     )
 

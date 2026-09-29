@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_validation
+from eml_attachment_remover import mime_parameters, mime_validation
 from eml_attachment_remover.domain import AppError, ExitCode
 
 
@@ -15,7 +15,7 @@ def test_extended_payload_accepts_every_rfc2231_language_alphabet_boundary(
     """Every endpoint of the three alphanumeric ranges and hyphen is permitted."""
     value = b"utf-8'" + language + b"'payload"
     assert (
-        mime_validation._extended_payload(  # ruff: ignore[private-member-access] - RFC 2231 language boundary.
+        mime_parameters._extended_payload(  # ruff: ignore[private-member-access] - RFC 2231 language boundary.
             value
         )
         == b"payload"
@@ -28,7 +28,7 @@ def test_extended_payload_rejects_each_gap_outside_the_language_alphabet(
 ) -> None:
     """Adjacent ASCII punctuation never becomes a valid RFC 2231 language byte."""
     with pytest.raises(AppError) as raised:
-        mime_validation._extended_payload(  # ruff: ignore[private-member-access] - RFC 2231 language gap.
+        mime_parameters._extended_payload(  # ruff: ignore[private-member-access] - RFC 2231 language gap.
             b"utf-8'" + language + b"'payload"
         )
     assert raised.value == AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 language")

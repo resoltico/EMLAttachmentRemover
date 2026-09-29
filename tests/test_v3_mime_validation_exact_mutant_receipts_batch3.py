@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_validation
+from eml_attachment_remover import mime_parameters, mime_validation
 from eml_attachment_remover.domain import AppError, ExitCode
 from eml_attachment_remover.mime_headers import Header
 from eml_attachment_remover.mime_validation import ContentSpec
@@ -24,7 +24,7 @@ def test_rfc2231_escape_case_allowed_octets_and_failures_are_exact() -> None:
     """Both hexadecimal cases and all allowed attribute characters remain raw facts."""
     value = b"utf-8'en-US'AZaz09!#$&+-.^_`|~%aF%F0"
     assert (
-        mime_validation._extended_parameter(  # ruff: ignore[private-member-access] - upper/lower hex and allowed-byte receipt.
+        mime_parameters._extended_parameter(  # ruff: ignore[private-member-access] - upper/lower hex and allowed-byte receipt.
             value, initial=True
         )
         == value
@@ -37,7 +37,7 @@ def test_rfc2231_escape_case_allowed_octets_and_failures_are_exact() -> None:
     )
     for wire_value, message in invalid:
         with pytest.raises(AppError) as rejected:
-            mime_validation._extended_parameter(  # ruff: ignore[private-member-access] - exact RFC 2231 grammar receipt.
+            mime_parameters._extended_parameter(  # ruff: ignore[private-member-access] - exact RFC 2231 grammar receipt.
                 wire_value, initial=True
             )
         assert rejected.value == AppError(ExitCode.PARSE_ERROR, message)
@@ -48,7 +48,7 @@ def test_rfc2231_payload_uses_the_first_two_apostrophes_as_its_prefix_boundary()
 ):
     """A third apostrophe is payload syntax, not a second language delimiter."""
     with pytest.raises(AppError) as rejected:
-        mime_validation._extended_parameter(  # ruff: ignore[private-member-access] - first-apostrophe partition receipt.
+        mime_parameters._extended_parameter(  # ruff: ignore[private-member-access] - first-apostrophe partition receipt.
             b"utf-8'en'payload'not-language", initial=True
         )
     assert rejected.value == AppError(
@@ -74,7 +74,7 @@ def test_semicolon_scanner_preserves_escaped_quote_termination() -> None:
 def test_unquote_decodes_one_escaped_octet_and_preserves_exact_failures() -> None:
     """Quoted-pairs lose one slash, and malformed terminal syntax stays visible."""
     assert (
-        mime_validation._unquote(  # ruff: ignore[private-member-access] - exact quoted-pair decoding receipt.
+        mime_parameters._unquote(  # ruff: ignore[private-member-access] - exact quoted-pair decoding receipt.
             b'"a\\;b\\"c"'
         )
         == b'a;b"c'
@@ -84,7 +84,7 @@ def test_unquote_decodes_one_escaped_octet_and_preserves_exact_failures() -> Non
         (b'"trailing\\"', "unterminated MIME quoted-pair"),
     ):
         with pytest.raises(AppError) as rejected:
-            mime_validation._unquote(  # ruff: ignore[private-member-access] - exact quoted-value failure receipt.
+            mime_parameters._unquote(  # ruff: ignore[private-member-access] - exact quoted-value failure receipt.
                 wire_value
             )
         assert rejected.value == AppError(ExitCode.PARSE_ERROR, message)

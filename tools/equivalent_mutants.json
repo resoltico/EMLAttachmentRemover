@@ -1,6 +1,6 @@
 {
     "schema_version": 1,
-    "source_sha256": "38efa7d5:4aae8f72:3a9b64f8:5e8b291e:ab445493:17c264fc:4fa2b0a0:ec797cf4",
+    "source_sha256": "55e071aa:5ed6b92a:635afe26:e1a22726:0ef3862a:d744efee:4e70c0cc:daf13361",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_10",
@@ -33,6 +33,14 @@
         {
             "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_8",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.destination_names.x_native_bytes__mutmut_9",
+            "rationale": "Python codec lookup is case-insensitive, so UTF-16-LE and utf-16-le encode identical bytes."
+        },
+        {
+            "mutant": "eml_attachment_remover.mime_header_block.x__fields_only_message__mutmut_12",
+            "rationale": "A root entity always starts at offset zero, so end - start and end + start are equal."
         },
         {
             "mutant": "eml_attachment_remover.mime_headers.x_root_header_start__mutmut_6",

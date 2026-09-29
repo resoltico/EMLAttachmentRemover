@@ -6,10 +6,11 @@ import pytest
 
 from eml_attachment_remover import (
     mime_encoding,
+    mime_header_block,
     mime_headers,
+    mime_parameters,
     mime_policy,
     mime_raw,
-    mime_validation,
 )
 from eml_attachment_remover.domain import AppError, DecisionAction, ExitCode
 from eml_attachment_remover.mime_raw import RawNode
@@ -74,15 +75,13 @@ def test_header_scanners_keep_zero_newlines_and_root_only_envelope_offsets() -> 
 
 def test_raw_header_probe_never_borrows_bytes_outside_its_entity() -> None:
     """A truncated entity is headerless even if a later source byte supplies a colon."""
-    assert mime_raw._first_line_is_header_like(  # ruff: ignore[private-member-access] - CRLF physical-header probe.
+    assert mime_header_block._first_line_is_header_like(  # ruff: ignore[private-member-access] - CRLF physical-header probe.
         b"X:\r\n", 0, 4
     )
-    assert mime_raw._first_line_is_header_like(  # ruff: ignore[private-member-access] - LF physical-header probe.
+    assert mime_header_block._first_line_is_header_like(  # ruff: ignore[private-member-access] - LF physical-header probe.
         b"X:\n", 0, 3
     )
-    assert mime_raw._entity_headers(  # ruff: ignore[private-member-access] - entity boundary must be authoritative.
-        b"X:\r\n\r\n", 0, 1
-    ) == ((), 0, 0)
+    assert mime_header_block.entity_headers(b"X:\r\n\r\n", 0, 1) == ((), 0, 0)
 
 
 def test_root_node_budget_starts_at_zero_before_the_first_node(
@@ -149,14 +148,22 @@ def test_policy_requires_a_kept_supported_leaf_not_merely_a_kept_leaf() -> None:
 
 def test_rfc2231_parameter_grammar_keeps_its_wire_boundaries() -> None:
     """A first equals, encoded flag, and hexadecimal alphabet each remain observable."""
-    assert mime_validation._parameter_piece(  # ruff: ignore[private-member-access] - quoted equals stays inside the value.
+    assert mime_parameters._parameter_piece(  # ruff: ignore[private-member-access] - quoted equals stays inside the value.
         b'filename="one=two"'
-    ) == (b"filename", None, b"one=two")
-    assert mime_validation._parameter_piece(  # ruff: ignore[private-member-access] - RFC 2231 encoded parameter receipt.
+    ) == (
+        b"filename",
+        None,
+        mime_parameters._Segment(b"one=two", b"one=two", encoded=False),  # ruff: ignore[private-member-access] - segment receipt.
+    )
+    assert mime_parameters._parameter_piece(  # ruff: ignore[private-member-access] - RFC 2231 encoded parameter receipt.
         b"filename*=utf-8''%41"
-    ) == (b"filename", None, b"utf-8''%41")
+    ) == (
+        b"filename",
+        None,
+        mime_parameters._Segment(b"utf-8''%41", b"A", encoded=True),  # ruff: ignore[private-member-access] - segment receipt.
+    )
     with pytest.raises(AppError) as malformed_escape:
-        mime_validation._extended_parameter(  # ruff: ignore[private-member-access] - non-hex X must not be accepted in an escape.
+        mime_parameters._extended_parameter(  # ruff: ignore[private-member-access] - non-hex X must not be accepted in an escape.
             b"utf-8''%XX", initial=True
         )
     assert malformed_escape.value == AppError(

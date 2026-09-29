@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_raw, mime_validation
+from eml_attachment_remover import mime_parameters, mime_raw, mime_validation
 from eml_attachment_remover.domain import AppError, ExitCode
 from eml_attachment_remover.mime_headers import Header
 from eml_attachment_remover.mime_validation import ContentSpec
@@ -12,32 +12,38 @@ from eml_attachment_remover.mime_validation import ContentSpec
 
 def test_parameter_piece_keeps_name_segment_and_raw_value_boundaries() -> None:
     """RFC 2231 pieces preserve a numbered extension and decoded quote-pair bytes."""
-    assert mime_validation._parameter_piece(  # ruff: ignore[private-member-access] - exact parameter-piece receipt.
+    assert mime_parameters._parameter_piece(  # ruff: ignore[private-member-access] - exact parameter-piece receipt.
         b"Filename*1*=two%20words"
-    ) == (b"filename", 1, b"two%20words")
-    assert mime_validation._parameter_piece(  # ruff: ignore[private-member-access] - quoted ordinary parameter receipt.
+    ) == (
+        b"filename",
+        1,
+        mime_parameters._Segment(b"two%20words", b"two words", encoded=True),  # ruff: ignore[private-member-access] - segment receipt.
+    )
+    assert mime_parameters._parameter_piece(  # ruff: ignore[private-member-access] - quoted ordinary parameter receipt.
         b' name = "a\\;b" '
-    ) == (b"name", None, b"a;b")
+    ) == (
+        b"name",
+        None,
+        mime_parameters._Segment(b"a;b", b"a;b", encoded=False),  # ruff: ignore[private-member-access] - segment receipt.
+    )
 
 
 def test_parameter_grammar_failures_keep_exact_parse_errors() -> None:
     """Malformed extensions, encoded quotes, and gapped continuations do not repair."""
     with pytest.raises(AppError) as extension:
-        mime_validation._parameter_name(  # ruff: ignore[private-member-access] - malformed extension receipt.
+        mime_parameters._parameter_name(  # ruff: ignore[private-member-access] - malformed extension receipt.
             b"name*bad"
         )
     assert extension.value == AppError(
         ExitCode.PARSE_ERROR, "malformed MIME parameter extension"
     )
     with pytest.raises(AppError) as quoted:
-        mime_validation._parameter_value(  # ruff: ignore[private-member-access] - encoded quote receipt.
+        mime_parameters._parameter_value(  # ruff: ignore[private-member-access] - encoded quote receipt.
             b"\"utf-8''x\"", encoded=True, initial=True
         )
     assert quoted.value == AppError(ExitCode.PARSE_ERROR, "quoted RFC 2231 parameter")
     with pytest.raises(AppError) as gapped:
-        mime_validation._finish_continuations(  # ruff: ignore[private-member-access] - continuation-gap receipt.
-            {}, {b"name": {1: b"late"}}
-        )
+        mime_parameters.structured_parameters([b"name*1=late"])
     assert gapped.value == AppError(
         ExitCode.PARSE_ERROR, "gapped MIME parameter continuation"
     )

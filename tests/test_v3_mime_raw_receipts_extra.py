@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_raw
+from eml_attachment_remover import mime_header_block, mime_raw
 from eml_attachment_remover.domain import AppError, ExitCode
 from eml_attachment_remover.mime_headers import Header
 from eml_attachment_remover.mime_raw import RawNode
@@ -61,17 +61,17 @@ def test_count_node_preserves_exact_limits_counters_and_failure_paths(
 
 def test_separator_and_entity_header_receipts_preserve_wire_boundaries() -> None:
     """Each transport separator and headerless-body decision remains byte exact."""
-    assert mime_raw._find_separator(b"X: y\r\n\r\nbody", 0, 13) == (4, 4)  # ruff: ignore[private-member-access] - exact entity separator receipt.
-    assert mime_raw._find_separator(b"X: y\n\nbody", 0, 10) == (4, 2)  # ruff: ignore[private-member-access] - exact entity separator receipt.
-    assert mime_raw._find_separator(b"X: y\r\rbody", 0, 10) == (4, 2)  # ruff: ignore[private-member-access] - exact entity separator receipt.
+    assert mime_header_block._find_separator(b"X: y\r\n\r\nbody", 0, 13) == (4, 4)  # ruff: ignore[private-member-access] - exact entity separator receipt.
+    assert mime_header_block._find_separator(b"X: y\n\nbody", 0, 10) == (4, 2)  # ruff: ignore[private-member-access] - exact entity separator receipt.
+    assert mime_header_block._find_separator(b"X: y\r\rbody", 0, 10) == (4, 2)  # ruff: ignore[private-member-access] - exact entity separator receipt.
     raw = b"X-Role: first\r\n\tcontinued\r\n\r\nbody"
-    assert mime_raw._entity_headers(raw, 0, len(raw)) == (  # ruff: ignore[private-member-access] - exact entity header receipt.
+    assert mime_header_block.entity_headers(raw, 0, len(raw)) == (
         (Header(b"x-role", b"first\r\n\tcontinued", 0, 25),),
         29,
         25,
     )
     headerless = b"plain prose\r\n\r\nX: later"
-    assert mime_raw._entity_headers(headerless, 0, len(headerless)) == (  # ruff: ignore[private-member-access] - headerless entity receipt.
+    assert mime_header_block.entity_headers(headerless, 0, len(headerless)) == (
         (),
         0,
         0,
@@ -81,12 +81,12 @@ def test_separator_and_entity_header_receipts_preserve_wire_boundaries() -> None
 def test_separator_and_header_like_entity_failures_are_publicly_exact() -> None:
     """Malformed separator states cannot silently become body text."""
     with pytest.raises(AppError) as raised:
-        mime_raw._find_separator(b"X: y\r\nbody", 0, 10)  # ruff: ignore[private-member-access] - exact separator failure.
+        mime_header_block._find_separator(b"X: y\r\nbody", 0, 10)  # ruff: ignore[private-member-access] - exact separator failure.
     assert raised.value == AppError(
         ExitCode.PARSE_ERROR, "MIME entity has no header/body separator"
     )
     with pytest.raises(AppError) as raised:
-        mime_raw._entity_headers(b"X-Role: first\r\nbody", 0, 20)  # ruff: ignore[private-member-access] - header-like entity must fail closed.
+        mime_header_block.entity_headers(b"X-Role: first\r\nbody", 0, 20)
     assert raised.value == AppError(
         ExitCode.PARSE_ERROR, "header-like MIME entity lacks a body separator"
     )

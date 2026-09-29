@@ -6,18 +6,18 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from .domain import AppError, ExitCode, MimePath
+from .mime_header_block import entity_headers
 from .mime_headers import (
     Header,
-    is_header_name,
     line_end,
-    parse_headers,
-    root_header_start,
 )
 from .mime_identifiers import parse_message_identifier
 from .mime_stdlib_check import StdlibValidationWork, parse_stdlib, validate_stdlib_tree
 from .mime_stdlib_skeleton import build_skeleton
 from .mime_validation import ContentSpec, content_specs
 
+PRINTABLE_FIRST: Final = 0x20
+PRINTABLE_LAST: Final = 0x7E
 MAX_NODES: Final = 20_000
 MAX_DEPTH: Final = 64
 MAX_CHILDREN: Final = 10_000
@@ -62,13 +62,28 @@ class RawNode:
         return result
 
     def parameter(self, name: bytes) -> bytes | None:
-        """Return one already validated raw parameter value.
+        """Return one structural parameter's meaning (boundary, start, type).
+
+        An RFC 2231 extended value is used decoded; a structural control must then
+        be printable ASCII, so an encoded control can never smuggle other bytes.
 
         Returns:
-            The exact normalized parameter value, if the field declared it.
+            The parameter's meaning, if the field declared it.
+
+        Raises:
+            AppError: If a decoded structural value is not printable ASCII.
 
         """
-        return self.content_type.parameters.get(name)
+        decoded = self.content_type.decoded.get(name)
+        if decoded is None:
+            return self.content_type.parameters.get(name)
+        if not all(PRINTABLE_FIRST <= byte <= PRINTABLE_LAST for byte in decoded):
+            raise AppError(
+                ExitCode.PARSE_ERROR,
+                "RFC 2231 structural MIME parameter is not printable ASCII",
+                self.path,
+            )
+        return decoded
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,26 +95,6 @@ class RawMimeTree:
     nodes: tuple[RawNode, ...]
     by_path: dict[MimePath, RawNode]
     stdlib_work: StdlibValidationWork
-
-
-def _find_separator(raw: bytes, start: int, end: int) -> tuple[int, int]:
-    """Find the exact header/body separator in one entity.
-
-    Returns:
-        The separator start offset and its byte length.
-
-    Raises:
-        AppError: If the entity has no physical separator.
-
-    """
-    matches = [
-        (raw.find(marker, start, end), len(marker))
-        for marker in (b"\r\n\r\n", b"\n\n", b"\r\r")
-    ]
-    positions = [(position, length) for position, length in matches if position >= 0]
-    if not positions:
-        raise AppError(ExitCode.PARSE_ERROR, "MIME entity has no header/body separator")
-    return min(positions)
 
 
 def _delimiter_lines(
@@ -164,43 +159,6 @@ def _payload_end(raw: bytes, boundary_start: int) -> int:
     return boundary_start
 
 
-def _entity_headers(
-    raw: bytes, start: int, end: int, *, root: bool = False
-) -> tuple[tuple[Header, ...], int, int]:
-    """Return physical headers and exact body start, accepting a headerless entity.
-
-    Returns:
-        Parsed fields, body start offset, and physical header byte count.
-
-    Raises:
-        AppError: If a header-like entity lacks a valid physical separator.
-
-    """
-    header_start = root_header_start(raw, start, end) if root else start
-    if not _first_line_is_header_like(raw, header_start, end):
-        return (), start, 0
-    try:
-        separator, separator_length = _find_separator(raw, header_start, end)
-    except AppError as exc:
-        raise AppError(
-            ExitCode.PARSE_ERROR, "header-like MIME entity lacks a body separator"
-        ) from exc
-    headers = parse_headers(raw, header_start, separator)
-    return headers, separator + separator_length, separator - start
-
-
-def _first_line_is_header_like(raw: bytes, start: int, end: int) -> bool:
-    """Return whether an entity begins with a colon-bearing physical header line.
-
-    Returns:
-        Whether its initial physical line can be interpreted as a header field.
-
-    """
-    first_line = raw[start : line_end(raw, start, end)]
-    name, colon, _value = first_line.partition(b":")
-    return bool(colon) and is_header_name(name)
-
-
 def _parse_node(
     raw: bytes, start: int, end: int, path: MimePath, totals: list[int]
 ) -> RawNode:
@@ -228,9 +186,7 @@ def _shallow_node(
 
     """
     _count_node(path, totals)
-    headers, body_start, header_bytes = _entity_headers(
-        raw, start, end, root=path == ()
-    )
+    headers, body_start, header_bytes = entity_headers(raw, start, end, root=path == ())
     totals[1] += header_bytes
     if totals[1] > MAX_TOTAL_HEADERS:
         raise AppError(

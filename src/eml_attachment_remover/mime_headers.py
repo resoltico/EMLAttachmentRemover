@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final
 
 from .domain import AppError, ExitCode
@@ -104,20 +104,43 @@ def parse_headers(raw: bytes, start: int, separator: int) -> tuple[Header, ...]:
     """
     if separator - start > MAX_HEADER_BYTES:
         raise AppError(ExitCode.PARSE_ERROR, "MIME entity exceeds header-byte limit")
-    headers: list[Header] = []
+    fields: list[_Field] = []
     position = start
     while position < separator:
         end = _advanced_cursor(position, line_end(raw, position, separator))
         if end <= position:
             raise AppError(ExitCode.PARSE_ERROR, "MIME header cursor did not advance")
         line = raw[position:end].rstrip(b"\r\n")
-        _append_header(headers, line, position, end)
+        _append_line(fields, line, position, end)
         position = end
+    headers = [field.header() for field in fields]
     _validate_header_multiplicity(headers)
     return tuple(headers)
 
 
-def _append_header(headers: list[Header], line: bytes, start: int, end: int) -> None:
+@dataclass(slots=True)
+class _Field:
+    """One field's first line and continuations, joined once when complete.
+
+    Joining once keeps a long folded field linear in its size rather than
+    re-copying the accumulated value for every continuation line.
+    """
+
+    first: Header
+    continuations: list[bytes]
+
+    def header(self) -> Header:
+        """Return the complete physical field.
+
+        Returns:
+            The field with every continuation joined by its original CRLF.
+
+        """
+        value = b"\r\n".join((self.first.value, *self.continuations))
+        return replace(self.first, value=value)
+
+
+def _append_line(fields: list[_Field], line: bytes, start: int, end: int) -> None:
     """Append one physical field or continuation while enforcing its entity limit.
 
     Raises:
@@ -127,26 +150,15 @@ def _append_header(headers: list[Header], line: bytes, start: int, end: int) -> 
     if not line:
         return
     if line[:1] in {b" ", b"\t"}:
-        _append_continuation(headers, line, end)
+        if not fields:
+            raise AppError(ExitCode.PARSE_ERROR, "orphaned MIME header continuation")
+        fields[-1].continuations.append(line)
+        # Only the small header record is replaced; its value is never re-copied.
+        fields[-1].first = replace(fields[-1].first, end=end)
     else:
-        headers.append(_new_header(line, start, end))
-    if len(headers) > MAX_HEADERS:
+        fields.append(_Field(_new_header(line, start, end), []))
+    if len(fields) > MAX_HEADERS:
         raise AppError(ExitCode.PARSE_ERROR, "MIME entity exceeds header-count limit")
-
-
-def _append_continuation(headers: list[Header], line: bytes, end: int) -> None:
-    """Add one physical continuation to the immediately preceding field.
-
-    Raises:
-        AppError: If no prior field owns the continuation.
-
-    """
-    if not headers:
-        raise AppError(ExitCode.PARSE_ERROR, "orphaned MIME header continuation")
-    previous = headers[-1]
-    headers[-1] = Header(
-        previous.name, previous.value + b"\r\n" + line, previous.start, end
-    )
 
 
 def _new_header(line: bytes, start: int, end: int) -> Header:

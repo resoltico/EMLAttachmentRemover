@@ -84,13 +84,24 @@ def test_shallow_node_honors_its_explicit_entity_end() -> None:
 
 
 def test_shallow_node_cannot_borrow_a_body_separator_past_its_entity_end() -> None:
-    """A header-like fragment without its separator is rejected rather than widened."""
+    """A nested header-like fragment without its separator is rejected, not widened."""
     raw = b"Content-Type: text/plain\r\n\r\nbody"
     end = raw.index(b"\r\n\r\n")
     with pytest.raises(AppError) as rejected:
         mime_raw._shallow_node(  # ruff: ignore[private-member-access] - bounded shallow-node rejection receipt.
-            raw, 0, end, (), [0, 0]
+            raw, 0, end, (0,), [0, 0]
         )
     assert rejected.value == AppError(
         ExitCode.PARSE_ERROR, "header-like MIME entity lacks a body separator"
     )
+
+
+def test_root_fields_end_where_the_entity_ends_without_borrowing_the_body() -> None:
+    """A root fragment of complete fields has an empty body at its own end."""
+    raw = b"Content-Type: text/plain\r\n\r\nbody"
+    end = raw.index(b"\r\n\r\n")
+    node = mime_raw._shallow_node(  # ruff: ignore[private-member-access] - bounded root receipt.
+        raw, 0, end, (), [0, 0]
+    )
+    assert (node.body_start, node.end) == (end, end)
+    assert node.content_type == ContentSpec("text/plain", {})

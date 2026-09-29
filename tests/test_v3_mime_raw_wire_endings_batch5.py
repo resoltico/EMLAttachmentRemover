@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_raw
+from eml_attachment_remover import mime_header_block
 from eml_attachment_remover.mime_raw import parse_raw_mime
 
 
@@ -22,7 +22,7 @@ def test_physical_line_endings_leave_the_exact_header_name(
 ) -> None:
     """Only the final transport ending is excluded before a field name is parsed."""
     assert expected == b"X-Token: value"
-    assert mime_raw._first_line_is_header_like(  # ruff: ignore[private-member-access] - physical header-line receipt.
+    assert mime_header_block._first_line_is_header_like(  # ruff: ignore[private-member-access] - physical header-line receipt.
         line, 0, len(line)
     )
 

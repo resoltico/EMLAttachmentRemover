@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from eml_attachment_remover import (
-    mime_validation,
+    mime_parameters,
     native_binding,
     native_posix,
     native_values,
@@ -178,7 +178,7 @@ def test_rfc2231_continuation_index_is_bounded_before_integer_conversion(
 ) -> None:
     """An untrusted continuation label is a typed parse failure, never an abort."""
     with pytest.raises(AppError) as rejected:
-        mime_validation._parameter_name(  # ruff: ignore[private-member-access] - finite RFC 2231 index grammar.
+        mime_parameters._parameter_name(  # ruff: ignore[private-member-access] - finite RFC 2231 index grammar.
             name
         )
     assert rejected.value.code is ExitCode.PARSE_ERROR

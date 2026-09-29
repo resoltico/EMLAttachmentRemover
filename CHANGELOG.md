@@ -32,6 +32,24 @@ Notable changes to this project are documented in this file. The format is based
   by a second document, and still reports published items if report staging fails.
 - A zipapp or installed package accepts a temporary directory beside it; only a
   source checkout keeps temporary storage out of its tree.
+- Reported payload hashes for parts with an empty header block no longer include the
+  separator line: the hash covers exactly the body octets.
+- RFC 2231 extended parameters work as structural controls: `boundary*=`,
+  `boundary*0*=` continuations and an empty charset (`filename*=''name`) are
+  accepted, each encoded segment decoded exactly once, while reported evidence keeps
+  the exact wire spelling. A decoded boundary must be printable ASCII.
+- A root message consisting only of complete header fields is accepted as a message
+  with an empty body; nested parts still require their separator.
+- Folded headers are accumulated in linear time (128 KiB: about 0.12 s to about
+  0.01 s).
+- A derived output name that would exceed the destination directory's filename limit
+  is shortened with a readable prefix and a stable digest of the full source name,
+  instead of failing after the source was read. Explicit `--output` names are never
+  renamed.
+- A message whose report evidence cannot fit a report record (about 3,700 retained
+  MIME parts) or the remaining report capacity is refused with `PARSE_ERROR` before
+  any copy is written, instead of creating a copy and then reporting
+  `published_with_error`.
 - Task timeouts and interruptions stop the whole process group, so no test or
   mutant descendant can outlive its task step and write after evidence capture.
 - Mutation workers remove each pytest session's temporary directory, keeping disk

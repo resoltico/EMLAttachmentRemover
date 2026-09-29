@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 from base64 import b64encode
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Final
 
 from . import batch_terminal, report_stream
 from .cancellation import CancellationSignal, install_cancellation_handlers
+from .destination_names import fitted_default_destination
 from .domain import (
     AppError,
     BatchLedger,
@@ -30,13 +30,13 @@ from .mime_removals import RemovalIndex
 from .mime_verification import verify_candidate
 from .native_paths import (
     bind_destination,
-    default_destination,
     existing_identity,
     inspect_source_identity,
     path_value,
     read_existing,
     read_source,
 )
+from .report_admission import admit
 from .staged_output import PublishedWithError, publish
 
 MAX_BATCH_ITEMS: Final = 4_096
@@ -111,10 +111,7 @@ def _destination_for(source: str, options: BatchOptions) -> str:
     """
     if options.output is not None:
         return options.output
-    default = default_destination(source)
-    if options.output_dir is None:
-        return default
-    return os.fspath(Path(options.output_dir) / Path(default).name)
+    return fitted_default_destination(source, options.output_dir)
 
 
 def _mark(item: LedgerItem, error: AppError) -> None:
@@ -402,6 +399,7 @@ def _run_item(
 ) -> bool:
     try:
         _candidate(item, identities[item.index])
+        admit(ledger, item)
         publication_cause = _existing_or_publish(item, options, all_identities)
     except AppError as exc:
         _mark(item, exc)
