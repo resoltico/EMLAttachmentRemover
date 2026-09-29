@@ -104,6 +104,16 @@ def test_report_path_value_rebuilds_every_serialized_field() -> None:
             "C:\\b.eml",
         ),
         ({"parent": None, "basename_base64": _native(b"c.eml")}, "/c.eml"),
+        (
+            {
+                "parent": {"display": "C:\\out"},
+                "basename_base64": None,
+                "basename_utf16le_base64": _native(
+                    "a\ud800.eml".encode("utf-16-le", "surrogatepass")
+                ),
+            },
+            "C:\\out\\a\ud800.eml",
+        ),
     ],
 )
 def test_planned_display_joins_parent_and_exact_basename(

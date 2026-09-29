@@ -85,6 +85,7 @@ def test_staging_targets_each_final_channel_encoding(
 def test_unknown_channel_encoding_stages_utf8() -> None:
     """An in-memory stand-in without an encoding keeps the historic UTF-8 staging."""
     assert report_delivery._encoding(StringIO()) == "utf-8"  # ruff: ignore[private-member-access] - fallback codec.
+    assert report_delivery._encoding(object()) == "utf-8"  # ruff: ignore[private-member-access] - no declared codec.
     assert report_delivery._encoding(SimpleNamespace(encoding="cp1252")) == "cp1252"  # ruff: ignore[private-member-access] - real codec.
 
 
@@ -122,11 +123,11 @@ def test_copy_chunks_are_bounded() -> None:
 
 
 @pytest.mark.parametrize(
-    ("output_format", "written", "expected"),
+    ("output_format", "written", "expected", "binary"),
     [
-        ("paths0", b"one\0", b"one\0"),
-        ("json", b'{"ok":true}\n', b'{"ok":true}\n'),
-        ("human", "human\n", b"human\n"),
+        ("paths0", b"one\0", b"one\0", True),
+        ("json", b'{"ok":true}\n', b'{"ok":true}\n', True),
+        ("human", "human\n", b"human\n", False),
     ],
 )
 def test_delivery_replays_one_staged_report_on_its_channel(
@@ -134,6 +135,8 @@ def test_delivery_replays_one_staged_report_on_its_channel(
     written: bytes | str,
     expected: bytes,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    binary: bool,
 ) -> None:
     """A partial earlier render is discarded; only the final render is delivered."""
     captured = BytesIO()
@@ -163,13 +166,16 @@ def test_delivery_replays_one_staged_report_on_its_channel(
         staged.out.write("stale partial render")
         state = cli._RunState(ledger, output_format, staged=staged)  # ruff: ignore[private-member-access] - delivery state.
         assert cli._write_then_close(state, 4) == 4  # ruff: ignore[private-member-access] - delivery contract.
-    assert captured.getvalue() + text.getvalue().encode() == expected
+    # Byte channels reach the binary buffer only; human text reaches the text stream.
+    received = (captured.getvalue(), text.getvalue().encode())
+    assert received == ((expected, b"") if binary else (b"", expected))
     assert state.delivery_started
     assert ledger.report_spool is None
 
 
+@pytest.mark.parametrize("mode", ["apply", "dry-run"])
 def test_staging_failure_recovers_the_reserved_status_report(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    mode: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A full disk during staging still delivers the outcome of published items."""
     ledger = _spooled()
@@ -189,7 +195,8 @@ def test_staging_failure_recovers_the_reserved_status_report(
             state = cli._RunState(  # ruff: ignore[private-member-access] - recovery state.
                 ledger,
                 "json",
-                staged=report_delivery.StagedChannels.open(resources, "json"),
+                mode,
+                report_delivery.StagedChannels.open(resources, "json"),
             )
             status = cli._write_then_close(state, 5)  # ruff: ignore[private-member-access] - staging recovery.
         document = json.loads(capsys.readouterr().out)
@@ -197,6 +204,7 @@ def test_staging_failure_recovers_the_reserved_status_report(
         report_stream.close(ledger)
     assert attempts == [False, True]
     assert status == int(ExitCode.WRITE_ERROR) == document["exit_code"]
+    assert document["mode"] == mode
     assert document["batch_error"]["message"] == "terminal report spool failed"
     assert [item["status"] for item in document["items"]] == ["failed"]
     assert state.delivery_started
@@ -299,3 +307,31 @@ def test_cancellation_keeps_an_interruption_recorded_during_processing(
         "reason": "interrupted by SIGTERM",
         "phase": "processing",
     }
+
+
+@pytest.mark.parametrize(
+    ("arguments", "mode", "staged_encoding"),
+    [
+        (["--output-format=human"], "apply", "ascii"),
+        (["--dry-run", "--output-format=human"], "dry-run", "ascii"),
+        (["--output-format=json"], "apply", report_delivery.BYTE_CHANNEL),
+        (["--output-format=paths0"], "apply", report_delivery.BYTE_CHANNEL),
+    ],
+)
+def test_run_retains_the_request_and_stages_for_its_channel(
+    arguments: list[str],
+    mode: str,
+    staged_encoding: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The retained mode and format decide staging before any item can publish."""
+    monkeypatch.setattr(sys, "stdout", SimpleNamespace(encoding="ascii"))
+    monkeypatch.setattr(sys, "stderr", SimpleNamespace(encoding="ascii"))
+    monkeypatch.setattr(cli, "execute", lambda *_args: _failed())
+    monkeypatch.setattr(cli, "_write_selected", lambda *_args: None)
+    state = cli._RunState()  # ruff: ignore[private-member-access] - retained request.
+    with ExitStack() as resources:
+        cli._run([*arguments, "source.eml"], state, resources)  # ruff: ignore[private-member-access] - request retention.
+        assert state.staged is not None
+        assert state.staged.out.encoding == staged_encoding
+    assert state.mode == mode
