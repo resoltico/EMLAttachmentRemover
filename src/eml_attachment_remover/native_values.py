@@ -315,17 +315,15 @@ def safe_display(value: str) -> str:
 def has_surrogate(text: str) -> bool:
     """Return whether text holds a code point in the surrogate range.
 
-    Strict UTF-8 refuses exactly the surrogate code points, so encoding is the whole
-    test, and ASCII, the common case, cannot contain one.
+    Strict UTF-8, which is what ``str.encode`` does without arguments, refuses exactly
+    the surrogate code points, so encoding is the whole test.
 
     Returns:
         Whether any character lies in U+D800 through U+DFFF.
 
     """
-    if text.isascii():
-        return False
     try:
-        text.encode("utf-8")
+        text.encode()
     except UnicodeEncodeError:
         return True
     return False

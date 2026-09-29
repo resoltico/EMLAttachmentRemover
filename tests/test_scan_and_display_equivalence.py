@@ -164,6 +164,11 @@ def test_scan_matches_the_walk_over_every_line(  # type: ignore[misc]
         ),
         pytest.param(b"\r\n--b-- \t\r\n", [(2, 11, True)], id="transport space"),
         pytest.param(b"--bx\r\n--b-\r\n", [], id="near misses stay payload"),
+        pytest.param(b"XX--b\r\n", [], id="mid-line after capital letters"),
+        pytest.param(b"--bX\r\n", [], id="capital letter after the boundary"),
+        pytest.param(b"--b--X\r\n", [], id="capital letter after the closing hyphens"),
+        pytest.param(b"--b \t\r\n", [(0, 7, False)], id="transport space only"),
+        pytest.param(b"X\r--b\rX--b\n", [(2, 6, False)], id="lone CR, then capital X"),
     ],
 )
 def test_scan_positions_and_kinds(raw: bytes, expected: list[Span]) -> None:
@@ -175,17 +180,36 @@ def test_scan_positions_and_kinds(raw: bytes, expected: list[Span]) -> None:
     assert scanned == _reference_delimiter_lines(raw, 0, len(raw), b"b")
 
 
-def test_the_range_start_begins_a_line_and_the_range_end_truncates_one() -> None:
-    """An offset start counts as a line start; a delimiter cut by the end is not one."""
+def test_the_range_start_begins_a_line() -> None:
+    """An offset start counts as a line start, and text before it is not scanned."""
     raw = b"xx--b\r\n--b--\r\n"
     from_offset = mime_raw._delimiter_lines(  # ruff: ignore[private-member-access] - range-start receipt.
         raw, 2, len(raw), b"b"
     )
     assert from_offset == [(2, 7, False), (7, 14, True)]
-    truncated = mime_raw._delimiter_lines(  # ruff: ignore[private-member-access] - range-end receipt.
-        raw, 0, 4, b"b"
+
+
+def test_a_delimiter_before_the_range_start_is_outside_the_range() -> None:
+    """A nested body must not see its parent's delimiters, which lie before it."""
+    raw = b"--b\r\nxx--b\r\n--b--\r\n"
+    scanned = mime_raw._delimiter_lines(  # ruff: ignore[private-member-access] - range-start receipt.
+        raw, 5, len(raw), b"b"
     )
-    assert truncated == []
+    assert scanned == [(12, 19, True)]
+    assert scanned == _reference_delimiter_lines(raw, 5, len(raw), b"b")
+
+
+@pytest.mark.parametrize(("end", "expected"), [(2, []), (3, [(0, 3, False)])])
+def test_a_delimiter_cut_by_the_range_end_is_not_one(
+    end: int, expected: list[Span]
+) -> None:
+    """The whole prefix must lie inside the range, not merely begin inside it."""
+    raw = b"--b\r\n"
+    scanned = mime_raw._delimiter_lines(  # ruff: ignore[private-member-access] - range-end receipt.
+        raw, 0, end, b"b"
+    )
+    assert scanned == expected
+    assert scanned == _reference_delimiter_lines(raw, 0, end, b"b")
 
 
 @pytest.mark.parametrize("boundary", [b"b\n", b"\r", b"b\r\n"])

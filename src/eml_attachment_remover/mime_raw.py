@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -108,7 +109,10 @@ def _delimiter_lines(
     the one a walk over every line would give: the range start begins a line, and a
     later position begins one exactly when a line break (LF, or a CR that is not the
     first half of CRLF) precedes it. The prefix begins with a hyphen, so a CR
-    immediately before it is never half of a CRLF.
+    immediately before it is never half of a CRLF. Matches are found without a
+    hand-kept cursor, so no fault can make the scan revisit a position and spin, and
+    matches that overlap an earlier one cannot be lost: they begin inside it, and no
+    line begins inside a prefix.
 
     Returns:
         Source spans and closing markers for recognized delimiter lines.
@@ -119,9 +123,8 @@ def _delimiter_lines(
     """
     prefix = b"--" + boundary
     result: list[tuple[int, int, bool]] = []
-    search_from = start
-    while (position := raw.find(prefix, search_from, end)) != -1:
-        search_from = position + 1
+    for occurrence in re.compile(re.escape(prefix)).finditer(raw, start, end):
+        position = occurrence.start()
         if position != start and raw[position - 1] not in b"\r\n":
             continue
         end_of_line = _advanced_delimiter_cursor(position, line_end(raw, position, end))
