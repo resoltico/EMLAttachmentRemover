@@ -33,7 +33,7 @@ def _invalid_posix() -> Iterator[tuple[str, AppError]]:
 def test_native_display_escapes_every_unsafe_unicode_category_exactly() -> None:
     """Public diagnostics retain visible text and escape every unsafe control form."""
     value = "A\x1f\u200e\ud800\u2028\u2029\u00a0Z"
-    assert native_values._display(value) == (  # ruff: ignore[private-member-access] - public diagnostic rendering contract.
+    assert native_values.safe_display(value) == (
         "A\\u001f\\u200e\\ud800\\u2028\\u2029\u00a0Z"
     )
 

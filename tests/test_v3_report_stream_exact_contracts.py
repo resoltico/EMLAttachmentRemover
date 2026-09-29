@@ -13,6 +13,7 @@ import pytest
 from eml_attachment_remover import (
     cli,
     native_literal_address,
+    report_session,
     report_spool,
     report_stream,
     reporting_v3,
@@ -26,7 +27,7 @@ from eml_attachment_remover.domain import (
     PathValue,
 )
 from eml_attachment_remover.native_paths import path_value
-from eml_attachment_remover.report_delivery import StagedChannels
+from tests.report_session_support import open_session
 
 
 def _ledger(*statuses: ItemStatus) -> BatchLedger:
@@ -395,14 +396,14 @@ def test_cli_selected_and_cancelled_channels_keep_exact_report_mode_and_status(
 ) -> None:
     """CLI selection never silently swaps direct and spooled report semantics."""
     direct = _ledger(ItemStatus.FAILED)
-    cli._write_selected("json", direct, "apply", 5)  # ruff: ignore[private-member-access] - direct JSON channel.
+    report_session._write_selected("json", direct, "apply", 5)  # ruff: ignore[private-member-access] - direct JSON channel.
     document = json.loads(capsys.readouterr().out)
     assert (document["mode"], document["exit_code"], document["ok"]) == (
         "apply",
         5,
         False,
     )
-    cli._write_selected("human", direct, "apply", 5)  # ruff: ignore[private-member-access] - direct human channel.
+    report_session._write_selected("human", direct, "apply", 5)  # ruff: ignore[private-member-access] - direct human channel.
     rendered = capsys.readouterr()
     assert rendered.out == "failed: source-0.eml\n"
     assert rendered.err == "source-0.eml: PARSE_ERROR: error-0\n"
@@ -413,7 +414,7 @@ def test_cli_selected_and_cancelled_channels_keep_exact_report_mode_and_status(
     try:
         with ExitStack() as resources:
             state = cli._RunState(  # ruff: ignore[private-member-access] - interruption state receipt.
-                spooled, "json", "dry-run", StagedChannels.open(resources, "json")
+                spooled, open_session(resources, "json", "dry-run")
             )
             assert (
                 cli._cancelled(  # ruff: ignore[private-member-access] - spooled JSON cancellation channel.

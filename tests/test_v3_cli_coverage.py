@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TextIO
+from contextlib import ExitStack
+from typing import TextIO
 
-from eml_attachment_remover import cli
+import pytest
+
+from eml_attachment_remover import cli, exit_status, report_session
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import (
     AppError,
@@ -13,9 +16,7 @@ from eml_attachment_remover.domain import (
     ItemStatus,
 )
 from eml_attachment_remover.native_paths import path_value
-
-if TYPE_CHECKING:
-    import pytest
+from tests.report_session_support import open_session
 
 
 def _ledger(status: ItemStatus, error: AppError | None = None) -> BatchLedger:
@@ -27,35 +28,35 @@ def _ledger(status: ItemStatus, error: AppError | None = None) -> BatchLedger:
 def test_exit_code_prioritizes_publication_and_single_failure_facts() -> None:
     publication_error = AppError(ExitCode.INTERNAL_ERROR, "sync")
     published = _ledger(ItemStatus.PUBLISHED_WITH_ERROR, publication_error)
-    assert cli.exit_code(published) == ExitCode.INTERNAL_ERROR
+    assert exit_status.exit_code(published) == ExitCode.INTERNAL_ERROR
 
     incomplete = _ledger(
         ItemStatus.PUBLISHED_WITH_ERROR, AppError(ExitCode.WRITE_ERROR, "x")
     )
-    assert cli.exit_code(incomplete) == ExitCode.PUBLICATION_INCOMPLETE
+    assert exit_status.exit_code(incomplete) == ExitCode.PUBLICATION_INCOMPLETE
 
     failed_without_error = _ledger(ItemStatus.FAILED)
-    assert cli.exit_code(failed_without_error) == ExitCode.INTERNAL_ERROR
+    assert exit_status.exit_code(failed_without_error) == ExitCode.INTERNAL_ERROR
 
     failed_parse = _ledger(ItemStatus.FAILED, AppError(ExitCode.PARSE_ERROR, "bad"))
-    assert cli.exit_code(failed_parse) == ExitCode.PARSE_ERROR
+    assert exit_status.exit_code(failed_parse) == ExitCode.PARSE_ERROR
 
     failed_internal = _ledger(
         ItemStatus.FAILED,
         AppError(ExitCode.INTERNAL_ERROR, "unexpected"),
     )
-    assert cli.exit_code(failed_internal) == ExitCode.INTERNAL_ERROR
+    assert exit_status.exit_code(failed_internal) == ExitCode.INTERNAL_ERROR
 
     interrupted = _ledger(ItemStatus.CREATED)
     interrupted.record_interruption("SIGTERM", "report")
-    assert cli.exit_code(interrupted) == ExitCode.INTERRUPTED
+    assert exit_status.exit_code(interrupted) == ExitCode.INTERRUPTED
 
 
 def test_exit_code_uses_batch_failure_for_multiple_terminal_failures() -> None:
     ledger = BatchLedger.from_requests([path_value("one.eml"), path_value("two.eml")])
     ledger.items[0].finish(ItemStatus.FAILED, AppError(ExitCode.PARSE_ERROR, "bad"))
     ledger.items[1].finish(ItemStatus.CREATED)
-    assert cli.exit_code(ledger) == ExitCode.BATCH_FAILURE
+    assert exit_status.exit_code(ledger) == ExitCode.BATCH_FAILURE
 
 
 def test_exit_code_uses_batch_failure_for_multiple_incomplete_publications() -> None:
@@ -66,21 +67,21 @@ def test_exit_code_uses_batch_failure_for_multiple_incomplete_publications() -> 
             ItemStatus.PUBLISHED_WITH_ERROR,
             AppError(ExitCode.WRITE_ERROR, "post-edge evidence failed"),
         )
-    assert cli.exit_code(ledger) == ExitCode.BATCH_FAILURE
+    assert exit_status.exit_code(ledger) == ExitCode.BATCH_FAILURE
 
 
 def test_internal_item_error_outranks_an_additional_batch_write_error() -> None:
     """A later report failure cannot mask a retained programming failure."""
     ledger = _ledger(ItemStatus.FAILED, AppError(ExitCode.INTERNAL_ERROR, "invariant"))
     ledger.batch_error = AppError(ExitCode.WRITE_ERROR, "report spool failed")
-    assert cli.exit_code(ledger) == ExitCode.INTERNAL_ERROR
+    assert exit_status.exit_code(ledger) == ExitCode.INTERNAL_ERROR
 
 
 def test_ordinary_batch_write_error_keeps_its_write_exit_code() -> None:
     """The precedence repair does not promote a report write failure to internal."""
     ledger = _ledger(ItemStatus.CREATED)
     ledger.batch_error = AppError(ExitCode.WRITE_ERROR, "report spool failed")
-    assert cli.exit_code(ledger) == ExitCode.WRITE_ERROR
+    assert exit_status.exit_code(ledger) == ExitCode.WRITE_ERROR
 
 
 def test_render_and_application_errors_preserve_the_selected_channel(
@@ -137,12 +138,20 @@ def test_cancelled_renders_preledger_json_and_human_terminal_ledgers(
     assert cli._cancelled(empty, signal) == 130  # ruff: ignore[private-member-access] - cancellation state contract.
 
     calls: list[str] = []
-    monkeypatch.setattr(cli, "write_json", lambda _document: calls.append("json"))
-    monkeypatch.setattr(cli, "write_human", lambda _document: calls.append("human"))
-    monkeypatch.setattr(cli, "write_paths0", lambda _ledger: calls.append("paths0"))
+    monkeypatch.setattr(
+        report_session, "write_json", lambda _document: calls.append("json")
+    )
+    monkeypatch.setattr(
+        report_session, "write_human", lambda _document: calls.append("human")
+    )
+    monkeypatch.setattr(
+        report_session, "write_paths0", lambda _ledger: calls.append("paths0")
+    )
     for output_format in ("json", "human", "paths0"):
-        active = cli._RunState(_ledger(ItemStatus.CREATED), output_format)  # ruff: ignore[private-member-access] - cancellation state contract.
-        assert cli._cancelled(active, signal) == 130  # ruff: ignore[private-member-access] - cancellation state contract.
+        with ExitStack() as resources:
+            session = open_session(resources, output_format)
+            active = cli._RunState(_ledger(ItemStatus.CREATED), session)  # ruff: ignore[private-member-access] - cancellation state contract.
+            assert cli._cancelled(active, signal) == 130  # ruff: ignore[private-member-access] - cancellation state contract.
     # The retained request, never a guess from raw argv, selects the channel.
     assert calls == ["json", "human", "paths0"]
 
@@ -157,12 +166,18 @@ def test_internal_error_and_selected_outputs_cover_all_channels(
 
     ledger = _ledger(ItemStatus.CREATED)
     channels: list[str] = []
-    monkeypatch.setattr(cli, "report", lambda *_args: {"items": []})
-    monkeypatch.setattr(cli, "write_json", lambda _document: channels.append("json"))
-    monkeypatch.setattr(cli, "write_paths0", lambda _ledger: channels.append("paths0"))
-    monkeypatch.setattr(cli, "write_human", lambda _document: channels.append("human"))
+    monkeypatch.setattr(report_session, "report", lambda *_args: {"items": []})
+    monkeypatch.setattr(
+        report_session, "write_json", lambda _document: channels.append("json")
+    )
+    monkeypatch.setattr(
+        report_session, "write_paths0", lambda _ledger: channels.append("paths0")
+    )
+    monkeypatch.setattr(
+        report_session, "write_human", lambda _document: channels.append("human")
+    )
     for output_format in ("json", "paths0", "human"):
-        cli._write_selected(output_format, ledger, "apply", 0)  # ruff: ignore[private-member-access] - selected-channel contract.
+        report_session._write_selected(output_format, ledger, "apply", 0)  # ruff: ignore[private-member-access] - selected-channel contract.
     assert channels == ["json", "paths0", "human"]
 
 
@@ -192,3 +207,50 @@ def _record_error(rendered: list[AppError]) -> object:
         return 70
 
     return record
+
+
+@pytest.mark.parametrize(
+    ("has_ledger", "has_session", "started", "publishes"),
+    [
+        (False, True, False, False),
+        (True, False, False, False),
+        (True, True, True, False),
+        (True, True, False, True),
+    ],
+)
+def test_cancelled_publishes_only_a_ledger_with_an_undelivered_session(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    has_ledger: bool,
+    has_session: bool,
+    started: bool,
+    publishes: bool,
+) -> None:
+    """Any missing report owner, or a delivery already begun, means diagnostic only."""
+    rendered: list[AppError] = []
+    published: list[int] = []
+
+    def render(error: AppError, _parser: object) -> int:
+        rendered.append(error)
+        return 130
+
+    def publish(
+        _self: report_session.ReportSession, _ledger: BatchLedger, status: int
+    ) -> int:
+        published.append(status)
+        return 0
+
+    monkeypatch.setattr(cli, "_render_error", render)
+    monkeypatch.setattr(report_session.ReportSession, "publish", publish)
+    with ExitStack() as resources:
+        session = open_session(resources) if has_session else None
+        if session is not None:
+            session.delivery_started = started
+        ledger = _ledger(ItemStatus.CREATED) if has_ledger else None
+        state = cli._RunState(ledger, session)  # ruff: ignore[private-member-access] - cancellation state contract.
+        status = cli._cancelled(state, CancellationSignal(2, "SIGINT"))  # ruff: ignore[private-member-access] - cancellation state contract.
+    if publishes:
+        assert (status, published, rendered) == (0, [130], [])
+    else:
+        assert (status, published) == (130, [])
+        assert rendered == [AppError(ExitCode.INTERRUPTED, "interrupted by SIGINT")]

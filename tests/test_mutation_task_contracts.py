@@ -297,3 +297,36 @@ def _paths(root: Path) -> mutation_task.MutationPaths:
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class MutationDiagnosticsStepTests(unittest.TestCase):
+    """The diagnostics step is last, labelled, and runs after earlier failures."""
+
+    def test_diagnostics_run_after_a_failed_step_and_failures_are_labelled(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = _paths(Path(directory))
+            events: list[str] = []
+
+            def run(command: Sequence[str], **_options: object) -> None:
+                events.append(command[0] if command[0] != "python" else command[1])
+                if command[0] == "mutmut" and command[1] == "run":
+                    message = "mutants failed"
+                    raise subprocess.CalledProcessError(1, message)
+
+            def diagnose() -> None:
+                events.append("diagnose")
+                message = "no space"
+                raise OSError(message)
+
+            actions = mutation_task.mutation_actions(
+                lambda: None, lambda: None, lambda: None, run, diagnose
+            )
+            with self.assertRaises(ExceptionGroup) as raised:
+                mutation_task.run_mutation(paths, actions, "python", preflight=False)
+        self.assertEqual(events[-1], "diagnose")
+        self.assertEqual(
+            [str(error) for error in raised.exception.exceptions][-1],
+            "capture diagnostics failed: no space",
+        )

@@ -114,6 +114,29 @@ def test_posix_identity_split_directory_and_read_receipts_are_exact(
     )
 
 
+def test_posix_binding_refuses_an_unresolvable_parent_and_closes_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No proven parent address means nothing may be published there."""
+    closed: list[int] = []
+    metadata = _metadata()
+    monkeypatch.setattr(native_posix, "_parent", lambda _path: (31, "parent", b"leaf"))
+    monkeypatch.setattr(native_posix, "_final_address", lambda _descriptor: None)
+    monkeypatch.setattr(
+        native_posix.__dict__["os"], "fstat", lambda _descriptor: metadata
+    )
+    monkeypatch.setattr(
+        native_posix.__dict__["stat"], "S_ISDIR", lambda mode: mode == metadata.st_mode
+    )
+    monkeypatch.setattr(native_posix.__dict__["os"], "close", closed.append)
+    with pytest.raises(AppError) as unresolved:
+        native_posix._bind_destination("request", "expanded")  # ruff: ignore[private-member-access] - unresolvable parent address.
+    assert unresolved.value == AppError(
+        ExitCode.WRITE_ERROR, "could not resolve the destination directory address"
+    )
+    assert closed == [31]
+
+
 def test_posix_binding_and_source_open_receipts_close_every_descriptor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -122,6 +145,8 @@ def test_posix_binding_and_source_open_receipts_close_every_descriptor(
     closed: list[int] = []
     monkeypatch.setattr(native_posix, "_parent", lambda _path: (31, "parent", b"leaf"))
     monkeypatch.setattr(native_posix, "path_value", _value)
+    resolved = PathValue("/resolved", "d", "L3Jlc29sdmVk")
+    monkeypatch.setattr(native_posix, "_final_address", lambda _descriptor: resolved)
     monkeypatch.setattr(
         native_posix,
         "_identity",

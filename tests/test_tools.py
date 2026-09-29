@@ -361,7 +361,10 @@ class TaskRunnerTests(unittest.TestCase):
             with self.subTest(task=task_name):
                 with patch.object(tasks, function_name) as action:
                     self.assertEqual(tasks.main([task_name]), 0)
-                action.assert_called_once_with()
+                if task_name == "quality":
+                    action.assert_called_once_with(native=False)
+                else:
+                    action.assert_called_once_with()
         with patch.object(tasks, "_test") as test:
             self.assertEqual(tasks.main(["test"]), 0)
             self.assertEqual(tasks.main(["thorough"]), 0)

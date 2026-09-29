@@ -20,6 +20,7 @@ from .domain import (
     LedgerItem,
 )
 from .native_values import report_path_bytes, report_path_value
+from .report_budget import ReportBudget, minimal_record
 from .report_spool import ReportSpool, ReportSpoolError
 
 _ITEM_KEY: Final = "items"
@@ -117,9 +118,17 @@ def archive(ledger: BatchLedger, item: LedgerItem) -> None:
     if not isinstance(spool, ReportSpool) or not item.terminalized:
         message = "terminal report item cannot be archived"
         raise ReportSpoolError(message)
-    record = reporting_v3._canonical_json(  # ruff: ignore[private-member-access] - canonical schema record owner.
-        reporting_v3.item_json(item)
-    ).encode("ascii")
+
+    def encode(record: dict[str, object]) -> bytes:
+        return reporting_v3._canonical_json(record).encode("ascii")  # ruff: ignore[private-member-access] - canonical schema record owner.
+
+    record = encode(reporting_v3.item_json(item))
+    budget = ledger.report_budget
+    if isinstance(budget, ReportBudget) and not budget.fits(
+        spool, item.index, len(record)
+    ):
+        # Later inputs keep their reserved room; this one keeps its outcome.
+        record = encode(minimal_record(item))
     spool.append(record)
     item.transformation = None
     item.warnings.clear()

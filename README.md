@@ -77,9 +77,17 @@ terminal-unsafe path text. Each line names where the copy is, or would be:
 `created: source.eml -> /path/to/source.mime-pruned.eml`; a dry run shows the
 planned destination.
 
-Every report reaches its channel exactly once, in the requested format and mode. An
-interruption before delivery reports the interruption in that same format; one
-during delivery lets the document finish and then exits with status 130.
+Every report reaches its channel exactly once, in the requested format and mode, as
+private, sealed output that is delivered only after everything that could fail has
+succeeded; if staging fails after a visible publication, the reserved status records
+produce a complete recovery report in the same byte format. An interruption before
+delivery reports the interruption in that same format and exits 130. A signal during
+delivery leaves the document whole and unchanged (its `exit_code` is the processing
+outcome), then exits 130 with an `interrupted by SIGINT after the report was delivered`
+diagnostic. Delivery never waits forever for a reader that stopped draining: after the
+first signal the process allows 10 seconds without output progress, and a second
+signal ends it at once, both with status 130 and possibly a partial document, which is
+never followed by another. Without a signal there is no deadline, so a pager works.
 
 ```sh
 remove-eml-attachments --output-format=json -- "one.eml" "two.eml"
@@ -90,7 +98,7 @@ JSON is one schema-3 report document. Its checked-in contract is
 [`schema/report.schema.json`](schema/report.schema.json); it reports every input in
 order, source-bound retained payload hashes, removal reasons, candidate digest,
 verification evidence, and truthful publication receipts. It never reports body
-contents. During processing, terminal evidence is streamed through bounded private
+contents. Error messages are capped at 2,048 characters. During processing, terminal evidence is streamed through bounded private
 spools; if normal report persistence fails after a visible publication, the command
 returns a complete status-preserving recovery report rather than claiming success.
 That evidence is measured before any copy is written: an input whose report record

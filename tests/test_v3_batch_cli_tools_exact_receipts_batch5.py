@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import batch, batch_terminal, cli, processing
+from eml_attachment_remover import (
+    batch,
+    batch_terminal,
+    cli,
+    exit_status,
+    processing,
+    report_session,
+)
 from eml_attachment_remover.batch import BatchOptions
 from eml_attachment_remover.domain import (
     AppError,
@@ -211,14 +218,14 @@ def test_cli_interruption_detection_accepts_each_independent_terminal_evidence()
     """Cancellation and post-edge interruption each force the interruption outcome."""
     ledger, item, _later = _ledger()
     item.finish(ItemStatus.CANCELLED, AppError(ExitCode.INTERRUPTED, "cancelled"))
-    assert cli._is_interrupted(ledger)  # ruff: ignore[private-member-access] - cancelled ledger receipt.
+    assert exit_status._is_interrupted(ledger)  # ruff: ignore[private-member-access] - cancelled ledger receipt.
 
     ledger, item, _later = _ledger()
     item.finish(
         ItemStatus.PUBLISHED_WITH_ERROR,
         AppError(ExitCode.INTERRUPTED, "interrupted after publication"),
     )
-    assert cli._is_interrupted(ledger)  # ruff: ignore[private-member-access] - post-edge interruption receipt.
+    assert exit_status._is_interrupted(ledger)  # ruff: ignore[private-member-access] - post-edge interruption receipt.
 
 
 def test_cli_selects_exact_modes_and_channels_and_main_preserves_argv(
@@ -234,17 +241,17 @@ def test_cli_selects_exact_modes_and_channels_and_main_preserves_argv(
         modes.append(mode)
         return document
 
-    monkeypatch.setattr(cli, "report", report)
+    monkeypatch.setattr(report_session, "report", report)
     monkeypatch.setattr(
-        cli, "write_json", lambda value: channels.append(("json", value))
+        report_session, "write_json", lambda value: channels.append(("json", value))
     )
     monkeypatch.setattr(
-        cli, "write_human", lambda value: channels.append(("human", value))
+        report_session, "write_human", lambda value: channels.append(("human", value))
     )
-    cli._write_selected(  # ruff: ignore[private-member-access] - apply JSON selection.
+    report_session._write_selected(  # ruff: ignore[private-member-access] - apply JSON selection.
         "json", ledger, "apply", 7
     )
-    cli._write_selected(  # ruff: ignore[private-member-access] - dry human selection.
+    report_session._write_selected(  # ruff: ignore[private-member-access] - dry human selection.
         "human", ledger, "dry-run", 0
     )
     assert modes == ["apply", "dry-run"]

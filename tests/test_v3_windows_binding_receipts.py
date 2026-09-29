@@ -58,6 +58,7 @@ class ReceiptApi:
         )
     )
     final: str | None = "\\\\?\\C:\\Inbox\\source.eml"
+    final_handles: list[int] = field(default_factory=list)
     publish_error: OSError | None = None
     open_directories: list[tuple[str, int | None]] = field(default_factory=list)
     children: list[tuple[int, str, bool]] = field(default_factory=list)
@@ -96,7 +97,8 @@ class ReceiptApi:
         return 202 if descriptor == 41 else 303
 
     def final_path(self, handle: int) -> str | None:
-        assert handle == 202
+        assert handle in {101, 202}
+        self.final_handles.append(handle)
         return self.final
 
     def create_child(self, parent: int, name: str) -> int:
@@ -188,6 +190,7 @@ def test_destination_binding_and_reopen_preserve_address_identity_and_closure(
         FileIdentity(7, 101, "directory", 809),
     )
     assert api.open_directories == [("C:\\Inbox", None)]
+    assert api.final_handles == [101]
     assert api.closed == [101]
 
     opened = native_windows_binding.open_bound_destination(bound)
@@ -211,6 +214,25 @@ def test_destination_binding_and_reopen_preserve_address_identity_and_closure(
     assert api.closed == [101, 101]
     native_windows_binding.close_bound_directory(opened)
     assert api.closed == [101, 101, 101]
+
+
+def test_binding_refuses_an_unresolvable_or_unreportable_parent_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The parent handle is closed and nothing is bound when its address is unusable."""
+    api = _install(monkeypatch)
+    api.final = None
+    with pytest.raises(AppError) as unresolved:
+        native_windows_binding.bind_destination("r.eml", "C:\\Inbox\\out.eml")
+    assert (
+        unresolved.value.message
+        == "could not resolve the destination directory address"
+    )
+    api.final = "\\\\?\\C:\\" + "d" * 5000
+    with pytest.raises(AppError) as too_long:
+        native_windows_binding.bind_destination("r.eml", "C:\\Inbox\\out.eml")
+    assert too_long.value.message == "destination address exceeds the reportable limit"
+    assert api.closed == [101, 101]
 
 
 def test_source_identity_and_snapshot_transfer_and_close_ownership(

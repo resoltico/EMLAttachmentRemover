@@ -18,7 +18,7 @@ from .domain import (
     PathValue,
     SourceSnapshot,
 )
-from .native_values import MAX_RAW_BYTES, path_value
+from .native_values import MAX_RAW_BYTES, path_value, require_reportable_destination
 from .native_windows import WindowsApi
 
 if TYPE_CHECKING:
@@ -87,6 +87,10 @@ def _bind_destination(request: str, expanded: str) -> BoundDestination:
             raise AppError(
                 ExitCode.WRITE_ERROR, "destination parent is not a directory"
             )
+        resolved = _api().final_path(handle)
+        require_reportable_destination(
+            None if resolved is None else path_value(resolved), basename
+        )
         return BoundDestination(
             path_value(request), path_value(parent), basename, _identity(handle)
         )

@@ -20,7 +20,7 @@ from eml_attachment_remover.domain import (
     LedgerItem,
 )
 from eml_attachment_remover.native_paths import path_value
-from eml_attachment_remover.report_delivery import StagedChannels
+from tests.report_session_support import open_session
 
 
 def _ledger() -> BatchLedger:
@@ -228,9 +228,7 @@ def test_cancelled_cli_uses_the_streamed_channels_when_a_spool_is_active(
         report_stream.archive_all(ledger)
         with ExitStack() as resources:
             state = cli._RunState(  # ruff: ignore[private-member-access] - cancellation state boundary.
-                ledger,
-                output_format,
-                staged=StagedChannels.open(resources, output_format),
+                ledger, open_session(resources, output_format)
             )
             assert (
                 cli._cancelled(  # ruff: ignore[private-member-access] - spooled cancellation renderer.

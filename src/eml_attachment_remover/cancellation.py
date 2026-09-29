@@ -5,12 +5,17 @@ from __future__ import annotations
 import os
 import signal
 import threading
+import time
 from contextlib import contextmanager
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+
+GRACE_SECONDS: Final = 10.0
+REPEAT_SIGNALS: Final = 2
+INTERRUPTED_STATUS: Final = 130
 
 
 @dataclass
@@ -82,29 +87,59 @@ def install_cancellation_handlers() -> Iterator[None]:
         yield
 
 
-@contextmanager
-def defer_cancellation() -> Iterator[None]:
-    """Hold cancellation until an enclosed report delivery has completed.
+@dataclass(slots=True)
+class DeliveryGuard:
+    """Absorb cancellation while a complete report is being written, boundedly.
 
-    A delivery interrupted halfway would leave a truncated document on its channel;
-    holding the signal lets the one selected document finish before it is honored.
+    Signals are recorded, never raised, so a document is not cut in half by an
+    exception. A first signal grants a grace of ``GRACE_SECONDS`` since the last
+    output progress; a second signal, or a stall through that grace, ends the
+    process at once with the interruption status.
+    """
+
+    clock: Callable[[], float] = time.monotonic
+    signals: list[int] = field(default_factory=list)
+    progress: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Start the grace clock at creation."""
+        self.progress = self.clock()
+
+    def record(self, number: int, _frame: object) -> None:
+        """Remember one delivered signal; the first one starts the grace clock."""
+        if not self.signals:
+            self.progress = self.clock()
+        self.signals.append(number)
+
+    def note_progress(self) -> None:
+        """Restart the grace clock after output was accepted by its channel."""
+        self.progress = self.clock()
+
+    def check(self) -> None:
+        """End the process when cancellation can no longer wait for delivery."""
+        stalled = self.clock() - self.progress >= GRACE_SECONDS
+        if len(self.signals) >= REPEAT_SIGNALS or (self.signals and stalled):
+            hard_exit(INTERRUPTED_STATUS)
+
+
+def hard_exit(status: int) -> None:
+    """End the process immediately, without flushing a channel that is stalled."""
+    os._exit(status)
+
+
+@contextmanager
+def delivery_guard(
+    clock: Callable[[], float] = time.monotonic,
+) -> Iterator[DeliveryGuard]:
+    """Hold cancellation while one report is delivered, under a bounded grace.
 
     Yields:
-        Control while the first delivered signal is recorded instead of raised.
-
-    Raises:
-        CancellationSignal: After the block, for the first signal it deferred.
+        The guard whose ``signals`` tell the caller what arrived meanwhile.
 
     """
-    deferred: list[int] = []
-
-    def record(number: int, _frame: object) -> None:
-        deferred.append(number)
-
-    with _handling(record):
-        yield
-    if deferred:
-        raise CancellationSignal(deferred[0], cancellation_name(deferred[0]))
+    guard = DeliveryGuard(clock)
+    with _handling(guard.record):
+        yield guard
 
 
 def _watched_signals() -> tuple[int, ...]:

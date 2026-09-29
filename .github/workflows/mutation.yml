@@ -54,6 +54,7 @@ jobs:
           path: |
             mutants/mutmut-cicd-stats.json
             build/mutmut-results.txt
+            build/mutation-diagnostics/
             build/coverage.xml
             build/test-results-project-ci.xml
             tools/equivalent_mutants.json

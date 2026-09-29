@@ -8,12 +8,14 @@ import sys
 import tempfile
 import time
 import tomllib
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
+    from contextlib import AbstractContextManager
 
     type StepRunner = Callable[[Sequence[str], Mapping[str, str], float], None]
 
@@ -35,6 +37,7 @@ TEMPORARY_PREFIX: Final = "eml-attachment-remover-ci-"
 SYNC: Final = f"uv sync --locked --group dev --python {MATRIX_PYTHON}"
 SHELL_CHECK: Final = "test -x /bin/sh"
 QUALITY: Final = "uv run python tools/tasks.py quality"
+QUALITY_NATIVE: Final = "uv run python tools/tasks.py quality --native"
 CANONICAL_SYNC: Final = f"uv sync --locked --group dev --python {CANONICAL_PYTHON}"
 TAG_CHECK: Final = 'uv run python tools/check_release_tag.py "$RELEASE_TAG"'
 BUILD: Final = "uv run python tools/qualify_release.py --output-directory release-dist"
@@ -94,6 +97,7 @@ class Step:
     command: tuple[str, ...]
     environment: Mapping[str, str]
     timeout_seconds: float
+    leased: bool = False
 
 
 def project_tag(project_root: Path) -> str:
@@ -183,7 +187,8 @@ def _linux_mutation(project_root: Path, root: Path, workers: str) -> list[Step]:
     )
     return [
         Step(MUTATION, build, {}, SHORT_TIMEOUT_SECONDS),
-        Step(MUTATION, run, {}, MUTATION_TIMEOUT_SECONDS),
+        # The evidence directory is shared with any other campaign in this checkout.
+        Step(MUTATION, run, {}, MUTATION_TIMEOUT_SECONDS, leased=True),
     ]
 
 
@@ -212,13 +217,15 @@ def plan(
     shell = ((SHELL_CHECK, SHORT_TIMEOUT_SECONDS),) if posix else ()
     steps: list[Step] = []
     for python in WORKFLOW_PYTHONS:
+        # CI runs the portable static checks once, on the canonical interpreter's lane.
+        quality = QUALITY if python == CANONICAL_PYTHON else QUALITY_NATIVE
         steps += _lane(
             root,
             python,
             values,
             (SYNC, SHORT_TIMEOUT_SECONDS),
             *shell,
-            (QUALITY, LANE_TIMEOUT_SECONDS),
+            (quality, LANE_TIMEOUT_SECONDS),
         )
     steps += [
         Step(
@@ -258,12 +265,14 @@ def run(
     steps: tuple[Step, ...],
     run_step: StepRunner,
     clock: Callable[[], float] = time.monotonic,
+    lease: Callable[[], AbstractContextManager[None]] = nullcontext,
 ) -> None:
     """Run each step in order, stopping at the first failure."""
     for number, step in enumerate(steps, start=1):
         print(f"==> [{number}/{len(steps)}] {shlex.join(step.command)}", flush=True)
         started = clock()
-        run_step(step.command, step.environment, step.timeout_seconds)
+        with lease() if step.leased else nullcontext():
+            run_step(step.command, step.environment, step.timeout_seconds)
         print(f"<== {clock() - started:.1f}s", flush=True)
     print(CI_ONLY_NOTICE, flush=True)
 
@@ -274,6 +283,7 @@ def run_local_ci(
     *,
     release_tag: str | None,
     workers: str,
+    lease: Callable[[], AbstractContextManager[None]] = nullcontext,
 ) -> None:
     """Run the full local plan with private, always-removed environments."""
     tag = project_tag(project_root) if release_tag is None else release_tag
@@ -292,4 +302,4 @@ def run_local_ci(
             release_tag=tag,
             workers=workers,
         )
-        run(steps, run_step)
+        run(steps, run_step, lease=lease)

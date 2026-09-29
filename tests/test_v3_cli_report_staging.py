@@ -3,27 +3,28 @@
 from __future__ import annotations
 
 import json
-import signal
 import sys
 import tempfile
 from contextlib import ExitStack
-from io import BytesIO, StringIO
+from io import BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import cast, override
 
 import pytest
 
 from eml_attachment_remover import (
     cli,
     report_delivery,
+    report_session,
     report_spool,
     report_stream,
     staged_output,
 )
-from eml_attachment_remover.cancellation import CancellationSignal
+from eml_attachment_remover.cancellation import CancellationSignal, DeliveryGuard
 from eml_attachment_remover.domain import AppError, BatchLedger, ExitCode, ItemStatus
 from eml_attachment_remover.native_paths import path_value
+from tests.report_session_support import open_session
 
 
 def _failed() -> BatchLedger:
@@ -89,37 +90,34 @@ def test_unknown_channel_encoding_stages_utf8() -> None:
     assert report_delivery._encoding(SimpleNamespace(encoding="cp1252")) == "cp1252"  # ruff: ignore[private-member-access] - real codec.
 
 
-def test_copy_chunks_are_bounded() -> None:
-    """Large staged reports are replayed in bounded reads."""
+def test_copy_is_chunked_flushed_and_stamped() -> None:
+    """Large staged reports are replayed in bounded, flushed, progress-stamped reads."""
     reads: list[int | None] = []
 
-    class Source:
+    class Source(BytesIO):
         """A two-read source that records the bounded read request."""
 
-        @staticmethod
-        def read(size: int | None) -> str:
+        @override
+        def read(self, size: int | None = -1) -> bytes:
             reads.append(size)
-            return "x" if len(reads) == 1 else ""
+            return b"x" if len(reads) == 1 else b""
 
-    destination = StringIO()
-    report_delivery._copy_text(Source(), destination)  # ruff: ignore[private-member-access] - bounded replay contract.
-    assert reads == [1024 * 1024, 1024 * 1024]
-    assert destination.getvalue() == "x"
+    class Sink(BytesIO):
+        """A byte sink that records each flush."""
 
-    byte_reads: list[int | None] = []
+        flushes = 0
 
-    class ByteSource:
-        """Binary counterpart of the bounded report source."""
+        @override
+        def flush(self) -> None:
+            type(self).flushes += 1
 
-        @staticmethod
-        def read(size: int | None) -> bytes:
-            byte_reads.append(size)
-            return b"x" if len(byte_reads) == 1 else b""
-
-    byte_destination = BytesIO()
-    report_delivery._copy_bytes(ByteSource(), byte_destination)  # ruff: ignore[private-member-access] - bounded binary replay contract.
-    assert byte_reads == [1024 * 1024, 1024 * 1024]
-    assert byte_destination.getvalue() == b"x"
+    guard = DeliveryGuard()
+    guard.progress = 0.0
+    destination = Sink()
+    report_delivery._copy_chunks(Source(), destination, guard)  # ruff: ignore[private-member-access] - bounded replay contract.
+    assert reads == [report_delivery.CHUNK_SIZE] * 2
+    assert (destination.getvalue(), Sink.flushes) == (b"x", 1)
+    assert guard.progress > 0.0
 
 
 @pytest.mark.parametrize(
@@ -152,6 +150,10 @@ def test_delivery_replays_one_staged_report_on_its_channel(
         def write(value: str) -> int:
             return text.write(value)
 
+        @staticmethod
+        def flush() -> None:
+            return None
+
     def render(*_args: object) -> None:
         if isinstance(written, bytes):
             sys.stdout.buffer.write(written)
@@ -160,16 +162,15 @@ def test_delivery_replays_one_staged_report_on_its_channel(
 
     ledger = _spooled()
     monkeypatch.setattr(sys, "stdout", Output())
-    monkeypatch.setattr(cli, "_write_selected", render)
+    monkeypatch.setattr(report_session, "_write_selected", render)
     with ExitStack() as resources:
-        staged = report_delivery.StagedChannels.open(resources, output_format)
-        staged.out.write("stale partial render")
-        state = cli._RunState(ledger, output_format, staged=staged)  # ruff: ignore[private-member-access] - delivery state.
-        assert cli._write_then_close(state, 4) == 4  # ruff: ignore[private-member-access] - delivery contract.
+        session = open_session(resources, output_format)
+        session.channels.out.write("stale partial render")
+        assert session.publish(ledger, 4) == 4
     # Byte channels reach the binary buffer only; human text reaches the text stream.
     received = (captured.getvalue(), text.getvalue().encode())
     assert received == ((expected, b"") if binary else (b"", expected))
-    assert state.delivery_started
+    assert session.delivery_started
     assert ledger.report_spool is None
 
 
@@ -179,7 +180,7 @@ def test_staging_failure_recovers_the_reserved_status_report(
 ) -> None:
     """A full disk during staging still delivers the outcome of published items."""
     ledger = _spooled()
-    original = cli._write_selected  # ruff: ignore[private-member-access] - real renderer.
+    original = report_session._write_selected  # ruff: ignore[private-member-access] - real renderer.
     attempts: list[bool] = []
 
     def fail_once(*args: object) -> None:
@@ -189,16 +190,11 @@ def test_staging_failure_recovers_the_reserved_status_report(
             raise OSError(message)
         original(*args)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(cli, "_write_selected", fail_once)
+    monkeypatch.setattr(report_session, "_write_selected", fail_once)
     try:
         with ExitStack() as resources:
-            state = cli._RunState(  # ruff: ignore[private-member-access] - recovery state.
-                ledger,
-                "json",
-                mode,
-                report_delivery.StagedChannels.open(resources, "json"),
-            )
-            status = cli._write_then_close(state, 5)  # ruff: ignore[private-member-access] - staging recovery.
+            session = open_session(resources, "json", mode)
+            status = session.publish(ledger, 5)
         document = json.loads(capsys.readouterr().out)
     finally:
         report_stream.close(ledger)
@@ -207,43 +203,7 @@ def test_staging_failure_recovers_the_reserved_status_report(
     assert document["mode"] == mode
     assert document["batch_error"]["message"] == "terminal report spool failed"
     assert [item["status"] for item in document["items"]] == ["failed"]
-    assert state.delivery_started
-
-
-def test_unspooled_ledgers_are_delivered_directly(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Without a spool there is nothing to stage, so the report goes straight out."""
-    state = cli._RunState(_failed(), "human")  # ruff: ignore[private-member-access] - direct delivery.
-    assert cli._write_then_close(state, 5) == 5  # ruff: ignore[private-member-access] - direct delivery.
-    assert capsys.readouterr().out == "failed: source.eml\n"
-    assert state.delivery_started
-
-
-def test_cancellation_during_delivery_is_honored_after_the_one_document(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A signal mid-delivery never truncates the report or appends a second one."""
-    ledger = _spooled()
-    deliveries: list[str] = []
-
-    def deliver(_staged: object, output_format: str) -> None:
-        deliveries.append(output_format)
-        signal.raise_signal(signal.SIGINT)
-        sys.stdout.write("{}\n")
-
-    monkeypatch.setattr(cli, "_write_selected", lambda *_args: None)
-    monkeypatch.setattr(report_delivery.StagedChannels, "deliver", deliver)
-    with ExitStack() as resources:
-        staged = report_delivery.StagedChannels.open(resources, "json")
-        state = cli._RunState(ledger, "json", staged=staged)  # ruff: ignore[private-member-access] - delivery state.
-        with pytest.raises(CancellationSignal):
-            cli._write_then_close(state, 0)  # ruff: ignore[private-member-access] - deferred delivery.
-        assert cli._cancelled(state, CancellationSignal(2, "SIGINT")) == 130  # ruff: ignore[private-member-access] - post-delivery cancellation.
-    captured = capsys.readouterr()
-    assert deliveries == ["json"]
-    assert captured.out == "{}\n"
-    assert captured.err.endswith("error[INTERRUPTED:130]: interrupted by SIGINT\n")
+    assert session.delivery_started
 
 
 def test_released_diagnoses_cleanup_failure_without_rewriting_status(
@@ -300,8 +260,9 @@ def test_cancellation_keeps_an_interruption_recorded_during_processing(
     """A later report-phase signal never rewrites where the batch was interrupted."""
     ledger = _failed()
     ledger.record_interruption("SIGTERM", "processing")
-    state = cli._RunState(ledger, "json")  # ruff: ignore[private-member-access] - earlier interruption.
-    assert cli._cancelled(state, CancellationSignal(2, "SIGINT")) == 130  # ruff: ignore[private-member-access] - report-phase signal.
+    with ExitStack() as resources:
+        state = cli._RunState(ledger, open_session(resources, "json"))  # ruff: ignore[private-member-access] - earlier interruption.
+        assert cli._cancelled(state, CancellationSignal(2, "SIGINT")) == 130  # ruff: ignore[private-member-access] - report-phase signal.
     assert json.loads(capsys.readouterr().out)["interruption"] == {
         "signal": "SIGTERM",
         "reason": "interrupted by SIGTERM",
@@ -325,13 +286,13 @@ def test_run_retains_the_request_and_stages_for_its_channel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The retained mode and format decide staging before any item can publish."""
-    monkeypatch.setattr(sys, "stdout", SimpleNamespace(encoding="ascii"))
-    monkeypatch.setattr(sys, "stderr", SimpleNamespace(encoding="ascii"))
+    for name in ("stdout", "stderr"):
+        monkeypatch.setattr(sys, name, TextIOWrapper(BytesIO(), encoding="ascii"))
     monkeypatch.setattr(cli, "execute", lambda *_args: _failed())
-    monkeypatch.setattr(cli, "_write_selected", lambda *_args: None)
+    monkeypatch.setattr(report_session, "_write_selected", lambda *_args: None)
     state = cli._RunState()  # ruff: ignore[private-member-access] - retained request.
     with ExitStack() as resources:
         cli._run([*arguments, "source.eml"], state, resources)  # ruff: ignore[private-member-access] - request retention.
-        assert state.staged is not None
-        assert state.staged.out.encoding == staged_encoding
-    assert state.mode == mode
+        assert state.session is not None
+        assert state.session.channels.out.encoding == staged_encoding
+    assert state.session.mode == mode

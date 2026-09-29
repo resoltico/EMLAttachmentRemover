@@ -12,6 +12,7 @@ import pytest
 from eml_attachment_remover import (
     cli,
     native_literal_address,
+    report_session,
     report_spool,
     report_stream,
     reporting_v3,
@@ -25,7 +26,7 @@ from eml_attachment_remover.domain import (
     PathValue,
 )
 from eml_attachment_remover.native_paths import path_value
-from eml_attachment_remover.report_delivery import StagedChannels
+from tests.report_session_support import open_session
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -321,13 +322,13 @@ def test_recovery_not_run_reason_and_close_clear_both_spool_owners() -> None:
 def test_cli_preserves_every_direct_and_spooled_routing_argument(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Every CLI report channel receives its real ledger, mode, and exit code."""
+    """Every report channel receives its real ledger, mode, and exit code."""
     calls: list[tuple[object, ...]] = []
     direct = _failed()
     monkeypatch.setattr(
-        cli, "write_paths0", lambda ledger: calls.append(("paths", ledger))
+        report_session, "write_paths0", lambda ledger: calls.append(("paths", ledger))
     )
-    cli._write_selected("paths0", direct, "apply", 5)  # ruff: ignore[private-member-access] - direct paths receipt.
+    report_session._write_selected("paths0", direct, "apply", 5)  # ruff: ignore[private-member-access] - direct paths receipt.
     assert calls == [("paths", direct)]
 
     spooled = _failed()
@@ -337,7 +338,7 @@ def test_cli_preserves_every_direct_and_spooled_routing_argument(
         "write_json",
         lambda ledger, mode, status: calls.append(("json", ledger, mode, status)),
     )
-    cli._write_selected("json", spooled, "dry-run", 7)  # ruff: ignore[private-member-access] - spooled mode receipt.
+    report_session._write_selected("json", spooled, "dry-run", 7)  # ruff: ignore[private-member-access] - spooled mode receipt.
     assert calls[-1] == ("json", spooled, "dry-run", 7)
 
     monkeypatch.setattr(
@@ -350,17 +351,17 @@ def test_cli_preserves_every_direct_and_spooled_routing_argument(
     )
     with ExitStack() as resources:
         state = cli._RunState(  # ruff: ignore[private-member-access] - cancellation routing state.
-            spooled, staged=StagedChannels.open(resources, "human")
+            spooled, open_session(resources, "human")
         )
         assert cli._cancelled(state, CancellationSignal(2, "SIGINT")) == 130  # ruff: ignore[private-member-access] - spooled human cancellation.
     assert calls[-2:] == [("human", spooled), ("close", spooled)]
 
 
-def test_spooled_cleanup_failure_emits_no_contradictory_success_document(
+def test_spooled_cleanup_failure_still_delivers_the_prepared_report(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Terminal cleanup must complete before the staged JSON can reach stdout."""
+    """Cleanup cannot consume the only outcome: it goes out, then is diagnosed."""
     ledger = _failed()
     report_stream.start(ledger)
     report_stream.archive_all(ledger)
@@ -372,15 +373,14 @@ def test_spooled_cleanup_failure_emits_no_contradictory_success_document(
 
     monkeypatch.setattr(report_stream, "close", fail_close)
     with ExitStack() as resources:
-        state = cli._RunState(  # ruff: ignore[private-member-access] - cleanup-before-output state.
-            ledger, "json", staged=StagedChannels.open(resources, "json")
-        )
-        with pytest.raises(report_spool.ReportSpoolError, match="synthetic cleanup"):
-            cli._write_then_close(state, 0)  # ruff: ignore[private-member-access] - cleanup-before-output contract.
-    assert not state.delivery_started
+        session = open_session(resources, "json")
+        assert session.publish(ledger, 5) == 5
+    assert session.delivery_started
     captured = capsys.readouterr()
-    assert not captured.out
-    assert not captured.err
+    assert json.loads(captured.out)["exit_code"] == 5
+    assert captured.err.endswith(
+        "error[INTERNAL_ERROR:70]: report cleanup failed: synthetic cleanup failure\n"
+    )
     monkeypatch.setattr(report_stream, "close", original_close)
     original_close(ledger)
 

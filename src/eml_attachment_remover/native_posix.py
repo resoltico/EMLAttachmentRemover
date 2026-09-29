@@ -34,7 +34,7 @@ from .domain import (
     PathValue,
     SourceSnapshot,
 )
-from .native_values import MAX_RAW_BYTES, path_value
+from .native_values import MAX_RAW_BYTES, path_value, require_reportable_destination
 
 _CWD_FLAGS: Final = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
@@ -106,6 +106,7 @@ def _bind_destination(request: str, expanded: str) -> BoundDestination:
             raise AppError(
                 ExitCode.WRITE_ERROR, "destination parent is not a directory"
             )
+        require_reportable_destination(_final_address(descriptor), basename)
         return BoundDestination(
             path_value(request), path_value(parent), basename, _identity(metadata)
         )

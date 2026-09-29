@@ -16,6 +16,10 @@ from .native_windows import WindowsApi
 
 MAX_PATH_BYTES: Final = 32 * 1024
 MAX_RAW_BYTES: Final = 128 * 1024 * 1024
+# Longest published final address a receipt may carry, in native units (bytes on
+# POSIX, UTF-16 units on Windows). Report admission reserves exactly this much.
+MAX_ADDRESS_UNITS: Final = 4096
+UTF16_UNIT_BYTES: Final = 2
 _WINDOWS_RESERVED: Final = {"CON", "PRN", "AUX", "NUL"} | {
     f"{prefix}{number}" for prefix in ("COM", "LPT") for number in range(1, 10)
 }
@@ -51,13 +55,13 @@ def path_value(value: str) -> PathValue:
     if os.name == "nt":
         return PathValue(
             value,
-            _display(value),
+            safe_display(value),
             None,
             _base64_text(_utf16le(value)),
         )
     return PathValue(
         value,
-        _display(value),
+        safe_display(value),
         _base64_text(os.fsencode(value)),
     )
 
@@ -105,23 +109,85 @@ def report_path_value(value: object) -> PathValue | None:
     )
 
 
-def planned_display(destination: Mapping[str, object]) -> str:
-    """Join a planned destination's parent display and exact native basename.
+def _native_text(value: object) -> str:
+    """Rebuild a serialized path's native text from its exact evidence.
 
     Returns:
-        Display text; undecodable POSIX bytes stay escaped by the channel writer.
+        The decoded native text, or an empty string when the record has no path.
 
     """
-    parent = destination.get("parent")
-    folder = str(parent.get("display")) if isinstance(parent, Mapping) else ""
-    posix = destination.get("basename_base64")
+    if not isinstance(value, Mapping):
+        return ""
+    posix = value.get("native_base64")
     if isinstance(posix, str):
-        name, separator = os.fsdecode(base64.b64decode(posix)), "/"
+        return os.fsdecode(base64.b64decode(posix))
+    wide = value.get("native_utf16le_base64")
+    if isinstance(wide, str):
+        return base64.b64decode(wide).decode("utf-16-le", "surrogatepass")
+    text = value.get("text")
+    # A display is already escaped and escaping is idempotent: a safe last resort.
+    return text if isinstance(text, str) else str(value.get("display") or "")
+
+
+def address_units(address: PathValue) -> int:
+    """Measure a resolved address in its backend's own unit.
+
+    Returns:
+        Bytes for a POSIX address, UTF-16 code units for a Windows address.
+
+    """
+    if address.native_base64 is not None:
+        return len(base64.b64decode(address.native_base64))
+    wide = base64.b64decode(str(address.native_utf16le_base64))
+    return len(wide) // UTF16_UNIT_BYTES
+
+
+def require_reportable_destination(
+    parent_address: PathValue | None, basename: bytes | str
+) -> None:
+    """Refuse, before anything is published, an address the report cannot carry.
+
+    The published file's final address is its resolved parent plus one separator and
+    its basename. If the parent cannot be resolved, or the sum exceeds the address
+    bound, the receipt could only fail after the copy became visible.
+
+    Raises:
+        AppError: If the destination's future final address cannot be reported.
+
+    """
+    if parent_address is None:
+        message = "could not resolve the destination directory address"
+        raise AppError(ExitCode.WRITE_ERROR, message)
+    name_units = (
+        len(basename)
+        if isinstance(basename, bytes)
+        else len(basename.encode("utf-16-le", "surrogatepass")) // UTF16_UNIT_BYTES
+    )
+    if address_units(parent_address) + 1 + name_units > MAX_ADDRESS_UNITS:
+        message = "destination address exceeds the reportable limit"
+        raise AppError(ExitCode.WRITE_ERROR, message)
+
+
+def planned_display(destination: Mapping[str, object]) -> str:
+    """Join a planned destination in its backend's native grammar, then escape once.
+
+    Presentation text is never joined with raw path text: the folder and basename
+    are rebuilt from their native evidence, and only the whole is made displayable.
+
+    Returns:
+        A single-line, control-free display of the planned path.
+
+    """
+    folder = _native_text(destination.get("parent"))
+    posix = destination.get("basename_base64")
+    separators: tuple[str, ...]
+    if isinstance(posix, str):
+        name, separators = os.fsdecode(base64.b64decode(posix)), ("/",)
     else:
         wide = base64.b64decode(str(destination.get("basename_utf16le_base64")))
-        name, separator = wide.decode("utf-16-le", "surrogatepass"), "\\"
-    joined = folder if folder.endswith(("/", "\\")) else folder + separator
-    return joined + name
+        name, separators = wide.decode("utf-16-le", "surrogatepass"), ("\\", "/")
+    joined = folder if folder.endswith(separators) else folder + separators[0]
+    return safe_display(joined + name)
 
 
 def validate_argument(value: str) -> str:
@@ -224,7 +290,14 @@ def require_native_backend() -> None:
         raise AppError(ExitCode.WRITE_ERROR, message) from exc
 
 
-def _display(value: str) -> str:
+def safe_display(value: str) -> str:
+    """Escape every character a terminal or log line must not interpret.
+
+    Returns:
+        The text with control, format, surrogate, and line-separator characters
+        replaced by four-digit Unicode escapes.
+
+    """
     return "".join(
         character
         if unicodedata.category(character) not in {"Cc", "Cf", "Cs", "Zl", "Zp"}

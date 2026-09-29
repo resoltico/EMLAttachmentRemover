@@ -21,8 +21,39 @@ Notable changes to this project are documented in this file. The format is based
   work; `--allow-stale-manifest` and `check_mutation_results.py --source-sha256`
   document the rebind flow. `--workers` makes Mutmut parallelism benchmarkable.
 
+- A mutation campaign takes an exclusive lease on its checkout
+  (`build/mutation.lock`); a second concurrent run fails at once and names the
+  holder. Every campaign, successful or not, leaves `build/mutation-diagnostics/`
+  (each non-killed mutant with its status, mapped tests, and a bounded patch), which
+  the mutation workflow uploads.
+- `tasks.py quality --native` runs only the host-dependent checks (repository audit
+  and coverage); CI runs the platform-independent static checks on one lane instead
+  of six, with every required check name unchanged.
+
 ### Fixed
 
+- A failure while flushing, rewinding, or cleaning up after a staged report can no
+  longer erase it: every step that can fail runs before the first byte reaches a
+  channel (falling back to the reserved status records), spool cleanup cannot
+  consume the report, and cleanup failures are diagnosed after delivery.
+- A reader that stops draining the report cannot make termination signals
+  ineffective: delivery runs under a progress-bounded grace (10 s after the first
+  signal) and a repeated signal ends the process at once, with status 130.
+- A signal during delivery leaves the complete document unchanged and exits 130;
+  the Finder launcher accepts exactly that disagreement between a complete report
+  and status 130 and keeps the run's receipts, instead of rejecting the report.
+- Report admission reserves a record's exact terminal form (a worst-case publication
+  receipt with the longest reportable final address, status, and error) and every
+  later input's minimal record before publication, instead of estimating; the
+  destination address bound (4,096 units) is checked when the destination is bound,
+  so a long absolute address can no longer turn a created copy into
+  `published_with_error`. Error messages are capped at 2,048 characters.
+- Dry-run destinations are built in the backend's native path grammar and escaped
+  once, so a newline or control character in a name no longer breaks the line and a
+  trailing backslash is an ordinary POSIX name character; all human diagnostics
+  are escaped the same way.
+- Recovery reports are staged and delivered as canonical ASCII bytes like every other
+  JSON report, whatever the terminal's text encoding.
 - `paths0` no longer omits a created copy whose name has no Unicode text; it emits
   the exact native path bytes, as documented.
 - Human output on a non-UTF-8 terminal no longer fails after creating a copy; text

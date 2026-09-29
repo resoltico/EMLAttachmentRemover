@@ -23,6 +23,17 @@ it, as CI does. Pass `--release-tag vX.Y.Z` before tagging. Windows lanes, Linux
 attestation, and GitHub publication remain CI-only. A test fails when a workflow
 `run:` step has no local counterpart, so the two cannot drift silently.
 
+A mutation campaign owns its checkout: `tasks.py mutation` (and the containerized
+campaign of `tasks.py ci`) takes an exclusive lease on `build/mutation.lock` and a
+second run in the same checkout fails at once, naming the holder's pid, instead of
+sharing `mutants/` and `build/`. Whatever the outcome, the campaign leaves
+`build/mutation-diagnostics/`: an `index.json` with every mutant that was not killed
+(status and mapped tests) and a bounded patch for each (at most 100 mutants, 16 KiB
+per patch, 25 tests each, with truncation recorded); the mutation workflow uploads
+it with the results. `quality --native` runs only what depends on the host (the
+repository audit and coverage); the platform-independent static checks run on the one
+lane CI marks `static`, and `tasks.py ci` mirrors that split.
+
 The component tasks are `uv run python tools/tasks.py check`, `coverage`, `quality`,
 `test`, `thorough`, `mutation`, `build`, and `release`. `quality` uses the
 deterministic Hypothesis profile; `thorough` is the larger randomized exploration
@@ -68,6 +79,27 @@ changes a verdict.
 “JUnit XML” names the conventional xUnit2 interchange format emitted by the
 lockfile-pinned pytest runner and sanitized by `tools/junit_report.py`. The project
 has no Java/JVM runtime; the report is an interchange artifact, not a Java dependency.
+
+## Report lifecycle evidence
+
+One report has one owner (`report_session.py`): render into private staging, seal it
+(flush, rewind, and read the first chunk of each file), release the spools, deliver
+once, then diagnose. Everything that can fail runs before the first external byte, so
+a failed flush, rewind, first read, or reset falls back to the reserved status records
+(`test_report_session.py` injects each), recovery is staged and delivered as the same
+canonical ASCII bytes whatever the terminal codec, and a cleanup failure is diagnosed
+after the report instead of replacing it. Delivery runs on a helper thread watched by a
+`DeliveryGuard`: a signal is recorded, the first one grants a 10-second grace since
+the last accepted output, a second signal or an expired grace calls `os._exit(130)`.
+`test_delivery_process.py` proves this against a real pipe whose reader never reads.
+A signal that arrives during delivery leaves the whole document unchanged and exits
+130; the Finder launcher accepts exactly that disagreement.
+
+Report admission (`report_budget.py`) serializes each item with a worst-case terminal
+form (longest reportable address, status, phase, error) and reserves every later
+input's minimal record; `test_report_budget.py` checks the reservation against
+generated real terminal records and the capacity arithmetic to the byte. The
+destination address bound is enforced at destination binding, before any copy.
 
 ## MIME and raw-wire evidence
 
