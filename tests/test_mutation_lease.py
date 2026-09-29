@@ -145,3 +145,53 @@ def test_a_missing_fcntl_module_leaves_the_lease_unsupported() -> None:
     finally:
         importlib.reload(mutation_lease)
     assert mutation_lease.fcntl is None or hasattr(mutation_lease.fcntl, "flock")
+
+
+class _FakeLocks:
+    """A stand-in for ``fcntl`` so the lease body runs on every platform."""
+
+    LOCK_EX = 2
+    LOCK_NB = 4
+
+    def __init__(self, *, busy: bool) -> None:
+        self.busy = busy
+        self.requests: list[int] = []
+
+    def flock(self, _descriptor: int, operation: int) -> None:
+        self.requests.append(operation)
+        if self.busy:
+            raise BlockingIOError
+
+
+def test_the_lease_takes_a_nonblocking_exclusive_lock_and_records_its_pid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lock request and the recorded holder, independent of the platform."""
+    locks = _FakeLocks(busy=False)
+    monkeypatch.setattr(mutation_lease, "fcntl", locks)
+    build = tmp_path / "build"
+    (build).mkdir()
+    (build / mutation_lease.LOCK_NAME).write_text("99999999999\n", encoding="ascii")
+    with mutation_lease.lease(build):
+        assert (build / mutation_lease.LOCK_NAME).read_text() == f"{os.getpid()}\n"
+    assert locks.requests == [_FakeLocks.LOCK_EX | _FakeLocks.LOCK_NB]
+
+
+@pytest.mark.parametrize(
+    ("recorded", "named"), [("4242\n", "4242"), ("", "unknown"), ("  \n", "unknown")]
+)
+def test_a_busy_lease_names_the_recorded_holder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: str, named: str
+) -> None:
+    """Contention fails at once with the holder's pid, or says it is unknown."""
+    monkeypatch.setattr(mutation_lease, "fcntl", _FakeLocks(busy=True))
+    build = tmp_path / "build"
+    build.mkdir()
+    (build / mutation_lease.LOCK_NAME).write_text(recorded, encoding="ascii")
+    with pytest.raises(RuntimeError) as raised, mutation_lease.lease(build):
+        pass
+    assert str(raised.value) == (
+        f"another mutation run owns this checkout (pid {named}); wait for it to "
+        "finish or use a separate checkout"
+    )
+    assert (build / mutation_lease.LOCK_NAME).read_text() == recorded
