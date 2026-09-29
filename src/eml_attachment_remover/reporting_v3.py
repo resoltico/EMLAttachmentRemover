@@ -8,7 +8,7 @@ from base64 import b64encode
 from encodings import utf_8, utf_16_le
 from typing import Final, TextIO
 
-from ._version import PROGRAM_VERSION
+from ._version import program_version
 from .domain import (
     PROGRAM_NAME,
     SCHEMA_VERSION,
@@ -20,13 +20,16 @@ from .domain import (
     LedgerItem,
     PathValue,
 )
-from .native_values import planned_display, report_path_bytes, safe_display
+from .native_values import (
+    has_surrogate,
+    planned_display,
+    report_path_bytes,
+    safe_display,
+)
 
 _UTF8: Final = utf_8.getregentry().name
 MAX_ERROR_MESSAGE: Final = 2048
 ELLIPSIS: Final = "\u2026"
-_SURROGATE_FIRST: Final = 0xD800
-_SURROGATE_LAST: Final = 0xDFFF
 
 
 def _base64(value: bytes) -> str:
@@ -63,9 +66,7 @@ def _path(value: PathValue | None) -> dict[str, str | None] | None:
     if value is None:
         return None
     text = value.text
-    if text is not None and any(
-        _SURROGATE_FIRST <= ord(character) <= _SURROGATE_LAST for character in text
-    ):
+    if text is not None and has_surrogate(text):
         text = None
     return {
         "text": text,
@@ -257,7 +258,7 @@ def report(ledger: BatchLedger, mode: str, exit_code: int) -> dict[str, object]:
         "schema_version": SCHEMA_VERSION,
         "scope": SCOPE,
         "program": PROGRAM_NAME,
-        "version": PROGRAM_VERSION,
+        "version": program_version(),
         "mode": mode,
         "ok": ledger.batch_error is None
         and all(item.status in accepted for item in ledger.items),

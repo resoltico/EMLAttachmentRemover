@@ -298,12 +298,35 @@ def safe_display(value: str) -> str:
         replaced by four-digit Unicode escapes.
 
     """
+    if value.isprintable():
+        # str.isprintable is false for every character of the Unicode categories Other
+        # (Cc, Cf, Cs, Co, Cn) and Separator (Zl, Zp, Zs but the ASCII space). The set
+        # escaped below is a subset of those, so printable text has nothing to escape
+        # and is returned as is, at C speed instead of one lookup per character.
+        return value
     return "".join(
         character
         if unicodedata.category(character) not in {"Cc", "Cf", "Cs", "Zl", "Zp"}
         else f"\\u{ord(character):04x}"
         for character in value
     )
+
+
+def has_surrogate(text: str) -> bool:
+    """Return whether text holds a code point in the surrogate range.
+
+    Strict UTF-8, which is what ``str.encode`` does without arguments, refuses exactly
+    the surrogate code points, so encoding is the whole test.
+
+    Returns:
+        Whether any character lies in U+D800 through U+DFFF.
+
+    """
+    try:
+        text.encode()
+    except UnicodeEncodeError:
+        return True
+    return False
 
 
 def _validate_posix(value: str) -> None:

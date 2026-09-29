@@ -8,7 +8,7 @@ from collections.abc import Iterator, Mapping
 from typing import Final, cast
 
 from . import reporting_v3
-from ._version import PROGRAM_VERSION
+from ._version import program_version
 from .domain import (
     PROGRAM_NAME,
     SCHEMA_VERSION,
@@ -329,7 +329,7 @@ def _top_level(ledger: BatchLedger, mode: str, exit_code: int) -> dict[str, obje
         "schema_version": SCHEMA_VERSION,
         "scope": SCOPE,
         "summary": _summary(ledger),
-        "version": PROGRAM_VERSION,
+        "version": program_version(),
     }
 
 

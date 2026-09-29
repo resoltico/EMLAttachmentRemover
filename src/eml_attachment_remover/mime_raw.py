@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -102,6 +103,17 @@ def _delimiter_lines(
 ) -> list[tuple[int, int, bool]]:
     """Find only whole-line multipart delimiters in the containing body range.
 
+    A delimiter must begin a wire line, so only positions where the delimiter prefix
+    occurs are examined, and only those that start a line. Every other line is
+    payload, and payload is the bulk of a message with attachments. The result is
+    the one a walk over every line would give: the range start begins a line, and a
+    later position begins one exactly when a line break (LF, or a CR that is not the
+    first half of CRLF) precedes it. The prefix begins with a hyphen, so a CR
+    immediately before it is never half of a CRLF. Matches are found without a
+    hand-kept cursor, so no fault can make the scan revisit a position and spin, and
+    matches that overlap an earlier one cannot be lost: they begin inside it, and no
+    line begins inside a prefix.
+
     Returns:
         Source spans and closing markers for recognized delimiter lines.
 
@@ -111,8 +123,10 @@ def _delimiter_lines(
     """
     prefix = b"--" + boundary
     result: list[tuple[int, int, bool]] = []
-    position = start
-    while position < end:
+    for occurrence in re.compile(re.escape(prefix)).finditer(raw, start, end):
+        position = occurrence.start()
+        if position != start and raw[position - 1] not in b"\r\n":
+            continue
         end_of_line = _advanced_delimiter_cursor(position, line_end(raw, position, end))
         if end_of_line <= position:
             raise AppError(
@@ -126,7 +140,6 @@ def _delimiter_lines(
                 tail = tail[2:]
             if not tail.strip(b" \t"):
                 result.append((position, end_of_line, closing))
-        position = end_of_line
     return result
 
 
