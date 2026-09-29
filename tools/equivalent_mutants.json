@@ -1,39 +1,7 @@
 {
     "schema_version": 1,
-    "source_sha256": "55e071aa:5ed6b92a:635afe26:e1a22726:0ef3862a:d744efee:4e70c0cc:daf13361",
+    "source_sha256": "3c84ced8:2f28a600:e5e2a8e2:5730be09:e4df5d4c:3f391a84:ea0894c9:c3cd4026",
     "equivalents": [
-        {
-            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_10",
-            "rationale": "The closed flag is only tested for truthiness before any true assignment, so False and None select the identical cleanup path."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_14",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_15",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_16",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_2",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_6",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_7",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__write_then_close__mutmut_8",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
         {
             "mutant": "eml_attachment_remover.destination_names.x_native_bytes__mutmut_9",
             "rationale": "Python codec lookup is case-insensitive, so UTF-16-LE and utf-16-le encode identical bytes."
@@ -51,15 +19,15 @@
             "rationale": "bytes.startswith treats an omitted start and None start identically as offset zero, which is the only reachable root-envelope start after the preceding guard."
         },
         {
-            "mutant": "eml_attachment_remover.mime_verifier_policy.x\u01c1_SourceAuthorization\u01c1_alternative__mutmut_31",
+            "mutant": "eml_attachment_remover.mime_verifier_policy.xǁ_SourceAuthorizationǁ_alternative__mutmut_31",
             "rationale": "Every permitted alternative branch either retains a supported body or raises before the return; False and None are equally false only in unreachable invalid state."
         },
         {
-            "mutant": "eml_attachment_remover.mime_verifier_policy.x\u01c1_SourceAuthorization\u01c1_alternative__mutmut_32",
+            "mutant": "eml_attachment_remover.mime_verifier_policy.xǁ_SourceAuthorizationǁ_alternative__mutmut_32",
             "rationale": "Every permitted alternative branch either retains a supported body or raises before the return; a True initializer is overwritten by the first permitted body result."
         },
         {
-            "mutant": "eml_attachment_remover.mime_verifier_policy.x\u01c1_SourceAuthorization\u01c1_mixed__mutmut_10",
+            "mutant": "eml_attachment_remover.mime_verifier_policy.xǁ_SourceAuthorizationǁ_mixed__mutmut_10",
             "rationale": "A mixed container without a retained body is rejected by the caller through truthiness; False and None produce the same rejection."
         },
         {
@@ -67,8 +35,16 @@
             "rationale": "Omitting an explicit trailing None passes the same final_address value to ExistingEntry."
         },
         {
-            "mutant": "eml_attachment_remover.native_values.x_planned_display__mutmut_33",
-            "rationale": "Python codec lookup is case-insensitive, so UTF-16-LE and utf-16-le decode identical text."
+            "mutant": "eml_attachment_remover.native_values.x__native_text__mutmut_19",
+            "rationale": "Python codec names are case-insensitive, so \"UTF-16-LE\" selects the identical codec."
+        },
+        {
+            "mutant": "eml_attachment_remover.native_values.x_planned_display__mutmut_26",
+            "rationale": "Python codec names are case-insensitive, so \"UTF-16-LE\" selects the identical codec."
+        },
+        {
+            "mutant": "eml_attachment_remover.native_values.x_require_reportable_destination__mutmut_12",
+            "rationale": "A UTF-16 encoding has an even byte length, so true division yields the same number compared against the address limit as floor division."
         },
         {
             "mutant": "eml_attachment_remover.native_windows_binding.x__open_child_nofollow__mutmut_11",
@@ -77,6 +53,10 @@
         {
             "mutant": "eml_attachment_remover.native_windows_binding.x__open_child_nofollow__mutmut_8",
             "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_budget.x_terminal_size__mutmut_5",
+            "rationale": "A null terminalized flag serializes as \"null\" and true as \"true\": both are four bytes, so the measured reservation is identical."
         },
         {
             "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_13",
@@ -95,15 +75,15 @@
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
         },
         {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_37",
+            "mutant": "eml_attachment_remover.report_spool.xǁReportSpoolǁappend__mutmut_37",
             "rationale": "On platforms without O_BINARY, fallback bit 1 is already included by O_WRONLY; the resulting open flags are identical."
         },
         {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_46",
+            "mutant": "eml_attachment_remover.report_spool.xǁReportSpoolǁappend__mutmut_46",
             "rationale": "On platforms without O_CLOEXEC, fallback bit 1 is already included by O_WRONLY; the resulting open flags are identical."
         },
         {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_47",
+            "mutant": "eml_attachment_remover.report_spool.xǁReportSpoolǁappend__mutmut_47",
             "rationale": "The committed marker is inspected only for truthiness before its sole true assignment, so False and None select identical recovery behavior."
         },
         {
@@ -139,8 +119,8 @@
             "rationale": "json.dumps treats allow_nan=None and allow_nan=False identically because both values are false."
         },
         {
-            "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_16",
-            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical bytes."
+            "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_14",
+            "rationale": "Python codec names are case-insensitive, so \"ASCII\" selects the identical codec."
         },
         {
             "mutant": "eml_attachment_remover.reporting_v3.x_write_json__mutmut_20",
@@ -199,19 +179,19 @@
             "rationale": "Every reference label undergoes the same deterministic normalization before equality comparison, so changing its internal join separator preserves duplicate detection."
         },
         {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_metadata__mutmut_6",
+            "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁverify_metadata__mutmut_6",
             "rationale": "Declared metadata field names are lowercase-normalized, making the explicit casefold sort key observationally identical."
         },
         {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_metadata__mutmut_8",
+            "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁverify_metadata__mutmut_8",
             "rationale": "Removing the explicit sort key preserves the only observable unsupported-field contents; rejection is covered independently of display ordering."
         },
         {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1wheel_sources__mutmut_3",
+            "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁwheel_sources__mutmut_3",
             "rationale": "Validated package roots are directories; safe_parts directory=None and directory=False accept the same canonical package-root spelling."
         },
         {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1wheel_sources__mutmut_6",
+            "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁwheel_sources__mutmut_6",
             "rationale": "Validated package roots are directories; safe_parts directory=True and directory=False accept the same canonical package-root spelling."
         },
         {
@@ -235,27 +215,27 @@
             "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode identical bytes."
         },
         {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1__init____mutmut_24",
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_24",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
         },
         {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1__init____mutmut_28",
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_28",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
         },
         {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1__init____mutmut_29",
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_29",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
         },
         {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1tag_commit__mutmut_35",
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_35",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
         },
         {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1tag_commit__mutmut_39",
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_39",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
         },
         {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1tag_commit__mutmut_40",
+            "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_40",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
         },
         {
@@ -407,7 +387,7 @@
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
         },
         {
-            "mutant": "tools.release_publication.x\u01c1Artifact\u01c1inspect__mutmut_19",
+            "mutant": "tools.release_publication.xǁArtifactǁinspect__mutmut_19",
             "rationale": "hashlib algorithm names are case-insensitive, so SHA256 and sha256 produce the same digest."
         },
         {

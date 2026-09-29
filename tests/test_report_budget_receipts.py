@@ -11,12 +11,16 @@ import pytest
 from eml_attachment_remover import native_values, report_budget, report_spool
 from eml_attachment_remover.domain import (
     AppError,
+    BoundDestination,
     ExitCode,
     FileIdentity,
     ItemStatus,
     LedgerItem,
     PathValue,
     PublicationReceipt,
+    SourceSnapshot,
+    TransformationPlan,
+    VerificationReceipt,
 )
 
 WORD = "w" * 32
@@ -173,3 +177,27 @@ def test_capacity_counts_what_is_already_written_and_the_newline() -> None:
     assert not budget.fits(_spool(limit - 10), 0, 10)
     assert not budget.fits(_spool(limit), 0, 0)
     assert budget.fits(_spool(limit - 1), 0, 0)
+
+
+def test_a_minimal_record_drops_every_bulky_section_an_item_holds() -> None:
+    """Source, destination, and verification are evidence detail, not outcome."""
+    identity = FileIdentity(1, 2, "-rw-------", 3)
+    item = LedgerItem(0, SOURCE)
+    item.source = SourceSnapshot(
+        SOURCE, SOURCE, SOURCE, b"s.eml", SOURCE, identity, 0o600, b"", "a" * 64, 1
+    )
+    item.destination = BoundDestination(SOURCE, SOURCE, b"o.eml", identity)
+    item.verification = VerificationReceipt(
+        authorization_matches=True,
+        output_parses=True,
+        retained_payloads_match=True,
+        structure_matches=True,
+        policy_is_idempotent=True,
+        digest_matches=True,
+    )
+    item.transformation = TransformationPlan((), (), (), "a" * 64, 1, b"x")
+    record = report_budget.minimal_record(item)
+    assert [
+        record[name]
+        for name in ("source", "destination", "verification", "transformation")
+    ] == [None, None, None, None]

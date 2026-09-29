@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import sys
 import threading
+import time
 from io import BytesIO, TextIOWrapper
-from typing import cast
+from typing import cast, override
 
 import pytest
 
@@ -75,3 +77,34 @@ def test_safe_lines_are_escaped_for_the_channel_codec_and_never_fail() -> None:
     reporting_v3._safe(stream, "caf\u00e9 and \u001b[0m")  # ruff: ignore[private-member-access] - display contract.
     stream.flush()
     assert raw.getvalue() == b"caf\\xe9 and \\u001b[0m\n"
+
+
+def test_a_late_note_is_watched_like_the_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The delivering thread polls the guard while the note is being written."""
+    checks: list[int] = []
+
+    class Watched(DeliveryGuard):
+        """A guard that counts how often it is consulted."""
+
+        @override
+        def check(self) -> None:
+            checks.append(1)
+
+    class SlowStderr:
+        """A standard error that is slow to accept its output."""
+
+        @staticmethod
+        def write(_text: str) -> int:
+            time.sleep(0.25)
+            return 0
+
+        @staticmethod
+        def flush() -> None:
+            return None
+
+    monkeypatch.setattr(report_delivery, "POLL_SECONDS", 0.02)
+    monkeypatch.setattr(sys, "stderr", SlowStderr())
+    report_delivery.write_note("note\n", Watched())
+    assert checks
