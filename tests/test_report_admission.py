@@ -161,10 +161,12 @@ def test_oversized_message_is_refused_before_any_copy_exists(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refused input publishes nothing and later inputs are unaffected."""
-    monkeypatch.setattr(report_spool, "MAX_RECORD_BYTES", 8192)
+    # A small item's record is a few KiB on POSIX and more on Windows (longer paths,
+    # UTF-16 forms); 64 KiB clears every host while 400 parts (~110 KiB) exceed it.
+    monkeypatch.setattr(report_spool, "MAX_RECORD_BYTES", 64 * 1024)
     big = tmp_path / "big.eml"
     small = tmp_path / "small.eml"
-    big.write_bytes(_parts(60))
+    big.write_bytes(_parts(400))
     small.write_bytes(_parts(1))
     ledger = execute([str(big), str(small)], OPTIONS)
     try:
