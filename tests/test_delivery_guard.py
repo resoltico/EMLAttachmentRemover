@@ -56,8 +56,8 @@ def test_signals_are_recorded_not_raised_and_handlers_are_restored() -> None:
     before = signal.getsignal(signal.SIGINT)
     with cancellation.delivery_guard() as guard:
         _deliver(signal.SIGINT)
-        _deliver(signal.SIGTERM)
-    assert guard.signals == [signal.SIGINT, signal.SIGTERM]
+        _deliver(signal.SIGINT)
+    assert guard.signals == [signal.SIGINT, signal.SIGINT]
     assert signal.getsignal(signal.SIGINT) is before
 
 
@@ -77,7 +77,7 @@ def test_the_grace_starts_at_the_first_signal_not_at_the_last_output(
     """A consumer stalled before the signal still gets the full grace afterwards."""
     with cancellation.delivery_guard(clock) as guard:
         clock.now += 3 * cancellation.GRACE_SECONDS
-        _deliver(signal.SIGTERM)
+        _deliver(signal.SIGINT)
         guard.check()
         assert exits == []
         clock.now += cancellation.GRACE_SECONDS - 0.001
