@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from eml_attachment_remover import mime_validation
+from eml_attachment_remover import mime_parameters
 
 
 def test_unquote_distinguishes_leading_and_escaped_backslash_pairs() -> None:
     """Quoted-pair state removes one slash and retains the escaped octet exactly."""
-    unquote = mime_validation._unquote  # ruff: ignore[private-member-access] - direct finite-state receipt.
+    unquote = mime_parameters._unquote  # ruff: ignore[private-member-access] - direct finite-state receipt.
     assert unquote(b'"\\leading"') == b"leading"
     assert unquote(b'"two\\\\slashes"') == b"two\\slashes"

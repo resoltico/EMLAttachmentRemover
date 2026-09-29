@@ -51,31 +51,37 @@ def test_header_append_enforces_blank_continuation_and_count_boundaries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Blank lines are inert, continuations require owners, and count is inclusive."""
-    headers: list[mime_headers.Header] = []
-    mime_headers._append_header(  # ruff: ignore[private-member-access] - blank physical-field receipt.
-        headers, b"", 0, 0
+    fields: list[mime_headers._Field] = []
+    mime_headers._append_line(  # ruff: ignore[private-member-access] - blank physical-field receipt.
+        fields, b"", 0, 0
     )
-    assert headers == []
+    assert fields == []
     with pytest.raises(AppError) as orphan:
-        mime_headers._append_header(  # ruff: ignore[private-member-access] - orphan continuation receipt.
-            headers, b"\tno owner", 0, 10
+        mime_headers._append_line(  # ruff: ignore[private-member-access] - orphan continuation receipt.
+            fields, b"\tno owner", 0, 10
         )
     assert orphan.value == AppError(
         ExitCode.PARSE_ERROR, "orphaned MIME header continuation"
     )
     with monkeypatch.context() as context:
         context.setattr(mime_headers, "MAX_HEADERS", 1)
-        mime_headers._append_header(  # ruff: ignore[private-member-access] - inclusive first physical-field receipt.
-            headers, b"X-One: first", 3, 15
+        mime_headers._append_line(  # ruff: ignore[private-member-access] - inclusive first physical-field receipt.
+            fields, b"X-One: first", 3, 15
+        )
+        mime_headers._append_line(  # ruff: ignore[private-member-access] - continuation is not a new field.
+            fields, b" more", 15, 22
         )
         with pytest.raises(AppError) as count:
-            mime_headers._append_header(  # ruff: ignore[private-member-access] - over-limit physical-field receipt.
-                headers, b"X-Two: second", 15, 28
+            mime_headers._append_line(  # ruff: ignore[private-member-access] - over-limit physical-field receipt.
+                fields, b"X-Two: second", 22, 35
             )
     assert count.value == AppError(
         ExitCode.PARSE_ERROR, "MIME entity exceeds header-count limit"
     )
-    assert [header.name for header in headers] == [b"x-one", b"x-two"]
+    assert [field.header() for field in fields] == [
+        mime_headers.Header(b"x-one", b"first\r\n more", 3, 22),
+        mime_headers.Header(b"x-two", b"second", 22, 35),
+    ]
 
 
 def test_header_singleton_validation_rejects_only_declared_duplicate_controls() -> None:

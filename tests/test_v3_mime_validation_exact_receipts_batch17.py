@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_validation
+from eml_attachment_remover import mime_parameters, mime_validation
 from eml_attachment_remover.domain import AppError, ExitCode
 
 
@@ -12,23 +12,21 @@ def test_parameter_parse_failures_keep_their_exact_public_diagnostics() -> None:
     """Distinct malformed parameter forms retain their observable classifications."""
     cases = (
         (
-            lambda: mime_validation._parameter_name(b"bad space"),  # ruff: ignore[private-member-access] - exact parameter-name diagnostic.
+            lambda: mime_parameters._parameter_name(b"bad space"),  # ruff: ignore[private-member-access] - exact parameter-name diagnostic.
             "malformed MIME parameter name",
         ),
         (
-            lambda: mime_validation._parameter_piece(b"filename"),  # ruff: ignore[private-member-access] - exact parameter-piece diagnostic.
+            lambda: mime_parameters._parameter_piece(b"filename"),  # ruff: ignore[private-member-access] - exact parameter-piece diagnostic.
             "malformed MIME parameter",
         ),
         (
-            lambda: mime_validation._parameter_value(  # ruff: ignore[private-member-access] - exact ordinary-value diagnostic.
+            lambda: mime_parameters._parameter_value(  # ruff: ignore[private-member-access] - exact ordinary-value diagnostic.
                 b"not a token", encoded=False, initial=False
             ),
             "malformed MIME parameter value",
         ),
         (
-            lambda: mime_validation._store_parameter(  # ruff: ignore[private-member-access] - exact ownership diagnostic.
-                {b"name": b"one"}, {}, b"name", None, b"two"
-            ),
+            lambda: mime_parameters.structured_parameters([b"name=one", b"name=two"]),
             "duplicate MIME parameter",
         ),
     )
@@ -41,7 +39,7 @@ def test_parameter_parse_failures_keep_their_exact_public_diagnostics() -> None:
 def test_encoded_parameter_piece_cannot_bypass_rfc2231_escape_validation() -> None:
     """The encoded bit must route a token-shaped bad escape to RFC 2231 checks."""
     with pytest.raises(AppError) as raised:
-        mime_validation._parameter_piece(  # ruff: ignore[private-member-access] - encoded-name routing receipt.
+        mime_parameters._parameter_piece(  # ruff: ignore[private-member-access] - encoded-name routing receipt.
             b"filename*=utf-8''bad%XZ"
         )
     assert raised.value == AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 escape")

@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from eml_attachment_remover import (
+    mime_header_block,
     mime_headers,
-    mime_raw,
     native_binding,
     native_posix,
     report_stream,
@@ -218,16 +218,15 @@ def test_root_envelope_requires_a_first_header_name_and_first_colon() -> None:
 def test_nonroot_entity_never_receives_root_envelope_treatment() -> None:
     """Nested From bytes remain headerless body data even when a header follows."""
     raw = b"From sender\r\nX-Value: retained\r\n\r\nbody\r\n"
-    headers, body_start, header_bytes = mime_raw._entity_headers(  # ruff: ignore[private-member-access] - nonroot envelope boundary.
+    headers, body_start, header_bytes = mime_header_block.entity_headers(
         raw, 0, len(raw), root=False
     )
     assert (headers, body_start, header_bytes) == ((), 0, 0)
-    # ruff: ignore[private-member-access] - default must remain non-root.
     (
         default_headers,
         default_body_start,
         default_header_bytes,
-    ) = mime_raw._entity_headers(raw, 0, len(raw))
+    ) = mime_header_block.entity_headers(raw, 0, len(raw))
     assert (default_headers, default_body_start, default_header_bytes) == ((), 0, 0)
 
 

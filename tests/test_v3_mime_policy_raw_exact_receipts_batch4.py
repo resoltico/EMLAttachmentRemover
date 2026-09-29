@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_policy, mime_raw
+from eml_attachment_remover import mime_header_block, mime_policy, mime_raw
 from eml_attachment_remover.domain import AppError, DecisionAction, ExitCode
 from eml_attachment_remover.mime_headers import Header
 from eml_attachment_remover.mime_validation import ContentSpec
@@ -77,10 +77,10 @@ def test_policy_related_and_final_leaf_failures_preserve_full_error_records() ->
 
 def test_first_line_header_detection_respects_bounds_and_first_colon() -> None:
     """Only the bounded first line and its first colon define header-like syntax."""
-    assert not mime_raw._first_line_is_header_like(  # ruff: ignore[private-member-access] - bounded initial-line receipt.
+    assert not mime_header_block._first_line_is_header_like(  # ruff: ignore[private-member-access] - bounded initial-line receipt.
         b"plain: later\r\n", 0, 5
     )
-    assert mime_raw._first_line_is_header_like(  # ruff: ignore[private-member-access] - first-colon physical-header receipt.
+    assert mime_header_block._first_line_is_header_like(  # ruff: ignore[private-member-access] - first-colon physical-header receipt.
         b"X-Trace: first: second\r\n", 0, 24
     )
 
@@ -88,13 +88,13 @@ def test_first_line_header_detection_respects_bounds_and_first_colon() -> None:
 def test_separator_search_observes_range_and_a_separator_at_zero() -> None:
     """Separators outside a bounded entity are absent, while index zero is valid."""
     with pytest.raises(AppError) as bounded_absence:
-        mime_raw._find_separator(  # ruff: ignore[private-member-access] - bounded separator-search receipt.
+        mime_header_block._find_separator(  # ruff: ignore[private-member-access] - bounded separator-search receipt.
             b"abc\r\n\r\nbody", 0, 3
         )
     assert bounded_absence.value == AppError(
         ExitCode.PARSE_ERROR, "MIME entity has no header/body separator"
     )
-    assert mime_raw._find_separator(  # ruff: ignore[private-member-access] - zero-offset separator receipt.
+    assert mime_header_block._find_separator(  # ruff: ignore[private-member-access] - zero-offset separator receipt.
         b"\r\n\r\nbody", 0, 8
     ) == (0, 4)
 

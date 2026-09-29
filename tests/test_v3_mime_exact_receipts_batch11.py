@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_encoding, mime_headers, mime_raw
+from eml_attachment_remover import (
+    mime_encoding,
+    mime_header_block,
+    mime_headers,
+    mime_raw,
+)
 from eml_attachment_remover.domain import AppError, ExitCode
 
 
@@ -28,7 +33,7 @@ def test_delimiter_rejects_suffix_and_separator_requires_a_marker() -> None:
         == []
     )
     with pytest.raises(AppError) as rejected:
-        mime_raw._find_separator(  # ruff: ignore[private-member-access] - exact separator absence receipt.
+        mime_header_block._find_separator(  # ruff: ignore[private-member-access] - exact separator absence receipt.
             b"X: one\r\nbody", 0, 12
         )
     assert rejected.value == AppError(

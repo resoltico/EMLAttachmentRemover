@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from eml_attachment_remover import mime_headers, mime_raw, mime_stdlib_check
+from eml_attachment_remover import (
+    mime_header_block,
+    mime_headers,
+    mime_raw,
+    mime_stdlib_check,
+)
 from eml_attachment_remover.domain import AppError, ExitCode
 from eml_attachment_remover.mime_validation import ContentSpec
 
@@ -33,9 +38,7 @@ def test_entity_headers_do_not_search_beyond_the_bounded_entity() -> None:
     """A header-like partial entity fails instead of borrowing a later separator."""
     raw = b"X: one\r\n\r\nbody"
     with pytest.raises(AppError) as rejected:
-        mime_raw._entity_headers(  # ruff: ignore[private-member-access] - bounded entity separator receipt.
-            raw, 0, 6, root=False
-        )
+        mime_header_block.entity_headers(raw, 0, 6, root=False)
     assert rejected.value == AppError(
         ExitCode.PARSE_ERROR, "header-like MIME entity lacks a body separator"
     )

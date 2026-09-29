@@ -6,13 +6,14 @@ the source byte spans.  It never regenerates body text or decodes character sets
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final
 
 from .domain import AppError, ExitCode
 from .mime_comments import without_comments
 from .mime_headers import TOKEN_RE, Header
 from .mime_identifiers import parse_message_identifier
+from .mime_parameters import BACKSLASH, DOUBLE_QUOTE, structured_parameters
 from .mime_quote_state import (
     ESCAPE_CLEAR,
     ESCAPE_PENDING,
@@ -24,42 +25,22 @@ from .mime_quote_state import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-BACKSLASH: Final = ord("\\")
-DOUBLE_QUOTE: Final = ord('"')
 SEMICOLON: Final = ord(";")
 SLASH: Final = ord("/")
-PERCENT: Final = ord("%")
-MIN_QUOTED_BYTES: Final = 2
-ASCII_DIGIT_START: Final = ord("0")
-ASCII_DIGIT_END: Final = ord("9")
-ASCII_UPPER_START: Final = ord("A")
-ASCII_UPPER_END: Final = ord("Z")
-ASCII_LOWER_START: Final = ord("a")
-ASCII_LOWER_END: Final = ord("z")
-MAX_RFC2231_SEGMENTS: Final = 512
-MAX_RFC2231_INDEX_DIGITS: Final = 3
-RFC2231_ATTR_PUNCTUATION: Final = frozenset({
-    33,
-    35,
-    36,
-    38,
-    43,
-    45,
-    46,
-    94,
-    95,
-    96,
-    124,
-    126,
-})
 
 
 @dataclass(frozen=True, slots=True)
 class ContentSpec:
-    """A lower-cased media/disposition token plus raw parameter values."""
+    """A lower-cased media/disposition token plus raw parameter values.
+
+    ``parameters`` keeps each value's exact wire spelling for evidence. ``decoded``
+    holds the RFC 2231 meaning of every parameter that used an extended segment,
+    for structural controls such as a multipart boundary.
+    """
 
     token: str
     parameters: dict[bytes, bytes]
+    decoded: dict[bytes, bytes] = field(default_factory=dict)
 
 
 def _split_semicolons(value: bytes, *, comments_allowed: bool) -> list[bytes]:
@@ -94,131 +75,6 @@ def _split_semicolons(value: bytes, *, comments_allowed: bool) -> list[bytes]:
     return pieces
 
 
-def _unquote(value: bytes) -> bytes:
-    """Return an exact quoted-string value with quoted-pairs decoded once.
-
-    Returns:
-        The unquoted parameter byte sequence.
-
-    Raises:
-        AppError: If quote or quoted-pair syntax is incomplete.
-
-    """
-    if not value.startswith(b'"'):
-        return value
-    if len(value) < MIN_QUOTED_BYTES or not value.endswith(b'"'):
-        raise AppError(ExitCode.PARSE_ERROR, "malformed MIME quoted parameter")
-    result = bytearray()
-    body = value[1:-1]
-    iterator = iter(body)
-    for byte in iterator:
-        if byte == BACKSLASH:
-            try:
-                escaped_byte = next(iterator)
-            except StopIteration as error:
-                raise AppError(
-                    ExitCode.PARSE_ERROR, "unterminated MIME quoted-pair"
-                ) from error
-            result.append(escaped_byte)
-        else:
-            result.append(byte)
-    return bytes(result)
-
-
-def _parameter_name(name: bytes) -> tuple[bytes, int | None, bool]:
-    """Split a regular, extended, or RFC 2231 continuation parameter name.
-
-    Returns:
-        Normalized base name, optional continuation number, and extended flag.
-
-    Raises:
-        AppError: If the parameter name is not part of the supported grammar.
-
-    """
-    base, marker, suffix = name.partition(b"*")
-    if not base or not TOKEN_RE.fullmatch(base):
-        raise AppError(ExitCode.PARSE_ERROR, "malformed MIME parameter name")
-    if not marker:
-        return base, None, False
-    if not suffix:
-        return base, None, True
-    encoded = suffix.endswith(b"*")
-    index_text = suffix[:-1] if encoded else suffix
-    if not index_text.isdigit() or len(index_text) > MAX_RFC2231_INDEX_DIGITS:
-        raise AppError(ExitCode.PARSE_ERROR, "malformed MIME parameter extension")
-    index = int(index_text)
-    if index >= MAX_RFC2231_SEGMENTS:
-        raise AppError(
-            ExitCode.PARSE_ERROR, "MIME parameter continuation index exceeds limit"
-        )
-    return base, index, encoded
-
-
-def _extended_parameter(value: bytes, *, initial: bool) -> bytes:
-    """Validate an RFC 2231 extension spelling without charset-decoding its bytes.
-
-    Returns:
-        The byte-exact extended parameter spelling.
-
-    Raises:
-        AppError: If percent escapes or allowed attribute characters are invalid.
-
-    """
-    payload = _extended_payload(value) if initial else value
-    for position, byte in enumerate(payload):
-        if byte == PERCENT:
-            if position + 2 >= len(payload) or any(
-                digit not in b"0123456789abcdefABCDEF"
-                for digit in payload[position + 1 : position + 3]
-            ):
-                raise AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 escape")
-        elif _is_rfc2231_attr_char(byte):
-            continue
-        else:
-            raise AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 parameter")
-    return value
-
-
-def _is_rfc2231_attr_char(byte: int) -> bool:
-    """Return whether one byte is a permitted RFC 2231 attribute character.
-
-    Returns:
-        Whether the byte belongs to the RFC 2231 attr-char alphabet.
-
-    """
-    return (
-        ASCII_DIGIT_START <= byte <= ASCII_DIGIT_END
-        or ASCII_UPPER_START <= byte <= ASCII_UPPER_END
-        or ASCII_LOWER_START <= byte <= ASCII_LOWER_END
-        or byte in RFC2231_ATTR_PUNCTUATION
-    )
-
-
-def _extended_payload(value: bytes) -> bytes:
-    """Return the RFC 2231 payload after a mandatory charset/language prefix.
-
-    Returns:
-        The percent-encoded payload after exactly two apostrophe delimiters.
-
-    Raises:
-        AppError: If the initial extended parameter has invalid prefix syntax.
-
-    """
-    charset, first_quote, remainder = value.partition(b"'")
-    language, second_quote, payload = remainder.partition(b"'")
-    language_bytes = (
-        bytes(range(48, 58))
-        + bytes(range(65, 91))
-        + bytes(range(97, 123))
-        + bytes((45,))
-    )
-    if not first_quote or not second_quote or not TOKEN_RE.fullmatch(charset):
-        raise AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 extended parameter")
-    if language and not all(byte in language_bytes for byte in language):
-        raise AppError(ExitCode.PARSE_ERROR, "malformed RFC 2231 language")
-    return payload
-
-
 def _structured(
     value: bytes,
     token_validator: Callable[[bytes], bytes],
@@ -233,8 +89,8 @@ def _structured(
     """
     pieces = _split_semicolons(value, comments_allowed=comments_allowed)
     token = token_validator(pieces[0])
-    parameters = _structured_parameters(pieces[1:])
-    return ContentSpec(_ascii_token(token), parameters)
+    parameters, decoded = structured_parameters(pieces[1:])
+    return ContentSpec(_ascii_token(token), parameters, decoded)
 
 
 def _structured_token(value: bytes) -> bytes:
@@ -271,105 +127,6 @@ def _media_token(value: bytes) -> bytes:
     if token.count(b"/") != 1 or any(not side for side in token.split(b"/")):
         raise AppError(ExitCode.PARSE_ERROR, "malformed MIME media type")
     return token
-
-
-def _structured_parameters(pieces: list[bytes]) -> dict[bytes, bytes]:
-    """Parse and join unique ordinary or RFC 2231 continuation parameters.
-
-    Returns:
-        Unique base parameter names mapped to their raw normalized values.
-
-    """
-    parameters: dict[bytes, bytes] = {}
-    continuations: dict[bytes, dict[int, bytes]] = {}
-    for piece in pieces:
-        name, segment, value = _parameter_piece(piece)
-        _store_parameter(parameters, continuations, name, segment, value)
-    _finish_continuations(parameters, continuations)
-    return parameters
-
-
-def _parameter_piece(piece: bytes) -> tuple[bytes, int | None, bytes]:
-    """Parse one parameter component before duplicate/continuation ownership checks.
-
-    Returns:
-        Base name, optional continuation index, and validated raw value.
-
-    Raises:
-        AppError: If a parameter component does not use the supported grammar.
-
-    """
-    name, equals, raw_value = piece.partition(b"=")
-    if not equals:
-        raise AppError(ExitCode.PARSE_ERROR, "malformed MIME parameter")
-    base_name, segment, encoded = _parameter_name(name.strip().lower())
-    value = raw_value.strip()
-    return (
-        base_name,
-        segment,
-        _parameter_value(value, encoded=encoded, initial=segment in {None, 0}),
-    )
-
-
-def _parameter_value(value: bytes, *, encoded: bool, initial: bool) -> bytes:
-    """Return one normal or RFC 2231 extended parameter value.
-
-    Returns:
-        The validated parameter bytes without character-set decoding.
-
-    Raises:
-        AppError: If quoting or extension syntax conflicts with the value form.
-
-    """
-    if encoded:
-        if value.startswith(b'"'):
-            raise AppError(ExitCode.PARSE_ERROR, "quoted RFC 2231 parameter")
-        return _extended_parameter(value, initial=initial)
-    if not value.startswith(b'"') and not TOKEN_RE.fullmatch(value):
-        raise AppError(ExitCode.PARSE_ERROR, "malformed MIME parameter value")
-    return _unquote(value)
-
-
-def _store_parameter(
-    parameters: dict[bytes, bytes],
-    continuations: dict[bytes, dict[int, bytes]],
-    name: bytes,
-    segment: int | None,
-    value: bytes,
-) -> None:
-    """Store one unique direct parameter or continuation segment.
-
-    Raises:
-        AppError: If it overlaps a direct value or prior continuation segment.
-
-    """
-    if segment is None:
-        if name in parameters or name in continuations:
-            raise AppError(ExitCode.PARSE_ERROR, "duplicate MIME parameter")
-        parameters[name] = value
-        return
-    if name in parameters:
-        raise AppError(ExitCode.PARSE_ERROR, "overlapping MIME parameter")
-    entries = continuations.setdefault(name, {})
-    if segment in entries:
-        raise AppError(ExitCode.PARSE_ERROR, "duplicate MIME parameter segment")
-    entries[segment] = value
-
-
-def _finish_continuations(
-    parameters: dict[bytes, bytes], continuations: dict[bytes, dict[int, bytes]]
-) -> None:
-    """Join each contiguous RFC 2231 continuation into its base parameter.
-
-    Raises:
-        AppError: If a continuation omits a required segment.
-
-    """
-    for name, segments in continuations.items():
-        expected = list(range(len(segments)))
-        if sorted(segments) != expected:
-            raise AppError(ExitCode.PARSE_ERROR, "gapped MIME parameter continuation")
-        parameters[name] = b"".join(segments[index] for index in expected)
 
 
 def _ascii_token(token: bytes) -> str:

@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from eml_attachment_remover import mime_execution, mime_validation
+from eml_attachment_remover import mime_execution, mime_parameters
 from eml_attachment_remover.domain import AppError, ExitCode
 
 
 def test_parameter_name_preserves_extended_and_numbered_forms() -> None:
     """Star spelling distinguishes direct extensions from numbered continuations."""
-    assert mime_validation._parameter_name(  # ruff: ignore[private-member-access] - direct extended-name receipt.
+    assert mime_parameters._parameter_name(  # ruff: ignore[private-member-access] - direct extended-name receipt.
         b"filename*"
     ) == (b"filename", None, True)
-    assert mime_validation._parameter_name(  # ruff: ignore[private-member-access] - numbered extended-name receipt.
+    assert mime_parameters._parameter_name(  # ruff: ignore[private-member-access] - numbered extended-name receipt.
         b"filename*12*"
     ) == (b"filename", 12, True)
 
