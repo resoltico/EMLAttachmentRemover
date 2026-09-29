@@ -247,6 +247,55 @@ class HypothesisArtifactPublicationTests(unittest.TestCase):
         self.assertNotIn(str(home), content)
         self.assertNotIn(str(Path(sys.prefix)), content)
 
+    def test_linked_home_and_python_prefix_spellings_become_placeholders(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as machine_directory,
+        ):
+            root = Path(directory).resolve()
+            machine = Path(machine_directory).resolve()
+            real_home = machine / "real-home"
+            (real_home / "venv").mkdir(parents=True)
+            home = machine / "linked-home"
+            home.symlink_to(real_home, target_is_directory=True)
+            python_prefix = home / "venv"
+            path = write_observations(
+                root,
+                [
+                    {
+                        "metadata": {
+                            "home": [
+                                str(home / "origin.py"),
+                                str(real_home / "origin.py"),
+                            ],
+                            "python": [
+                                str(python_prefix / "lib" / "module.py"),
+                                str(real_home / "venv" / "lib" / "module.py"),
+                            ],
+                        }
+                    }
+                ],
+            )
+            with (
+                patch.object(Path, "home", return_value=home),
+                patch.object(sys, "prefix", str(python_prefix)),
+            ):
+                self.assertEqual(artifacts.finalize(root, observations=True), (1, 1))
+            metadata = json.loads(path.read_text(encoding="utf-8"))["metadata"]
+
+        self.assertEqual(
+            metadata,
+            {
+                "home": ["<user-home>/origin.py", "<user-home>/origin.py"],
+                "python": [
+                    "<python-prefix>/lib/module.py",
+                    "<python-prefix>/lib/module.py",
+                ],
+            },
+        )
+
     def test_public_urls_and_project_relative_test_ids_are_not_paths(self) -> None:
         public = (
             "https://example.test/path/to/resource?next=/relative/value",
