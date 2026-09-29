@@ -60,6 +60,7 @@ class MutationActions:
     cleanup: Callable[[], None]
     capture: Callable[[], None]
     run: CommandRunner
+    diagnose: Callable[[], None]
 
 
 def mutation_paths(
@@ -85,11 +86,16 @@ def mutation_paths(
     )
 
 
+def _no_diagnostics() -> None:
+    """Skip the diagnostics bundle when a caller supplies none."""
+
+
 def mutation_actions(
     coverage: Callable[[], None],
     cleanup: Callable[[], None],
     capture: Callable[[], None],
     run: CommandRunner,
+    diagnose: Callable[[], None] = _no_diagnostics,
 ) -> MutationActions:
     """Create an injected mutation-action bundle.
 
@@ -97,7 +103,7 @@ def mutation_actions(
         The immutable action bundle.
 
     """
-    return MutationActions(coverage, cleanup, capture, run)
+    return MutationActions(coverage, cleanup, capture, run, diagnose)
 
 
 def mutation_worker_count(cpu_count: int | None = None) -> int:
@@ -134,6 +140,50 @@ def parse_workers(value: str) -> int | None:
     return workers
 
 
+def command_runner(
+    run: Callable[..., None],
+    storage: Path,
+    storage_variable: str,
+    observability: Sequence[str],
+) -> CommandRunner:
+    """Bind the isolated storage and coverage settings every mutation command needs.
+
+    Returns:
+        A runner that adds the mutation environment to each task command.
+
+    """
+    coverage_variables = tuple(
+        variable for variable in os.environ if variable.startswith("COVERAGE_")
+    )
+
+    def run_mutation_command(
+        command: Sequence[str],
+        *,
+        profile: str | None = None,
+        timeout_seconds: float | None = 600,
+        environment_updates: Mapping[str, str] | None = None,
+        environment_removals: Sequence[str] = (),
+    ) -> None:
+        updates = dict(environment_updates or {})
+        updates["COVERAGE_FILE"] = str(storage.parent / ".mutmut-coverage")
+        updates[storage_variable] = str(storage)
+        updates["EML_MUTATION_PYTEST_TEMPORARY_ROOT"] = str(storage)
+        run(
+            command,
+            profile=profile,
+            timeout_seconds=timeout_seconds,
+            environment_updates=updates,
+            environment_removals=(
+                *observability,
+                *coverage_variables,
+                "PYTEST_ADDOPTS",
+                *environment_removals,
+            ),
+        )
+
+    return run_mutation_command
+
+
 def capture_results(
     paths: MutationPaths,
     executable: str,
@@ -156,6 +206,30 @@ def capture_results(
         "".join(f"{line}\n" for line in lines),
         encoding=UTF8,
     )
+
+
+def show_mutant(
+    paths: MutationPaths,
+    executable: str,
+    environment: Mapping[str, str],
+    mutant: str,
+) -> str:
+    """Return Mutmut's patch for one named mutant.
+
+    Returns:
+        The decoded unified diff Mutmut prints for the mutant.
+
+    """
+    completed = subprocess.run(
+        (executable, "-m", "mutmut", "show", mutant),
+        check=True,
+        cwd=paths.project_root,
+        env=environment,
+        timeout=EVIDENCE_TIMEOUT_SECONDS,
+        capture_output=True,
+        encoding=UTF8,
+    )
+    return completed.stdout
 
 
 def remove_workspace(paths: MutationPaths) -> None:
@@ -265,6 +339,7 @@ def run_mutation(
                 timeout_seconds=EVIDENCE_TIMEOUT_SECONDS,
             ),
         ),
+        ("capture diagnostics", actions.diagnose),
     )
     for label, action in operations:
         _collect_failure(label, action, failures)

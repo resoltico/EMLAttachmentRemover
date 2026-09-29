@@ -55,7 +55,7 @@ EXPECTED_POSIX_PLAN: Final = (
     ("uv run python tools/tasks.py quality", _lane("3.14.7"), 1_800),
     ("uv sync --locked --group dev --python 3.14.7t", _installer("3.14.7t"), 600),
     ("test -x /bin/sh", _lane("3.14.7t"), 600),
-    ("uv run python tools/tasks.py quality", _lane("3.14.7t"), 1_800),
+    ("uv run python tools/tasks.py quality --native", _lane("3.14.7t"), 1_800),
     (_type_check("darwin"), _lane("3.14.7"), 600),
     (_type_check("linux"), _lane("3.14.7"), 600),
     (_type_check("win32"), _lane("3.14.7"), 600),
@@ -414,12 +414,19 @@ class TaskIntegrationTests(unittest.TestCase):
             [tasks.PROJECT_ROOT, tasks.PROJECT_ROOT],
         )
         self.assertEqual(
-            [entry.kwargs for entry in run_local_ci.call_args_list],
+            [
+                {key: value for key, value in entry.kwargs.items() if key != "lease"}
+                for entry in run_local_ci.call_args_list
+            ],
             [
                 {"release_tag": "v1.0.0", "workers": "auto"},
                 {"release_tag": None, "workers": "3"},
             ],
         )
+        lease = run_local_ci.call_args_list[0].kwargs["lease"]
+        with patch.object(tasks.mutation_lease, "lease") as leased:
+            lease()
+        leased.assert_called_once_with(tasks.BUILD_DIRECTORY)
         environment.assert_called_once_with(environment_updates={"UV_PYTHON": "3.14.7"})
         self.assertEqual(
             run.call_args_list,

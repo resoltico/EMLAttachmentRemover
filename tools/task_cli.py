@@ -47,6 +47,11 @@ def build_parser(
     )
     for name in ("ci", "mutation"):
         parsers[name].add_argument("--workers", type=workers, help=WORKERS_HELP)
+    parsers["quality"].add_argument(
+        "--native",
+        action="store_true",
+        help="skip the static checks that another lane runs; keep audit and coverage",
+    )
     parsers["thorough"].add_argument(
         "--timeout-seconds",
         type=positive_timeout,

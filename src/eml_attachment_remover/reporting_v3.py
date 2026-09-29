@@ -20,9 +20,11 @@ from .domain import (
     LedgerItem,
     PathValue,
 )
-from .native_values import planned_display, report_path_bytes
+from .native_values import planned_display, report_path_bytes, safe_display
 
 _UTF8: Final = utf_8.getregentry().name
+MAX_ERROR_MESSAGE: Final = 2048
+ELLIPSIS: Final = "\u2026"
 _SURROGATE_FIRST: Final = 0xD800
 _SURROGATE_LAST: Final = 0xDFFF
 
@@ -95,9 +97,12 @@ def _error(error: AppError | None) -> dict[str, object] | None:
     if error is None:
         return None
     code = error.code
+    message = error.message
+    if len(message) > MAX_ERROR_MESSAGE:
+        message = message[: MAX_ERROR_MESSAGE - 1] + ELLIPSIS
     return {
         "code": code.name,
-        "message": error.message,
+        "message": message,
         "mime_path": error.mime_path,
         "phase": error.phase,
     }
@@ -278,7 +283,8 @@ def write_json(document: dict[str, object]) -> None:
 def _safe(stream: TextIO, text: str) -> None:
     """Write one display-safe line."""
     encoding = stream.encoding or _UTF8
-    stream.write(text.encode(encoding, "backslashreplace").decode(encoding) + "\n")
+    escaped = safe_display(text).encode(encoding, "backslashreplace")
+    stream.write(escaped.decode(encoding) + "\n")
 
 
 def write_human(document: dict[str, object]) -> None:

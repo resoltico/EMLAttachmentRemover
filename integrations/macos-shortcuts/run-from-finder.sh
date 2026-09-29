@@ -96,6 +96,7 @@ ITEM_FIELDS = {
 }
 MAX_DETAILS = 24
 MAX_TEXT = 512
+INTERRUPTED = 130
 
 
 def safe(value: object) -> str:
@@ -164,7 +165,9 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
         or document.get("mode") not in {"apply", "dry-run"}
         or type(document.get("ok")) is not bool
         or type(document.get("exit_code")) is not int
-        or document["exit_code"] != status
+        # A signal during delivery of a complete report ends the process with 130 while
+        # the delivered document keeps its processing outcome; nothing else may differ.
+        or (document["exit_code"] != status and status != INTERRUPTED)
     ):
         raise ValueError("report identity or exit status is invalid")
     items = document.get("items")
@@ -234,6 +237,8 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
         raise ValueError("report interruption receipt is invalid")
     if interrupted:
         details.append(f"Interrupted: {safe(interruption.get('reason'))}")
+    if document["exit_code"] != status:
+        details.append("Interrupted: after the report was written; its results are complete.")
     return outputs, details
 
 

@@ -16,8 +16,11 @@ if TYPE_CHECKING:
         CoverageTask,
         HypothesisRunner,
         LocalCi,
+        MutationDiagnostics,
+        MutationLease,
         MutationTaskModule,
         RepositoryHygiene,
+        StaticChecks,
         TaskCli,
         TaskProcess,
         TaskTestCommands,
@@ -41,6 +44,9 @@ def _tool(name: str) -> object:
 
 check_repository_hygiene = cast("RepositoryHygiene", _tool("check_repository_hygiene"))
 mutation_task = cast("MutationTaskModule", _tool("mutation_task"))
+static_checks = cast("StaticChecks", _tool("static_checks"))
+mutation_lease = cast("MutationLease", _tool("mutation_lease"))
+mutation_diagnostics = cast("MutationDiagnostics", _tool("mutation_diagnostics"))
 hypothesis_runner = cast("HypothesisRunner", _tool("hypothesis_run"))
 task_timeout = cast("TaskTimeout", _tool("task_timeout"))
 task_test_commands = cast("TaskTestCommands", _tool("task_test_commands"))
@@ -55,6 +61,7 @@ BUILD_DIRECTORY: Final = PROJECT_ROOT / "build"
 MUTATION_STATISTICS: Final = PROJECT_ROOT / "mutants" / "mutmut-cicd-stats.json"
 MUTATION_RESULTS: Final = BUILD_DIRECTORY / "mutmut-results.txt"
 MUTATION_EQUIVALENTS: Final = PROJECT_ROOT / "tools" / "equivalent_mutants.json"
+MUTATION_DIAGNOSTICS: Final = BUILD_DIRECTORY / "mutation-diagnostics"
 DEVELOPMENT_TEST_TIMEOUT_SECONDS: Final = 600
 THOROUGH_TEST_TIMEOUT_SECONDS: Final = 1_800
 OBSERVABILITY_VARIABLES: Final = (
@@ -143,39 +150,26 @@ def _isolated_run(
     )
 
 
-def _check() -> None:
-    """Run formatting, linting, type, and module-design checks.
-
-    Raises:
-        RuntimeError: If the fresh pre-secret-scan repository audit is dirty.
-
-    """
+def _hygiene() -> None:
+    """Audit the checkout itself: paths, line endings, links, and generated files."""
     _run((sys.executable, "tools/check_repository_hygiene.py"))
-    _run(("ruff", "format", "--check", "--no-cache", "."))
-    _run(("ruff", "check", "--no-cache", "."))
-    _run(("mypy", "--no-incremental", "--cache-dir", os.devnull))
-    _run((sys.executable, "tools/check_module_design.py"))
-    _run(
-        (
-            "actionlint",
-            "-shellcheck",
-            "shellcheck",
-            "-pyflakes",
-            "pyflakes",
-            *WORKFLOW_FILES,
-        ),
+
+
+def _static() -> None:
+    """Run the platform-independent formatting, lint, type, and secret checks."""
+    static_checks.run(
+        _run,
+        check_repository_hygiene,
+        PROJECT_ROOT,
+        WORKFLOW_FILES,
+        SHELL_SCRIPTS,
     )
-    _run(("shellcheck", "--shell=sh", *SHELL_SCRIPTS))
-    audit = check_repository_hygiene.audit_repository(PROJECT_ROOT)
-    if audit.issues:
-        diagnostics = "\n".join(audit.diagnostics(PROJECT_ROOT))
-        message = f"repository changed before secret scanning:\n{diagnostics}"
-        raise RuntimeError(message)
-    _run((
-        "detect-secrets-hook",
-        "--no-verify",
-        *(str(path) for path in audit.public_files),
-    ))
+
+
+def _check() -> None:
+    """Run every static check, including the host-dependent repository audit."""
+    _hygiene()
+    _static()
 
 
 def _test_result_path(profile: str) -> Path:
@@ -281,6 +275,20 @@ def _capture_mutation_results() -> None:
     )
 
 
+def _capture_mutation_diagnostics() -> None:
+    """Bundle a bounded patch and mapped tests for every mutant that survived."""
+    paths = _mutation_paths()
+    environment = _task_environment()
+    mutation_diagnostics.collect(
+        MUTATION_RESULTS,
+        PROJECT_ROOT / "mutants" / "mutmut-stats.json",
+        MUTATION_DIAGNOSTICS,
+        lambda mutant: mutation_task.show_mutant(
+            paths, sys.executable, environment, mutant
+        ),
+    )
+
+
 def _mutation_paths() -> object:
     """Return the canonical mutation workspace and evidence paths.
 
@@ -318,34 +326,12 @@ def _mutation(*, workers: int | None = None, preflight: bool = True) -> None:
         raise RuntimeError(message)
 
     def mutation_action(storage: Path) -> None:
-        coverage_variables = tuple(
-            variable for variable in os.environ if variable.startswith("COVERAGE_")
+        run_mutation_command = mutation_task.command_runner(
+            _run,
+            storage,
+            hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE,
+            OBSERVABILITY_VARIABLES,
         )
-
-        def run_mutation_command(
-            command: Sequence[str],
-            *,
-            profile: str | None = None,
-            timeout_seconds: float | None = 600,
-            environment_updates: Mapping[str, str] | None = None,
-            environment_removals: Sequence[str] = (),
-        ) -> None:
-            updates = dict(environment_updates or {})
-            updates["COVERAGE_FILE"] = str(storage.parent / ".mutmut-coverage")
-            updates[hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE] = str(storage)
-            updates["EML_MUTATION_PYTEST_TEMPORARY_ROOT"] = str(storage)
-            _run(
-                command,
-                profile=profile,
-                timeout_seconds=timeout_seconds,
-                environment_updates=updates,
-                environment_removals=(
-                    *OBSERVABILITY_VARIABLES,
-                    *coverage_variables,
-                    "PYTEST_ADDOPTS",
-                    *environment_removals,
-                ),
-            )
 
         mutation_task.run_mutation(
             _mutation_paths(),
@@ -354,13 +340,15 @@ def _mutation(*, workers: int | None = None, preflight: bool = True) -> None:
                 _remove_mutation_workspace,
                 _capture_mutation_results,
                 run_mutation_command,
+                _capture_mutation_diagnostics,
             ),
             sys.executable,
             workers=workers,
             preflight=preflight,
         )
 
-    hypothesis_runner.run_isolated(mutation_action, PROJECT_ROOT)
+    with mutation_lease.lease(BUILD_DIRECTORY):
+        hypothesis_runner.run_isolated(mutation_action, PROJECT_ROOT)
 
 
 def _build_zipapp() -> None:
@@ -380,9 +368,16 @@ def _qualify_release() -> None:
     print(f"qualified release candidates: {output_directory}")
 
 
-def _quality() -> None:
-    """Run the complete pull-request quality gate."""
-    _check()
+def _quality(*, native: bool = False) -> None:
+    """Run the complete pull-request quality gate.
+
+    With ``native``, only what depends on this host runs: the repository audit and
+    coverage. The static checks are identical on every host, so one lane owns them.
+    """
+    if native:
+        _hygiene()
+    else:
+        _check()
     _coverage()
 
 
@@ -399,6 +394,7 @@ def _ci(release_tag: str | None, workers: int | None) -> None:
         ),
         release_tag=release_tag,
         workers=mutation_task.AUTOMATIC_WORKERS if workers is None else str(workers),
+        lease=lambda: mutation_lease.lease(BUILD_DIRECTORY),
     )
 
 
@@ -428,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
             workers=arguments.workers,
             preflight=not arguments.allow_stale_manifest,
         ),
-        "quality": _quality,
+        "quality": lambda: _quality(native=arguments.native),
         "release": _qualify_release,
         "test": lambda: _test("project-development"),
         "thorough": lambda: _test(

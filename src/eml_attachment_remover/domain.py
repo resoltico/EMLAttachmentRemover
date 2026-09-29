@@ -331,6 +331,7 @@ class BatchLedger:
     batch_error: AppError | None = None
     report_spool: object | None = field(default=None, repr=False)
     emergency_report_spool: object | None = field(default=None, repr=False)
+    report_budget: object | None = field(default=None, repr=False)
     report_spool_failed: bool = False
 
     @classmethod

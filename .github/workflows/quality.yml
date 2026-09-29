@@ -28,8 +28,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The one lane that runs the platform-independent static checks.
           - os: ubuntu-latest
             python: 3.14.7
+            static: true
           - os: macos-latest
             python: 3.14.7
           - os: windows-latest
@@ -60,7 +62,11 @@ jobs:
         shell: bash
         run: test -x /bin/sh
       - name: Run the complete quality gate
+        if: matrix.static
         run: uv run python tools/tasks.py quality
+      - name: Run the platform-native quality gate
+        if: ${{ !matrix.static }}
+        run: uv run python tools/tasks.py quality --native
       - name: Preserve machine-readable quality reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

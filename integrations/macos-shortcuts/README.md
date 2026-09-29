@@ -27,7 +27,10 @@ The launcher defaults to `EML_REMOVER_EXISTING=verify`, so repeat use accepts on
 destination whose exact bytes equal the current verified candidate. It also accepts
 `error`; unsupported values produce a configuration diagnostic. It forwards
 HUP/INT/TERM to its child, waits for cleanup/reporting, validates the complete
-schema-3 terminal receipt/count/exit contract, and reveals only `created` or
+schema-3 terminal receipt/count/exit contract (the one allowed disagreement is exit
+status 130 with a complete report whose `exit_code` differs: a signal that arrived
+while the finished report was being delivered; the receipts are kept and the
+summary says the run was cut short), and reveals only `created` or
 `existing_verified` paths whose address receipt succeeded. Its visible Shortcuts
 result always shows created, existing-verified, failed, not-run,
 published-with-error, and cancelled totals, followed by bounded source-qualified

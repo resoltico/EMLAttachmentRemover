@@ -5,16 +5,13 @@ from __future__ import annotations
 import base64
 import io
 import os
-import signal
 import subprocess
 import sys
-import threading
 from typing import TYPE_CHECKING
 
 import pytest
 
 from eml_attachment_remover import (
-    cancellation,
     native_values,
     report_spool,
     report_stream,
@@ -108,7 +105,7 @@ def test_report_path_value_rebuilds_every_serialized_field() -> None:
                     "a\ud800.eml".encode("utf-16-le", "surrogatepass")
                 ),
             },
-            "C:\\out\\a\ud800.eml",
+            "C:\\out\\a\\ud800.eml",
         ),
     ],
 )
@@ -130,7 +127,7 @@ def test_undecodable_posix_basename_stays_reversible_in_a_planned_display(
         "parent": {"display": "/"},
         "basename_base64": _native(b"\xff.eml"),
     }
-    assert native_values.planned_display(destination) == "/\udcff.eml"
+    assert native_values.planned_display(destination) == "/\\udcff.eml"
 
 
 def test_human_lines_name_the_final_or_planned_destination() -> None:
@@ -143,45 +140,6 @@ def test_human_lines_name_the_final_or_planned_destination() -> None:
     assert target({"status": "failed", "destination": planned}) is None
     assert target({"status": "would_create", "destination": None}) is None
     assert target({"publication": {"final_address": None}}) is None
-
-
-def _deliver_through_two_signals() -> None:
-    with cancellation.defer_cancellation():
-        signal.raise_signal(signal.SIGINT)
-        signal.raise_signal(signal.SIGINT)
-
-
-def test_deferred_cancellation_is_raised_once_after_the_block() -> None:
-    """A signal during delivery is held, then honored with its own name."""
-    with (
-        cancellation.install_cancellation_handlers(),
-        pytest.raises(cancellation.CancellationSignal) as raised,
-    ):
-        _deliver_through_two_signals()
-    assert (raised.value.number, raised.value.name) == (signal.SIGINT, "SIGINT")
-
-
-def test_deferred_cancellation_without_a_signal_restores_handlers() -> None:
-    """An undisturbed delivery raises nothing and leaves prior handlers in place."""
-    before = signal.getsignal(signal.SIGINT)
-    with cancellation.defer_cancellation():
-        assert signal.getsignal(signal.SIGINT) is not before
-    assert signal.getsignal(signal.SIGINT) is before
-
-
-def test_deferred_cancellation_off_the_main_thread_changes_nothing() -> None:
-    """Signal handlers belong to the main thread; workers only run the block."""
-    seen: list[bool] = []
-
-    def worker() -> None:
-        before = signal.getsignal(signal.SIGINT)
-        with cancellation.defer_cancellation():
-            seen.append(signal.getsignal(signal.SIGINT) is before)
-
-    thread = threading.Thread(target=worker)
-    thread.start()
-    thread.join()
-    assert seen == [True]
 
 
 def test_temp_root_check_applies_only_to_a_source_checkout(

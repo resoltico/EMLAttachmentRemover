@@ -36,7 +36,7 @@ from .native_paths import (
     read_existing,
     read_source,
 )
-from .report_admission import admit
+from .report_budget import admit, plan
 from .staged_output import PublishedWithError, publish
 
 MAX_BATCH_ITEMS: Final = 4_096
@@ -376,6 +376,11 @@ def _run_inventory_and_items(
     inventory = _inventory(ledger, sources, options)
     if inventory is None:
         return
+    budget = plan(ledger)
+    if budget is None:
+        report_stream.recover(ledger)
+        return
+    ledger.report_budget = budget
     if not report_stream.archive_or_recover(ledger):
         return
     all_identities = set(inventory.identities.values())

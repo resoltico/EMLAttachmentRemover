@@ -11,7 +11,6 @@ from eml_attachment_remover import batch as batch_module
 from eml_attachment_remover import native_binding, staged_output
 from eml_attachment_remover.batch import BatchOptions, execute
 from eml_attachment_remover.cancellation import CancellationSignal
-from eml_attachment_remover.cli import exit_code
 from eml_attachment_remover.domain import (
     AppError,
     BatchLedger,
@@ -23,6 +22,7 @@ from eml_attachment_remover.domain import (
     LedgerItem,
     PublicationReceipt,
 )
+from eml_attachment_remover.exit_status import exit_code
 from eml_attachment_remover.native_paths import (
     BoundDirectoryHandle,
     path_value,

@@ -1,5 +1,6 @@
 import argparse
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Protocol
 
@@ -40,6 +41,7 @@ class TaskTestCommands(Protocol):
 
 class MutationTaskModule(Protocol):
     AUTOMATIC_WORKERS: str
+    EVIDENCE_TIMEOUT_SECONDS: int
     def mutation_worker_count(self, cpu_count: int | None = None) -> int: ...
     def parse_workers(self, value: str) -> int | None: ...
     def mutation_paths(
@@ -56,6 +58,7 @@ class MutationTaskModule(Protocol):
         cleanup: Callable[[], None],
         capture: Callable[[], None],
         run: Callable[..., None],
+        diagnose: Callable[[], None] = ...,
     ) -> object: ...
     def capture_results(
         self,
@@ -63,6 +66,20 @@ class MutationTaskModule(Protocol):
         executable: str,
         environment: Mapping[str, str],
     ) -> None: ...
+    def command_runner(
+        self,
+        run: Callable[..., None],
+        storage: Path,
+        storage_variable: str,
+        observability: Sequence[str],
+    ) -> Callable[..., None]: ...
+    def show_mutant(
+        self,
+        paths: object,
+        executable: str,
+        environment: Mapping[str, str],
+        mutant: str,
+    ) -> str: ...
     def remove_workspace(self, paths: object) -> None: ...
     def run_mutation(
         self,
@@ -73,6 +90,28 @@ class MutationTaskModule(Protocol):
         workers: int | None = None,
         preflight: bool = True,
     ) -> None: ...
+
+class StaticChecks(Protocol):
+    def run(
+        self,
+        run_command: Callable[[Sequence[str]], None],
+        hygiene: RepositoryHygiene,
+        project_root: Path,
+        workflow_files: Sequence[str],
+        shell_scripts: Sequence[str],
+    ) -> None: ...
+
+class MutationDiagnostics(Protocol):
+    def collect(
+        self,
+        results: Path,
+        stats: Path,
+        output: Path,
+        show: Callable[[str], str],
+    ) -> None: ...
+
+class MutationLease(Protocol):
+    def lease(self, build_directory: Path) -> AbstractContextManager[None]: ...
 
 class TaskProcess(Protocol):
     DEFAULT_GRACE_SECONDS: float
@@ -100,6 +139,7 @@ class LocalCi(Protocol):
         *,
         release_tag: str | None,
         workers: str,
+        lease: Callable[[], AbstractContextManager[None]] = ...,
     ) -> None: ...
 
 class TaskCli(Protocol):

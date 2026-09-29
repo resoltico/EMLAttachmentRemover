@@ -11,8 +11,10 @@ from eml_attachment_remover import cli
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import BatchLedger, ExitCode, ItemStatus
 from eml_attachment_remover.native_paths import path_value
+from tests.report_session_support import open_session
 
 if TYPE_CHECKING:
+    from contextlib import ExitStack
     from pathlib import Path
 
 
@@ -26,10 +28,10 @@ def test_dispatch_cancellation_writes_one_terminal_json_receipt(
     ])
     ledger.items[0].finish(ItemStatus.CREATED)
 
-    def interrupt(raw: list[str], state: cli._RunState, _resources: object) -> int:
+    def interrupt(raw: list[str], state: cli._RunState, resources: ExitStack) -> int:
         assert raw == ["--output-format=json"]
         state.ledger = ledger
-        state.output_format = "json"
+        state.session = open_session(resources, "json")
         raise CancellationSignal(15, "SIGTERM")
 
     monkeypatch.setattr(cli, "_run", interrupt)

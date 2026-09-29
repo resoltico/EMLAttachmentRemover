@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import pytest
 from tools import check_repository_hygiene, junit_node_id, tasks
 
-from eml_attachment_remover import cli, staged_output
+from eml_attachment_remover import exit_status, staged_output
 from eml_attachment_remover.domain import (
     AppError,
     BatchLedger,
@@ -98,7 +98,7 @@ def test_cli_cancelled_status_is_independent_interruption_evidence() -> None:
     """A cancelled row means interruption even when no separate ledger record exists."""
     ledger = BatchLedger.from_requests([path_value("source.eml")])
     ledger.items[0].finish(ItemStatus.CANCELLED, AppError(ExitCode.INTERRUPTED, "stop"))
-    assert cli._is_interrupted(ledger)  # ruff: ignore[private-member-access] - cancelled status receipt.
+    assert exit_status._is_interrupted(ledger)  # ruff: ignore[private-member-access] - cancelled status receipt.
 
 
 def test_generated_opaque_archive_requires_a_direct_named_artifact_root() -> None:

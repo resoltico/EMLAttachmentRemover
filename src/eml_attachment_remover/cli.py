@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import sys
-from contextlib import ExitStack, redirect_stderr, redirect_stdout
+from contextlib import ExitStack
 from dataclasses import dataclass
-from typing import Final, cast
 
 from . import report_stream
 from .batch import BatchOptions, execute
 from .cancellation import (
     CancellationSignal,
-    defer_cancellation,
+    delivery_guard,
     install_cancellation_handlers,
 )
 from .cli_parser import (
@@ -20,110 +19,21 @@ from .cli_parser import (
     raw_source_candidates,
     validate_arguments,
 )
-from .domain import (
-    PROGRAM_NAME,
-    AppError,
-    BatchLedger,
-    ExitCode,
-    ItemStatus,
-    LedgerItem,
-)
+from .diagnostics import write_error
+from .domain import AppError, BatchLedger, ExitCode
+from .exit_status import exit_code
 from .native_paths import path_value
 from .report_delivery import StagedChannels
-from .reporting_v3 import report, write_human, write_json, write_paths0
-
-ACCEPTED: Final = frozenset({
-    ItemStatus.CREATED,
-    ItemStatus.EXISTING_VERIFIED,
-    ItemStatus.WOULD_CREATE,
-})
+from .report_session import ReportSession
+from .reporting_v3 import report, write_json
 
 
 @dataclass(slots=True)
 class _RunState:
-    """Own one run's retained output request, report staging, and ledger."""
+    """Own one run's ledger and its report session."""
 
     ledger: BatchLedger | None = None
-    output_format: str = "human"
-    mode: str = "apply"
-    staged: StagedChannels | None = None
-    delivery_started: bool = False
-
-
-def exit_code(ledger: BatchLedger) -> int:
-    """Apply the documented terminal-state precedence to a completed ledger.
-
-    Returns:
-        The stable process code corresponding to the terminal ledger states.
-
-    """
-    if _is_interrupted(ledger):
-        return int(ExitCode.INTERRUPTED)
-    if (
-        (
-            ledger.batch_error is not None
-            and ledger.batch_error.code is ExitCode.INTERNAL_ERROR
-        )
-        or _has_publication_error(ledger, ExitCode.INTERNAL_ERROR)
-        or any(
-            item.status is ItemStatus.FAILED
-            and item.error is not None
-            and item.error.code is ExitCode.INTERNAL_ERROR
-            for item in ledger.items
-        )
-    ):
-        return int(ExitCode.INTERNAL_ERROR)
-    if ledger.batch_error is not None:
-        return int(ledger.batch_error.code)
-    if _has_status(ledger, ItemStatus.PUBLISHED_WITH_ERROR):
-        return int(
-            ExitCode.PUBLICATION_INCOMPLETE
-            if len(ledger.items) == 1
-            else ExitCode.BATCH_FAILURE
-        )
-    return _failure_exit(ledger)
-
-
-def _is_interrupted(ledger: BatchLedger) -> bool:
-    return (
-        ledger.interruption is not None
-        or _has_status(ledger, ItemStatus.CANCELLED)
-        or _has_publication_error(ledger, ExitCode.INTERRUPTED)
-    )
-
-
-def _has_status(ledger: BatchLedger, status: ItemStatus) -> bool:
-    return any(item.status is status for item in ledger.items)
-
-
-def _has_publication_error(ledger: BatchLedger, code: ExitCode) -> bool:
-    return any(
-        item.status is ItemStatus.PUBLISHED_WITH_ERROR
-        and item.error is not None
-        and item.error.code is code
-        for item in ledger.items
-    )
-
-
-def _failure_exit(ledger: BatchLedger) -> int:
-    failed = [item for item in ledger.items if item.status is ItemStatus.FAILED]
-    if not failed:
-        return _remaining_exit(ledger)
-    if len(ledger.items) != 1:
-        return int(ExitCode.BATCH_FAILURE)
-    return _single_failure_exit(failed[0])
-
-
-def _remaining_exit(ledger: BatchLedger) -> int:
-    return (
-        int(ExitCode.BATCH_FAILURE)
-        if any(item.status not in ACCEPTED for item in ledger.items)
-        else int(ExitCode.SUCCESS)
-    )
-
-
-def _single_failure_exit(item: LedgerItem) -> int:
-    return int(ExitCode.INTERNAL_ERROR if item.error is None else item.error.code)
+    session: ReportSession | None = None
 
 
 def _render_error(error: AppError, parser: object | None) -> int:
@@ -135,10 +45,7 @@ def _render_error(error: AppError, parser: object | None) -> int:
     """
     if error.code is ExitCode.USAGE and parser is not None:
         parser.print_usage(sys.stderr)  # type: ignore[attr-defined]
-    sys.stderr.write(
-        f"{PROGRAM_NAME}: error[{error.code.name}:{int(error.code)}]: {error.message}\n"
-    )
-    return int(error.code)
+    return write_error(error)
 
 
 def _json_error(arguments: list[str], error: AppError) -> int:
@@ -208,14 +115,16 @@ def _released(state: _RunState, status: int) -> int:
 
 
 def _cancelled(state: _RunState, cancellation: CancellationSignal) -> int:
-    status = int(ExitCode.INTERRUPTED)
     interrupted = AppError(ExitCode.INTERRUPTED, f"interrupted by {cancellation.name}")
-    if state.ledger is None or state.delivery_started:
+    session = state.session
+    if state.ledger is None or session is None or session.delivery_started:
         # Once delivery began, a second document would corrupt the channel.
         return _render_error(interrupted, None)
     if state.ledger.interruption is None:
         state.ledger.record_interruption(cancellation.name, "report")
-    return _write_then_close(state, status)
+    # The final report is owed exactly once; further signals only wait behind it.
+    with delivery_guard():
+        return session.publish(state.ledger, int(ExitCode.INTERRUPTED))
 
 
 def _application_error(raw: list[str], error: AppError) -> int:
@@ -242,61 +151,14 @@ def _run(raw: list[str], state: _RunState, resources: ExitStack) -> int:
         namespace.output,
         namespace.output_dir,
     )
-    state.output_format = str(namespace.output_format)
-    state.mode = "dry-run" if options.dry_run else "apply"
-    state.staged = StagedChannels.open(resources, state.output_format)
+    output_format = str(namespace.output_format)
+    session = ReportSession(
+        StagedChannels.open(resources, output_format),
+        output_format,
+        "dry-run" if options.dry_run else "apply",
+    )
+    state.session = session
     with install_cancellation_handlers():
         ledger = execute(list(namespace.source), options)
         state.ledger = ledger
-        return _write_then_close(state, exit_code(ledger))
-
-
-def _write_selected(
-    output_format: str, ledger: BatchLedger, mode: str, status: int
-) -> None:
-    if ledger.report_spool is None:
-        document = report(ledger, mode, status)
-        if output_format == "json":
-            write_json(document)
-        elif output_format == "paths0":
-            write_paths0(ledger)
-        else:
-            write_human(document)
-    elif output_format == "json":
-        report_stream.write_json(ledger, mode, status)
-    elif output_format == "paths0":
-        report_stream.write_paths0(ledger)
-    else:
-        report_stream.write_human(ledger)
-
-
-def _write_then_close(state: _RunState, status: int) -> int:
-    """Stage one complete report, release its receipts, then deliver it once.
-
-    Returns:
-        The delivered report's status, which a staging failure can change.
-
-    """
-    ledger = cast("BatchLedger", state.ledger)
-    staged = cast("StagedChannels", state.staged)
-    if ledger.report_spool is None:
-        state.delivery_started = True
-        _write_selected(state.output_format, ledger, state.mode, status)
-        return status
-    staged.reset()
-    try:
-        with redirect_stdout(staged.out), redirect_stderr(staged.err):
-            _write_selected(state.output_format, ledger, state.mode, status)
-    except OSError:
-        # Nothing has reached a channel yet: fall back to the reserved status
-        # records rather than losing the outcome of already-published items.
-        report_stream.recover(ledger)
-        recovered = exit_code(ledger)
-        state.delivery_started = True
-        _write_selected(state.output_format, ledger, state.mode, recovered)
-        return recovered
-    report_stream.close(ledger)
-    with defer_cancellation():
-        state.delivery_started = True
-        staged.deliver(state.output_format)
-    return status
+        return session.publish(ledger, exit_code(ledger))

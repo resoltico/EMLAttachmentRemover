@@ -13,12 +13,13 @@ WORKFLOWS = PROJECT_ROOT / ".github" / "workflows"
 
 def test_quality_task_keeps_static_hygiene_and_branch_coverage_gates() -> None:
     task_source = TASKS.read_text(encoding="utf-8")
+    static_source = (TASKS.parent / "static_checks.py").read_text(encoding="utf-8")
     assert "tools/check_repository_hygiene.py" in task_source
-    assert '"ruff", "format", "--check"' in task_source
-    assert '"mypy", "--no-incremental"' in task_source
-    assert "tools/check_module_design.py" in task_source
+    assert '"ruff", "format", "--check"' in static_source
+    assert '"mypy", "--no-incremental"' in static_source
+    assert "tools/check_module_design.py" in static_source
     assert "tools/report_coverage.py" in task_source
-    assert "detect-secrets-hook" in task_source
+    assert "detect-secrets-hook" in static_source
 
 
 def test_mutation_task_binds_results_to_both_core_and_assurance_sources() -> None:

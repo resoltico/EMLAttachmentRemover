@@ -210,6 +210,70 @@ def test_finder_launcher_accepts_native_only_posix_output_address(
     assert "created 1" in result.stdout
 
 
+def _complete(status: int) -> dict[str, object]:
+    """Build a complete, uninterrupted, successful report with a given exit field.
+
+    Returns:
+        A structurally valid report of one created output.
+
+    """
+    report = _report([_item(0, "created")], status)
+    report["ok"] = True
+    report["batch_error"] = None
+    report["interrupted"] = False
+    report["interruption"] = None
+    return report
+
+
+def test_finder_launcher_accepts_a_signal_that_arrived_during_delivery(
+    tmp_path: Path,
+) -> None:
+    """A complete report with status 130 keeps its receipts and says so."""
+    result = _run(tmp_path, _complete(0), 130)
+    assert result.returncode == 130
+    assert "created 1" in result.stdout
+    assert "Interrupted: after the report was written" in result.stdout
+    assert "invalid processor report" not in result.stdout
+
+
+@pytest.mark.parametrize("status", [2, 9, 70])
+def test_finder_launcher_rejects_every_other_status_disagreement(
+    tmp_path: Path, status: int
+) -> None:
+    """Only the interruption status may differ from the delivered document."""
+    result = _run(tmp_path, _complete(0), status)
+    assert result.returncode == 70
+    assert "report identity or exit status is invalid" in result.stdout
+
+
+def test_finder_launcher_still_rejects_a_truncated_report_on_interruption(
+    tmp_path: Path,
+) -> None:
+    """A partially delivered document is never mistaken for a complete one."""
+    zipapp = tmp_path / "processor.pyz"
+    zipapp.write_text(
+        'print(\'{"schema_version": 3, "scope"\')\nraise SystemExit(130)\n',
+        encoding="utf-8",
+    )
+    source = tmp_path / "source.eml"
+    source.write_bytes(b"source")
+    result = subprocess.run(
+        ["/bin/sh" if os.name != "nt" else "sh", str(RUNNER), str(source)],
+        check=False,
+        capture_output=True,
+        cwd=tmp_path,
+        encoding="utf-8",
+        env={
+            **os.environ,
+            "EML_REMOVER_PYTHON": sys.executable,
+            "EML_REMOVER_ZIPAPP": str(zipapp),
+            "EML_REMOVER_REVEAL": "0",
+        },
+    )
+    assert result.returncode == 70
+    assert "invalid processor report" in result.stdout
+
+
 def test_installer_prints_the_documented_finder_error_transport() -> None:
     """The generated Shortcuts command keeps Show Content reachable on failure."""
     source = INSTALLER.read_text(encoding="utf-8")

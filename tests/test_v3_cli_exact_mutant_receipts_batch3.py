@@ -7,11 +7,12 @@ from contextlib import ExitStack
 
 import pytest
 
-from eml_attachment_remover import cli
+from eml_attachment_remover import cli, report_session
 from eml_attachment_remover.batch import BatchOptions
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import AppError, BatchLedger, ExitCode, ItemStatus
 from eml_attachment_remover.native_paths import path_value
+from tests.report_session_support import open_session
 
 
 def test_preledger_cancellation_retains_its_exact_interruption_error(
@@ -40,10 +41,13 @@ def test_active_cancellation_reports_its_retained_mode_on_its_selected_channel(
     """An interrupted report keeps the requested channel and mode, never defaults."""
     ledger = BatchLedger.from_requests([path_value("source.eml")])
     ledger.items[0].finish(ItemStatus.CREATED)
-    state = cli._RunState(ledger, output_format, mode)  # ruff: ignore[private-member-access] - active cancellation state.
-    status = cli._cancelled(  # ruff: ignore[private-member-access] - active cancellation receipt.
-        state, CancellationSignal(2, "SIGHUP")
-    )
+    with ExitStack() as resources:
+        state = cli._RunState(  # ruff: ignore[private-member-access] - active cancellation state.
+            ledger, open_session(resources, output_format, mode)
+        )
+        status = cli._cancelled(  # ruff: ignore[private-member-access] - active cancellation receipt.
+            state, CancellationSignal(2, "SIGHUP")
+        )
     assert status == 130
     captured = capsys.readouterr()
     if output_format == "json":
@@ -116,7 +120,7 @@ def test_run_keeps_every_validated_option_and_the_completed_ledger(
         "execute",
         execute,
     )
-    monkeypatch.setattr(cli, "_write_selected", lambda *_arguments: None)
+    monkeypatch.setattr(report_session, "_write_selected", lambda *_arguments: None)
     state = cli._RunState()  # ruff: ignore[private-member-access] - run-state receipt.
     with ExitStack() as resources:
         assert (
@@ -135,8 +139,11 @@ def test_run_keeps_every_validated_option_and_the_completed_ledger(
             )
             == 0
         )
-        assert state.staged is not None
-    assert (state.output_format, state.mode) == ("json", "dry-run")
+        assert state.session is not None
+        assert (state.session.output_format, state.session.mode) == (
+            "json",
+            "dry-run",
+        )
     assert captured == [
         BatchOptions(
             dry_run=True,

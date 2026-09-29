@@ -4,17 +4,23 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, cast
+from typing import IO, TYPE_CHECKING, Any, Final, cast
 
 from .report_spool import private_temp_root
 
 # JSON is ASCII and paths0 is written to the binary buffer; neither is re-encoded.
 BYTE_CHANNEL: Final = "utf-8"
+CHUNK_SIZE: Final = 64 * 1024
+POLL_SECONDS: Final = 0.05
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from contextlib import ExitStack
     from typing import TextIO
+
+    from .cancellation import DeliveryGuard
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,16 +59,29 @@ class StagedChannels:
             staged.seek(0)
             staged.truncate()
 
-    def deliver(self, output_format: str) -> None:
-        """Copy the staged diagnostics and report to the real channels."""
-        self.err.seek(0)
-        _copy_text(self.err, sys.stderr)
-        self.out.flush()
-        self.out.seek(0)
+    def seal(self) -> None:
+        """Make the staged report deliverable, or fail while recovery is still open.
+
+        Everything that can fail before the first external byte happens here: the
+        flush, the rewind, and a read of the first chunk from each file.
+        """
+        for staged in (self.out, self.err):
+            staged.flush()
+            staged.seek(0)
+            staged.read(1)
+            staged.seek(0)
+
+    def deliver(self, output_format: str, guard: DeliveryGuard) -> None:
+        """Copy the sealed diagnostics and report to the real channels, boundedly."""
+        _bounded(lambda: self._copy(output_format, guard), guard)
+
+    def _copy(self, output_format: str, guard: DeliveryGuard) -> None:
+        """Write stderr then stdout in flushed chunks, stamping each one's progress."""
+        _copy_chunks(self.err, sys.stderr, guard)
         if output_format in {"json", "paths0"}:
-            _copy_bytes(self.out.buffer, sys.stdout.buffer)
+            _copy_chunks(self.out.buffer, sys.stdout.buffer, guard)
         else:
-            _copy_text(self.out, sys.stdout)
+            _copy_chunks(self.out, sys.stdout, guard)
 
 
 def _staging_file(resources: ExitStack, encoding: str, root: str) -> TextIO:
@@ -87,13 +106,44 @@ def _encoding(stream: object) -> str:
     return getattr(stream, "encoding", None) or "utf-8"
 
 
-def _copy_text(source: object, destination: object) -> None:
-    """Copy bounded staged text to one already-selected real output channel."""
-    while chunk := source.read(1024 * 1024):  # type: ignore[attr-defined]
-        destination.write(chunk)  # type: ignore[attr-defined]
+def write_note(text: str, guard: DeliveryGuard) -> None:
+    """Write one short diagnostic to standard error under the same bound."""
+
+    def write() -> None:
+        sys.stderr.write(text)
+        sys.stderr.flush()
+        guard.note_progress()
+
+    _bounded(write, guard)
 
 
-def _copy_bytes(source: object, destination: object) -> None:
-    """Copy bounded staged binary output to one already-selected real channel."""
-    while chunk := source.read(1024 * 1024):  # type: ignore[attr-defined]
-        destination.write(chunk)  # type: ignore[attr-defined]
+def _bounded(work: Callable[[], None], guard: DeliveryGuard) -> None:
+    """Run channel output on a helper thread while this thread watches the guard.
+
+    The delivering thread never blocks in a channel write, so signal handlers run on
+    every platform and a stalled reader can be abandoned once the grace is spent.
+
+    """
+    failures: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            work()
+        except BaseException as exc:  # ruff: ignore[blind-except] - re-raised on the delivering thread.
+            failures.append(exc)
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    while worker.is_alive():
+        worker.join(POLL_SECONDS)
+        guard.check()
+    if failures:
+        raise failures[0]
+
+
+def _copy_chunks(source: IO[Any], destination: IO[Any], guard: DeliveryGuard) -> None:
+    """Copy a staged stream in bounded chunks, flushing and stamping each one."""
+    while chunk := source.read(CHUNK_SIZE):
+        destination.write(chunk)
+        destination.flush()
+        guard.note_progress()
