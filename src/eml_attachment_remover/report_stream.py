@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
-from base64 import b64decode
 from collections.abc import Iterator, Mapping
 from typing import Final, cast
 
@@ -21,6 +19,7 @@ from .domain import (
     ItemStatus,
     LedgerItem,
 )
+from .native_values import report_path_bytes, report_path_value
 from .report_spool import ReportSpool, ReportSpoolError
 
 _ITEM_KEY: Final = "items"
@@ -370,17 +369,18 @@ def write_human(ledger: BatchLedger) -> None:
 
 
 def _write_path_record(record: Mapping[str, object]) -> None:
-    """Write one accepted native path only when its final receipt is usable."""
+    """Write one accepted path from its final receipt, whatever its text form.
+
+    A name with no Unicode text (``text: null``) is still emitted from its
+    authoritative native bytes, exactly as the in-memory writer does.
+    """
     publication = record.get("publication")
-    final = (
+    final = report_path_value(
         publication.get("final_address") if isinstance(publication, Mapping) else None
     )
-    text = final.get("text") if isinstance(final, Mapping) else None
     accepted = {ItemStatus.CREATED.value, ItemStatus.EXISTING_VERIFIED.value}
-    if record.get("status") in accepted and isinstance(text, str):
-        native = final.get("native_base64") if isinstance(final, Mapping) else None
-        value = b64decode(native) if isinstance(native, str) else os.fsencode(text)
-        sys.stdout.buffer.write(value + b"\0")
+    if record.get("status") in accepted and final is not None:
+        sys.stdout.buffer.write(report_path_bytes(final) + b"\0")
 
 
 def _write_record_diagnostics(record: Mapping[str, object]) -> None:

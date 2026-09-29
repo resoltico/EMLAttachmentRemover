@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import ExitStack
 from pathlib import Path
 from typing import cast
 
@@ -19,6 +20,7 @@ from eml_attachment_remover.domain import (
     LedgerItem,
 )
 from eml_attachment_remover.native_paths import path_value
+from eml_attachment_remover.report_delivery import StagedChannels
 
 
 def _ledger() -> BatchLedger:
@@ -217,18 +219,26 @@ def test_cancelled_cli_uses_the_streamed_channels_when_a_spool_is_active(
         original_close(ledger)
 
     monkeypatch.setattr(report_stream, "close", close)
-    for raw, expected in ((["--output-format=json"], "json"), ([], "human")):
+    monkeypatch.setattr(
+        report_stream, "write_paths0", lambda *_args: calls.append("paths0")
+    )
+    for output_format in ("json", "human", "paths0"):
         ledger = _ledger()
         report_stream.start(ledger)
         report_stream.archive_all(ledger)
-        state = cli._RunState(ledger)  # ruff: ignore[private-member-access] - cancellation state boundary.
-        assert (
-            cli._cancelled(  # ruff: ignore[private-member-access] - spooled cancellation renderer.
-                raw, state, CancellationSignal(2, "SIGINT")
+        with ExitStack() as resources:
+            state = cli._RunState(  # ruff: ignore[private-member-access] - cancellation state boundary.
+                ledger,
+                output_format,
+                staged=StagedChannels.open(resources, output_format),
             )
-            == 130
-        )
-        assert calls[-2:] == [expected, "close"]
+            assert (
+                cli._cancelled(  # ruff: ignore[private-member-access] - spooled cancellation renderer.
+                    state, CancellationSignal(2, "SIGINT")
+                )
+                == 130
+            )
+        assert calls[-2:] == [output_format, "close"]
 
 
 def test_primary_spool_fault_uses_reserved_complete_status_report(

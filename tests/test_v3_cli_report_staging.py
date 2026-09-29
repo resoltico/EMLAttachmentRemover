@@ -1,17 +1,26 @@
-"""CLI terminal-report staging and cleanup contracts."""
+"""CLI terminal-report staging, delivery, and cleanup contracts."""
 
 from __future__ import annotations
 
+import json
+import signal
 import sys
 import tempfile
+from contextlib import ExitStack
 from io import BytesIO, StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
 
-from eml_attachment_remover import cli, report_spool, report_stream, staged_output
-from eml_attachment_remover.batch import BatchOptions
+from eml_attachment_remover import (
+    cli,
+    report_delivery,
+    report_spool,
+    report_stream,
+    staged_output,
+)
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import AppError, BatchLedger, ExitCode, ItemStatus
 from eml_attachment_remover.native_paths import path_value
@@ -29,53 +38,58 @@ def _failed() -> BatchLedger:
     return ledger
 
 
-def _options() -> BatchOptions:
-    """Build the canonical ordinary report options.
+def _spooled() -> BatchLedger:
+    """Build a terminal ledger whose record already lives in a private spool.
 
     Returns:
-        Stable non-dry-run options.
+        The archived ledger; callers release it.
 
     """
-    return BatchOptions(
-        dry_run=False, existing="error", fail_fast=False, output=None, output_dir=None
+    ledger = _failed()
+    report_stream.start(ledger)
+    report_stream.archive_all(ledger)
+    return ledger
+
+
+def test_staging_targets_each_final_channel_encoding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Human text escapes for its real channel; byte channels are staged unchanged."""
+    calls: list[dict[str, object]] = []
+
+    def temporary_file(**kwargs: object) -> StringIO:
+        calls.append(kwargs)
+        return StringIO()
+
+    monkeypatch.setattr(tempfile, "TemporaryFile", temporary_file)
+    monkeypatch.setattr(report_delivery, "private_temp_root", lambda: Path("/p"))
+    monkeypatch.setattr(sys, "stdout", SimpleNamespace(encoding="ascii"))
+    monkeypatch.setattr(sys, "stderr", SimpleNamespace(encoding="latin-1"))
+    with ExitStack() as resources:
+        for output_format in ("human", "json", "paths0"):
+            report_delivery.StagedChannels.open(resources, output_format)
+    expected = [
+        (encoding, "latin-1")
+        for encoding in ("ascii", report_delivery.BYTE_CHANNEL, "utf-8")
+    ]
+    assert [
+        (calls[index]["encoding"], calls[index + 1]["encoding"])
+        for index in range(0, 6, 2)
+    ] == expected
+    assert all(
+        (call["mode"], call["newline"], call["dir"]) == ("w+", "", str(Path("/p")))
+        for call in calls
     )
 
 
-def test_staged_files_are_explicitly_private_utf8_text_files(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The cleanup barrier never inherits encoding, newline, or temp-root policy."""
-    calls: list[dict[str, object]] = []
-
-    class StagedText(StringIO):
-        """Text staging double exposing the binary replay channel."""
-
-        buffer = BytesIO()
-
-    def temporary_file(**kwargs: object) -> StagedText:
-        calls.append(kwargs)
-        return StagedText()
-
-    ledger = _failed()
-    ledger.report_spool = object()
-    private_root = Path("/private")
-    monkeypatch.setattr(tempfile, "TemporaryFile", temporary_file)
-    monkeypatch.setattr(cli, "private_temp_root", lambda: private_root)
-    monkeypatch.setattr(cli, "_write_selected", lambda *_args: None)
-    monkeypatch.setattr(report_stream, "close", lambda _ledger: None)
-    monkeypatch.setattr(cli, "_copy_text", lambda *_args: None)
-    monkeypatch.setattr(cli, "_copy_bytes", lambda *_args: None)
-    cli._write_then_close("json", ledger, _options(), 0)  # ruff: ignore[private-member-access] - exact temporary-file policy.
-    assert calls == [
-        {"mode": "w+", "encoding": "utf-8", "newline": "", "dir": private_root},
-        {"mode": "w+", "encoding": "utf-8", "newline": "", "dir": private_root},
-    ]
+def test_unknown_channel_encoding_stages_utf8() -> None:
+    """An in-memory stand-in without an encoding keeps the historic UTF-8 staging."""
+    assert report_delivery._encoding(StringIO()) == "utf-8"  # ruff: ignore[private-member-access] - fallback codec.
+    assert report_delivery._encoding(SimpleNamespace(encoding="cp1252")) == "cp1252"  # ruff: ignore[private-member-access] - real codec.
 
 
-def test_copy_chunks_and_paths0_binary_replay_are_exact(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Large staged reports remain bounded and NUL-delimited output stays binary."""
+def test_copy_chunks_are_bounded() -> None:
+    """Large staged reports are replayed in bounded reads."""
     reads: list[int | None] = []
 
     class Source:
@@ -87,7 +101,7 @@ def test_copy_chunks_and_paths0_binary_replay_are_exact(
             return "x" if len(reads) == 1 else ""
 
     destination = StringIO()
-    cli._copy_text(Source(), destination)  # ruff: ignore[private-member-access] - bounded replay contract.
+    report_delivery._copy_text(Source(), destination)  # ruff: ignore[private-member-access] - bounded replay contract.
     assert reads == [1024 * 1024, 1024 * 1024]
     assert destination.getvalue() == "x"
 
@@ -102,60 +116,166 @@ def test_copy_chunks_and_paths0_binary_replay_are_exact(
             return b"x" if len(byte_reads) == 1 else b""
 
     byte_destination = BytesIO()
-    cli._copy_bytes(ByteSource(), byte_destination)  # ruff: ignore[private-member-access] - bounded binary replay contract.
+    report_delivery._copy_bytes(ByteSource(), byte_destination)  # ruff: ignore[private-member-access] - bounded binary replay contract.
     assert byte_reads == [1024 * 1024, 1024 * 1024]
     assert byte_destination.getvalue() == b"x"
 
-    ledger = _failed()
-    ledger.report_spool = object()
-    captured = BytesIO()
 
-    class Output:
-        """Minimal real-output boundary for paths0 replay."""
-
-        buffer = captured
-
-        @staticmethod
-        def write(_text: str) -> int:
-            return 0
-
-    monkeypatch.setattr(sys, "stdout", Output())
-    monkeypatch.setattr(
-        cli, "_write_selected", lambda *_args: sys.stdout.buffer.write(b"one\0")
-    )
-    monkeypatch.setattr(report_stream, "close", lambda _ledger: None)
-    cli._write_then_close("paths0", ledger, _options(), 0)  # ruff: ignore[private-member-access] - binary paths0 replay.
-    assert captured.getvalue() == b"one\0"
-
-    captured.seek(0)
-    captured.truncate(0)
-    monkeypatch.setattr(
-        cli, "_write_selected", lambda *_args: sys.stdout.buffer.write(b'{"ok":true}\n')
-    )
-    cli._write_then_close("json", ledger, _options(), 0)  # ruff: ignore[private-member-access] - binary JSON replay.
-    assert captured.getvalue() == b'{"ok":true}\n'
-
-    human = StringIO()
-    monkeypatch.setattr(sys, "stdout", human)
-    monkeypatch.setattr(
-        cli, "_write_selected", lambda *_args: sys.stdout.write("human\n")
-    )
-    cli._write_then_close("human", ledger, _options(), 0)  # ruff: ignore[private-member-access] - text human replay.
-    assert human.getvalue() == "human\n"
-
-
-def test_cancelled_constructs_the_canonical_terminal_options(
+@pytest.mark.parametrize(
+    ("output_format", "written", "expected"),
+    [
+        ("paths0", b"one\0", b"one\0"),
+        ("json", b'{"ok":true}\n', b'{"ok":true}\n'),
+        ("human", "human\n", b"human\n"),
+    ],
+)
+def test_delivery_replays_one_staged_report_on_its_channel(
+    output_format: str,
+    written: bytes | str,
+    expected: bytes,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Signal reporting must retain the public human mode and stable option facts."""
+    """A partial earlier render is discarded; only the final render is delivered."""
+    captured = BytesIO()
+    text = StringIO()
+
+    class Output:
+        """Real-output boundary exposing text and binary channels."""
+
+        buffer = captured
+        encoding = "utf-8"
+
+        @staticmethod
+        def write(value: str) -> int:
+            return text.write(value)
+
+    def render(*_args: object) -> None:
+        if isinstance(written, bytes):
+            sys.stdout.buffer.write(written)
+        else:
+            sys.stdout.write(written)
+
+    ledger = _spooled()
+    monkeypatch.setattr(sys, "stdout", Output())
+    monkeypatch.setattr(cli, "_write_selected", render)
+    with ExitStack() as resources:
+        staged = report_delivery.StagedChannels.open(resources, output_format)
+        staged.out.write("stale partial render")
+        state = cli._RunState(ledger, output_format, staged=staged)  # ruff: ignore[private-member-access] - delivery state.
+        assert cli._write_then_close(state, 4) == 4  # ruff: ignore[private-member-access] - delivery contract.
+    assert captured.getvalue() + text.getvalue().encode() == expected
+    assert state.delivery_started
+    assert ledger.report_spool is None
+
+
+def test_staging_failure_recovers_the_reserved_status_report(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A full disk during staging still delivers the outcome of published items."""
+    ledger = _spooled()
+    original = cli._write_selected  # ruff: ignore[private-member-access] - real renderer.
+    attempts: list[bool] = []
+
+    def fail_once(*args: object) -> None:
+        attempts.append(ledger.report_spool_failed)
+        if not attempts[1:]:
+            message = "synthetic no space"
+            raise OSError(message)
+        original(*args)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cli, "_write_selected", fail_once)
+    try:
+        with ExitStack() as resources:
+            state = cli._RunState(  # ruff: ignore[private-member-access] - recovery state.
+                ledger,
+                "json",
+                staged=report_delivery.StagedChannels.open(resources, "json"),
+            )
+            status = cli._write_then_close(state, 5)  # ruff: ignore[private-member-access] - staging recovery.
+        document = json.loads(capsys.readouterr().out)
+    finally:
+        report_stream.close(ledger)
+    assert attempts == [False, True]
+    assert status == int(ExitCode.WRITE_ERROR) == document["exit_code"]
+    assert document["batch_error"]["message"] == "terminal report spool failed"
+    assert [item["status"] for item in document["items"]] == ["failed"]
+    assert state.delivery_started
+
+
+def test_unspooled_ledgers_are_delivered_directly(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Without a spool there is nothing to stage, so the report goes straight out."""
+    state = cli._RunState(_failed(), "human")  # ruff: ignore[private-member-access] - direct delivery.
+    assert cli._write_then_close(state, 5) == 5  # ruff: ignore[private-member-access] - direct delivery.
+    assert capsys.readouterr().out == "failed: source.eml\n"
+    assert state.delivery_started
+
+
+def test_cancellation_during_delivery_is_honored_after_the_one_document(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A signal mid-delivery never truncates the report or appends a second one."""
+    ledger = _spooled()
+    deliveries: list[str] = []
+
+    def deliver(_staged: object, output_format: str) -> None:
+        deliveries.append(output_format)
+        signal.raise_signal(signal.SIGINT)
+        sys.stdout.write("{}\n")
+
+    monkeypatch.setattr(cli, "_write_selected", lambda *_args: None)
+    monkeypatch.setattr(report_delivery.StagedChannels, "deliver", deliver)
+    with ExitStack() as resources:
+        staged = report_delivery.StagedChannels.open(resources, "json")
+        state = cli._RunState(ledger, "json", staged=staged)  # ruff: ignore[private-member-access] - delivery state.
+        with pytest.raises(CancellationSignal):
+            cli._write_then_close(state, 0)  # ruff: ignore[private-member-access] - deferred delivery.
+        assert cli._cancelled(state, CancellationSignal(2, "SIGINT")) == 130  # ruff: ignore[private-member-access] - post-delivery cancellation.
+    captured = capsys.readouterr()
+    assert deliveries == ["json"]
+    assert captured.out == "{}\n"
+    assert captured.err.endswith("error[INTERRUPTED:130]: interrupted by SIGINT\n")
+
+
+def test_released_diagnoses_cleanup_failure_without_rewriting_status(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Spool cleanup after rendering reports its failure but keeps the run's status."""
     ledger = _failed()
-    captured: list[tuple[object, ...]] = []
-    monkeypatch.setattr(cli, "_write_then_close", lambda *args: captured.append(args))
-    status = cli._cancelled([], cli._RunState(ledger), CancellationSignal(2, "SIGINT"))  # ruff: ignore[private-member-access] - signal terminal contract.
-    assert status == 130
-    output_format, received_ledger, options, received_status = captured[0]
-    assert (output_format, received_ledger, received_status) == ("human", ledger, 130)
-    assert options == _options()
+
+    def fail_close(_ledger: BatchLedger) -> None:
+        message = "synthetic cleanup failure"
+        raise report_spool.ReportSpoolError(message)
+
+    monkeypatch.setattr(report_stream, "close", fail_close)
+    state = cli._RunState(ledger)  # ruff: ignore[private-member-access] - cleanup state.
+    assert cli._released(state, 5) == 5  # ruff: ignore[private-member-access] - cleanup contract.
+    assert cli._released(cli._RunState(), 3) == 3  # ruff: ignore[private-member-access] - no ledger to release.
+    assert capsys.readouterr().err.endswith(
+        "error[INTERNAL_ERROR:70]: report cleanup failed: synthetic cleanup failure\n"
+    )
+
+
+def test_dispatch_releases_spools_after_every_rendering_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failed or cancelled runs never leak a private terminal report spool."""
+    ledger = _spooled()
+    primary = cast("report_spool.ReportSpool", ledger.report_spool)
+    emergency = cast("report_spool.ReportSpool", ledger.emergency_report_spool)
+
+    def fail(_raw: list[str], state: cli._RunState, _resources: ExitStack) -> int:
+        state.ledger = ledger
+        message = "synthetic late failure"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(cli, "_run", fail)
+    monkeypatch.setattr(cli, "_render_error", lambda *_args: 70)
+    assert cli._dispatch(["source.eml"]) == 70  # ruff: ignore[private-member-access] - release contract.
+    assert ledger.report_spool is None
+    assert not primary.path.exists()
+    assert not emergency.path.exists()
 
 
 def test_stage_construction_reraises_one_failure_without_a_wrapper() -> None:
@@ -166,50 +286,16 @@ def test_stage_construction_reraises_one_failure_without_a_wrapper() -> None:
     assert raised.value is failure
 
 
-@pytest.mark.parametrize("failure_point", ["writer", "second-temporary-file"])
-def test_spooled_failures_always_release_both_private_report_owners(
-    failure_point: str,
-    monkeypatch: pytest.MonkeyPatch,
+def test_cancellation_keeps_an_interruption_recorded_during_processing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """No rendering or staging failure may leak a private terminal report spool."""
+    """A later report-phase signal never rewrites where the batch was interrupted."""
     ledger = _failed()
-    report_stream.start(ledger)
-    report_stream.archive_all(ledger)
-    primary = cast("report_spool.ReportSpool", ledger.report_spool)
-    emergency = cast("report_spool.ReportSpool", ledger.emergency_report_spool)
-    owned_paths = (primary.path, emergency.path)
-    if failure_point == "writer":
-        message = "synthetic render failure"
-
-        def fail_writer(*_args: object) -> None:
-            raise OSError(message)
-
-        monkeypatch.setattr(cli, "_write_selected", fail_writer)
-    else:
-        original = tempfile.TemporaryFile
-        allocations = 0
-
-        def temporary_file(
-            *,
-            mode: str,
-            encoding: str | None,
-            newline: str | None,
-            dir: Path | None,  # ruff: ignore[builtin-argument-shadowing] - mirrors TemporaryFile's public keyword.
-        ) -> object:
-            nonlocal allocations
-            allocations += 1
-            if allocations == 2:
-                message = "synthetic staging failure"
-                raise OSError(message)
-            return original(mode=mode, encoding=encoding, newline=newline, dir=dir)
-
-        monkeypatch.setattr(tempfile, "TemporaryFile", temporary_file)
-    with pytest.raises(OSError, match=r"synthetic (render|staging) failure"):
-        cli._write_then_close(  # ruff: ignore[private-member-access] - unconditional private cleanup contract.
-            "json", ledger, _options(), 1
-        )
-    assert ledger.report_spool is None
-    assert ledger.emergency_report_spool is None
-    assert all(not path.exists() for path in owned_paths)
-    assert not capsys.readouterr().out
+    ledger.record_interruption("SIGTERM", "processing")
+    state = cli._RunState(ledger, "json")  # ruff: ignore[private-member-access] - earlier interruption.
+    assert cli._cancelled(state, CancellationSignal(2, "SIGINT")) == 130  # ruff: ignore[private-member-access] - report-phase signal.
+    assert json.loads(capsys.readouterr().out)["interruption"] == {
+        "signal": "SIGTERM",
+        "reason": "interrupted by SIGTERM",
+        "phase": "processing",
+    }

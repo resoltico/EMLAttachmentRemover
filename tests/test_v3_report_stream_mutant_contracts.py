@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import ExitStack
 from typing import TYPE_CHECKING, Self, cast
 
 import pytest
@@ -15,7 +16,6 @@ from eml_attachment_remover import (
     report_stream,
     reporting_v3,
 )
-from eml_attachment_remover.batch import BatchOptions
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import (
     AppError,
@@ -25,6 +25,7 @@ from eml_attachment_remover.domain import (
     PathValue,
 )
 from eml_attachment_remover.native_paths import path_value
+from eml_attachment_remover.report_delivery import StagedChannels
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -322,18 +323,11 @@ def test_cli_preserves_every_direct_and_spooled_routing_argument(
 ) -> None:
     """Every CLI report channel receives its real ledger, mode, and exit code."""
     calls: list[tuple[object, ...]] = []
-    options = BatchOptions(
-        dry_run=False,
-        existing="error",
-        fail_fast=False,
-        output=None,
-        output_dir=None,
-    )
     direct = _failed()
     monkeypatch.setattr(
         cli, "write_paths0", lambda ledger: calls.append(("paths", ledger))
     )
-    cli._write_selected("paths0", direct, options, 5)  # ruff: ignore[private-member-access] - direct paths receipt.
+    cli._write_selected("paths0", direct, "apply", 5)  # ruff: ignore[private-member-access] - direct paths receipt.
     assert calls == [("paths", direct)]
 
     spooled = _failed()
@@ -343,8 +337,8 @@ def test_cli_preserves_every_direct_and_spooled_routing_argument(
         "write_json",
         lambda ledger, mode, status: calls.append(("json", ledger, mode, status)),
     )
-    cli._write_selected("json", spooled, options, 7)  # ruff: ignore[private-member-access] - spooled mode receipt.
-    assert calls[-1] == ("json", spooled, "apply", 7)
+    cli._write_selected("json", spooled, "dry-run", 7)  # ruff: ignore[private-member-access] - spooled mode receipt.
+    assert calls[-1] == ("json", spooled, "dry-run", 7)
 
     monkeypatch.setattr(
         report_stream,
@@ -354,8 +348,11 @@ def test_cli_preserves_every_direct_and_spooled_routing_argument(
     monkeypatch.setattr(
         report_stream, "close", lambda ledger: calls.append(("close", ledger))
     )
-    state = cli._RunState(spooled)  # ruff: ignore[private-member-access] - cancellation routing state.
-    assert cli._cancelled([], state, CancellationSignal(2, "SIGINT")) == 130  # ruff: ignore[private-member-access] - spooled human cancellation.
+    with ExitStack() as resources:
+        state = cli._RunState(  # ruff: ignore[private-member-access] - cancellation routing state.
+            spooled, staged=StagedChannels.open(resources, "human")
+        )
+        assert cli._cancelled(state, CancellationSignal(2, "SIGINT")) == 130  # ruff: ignore[private-member-access] - spooled human cancellation.
     assert calls[-2:] == [("human", spooled), ("close", spooled)]
 
 
@@ -374,19 +371,13 @@ def test_spooled_cleanup_failure_emits_no_contradictory_success_document(
         raise report_spool.ReportSpoolError(message)
 
     monkeypatch.setattr(report_stream, "close", fail_close)
-    with pytest.raises(report_spool.ReportSpoolError, match="synthetic cleanup"):
-        cli._write_then_close(  # ruff: ignore[private-member-access] - cleanup-before-output contract.
-            "json",
-            ledger,
-            BatchOptions(
-                dry_run=False,
-                existing="error",
-                fail_fast=False,
-                output=None,
-                output_dir=None,
-            ),
-            0,
+    with ExitStack() as resources:
+        state = cli._RunState(  # ruff: ignore[private-member-access] - cleanup-before-output state.
+            ledger, "json", staged=StagedChannels.open(resources, "json")
         )
+        with pytest.raises(report_spool.ReportSpoolError, match="synthetic cleanup"):
+            cli._write_then_close(state, 0)  # ruff: ignore[private-member-access] - cleanup-before-output contract.
+    assert not state.delivery_started
     captured = capsys.readouterr()
     assert not captured.out
     assert not captured.err

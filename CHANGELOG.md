@@ -4,6 +4,12 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+### Changed
+
+- Human output names each copy's destination
+  (`created: source.eml -> /path/to/source.mime-pruned.eml`); dry runs show the
+  planned destination.
+
 ### Added
 
 - `tasks.py ci` runs every CI gate the host can reproduce (both interpreters,
@@ -17,6 +23,15 @@ Notable changes to this project are documented in this file. The format is based
 
 ### Fixed
 
+- `paths0` no longer omits a created copy whose name has no Unicode text; it emits
+  the exact native path bytes, as documented.
+- Human output on a non-UTF-8 terminal no longer fails after creating a copy; text
+  is escaped for the terminal's actual encoding.
+- An interrupted or failed report keeps the requested format and mode (a `paths0`
+  or dry-run request no longer turns into human or apply output), is never followed
+  by a second document, and still reports published items if report staging fails.
+- A zipapp or installed package accepts a temporary directory beside it; only a
+  source checkout keeps temporary storage out of its tree.
 - Task timeouts and interruptions stop the whole process group, so no test or
   mutant descendant can outlive its task step and write after evidence capture.
 - Mutation workers remove each pytest session's temporary directory, keeping disk

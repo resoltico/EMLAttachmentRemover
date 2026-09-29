@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import ExitStack
 
 import pytest
 
@@ -25,26 +26,27 @@ def test_preledger_cancellation_retains_its_exact_interruption_error(
 
     monkeypatch.setattr(cli, "_render_error", render)
     signal = CancellationSignal(15, "SIGTERM")
-    assert cli._cancelled([], cli._RunState(), signal) == 130  # ruff: ignore[private-member-access] - preledger cancellation receipt.
+    assert cli._cancelled(cli._RunState(), signal) == 130  # ruff: ignore[private-member-access] - preledger cancellation receipt.
     assert captured == [
         (AppError(ExitCode.INTERRUPTED, "interrupted by SIGTERM"), None)
     ]
 
 
-@pytest.mark.parametrize("raw", [["--output-format=json"], []])
-def test_active_cancellation_reports_apply_mode_on_its_selected_channel(
-    raw: list[str], capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("mode", ["dry-run", "apply"])
+@pytest.mark.parametrize("output_format", ["json", "human"])
+def test_active_cancellation_reports_its_retained_mode_on_its_selected_channel(
+    output_format: str, mode: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An active ledger reports an apply-mode terminal document after interruption."""
+    """An interrupted report keeps the requested channel and mode, never defaults."""
     ledger = BatchLedger.from_requests([path_value("source.eml")])
     ledger.items[0].finish(ItemStatus.CREATED)
-    state = cli._RunState(ledger)  # ruff: ignore[private-member-access] - active cancellation state.
+    state = cli._RunState(ledger, output_format, mode)  # ruff: ignore[private-member-access] - active cancellation state.
     status = cli._cancelled(  # ruff: ignore[private-member-access] - active cancellation receipt.
-        raw, state, CancellationSignal(2, "SIGHUP")
+        state, CancellationSignal(2, "SIGHUP")
     )
     assert status == 130
     captured = capsys.readouterr()
-    if raw:
+    if output_format == "json":
         document = json.loads(captured.out)
         assert (
             document["mode"],
@@ -52,7 +54,7 @@ def test_active_cancellation_reports_apply_mode_on_its_selected_channel(
             document["interruption"],
             document["items"][0]["status"],
         ) == (
-            "apply",
+            mode,
             130,
             {
                 "signal": "SIGHUP",
@@ -116,20 +118,25 @@ def test_run_keeps_every_validated_option_and_the_completed_ledger(
     )
     monkeypatch.setattr(cli, "_write_selected", lambda *_arguments: None)
     state = cli._RunState()  # ruff: ignore[private-member-access] - run-state receipt.
-    assert (
-        cli._run(  # ruff: ignore[private-member-access] - parsed options receipt.
-            [
-                "--dry-run",
-                "--existing=verify",
-                "--fail-fast",
-                "--output-dir",
-                "destinations",
-                "source.eml",
-            ],
-            state,
+    with ExitStack() as resources:
+        assert (
+            cli._run(  # ruff: ignore[private-member-access] - parsed options receipt.
+                [
+                    "--dry-run",
+                    "--existing=verify",
+                    "--fail-fast",
+                    "--output-dir",
+                    "destinations",
+                    "--output-format=json",
+                    "source.eml",
+                ],
+                state,
+                resources,
+            )
+            == 0
         )
-        == 0
-    )
+        assert state.staged is not None
+    assert (state.output_format, state.mode) == ("json", "dry-run")
     assert captured == [
         BatchOptions(
             dry_run=True,

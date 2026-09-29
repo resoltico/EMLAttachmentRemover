@@ -14,6 +14,9 @@ if TYPE_CHECKING:
 MAX_RECORD_BYTES: Final = 1024 * 1024
 MAX_SPOOL_BYTES: Final = 64 * 1024 * 1024
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[2]
+# Only a source checkout has project storage to protect. A zipapp or installed
+# package sits beside unrelated user directories that are valid temporary roots.
+SOURCE_CHECKOUT: Final = (PROJECT_ROOT / "pyproject.toml").is_file()
 
 
 class ReportSpoolError(OSError):
@@ -35,7 +38,7 @@ def private_temp_root() -> Path:
         message = "private terminal report root is unsafe"
         raise ReportSpoolError(message)
     root = selected_root.resolve()
-    if root.is_relative_to(PROJECT_ROOT):
+    if SOURCE_CHECKOUT and root.is_relative_to(PROJECT_ROOT):
         message = "private terminal report root is unsafe"
         raise ReportSpoolError(message)
     return root

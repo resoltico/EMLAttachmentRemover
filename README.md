@@ -65,7 +65,13 @@ The supported report formats are `human`, `json`, and raw NUL-delimited `paths0`
 `existing_verified` paths. JSON is always canonical ASCII JSON transported through
 the binary stdout channel; `paths0` is always native path bytes followed by NUL.
 Human output uses the final display channel's codec and escapes unrepresentable or
-terminal-unsafe path text.
+terminal-unsafe path text. Each line names where the copy is, or would be:
+`created: source.eml -> /path/to/source.mime-pruned.eml`; a dry run shows the
+planned destination.
+
+Every report reaches its channel exactly once, in the requested format and mode. An
+interruption before delivery reports the interruption in that same format; one
+during delivery lets the document finish and then exits with status 130.
 
 ```sh
 remove-eml-attachments --output-format=json -- "one.eml" "two.eml"
