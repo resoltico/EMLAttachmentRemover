@@ -84,10 +84,6 @@ def test_report_path_value_rebuilds_every_serialized_field() -> None:
             "/out/a.eml",
         ),
         (
-            {"parent": {"display": "/"}, "basename_base64": _native(b"\xff.eml")},
-            "/\udcff.eml",
-        ),
-        (
             {
                 "parent": {"display": "C:\\out"},
                 "basename_base64": None,
@@ -121,6 +117,20 @@ def test_planned_display_joins_parent_and_exact_basename(
 ) -> None:
     """A dry run shows where its copy would go, in the platform's own separator."""
     assert native_values.planned_display(destination) == expected
+
+
+def test_undecodable_posix_basename_stays_reversible_in_a_planned_display(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Native bytes with no text keep a surrogate escape; Windows has no such name."""
+    monkeypatch.setattr(
+        os, "fsdecode", lambda value: bytes(value).decode("utf-8", "surrogateescape")
+    )
+    destination = {
+        "parent": {"display": "/"},
+        "basename_base64": _native(b"\xff.eml"),
+    }
+    assert native_values.planned_display(destination) == "/\udcff.eml"
 
 
 def test_human_lines_name_the_final_or_planned_destination() -> None:
@@ -198,17 +208,15 @@ def test_ascii_terminal_gets_an_escaped_successful_human_report(tmp_path: Path) 
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     result = subprocess.run(
-        [sys.executable, "-m", "eml_attachment_remover", "--", source.name],
-        cwd=tmp_path,
+        [sys.executable, "-m", "eml_attachment_remover", "--", str(source)],
         env=environment,
         capture_output=True,
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.decode("ascii") == (
-        "created: r\\u0113\\u0137ins.eml -> "
-        f"{tmp_path.resolve()}/r\\u0113\\u0137ins.mime-pruned.eml\n".replace(
-            str(tmp_path.resolve()),
-            str(tmp_path.resolve()).encode("ascii", "backslashreplace").decode(),
-        )
-    )
+    line = result.stdout.decode("ascii")
+    escaped = str(source).encode("ascii", "backslashreplace").decode("ascii")
+    assert line.startswith(f"created: {escaped} -> ")
+    # The copy's own name is what the audit's failure lost; it arrives escaped.
+    assert line.endswith("r\\u0113\\u0137ins.mime-pruned.eml\n")
+    assert (tmp_path / "rēķins.mime-pruned.eml").exists()
