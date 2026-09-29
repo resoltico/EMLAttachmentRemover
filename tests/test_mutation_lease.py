@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import subprocess
 import sys
 from pathlib import Path
 from textwrap import dedent
 from typing import Final
+from unittest.mock import patch
 
 import pytest
 from tools import mutation_lease, tasks
@@ -132,3 +134,14 @@ def test_a_platform_without_file_locking_refuses_before_touching_the_checkout(
         pass
     assert str(raised.value) == "mutation testing requires POSIX file locking"
     assert not build.exists()
+
+
+def test_a_missing_fcntl_module_leaves_the_lease_unsupported() -> None:
+    """Importing the tool on a platform without ``fcntl`` succeeds and refuses use."""
+    try:
+        with patch.dict(sys.modules, {"fcntl": None}):
+            reloaded = importlib.reload(mutation_lease)
+            assert reloaded.fcntl is None
+    finally:
+        importlib.reload(mutation_lease)
+    assert mutation_lease.fcntl is None or hasattr(mutation_lease.fcntl, "flock")
