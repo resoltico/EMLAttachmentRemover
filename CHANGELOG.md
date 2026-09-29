@@ -21,6 +21,15 @@ Notable changes to this project are documented in this file. The format is based
   work; `--allow-stale-manifest` and `check_mutation_results.py --source-sha256`
   document the rebind flow. `--workers` makes Mutmut parallelism benchmarkable.
 
+- A mutation campaign takes an exclusive lease on its checkout
+  (`build/mutation.lock`); a second concurrent run fails at once and names the
+  holder. Every campaign, successful or not, leaves `build/mutation-diagnostics/`
+  (each non-killed mutant with its status, mapped tests, and a bounded patch), which
+  the mutation workflow uploads.
+- `tasks.py quality --native` runs only the host-dependent checks (repository audit
+  and coverage); CI runs the platform-independent static checks on one lane instead
+  of six, with every required check name unchanged.
+
 ### Fixed
 
 - A failure while flushing, rewinding, or cleaning up after a staged report can no

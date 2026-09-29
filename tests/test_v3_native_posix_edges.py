@@ -265,6 +265,9 @@ def _successful_posix_backend(
         return 7
 
     monkeypatch.setattr(native_posix, "_parent", lambda _path: (6, "parent", b"x"))
+    monkeypatch.setattr(
+        native_posix, "_final_address", lambda _descriptor: path_value("/resolved")
+    )
     monkeypatch.setattr(_module_value("os"), "open", open_path)
     monkeypatch.setattr(_module_value("os"), "fstat", lambda _fd: metadata)
     monkeypatch.setattr(_module_value("os"), "close", closed.append)
