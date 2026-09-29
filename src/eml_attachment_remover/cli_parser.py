@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import argparse
-from typing import Never, override
+from typing import TYPE_CHECKING, Never, TypedDict, Unpack, override
 
-from ._version import PROGRAM_VERSION
+from ._version import program_version
 from .domain import PROGRAM_NAME, AppError, ExitCode
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+VERSION_HELP = "show program's version number and exit"
 
 
 class Parser(argparse.ArgumentParser):
@@ -21,6 +26,55 @@ class Parser(argparse.ArgumentParser):
 
         """
         raise AppError(ExitCode.USAGE, message)
+
+
+class _ActionKeywords(TypedDict, total=False):
+    """The keyword argparse forwards to this option's action."""
+
+    help: str | None
+
+
+class _LazyVersion(argparse.Action):
+    """Print ``PROG VERSION`` and exit, resolving the version only when asked.
+
+    argparse's own version action needs the text when the parser is built, which made
+    every run pay for the packaging-metadata lookup. Here the lookup happens when
+    ``--version`` is used, through a throwaway parser that owns the printing and the
+    exit, so the output and status are argparse's own.
+    """
+
+    def __init__(
+        self,
+        option_strings: Sequence[str],
+        dest: str = argparse.SUPPRESS,
+        default: str = argparse.SUPPRESS,
+        **keywords: Unpack[_ActionKeywords],
+    ) -> None:
+        """Declare an option that takes no argument and stores nothing."""
+        super().__init__(
+            option_strings=option_strings,
+            dest=dest,
+            default=default,
+            nargs=0,
+            **keywords,
+        )
+
+    @override
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[object] | None,
+        option_string: str | None = None,
+    ) -> None:
+        """Print the version through argparse and exit successfully."""
+        delegate = argparse.ArgumentParser(prog=parser.prog, add_help=False)
+        delegate.add_argument(
+            "--version",
+            action="version",
+            version=f"%(prog)s {program_version()}",
+        )
+        delegate.parse_args(["--version"])
 
 
 def build_parser() -> Parser:
@@ -64,9 +118,7 @@ def build_parser() -> Parser:
         default="human",
         help="report format (default: human)",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {PROGRAM_VERSION}"
-    )
+    parser.add_argument("--version", action=_LazyVersion, help=VERSION_HELP)
     return parser
 
 

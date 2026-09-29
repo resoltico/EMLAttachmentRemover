@@ -48,7 +48,7 @@ def test_delimiter_scan_rejects_a_nonadvancing_wire_cursor(
     with monkeypatch.context() as context:
         context.setattr(mime_raw, "_advanced_delimiter_cursor", stalled_once)
         with pytest.raises(AppError) as captured:
-            mime_raw._delimiter_lines(b"x", 0, 1, b"m")  # ruff: ignore[private-member-access] - caller-side delimiter progress invariant.
+            mime_raw._delimiter_lines(b"--m", 0, 3, b"m")  # ruff: ignore[private-member-access] - caller-side delimiter progress invariant.
     assert captured.value == AppError(
         ExitCode.PARSE_ERROR, "MIME delimiter cursor did not advance"
     )

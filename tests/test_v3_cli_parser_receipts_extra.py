@@ -195,7 +195,7 @@ def test_every_parser_action_and_exclusive_group_has_an_exact_receipt() -> None:
         ),
         (
             "version",
-            "_VersionAction",
+            "_LazyVersion",
             ["--version"],
             0,
             None,
@@ -205,7 +205,7 @@ def test_every_parser_action_and_exclusive_group_has_an_exact_receipt() -> None:
             False,
             "show program's version number and exit",
             None,
-            "%(prog)s 3.0.6",
+            None,
         ),
     ]
     groups = parser._mutually_exclusive_groups  # ruff: ignore[private-member-access] - group topology is public CLI behavior.
