@@ -73,7 +73,8 @@ def test_a_stale_lock_file_does_not_block_and_a_missing_holder_is_unknown(
     (build / mutation_lease.LOCK_NAME).write_text("", encoding="ascii")
     other = os.open(build / mutation_lease.LOCK_NAME, os.O_RDWR)
     try:
-        fcntl = pytest.importorskip("fcntl")
+        fcntl = mutation_lease.fcntl
+        assert fcntl is not None
         fcntl.flock(other, fcntl.LOCK_EX)
         with pytest.raises(RuntimeError, match="pid unknown"):
             with mutation_lease.lease(build):
