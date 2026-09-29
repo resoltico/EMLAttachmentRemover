@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import importlib
 import os
-import sys
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Final
-
-if sys.platform != "win32":
-    import fcntl
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
+    from types import ModuleType
+
+# Windows has no ``fcntl``; the lease then refuses instead of failing obscurely.
+fcntl: ModuleType | None
+try:
+    fcntl = importlib.import_module("fcntl")
+except ImportError:
+    fcntl = None
 
 LOCK_NAME: Final = "mutation.lock"
 HOLDER_BYTES: Final = 32
@@ -30,9 +35,13 @@ def lease(build_directory: Path) -> Iterator[None]:
         Control while this process is the only mutation run in the checkout.
 
     Raises:
-        RuntimeError: If another mutation run already owns this checkout.
+        RuntimeError: If another mutation run already owns this checkout, or on a
+            platform without file locking.
 
     """
+    if fcntl is None:
+        message = "mutation testing requires POSIX file locking"
+        raise RuntimeError(message)
     build_directory.mkdir(exist_ok=True)
     descriptor = os.open(
         build_directory / LOCK_NAME,
@@ -43,7 +52,8 @@ def lease(build_directory: Path) -> Iterator[None]:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
-            holder = os.pread(descriptor, HOLDER_BYTES, 0).decode("ascii", "replace")
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            holder = os.read(descriptor, HOLDER_BYTES).decode("ascii", "replace")
             message = (
                 "another mutation run owns this checkout "
                 f"(pid {holder.strip() or UNKNOWN_HOLDER}); wait for it to finish "
@@ -51,7 +61,8 @@ def lease(build_directory: Path) -> Iterator[None]:
             )
             raise RuntimeError(message) from error
         os.ftruncate(descriptor, 0)
-        os.pwrite(descriptor, f"{os.getpid()}\n".encode("ascii"), 0)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        os.write(descriptor, f"{os.getpid()}\n".encode("ascii"))
         yield
     finally:
         os.close(descriptor)

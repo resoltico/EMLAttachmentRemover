@@ -12,9 +12,6 @@ from typing import Final
 import pytest
 from tools import mutation_lease, tasks
 
-if sys.platform != "win32":
-    import fcntl
-
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
 HOLDER: Final = dedent(
     """
@@ -76,6 +73,7 @@ def test_a_stale_lock_file_does_not_block_and_a_missing_holder_is_unknown(
     (build / mutation_lease.LOCK_NAME).write_text("", encoding="ascii")
     other = os.open(build / mutation_lease.LOCK_NAME, os.O_RDWR)
     try:
+        fcntl = pytest.importorskip("fcntl")
         fcntl.flock(other, fcntl.LOCK_EX)
         with pytest.raises(RuntimeError, match="pid unknown"):
             with mutation_lease.lease(build):
@@ -121,3 +119,15 @@ def test_the_mutation_task_holds_the_lease_for_the_whole_campaign(
     )
     tasks._mutation()  # ruff: ignore[private-member-access] - task contract.
     assert events == ["acquire", "campaign", "release"]
+
+
+def test_a_platform_without_file_locking_refuses_before_touching_the_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation testing is POSIX-only; the lease says so instead of failing oddly."""
+    monkeypatch.setattr(mutation_lease, "fcntl", None)
+    build = tmp_path / "build"
+    with pytest.raises(RuntimeError) as raised, mutation_lease.lease(build):
+        pass
+    assert str(raised.value) == "mutation testing requires POSIX file locking"
+    assert not build.exists()
