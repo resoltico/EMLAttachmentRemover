@@ -46,6 +46,10 @@ Notable changes to this project are documented in this file. The format is based
   is shortened with a readable prefix and a stable digest of the full source name,
   instead of failing after the source was read. Explicit `--output` names are never
   renamed.
+- A message whose report evidence cannot fit a report record (about 3,700 retained
+  MIME parts) or the remaining report capacity is refused with `PARSE_ERROR` before
+  any copy is written, instead of creating a copy and then reporting
+  `published_with_error`.
 - Task timeouts and interruptions stop the whole process group, so no test or
   mutant descendant can outlive its task step and write after evidence capture.
 - Mutation workers remove each pytest session's temporary directory, keeping disk

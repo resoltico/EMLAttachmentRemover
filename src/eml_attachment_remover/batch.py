@@ -36,6 +36,7 @@ from .native_paths import (
     read_existing,
     read_source,
 )
+from .report_admission import admit
 from .staged_output import PublishedWithError, publish
 
 MAX_BATCH_ITEMS: Final = 4_096
@@ -398,6 +399,7 @@ def _run_item(
 ) -> bool:
     try:
         _candidate(item, identities[item.index])
+        admit(ledger, item)
         publication_cause = _existing_or_publish(item, options, all_identities)
     except AppError as exc:
         _mark(item, exc)

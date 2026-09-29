@@ -93,6 +93,9 @@ verification evidence, and truthful publication receipts. It never reports body
 contents. During processing, terminal evidence is streamed through bounded private
 spools; if normal report persistence fails after a visible publication, the command
 returns a complete status-preserving recovery report rather than claiming success.
+That evidence is measured before any copy is written: an input whose report record
+would exceed 1 MiB (about 3,700 retained MIME parts), or the 64 MiB report capacity,
+fails with `PARSE_ERROR` and no copy is created.
 Path `text` is ordinary Unicode only. For a POSIX path containing surrogate-escaped
 native bytes, `text` is `null`, `native_base64` remains authoritative, and `display`
 is safe presentation text. Consumers must not reconstruct a path from `display`.
