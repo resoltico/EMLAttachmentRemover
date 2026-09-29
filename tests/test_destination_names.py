@@ -4,36 +4,46 @@ from __future__ import annotations
 
 import hashlib
 import os
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
 from eml_attachment_remover import destination_names
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 MESSAGE = b"From: a@example.test\r\n\r\nretained\r\n"
 SUFFIX = ".mime-pruned.eml"
 
 
-def _tail(name: str, encoding: str = "utf-8") -> str:
+def _tail(name: str) -> str:
     """Return the hash-and-suffix tail, computed independently of the fitter.
 
     Returns:
-        ``-<16 hex of sha256(native name)>.mime-pruned.eml``.
+        ``-<16 hex of sha256(native name)>.mime-pruned.eml``; the native form is
+        UTF-16 on Windows and UTF-8 elsewhere, following the active ``os.name``.
 
     """
+    encoding = "utf-16-le" if os.name == "nt" else "utf-8"
     digest = hashlib.sha256(name.encode(encoding, "surrogatepass")).hexdigest()
     return f"-{digest[:16]}{SUFFIX}"
+
+
+@pytest.fixture
+def posix(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Measure names as a POSIX backend does, whatever host runs the test.
+
+    Only string helpers run under this, never pathlib, which reads ``os.name``.
+    """
+    monkeypatch.setattr(os, "name", "posix")
 
 
 def test_native_units_are_utf8_bytes_on_posix_and_utf16_units_on_windows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A name is measured the way its backend stores it (finding 7)."""
-    assert destination_names.native_length("ē😀a") == 2 + 4 + 1
-    assert destination_names.native_bytes("ē") == "ē".encode()
+    with monkeypatch.context() as posix_backend:
+        posix_backend.setattr(os, "name", "posix")
+        assert destination_names.native_length("ē😀a") == 2 + 4 + 1
+        assert destination_names.native_bytes("ē") == "ē".encode()
     with monkeypatch.context() as windows:
         windows.setattr(os, "name", "nt")
         # A supplementary character is two UTF-16 units; a lone surrogate is one.
@@ -46,16 +56,17 @@ def test_limit_comes_from_the_directory_the_kernel_will_traverse(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """POSIX asks pathconf about the directory expression; empty means here."""
-    assert destination_names.name_limit(str(tmp_path)) == os.pathconf(
-        str(tmp_path), "PC_NAME_MAX"
-    )
+    pathconf = getattr(os, "pathconf", None)
+    real = 255 if pathconf is None else pathconf(str(tmp_path), "PC_NAME_MAX")
+    assert destination_names.name_limit(str(tmp_path)) == real
     asked: list[tuple[str, str]] = []
 
-    def pathconf(directory: str, name: str) -> int:
+    def fake(directory: str, name: str) -> int:
         asked.append((directory, name))
         return 99
 
-    monkeypatch.setattr(os, "pathconf", pathconf)
+    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(os, "pathconf", fake, raising=False)
     assert destination_names.name_limit("") == 99
     assert destination_names.name_limit("in/../out") == 99
     assert asked == [(".", "PC_NAME_MAX"), ("in/../out", "PC_NAME_MAX")]
@@ -67,12 +78,13 @@ def test_unanswerable_limit_keeps_the_conservative_common_limit(
 ) -> None:
     """A missing directory or unlimited answer never shortens names below 255."""
 
-    def pathconf(_directory: str, _name: str) -> int:
+    def fake(_directory: str, _name: str) -> int:
         if isinstance(answer, Exception):
             raise answer
         return int(str(answer))
 
-    monkeypatch.setattr(os, "pathconf", pathconf)
+    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(os, "pathconf", fake, raising=False)
     assert destination_names.name_limit("anywhere") == 255
 
 
@@ -83,7 +95,8 @@ def test_windows_and_pathconf_less_platforms_use_the_common_limit(
     with monkeypatch.context() as windows:
         windows.setattr(os, "name", "nt")
         assert destination_names.name_limit("C:\\out") == 255
-    monkeypatch.delattr(os, "pathconf")
+    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.delattr(os, "pathconf", raising=False)
     assert destination_names.name_limit("/out") == 255
 
 
@@ -99,6 +112,7 @@ def test_windows_and_pathconf_less_platforms_use_the_common_limit(
         ("", 5, ""),
     ],
 )
+@pytest.mark.usefixtures("posix")
 def test_prefix_keeps_whole_characters_within_the_budget(
     text: str, budget: int, expected: str
 ) -> None:
@@ -165,6 +179,7 @@ def test_only_a_terminal_eml_suffix_is_replaced_in_the_kept_prefix() -> None:
     )
 
 
+@pytest.mark.usefixtures("posix")
 def test_multibyte_names_are_budgeted_in_bytes_without_splitting() -> None:
     """A cut lands between whole characters and the total stays within the limit."""
     source = "ē" * 200 + ".eml"
@@ -197,16 +212,23 @@ def test_windows_names_are_measured_in_utf16_units(
 
 
 def _limit(monkeypatch: pytest.MonkeyPatch, limit: int) -> list[str]:
+    """Pin the directory limit and record which directories were asked about.
+
+    Returns:
+        The directory expressions, in the order they were queried.
+
+    """
     asked: list[str] = []
 
-    def pathconf(directory: str, _name: str) -> int:
+    def name_limit(directory: str) -> int:
         asked.append(directory)
         return limit
 
-    monkeypatch.setattr(os, "pathconf", pathconf)
+    monkeypatch.setattr(destination_names, "name_limit", name_limit)
     return asked
 
 
+@pytest.mark.usefixtures("posix")
 def test_parent_expression_and_short_names_are_preserved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -217,20 +239,32 @@ def test_parent_expression_and_short_names_are_preserved(
         "parent/../inbox/Message.mime-pruned.eml"
     )
     assert fitted("Message.EML", None) == "Message.mime-pruned.eml"
-    assert asked == ["parent/../inbox", "."]
+    assert asked == ["parent/../inbox", ""]
 
 
-def test_overlong_names_are_fitted_beside_the_source_or_in_the_output_directory(
+@pytest.mark.usefixtures("posix")
+def test_overlong_names_are_fitted_beside_the_source(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The limit is asked of the directory that will receive the copy."""
+    """Beside the source, the limit is asked of the source's parent expression."""
     asked = _limit(monkeypatch, 60)
     source = "s" * 90 + ".eml"
     name = "s" * (60 - len(_tail(source))) + _tail(source)
     fitted = destination_names.fitted_default_destination
     assert fitted("in/../" + source, None) == "in/../" + name
-    assert fitted("in/" + source, "out/dir") == "out/dir/" + name
-    assert asked == ["in/..", "out/dir"]
+    assert asked == ["in/.."]
+
+
+def test_output_directory_names_are_fitted_to_that_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With --output-dir, the limit is asked of that directory, in the host grammar."""
+    asked = _limit(monkeypatch, 60)
+    source = "s" * 90 + ".eml"
+    name = "s" * (60 - len(_tail(source))) + _tail(source)
+    fitted = destination_names.fitted_default_destination(source, "out/dir")
+    assert fitted == os.fspath(Path("out/dir") / name)
+    assert asked == ["out/dir"]
 
 
 def test_windows_grammar_keeps_its_parent_expression(
@@ -239,7 +273,7 @@ def test_windows_grammar_keeps_its_parent_expression(
     """Drive letters and backslashes survive fitting untouched."""
     monkeypatch.setattr(os, "name", "nt")
     source = "w" * 300 + ".eml"
-    tail = _tail(source, "utf-16-le")
+    tail = _tail(source)
     name = "w" * (255 - len(tail)) + tail
     fitted = destination_names.fitted_default_destination
     assert fitted("C:\\in\\..\\" + source, None) == "C:\\in\\..\\" + name

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 from typing import TYPE_CHECKING
 
 from eml_attachment_remover import cli
@@ -24,10 +25,13 @@ def _tail(name: str) -> str:
     """Return the hash-and-suffix tail, computed independently of the fitter.
 
     Returns:
-        ``-<16 hex of sha256(name)>.mime-pruned.eml``.
+        ``-<16 hex of sha256(native name)>.mime-pruned.eml``, native meaning
+        UTF-16 on Windows and UTF-8 elsewhere.
 
     """
-    return f"-{hashlib.sha256(name.encode()).hexdigest()[:16]}{SUFFIX}"
+    encoding = "utf-16-le" if os.name == "nt" else "utf-8"
+    digest = hashlib.sha256(name.encode(encoding)).hexdigest()
+    return f"-{digest[:16]}{SUFFIX}"
 
 
 def _options(**overrides: object) -> BatchOptions:
@@ -87,7 +91,8 @@ def test_explicit_output_is_never_renamed(tmp_path: Path) -> None:
     ledger = execute([str(source)], _options(output=str(explicit)))
     assert ledger.items[0].status is ItemStatus.FAILED
     assert ledger.items[0].error is not None
-    assert ledger.items[0].error.code is ExitCode.WRITE_ERROR
+    # The kernel's own refusal is surfaced; its class differs between hosts.
+    assert ledger.items[0].error.code in {ExitCode.WRITE_ERROR, ExitCode.INPUT_ERROR}
     assert list(tmp_path.iterdir()) == [source]
 
 
@@ -101,5 +106,14 @@ def test_dry_run_reports_the_fitted_destination(
     assert cli.main(arguments) == 0
     destination = json.loads(capsys.readouterr().out)["items"][0]["destination"]
     name = "h" * (255 - len(_tail(source.name))) + _tail(source.name)
-    assert base64.b64decode(destination["basename_base64"]) == name.encode()
+    posix, windows = (
+        destination["basename_base64"],
+        destination["basename_utf16le_base64"],
+    )
+    actual = (
+        base64.b64decode(posix).decode()
+        if posix is not None
+        else base64.b64decode(windows).decode("utf-16-le")
+    )
+    assert actual == name
     assert list(tmp_path.iterdir()) == [source]
