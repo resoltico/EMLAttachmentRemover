@@ -82,7 +82,9 @@ def _cancelled_process(
             if case == "broken":
                 child.stdout.close()
                 child.stdout = None
-            assert child.wait(timeout=5) == (1 if case == "broken" else 130)
+            status = child.wait(timeout=5)
+            _output, diagnostics = child.communicate(timeout=5)
+            assert status == (1 if case == "broken" else 130), diagnostics
         finally:
             if child.poll() is None:
                 child.kill()
