@@ -9,7 +9,7 @@ import tempfile
 import time
 import tomllib
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     type StepRunner = Callable[[Sequence[str], Mapping[str, str], float], None]
 
 WORKFLOW_PYTHONS: Final = ("3.14.7", "3.14.7t")
-# CI type-checks natively on each runner OS; mypy can check every target from here.
+# The shared CI static lane and this local plan explicitly check every mypy target.
 TYPE_PLATFORMS: Final = ("darwin", "linux", "win32")
 CANONICAL_PYTHON: Final = "3.14.7"
 MATRIX_PYTHON: Final = "${{ matrix.python }}"
@@ -40,10 +40,12 @@ QUALITY: Final = "uv run python tools/tasks.py quality"
 QUALITY_NATIVE: Final = "uv run python tools/tasks.py quality --native"
 CANONICAL_SYNC: Final = f"uv sync --locked --group dev --python {CANONICAL_PYTHON}"
 TAG_CHECK: Final = 'uv run python tools/check_release_tag.py "$RELEASE_TAG"'
-BUILD: Final = "uv run python tools/qualify_release.py --output-directory release-dist"
+BUILD: Final = (
+    "uv run python -B -m tools.release_delivery --output-directory release-dist"
+)
 VERIFY: Final = (
     f"uv run --no-project --python {CANONICAL_PYTHON} python "
-    "tools/qualify_release.py --verify-directory release-dist"
+    "-B -m tools.release_delivery --verify-directory release-dist"
 )
 MUTATION: Final = 'uv run python tools/tasks.py mutation --workers "$MUTATION_WORKERS"'
 THOROUGH: Final = (
@@ -55,12 +57,24 @@ FINALIZE: Final = "uv run python tools/finalize_hypothesis_artifacts.py --observ
 # Linux IDs; other POSIX hosts therefore run mutation in CI's runner image. It uses
 # Docker's native architecture: the code has no architecture-specific branches, and
 # emulated x86_64 campaigns were both slower and killed mid-run.
-LINUX_IMAGE: Final = "eml-attachment-remover-ci:uv-0.12.5"
+LINUX_IMAGE: Final = "eml-attachment-remover-ci:uv-0.12.21"
+UV_IMAGE: Final = (
+    "ghcr.io/astral-sh/uv:0.12.21@sha256:"
+    # Public GHCR image digest.
+    "a7aed3216253ee804de3e2d8afa5073baa"  # pragma: allowlist secret
+    "1a177335345d43845cd4165e43b711"  # pragma: allowlist secret
+)
+UBUNTU_IMAGE: Final = (
+    "ubuntu:24.04@sha256:"
+    # Public Docker image digest.
+    "008173c23f95b170204355c12626cb5a9"  # pragma: allowlist secret
+    "65d779a7e1283b09e9cffbb1bf33ca3"  # pragma: allowlist secret
+)
 # Like GitHub's runner, the campaign runs unprivileged: as root, a defect could
 # signal processes that CI's runner user never can.
 LINUX_IMAGE_DEFINITION: Final = (
-    "FROM ghcr.io/astral-sh/uv:0.12.5 AS uv\n"
-    "FROM ubuntu:24.04\n"
+    f"FROM {UV_IMAGE} AS uv\n"
+    f"FROM {UBUNTU_IMAGE}\n"
     "RUN apt-get update && apt-get install -y --no-install-recommends "
     "ca-certificates && rm -rf /var/lib/apt/lists/* "
     "&& useradd --create-home --home-dir /ci --uid 1001 runner "
@@ -245,6 +259,13 @@ def plan(
         (BUILD, LANE_TIMEOUT_SECONDS),
         (VERIFY, LANE_TIMEOUT_SECONDS),
     )
+    if host != "darwin":
+        steps = [
+            replace(step, command=(*step.command, "--portable-only"))
+            if step.mirrors in {BUILD, VERIFY}
+            else step
+            for step in steps
+        ]
     if host == "linux":
         mutation = (MUTATION, MUTATION_TIMEOUT_SECONDS)
         steps += _lane(root, CANONICAL_PYTHON, values, mutation)

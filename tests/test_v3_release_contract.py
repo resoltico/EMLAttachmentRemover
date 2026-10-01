@@ -67,7 +67,7 @@ def test_current_changelog_is_the_release_prose_source() -> None:
         (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), version
     )
     assert not body.startswith(f"## [{version}] - ")
-    assert body.startswith("### Changed\n")
+    assert body.splitlines()[0] == "### Added"
     assert body.endswith("\n")
 
 
@@ -81,7 +81,7 @@ def test_release_workflow_requires_all_qualification_jobs_before_publication() -
     assert required_needs in workflow
     assert "tools/tasks.py thorough" in workflow
     assert "--observable --timeout-seconds 3300" in workflow
-    assert "tools/qualify_release.py" in workflow
+    assert "-m tools.release_delivery" in workflow
     assert "--output-directory release-dist" in workflow
     assert "--verify-directory release-dist" in workflow
     assert "subject-checksums: release-dist/SHA256SUMS" in workflow

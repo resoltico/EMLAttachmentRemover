@@ -7,6 +7,8 @@ import threading
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
+from .cancellation_state import CURRENT
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -14,6 +16,11 @@ if TYPE_CHECKING:
 @contextmanager
 def defer_signals() -> Iterator[None]:
     """Defer catchable process signals across one nonterminal publication edge."""
+    # Cooperative handlers must see the request immediately; they cannot throw
+    # through this operation. Standalone callers retain the legacy mask boundary.
+    if CURRENT.get() is not None:
+        yield
+        return
     mask = getattr(signal, "pthread_" + "sigmask", None)
     block = getattr(signal, "SIG_" + "BLOCK", None)
     restore = getattr(signal, "SIG_" + "SETMASK", None)

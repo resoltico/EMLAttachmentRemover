@@ -5,13 +5,18 @@ from __future__ import annotations
 import sys
 import threading
 import time
-from io import BytesIO, TextIOWrapper
+from io import BytesIO, StringIO, TextIOWrapper
 from typing import cast, override
 
 import pytest
 
-from eml_attachment_remover import report_delivery, reporting_v3
+from eml_attachment_remover import (
+    report_batch_diagnostics,
+    report_delivery,
+    reporting_v3,
+)
 from eml_attachment_remover.cancellation import DeliveryGuard
+from eml_attachment_remover.domain import AppError, ExitCode
 from eml_attachment_remover.report_delivery import StagedChannels
 
 
@@ -21,6 +26,7 @@ class _Recorder:
     def __init__(self, calls: list[tuple[str, object]], name: str) -> None:
         self.calls = calls
         self.name = name
+        self.buffer = self
 
     def flush(self) -> None:
         self.calls.append((self.name, "flush"))
@@ -28,12 +34,44 @@ class _Recorder:
     def seek(self, offset: int) -> None:
         self.calls.append((self.name, f"seek{offset}"))
 
-    def read(self, size: int) -> str:
+    def read(self, size: int) -> bytes:
         self.calls.append((self.name, f"read{size}"))
-        return ""
+        return b""
 
 
-def test_seal_flushes_rewinds_primes_one_character_and_rewinds_again() -> None:
+def test_notes_count_as_diagnostics_without_claiming_stdout_progress(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    guard = DeliveryGuard()
+    report_delivery.write_note("public note\n", guard)
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert captured.err == "public note\n"
+    assert not guard.report_units
+    assert guard.diagnostic_units
+
+
+def test_batch_and_interruption_diagnostics_support_inmemory_and_ascii_channels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "stderr", StringIO())
+    assert (
+        report_batch_diagnostics.batch_error_line(
+            AppError(ExitCode.WRITE_ERROR, "public π error")
+        )
+        == "Batch: WRITE_ERROR: public π error\n"
+    )
+    assert report_batch_diagnostics.interruption_line("public π request") == (
+        "Interrupted: public π request\n"
+    )
+    with TextIOWrapper(BytesIO(), encoding="ascii") as stream:
+        monkeypatch.setattr(sys, "stderr", stream)
+        assert report_batch_diagnostics.interruption_line("public π request") == (
+            "Interrupted: public \\u03c0 request\n"
+        )
+
+
+def test_seal_flushes_rewinds_primes_one_byte_and_rewinds_again() -> None:
     """Both files are prepared identically, and nothing is left half-read."""
     calls: list[tuple[str, object]] = []
     channels = StagedChannels(
@@ -96,9 +134,9 @@ def test_a_late_note_is_watched_like_the_report(
         """A standard error that is slow to accept its output."""
 
         @staticmethod
-        def write(_text: str) -> int:
+        def write(text: str) -> int:
             time.sleep(0.25)
-            return 0
+            return len(text)
 
         @staticmethod
         def flush() -> None:

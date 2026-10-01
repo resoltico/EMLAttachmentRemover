@@ -7,7 +7,7 @@ from typing import TextIO
 
 import pytest
 
-from eml_attachment_remover import cli, exit_status, report_session
+from eml_attachment_remover import cli, exit_status, report_session, report_stream
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import (
     AppError,
@@ -139,13 +139,13 @@ def test_cancelled_renders_preledger_json_and_human_terminal_ledgers(
 
     calls: list[str] = []
     monkeypatch.setattr(
-        report_session, "write_json", lambda _document: calls.append("json")
+        report_stream, "write_json", lambda *_args: calls.append("json")
     )
     monkeypatch.setattr(
-        report_session, "write_human", lambda _document: calls.append("human")
+        report_stream, "write_human", lambda _ledger: calls.append("human")
     )
     monkeypatch.setattr(
-        report_session, "write_paths0", lambda _ledger: calls.append("paths0")
+        report_stream, "write_paths0", lambda _ledger: calls.append("paths0")
     )
     for output_format in ("json", "human", "paths0"):
         with ExitStack() as resources:
@@ -186,7 +186,9 @@ def _raise(error: BaseException) -> None:
 
 
 def _record_json_error(seen: list[str]) -> object:
-    def record(_raw: list[str], _error: AppError) -> int:
+    def record(
+        _raw: list[str], _error: AppError, _intent: object = None, **_kwargs: object
+    ) -> int:
         seen.append("json")
         return 2
 
@@ -210,7 +212,7 @@ def _record_error(rendered: list[AppError]) -> object:
 
 
 @pytest.mark.parametrize(
-    ("has_ledger", "has_session", "started", "publishes"),
+    "case",
     [
         (False, True, False, False),
         (True, False, False, False),
@@ -220,19 +222,12 @@ def _record_error(rendered: list[AppError]) -> object:
 )
 def test_cancelled_publishes_only_a_ledger_with_an_undelivered_session(
     monkeypatch: pytest.MonkeyPatch,
-    *,
-    has_ledger: bool,
-    has_session: bool,
-    started: bool,
-    publishes: bool,
+    capsys: pytest.CaptureFixture[str],
+    case: tuple[bool, bool, bool, bool],
 ) -> None:
     """Any missing report owner, or a delivery already begun, means diagnostic only."""
-    rendered: list[AppError] = []
+    has_ledger, has_session, started, publishes = case
     published: list[int] = []
-
-    def render(error: AppError, _parser: object) -> int:
-        rendered.append(error)
-        return 130
 
     def publish(
         _self: report_session.ReportSession, _ledger: BatchLedger, status: int
@@ -240,7 +235,6 @@ def test_cancelled_publishes_only_a_ledger_with_an_undelivered_session(
         published.append(status)
         return 0
 
-    monkeypatch.setattr(cli, "_render_error", render)
     monkeypatch.setattr(report_session.ReportSession, "publish", publish)
     with ExitStack() as resources:
         session = open_session(resources) if has_session else None
@@ -250,7 +244,11 @@ def test_cancelled_publishes_only_a_ledger_with_an_undelivered_session(
         state = cli._RunState(ledger, session)  # ruff: ignore[private-member-access] - cancellation state contract.
         status = cli._cancelled(state, CancellationSignal(2, "SIGINT"))  # ruff: ignore[private-member-access] - cancellation state contract.
     if publishes:
-        assert (status, published, rendered) == (0, [130], [])
+        assert (status, published) == (0, [130])
+        assert not capsys.readouterr().err
     else:
         assert (status, published) == (130, [])
-        assert rendered == [AppError(ExitCode.INTERRUPTED, "interrupted by SIGINT")]
+        assert (
+            capsys.readouterr().err
+            == "remove-eml-attachments: error[INTERRUPTED:130]: interrupted by SIGINT\n"
+        )

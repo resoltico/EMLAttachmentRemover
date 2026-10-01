@@ -70,6 +70,12 @@ def test_static_checks_are_the_platform_independent_ones() -> None:
     names = [command[0] for command in commands]
     assert "ruff" in names
     assert "mypy" in names
+    type_checks = [command for command in commands if command[0] == "mypy"]
+    assert [command[-2:] for command in type_checks] == [
+        ("--platform", "linux"),
+        ("--platform", "darwin"),
+        ("--platform", "win32"),
+    ]
     assert "detect-secrets-hook" in names
     assert all("check_repository_hygiene" not in " ".join(c) for c in commands)
 

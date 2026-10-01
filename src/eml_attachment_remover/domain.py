@@ -12,6 +12,8 @@ from enum import IntEnum, StrEnum
 from itertools import starmap
 from typing import Final
 
+from .terminal_outcome import TerminalOutcome
+
 PROGRAM_NAME: Final = "remove-eml-attachments"
 SCHEMA_VERSION: Final = 3
 SCOPE: Final = "mime-pruned"
@@ -270,6 +272,9 @@ class LedgerItem:
     warnings: list[dict[str, object]] = field(default_factory=list)
     error: AppError | None = None
     archived: bool = False
+    _outcome: TerminalOutcome | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def finish(self, status: ItemStatus, error: AppError | None = None) -> None:
         """Set the sole terminal state exactly once.
@@ -280,13 +285,38 @@ class LedgerItem:
         """
         if self.terminalized or self.status is not None:
             raise RuntimeError(DOUBLE_TERMINAL_ERROR)
-        self.status = status
-        self.error = None if error is None else self._detached_error(error)
-        if self.source is not None:
-            self.source = replace(self.source, raw=b"")
-        if self.transformation is not None:
-            self.transformation = replace(self.transformation, candidate=b"")
+        detached_error = None if error is None else self._detached_error(error)
+        source = None if self.source is None else replace(self.source, raw=b"")
+        plan = (
+            None
+            if self.transformation is None
+            else replace(self.transformation, candidate=b"")
+        )
+        outcome = TerminalOutcome(status, detached_error, self.publication)
+        self.source = source
+        self.transformation = plan
+        self._outcome = outcome
+        self.status = outcome.status
+        self.error = outcome.error
         self.terminalized = True
+
+    def completed_view(self) -> LedgerItem:
+        """Take one coherent terminal snapshot without retaining bulky archived detail.
+
+        Returns:
+            The supplied preparation record or a coherent completed view.
+
+        """
+        outcome = self._outcome
+        if outcome is None:
+            return self
+        return replace(
+            self,
+            status=outcome.status,
+            error=outcome.error,
+            publication=outcome.publication,
+            terminalized=True,
+        )
 
     def correct_report_failure(self, error: AppError) -> None:
         """Record a report-persistence failure learned after terminalization.
@@ -310,6 +340,7 @@ class LedgerItem:
             if self.status is ItemStatus.CREATED
             else ItemStatus.FAILED
         )
+        self._outcome = TerminalOutcome(self.status, self.error, self.publication)
 
     @staticmethod
     def _detached_error(error: AppError) -> AppError:
@@ -333,6 +364,7 @@ class BatchLedger:
     emergency_report_spool: object | None = field(default=None, repr=False)
     report_budget: object | None = field(default=None, repr=False)
     report_spool_failed: bool = False
+    retain_evidence: bool = False
 
     @classmethod
     def from_requests(cls, requests: list[PathValue]) -> BatchLedger:

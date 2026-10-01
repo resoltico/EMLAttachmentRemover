@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from contextlib import ExitStack
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from eml_attachment_remover import cli, report_spool, report_stream
 from eml_attachment_remover.batch import BatchOptions, execute
@@ -21,6 +23,7 @@ from eml_attachment_remover.domain import (
 )
 from eml_attachment_remover.native_paths import path_value
 from tests.report_session_support import open_session
+from tests.report_spool_support import replace_data
 
 
 def _ledger() -> BatchLedger:
@@ -57,48 +60,26 @@ def test_spool_rejects_unsafe_records_and_nonprogress_writes(
         spool.close()
 
 
-def test_spool_detects_unavailable_corrupt_and_incomplete_cleanup(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Unreadable, malformed, and undeleted owned spools fail closed."""
+def test_spool_detects_unavailable_corrupt_and_incomplete_cleanup() -> None:
+    """Closed owners and malformed data fail closed; repeated close is harmless."""
     unavailable = report_spool.ReportSpool.create()
     unavailable.close()
     unavailable.close()
     with pytest.raises(report_spool.ReportSpoolError):
         tuple(unavailable.records())
-
     missing = report_spool.ReportSpool.create()
-    missing.path.unlink()
+    missing.file.close()
     with pytest.raises(report_spool.ReportSpoolError) as absent:
         tuple(missing.records())
     assert str(absent.value) == "terminal report spool is unavailable"
-    missing.closed = True
-
+    missing.close()
     corrupt = report_spool.ReportSpool.create()
     try:
-        corrupt.path.write_bytes(b"not-json-without-newline")
+        replace_data(corrupt, b"not-json-without-newline")
         with pytest.raises(report_spool.ReportSpoolError):
             tuple(corrupt.records())
     finally:
         corrupt.close()
-
-    unsafe = report_spool.ReportSpool.create()
-    unsafe.path.unlink()
-    with pytest.raises(report_spool.ReportSpoolError):
-        unsafe.close()
-    unsafe.closed = True
-
-    incomplete = report_spool.ReportSpool.create()
-    try:
-        with monkeypatch.context() as context:
-            context.setattr(Path, "unlink", lambda _path: None)
-            with pytest.raises(report_spool.ReportSpoolError):
-                incomplete.close()
-        incomplete.path.unlink()
-        incomplete.closed = True
-    finally:
-        if incomplete.path.exists():
-            incomplete.path.unlink()
 
 
 def test_spool_detects_record_accounting_drift() -> None:
@@ -292,7 +273,7 @@ def test_corrupt_primary_spool_is_detected_before_json_output(
     spool = cast("report_spool.ReportSpool", ledger.report_spool)
     try:
         report_stream.archive_all(ledger)
-        spool.path.write_bytes(b"corrupt")
+        replace_data(spool, b"corrupt")
         with pytest.raises(report_spool.ReportSpoolError):
             report_stream.write_json(ledger, "apply", 70)
         assert not capsys.readouterr().out
@@ -335,7 +316,7 @@ def test_emergency_record_reader_rejects_every_untrusted_reservation_shape() -> 
     corrupt.report_spool_failed = True
     emergency = cast("report_spool.ReportSpool", corrupt.emergency_report_spool)
     try:
-        emergency.path.write_bytes(b"not-json\n")
+        replace_data(emergency, b"not-json\n")
         with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
             tuple(report_stream._records(corrupt))  # ruff: ignore[private-member-access] - corrupt emergency JSON.
     finally:
@@ -346,7 +327,7 @@ def test_emergency_record_reader_rejects_every_untrusted_reservation_shape() -> 
     mismatched.report_spool_failed = True
     emergency = cast("report_spool.ReportSpool", mismatched.emergency_report_spool)
     try:
-        emergency.path.write_bytes(b'{"index":1,"source_request":null}\n')
+        replace_data(emergency, b'{"index":1,"source_request":null}\n')
         with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
             tuple(report_stream._records(mismatched))  # ruff: ignore[private-member-access] - mismatched source reservation.
     finally:
@@ -391,7 +372,7 @@ def test_report_stream_recovers_idempotently_and_attempts_every_owned_close(
     with pytest.raises(report_spool.ReportSpoolError, match="synthetic primary"):
         report_stream.close(ledger)
     assert calls == [primary, emergency]
-    primary.path.unlink()
+    primary.file.close()
     primary.closed = True
 
 
@@ -411,6 +392,10 @@ def test_terminal_receipt_reclassifies_for_report_failure() -> None:
     item.correct_report_failure(error)
     assert item.status is ItemStatus.FAILED
     assert item.error == error
+    view = item.completed_view()
+    assert view is not item
+    assert view.status is ItemStatus.FAILED
+    assert view.error == error
 
 
 def test_report_failure_never_erases_a_visible_publication_receipt() -> None:

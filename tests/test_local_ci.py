@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import io
-import os
 import tempfile
 import unittest
 from contextlib import contextmanager, redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Final
 from unittest.mock import MagicMock, call, patch
 
 from tools import local_ci, tasks
+
+from tests.local_ci_plan_support import EXPECTED_POSIX_PLAN, commands
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
@@ -24,97 +26,6 @@ HOST_ROOT: Final = Path("/host-ci")
 HOST_PROJECT: Final = Path("/project")
 
 
-def _lane(python: str) -> dict[str, str]:
-    return {
-        "UV_PROJECT_ENVIRONMENT": str(HOST_ROOT / f"venv-{python}"),
-        "UV_PYTHON": python,
-        "VIRTUAL_ENV": str(HOST_ROOT / f"venv-{python}"),
-    }
-
-
-def _installer(python: str) -> dict[str, str]:
-    return {**_lane(python), "PYTHONWARNINGS": "default"}
-
-
-def _type_check(platform: str) -> tuple[str, ...]:
-    return (
-        "uv",
-        "run",
-        "mypy",
-        "--no-incremental",
-        "--cache-dir",
-        os.devnull,
-        "--platform",
-        platform,
-    )
-
-
-EXPECTED_POSIX_PLAN: Final = (
-    ("uv sync --locked --group dev --python 3.14.7", _installer("3.14.7"), 600),
-    ("test -x /bin/sh", _lane("3.14.7"), 600),
-    ("uv run python tools/tasks.py quality", _lane("3.14.7"), 1_800),
-    ("uv sync --locked --group dev --python 3.14.7t", _installer("3.14.7t"), 600),
-    ("test -x /bin/sh", _lane("3.14.7t"), 600),
-    ("uv run python tools/tasks.py quality --native", _lane("3.14.7t"), 1_800),
-    (_type_check("darwin"), _lane("3.14.7"), 600),
-    (_type_check("linux"), _lane("3.14.7"), 600),
-    (_type_check("win32"), _lane("3.14.7"), 600),
-    ("uv sync --locked --group dev --python 3.14.7", _installer("3.14.7"), 600),
-    ("uv run python tools/check_release_tag.py v1.2.3", _lane("3.14.7"), 600),
-    (
-        (
-            *("uv", "run", "python", "tools/qualify_release.py"),
-            *("--output-directory", str(HOST_ROOT / "release-dist")),
-        ),
-        _lane("3.14.7"),
-        1_800,
-    ),
-    (
-        (
-            *("uv", "run", "--no-project", "--python", "3.14.7", "python"),
-            *("tools/qualify_release.py", "--verify-directory"),
-            str(HOST_ROOT / "release-dist"),
-        ),
-        _lane("3.14.7"),
-        1_800,
-    ),
-    ("uv run python tools/tasks.py mutation --workers 4", _lane("3.14.7"), 10_800),
-    (
-        "uv run python tools/tasks.py thorough --observable --timeout-seconds 3300",
-        _lane("3.14.7"),
-        3_600,
-    ),
-    (
-        "uv run python tools/finalize_hypothesis_artifacts.py --observations",
-        _lane("3.14.7"),
-        600,
-    ),
-    (
-        "uv run python tools/tasks.py thorough --observable --timeout-seconds 3300",
-        _lane("3.14.7t"),
-        3_600,
-    ),
-    (
-        "uv run python tools/finalize_hypothesis_artifacts.py --observations",
-        _lane("3.14.7t"),
-        600,
-    ),
-)
-
-
-def _commands(
-    expected: Sequence[tuple[object, Mapping[str, str], int]],
-) -> list[tuple[tuple[str, ...], Mapping[str, str], int]]:
-    return [
-        (
-            command if isinstance(command, tuple) else tuple(str(command).split()),
-            environment,
-            timeout,
-        )
-        for command, environment, timeout in expected
-    ]
-
-
 class PlanTests(unittest.TestCase):
     """Pin every local command, environment, and timeout."""
 
@@ -122,14 +33,14 @@ class PlanTests(unittest.TestCase):
         steps = _plan("linux")
         self.assertEqual(
             [(step.command, step.environment, step.timeout_seconds) for step in steps],
-            _commands(EXPECTED_POSIX_PLAN),
+            commands(EXPECTED_POSIX_PLAN),
         )
 
     def test_windows_plan_omits_the_posix_only_steps_as_ci_does(self) -> None:
         steps = _plan("win32")
         expected = [
             entry
-            for entry in _commands(EXPECTED_POSIX_PLAN)
+            for entry in commands(EXPECTED_POSIX_PLAN)
             if entry[0][:1] != ("test",) and "mutation" not in entry[0]
         ]
         self.assertEqual(
@@ -143,7 +54,15 @@ class PlanTests(unittest.TestCase):
         mutation_index = next(
             index for index, step in enumerate(linux) if "mutation" in step.command
         )
-        self.assertEqual(steps[:mutation_index], linux[:mutation_index])
+        for native, portable in zip(
+            steps[:mutation_index], linux[:mutation_index], strict=True
+        ):
+            expected = (
+                portable.command[:-1]
+                if native.mirrors in {local_ci.BUILD, local_ci.VERIFY}
+                else portable.command
+            )
+            self.assertEqual(native, replace(portable, command=expected))
         self.assertEqual(steps[mutation_index + 2 :], linux[mutation_index + 1 :])
         build, campaign = steps[mutation_index : mutation_index + 2]
         self.assertEqual(
@@ -154,7 +73,7 @@ class PlanTests(unittest.TestCase):
             build.command,
             (
                 *("docker", "build", "--quiet"),
-                *("--tag", "eml-attachment-remover-ci:uv-0.12.5"),
+                *("--tag", "eml-attachment-remover-ci:uv-0.12.21"),
                 str(HOST_ROOT / "image"),
             ),
         )
@@ -185,7 +104,7 @@ class PlanTests(unittest.TestCase):
                 *("--env", "MUTATION_WORKERS=4"),
                 *("--env", "UV_PROJECT_ENVIRONMENT=/ci/venv"),
                 *("--env", "UV_PYTHON=3.14.7"),
-                "eml-attachment-remover-ci:uv-0.12.5",
+                "eml-attachment-remover-ci:uv-0.12.21",
                 *("/bin/sh", "-c"),
                 (
                     "cd /src && tar --exclude=./.venv --exclude=./mutants "
@@ -199,8 +118,10 @@ class PlanTests(unittest.TestCase):
         )
         self.assertEqual(
             local_ci.LINUX_IMAGE_DEFINITION,
-            "FROM ghcr.io/astral-sh/uv:0.12.5 AS uv\n"
-            "FROM ubuntu:24.04\n"
+            "FROM ghcr.io/astral-sh/uv:0.12.21@sha256:"
+            "a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711 AS uv\n"
+            "FROM ubuntu:24.04@sha256:"
+            "008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3\n"
             "RUN apt-get update && apt-get install -y --no-install-recommends "
             "ca-certificates && rm -rf /var/lib/apt/lists/* "
             "&& useradd --create-home --home-dir /ci --uid 1001 runner "

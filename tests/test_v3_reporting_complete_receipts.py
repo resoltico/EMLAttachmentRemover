@@ -148,7 +148,7 @@ def test_report_serializes_every_complete_receipt_and_schema_field() -> None:
         "schema_version": 3,
         "scope": "mime-pruned",
         "program": "remove-eml-attachments",
-        "version": "3.0.6",
+        "version": "4.0.0",
         "mode": "apply",
         "ok": False,
         "exit_code": 9,
@@ -343,6 +343,7 @@ def test_complete_receipt_uses_canonical_json_and_human_channels(
         "source π display: CREATED_WARN: created warning\n"
         "failed display: FAILED_WARN: failed warning\n"
         "failed display: PARSE_ERROR: failed message\n"
+        "Batch: BATCH_FAILURE: batch message\n"
     )
 
 
@@ -357,4 +358,5 @@ def test_complete_receipt_paths0_emits_only_published_native_address(
         "source π display: CREATED_WARN: created warning\n"
         "failed display: PARSE_ERROR: failed message\n"
         "failed display: FAILED_WARN: failed warning\n"
+        "Batch: BATCH_FAILURE: batch message\n"
     )

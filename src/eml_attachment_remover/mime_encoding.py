@@ -8,6 +8,7 @@ import hashlib
 import quopri
 from typing import TYPE_CHECKING, Final
 
+from .cancellation import checkpoint
 from .domain import AppError, ExitCode, RetainedFingerprint
 
 if TYPE_CHECKING:
@@ -98,6 +99,7 @@ def fingerprint_retained(
     total = 0
     result: list[RetainedFingerprint] = []
     for node in nodes:
+        checkpoint()
         if node.children:
             continue
         encoded = payload(raw, node)

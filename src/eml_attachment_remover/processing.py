@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from . import report_stream
 from .batch import BatchOptions, execute
 
 if TYPE_CHECKING:
@@ -30,4 +31,8 @@ def process_file(
         output=destination,
         output_dir=None,
     )
-    return execute([source], options)
+    ledger = execute([source], options, retain_evidence=True)
+    try:
+        return ledger
+    finally:
+        report_stream.close(ledger)

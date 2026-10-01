@@ -8,6 +8,7 @@ from base64 import b64encode
 from encodings import utf_8, utf_16_le
 from typing import Final, TextIO
 
+from . import report_diagnostics
 from ._version import program_version
 from .domain import (
     PROGRAM_NAME,
@@ -26,10 +27,11 @@ from .native_values import (
     report_path_bytes,
     safe_display,
 )
+from .report_batch_diagnostics import batch_error_line, write_batch_error
 
 _UTF8: Final = utf_8.getregentry().name
-MAX_ERROR_MESSAGE: Final = 2048
-ELLIPSIS: Final = "\u2026"
+MAX_ERROR_MESSAGE: Final = report_diagnostics.MAX_ERROR_MESSAGE
+MAX_ERROR_BYTES: Final = report_diagnostics.MAX_ERROR_BYTES
 
 
 def _base64(value: bytes) -> str:
@@ -98,9 +100,7 @@ def _error(error: AppError | None) -> dict[str, object] | None:
     if error is None:
         return None
     code = error.code
-    message = error.message
-    if len(message) > MAX_ERROR_MESSAGE:
-        message = message[: MAX_ERROR_MESSAGE - 1] + ELLIPSIS
+    message = report_diagnostics.bounded_message(error.message)
     return {
         "code": code.name,
         "message": message,
@@ -215,6 +215,7 @@ def item_json(item: LedgerItem) -> dict[str, object]:
         The schema-3 mapping for the one terminal ledger record.
 
     """
+    item = item.completed_view()
     return {
         "index": item.index,
         "phase": item.phase,
@@ -244,7 +245,7 @@ def report(ledger: BatchLedger, mode: str, exit_code: int) -> dict[str, object]:
     """
     counts = {status.value: 0 for status in ItemStatus}
     for item in ledger.items:
-        if item.status is None:
+        if item.status is None or not item.terminalized:
             message = "report requested before ledger terminalization"
             raise RuntimeError(message)
         counts[item.status.value] += 1
@@ -310,6 +311,8 @@ def write_human(document: dict[str, object]) -> None:
         error = typed.get("error")
         if isinstance(error, dict):
             _safe(sys.stderr, f"{display}: {error.get('code')}: {error.get('message')}")
+    if line := batch_error_line(document.get("batch_error")):
+        sys.stderr.write(line)
 
 
 def _target_display(record: dict[str, object]) -> str | None:
@@ -363,3 +366,4 @@ def write_paths0(ledger: BatchLedger) -> None:
                 ),
             )
         _write_warnings(item.source_request.display, item.warnings)
+    write_batch_error(ledger.batch_error)

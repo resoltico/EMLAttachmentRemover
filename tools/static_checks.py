@@ -28,7 +28,15 @@ def run(
     """
     run_command(("ruff", "format", "--check", "--no-cache", "."))
     run_command(("ruff", "check", "--no-cache", "."))
-    run_command(("mypy", "--no-incremental", "--cache-dir", os.devnull))
+    for platform in ("linux", "darwin", "win32"):
+        run_command((
+            "mypy",
+            "--no-incremental",
+            "--cache-dir",
+            os.devnull,
+            "--platform",
+            platform,
+        ))
     run_command((sys.executable, "tools/check_module_design.py"))
     run_command((
         *("actionlint", "-shellcheck", "shellcheck", "-pyflakes", "pyflakes"),

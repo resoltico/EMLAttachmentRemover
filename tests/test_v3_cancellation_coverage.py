@@ -23,8 +23,9 @@ def test_cancellation_fallback_and_installed_handler_restore(
     with cancellation.install_cancellation_handlers():
         handler = signal.getsignal(signal.SIGINT)
         assert callable(handler)
+        cast("Callable[[int, object], None]", handler)(signal.SIGINT, None)
         with pytest.raises(cancellation.CancellationSignal):
-            cast("Callable[[int, object], None]", handler)(signal.SIGINT, None)
+            cancellation.checkpoint()
     assert signal.getsignal(signal.SIGINT) == previous
     watched = cast(
         "Callable[[], tuple[int, ...]]", cancellation.__dict__["_watched_signals"]

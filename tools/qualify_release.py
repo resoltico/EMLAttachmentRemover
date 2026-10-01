@@ -310,11 +310,13 @@ def _complete_staging(
     return final_names
 
 
-def verify_release_directory(directory: Path) -> tuple[Path, ...]:
+def verify_release_directory(
+    directory: Path, *, additional_artifacts: tuple[str, ...] = ()
+) -> tuple[Path, ...]:
     """Verify the exact artifact set and checksum bytes in one directory.
 
     Returns:
-        The four verified paths in lexical basename order.
+        All verified artifacts and the manifest in lexical basename order.
 
     """
     candidate = _lexical_absolute(directory)
@@ -322,10 +324,17 @@ def verify_release_directory(directory: Path) -> tuple[Path, ...]:
         message = f"release candidate must be a non-symbolic directory: {candidate}"
         raise ReleaseQualificationError(message)
     artifact_names = _artifact_names(*_project_identity())
-    final_names = frozenset((*artifact_names, CHECKSUM_FILE_NAME))
+    manifest_names = (*artifact_names, *additional_artifacts)
+    if len(set(manifest_names)) != len(manifest_names) or any(
+        Path(name).name != name or name in {"", ".."} or "\\" in name
+        for name in additional_artifacts
+    ):
+        message = "Invalid additional release artifact names"
+        raise ReleaseQualificationError(message)
+    final_names = frozenset((*manifest_names, CHECKSUM_FILE_NAME))
     _assert_exact_entries(candidate, final_names)
     manifest = candidate / CHECKSUM_FILE_NAME
-    expected = _manifest_bytes(candidate, artifact_names)
+    expected = _manifest_bytes(candidate, manifest_names)
     if manifest.read_bytes() != expected:
         message = f"release checksum manifest failed verification: {manifest}"
         raise ReleaseQualificationError(message)

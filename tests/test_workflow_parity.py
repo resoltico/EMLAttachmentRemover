@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import tomllib
 import unittest
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -19,7 +20,7 @@ RUN_KEY: Final = re.compile(r"( *(?:- )?)run: (.*)")
 CI_ONLY: Final = {
     # Extracts the checksum-manifest digest for GitHub artifact attestation.
     (
-        "manifest_digest=$(sha256sum release-dist/SHA256SUMS) "
+        "manifest_digest=$(shasum -a 256 release-dist/SHA256SUMS) "
         "manifest_digest=${manifest_digest%% *} "
         'if [[ ! "$manifest_digest" =~ ^[0-9a-f]{64}$ ]]; then exit 1 fi '
         'printf \'digest=sha256:%s\\n\' "$manifest_digest" >> "$GITHUB_OUTPUT"'
@@ -103,10 +104,13 @@ class WorkflowParityTests(unittest.TestCase):
             for text in workflows
             for match in re.findall(r"^ +version: (\S+)$", text, re.MULTILINE)
         }
-        self.assertEqual(uv_versions, {"0.12.5"})
+        configuration = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
+        required = configuration["tool"]["uv"]["required-version"]
+        self.assertTrue(required.startswith("=="))
+        self.assertEqual(uv_versions, {required.removeprefix("==")})
         (version,) = uv_versions
         self.assertIn(
-            f"FROM ghcr.io/astral-sh/uv:{version} AS uv\n",
+            f"FROM ghcr.io/astral-sh/uv:{version}@sha256:",
             local_ci.LINUX_IMAGE_DEFINITION,
         )
         self.assertTrue(local_ci.LINUX_IMAGE.endswith(f":uv-{version}"))
@@ -114,6 +118,20 @@ class WorkflowParityTests(unittest.TestCase):
             f"python-version: {local_ci.CANONICAL_PYTHON}\n",
             (WORKFLOWS / "mutation.yml").read_text(encoding="utf-8"),
         )
+
+    def test_interpreter_pin_and_local_ci_lanes_are_consistent(self) -> None:
+        pinned = (PROJECT_ROOT / ".python-version").read_text().strip()
+        self.assertEqual(local_ci.CANONICAL_PYTHON, pinned)
+        self.assertEqual(local_ci.WORKFLOW_PYTHONS, (pinned, pinned + "t"))
+
+    def test_setup_uv_preserves_safe_cache_defaults(self) -> None:
+        for path in WORKFLOWS.glob("*.yml"):
+            content = path.read_text()
+            self.assertNotIn("enable-cache: true", content)
+            self.assertIn("enable-cache: auto", content)
+            self.assertIn("cache-dependency-glob: uv.lock", content)
+            for action in re.findall(r"uses: (\S+)", content):
+                self.assertRegex(action, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 
     def test_block_scalars_are_read_until_their_indentation_ends(self) -> None:
         text = (

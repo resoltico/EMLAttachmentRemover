@@ -75,7 +75,7 @@ def _worst_error() -> AppError:
 
     """
     return AppError(
-        LONGEST_CODE, "\x01" * reporting_v3.MAX_ERROR_MESSAGE, None, WORST_WORD
+        LONGEST_CODE, "\x01" * (reporting_v3.MAX_ERROR_BYTES // 6), None, WORST_WORD
     )
 
 

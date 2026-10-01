@@ -6,6 +6,14 @@ and observations stay outside this repository and public CI artifacts.
 
 ## Required local gates
 
+UV 0.12.21 is required by `pyproject.toml`; CI and the digest-pinned local Linux image use that version. Direct tool dependencies and the transitive lockfile are current as of 2026-10-01. Pyflakes 4 and Setup UV 10 are included; workflow caches use Setup UV's safer `auto` default, with release asset build/publish caches disabled. Hatchling's build-system and development pins agree, and pytest's required Hypothesis plugin is checked against its development dependency pin.
+
+Signal-tracing tests resolve the implementation selected by the pinned Mutmut trampoline, including its process-local selector, rather than tracing a decorator's unused code object. Tests verify original, statistics, selected-mutant, and unrelated-mutant dispatch while actual calls continue through the trampoline. Shutdown-operation injection wraps the operation and preserves its selected implementation.
+
+During mutation testing, ordinary test subprocesses inherit the generated application source and workspace import paths; installed-artifact tests explicitly remove that override. A regression test verifies parent/child source agreement. A test-only startup hook initializes the child's Mutmut configuration independently of its working directory and journals distinct measured call names; the parent attributes those names to the test before collecting its mapping, including calls preceding immediate process exit. Unexpected in-process hard exits fail the test without killing its mutation worker; actual process-exit behavior runs in exec children. Finite-output mutations have a generous per-test deadline so nontermination becomes a test failure before the runner timeout. Accepted output is checked as it arrives, and real pipe readers stop if output exceeds the expected payload.
+
+CPython 3.14.8 was published on 2026-09-30, but the current Astral managed-build and GitHub Python-version catalogs do not yet provide it. An actual UV installation request fails; the six qualification lanes retain installable 3.14.7/3.14.7t. Python 3.15 is still prerelease. Update the interpreter pin, local plan and all workflow lanes together once the provider offers both standard and free-threaded builds; a consistency test checks the local interpreter pins against `.python-version`.
+
 Run every CI gate this host can reproduce before pushing:
 
 ```sh
@@ -31,8 +39,9 @@ sharing `mutants/` and `build/`. Whatever the outcome, the campaign leaves
 (status and mapped tests) and a bounded patch for each (at most 100 mutants, 16 KiB
 per patch, 25 tests each, with truncation recorded); the mutation workflow uploads
 it with the results. `quality --native` runs only what depends on the host (the
-repository audit and coverage); the platform-independent static checks run on the one
-lane CI marks `static`, and `tasks.py ci` mirrors that split.
+repository audit and coverage); shared static checks run on the one lane CI marks
+`static`, explicitly invoking mypy for `linux`, `darwin`, and `win32`.
+`tasks.py ci` mirrors that split.
 
 The component tasks are `uv run python tools/tasks.py check`, `coverage`, `quality`,
 `test`, `thorough`, `mutation`, `build`, and `release`. `quality` uses the
@@ -83,25 +92,137 @@ has no Java/JVM runtime; the report is an interchange artifact, not a Java depen
 ## Report lifecycle evidence
 
 One report has one owner (`report_session.py`): render into private staging, seal it
-(flush, rewind, and read the first chunk of each file), release the spools, deliver
-once, then diagnose. Everything that can fail runs before the first external byte, so
-a failed flush, rewind, first read, or reset falls back to the reserved status records
-(`test_report_session.py` injects each), recovery is staged and delivered as the same
-canonical ASCII bytes whatever the terminal codec, and a cleanup failure is diagnosed
+(flush, rewind, and read bytes from each file), deliver, release the spools, then
+diagnose. Retained receipt ownership lasts through delivery. Staging failures are
+handled before the first external byte.
+The CLI stores the authoritative ledger before execution can publish. Batch
+execution operates on that same object, so there is no return/assignment handoff
+that can discard results. `test_owned_cancellation.py` sends real SIGINT at
+reservation, inventory, publication, finalization, final archiving, return, and
+report-entry boundaries for all three formats.
+
+Signal handlers record requests without raising through assignments. Explicit
+checkpoints surround long processing and the publication visibility boundary;
+receipt transfer and immutable terminal-outcome commitment complete before the
+next checkpoint. `test_coherent_outcome_signals.py` sends real SIGINT before
+visibility, before the publisher returns, after receipt transfer, and during
+terminal commitment in every format. It checks actual copies, unchanged originals,
+decoded bodies, hashes, verified receipts, terminal completeness, and one stderr
+notice for non-JSON reports. Unresponsive processing has a 10-second escape and
+repeated signals terminate it immediately. Report preflight rejects unfinished
+rows before external output.
+
+The controller design and its separate counterexample review cover partial handler
+installation, failed thread construction/start (including failure after launch),
+join failure, shutdown signals, nesting, and copied thread contexts. One owner
+prepares resources before context publication. Its independent releases stop/wake
+the monitor, join only a launched thread, and reset the context while cooperative
+handlers remain installed; handler restoration follows. Primary errors retain
+cleanup failures as exception notes. Shutdown requests are acknowledged even
+after context reset. `test_controller_lifecycle.py` verifies the decisive second
+real API call in the same interpreter after failed setup or interrupted teardown,
+including SIGINT at the proven publisher return. It also verifies monitor ownership
+and explicit wakeup independently of a machine-specific latency threshold.
+
+A local three-round comparison used the exact audited source and current source,
+verified import locations, 35 real small-message dry runs per round, and five
+warm-up exclusions. The audited median was 55.2–55.4 ms; the corrected median was
+2.6–2.7 ms. These measurements establish removal of the polling floor on that host,
+not a universal runtime target. No signal handler invokes synchronization or thread
+management operations.
+
+The cancellation-finalization design has a separate review of scope-exit catches,
+handler handback, forwarded requests, already delivered JSON, and duplicate notices
+across guard/controller retirement. The ledger-aware catch covers acquisition,
+processing, and controller exit. Final acknowledgement reads explicit retired state
+after handler restoration; delivery requests are consumed only when its retired
+guard selects status. `test_cancellation_finalization.py` sends real SIGINT during
+stop, join, context reset, and processing/delivery handler restoration. It requires
+completed API return values, unchanged originals, verified copies and hashes,
+truthful post-publication failures, stable complete report bytes, status 130, and
+one interruption explanation. It also covers early JSON error delivery and a
+request at both retirement boundaries in one invocation.
+
+The CLI-only diagnostic design and its separate review cover interruption after
+JSON error-handler retirement, actual stdout acceptance, failed notice production,
+blocked stderr, and caller-owned API signal policy. `_RunState` retains the error
+delivery guard as acceptance evidence. An outer CLI catch includes error responses
+and release; it never restarts accepted stdout and contains notice failures without
+recursive rendering. A fresh diagnostic guard carries the known request into the
+deadline and avoids counting an enclosing owner's same request twice.
+`test_cli_outer_interruption.py` uses real SIGINT after usage and temporary-root
+error delivery and compares the original JSON bytes. It covers pre-delivery and
+partial output, failed writes/formatting, and enclosing owners.
+`test_cli_interruption_notice_process.py` proves grace and repeat termination
+against an actual blocked diagnostic worker. API cancellation ownership is unchanged.
+
+The output-finalization design and its separate review distinguish the selected
+`SystemExit` status from the exit observed after interpreter cleanup. Linux
+`/dev/full` subprocess tests exercise buffered and unbuffered stdout and stderr,
+recording selection 130 separately from actual 120/130, complete versus unavailable
+JSON, and original/copy integrity. Status 120 is a secondary failure, not an
+application success or a replacement for the processing evidence. Finder accepts
+this status discrepancy only after its existing report validation, displays the
+available outcomes with an explicit failure notice, retains exit 120, and suppresses
+reveal. Invalid/truncated reports remain rejected. No stream ownership or shutdown
+policy is imposed on API callers.
+
+Both receipt spools retain OS-owned temporary handles throughout delivery and
+never reopen a pathname. POSIX backing storage is anonymous or unlinked at
+creation; Windows uses the stdlib delete-on-close handle contract. Reads remain
+bounded, and a failed append rolls back to its prior byte count.
+`test_spool_process_lifetime.py` exercises real processes on ordinary completion,
+grace expiry, repeated cancellation, and broken pipes, requiring no orphaned files.
+`test_raw_format_order.py` checks final-choice inference, known option-value
+consumption, negative-number values, and end-of-options boundaries.
+A failed flush, rewind, first read, write, or reset falls back to retained terminal
+receipts using memory channels, with a 128 MiB limit per channel and no spool reads
+or writable-storage dependency. `test_report_recovery.py` covers persistent faults,
+already active recovery, cancellation during memory staging, native bytes before
+and after decoder read-ahead distances,
+and every output format. Recovery JSON stays canonical ASCII regardless of terminal
+codec. Output endpoint failures can still prevent completion. A cleanup failure is diagnosed
 after the report instead of replacing it. Delivery runs on a helper thread watched by a
 `DeliveryGuard`: a signal is recorded, the first one grants a 10-second grace since
 the last accepted output, a second signal or an expired grace calls `os._exit(130)`.
 `test_delivery_process.py` proves this against a real pipe whose reader never reads.
 A signal that arrives during delivery leaves the whole document unchanged and exits
-130; the Finder launcher accepts exactly that disagreement.
+130; the Finder launcher accepts that disagreement. Signals to the launcher itself
+forward cancellation, wait at most 12 seconds for the processor (a repeated signal
+kills it immediately), validate and display available complete results, suppress
+reveal actions, then remove temporary reports and preserve the launcher's signal
+status. Invalid or truncated reports remain rejected. `test_finder_cancellation.py`
+tests the wrapper and child separately, including uncooperative children.
+
+Delivery checks accepted counts and retains unwritten bytes across partial writes,
+zero/None progress, and nonblocking write or flush failures. Only accepted output
+resets the cancellation grace. `test_report_delivery_writes.py` covers a real raw
+nonblocking POSIX pipe and partial buffered acceptance.
 
 Report admission (`report_budget.py`) serializes each item with a worst-case terminal
 form (longest reportable address, status, phase, error) and reserves every later
 input's minimal record; `test_report_budget.py` checks the reservation against
 generated real terminal records and the capacity arithmetic to the byte. The
 destination address bound is enforced at destination binding, before any copy.
+Diagnostics have both a 2,048-character limit and a 12,288-byte canonical ASCII JSON
+content limit, including the truncation marker. `test_report_diagnostic_budget.py`
+checks controls, Unicode, non-BMP characters, escaping, truncation boundaries, and
+cumulative reservations.
 
 ## MIME and raw-wire evidence
+
+`test_live_delivery_boundary.py` processes real synthetic messages and checks
+first-delivery-read recovery, separate stderr progress, partial-output refusal to
+restart, and broken endpoints. Batch errors appear once on non-JSON stderr.
+`test_early_report_intent.py` covers allocation failures, unsafe temporary roots,
+usage errors, option boundaries, startup cancellation, and ASCII JSON on hostile
+terminal codecs. The error renderer uses bounded memory, not temporary files.
+
+`test_public_api_result.py` checks repeated apply, dry-run, failed, and existing-file
+calls, detached complete evidence, cleanup on exceptional unwind, and the
+prepublication evidence limit. Retention is restricted to single-file results.
+`test_physical_header_names.py` covers RFC 5322 punctuation in first/later positions,
+exact source spans, all byte boundaries, and malformed structured MIME controls.
 
 Tests must cover the closed policy matrix: disposition, filename/name, CID/location,
 plain and HTML alternatives, `multipart/mixed`, `multipart/related`, nested supported
@@ -137,3 +258,13 @@ Before a public release, inspect the schema/Finder consumer and no-replace bound
 run packaged artifacts rather than imports alone, and complete the private field
 protocol locally. The release workflow must gate publication on terminal-green
 quality, mutation, archive, checksum, provenance, and artifact-identity jobs.
+
+## Native macOS presentation qualification
+
+The macOS quality lanes compile the presentation model and build a fresh locally signed universal app, verify its complete bundle signature and both architectures, and exercise its bundled launcher against a synthetic EML. POSIX quality lanes also lint the native integration shell scripts. Native model checks cover created, existing-verified, stopped, unprocessed, failed, published-with-error, and planned results; invocation status 120 or late interruption cannot become success merely because file receipts succeeded. Stopped and unprocessed rows retain their diagnostics without inflating the processing-error badge.
+
+Before release, live-test the existing Finder Quick Action and direct Terminal launcher with public synthetic fixtures. Check successful attachment removal, exact existing-copy verification, conflicts, mixed batches, long and control-character filenames, warning display, selectable Details and complete Copy details, Finder reveal, keyboard Done, and repeated invocation while earlier reports remain open. Hold a real processor after several publications, activate Stop processing in the native UI, resume it to receive interruption, and compare the complete receipt with actual files and owned PID exits. Separately test a processor that cannot cooperate with cancellation, late interruption, output-finalization failure, missing runtime, and invalid reports; clearly identify injected fault cases. Repeat affected checks after remediation and retain the methodology and receipts in private persistent storage outside the checkout. Live GUI qualification is distinct from automated Python coverage and does not imply qualification on other macOS versions or Intel hardware.
+
+## Complete macOS release delivery
+
+The v4 publisher requires the prebuilt universal macOS ZIP in addition to the portable artifacts. Both production and downloaded-artifact verification run on macOS through `python -B -m tools.release_delivery`; a portable-only qualification cannot publish a v4 release. The [release pipeline contract](integrations/macos-ui/RELEASE.md) documents the five-file set, independent builds, archive permissions and extraction, source checks, ad-hoc signing, installation, and publication boundaries.

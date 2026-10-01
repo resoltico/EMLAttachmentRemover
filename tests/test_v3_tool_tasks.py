@@ -16,7 +16,8 @@ def test_quality_task_keeps_static_hygiene_and_branch_coverage_gates() -> None:
     static_source = (TASKS.parent / "static_checks.py").read_text(encoding="utf-8")
     assert "tools/check_repository_hygiene.py" in task_source
     assert '"ruff", "format", "--check"' in static_source
-    assert '"mypy", "--no-incremental"' in static_source
+    assert '"mypy"' in static_source
+    assert '"--no-incremental"' in static_source
     assert "tools/check_module_design.py" in static_source
     assert "tools/report_coverage.py" in task_source
     assert "detect-secrets-hook" in static_source
@@ -46,5 +47,5 @@ def test_workflow_lanes_invoke_the_matching_quality_mutation_and_release_tasks()
     assert "--observable" in hypothesis
     assert "tools/tasks.py thorough" in release
     assert "--observable" in release
-    assert "tools/qualify_release.py" in release
+    assert "-m tools.release_delivery" in release
     assert "--output-directory release-dist" in release

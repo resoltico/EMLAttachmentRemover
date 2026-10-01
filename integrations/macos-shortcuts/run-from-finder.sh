@@ -40,30 +40,76 @@ umask 077
 REPORT_FILE=$(mktemp "${TMPDIR:-/tmp}/eml-remover-report.XXXXXX") || fail 7 "could not create report file"
 ERROR_FILE=$(mktemp "${TMPDIR:-/tmp}/eml-remover-errors.XXXXXX") || { rm -f "$REPORT_FILE"; fail 7 "could not create error file"; }
 CHILD=
+WATCHDOG=
+OWNER_WATCHER=
+CANCEL_STATUS=0
+CANCEL_SIGNAL=
 # shellcheck disable=SC2329  # Invoked through the EXIT trap.
-cleanup() { rm -f "$REPORT_FILE" "$ERROR_FILE"; }
+cleanup() {
+    if [ -n "$WATCHDOG" ]; then
+        kill "$WATCHDOG" 2>/dev/null || true
+        wait "$WATCHDOG" 2>/dev/null || true
+    fi
+    if [ -n "$OWNER_WATCHER" ]; then
+        kill "$OWNER_WATCHER" 2>/dev/null || true
+        wait "$OWNER_WATCHER" 2>/dev/null || true
+    fi
+    rm -f "$REPORT_FILE" "$ERROR_FILE"
+}
 # shellcheck disable=SC2329  # Invoked through signal traps.
 forward() {
     signal=$1
-    status=$2
-    if [ -n "$CHILD" ]; then
-        kill "-$signal" "$CHILD" 2>/dev/null || true
-        wait "$CHILD" 2>/dev/null || true
+    requested_status=$2
+    if [ "$CANCEL_STATUS" -ne 0 ]; then
+        if [ -n "$CHILD" ]; then kill -KILL "$CHILD" 2>/dev/null || true; fi
+        return
     fi
-    exit "$status"
+    CANCEL_STATUS=$requested_status
+    CANCEL_SIGNAL=$signal
+    interrupt_child
 }
+# shellcheck disable=SC2329  # Also delivers a signal caught before child startup.
+interrupt_child() {
+    if [ -n "$CHILD" ]; then
+        kill "-$CANCEL_SIGNAL" "$CHILD" 2>/dev/null || true
+        "$PYTHON" -c 'import os, signal, sys, time; time.sleep(12); os.kill(int(sys.argv[1]), signal.SIGKILL)' "$CHILD" 2>/dev/null &
+        WATCHDOG=$!
+    fi
+}
+
 trap cleanup EXIT
 trap 'forward HUP 129' HUP
 trap 'forward INT 130' INT
 trap 'forward TERM 143' TERM
 
+# The native app alone holds this pipe's write end. EOF also covers forced app loss.
+if [ "${EML_REMOVER_UI_OWNER_PIPE:-0}" = 1 ]; then
+    # Preserve the live input before POSIX shells redirect background stdin.
+    exec 3<&0
+    "$PYTHON" -c 'import os, signal, sys; parent = int(sys.argv[1]); sys.stdin.buffer.read(); os.getppid() == parent and os.kill(parent, signal.SIGTERM)' "$$" <&3 3<&- >/dev/null 2>/dev/null &
+    OWNER_WATCHER=$!
+    exec 3<&-
+fi
+
 "$PYTHON" "$ZIPAPP" --existing="$existing" --output-format json -- "$@" >"$REPORT_FILE" 2>"$ERROR_FILE" &
 CHILD=$!
-wait "$CHILD"
-status=$?
+if [ "$CANCEL_STATUS" -ne 0 ]; then interrupt_child; fi
+while :; do
+    wait "$CHILD"
+    status=$?
+    # A caught signal can interrupt wait before the processor has exited.
+    if ! kill -0 "$CHILD" 2>/dev/null; then break; fi
+done
 CHILD=
+if [ -n "$WATCHDOG" ]; then
+    kill "$WATCHDOG" 2>/dev/null || true
+    wait "$WATCHDOG" 2>/dev/null || true
+    WATCHDOG=
+fi
+reveal=${EML_REMOVER_REVEAL:-1}
+if [ "$CANCEL_STATUS" -ne 0 ] || [ "$status" -eq 120 ]; then reveal=0; fi
 
-"$PYTHON" - "$REPORT_FILE" "$ERROR_FILE" "${EML_REMOVER_REVEAL:-1}" "$status" <<'PY'
+"$PYTHON" - "$REPORT_FILE" "$ERROR_FILE" "$reveal" "$status" "$CANCEL_STATUS" <<'PY'
 from __future__ import annotations
 
 import base64
@@ -75,7 +121,7 @@ import sys
 import unicodedata
 from collections.abc import Mapping
 
-report_path, error_path, reveal, processor_status = sys.argv[1:]
+report_path, error_path, reveal, processor_status, cancellation_status = sys.argv[1:]
 STATUSES = (
     "created",
     "existing_verified",
@@ -97,6 +143,7 @@ ITEM_FIELDS = {
 MAX_DETAILS = 24
 MAX_TEXT = 512
 INTERRUPTED = 130
+OUTPUT_FINALIZATION = 120
 
 
 def safe(value: object) -> str:
@@ -165,9 +212,9 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
         or document.get("mode") not in {"apply", "dry-run"}
         or type(document.get("ok")) is not bool
         or type(document.get("exit_code")) is not int
-        # A signal during delivery of a complete report ends the process with 130 while
-        # the delivered document keeps its processing outcome; nothing else may differ.
-        or (document["exit_code"] != status and status != INTERRUPTED)
+        # Late cancellation or CPython output-finalization failure preserves a
+        # complete document's processing outcome while the process status differs.
+        or (document["exit_code"] != status and status not in {INTERRUPTED, OUTPUT_FINALIZATION} and cancellation_status == "0")
     ):
         raise ValueError("report identity or exit status is invalid")
     items = document.get("items")
@@ -237,7 +284,11 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
         raise ValueError("report interruption receipt is invalid")
     if interrupted:
         details.append(f"Interrupted: {safe(interruption.get('reason'))}")
-    if document["exit_code"] != status:
+    if status == OUTPUT_FINALIZATION:
+        details.insert(0, "Output finalization failed: processor status 120; available results are complete.")
+    if cancellation_status != "0":
+        details.append("Interrupted: launcher cancelled; available results are complete.")
+    elif document["exit_code"] != status and status == INTERRUPTED:
         details.append("Interrupted: after the report was written; its results are complete.")
     return outputs, details
 
@@ -252,6 +303,19 @@ except (OSError, ValueError, json.JSONDecodeError) as exc:
     raise SystemExit(70)
 
 summary = report["summary"]
+if os.environ.get("EML_REMOVER_UI_REPORT") == "1":
+    # This private UI transport follows exactly the same admission checks as text.
+    # Preserve invocation failure independently of successful item receipts.
+    final_status = int(cancellation_status) or int(processor_status)
+    print(json.dumps({
+        "report": report,
+        "process_status": final_status,
+        # Item diagnostics already live in the complete canonical receipt.
+        "details": [detail for detail in details if detail.startswith((
+            "Interrupted:", "Output finalization failed:", "Batch:",
+        ))],
+    }, ensure_ascii=True))
+    raise SystemExit(final_status)
 print(
     "MIME-pruned EML: "
     f"created {summary['created']}; existing verified {summary['existing_verified']}; "
@@ -267,4 +331,6 @@ if reveal != "0":
         subprocess.run(["open", "-R", output], check=False)
 raise SystemExit(int(processor_status))
 PY
-exit $?
+validation_status=$?
+if [ "$CANCEL_STATUS" -ne 0 ]; then exit "$CANCEL_STATUS"; fi
+exit "$validation_status"
