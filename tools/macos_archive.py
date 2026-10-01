@@ -19,6 +19,7 @@ MAX_TOTAL: Final = 128 * 1024 * 1024
 UNIX_SYSTEM: Final = 3
 DOCUMENTS: Final = (
     "LICENSE",
+    "QA.md",
     "integrations/macos-ui/README.md",
     "integrations/macos-ui/ARTWORK.md",
     "integrations/macos-ui/RELEASE.md",
