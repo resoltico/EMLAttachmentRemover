@@ -46,7 +46,14 @@ def _python(source: str, *arguments: str) -> tuple[str, ...]:
 
 
 def _environment() -> dict[str, str]:
-    environment = os.environ.copy()
+    # These standard-library-only process fixtures are deliberately killed.
+    # Coverage belongs to the parent, which executes the project process owner;
+    # starting collectors in the fixtures can leave interrupted SQLite files.
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith("COVERAGE_")
+    }
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     return environment
 
@@ -319,3 +326,18 @@ class PlatformPrimitiveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_synthetic_group_children_retain_fixture_settings_without_coverage() -> None:
+    with patch.dict(
+        os.environ,
+        {
+            "COVERAGE_FILE": "unused synthetic measurement",
+            "COVERAGE_PROCESS_CONFIG": "unused synthetic measurement",
+            "PUBLIC_FIXTURE": "retained",
+        },
+    ):
+        environment = _environment()
+    assert not any(name.startswith("COVERAGE_") for name in environment)
+    assert environment["PUBLIC_FIXTURE"] == "retained"
+    assert environment["PYTHONDONTWRITEBYTECODE"] == "1"
