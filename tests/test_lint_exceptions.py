@@ -5,14 +5,12 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from tools import lint_exceptions as lint
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from tools import mutmut_workspace
 
 
 def _workspace(root: Path) -> tuple[Path, Path]:
@@ -113,8 +111,11 @@ def test_registry_cli_reports_failures_and_source_registry_passes(
     with patch.object(lint, "check", return_value=["Missing approval"]):
         assert lint.main() == 1
     assert "Missing approval" in capsys.readouterr().err
+    root = Path(__file__).resolve().parents[1]
+    # Registry approvals address original source, not generated mutation wrappers.
+    original = root.parent if mutmut_workspace.active(root) else root
     result = subprocess.run(
-        [sys.executable, "-B", "tools/lint_exceptions.py"],
+        [sys.executable, "-B", str(original / "tools/lint_exceptions.py")],
         check=True,
         capture_output=True,
         timeout=30,
