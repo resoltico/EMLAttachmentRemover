@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import signal
 import threading
 from email import policy
@@ -89,7 +90,9 @@ def test_cli_reflects_signals_received_before_handler_handback(
             for item in report["items"]
         )
     elif fmt == "paths0":
-        assert captured.out == "".join(str(copy) + "\0" for copy in copies)
+        assert captured.out == "".join(
+            ("\\\\?\\" if os.name == "nt" else "") + str(copy) + "\0" for copy in copies
+        )
     else:
         assert captured.out.count("created:") == 2
     assert captured.err.count("interrupted by SIGINT") == 1

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import json
+import os
 import sys
 from email import policy
 from email.parser import BytesParser
@@ -159,7 +160,7 @@ def test_recovery_delivery_preserves_bytes_on_a_utf16_terminal(
             assert json.loads(raw.getvalue().decode("ascii"))["summary"]["created"] == 2
         else:
             expected = b"".join(
-                str(path).encode() + b"\0"
+                os.fsencode(("\\\\?\\" if os.name == "nt" else "") + str(path)) + b"\0"
                 for path in sorted(tmp_path.glob("*.mime-pruned.eml"))
             )
             assert raw.getvalue() == expected

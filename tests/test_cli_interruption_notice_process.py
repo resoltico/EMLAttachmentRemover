@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 CHILD: Final = """
-import inspect, signal, sys, time
+import inspect, os, signal, sys, time, threading
 from pathlib import Path
 from eml_attachment_remover import cancellation, cli
 from tests.trace_implementation_support import traced_implementation
@@ -26,6 +26,8 @@ class Blocked:
     encoding = 'ascii'
     def write(self, text):
         marker.write_text('blocked')
+        if os.name == 'nt' and os.environ.get('TEST_REPEAT') == '1':
+            threading.Timer(0.05, signal.raise_signal, (signal.SIGINT,)).start()
         time.sleep(60)
     def flush(self):
         pass
@@ -59,7 +61,12 @@ def test_stalled_notice_has_a_deadline_and_repeat_escalation(
         [sys.executable, "-B", "-c", CHILD, str(marker)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1"},
+        env={
+            **os.environ,
+            "PYTHONUNBUFFERED": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "TEST_REPEAT": "1" if repeat else "0",
+        },
     )
     try:
         deadline = time.monotonic() + 10
@@ -68,7 +75,7 @@ def test_stalled_notice_has_a_deadline_and_repeat_escalation(
         ):
             time.sleep(0.01)
         assert marker.exists()
-        if repeat:
+        if repeat and os.name != "nt":
             child.send_signal(signal.SIGINT)
         output, errors = child.communicate(timeout=10)
         assert child.returncode == 130

@@ -12,7 +12,7 @@ Everything else is kept or rejected. In particular, filenames, media types,
 position are never used as weaker evidence that content is disposable. Originals are
 never modified.
 
-For a prebuilt native macOS application, download the macOS universal ZIP from the GitHub Release. It requires macOS 14 and CPython 3.14, but no Swift compiler; see the [installation and release pipeline](integrations/macos-ui/RELEASE.md).
+For a prebuilt native macOS application, download the macOS universal ZIP from the GitHub Release. It requires macOS 14 and CPython 3.14, but no Swift compiler; see the [first-launch and Gatekeeper setup steps](integrations/macos-ui/README.md#first-launch-and-macos-approval) and [release pipeline](integrations/macos-ui/RELEASE.md).
 
 For a native macOS progress and report window with processing cancellation, app identity, per-file outcomes, and expandable diagnostics, see the [macOS application guide](integrations/macos-ui/README.md). The application requires CPython 3.14 at runtime.
 

@@ -1,0 +1,43 @@
+EML Attachment Remover — prebuilt macOS application
+
+Requirements: macOS 14 or later and CPython 3.14 installed separately.
+Swift, Xcode and personal code signing are not required.
+This app has an ad-hoc integrity signature. It has no Developer ID and is
+not notarized; macOS may block the first launch of an internet download.
+
+1. Download the macOS universal ZIP from the project's official GitHub Release.
+   Check its checksum/provenance using the release instructions, then extract it.
+2. Install CPython 3.14. Quit any previous EML Attachment Remover instance.
+3. Open Terminal, change directory to the extracted ZIP folder, then run:
+   EML_REMOVER_PYTHON=/absolute/path/to/python3.14 /bin/sh integrations/macos-ui/install.sh "EML Attachment Remover.app"
+   Replace the placeholder with your real Python executable path. The installer
+   records it privately, installs into ~/Applications, and updates CLI support.
+   Alternatively copy the app into ~/Applications and use runtime discovery.
+4. Open ~/Applications/EML Attachment Remover.app in Finder.
+5. If macOS blocks the app because its developer cannot be verified, dismiss
+   the warning with Done or OK; do not move the app to the Bin.
+6. Open System Settings > Privacy & Security and scroll to Security.
+   If an entry for EML Attachment Remover appears, select Open Anyway.
+   Authenticate with your Mac password or Touch ID if macOS requests it,
+   then confirm Open in the additional warning. Attempt the launch first:
+   Open Anyway generally appears only after macOS blocks that app.
+7. Once the app opens, choose EML files or configure the optional Finder
+   Quick Action described in integrations/macos-ui/README.md.
+
+If there is no Open Anyway entry, check whether the app already opens normally.
+If it remains blocked, consult Apple's instructions below; managed-device
+policy may require your administrator's assistance or prohibit an exception.
+Do not disable Gatekeeper globally, strip quarantine, or re-sign the app as a
+routine installation step. An invalid/damaged signature requires investigating
+or downloading a clean official copy, rather than approving the damaged copy.
+
+Updates: quit the app, verify and extract the new release, rerun step 3 with
+your chosen Python, then launch it. A new build may require steps 5–6 again.
+Previous managed app bundles are retained in private application-support backups.
+
+A missing-Python message is separate from a Gatekeeper warning. Install CPython
+3.14 and rerun the installer with its actual executable path. CPython 3.15
+is not a supported substitute for this release.
+
+Apple's instructions: https://support.apple.com/102445
+Shortcut completion confirms launch; use the CLI for synchronous processing status.

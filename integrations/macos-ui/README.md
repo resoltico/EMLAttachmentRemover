@@ -10,6 +10,16 @@ Download `eml_attachment_remover-VERSION-macos-universal.zip` from the official 
 
 The release app is already ad-hoc signed by CI. Customers do not re-sign it. It has no Developer ID and is not notarized, so Gatekeeper may block an internet download. If you trust the official download, follow [Apple's app-specific Open Anyway instructions](https://support.apple.com/102445); device-management policy may prohibit an exception. Signature integrity and Gatekeeper approval are separate checks. Do not disable Gatekeeper or strip quarantine to install this application.
 
+### First launch and macOS approval
+
+1. Install CPython 3.14, verify and extract the official ZIP, quit the previous app, and run the bundled `INSTALL.txt` installation command with your real Python executable path.
+2. Open `~/Applications/EML Attachment Remover.app` in Finder. If macOS blocks it because the developer cannot be verified, dismiss the warning with **Done** or **OK**, keeping the app.
+3. Open **System Settings → Privacy & Security**, scroll to **Security**, and select **Open Anyway** for **EML Attachment Remover**. Authenticate with your Mac password or Touch ID if requested, then confirm **Open** in the additional warning. Attempt the launch first; the exception normally appears only after a blocked launch.
+4. If no exception appears, check whether the app already opens. If it remains blocked, follow [Apple's current instructions](https://support.apple.com/102445); a managed Mac may require administrator assistance or prohibit this exception.
+5. After the app opens, choose files or set up the optional Finder Quick Action below. A missing-Python error requires installing CPython 3.14 and rerunning the installer with its actual executable path; it is separate from Gatekeeper approval.
+
+For each update, quit the app, verify and extract the new ZIP, rerun the installer, and launch the replacement. A new build may require another app-specific approval. Do not re-sign the release, strip quarantine, or disable Gatekeeper globally as routine setup steps. A damaged/invalid signature calls for investigation or a clean official download, not approval of the damaged copy. See the complete [bundled setup instructions](INSTALL.txt).
+
 ## Build from source
 
 Building requires macOS, Apple Command Line Tools with Swift 6, and CPython 3.14. The app contains Apple Silicon and Intel executables targeting macOS 14 or later. It still requires CPython 3.14 at runtime; the native UI does not bundle Python. Only the host architecture and OS used for qualification are live-tested locally.

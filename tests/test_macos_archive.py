@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import plistlib
 import stat
 import struct
@@ -68,7 +69,10 @@ def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
     }
     for name in archive._surface():
         mode = 0o755 if name.endswith("/") or name in executables else 0o644
-        assert stat.S_IMODE((extracted / name).stat().st_mode) == mode
+        with zipfile.ZipFile(first) as metadata:
+            assert stat.S_IMODE(metadata.getinfo(name).external_attr >> 16) == mode
+        if os.name != "nt":
+            assert stat.S_IMODE((extracted / name).stat().st_mode) == mode
     with zipfile.ZipFile(first) as packaged:
         expected = {
             *archive.DOCUMENTS,

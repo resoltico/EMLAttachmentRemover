@@ -62,9 +62,11 @@ def test_recovery_projects_receipts_and_obeys_each_output_channel(
             batch = (
                 "batch π message" if encoding == "utf-16" else "batch \\u03c0 message"
             )
-            assert f"Batch: BATCH_FAILURE: {batch}\n" in err.getvalue().decode(encoding)
+            assert f"Batch: BATCH_FAILURE: {batch}\n" in err.getvalue().decode(
+                encoding
+            ).replace("\r\n", "\n")
         else:
-            text = out.getvalue().decode(encoding)
+            text = out.getvalue().decode(encoding).replace("\r\n", "\n")
             display = (
                 "source \\u03c0 display" if encoding != "utf-16" else "source π display"
             )
@@ -73,7 +75,9 @@ def test_recovery_projects_receipts_and_obeys_each_output_channel(
             batch = (
                 "batch π message" if encoding == "utf-16" else "batch \\u03c0 message"
             )
-            assert f"Batch: BATCH_FAILURE: {batch}\n" in err.getvalue().decode(encoding)
+            assert f"Batch: BATCH_FAILURE: {batch}\n" in err.getvalue().decode(
+                encoding
+            ).replace("\r\n", "\n")
     assert ledger.items[0].source is not None
     assert ledger.items[0].transformation is not None
     assert ledger.items[0].warnings

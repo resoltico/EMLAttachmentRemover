@@ -22,6 +22,7 @@ DOCUMENTS: Final = (
     "integrations/macos-ui/README.md",
     "integrations/macos-ui/ARTWORK.md",
     "integrations/macos-ui/RELEASE.md",
+    "integrations/macos-ui/INSTALL.txt",
     "integrations/macos-ui/install.sh",
     "integrations/macos-shortcuts/install.sh",
     "integrations/macos-shortcuts/installer-filesystem.sh",
@@ -57,23 +58,7 @@ def instructions() -> bytes:
         UTF-8 installation instructions included verbatim in the release.
 
     """
-    return (
-        "EML Attachment Remover — prebuilt macOS application\n\n"
-        "Requires macOS 14 or later and CPython 3.14. Swift/Xcode are not required.\n"
-        "Quit the app before an update. From this extracted directory run:\n"
-        "EML_REMOVER_PYTHON=/absolute/path/to/python3.14 /bin/sh "
-        'integrations/macos-ui/install.sh "EML Attachment Remover.app"\n\n'
-        "The installer records your interpreter privately "
-        "and installs into ~/Applications.\n"
-        "Alternatively copy the app into ~/Applications and use runtime discovery.\n"
-        "This app is ad-hoc signed, without Developer ID or notarization.\n"
-        "If a trusted official download is blocked, use the app-specific Open Anyway\n"
-        "option in Privacy & Security; managed policy may prevent that exception.\n"
-        "https://support.apple.com/102445\n"
-        "Do not disable Gatekeeper or remove quarantine as an installation step.\n\n"
-        "See integrations/macos-ui/README.md for the optional Finder Quick Action.\n"
-        "Shortcut completion confirms launch; use the CLI for synchronous status.\n"
-    ).encode()
+    return (ROOT / "integrations/macos-ui/INSTALL.txt").read_bytes()
 
 
 def _surface() -> dict[str, int]:

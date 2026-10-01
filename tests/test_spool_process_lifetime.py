@@ -81,6 +81,7 @@ def _cancelled_process(
             assert child.stdout is not None
             if case == "broken":
                 child.stdout.close()
+                child.stdout = None
             assert child.wait(timeout=5) == (1 if case == "broken" else 130)
         finally:
             if child.poll() is None:
