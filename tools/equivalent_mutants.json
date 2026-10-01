@@ -1,6 +1,6 @@
 {
     "schema_version": 1,
-    "source_sha256": "254cc1b3:7e9ae2e9:b0f21766:82fb75a6:005b20cd:cf63ee53:3508063e:80f39947",
+    "source_sha256": "40e2c4f8:376cbc4c:0b1fa41a:0f9b4a87:0c35b872:1d42fa06:6aa9c32b:31aac433",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.cancellation_owner.x\u01c1CancellationOwner\u01c1_reset__mutmut_3",
@@ -195,11 +195,11 @@
             "rationale": "A BlockingIOError without characters_written produces either zero or None. Both values enter the same no-progress retry branch before any acceptance or offset change, so this fallback substitution has identical delivery and cancellation behavior."
         },
         {
-            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_31",
+            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_35",
             "rationale": "Zero and None progress have already continued before this guard. For the remaining integer counts, <0, <=0 and <1 reject exactly the same negative values."
         },
         {
-            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_32",
+            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_36",
             "rationale": "Zero and None progress have already continued before this guard. For the remaining integer counts, <0, <=0 and <1 reject exactly the same negative values."
         },
         {
@@ -425,6 +425,26 @@
         {
             "mutant": "tools.junit_report.x__statistics_properties__mutmut_18",
             "rationale": "A property with no parent cannot meet the surrounding testsuites/property shape, so the alternate grandparent lookup is unreachable."
+        },
+        {
+            "mutant": "tools.lint_exceptions.x_check__mutmut_5",
+            "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
+        },
+        {
+            "mutant": "tools.lint_exceptions.x_check__mutmut_59",
+            "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
+        },
+        {
+            "mutant": "tools.lint_exceptions.x_python_directives__mutmut_5",
+            "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
+        },
+        {
+            "mutant": "tools.lint_exceptions.x_swift_findings__mutmut_40",
+            "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
+        },
+        {
+            "mutant": "tools.lint_exceptions.x_swift_findings__mutmut_5",
+            "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
         },
         {
             "mutant": "tools.macos_archive.x_verify__mutmut_1",

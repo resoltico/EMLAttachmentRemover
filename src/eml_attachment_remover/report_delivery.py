@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import errno
+import os
+import stat
 import sys
 import tempfile
 import threading
@@ -204,6 +207,9 @@ def _write_all(
             accepted = cast("int | None", destination.write(chunk[offset:]))
         except BlockingIOError as error:
             accepted = getattr(error, "characters_written", 0)
+        except OSError as error:
+            _normalize_pipe_error(destination, error)
+            raise
         if accepted is None or accepted == 0:
             time.sleep(POLL_SECONDS)
             continue
@@ -215,11 +221,35 @@ def _write_all(
 
 
 def _flush(destination: IO[Any]) -> None:
-    """Retry a nonblocking flush while the main thread watches cancellation."""
+    """Retry a nonblocking flush while the main thread watches cancellation.
+
+    Raises:
+        OSError: If the external report channel cannot be flushed.
+
+    """
     while True:
         try:
             destination.flush()
         except BlockingIOError:
             time.sleep(POLL_SECONDS)
+        except OSError as error:
+            _normalize_pipe_error(destination, error)
+            raise
         else:
             return
+
+
+def _normalize_pipe_error(destination: IO[Any], error: OSError) -> None:
+    """Recognize the Windows CRT's EINVAL for a closed report-pipe reader.
+
+    Raises:
+        BrokenPipeError: Only for EINVAL on a positively identified Windows pipe.
+
+    """
+    if sys.platform == "win32" and error.errno == errno.EINVAL:
+        try:
+            pipe = stat.S_ISFIFO(os.fstat(destination.fileno()).st_mode)
+        except AttributeError, OSError, ValueError:
+            return
+        if pipe:
+            raise BrokenPipeError(errno.EPIPE, "report pipe reader closed") from error

@@ -133,7 +133,8 @@ exit to **120** if interpreter cleanup fails while flushing a buffered standard
 stream after `SystemExit`; see [Python's exit contract](https://docs.python.org/3.14/library/sys.html#sys.exit).
 Treat 120 as an output-finalization failure. Validate any available complete report
 and retain its truthful processing evidence, while treating the invocation as
-unsuccessful. A broken stdout endpoint may provide no usable report; a partial
+unsuccessful. Closed report pipes select status 1, including Windows pipe writes
+that raise an invalid-argument error. A broken stdout endpoint may provide no usable report; a partial
 document remains invalid and is never replaced. A complete JSON document keeps its
 original `exit_code`, which can differ from the parent's observed process status.
 Unbuffered controls can retain 130 on the same failed endpoints, but do not make
