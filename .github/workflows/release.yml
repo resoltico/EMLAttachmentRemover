@@ -136,6 +136,9 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: test -x /bin/sh
+      - name: Install pinned Swift quality tools
+        if: runner.os == 'macOS'
+        run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
       - name: Run randomized property exploration
         run: >-
           uv run python tools/tasks.py thorough
