@@ -109,7 +109,10 @@ def test_swift_diagnostics_require_exact_central_approval(
             []
             if approved
             else [
-                f"{Path('integrations/macos-ui/Example.swift')}:1: force_try: Unsafe unwrap"
+                (
+                    f"{Path('integrations/macos-ui/Example.swift')}:1: "
+                    "force_try: Unsafe unwrap"
+                )
             ]
         )
         if approved:
