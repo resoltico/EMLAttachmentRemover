@@ -108,7 +108,9 @@ def test_swift_diagnostics_require_exact_central_approval(
         assert errors == (
             []
             if approved
-            else ["integrations/macos-ui/Example.swift:1: force_try: Unsafe unwrap"]
+            else [
+                f"{Path('integrations/macos-ui/Example.swift')}:1: force_try: Unsafe unwrap"
+            ]
         )
         if approved:
             assert "Stale Swift approval" in lint.swift_findings([])[0]
