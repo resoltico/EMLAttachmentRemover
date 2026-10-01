@@ -389,7 +389,7 @@ class TaskCommandContractTests(unittest.TestCase):
                 call(
                     (
                         sys.executable,
-                        "tools/qualify_release.py",
+                        *("-B", "-m", "tools.release_delivery"),
                         "--output-directory",
                         str(output),
                     ),

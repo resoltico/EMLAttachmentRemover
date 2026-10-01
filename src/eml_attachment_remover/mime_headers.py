@@ -21,6 +21,7 @@ SINGLETON_LABELS: Final = {
 }
 SINGLETONS: Final = frozenset(SINGLETON_LABELS)
 TOKEN_RE: Final = re.compile(rb"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+FIELD_NAME_RE: Final = re.compile(rb"^[\x21-\x39\x3b-\x7e]+$")
 LINE_BREAK_RE: Final = re.compile(rb"\r\n?|\n")
 
 
@@ -35,13 +36,13 @@ class Header:
 
 
 def is_header_name(value: bytes) -> bool:
-    """Return whether bytes are an RFC token suitable for a physical header name.
+    """Recognize RFC 5322 physical field names independently of MIME value tokens.
 
     Returns:
-        Whether the nonempty byte sequence uses only RFC token characters.
+        Whether the nonempty name uses printable ASCII except space and colon.
 
     """
-    return bool(value) and TOKEN_RE.fullmatch(value) is not None
+    return bool(value) and FIELD_NAME_RE.fullmatch(value) is not None
 
 
 def line_end(raw: bytes, position: int, end: int) -> int:

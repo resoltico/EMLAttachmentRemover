@@ -61,10 +61,10 @@ class _Faulty:
         self.real = real
         self.operation = operation
         self.remaining = call
-        self.buffer = real.buffer
+        self.buffer = self if operation == "read" else real.buffer
 
     def __getattr__(self, name: str) -> object:
-        target = getattr(self.real, name)
+        target = getattr(self.real.buffer if name == "read" else self.real, name)
         if name != self.operation:
             return target
 
@@ -136,13 +136,13 @@ def test_recovery_json_stays_ascii_bytes_on_a_utf16_terminal(
 
 @pytest.mark.parametrize("failed_already", [False, True])
 def test_a_render_failure_without_usable_reserved_evidence_is_not_masked(
-    capsys: pytest.CaptureFixture[str], *, failed_already: bool
+    capsys: pytest.CaptureFixture[str],
+    *,
+    failed_already: bool,
 ) -> None:
-    """Only a run with unused reserved records may fall back; otherwise it raises."""
+    """A run without reserved records cannot claim a reserved recovery route."""
     ledger = _failed()
-    if failed_already:
-        report_stream.start(ledger)
-        ledger.report_spool_failed = True
+    ledger.report_spool_failed = failed_already
     try:
         with ExitStack() as resources:
             session = open_session(resources, "json")
@@ -222,9 +222,9 @@ def test_a_stalled_consumer_is_abandoned_once_the_grace_is_spent(
         """A byte sink whose write never returns until the process is ended."""
 
         @override
-        def write(self, _chunk: object) -> int:
+        def write(self, chunk: object) -> int:
             release.wait(30)
-            return 0
+            return super().write(chunk)  # type: ignore[arg-type]
 
     class Output:
         """Standard output over the stalled sink."""

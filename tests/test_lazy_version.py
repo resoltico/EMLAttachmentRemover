@@ -16,7 +16,24 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-METADATA_LOADED = "'importlib.metadata' in sys.modules"
+METADATA_LOADED = (
+    "bool(metadata_requests) or "
+    "('importlib.metadata' in sys.modules and not metadata_before)"
+)
+METADATA_PROBE = """
+import sys
+metadata_before = 'importlib.metadata' in sys.modules
+metadata_requests = []
+def metadata_profile(frame, event, argument):
+    if (
+        event == 'call'
+        and frame.f_globals.get('__name__') == 'importlib'
+        and frame.f_code.co_name == 'import_module'
+        and frame.f_locals.get('name') == 'importlib.metadata'
+    ):
+        metadata_requests.append(1)
+sys.setprofile(metadata_profile)
+"""
 _version = importlib.import_module("eml_attachment_remover._version")
 
 
@@ -28,7 +45,7 @@ def _run_python(code: str, *arguments: str) -> subprocess.CompletedProcess[str]:
 
     """
     return subprocess.run(
-        [sys.executable, "-c", code, *arguments],
+        [sys.executable, "-c", METADATA_PROBE + code, *arguments],
         check=False,
         capture_output=True,
         text=True,

@@ -17,11 +17,8 @@ class ReleaseQualificationError(RuntimeError):
     """Report an unsafe output directory or invalid release artifact set."""
 
 
-def prepare_output_directory(output: Path) -> Path:
-    """Validate the destination and reserve a same-parent staging directory.
-
-    Returns:
-        A unique staging directory for atomic publication.
+def validate_output_directory(output: Path) -> None:
+    """Refuse a nonempty or symbolic destination before doing release work.
 
     Raises:
         ReleaseQualificationError: If the requested destination is not empty.
@@ -33,6 +30,16 @@ def prepare_output_directory(output: Path) -> Path:
     ):
         message = f"release output must be an absent or empty directory: {output}"
         raise ReleaseQualificationError(message)
+
+
+def prepare_output_directory(output: Path) -> Path:
+    """Validate the destination and reserve a same-parent staging directory.
+
+    Returns:
+        A unique staging directory for atomic publication.
+
+    """
+    validate_output_directory(output)
     return Path(tempfile.mkdtemp(dir=output.parent, prefix=f".{output.name}."))
 
 

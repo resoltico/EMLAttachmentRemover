@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Final, Never
 
+from .cancellation import checkpoint
+
 if sys.platform == "win32":
     _FCNTL_UNAVAILABLE: Final = "fcntl is unavailable on Windows"
 
@@ -85,6 +87,7 @@ def _read_all(descriptor: int) -> bytes:
     chunks: list[bytes] = []
     size = 0
     while chunk := os.read(descriptor, min(1024 * 1024, MAX_RAW_BYTES - size + 1)):
+        checkpoint()
         size += len(chunk)
         if size > MAX_RAW_BYTES:
             raise AppError(

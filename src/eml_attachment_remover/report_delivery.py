@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import errno
+import os
+import stat
 import sys
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from typing import IO, TYPE_CHECKING, Any, Final, cast
 
@@ -23,14 +27,18 @@ if TYPE_CHECKING:
     from .cancellation import DeliveryGuard
 
 
+class StagedReadError(OSError):
+    """A source-read failure, distinct from failure of the external output endpoint."""
+
+
 @dataclass(frozen=True, slots=True)
 class StagedChannels:
-    """Private files that hold one complete report before it reaches a channel.
+    """Private storage holding a complete report before it reaches a channel.
 
-    They are created before any item can publish, so their allocation cannot fail
-    after a destination became visible. Human text and diagnostics use their final
-    channel's encoding, so escaping targets the channel they will actually reach;
-    JSON and paths0 are byte channels and are staged unchanged.
+    Normal files are created before any item can publish; recovery uses bounded
+    memory instead. Human text and diagnostics use their final channel's encoding,
+    so escaping targets the channel they will actually reach; JSON and paths0 are
+    byte channels and are staged unchanged.
     """
 
     out: TextIO
@@ -62,26 +70,40 @@ class StagedChannels:
     def seal(self) -> None:
         """Make the staged report deliverable, or fail while recovery is still open.
 
-        Everything that can fail before the first external byte happens here: the
-        flush, the rewind, and a read of the first chunk from each file.
+        Flush and prime the underlying byte streams before external delivery.
+        No decoder may interpret native ``paths0`` bytes during this check.
         """
         for staged in (self.out, self.err):
             staged.flush()
             staged.seek(0)
-            staged.read(1)
+            staged.buffer.read(1)
             staged.seek(0)
 
     def deliver(self, output_format: str, guard: DeliveryGuard) -> None:
         """Copy the sealed diagnostics and report to the real channels, boundedly."""
         _bounded(lambda: self._copy(output_format, guard), guard)
 
+    def discard(self) -> None:
+        """Close failed staging without letting its flush replace recovery.
+
+        A close can repeat the failed flush, but the temporary file is discarded
+        and its owner must not let that error replace the recovery result.
+
+        """
+        for staged in (self.out, self.err):
+            try:
+                staged.close()
+            except OSError:
+                continue
+
     def _copy(self, output_format: str, guard: DeliveryGuard) -> None:
         """Write stderr then stdout in flushed chunks, stamping each one's progress."""
-        _copy_chunks(self.err, sys.stderr, guard)
+        if not guard.diagnostic_units:
+            _copy_chunks(self.err, sys.stderr, guard)
         if output_format in {"json", "paths0"}:
-            _copy_chunks(self.out.buffer, sys.stdout.buffer, guard)
+            _copy_chunks(self.out.buffer, sys.stdout.buffer, guard, report=True)
         else:
-            _copy_chunks(self.out, sys.stdout, guard)
+            _copy_chunks(self.out, sys.stdout, guard, report=True)
 
 
 def _staging_file(resources: ExitStack, encoding: str, root: str) -> TextIO:
@@ -110,9 +132,8 @@ def write_note(text: str, guard: DeliveryGuard) -> None:
     """Write one short diagnostic to standard error under the same bound."""
 
     def write() -> None:
-        sys.stderr.write(text)
-        sys.stderr.flush()
-        guard.note_progress()
+        _write_all(sys.stderr, text, guard)
+        _flush(sys.stderr)
 
     _bounded(write, guard)
 
@@ -141,9 +162,94 @@ def _bounded(work: Callable[[], None], guard: DeliveryGuard) -> None:
         raise failures[0]
 
 
-def _copy_chunks(source: IO[Any], destination: IO[Any], guard: DeliveryGuard) -> None:
+def _copy_chunks(
+    source: IO[Any], destination: IO[Any], guard: DeliveryGuard, *, report: bool = False
+) -> None:
     """Copy a staged stream in bounded chunks, flushing and stamping each one."""
-    while chunk := source.read(CHUNK_SIZE):
-        destination.write(chunk)
-        destination.flush()
-        guard.note_progress()
+    while chunk := _read_chunk(source):
+        _write_all(destination, chunk, guard, report=report)
+        _flush(destination)
+
+
+def _read_chunk(source: IO[Any]) -> bytes | str:
+    """Read staged data while identifying faults eligible for pre-output recovery.
+
+    Returns:
+        The next chunk, or an empty chunk at EOF.
+
+    Raises:
+        StagedReadError: If the private source cannot be read.
+
+    """
+    try:
+        return source.read(CHUNK_SIZE)  # type: ignore[no-any-return]
+    except OSError as error:
+        message = "could not read staged report"
+        raise StagedReadError(message) from error
+
+
+def _write_all(
+    destination: IO[Any],
+    chunk: bytes | str,
+    guard: DeliveryGuard,
+    *,
+    report: bool = False,
+) -> None:
+    """Retain unaccepted bytes, including across nonblocking writes.
+
+    Raises:
+        OSError: If the channel returns an invalid accepted count.
+
+    """
+    offset = 0
+    while offset < len(chunk):
+        try:
+            accepted = cast("int | None", destination.write(chunk[offset:]))
+        except BlockingIOError as error:
+            accepted = getattr(error, "characters_written", 0)
+        except OSError as error:
+            _normalize_pipe_error(destination, error)
+            raise
+        if accepted is None or accepted == 0:
+            time.sleep(POLL_SECONDS)
+            continue
+        if accepted < 0 or accepted > len(chunk) - offset:
+            message = "report channel returned an invalid write count"
+            raise OSError(message)
+        guard.accepted(chunk[offset : offset + accepted], report=report)
+        offset += accepted
+
+
+def _flush(destination: IO[Any]) -> None:
+    """Retry a nonblocking flush while the main thread watches cancellation.
+
+    Raises:
+        OSError: If the external report channel cannot be flushed.
+
+    """
+    while True:
+        try:
+            destination.flush()
+        except BlockingIOError:
+            time.sleep(POLL_SECONDS)
+        except OSError as error:
+            _normalize_pipe_error(destination, error)
+            raise
+        else:
+            return
+
+
+def _normalize_pipe_error(destination: IO[Any], error: OSError) -> None:
+    """Recognize the Windows CRT's EINVAL for a closed report-pipe reader.
+
+    Raises:
+        BrokenPipeError: Only for EINVAL on a positively identified Windows pipe.
+
+    """
+    if sys.platform == "win32" and error.errno == errno.EINVAL:
+        try:
+            pipe = stat.S_ISFIFO(os.fstat(destination.fileno()).st_mode)
+        except AttributeError, OSError, ValueError:
+            return
+        if pipe:
+            raise BrokenPipeError(errno.EPIPE, "report pipe reader closed") from error

@@ -20,6 +20,7 @@ from .domain import (
     LedgerItem,
 )
 from .native_values import report_path_bytes, report_path_value
+from .report_batch_diagnostics import write_batch_error
 from .report_budget import ReportBudget, minimal_record
 from .report_spool import ReportSpool, ReportSpoolError
 
@@ -130,8 +131,9 @@ def archive(ledger: BatchLedger, item: LedgerItem) -> None:
         # Later inputs keep their reserved room; this one keeps its outcome.
         record = encode(minimal_record(item))
     spool.append(record)
-    item.transformation = None
-    item.warnings.clear()
+    if not ledger.retain_evidence:
+        item.transformation = None
+        item.warnings.clear()
     item.archived = True
 
 
@@ -287,7 +289,7 @@ def _summary(ledger: BatchLedger) -> dict[str, int]:
     """
     counts = dict.fromkeys((status.value for status in ItemStatus), 0)
     for item in ledger.items:
-        if item.status is None:
+        if item.status is None or not item.terminalized:
             message = "report requested before ledger terminalization"
             raise RuntimeError(message)
         counts[item.status.value] += 1
@@ -302,7 +304,13 @@ def _preflight(ledger: BatchLedger) -> None:
     prevents a corrupt committed record from producing a misleading partial JSON
     document or a partial set of Finder paths.
 
+    Raises:
+        RuntimeError: If any item lacks a complete terminal state.
+
     """
+    if any(item.status is None or not item.terminalized for item in ledger.items):
+        message = "report requested before ledger terminalization"
+        raise RuntimeError(message)
     for _ in _records(ledger):
         pass
 
@@ -375,6 +383,7 @@ def write_human(ledger: BatchLedger) -> None:
     _preflight(ledger)
     for record in _records(ledger):
         reporting_v3.write_human({_ITEM_KEY: [record]})
+    write_batch_error(ledger.batch_error)
 
 
 def _write_path_record(record: Mapping[str, object]) -> None:
@@ -418,3 +427,4 @@ def write_paths0(ledger: BatchLedger) -> None:
     for record in _records(ledger):
         _write_path_record(record)
         _write_record_diagnostics(record)
+    write_batch_error(ledger.batch_error)

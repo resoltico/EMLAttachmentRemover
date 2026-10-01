@@ -279,3 +279,32 @@ def test_installer_prints_the_documented_finder_error_transport() -> None:
     source = INSTALLER.read_text(encoding="utf-8")
     assert 'f"/bin/sh {shlex.quote(runner)} {arguments} || :"' in source
     assert 'f"/bin/sh {runner_variable} " + arguments + " || :"' in source
+    assert "Add a Shortcuts 'Show Content' action" in source
+    assert "Shell Script Result as its input" in source
+
+
+def test_native_ui_transport_preserves_receipts_and_invocation_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The native UI gets admitted receipts even when final invocation fails."""
+    monkeypatch.setenv("EML_REMOVER_UI_REPORT", "1")
+    report = _report([_item(0, "created"), _item(1, "published_with_error")], 9)
+    result = _run(tmp_path, report, 120)
+    assert result.returncode == 120
+    envelope = json.loads(result.stdout)
+    assert envelope["report"] == report
+    assert envelope["process_status"] == 120
+    assert envelope["details"][0].startswith("Output finalization failed:")
+
+
+def test_native_ui_transport_rejects_unadmitted_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Malformed receipt counts cannot reach the UI as machine reports."""
+    monkeypatch.setenv("EML_REMOVER_UI_REPORT", "1")
+    report = _report([_item(0, "created")], 9)
+    report["summary"] = {}
+    result = _run(tmp_path, report, 9)
+    assert result.returncode == 70
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(result.stdout)

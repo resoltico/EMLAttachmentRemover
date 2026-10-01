@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from contextlib import ExitStack
-from typing import TYPE_CHECKING, Self, cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -27,10 +28,10 @@ from eml_attachment_remover.domain import (
 )
 from eml_attachment_remover.native_paths import path_value
 from tests.report_session_support import open_session
+from tests.report_spool_support import replace_data
 
 if TYPE_CHECKING:
     from pathlib import Path
-    from types import ModuleType
 
 
 def _failed(count: int = 1) -> BatchLedger:
@@ -49,123 +50,93 @@ def _failed(count: int = 1) -> BatchLedger:
 
 
 def test_spool_creation_and_append_request_the_exact_private_native_flags(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Private spool ownership uses its stable prefix and every available flag."""
-    descriptor = 71
+    """Creation owns an OS-managed binary stream; append never reopens a pathname."""
     created: dict[str, object] = {}
-    opened: dict[str, object] = {}
-    spool_os = cast("ModuleType", report_spool.__dict__["os"])
-    spool_tempfile = cast("ModuleType", report_spool.__dict__["tempfile"])
+    original = tempfile.TemporaryFile
+
+    def temporary(**keywords: object) -> object:
+        created.update(keywords)
+        return original(mode="w+b", dir=tmp_path)
+
     monkeypatch.setattr(report_spool, "private_temp_root", lambda: tmp_path)
-    monkeypatch.setattr(
-        spool_tempfile,
-        "mkstemp",
-        lambda **keywords: (
-            created.update(keywords) or (descriptor, str(tmp_path / "private"))
-        ),
-    )
-    monkeypatch.setattr(spool_os, "fchmod", lambda *_args: None)
-    monkeypatch.setattr(spool_os, "close", lambda _descriptor: None)
+    monkeypatch.setattr(tempfile, "TemporaryFile", temporary)
     spool = report_spool.ReportSpool.create()
-    assert spool.path == tmp_path / "private"
-    assert created == {
-        "prefix": ".eml-attachment-remover-report-",
-        "dir": tmp_path,
-    }
-    assert spool.closed is False
-    assert spool.bytes_written == spool.record_count == 0
-    original_open = spool_os.open
-    monkeypatch.setattr(spool_os, "O_BINARY", 0x40, raising=False)
-    monkeypatch.setattr(spool_os, "O_CLOEXEC", 0x80, raising=False)
-    monkeypatch.setattr(
-        spool_os,
-        "open",
-        lambda path, flags: opened.update(path=path, flags=flags) or descriptor,
-    )
-    monkeypatch.setattr(report_spool, "_write_all", lambda *_args: None)
-    spool.append(b"{}")
-    assert opened == {
-        "path": spool.path,
-        "flags": spool_os.O_WRONLY | spool_os.O_APPEND | 0x40 | 0x80,
-    }
-    monkeypatch.setattr(spool_os, "open", original_open)
+    try:
+        assert created == {
+            "mode": "w+b",
+            "prefix": ".eml-attachment-remover-report-",
+            "dir": tmp_path,
+        }
+        assert not os.get_inheritable(spool.file.fileno())
+        spool.append(b"{}")
+        assert tuple(spool.records()) == (b"{}",)
+    finally:
+        spool.close()
 
 
-def test_spool_enforces_exact_record_boundaries_when_reading_and_writing(
-    tmp_path: Path,
-) -> None:
-    """The record limit is inclusive before framing and exclusive after framing."""
-    spool = report_spool.ReportSpool(tmp_path / "terminal.jsonl")
-    spool.path.write_bytes(b"")
-    spool.append(b"x" * report_spool.MAX_RECORD_BYTES)
-    assert spool.record_count == 1
-    with pytest.raises(report_spool.ReportSpoolError, match="unsafe"):
-        spool.append(b"x" * (report_spool.MAX_RECORD_BYTES + 1))
-    spool.path.write_bytes(b"x" * (report_spool.MAX_RECORD_BYTES + 1) + b"\n")
-    spool.record_count = 1
-    spool.bytes_written = report_spool.MAX_RECORD_BYTES + 2
-    with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
-        tuple(spool.records())
-    spool.path.write_bytes(b"x" * report_spool.MAX_RECORD_BYTES + b"\n")
-    spool.bytes_written = report_spool.MAX_RECORD_BYTES + 1
-    assert tuple(spool.records()) == (b"x" * report_spool.MAX_RECORD_BYTES,)
+def test_spool_enforces_exact_record_boundaries_when_reading_and_writing() -> None:
+    """Record bounds are inclusive and survive descriptor-based corruption tests."""
+    spool = report_spool.ReportSpool.create()
+    try:
+        spool.append(b"x" * report_spool.MAX_RECORD_BYTES)
+        assert spool.record_count == 1
+        with pytest.raises(report_spool.ReportSpoolError, match="unsafe"):
+            spool.append(b"x" * (report_spool.MAX_RECORD_BYTES + 1))
+        replace_data(spool, b"x" * (report_spool.MAX_RECORD_BYTES + 1) + b"\n")
+        spool.bytes_written = report_spool.MAX_RECORD_BYTES + 2
+        with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
+            tuple(spool.records())
+        replace_data(spool, b"x" * report_spool.MAX_RECORD_BYTES + b"\n")
+        spool.bytes_written = report_spool.MAX_RECORD_BYTES + 1
+        assert tuple(spool.records()) == (b"x" * report_spool.MAX_RECORD_BYTES,)
+    finally:
+        spool.close()
 
 
 def test_spool_uses_zero_for_unavailable_platform_open_flags(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    """Absent optional OS flags alter neither the requested flags nor append success."""
-    spool = report_spool.ReportSpool(tmp_path / "terminal.jsonl")
-    calls: list[int] = []
-    spool_os = cast("ModuleType", report_spool.__dict__["os"])
-
-    def open_spool(_path: object, flags: int) -> int:
-        calls.append(flags)
-        return 73
-
-    monkeypatch.delattr(spool_os, "O_BINARY", raising=False)
-    monkeypatch.delattr(spool_os, "O_CLOEXEC", raising=False)
-    monkeypatch.setattr(
-        spool_os,
-        "open",
-        open_spool,
-    )
-    monkeypatch.setattr(spool_os, "close", lambda _descriptor: None)
-    monkeypatch.setattr(report_spool, "_write_all", lambda *_args: None)
-    spool.append(b"{}")
-    assert calls == [spool_os.O_WRONLY | spool_os.O_APPEND]
+    """Append uses an already-owned descriptor and does not require reopen flags."""
+    spool = report_spool.ReportSpool.create()
+    try:
+        with monkeypatch.context() as context:
+            context.delattr(os, "O_BINARY", raising=False)
+            context.delattr(os, "O_CLOEXEC", raising=False)
+            spool.append(b"{}")
+        assert tuple(spool.records()) == (b"{}",)
+    finally:
+        spool.close()
 
 
-def test_spool_reads_with_the_exact_bounded_record_lookahead(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """A spool read requests only one record plus framing and corruption lookahead."""
-    spool = report_spool.ReportSpool(tmp_path / "terminal.jsonl", 3, 1)
-    spool.path.write_bytes(b"{}\n")
+def test_spool_reads_with_the_exact_bounded_record_lookahead() -> None:
+    """Reads retain bounded lookahead without closing the owner on EOF."""
     sizes: list[int | None] = []
 
     class Source:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
         def __init__(self) -> None:
             self.calls = 0
 
-        def __enter__(self) -> Self:
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
+        def seek(self, offset: int) -> None:
+            assert offset == 0
+            self.position = offset
 
         def readline(self, size: int | None = None) -> bytes:
             sizes.append(size)
             self.calls += 1
             return b"{}\n" if self.calls == 1 else b""
 
-    monkeypatch.setattr(type(spool.path), "open", lambda *_args, **_kwargs: Source())
+    source = Source()
+    spool = report_spool.ReportSpool(source, 3, 1)  # type: ignore[arg-type]
     assert tuple(spool.records()) == (b"{}",)
     assert sizes == [report_spool.MAX_RECORD_BYTES + 2] * 2
+    assert not source.closed
 
 
 def test_summary_counts_repeated_statuses_and_batch_error_rejects_ok() -> None:
@@ -192,7 +163,7 @@ def test_primary_and_emergency_spool_failures_have_exact_safe_diagnostics() -> N
     ledger.report_spool_failed = True
     emergency = cast("report_spool.ReportSpool", ledger.emergency_report_spool)
     try:
-        emergency.path.write_bytes(b'{"index":0,"source_request":null}\n')
+        replace_data(emergency, b'{"index":0,"source_request":null}\n')
         with pytest.raises(report_spool.ReportSpoolError) as mismatch:
             tuple(report_stream._records(ledger))  # ruff: ignore[private-member-access] - reservation source mismatch.
         assert str(mismatch.value) == "terminal emergency report spool is corrupt"
@@ -245,7 +216,7 @@ def test_emergency_boolean_guards_reject_each_independent_mismatch() -> None:
         original = records[0]
         malformed = json.loads(original)
         malformed["source_request"] = None
-        emergency.path.write_text(json.dumps(malformed) + "\n", encoding="utf-8")
+        replace_data(emergency, (json.dumps(malformed) + "\n").encode("utf-8"))
         with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
             tuple(report_stream._records(ledger))  # ruff: ignore[private-member-access] - source evidence mismatch.
     finally:
@@ -354,7 +325,13 @@ def test_cli_preserves_every_direct_and_spooled_routing_argument(
             spooled, open_session(resources, "human")
         )
         assert cli._cancelled(state, CancellationSignal(2, "SIGINT")) == 130  # ruff: ignore[private-member-access] - spooled human cancellation.
-    assert calls[-2:] == [("human", spooled), ("close", spooled)]
+    events = calls[-2:]
+    assert events[-1] == ("close", spooled)
+    assert events[0][0] == "human"
+    retained = events[0][1]
+    assert isinstance(retained, BatchLedger)
+    assert retained.interruption == spooled.interruption
+    assert retained.items[0].status == spooled.items[0].status
 
 
 def test_spooled_cleanup_failure_still_delivers_the_prepared_report(
@@ -395,7 +372,7 @@ def test_emergency_index_mismatch_is_not_masked_by_other_valid_fields() -> None:
         records = tuple(emergency.records())
         raw = json.loads(records[0])
         raw["index"] = 1
-        emergency.path.write_text(json.dumps(raw) + "\n", encoding="utf-8")
+        replace_data(emergency, (json.dumps(raw) + "\n").encode("utf-8"))
         with pytest.raises(report_spool.ReportSpoolError, match="corrupt"):
             tuple(report_stream._records(ledger))  # ruff: ignore[private-member-access] - index evidence mismatch.
     finally:

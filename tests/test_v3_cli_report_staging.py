@@ -24,7 +24,7 @@ from eml_attachment_remover import (
 from eml_attachment_remover.cancellation import CancellationSignal, DeliveryGuard
 from eml_attachment_remover.domain import AppError, BatchLedger, ExitCode, ItemStatus
 from eml_attachment_remover.native_paths import path_value
-from tests.report_session_support import open_session
+from tests.report_session_support import complete_owned, open_session
 
 
 def _failed() -> BatchLedger:
@@ -198,7 +198,7 @@ def test_staging_failure_recovers_the_reserved_status_report(
         document = json.loads(capsys.readouterr().out)
     finally:
         report_stream.close(ledger)
-    assert attempts == [False, True]
+    assert attempts == [False]
     assert status == int(ExitCode.WRITE_ERROR) == document["exit_code"]
     assert document["mode"] == mode
     assert document["batch_error"]["message"] == "terminal report spool failed"
@@ -242,8 +242,8 @@ def test_dispatch_releases_spools_after_every_rendering_attempt(
     monkeypatch.setattr(cli, "_render_error", lambda *_args: 70)
     assert cli._dispatch(["source.eml"]) == 70  # ruff: ignore[private-member-access] - release contract.
     assert ledger.report_spool is None
-    assert not primary.path.exists()
-    assert not emergency.path.exists()
+    assert primary.file.closed
+    assert emergency.file.closed
 
 
 def test_stage_construction_reraises_one_failure_without_a_wrapper() -> None:
@@ -288,7 +288,9 @@ def test_run_retains_the_request_and_stages_for_its_channel(
     """The retained mode and format decide staging before any item can publish."""
     for name in ("stdout", "stderr"):
         monkeypatch.setattr(sys, name, TextIOWrapper(BytesIO(), encoding="ascii"))
-    monkeypatch.setattr(cli, "execute", lambda *_args: _failed())
+    monkeypatch.setattr(
+        cli, "execute", lambda *_args, ledger: complete_owned(ledger, _failed())
+    )
     monkeypatch.setattr(report_session, "_write_selected", lambda *_args: None)
     state = cli._RunState()  # ruff: ignore[private-member-access] - retained request.
     with ExitStack() as resources:

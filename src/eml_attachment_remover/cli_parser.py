@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from typing import TYPE_CHECKING, Never, TypedDict, Unpack, override
 
 from ._version import program_version
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 VERSION_HELP = "show program's version number and exit"
+NEGATIVE_NUMBER = re.compile(r"^-\d+$|^-\d*\.\d+$")
 
 
 class Parser(argparse.ArgumentParser):
@@ -143,19 +145,24 @@ def raw_json_requested(arguments: list[str]) -> bool:
     """Return whether pre-parse options selected the JSON automation channel.
 
     Returns:
-        Whether JSON is selected before an end-of-options marker.
+        Whether the last effective known format selects JSON before ``--``.
 
     """
     options = _raw_options(arguments)
-    return any(
-        option == "--output-format=json"
-        or (
-            option == "--output-format"
-            and index + 1 < len(options)
-            and options[index + 1] == "json"
-        )
-        for index, option in enumerate(options)
-    )
+    consumed = _consumed_option_values(options)
+    selected = "human"
+    for index, option in enumerate(options):
+        if index in consumed:
+            continue
+        if option.startswith("--output-format="):
+            value = option.partition("=")[2]
+        elif option == "--output-format" and index + 1 < len(options):
+            value = options[index + 1]
+        else:
+            continue
+        if value in {"human", "json", "paths0"}:
+            selected = value
+    return selected == "json"
 
 
 def raw_source_candidates(arguments: list[str]) -> list[str]:
@@ -178,6 +185,21 @@ def raw_source_candidates(arguments: list[str]) -> list[str]:
     return candidates
 
 
+def raw_dry_run_requested(arguments: list[str]) -> bool:
+    """Infer dry-run only from an option before the end-of-options boundary.
+
+    Returns:
+        Whether raw options contain a dry-run flag rather than an option value.
+
+    """
+    options = _raw_options(arguments)
+    consumed = _consumed_option_values(options)
+    return any(
+        value == "--dry-run" and index not in consumed
+        for index, value in enumerate(options)
+    )
+
+
 def _raw_options(arguments: list[str]) -> list[str]:
     return arguments[: arguments.index("--")] if "--" in arguments else arguments
 
@@ -188,4 +210,9 @@ def _consumed_option_values(arguments: list[str]) -> set[int]:
         index + 1
         for index, argument in enumerate(arguments[:-1])
         if argument in value_options
+        and (
+            not arguments[index + 1].startswith("-")
+            or arguments[index + 1] == "-"
+            or NEGATIVE_NUMBER.fullmatch(arguments[index + 1]) is not None
+        )
     }

@@ -1,0 +1,116 @@
+#!/bin/sh
+# Install only our owned native application; preserve the previous bundle.
+set -eu
+umask 077
+SCRIPT_DIR=$(CDPATH='' cd -P "$(dirname "$0")" && pwd -P)
+PYTHON=${EML_REMOVER_PYTHON:-python3.14}
+APP=${1:?Supply the freshly built EML Attachment Remover.app path}
+DESTINATION=${EML_REMOVER_UI_APP:-"$HOME/Applications/EML Attachment Remover.app"}
+"$PYTHON" -c 'import platform, sys; raise SystemExit(platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 14))'     || { printf '%s\n' 'The native UI installer requires CPython 3.14.' >&2; exit 9; }
+codesign --verify --deep --strict "$APP"
+"$PYTHON" - "$APP" "$DESTINATION" <<'PY'
+import json, os, plistlib, shutil, stat, subprocess, sys, tempfile
+from pathlib import Path
+def install():
+    source = Path(sys.argv[1]).absolute()
+    destination = Path(sys.argv[2]).absolute()
+    marker = 'EML Attachment Remover native UI managed installation\n'
+    identifier = 'io.github.resoltico.emlattachmentremover'
+    legacy_identifier = 'org.emlattachmentremover.report'
+    def owned_tree(root, *, allow_legacy=False):
+        for item in [root, *root.rglob('*')]:
+            mode = item.lstat()
+            if mode.st_uid != os.geteuid() or not (stat.S_ISDIR(mode.st_mode) or stat.S_ISREG(mode.st_mode)):
+                raise OSError('Application contains an unowned or unsafe entry')
+        if (root/'Contents/Resources/.eml-ui-installation').read_text() != marker:
+            raise OSError('Application is not an owned native UI bundle')
+        with (root/'Contents/Info.plist').open('rb') as stream:
+            accepted = {identifier, legacy_identifier} if allow_legacy else {identifier}
+            if plistlib.load(stream).get('CFBundleIdentifier') not in accepted:
+                raise OSError('Application identity differs')
+    owned_tree(source)
+    executable = str(destination / 'Contents/MacOS/EMLAttachmentRemover')
+    processes = subprocess.check_output(['/bin/ps', '-axo', 'pid=,comm='], text=True)
+    if any(line.strip().split(None, 1)[-1] == executable for line in processes.splitlines()):
+        raise OSError('Quit EML Attachment Remover before updating its application bundle')
+    for ancestor in [destination.parent, *destination.parent.parents]:
+        if ancestor.is_symlink():
+            raise OSError('Refusing a symbolic-link installation ancestor')
+    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    parent_stat = destination.parent.stat()
+    if parent_stat.st_uid != os.geteuid() or stat.S_IMODE(parent_stat.st_mode) & 0o022:
+        raise OSError('Application directory is not privately owned')
+    if destination.exists() or destination.is_symlink():
+        owned_tree(destination, allow_legacy=True)
+        if destination == source:
+            raise OSError('Source and destination are identical')
+    configuration = Path.home()/'Library/Application Support/EML Attachment Remover UI'
+    for ancestor in [configuration, *configuration.parents]:
+        if ancestor.is_symlink():
+            raise OSError('Refusing a symbolic-link runtime configuration ancestor')
+    configuration.mkdir(mode=0o700, parents=True, exist_ok=True)
+    configuration_stat = configuration.stat()
+    if configuration_stat.st_uid != os.geteuid() or stat.S_IMODE(configuration_stat.st_mode) & 0o077:
+        raise OSError('Runtime configuration directory is not privately owned')
+    runtime = configuration/'runtime.json'
+    if runtime.exists() or runtime.is_symlink():
+        runtime_stat = runtime.lstat()
+        if not stat.S_ISREG(runtime_stat.st_mode) or runtime_stat.st_uid != os.geteuid():
+            raise OSError('Refusing an unsafe runtime configuration file')
+    stage = Path(tempfile.mkdtemp(prefix='.eml-ui-install-', dir=destination.parent))
+    backup = None
+    runtime_temp = None
+    try:
+        fd, runtime_temp = tempfile.mkstemp(prefix='.runtime-', dir=configuration)
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            json.dump({'python': str(Path(sys.executable).resolve())}, stream)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        prepared = stage/destination.name
+        shutil.copytree(source, prepared, symlinks=False)
+        owned_tree(prepared)
+        subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(prepared)], check=True)
+        if destination.exists():
+            # The prior installation remains recoverable, outside the application path.
+            backup_root = Path.home()/'Library/Application Support/EML Attachment Remover UI Backups'
+            backup_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if backup_root.is_symlink() or backup_root.stat().st_uid != os.geteuid() or stat.S_IMODE(backup_root.stat().st_mode) & 0o077:
+                raise OSError('Backup directory is not private')
+            backup = Path(tempfile.mkdtemp(prefix='previous-', dir=backup_root))/(destination.stem + '.bundle-backup')
+            os.rename(destination, backup)
+        try:
+            os.rename(prepared, destination)
+            try:
+                os.replace(runtime_temp, runtime)
+            except BaseException:
+                os.rename(destination, prepared)
+                raise
+        except BaseException:
+            if backup is not None:
+                os.rename(backup, destination)
+            raise
+    finally:
+        if runtime_temp is not None and os.path.exists(runtime_temp): os.unlink(runtime_temp)
+        shutil.rmtree(stage)
+    print(f'Installed: {destination}')
+    if backup is not None:
+        print(f'Previous application retained: {backup}')
+
+try:
+    install()
+except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+    print(f'Native UI installation refused: {exc}', file=sys.stderr)
+    raise SystemExit(4)
+
+PY
+# Keep the direct Terminal integration at exactly the bundled processing build.
+EML_REMOVER_ZIPAPP="$APP/Contents/Resources/remove-eml-attachments.pyz" \
+    /bin/sh "$SCRIPT_DIR/../macos-shortcuts/install.sh" >/dev/null || {
+        printf '%s\n' 'The native app is installed; direct Terminal integration failed. Rerun the installer to retry.' >&2
+        exit 4
+    }
+printf '%s\n' 'Replace the Quick Action shell with:'
+# shellcheck disable=SC2016  # Print literal variables for the Shortcuts action.
+printf '%s\n' '/usr/bin/open -a "$HOME/Applications/EML Attachment Remover.app" -- "$@"'
+printf '%s\n' 'Remove Show Content. The application owns processing and its final report.'

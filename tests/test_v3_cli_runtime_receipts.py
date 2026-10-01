@@ -88,7 +88,7 @@ def test_dispatch_cancellation_writes_one_terminal_json_receipt(
         (
             KeyboardInterrupt(),
             ExitCode.INTERRUPTED,
-            "remove-eml-attachments: error[INTERRUPTED:130]: interrupted\n",
+            "remove-eml-attachments: error[INTERRUPTED:130]: interrupted by SIGINT\n",
         ),
         (BrokenPipeError(), 1, ""),
         (

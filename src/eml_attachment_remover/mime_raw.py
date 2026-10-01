@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Final
 
+from .cancellation import checkpoint
 from .domain import AppError, ExitCode, MimePath
 from .mime_header_block import entity_headers
 from .mime_headers import (
@@ -124,6 +125,7 @@ def _delimiter_lines(
     prefix = b"--" + boundary
     result: list[tuple[int, int, bool]] = []
     for occurrence in re.compile(re.escape(prefix)).finditer(raw, start, end):
+        checkpoint()
         position = occurrence.start()
         if position != start and raw[position - 1] not in b"\r\n":
             continue
@@ -397,6 +399,7 @@ def iter_nodes(root: RawNode) -> tuple[RawNode, ...]:
     result: list[RawNode] = []
     pending = [root]
     while pending:
+        checkpoint()
         node = pending.pop()
         result.append(node)
         pending.extend(reversed(node.children))

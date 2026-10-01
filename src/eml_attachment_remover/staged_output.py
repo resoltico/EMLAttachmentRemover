@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass, replace
 
 from . import native_literal_address, staged_receipt, staged_signals
+from .cancellation import checkpoint
 from .domain import (
     AppError,
     BoundDestination,
@@ -171,6 +172,7 @@ def _verify_staged(state: _PublicationState) -> None:
         raise AppError(ExitCode.INTERNAL_ERROR, "staging file was not created")
     position = 0
     while position < len(state.candidate):
+        checkpoint(before_visibility=True)
         written = os.write(stage.descriptor, state.candidate[position:])
         position = advance_position(position, written, len(state.candidate))
     os.fsync(stage.descriptor)
@@ -295,6 +297,7 @@ def _publish_edge(state: _PublicationState) -> None:
         raise AppError(ExitCode.INTERNAL_ERROR, "staging file was not created")
     if stage.name is None:
         raise AppError(ExitCode.INTERNAL_ERROR, "staging name is unavailable")
+    checkpoint(before_visibility=True)
     stage_link_remains = publish_stage_no_replace(
         parent, stage.descriptor, stage.name, state.destination.basename
     )

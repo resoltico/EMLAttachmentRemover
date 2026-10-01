@@ -34,6 +34,13 @@ def subprocess_environment(*, source_tree: bool = False) -> dict[str, str]:
     environment["PYTHONWARNINGS"] = "error"
     if source_tree:
         environment["PYTHONPATH"] = str(SOURCE_ROOT)
+        workspace = SOURCE_ROOT.parent
+        if environment.get("EML_MUTATION_CHILD_WORKSPACE") == str(workspace):
+            environment["PYTHONPATH"] = os.pathsep.join((
+                str(workspace / "tests" / "mutation_child_bootstrap"),
+                str(SOURCE_ROOT),
+                str(workspace),
+            ))
     else:
         environment.pop("PYTHONPATH", None)
     return environment

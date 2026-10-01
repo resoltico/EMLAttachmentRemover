@@ -21,6 +21,7 @@ from eml_attachment_remover.domain import (
     TransformationPlan,
 )
 from eml_attachment_remover.native_paths import path_value
+from tests.report_spool_support import replace_data
 
 
 def test_private_spool_preserves_order_and_removes_only_its_owned_path() -> None:
@@ -28,13 +29,13 @@ def test_private_spool_preserves_order_and_removes_only_its_owned_path() -> None
     spool = report_spool.ReportSpool.create()
     try:
         if os.name == "posix":
-            assert spool.path.stat().st_mode & 0o777 == 0o600
+            assert os.fstat(spool.file.fileno()).st_mode & 0o777 == 0o600
         spool.append(b'{"index":0}')
         spool.append(b'{"index":1}')
         assert tuple(spool.records()) == (b'{"index":0}', b'{"index":1}')
     finally:
         spool.close()
-    assert not spool.path.exists()
+    assert spool.file.closed
 
 
 def test_environment_temp_root_inside_the_repository_is_rejected(
@@ -73,7 +74,7 @@ def test_spool_rejects_oversized_partial_and_corrupt_records(
             spool.append(b"12345678")
         monkeypatch.setattr(report_spool, "MAX_SPOOL_BYTES", 64 * 1024 * 1024)
         spool.append(b'{"index":0}')
-        spool.path.write_bytes(b'{"index":0}')
+        replace_data(spool, b'{"index":0}')
         with pytest.raises(report_spool.ReportSpoolError):
             tuple(spool.records())
     finally:
@@ -164,7 +165,7 @@ def test_reserved_emergency_status_spool_exists_before_any_item_is_terminal() ->
     try:
         emergency = cast("report_spool.ReportSpool", ledger.emergency_report_spool)
         if os.name == "posix":
-            assert emergency.path.stat().st_mode & 0o777 == 0o600
+            assert os.fstat(emergency.file.fileno()).st_mode & 0o777 == 0o600
         assert emergency.record_count == 2
         assert [
             record["index"]

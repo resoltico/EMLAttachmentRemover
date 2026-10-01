@@ -278,7 +278,10 @@ def test_process_file_forwards_the_complete_default_and_custom_option_bundle(
     observed: list[tuple[list[str], BatchOptions]] = []
     expected = BatchLedger.from_requests([PathValue("source", "source", "c291cmNl")])
 
-    def execute(sources: list[str], options: BatchOptions) -> BatchLedger:
+    def execute(
+        sources: list[str], options: BatchOptions, *, retain_evidence: bool
+    ) -> BatchLedger:
+        assert retain_evidence
         observed.append((sources, options))
         return expected
 

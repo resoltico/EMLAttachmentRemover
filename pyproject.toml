@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "eml-attachment-remover"
-version = "3.0.6"
+version = "4.0.0"
 description = "Create structurally verified MIME-pruned EML working copies"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
@@ -19,7 +19,6 @@ classifiers = [
   "Environment :: Console",
   "Intended Audience :: End Users/Desktop",
   "Intended Audience :: System Administrators",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: MacOS",
   "Operating System :: Microsoft :: Windows",
   "Operating System :: POSIX :: Linux",
@@ -40,17 +39,17 @@ Changelog = "https://github.com/resoltico/EMLAttachmentRemover/blob/main/CHANGEL
 
 [dependency-groups]
 dev = [
-  "actionlint-py==1.7.12.24",
-  "coverage==7.16.1",
+  "actionlint-py==1.7.12.25",
+  "coverage==7.16.2",
   "defusedxml==0.7.1",
   "detect-secrets==1.5.0",
   "hatchling==1.32.4",
-  "hypothesis==6.168.0",
+  "hypothesis==6.168.3",
   "mypy==2.3.1",
   "mutmut==3.8.0",
-  "pyflakes==3.4.0",
+  "pyflakes==4.0.1",
   "pytest==9.1.1",
-  "ruff==0.16.8",
+  "ruff==0.16.9",
   "shellcheck-py==0.11.0.1",
   "types-defusedxml==0.7.0.20260504",
 ]
@@ -77,8 +76,10 @@ include = [
   "/.gitattributes",
   "/.gitignore",
   "/.python-version",
+  "/AGENTS.md",
   "/CHANGELOG.md",
   "/LICENSE",
+  "/lint-exceptions.json",
   "/QA.md",
   "/README.md",
   "/schema",
@@ -89,6 +90,9 @@ include = [
   "/tools",
   "/uv.lock",
 ]
+
+[tool.uv]
+required-version = "==0.12.21"
 
 [tool.ruff]
 target-version = "py314"
@@ -135,6 +139,8 @@ max-statements = 40
   "undocumented-public-function",
   "undocumented-public-method",
 ]
+"tests/test_macos_archive.py" = ["private-member-access"]
+"tests/test_release_delivery.py" = ["private-member-access"]
 "tests/test_filesystem_edges.py" = ["private-member-access"]
 "tests/test_build_zipapp_publication.py" = ["private-member-access"]
 "tests/test_coverage_contract_edges.py" = ["private-member-access"]
@@ -182,7 +188,7 @@ addopts = ["--runxfail", "--strict-config", "--strict-markers"]
 filterwarnings = ["error"]
 junit_family = "xunit2"
 minversion = "9.1"
-required_plugins = ["hypothesis==6.168.0"]
+required_plugins = ["hypothesis==6.168.3"]
 testpaths = ["tests"]
 pythonpath = [".", "src"]
 xfail_strict = true
@@ -208,8 +214,10 @@ also_copy = [
   ".gitattributes",
   ".gitignore",
   ".python-version",
+  "AGENTS.md",
   "CHANGELOG.md",
   "LICENSE",
+  "lint-exceptions.json",
   "QA.md",
   "README.md",
   "schema",

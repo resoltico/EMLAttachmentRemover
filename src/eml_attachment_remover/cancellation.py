@@ -1,4 +1,4 @@
-"""Main-thread catchable process cancellation with restoration of prior handlers."""
+"""Cooperative process cancellation with restoration of prior signal handlers."""
 
 from __future__ import annotations
 
@@ -8,7 +8,11 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import partial
 from typing import TYPE_CHECKING, Final
+
+from .cancellation_owner import CancellationOwner, cleanup_actions
+from .cancellation_state import CURRENT, CancellationState
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -66,13 +70,22 @@ def _handling(handler: Callable[[int, object], None]) -> Iterator[None]:
     previous = {
         watched_signal: signal.getsignal(watched_signal) for watched_signal in watched
     }
+    primary: BaseException | None = None
     try:
         for watched_signal in watched:
             signal.signal(watched_signal, handler)
         yield
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        for watched_signal, handler_before in previous.items():
-            signal.signal(watched_signal, handler_before)
+        cleanup_actions(
+            primary,
+            (
+                partial(signal.signal, number, before)
+                for number, before in reversed(previous.items())
+            ),
+        )
 
 
 @contextmanager
@@ -80,11 +93,81 @@ def install_cancellation_handlers() -> Iterator[None]:
     """Install and restore main-thread cancellation handlers for batch execution.
 
     Yields:
-        Control while SIGINT and available POSIX termination signals raise receipts.
+        Control while signals record requests for acknowledgment at safe checkpoints.
+
+    Raises:
+        RuntimeError: If a same-thread enclosing context is no longer active.
 
     """
-    with _handling(_raise_cancellation):
+    enclosing = CURRENT.get()
+    if enclosing is not None and enclosing.owner_thread == threading.get_ident():
+        if not enclosing.active:
+            message = "inactive cancellation context"
+            raise RuntimeError(message)
         yield
+        return
+    state = CancellationState()
+    worker = threading.Thread(
+        target=_watch_processing,
+        args=(state,),
+        daemon=True,
+        name="eml-cancellation-monitor",
+    )
+    owner = CancellationOwner(state, worker, GRACE_SECONDS)
+    with _handling(state.record), owner.scope():
+        yield
+    _acknowledge(state)
+
+
+POLL_SECONDS: Final = 0.05
+
+
+def checkpoint(*, before_visibility: bool = False) -> None:
+    """Acknowledge pending cancellation only at a coherent application boundary."""
+    state = CURRENT.get()
+    if state is not None and (not state.critical or before_visibility):
+        _acknowledge(state)
+
+
+def _acknowledge(state: CancellationState) -> None:
+    """Observe pending requests even after the owner's context has been restored.
+
+    Raises:
+        CancellationSignal: For an unacknowledged interruption request.
+
+    """
+    if len(state.signals) > state.acknowledged:
+        number = state.signals[state.acknowledged]
+        state.acknowledged = len(state.signals)
+        raise CancellationSignal(number, cancellation_name(number))
+
+
+@contextmanager
+def coherent_operation() -> Iterator[None]:
+    """Keep receipt transfer and item construction inside one cooperative operation.
+
+    Yields:
+        Control until the authoritative outcome has been committed.
+
+    """
+    checkpoint()
+    state = CURRENT.get()
+    if state is not None:
+        state.critical += 1
+    try:
+        yield
+    finally:
+        if state is not None:
+            state.critical -= 1
+
+
+def _watch_processing(state: CancellationState) -> None:
+    """Bound unresponsive native/CPU work without interrupting Python assignments."""
+    while state.active and not state.stop.wait(POLL_SECONDS):
+        if state.signals and not state.delivering:
+            expired = time.monotonic() - state.requested_at >= GRACE_SECONDS
+            if len(state.signals) >= REPEAT_SIGNALS or expired:
+                hard_exit(INTERRUPTED_STATUS)
 
 
 @dataclass(slots=True)
@@ -100,6 +183,12 @@ class DeliveryGuard:
     clock: Callable[[], float] = time.monotonic
     signals: list[int] = field(default_factory=list)
     progress: float = 0.0
+    report_units: int = 0
+    diagnostic_units: int = 0
+    diagnostic_newline: bool = True
+    owner: CancellationState | None = field(default=None, repr=False)
+    forwarded: int = 0
+    retired: bool = False
 
     def __post_init__(self) -> None:
         """Start the grace clock at creation."""
@@ -115,11 +204,38 @@ class DeliveryGuard:
         """Restart the grace clock after output was accepted by its channel."""
         self.progress = self.clock()
 
+    def accepted(self, chunk: bytes | str, *, report: bool) -> None:
+        """Record channel acceptance separately from shared cancellation progress."""
+        if report:
+            self.report_units += len(chunk)
+        else:
+            self.diagnostic_units += len(chunk)
+            self.diagnostic_newline = chunk[-1:] in {"\n", b"\n"}
+        self.note_progress()
+
     def check(self) -> None:
         """End the process when cancellation can no longer wait for delivery."""
         stalled = self.clock() - self.progress >= GRACE_SECONDS
         if len(self.signals) >= REPEAT_SIGNALS or (self.signals and stalled):
             hard_exit(INTERRUPTED_STATUS)
+
+    def result(self, status: int) -> int:
+        """Select status from the retired guard and consume only its forwarded requests.
+
+        Returns:
+            The processing status or interruption after complete guard retirement.
+
+        Raises:
+            RuntimeError: If status is selected while the guard still accepts signals.
+
+        """
+        if not self.retired:
+            message = "delivery status requested before handler retirement"
+            raise RuntimeError(message)
+        selected = INTERRUPTED_STATUS if self.signals else status
+        if self.owner is not None:
+            self.owner.acknowledged = max(self.owner.acknowledged, self.forwarded)
+        return selected
 
 
 def hard_exit(status: int) -> None:
@@ -138,8 +254,26 @@ def delivery_guard(
 
     """
     guard = DeliveryGuard(clock)
-    with _handling(guard.record):
-        yield guard
+    state = CURRENT.get()
+    guard.owner = state
+    if state is not None:
+        state.delivering = True
+        guard.signals.extend(state.signals)
+        guard.forwarded = len(state.signals)
+
+    def record(number: int, frame: object) -> None:
+        guard.record(number, frame)
+        if state is not None:
+            state.record(number, frame)
+            guard.forwarded = len(state.signals)
+
+    try:
+        with _handling(record):
+            yield guard
+    finally:
+        if state is not None:
+            state.delivering = False
+        guard.retired = True
 
 
 def _watched_signals() -> tuple[int, ...]:

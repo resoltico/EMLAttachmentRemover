@@ -28,6 +28,7 @@ from eml_attachment_remover.domain import (
 )
 from eml_attachment_remover.native_paths import path_value
 from tests.report_session_support import open_session
+from tests.report_spool_support import replace_data
 
 
 def _ledger(*statuses: ItemStatus) -> BatchLedger:
@@ -285,7 +286,7 @@ def test_emergency_corruption_messages_and_archive_recovery_are_exact(
     ledger.report_spool_failed = True
     emergency = cast("report_spool.ReportSpool", ledger.emergency_report_spool)
     try:
-        emergency.path.write_bytes(b"not-json\n")
+        replace_data(emergency, b"not-json\n")
         with pytest.raises(report_spool.ReportSpoolError) as corrupt:
             tuple(report_stream._records(ledger))  # ruff: ignore[private-member-access] - corrupt reservation receipt.
         assert str(corrupt.value) == "terminal emergency report spool is corrupt"

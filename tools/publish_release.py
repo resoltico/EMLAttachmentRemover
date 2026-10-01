@@ -11,7 +11,7 @@ from typing import cast
 
 from tools.changelog import VERSION, extract_release, require
 from tools.github_release_api import COMMIT, GitHubAPI, run
-from tools.qualify_release import verify_release_directory
+from tools.release_delivery import verify as verify_release_directory
 from tools.release_publication import Artifact, Release, publish_release, record
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -98,7 +98,7 @@ class TaskRunnerTests(unittest.TestCase):
             ),
         ):
             tasks._check()
-        self.assertEqual(run.call_count, 8)
+        self.assertEqual(run.call_count, 11)
         self.assertEqual(
             run.call_args_list[0],
             call((sys.executable, "tools/check_repository_hygiene.py")),
@@ -112,13 +112,20 @@ class TaskRunnerTests(unittest.TestCase):
         )
         self.assertEqual(
             run.call_args_list[3],
-            call(("mypy", "--no-incremental", "--cache-dir", os.devnull)),
+            call((
+                "mypy",
+                "--no-incremental",
+                "--cache-dir",
+                os.devnull,
+                "--platform",
+                "linux",
+            )),
         )
         self.assertEqual(
-            run.call_args_list[4],
+            run.call_args_list[6],
             call((sys.executable, "tools/check_module_design.py")),
         )
-        actionlint_command = run.call_args_list[5].args[0]
+        actionlint_command = run.call_args_list[8].args[0]
         self.assertEqual(
             actionlint_command,
             (
@@ -131,10 +138,10 @@ class TaskRunnerTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            run.call_args_list[6],
+            run.call_args_list[9],
             call(("shellcheck", "--shell=sh", *tasks.SHELL_SCRIPTS)),
         )
-        secret_command = run.call_args_list[7].args[0]
+        secret_command = run.call_args_list[10].args[0]
         self.assertEqual(secret_command[:2], ("detect-secrets-hook", "--no-verify"))
         self.assertTrue(
             all(str(path) in secret_command for path in public_files),
@@ -181,7 +188,7 @@ class TaskRunnerTests(unittest.TestCase):
                 ),
             ):
                 tasks._check()
-        self.assertEqual(run.call_count, 7)
+        self.assertEqual(run.call_count, 10)
         self.assertFalse(
             any(
                 call_args.args[0][0] == "detect-secrets-hook"
@@ -297,7 +304,7 @@ class TaskRunnerTests(unittest.TestCase):
             tasks.OBSERVABILITY_VARIABLES,
         )
 
-    def test_release_task_runs_portable_qualification_tool(self) -> None:
+    def test_release_task_runs_complete_delivery_tool(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "release"
             with (
@@ -308,7 +315,7 @@ class TaskRunnerTests(unittest.TestCase):
         self.assertEqual(run.call_count, 1)
         run.assert_called_once_with((
             sys.executable,
-            "tools/qualify_release.py",
+            *("-B", "-m", "tools.release_delivery"),
             "--output-directory",
             str(output),
         ))

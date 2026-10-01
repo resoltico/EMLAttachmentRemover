@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from base64 import b64encode
+from contextlib import ExitStack
 from dataclasses import dataclass
 from typing import Final
 
-from . import batch_terminal, report_stream
-from .cancellation import CancellationSignal, install_cancellation_handlers
+from . import batch_execution, batch_terminal, report_stream
+from .cancellation import CancellationSignal, checkpoint, coherent_operation
 from .destination_names import fitted_default_destination
 from .domain import (
     AppError,
@@ -36,6 +36,7 @@ from .native_paths import (
     read_existing,
     read_source,
 )
+from .publication_error import publication_error as _publication_error
 from .report_budget import admit, plan
 from .staged_output import PublishedWithError, publish
 
@@ -149,7 +150,9 @@ def _inventory_item(
     ledger: BatchLedger,
 ) -> bool:
     try:
+        checkpoint()
         inventory.add(item, source, options)
+        checkpoint()
     except AppError as exc:
         _mark(item, exc)
     except CancellationSignal as cancellation:
@@ -185,13 +188,16 @@ def _candidate(item: LedgerItem, expected_identity: FileIdentity) -> None:
     if source_text is None:
         raise AppError(ExitCode.INPUT_ERROR, MISSING_SOURCE_ADDRESS)
     snapshot = read_source(source_text)
+    checkpoint()
     if snapshot.identity != expected_identity:
         raise AppError(ExitCode.INPUT_ERROR, "source changed after inventory")
     item.source = snapshot
     item.phase = ItemPhase.BOUND
     tree = parse_raw_mime(snapshot.raw)
+    checkpoint()
     item.phase = ItemPhase.PARSED
     policy = classify(tree.root)
+    checkpoint()
     item.phase = ItemPhase.CLASSIFIED
     roots = {removal.path for removal in policy.removals}
     retained_nodes = RemovalIndex.from_roots(roots).retained_nodes(tree.root)
@@ -200,6 +206,7 @@ def _candidate(item: LedgerItem, expected_identity: FileIdentity) -> None:
     receipt, independently_recomputed = verify_candidate(
         tree, candidate, policy.removals
     )
+    checkpoint()
     item.transformation = TransformationPlan(
         policy.removals,
         independently_recomputed,
@@ -255,6 +262,7 @@ def _existing_or_publish(
         item.finish(ItemStatus.WOULD_CREATE)
         return None
     item.phase = ItemPhase.STAGED
+    checkpoint()
     try:
         item.publication = publish(destination, plan.candidate)
     except PublishedWithError as exc:
@@ -315,18 +323,6 @@ def _verify_existing(
     return True
 
 
-def _publication_error(cause: BaseException) -> AppError:
-    if isinstance(cause, AppError):
-        return cause
-    if isinstance(cause, (CancellationSignal, KeyboardInterrupt)):
-        return AppError(ExitCode.INTERRUPTED, "interrupted after publication")
-    if isinstance(cause, SystemExit):
-        return AppError(
-            ExitCode.INTERNAL_ERROR, "unexpected SystemExit after publication"
-        )
-    return AppError(ExitCode.WRITE_ERROR, f"post-publication receipt failed: {cause}")
-
-
 def _internal_abort(
     item: LedgerItem,
     ledger: BatchLedger,
@@ -339,35 +335,35 @@ def _internal_abort(
     ledger.finalize_not_run("not run after internal abort")
 
 
-def execute(sources: list[str], options: BatchOptions) -> BatchLedger:
+def execute(
+    sources: list[str],
+    options: BatchOptions,
+    *,
+    retain_evidence: bool = False,
+    ledger: BatchLedger | None = None,
+) -> BatchLedger:
     """Process every input in order while preserving every terminal ledger record.
 
     Returns:
         The fully terminalized authoritative ledger for this invocation.
 
     """
-    ledger = BatchLedger.from_requests([path_value(source) for source in sources])
-    if not report_stream.start_or_fail(ledger):
-        return ledger
-    argument_bytes = sum(len(os.fsencode(source)) for source in sources)
-    if (
-        len(sources) > MAX_BATCH_ITEMS
-        or argument_bytes > MAX_CUMULATIVE_NATIVE_ARGUMENT_BYTES
-    ):
-        ledger.finalize_not_run("batch exceeds native argument resource limit")
-    else:
-        with install_cancellation_handlers():
-            try:
-                _run_inventory_and_items(ledger, sources, options)
-            except CancellationSignal as cancellation:
-                ledger.record_interruption(
-                    cancellation.name, ItemPhase.INVENTORIED.value
-                )
-            except KeyboardInterrupt:
-                ledger.record_interruption("SIGINT", ItemPhase.INVENTORIED.value)
-    ledger.finalize_not_run("not run")
-    report_stream.archive_or_recover(ledger)
-    return ledger
+    with ExitStack() as storage:
+        if ledger is None:
+            ledger = BatchLedger.from_requests([
+                path_value(source) for source in sources
+            ])
+            storage.callback(report_stream.close, ledger)
+        ledger.retain_evidence = retain_evidence
+        result = batch_execution.run(
+            ledger,
+            sources,
+            options,
+            _run_inventory_and_items,
+            limits=(MAX_BATCH_ITEMS, MAX_CUMULATIVE_NATIVE_ARGUMENT_BYTES),
+        )
+        storage.pop_all()
+        return result
 
 
 def _run_inventory_and_items(
@@ -405,7 +401,9 @@ def _run_item(
     try:
         _candidate(item, identities[item.index])
         admit(ledger, item)
-        publication_cause = _existing_or_publish(item, options, all_identities)
+        with coherent_operation():
+            publication_cause = _existing_or_publish(item, options, all_identities)
+        checkpoint()
     except AppError as exc:
         _mark(item, exc)
         if exc.code is ExitCode.INTERNAL_ERROR:
@@ -439,10 +437,12 @@ def _after_item(
     options: BatchOptions,
     publication_cause: BaseException | None,
 ) -> bool:
-    return batch_terminal.after_item(
+    selected = batch_terminal.after_item(
         item,
         ledger,
         fail_fast=options.fail_fast,
         publication_cause=publication_cause,
         internal_abort=lambda message: _internal_abort(item, ledger, message),
     )
+    checkpoint()
+    return selected

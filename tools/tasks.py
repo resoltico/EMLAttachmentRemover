@@ -361,7 +361,9 @@ def _qualify_release() -> None:
     output_directory = Path(tempfile.mkdtemp(prefix="eml-attachment-remover-release-"))
     _run((
         sys.executable,
-        "tools/qualify_release.py",
+        "-B",
+        "-m",
+        "tools.release_delivery",
         "--output-directory",
         str(output_directory),
     ))
@@ -372,8 +374,13 @@ def _quality(*, native: bool = False) -> None:
     """Run the complete pull-request quality gate.
 
     With ``native``, only what depends on this host runs: the repository audit and
-    coverage. The static checks are identical on every host, so one lane owns them.
+    coverage. One shared lane owns static checks, including all mypy platforms.
     """
+    if sys.platform == "darwin":
+        _run(
+            ("/bin/sh", str(PROJECT_ROOT / "integrations/macos-ui/quality.sh")),
+            environment_updates={"EML_REMOVER_PYTHON": sys.executable},
+        )
     if native:
         _hygiene()
     else:

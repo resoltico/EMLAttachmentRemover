@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-from pathlib import Path
 
 import pytest
 
@@ -17,6 +16,7 @@ from eml_attachment_remover.domain import (
     PathValue,
 )
 from eml_attachment_remover.native_paths import path_value
+from tests.report_spool_support import append_data, replace_data
 
 
 def _raise_os_error(message: str) -> None:
@@ -63,12 +63,11 @@ def test_unterminated_and_miscounted_spools_have_exact_diagnostics() -> None:
     spool = report_spool.ReportSpool.create()
     try:
         spool.append(b'{"index":0}')
-        with spool.path.open("ab") as extra:
-            extra.write(b'{"index":1}\n')
+        append_data(spool, b'{"index":1}\n')
         with pytest.raises(report_spool.ReportSpoolError) as miscounted:
             tuple(spool.records())
         assert str(miscounted.value) == "terminal report spool accounting is corrupt"
-        spool.path.write_bytes(b'{"index":0}')
+        replace_data(spool, b'{"index":0}')
         with pytest.raises(report_spool.ReportSpoolError) as unterminated:
             tuple(spool.records())
         assert str(unterminated.value) == "terminal report spool is corrupt"
@@ -76,25 +75,30 @@ def test_unterminated_and_miscounted_spools_have_exact_diagnostics() -> None:
         spool.close()
 
 
-def test_cleanup_failures_have_exact_diagnostics(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """An untrusted or surviving spool path is never reported as cleaned up."""
+def test_cleanup_failures_have_exact_diagnostics() -> None:
+    """A close failure is reported without substituting pathname cleanup."""
     spool = report_spool.ReportSpool.create()
-    with monkeypatch.context() as context:
-        context.setattr(Path, "unlink", lambda _path, **_options: None)
-        with pytest.raises(report_spool.ReportSpoolError) as incomplete:
-            spool.close()
-    assert str(incomplete.value) == "terminal report spool cleanup was incomplete"
-    assert not spool.closed
-    spool.path.unlink()
-    spool.path.mkdir()
+    real = spool.file
+
+    class Unclosable:
+        @staticmethod
+        def close() -> None:
+            message = "public close failure"
+            raise OSError(message)
+
+    spool.file = Unclosable()  # type: ignore[assignment]
     try:
-        with pytest.raises(report_spool.ReportSpoolError) as unsafe:
+        with pytest.raises(report_spool.ReportSpoolError) as failed:
             spool.close()
-        assert str(unsafe.value) == "terminal report spool is unsafe during cleanup"
+        assert (
+            str(failed.value)
+            == "terminal report spool could not close its owned handle"
+        )
+        assert str(failed.value.__cause__) == "public close failure"
+        assert not spool.closed
     finally:
-        spool.path.rmdir()
+        spool.file = real
+        spool.close()
 
 
 def test_emergency_status_rejects_a_reservation_longer_than_the_batch() -> None:
@@ -105,8 +109,7 @@ def test_emergency_status_rejects_a_reservation_longer_than_the_batch() -> None:
     try:
         emergency = ledger.emergency_report_spool
         assert isinstance(emergency, report_spool.ReportSpool)
-        with emergency.path.open("ab") as extra:
-            extra.write(b'{"index":1}\n')
+        append_data(emergency, b'{"index":1}\n')
         records = report_stream._emergency_records(ledger)  # ruff: ignore[private-member-access] - reservation length contract.
         with pytest.raises(ValueError, match=r"zip\(\) argument 2 is shorter"):
             list(records)

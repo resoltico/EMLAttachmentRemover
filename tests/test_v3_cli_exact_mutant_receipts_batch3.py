@@ -16,21 +16,17 @@ from tests.report_session_support import open_session
 
 
 def test_preledger_cancellation_retains_its_exact_interruption_error(
-    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The no-ledger path has one full interruption error and no report attempt."""
-    captured: list[tuple[AppError, object | None]] = []
-
-    def render(error: AppError, parser: object | None) -> int:
-        captured.append((error, parser))
-        return int(error.code)
-
-    monkeypatch.setattr(cli, "_render_error", render)
     signal = CancellationSignal(15, "SIGTERM")
     assert cli._cancelled(cli._RunState(), signal) == 130  # ruff: ignore[private-member-access] - preledger cancellation receipt.
-    assert captured == [
-        (AppError(ExitCode.INTERRUPTED, "interrupted by SIGTERM"), None)
-    ]
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert (
+        captured.err
+        == "remove-eml-attachments: error[INTERRUPTED:130]: interrupted by SIGTERM\n"
+    )
 
 
 @pytest.mark.parametrize("mode", ["dry-run", "apply"])
@@ -70,7 +66,7 @@ def test_active_cancellation_reports_its_retained_mode_on_its_selected_channel(
         assert not captured.err
     else:
         assert captured.out == "created: source.eml\n"
-        assert not captured.err
+        assert captured.err == "Interrupted: interrupted by SIGHUP\n"
 
 
 def test_json_error_terminalizes_every_source_with_the_configuration_reason(
@@ -111,9 +107,12 @@ def test_run_keeps_every_validated_option_and_the_completed_ledger(
     expected_ledger.items[0].finish(ItemStatus.WOULD_CREATE)
     captured: list[BatchOptions] = []
 
-    def execute(_sources: list[str], options: BatchOptions) -> BatchLedger:
+    def execute(
+        _sources: list[str], options: BatchOptions, *, ledger: BatchLedger
+    ) -> BatchLedger:
         captured.append(options)
-        return expected_ledger
+        ledger.items = expected_ledger.items
+        return ledger
 
     monkeypatch.setattr(
         cli,
@@ -153,4 +152,5 @@ def test_run_keeps_every_validated_option_and_the_completed_ledger(
             output_dir="destinations",
         )
     ]
-    assert state.ledger is expected_ledger
+    assert state.ledger is not None
+    assert state.ledger.items is expected_ledger.items
