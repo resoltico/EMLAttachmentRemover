@@ -38,6 +38,7 @@ PUBLIC_ROOT_FILES: Final = frozenset({
     ".gitattributes",
     ".gitignore",
     ".python-version",
+    "AGENTS.md",
     "CHANGELOG.md",
     "LICENSE",
     "QA.md",
