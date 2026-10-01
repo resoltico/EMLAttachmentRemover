@@ -41,6 +41,7 @@ PUBLIC_ROOT_FILES: Final = frozenset({
     "AGENTS.md",
     "CHANGELOG.md",
     "LICENSE",
+    "lint-exceptions.json",
     "QA.md",
     "README.md",
     "pyproject.toml",

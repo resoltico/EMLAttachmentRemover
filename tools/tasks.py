@@ -376,6 +376,11 @@ def _quality(*, native: bool = False) -> None:
     With ``native``, only what depends on this host runs: the repository audit and
     coverage. One shared lane owns static checks, including all mypy platforms.
     """
+    if sys.platform == "darwin":
+        _run(
+            ("/bin/sh", str(PROJECT_ROOT / "integrations/macos-ui/quality.sh")),
+            environment_updates={"EML_REMOVER_PYTHON": sys.executable},
+        )
     if native:
         _hygiene()
     else:

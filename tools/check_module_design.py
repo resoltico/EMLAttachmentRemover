@@ -120,7 +120,7 @@ def _module_violations(path: Path) -> list[DesignViolation]:
                 f"{MAX_TOP_LEVEL_DECLARATIONS}",
             ),
         )
-    for node in declarations:
+    for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef):
             _append_class_violation(violations, path, node)
     return violations

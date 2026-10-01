@@ -62,6 +62,9 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: test -x /bin/sh
+      - name: Install pinned Swift quality tools
+        if: runner.os == 'macOS'
+        run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
       - name: Run the complete quality gate
         if: matrix.static
         run: uv run python tools/tasks.py quality

@@ -223,11 +223,12 @@ def verify(archive: Path, zipapp: Path, version: str) -> None:
             "CFBundleShortVersionString": version,
             "CFBundleVersion": version,
             "CFBundleIdentifier": "io.github.resoltico.emlattachmentremover",
-            "NSHumanReadableCopyright": next(
+            "NSHumanReadableCopyright": "Copyright © "
+            + next(
                 line
                 for line in (ROOT / "LICENSE").read_text().splitlines()
                 if line.startswith("Copyright (c) ")
-            ).replace("Copyright (c)", "Copyright ©", 1),
+            ).removeprefix("Copyright (c) "),
             "LSMinimumSystemVersion": "14.0",
         }
         required = {

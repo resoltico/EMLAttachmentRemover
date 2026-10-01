@@ -49,7 +49,12 @@ class PlanTests(unittest.TestCase):
         )
 
     def test_other_posix_hosts_run_mutation_in_the_ci_runner_image(self) -> None:
-        steps = _plan("darwin")
+        native_steps = _plan("darwin")
+        swift = [step for step in native_steps if step.mirrors == local_ci.SWIFT_SETUP]
+        self.assertEqual(len(swift), 2)
+        steps = tuple(
+            step for step in native_steps if step.mirrors != local_ci.SWIFT_SETUP
+        )
         linux = _plan("linux")
         mutation_index = next(
             index for index, step in enumerate(linux) if "mutation" in step.command

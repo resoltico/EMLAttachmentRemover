@@ -200,6 +200,22 @@ class ModuleDesignToolTests(unittest.TestCase):
                 ),
             )
 
+    def test_nested_class_cannot_bypass_the_method_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "nested.py"
+            source.write_text(
+                "def factory():\n    class Nested:\n"
+                + "".join(
+                    f"        def method_{index}(self):\n            pass\n"
+                    for index in range(21)
+                ),
+                encoding="utf-8",
+            )
+            violations = check_module_design._module_violations(source)
+            self.assertTrue(
+                any("Nested has 21 methods" in item.message for item in violations)
+            )
+
     def test_file_discovery_and_main_status(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -22,7 +22,7 @@ cp "$PROJECT_ROOT/integrations/macos-shortcuts/run-from-finder.sh" "$APP/Content
 "$PYTHON" - "$PROJECT_ROOT/pyproject.toml" "$APP/Contents/Info.plist" <<'PY'
 import plistlib, sys, tomllib
 from pathlib import Path
-notice = next(line for line in (Path(sys.argv[1]).parent/'LICENSE').read_text().splitlines() if line.startswith('Copyright (c) ')).replace('Copyright (c)', 'Copyright ©', 1)
+notice = 'Copyright © ' + next(line for line in (Path(sys.argv[1]).parent/'LICENSE').read_text().splitlines() if line.startswith('Copyright (c) ')).removeprefix('Copyright (c) ')
 version = tomllib.loads(Path(sys.argv[1]).read_text())['project']['version']
 with open(sys.argv[2], 'wb') as target:
     plistlib.dump({
@@ -41,14 +41,16 @@ with open(sys.argv[2], 'wb') as target:
     }, target)
 PY
 # Compile an immutable source snapshot so both CPU slices use the same input.
-cp "$SCRIPT_DIR/ReportModel.swift" "$SCRIPT_DIR/ReportApp.swift" "$SCRIPT_DIR/CreateIcon.swift" "$SCRIPT_DIR/Artwork.swift" "$STAGING/"
+cp "$SCRIPT_DIR/ReportModel.swift" "$SCRIPT_DIR/CreateIcon.swift" "$SCRIPT_DIR/Artwork.swift" "$STAGING/"
+mkdir "$STAGING/app"
+cp "$SCRIPT_DIR"/App/*.swift "$STAGING/app/"
 xcrun swiftc -parse-as-library -swift-version 6 -warnings-as-errors "$STAGING/Artwork.swift" "$STAGING/CreateIcon.swift" -o "$STAGING/create-icon"
 "$STAGING/create-icon" "$STAGING/EML.iconset"
 /usr/bin/iconutil -c icns "$STAGING/EML.iconset" -o "$APP/Contents/Resources/EML.icns"
 for ARCH in arm64 x86_64; do
     xcrun swiftc -swift-version 6 -warnings-as-errors -O \
         -target "$ARCH-apple-macosx14.0" \
-        "$STAGING/ReportModel.swift" "$STAGING/Artwork.swift" "$STAGING/ReportApp.swift" \
+        "$STAGING/ReportModel.swift" "$STAGING/Artwork.swift" "$STAGING"/app/*.swift \
         -o "$STAGING/ui-$ARCH"
 done
 xcrun lipo -create "$STAGING/ui-arm64" "$STAGING/ui-x86_64" -output "$APP/Contents/MacOS/EMLAttachmentRemover"

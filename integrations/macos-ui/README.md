@@ -57,6 +57,8 @@ All custom graphics are drawn from original project geometry by `Artwork.swift`;
 
 ## Qualification
 
+Maintainers install the pinned quality tools with `uv run /bin/sh integrations/macos-ui/install-quality-tools.sh`, then run `uv run python tools/tasks.py quality`. See [quality and exception governance](../../QA.md#swift-quality-and-exception-governance). The prebuilt app does not require SwiftLint or swift-format on customer machines.
+
 ```sh
 /bin/sh integrations/macos-ui/test.sh
 ```

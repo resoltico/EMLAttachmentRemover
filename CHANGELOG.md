@@ -44,6 +44,8 @@ Notable changes to this project are documented in this file. The format is based
 
 ### Internal
 
+- Swift source now has pinned strict formatting and lint gates, structural size and complexity checks, and a central exception approval registry shared with Python. Python method-size checks also cover nested classes. Native presentation, process ownership, runtime configuration, and application lifecycle are separated for review and verification.
+
 - macOS CI produces and ad-hoc signs the universal native application together with the portable CLI assets. Release publication requires the complete checksummed set and reverifies the extracted native app, both architectures, source-bound installer/documentation files, and bundled processor. The release pipeline and audit contract are documented.
 - Updated the verification toolchain to UV 0.12.21, Actionlint-py 1.7.12.25, Coverage 7.16.2, Hypothesis 6.168.3, Pyflakes 4.0.1, Ruff 0.16.9, and refreshed transitive dependencies. GitHub Setup UV is pinned to v10.2.0 with its safer cache defaults; local Linux base images are pinned by digest. Signal-boundary tests follow mutation dispatch so campaigns exercise the selected implementation. The installable standard/free-threaded CPython qualification pins remain 3.14.7 pending provider availability of 3.14.8 builds.
 - Quality tasks can run host-dependent checks separately with `quality --native`; shared static checks explicitly type-check Linux, macOS, and Windows targets. Tests check that supported workflow steps have local equivalents.

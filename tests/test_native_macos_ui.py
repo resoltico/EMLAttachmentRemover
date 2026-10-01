@@ -190,7 +190,7 @@ def test_native_integration_shell_scripts_pass_static_analysis() -> None:
 
 def test_custom_artwork_has_no_system_symbol_dependencies() -> None:
     """Branding and UI artwork cannot regress to vendor-provided symbol images."""
-    for source in UI.glob("*.swift"):
+    for source in UI.rglob("*.swift"):
         text = source.read_text(encoding="utf-8")
         for forbidden in (
             "systemSymbolName:",

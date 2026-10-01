@@ -38,6 +38,7 @@ def run(
             platform,
         ))
     run_command((sys.executable, "tools/check_module_design.py"))
+    run_command((sys.executable, "tools/lint_exceptions.py"))
     run_command((
         *("actionlint", "-shellcheck", "shellcheck", "-pyflakes", "pyflakes"),
         *workflow_files,

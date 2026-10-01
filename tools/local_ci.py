@@ -36,6 +36,7 @@ TEMPORARY_PREFIX: Final = "eml-attachment-remover-ci-"
 # CI-only values (matrix interpreter, tag, artifact directory, workers) substituted.
 SYNC: Final = f"uv sync --locked --group dev --python {MATRIX_PYTHON}"
 SHELL_CHECK: Final = "test -x /bin/sh"
+SWIFT_SETUP: Final = "uv run /bin/sh integrations/macos-ui/install-quality-tools.sh"
 QUALITY: Final = "uv run python tools/tasks.py quality"
 QUALITY_NATIVE: Final = "uv run python tools/tasks.py quality --native"
 CANONICAL_SYNC: Final = f"uv sync --locked --group dev --python {CANONICAL_PYTHON}"
@@ -239,6 +240,7 @@ def plan(
             values,
             (SYNC, SHORT_TIMEOUT_SECONDS),
             *shell,
+            *(((SWIFT_SETUP, LANE_TIMEOUT_SECONDS),) if host == "darwin" else ()),
             (quality, LANE_TIMEOUT_SECONDS),
         )
     steps += [

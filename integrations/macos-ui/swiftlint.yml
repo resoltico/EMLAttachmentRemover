@@ -1,0 +1,42 @@
+# swift-format owns layout; SwiftLint owns complementary correctness and structure.
+strict: true
+check_for_updates: false
+allow_zero_lintable_files: false
+only_rules:
+  - force_cast
+  - force_try
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - unused_closure_parameter
+  - duplicate_imports
+  - contains_over_filter_count
+  - unhandled_throwing_task
+  - weak_delegate
+  - invalid_swiftlint_command
+  - blanket_disable_command
+  - superfluous_disable_command
+  - file_length
+  - type_body_length
+  - function_body_length
+  - function_parameter_count
+  - cyclomatic_complexity
+  - nesting
+file_length:
+  warning: 450
+  error: 450
+  ignore_comment_only_lines: false
+type_body_length:
+  warning: 300
+  error: 300
+function_body_length:
+  warning: 60
+  error: 60
+function_parameter_count:
+  warning: 5
+  error: 5
+cyclomatic_complexity:
+  warning: 8
+  error: 8
+nesting:
+  type_level: 2
+  function_level: 2
