@@ -34,7 +34,17 @@ raise SystemExit(cli.main(['--output-format=json', '--existing=verify', *sources
 """
 
 
-@pytest.mark.parametrize("case", ["complete", "grace", "repeat", "broken"])
+# Exercise fresh pipe lifetimes repeatedly: the Windows CRT's closed-reader
+# failure depends on whether the close precedes or interrupts the first write.
+@pytest.mark.parametrize(
+    "case",
+    [
+        "complete",
+        "grace",
+        "repeat",
+        *(pytest.param("broken", id=f"broken-{index}") for index in range(20)),
+    ],
+)
 def test_private_directory_has_no_orphaned_receipts_after_process_exit(
     tmp_path: Path,
     case: str,
