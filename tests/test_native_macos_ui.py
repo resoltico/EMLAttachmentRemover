@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import plistlib
 import shutil
 import subprocess
@@ -264,13 +265,23 @@ def _exercise_runtime_rollback(
 
 
 def _exercise_native_launch(
-    app: Path, sources: tuple[Path, ...], environment: dict[str, str], root: Path
+    app: Path,
+    sources: tuple[Path, ...],
+    environment: dict[str, str],
+    root: Path,
+    *,
+    intel_slice: bool = False,
 ) -> None:
     log = root / "native-launch.txt"
+    command = ["/usr/bin/arch", "-x86_64"] if intel_slice else []
+    command.extend((
+        str(app / "Contents/MacOS/EMLAttachmentRemover"),
+        *map(str, sources),
+    ))
     with (
         log.open("w") as errors,
         subprocess.Popen(
-            [str(app / "Contents/MacOS/EMLAttachmentRemover"), *map(str, sources)],
+            command,
             env={**environment, "EML_REMOVER_UI_TRACE": "1"},
             stdout=subprocess.DEVNULL,
             stderr=errors,
@@ -320,6 +331,23 @@ def test_downloaded_candidate_executes_on_this_os_and_cpu(tmp_path: Path) -> Non
         tmp_path,
     )
     assert (tmp_path / "candidate.mime-pruned.eml").is_file()
+    if platform.machine() == "arm64":
+        translated_machine = subprocess.check_output(
+            ["/usr/bin/arch", "-x86_64", "/usr/bin/uname", "-m"],
+            text=True,
+            timeout=15,
+        ).strip()
+        assert translated_machine == "x86_64"
+        intel_source = tmp_path / "candidate-intel.eml"
+        intel_source.write_bytes(b"Subject: Intel slice QA\r\n\r\nPublic body.\r\n")
+        _exercise_native_launch(
+            extracted / macos_archive.APP,
+            (intel_source,),
+            {**os.environ, "EML_REMOVER_PYTHON": sys.executable},
+            tmp_path,
+            intel_slice=True,
+        )
+        assert (tmp_path / "candidate-intel.mime-pruned.eml").is_file()
 
 
 def _assert_no_development_runtime(executable: Path) -> None:
