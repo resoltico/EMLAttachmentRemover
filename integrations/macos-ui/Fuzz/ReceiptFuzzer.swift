@@ -32,6 +32,12 @@ private func checkTextAndAddresses(_ data: Data) {
 }
 
 private func checkReceipt(_ data: Data) {
+  if !hasValidUTF8Encoding(data) {
+    precondition(
+      (try? UIReceipt.admit(data, status: 0, version: "fuzz")) == nil,
+      "Invalid UTF-8 receipt accepted")
+    return
+  }
   let decoder = JSONDecoder()
   decoder.keyDecodingStrategy = .convertFromSnakeCase
   guard let decoded = try? decoder.decode(UIReceipt.self, from: data),

@@ -102,6 +102,11 @@ struct UIReceipt: Decodable, Sendable {
   let details: [String]
 
   static func admit(_ data: Data, status: Int32, version: String) throws -> UIReceipt {
+    guard hasValidUTF8Encoding(data) else {
+      throw NSError(
+        domain: "EMLReport", code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "The report is not valid UTF-8."])
+    }
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
     let receipt = try decoder.decode(UIReceipt.self, from: data)
@@ -184,4 +189,8 @@ func safeText(_ text: String, multiline: Bool = true) -> String {
     }
   }
   return result
+}
+
+func hasValidUTF8Encoding(_ data: Data) -> Bool {
+  String(decoding: data, as: UTF8.self).utf8.elementsEqual(data)
 }

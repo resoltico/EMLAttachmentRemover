@@ -194,7 +194,7 @@ def test_optimized_asan_campaign_replays_seeds_and_records_all_stages(
 @pytest.mark.parametrize(
     ("before", "after", "input_bytes"),
     [
-        ('var result = ""', 'return text\n  var result = ""', b"\x1b"),
+        ('var result = ""', "return text", b"\x1b"),
         (
             "receipt.processStatus == Int(status), receipt.report.version == version",
             "true",
@@ -219,7 +219,9 @@ def test_optimized_harness_detects_broken_model_contracts(
     assert before in source
     # Replace the entire sanitizer body to avoid an unreachable-code warning.
     if before == 'var result = ""':
-        source = source[: source.index(before)] + "return text\n}\n"
+        start = source.index('  var result = ""')
+        end = source.index("\n}", start)
+        source = source[:start] + "  return text" + source[end:]
     else:
         source = source.replace(before, after)
     model.write_text(source)
@@ -388,3 +390,27 @@ def test_asan_detects_a_real_heap_overflow(tmp_path: Path) -> None:
     )
     assert result.returncode != 0
     assert "ERROR: AddressSanitizer: heap-buffer-overflow" in result.stderr
+
+
+@MACOS
+def test_invalid_utf8_json_key_is_rejected_by_optimized_model(
+    campaign: Path, tmp_path: Path
+) -> None:
+    seed = (UI / "Fuzz/corpus/display-controls.json").read_bytes()
+    needle = b"address_verified"
+    positions = [index for index in range(len(seed)) if seed.startswith(needle, index)]
+    assert len(positions) == 7
+    data = bytearray(seed)
+    data[positions[5] : positions[5] + 4] = bytes((0xA0, 0x9B, 0x9B, 0x8D))
+    source = tmp_path / "invalid-utf8-key"
+    source.write_bytes(data)
+    result = subprocess.run(
+        [str(campaign / "receipt-fuzzer"), str(source)],
+        env=_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Executed" in result.stderr

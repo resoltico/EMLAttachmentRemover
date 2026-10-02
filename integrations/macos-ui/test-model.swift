@@ -66,8 +66,23 @@ struct ModelTests {
       _ = try UIReceipt.admit(Data("{}".utf8), status: 0, version: version)
       preconditionFailure("incomplete report accepted")
     } catch {}
+    try checkInvalidUTF8()
     try checkAddresses()
     print("Native report model checks passed.")
+  }
+
+  static func checkInvalidUTF8() throws {
+    precondition(hasValidUTF8Encoding(Data([0x65, 0xCC, 0x81])))
+    precondition(!hasValidUTF8Encoding(Data([0xA0, 0x9B, 0x9B, 0x8D])))
+    var invalid = try envelope(0, "created", ok: true)
+    guard let range = invalid.range(of: Data("source_request".utf8)) else {
+      preconditionFailure("missing regression field")
+    }
+    invalid.replaceSubrange(
+      range.lowerBound..<(range.lowerBound + 4), with: [0xA0, 0x9B, 0x9B, 0x8D])
+    precondition(
+      (try? UIReceipt.admit(invalid, status: 0, version: version)) == nil,
+      "invalid UTF-8 report accepted")
   }
 
   static func checkAddresses() throws {
