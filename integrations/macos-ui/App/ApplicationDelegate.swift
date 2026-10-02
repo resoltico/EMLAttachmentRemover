@@ -6,6 +6,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
   private var quitting = false
   private var pendingQuit: Set<UUID> = []
   private var launched = false
+  private var launchFiles: [String] = []
   private let information = ApplicationInformation()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -13,6 +14,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     configureMenus()
     launched = true
     // AppKit delivers launch files through openFiles, including executable arguments.
+    if !launchFiles.isEmpty {
+      let paths = launchFiles
+      launchFiles.removeAll()
+      openBatch(paths)
+    }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
       if self.windows.isEmpty { self.openBatch([]) }
     }
@@ -87,7 +93,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
 
   func application(_ sender: NSApplication, openFiles filenames: [String]) {
     trace("open-files count=\(filenames.count)")
-    openBatch(filenames)
+    if launched {
+      openBatch(filenames)
+    } else {
+      launchFiles.append(contentsOf: filenames)
+    }
     sender.reply(toOpenOrPrint: .success)
   }
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool

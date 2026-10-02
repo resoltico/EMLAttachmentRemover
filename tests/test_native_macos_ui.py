@@ -100,7 +100,10 @@ def test_native_bundle_is_signed_universal_and_processes_current_sources(
     assert envelope["report"]["version"] == metadata["CFBundleShortVersionString"]
     assert envelope["report"]["items"][0]["status"] == "created"
     assert (tmp_path / "public.mime-pruned.eml").is_file()
-    _exercise_native_launch(app, source, environment, tmp_path)
+    _exercise_native_launch(app, (source,), environment, tmp_path)
+    companion = tmp_path / "companion.eml"
+    companion.write_bytes(b"Subject: Public companion\r\n\r\nPublic body.\r\n")
+    _exercise_native_launch(app, (source, companion), environment, tmp_path)
     _exercise_installation(
         app, tmp_path, environment, extracted / "integrations/macos-ui"
     )
@@ -260,13 +263,13 @@ def _exercise_runtime_rollback(
 
 
 def _exercise_native_launch(
-    app: Path, source: Path, environment: dict[str, str], root: Path
+    app: Path, sources: tuple[Path, ...], environment: dict[str, str], root: Path
 ) -> None:
     log = root / "native-launch.txt"
     with (
         log.open("w") as errors,
         subprocess.Popen(
-            [str(app / "Contents/MacOS/EMLAttachmentRemover"), str(source)],
+            [str(app / "Contents/MacOS/EMLAttachmentRemover"), *map(str, sources)],
             env={**environment, "EML_REMOVER_UI_TRACE": "1"},
             stdout=subprocess.DEVNULL,
             stderr=errors,
@@ -283,9 +286,10 @@ def _exercise_native_launch(
             assert "admitted status=0" in log.read_text(), (
                 "Packaged native executable did not admit its processing receipt"
             )
-            assert log.read_text().count("open-batch count=1") == 1, (
-                "One native launch must process its file exactly once"
+            assert log.read_text().count("open-batch count=") == 1, (
+                "One native launch must create exactly one batch"
             )
+            assert f"open-batch count={len(sources)}" in log.read_text()
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -310,7 +314,7 @@ def test_downloaded_candidate_executes_on_this_os_and_cpu(tmp_path: Path) -> Non
     source.write_bytes(b"Subject: Public compatibility QA\r\n\r\nPublic body.\r\n")
     _exercise_native_launch(
         extracted / macos_archive.APP,
-        source,
+        (source,),
         {**os.environ, "EML_REMOVER_PYTHON": sys.executable},
         tmp_path,
     )
