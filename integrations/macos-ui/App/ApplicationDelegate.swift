@@ -12,9 +12,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     trace("app-launched args=\(CommandLine.arguments.count)")
     configureMenus()
     launched = true
-    let arguments = Array(CommandLine.arguments.dropFirst()).filter { !$0.hasPrefix("-psn_") }
-    if !arguments.isEmpty { openBatch(arguments) }
-    // Finder's file-open event can arrive just after launch.
+    // AppKit delivers launch files through openFiles, including executable arguments.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
       if self.windows.isEmpty { self.openBatch([]) }
     }

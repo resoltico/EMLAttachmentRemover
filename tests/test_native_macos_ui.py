@@ -283,6 +283,9 @@ def _exercise_native_launch(
             assert "admitted status=0" in log.read_text(), (
                 "Packaged native executable did not admit its processing receipt"
             )
+            assert log.read_text().count("open-batch count=1") == 1, (
+                "One native launch must process its file exactly once"
+            )
         finally:
             if process.poll() is None:
                 process.terminate()
