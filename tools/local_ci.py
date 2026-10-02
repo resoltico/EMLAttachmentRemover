@@ -37,6 +37,12 @@ TEMPORARY_PREFIX: Final = "eml-attachment-remover-ci-"
 SYNC: Final = f"uv sync --locked --group dev --python {MATRIX_PYTHON}"
 SHELL_CHECK: Final = "test -x /bin/sh"
 SWIFT_SETUP: Final = "uv run /bin/sh integrations/macos-ui/install-quality-tools.sh"
+SWIFT_COMPILER_SETUP: Final = (
+    "uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh"
+)
+FUZZ: Final = (
+    'uv run /bin/sh integrations/macos-ui/fuzz.sh "$FUZZ_OUTPUT" -max_total_time=300'
+)
 QUALITY: Final = "uv run python tools/tasks.py quality"
 QUALITY_NATIVE: Final = "uv run python tools/tasks.py quality --native"
 CANONICAL_SYNC: Final = f"uv sync --locked --group dev --python {CANONICAL_PYTHON}"
@@ -228,6 +234,11 @@ def plan(
         '"$RELEASE_TAG"': release_tag,
         "release-dist": str(root / "release-dist"),
         '"$MUTATION_WORKERS"': workers,
+        '"$FUZZ_OUTPUT"': str(
+            Path.home()
+            / "Library/Application Support/EML Attachment Remover QA/receipt-fuzz"
+            / root.name
+        ),
     }
     shell = ((SHELL_CHECK, SHORT_TIMEOUT_SECONDS),) if posix else ()
     steps: list[Step] = []
@@ -252,6 +263,14 @@ def plan(
         )
         for platform in TYPE_PLATFORMS
     ]
+    if host == "darwin":
+        steps += _lane(
+            root,
+            CANONICAL_PYTHON,
+            values,
+            (SWIFT_COMPILER_SETUP, LANE_TIMEOUT_SECONDS),
+            (FUZZ, SHORT_TIMEOUT_SECONDS),
+        )
     steps += _lane(
         root,
         CANONICAL_PYTHON,

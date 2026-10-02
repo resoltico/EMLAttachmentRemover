@@ -8,3 +8,11 @@ version = "604.0.0"
 repository = "https://github.com/swiftlang/swift-format.git"
 revision = "15d7877c6b32926948f6520f0156657945955ea3" # pragma: allowlist secret - public upstream integrity pin
 
+
+[swift]
+version = "6.4.0"
+compiler_tag = "swift-6.4-RELEASE"
+signer = "Developer ID Installer: Swift Open Source (V9AUD2URP3)"
+url = "https://download.swift.org/swift-6.4.0-release/xcode/swift-6.4.0-RELEASE/swift-6.4.0-RELEASE-osx.pkg"
+sha256 = "8fd03185b98fe27f54a54631c2449decf75d5b466ce8e34abbd414141063c6aa" # pragma: allowlist secret - public upstream integrity pin
+

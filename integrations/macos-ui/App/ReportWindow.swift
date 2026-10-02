@@ -24,7 +24,7 @@ final class ReportWindow: NSObject, NSWindowDelegate {
       contentRect: NSRect(x: 0, y: 0, width: 640, height: 590),
       styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false
     )
-    layout = ReportLayout(window: window, version: version)
+    layout = ReportLayout(window: window)
     super.init()
     let firstName = paths.first.map {
       safeText(($0 as NSString).lastPathComponent, multiline: false)
@@ -33,7 +33,7 @@ final class ReportWindow: NSObject, NSWindowDelegate {
       firstName.map {
         $0 + (paths.count > 1 ? " + \(paths.count - 1) more" : "") + " — Processing report"
       } ?? "Processing report"
-    window.minSize = NSSize(width: 560, height: 460)
+    window.minSize = NSSize(width: 560, height: 280)
     window.delegate = self
     window.isReleasedWhenClosed = false
     window.center()
@@ -60,6 +60,7 @@ final class ReportWindow: NSObject, NSWindowDelegate {
     stopButton = stop
     layout.footerHost.addArrangedSubview(stop)
     window.standardWindowButton(.closeButton)?.isEnabled = false
+    layout.resizeToContent()
     do {
       try run.start(
         paths: paths, version: version,
@@ -98,6 +99,7 @@ final class ReportWindow: NSObject, NSWindowDelegate {
       trace(
         "admitted status=\(admitted.processStatus) heading=\(admitted.heading) counts=\(admitted.subtitle)"
       )
+      window.minSize = NSSize(width: 560, height: 400)
       layout.makeContent()
       layout.heading(
         admitted.heading, subtitle: admitted.subtitle,
@@ -142,6 +144,9 @@ final class ReportWindow: NSObject, NSWindowDelegate {
         color: .secondaryLabelColor))
     let choose = UIControls.button("Choose files…", action: #selector(chooseFiles), target: self)
     choose.keyEquivalent = "\r"
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    layout.footerHost.addArrangedSubview(spacer)
     layout.footerHost.addArrangedSubview(choose)
     window.defaultButtonCell = choose.cell as? NSButtonCell
     layout.resizeToContent()
@@ -150,6 +155,7 @@ final class ReportWindow: NSObject, NSWindowDelegate {
   func closeWelcome() { if isWelcome { window.close() } }
   private func showFailure(_ title: String, explanation: String, diagnostics: String) {
     trace("unverified-report heading=\(title)")
+    window.minSize = NSSize(width: 560, height: 320)
     layout.makeContent()
     layout.heading(
       title, subtitle: "Review the details before trying again.", artwork: .attention,

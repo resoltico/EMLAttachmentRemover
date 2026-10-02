@@ -1,6 +1,6 @@
 {
     "schema_version": 1,
-    "source_sha256": "40e2c4f8:376cbc4c:0b1fa41a:0f9b4a87:0c35b872:1d42fa06:6aa9c32b:31aac433",
+    "source_sha256": "bf8f2da3:2a675893:ce9a6d65:3eac30e6:10903003:670be79c:4a7f0222:3960f3f7",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.cancellation_owner.x\u01c1CancellationOwner\u01c1_reset__mutmut_3",

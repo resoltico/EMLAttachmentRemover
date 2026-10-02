@@ -1,0 +1,6 @@
+[campaign]
+seed = 1
+runs = 100000
+max_length = 65536
+timeout_seconds = 10
+rss_limit_mb = 2048

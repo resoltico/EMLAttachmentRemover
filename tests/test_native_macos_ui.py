@@ -86,12 +86,10 @@ def test_native_bundle_is_signed_universal_and_processes_current_sources(
         b"From: qa@example.test\r\nSubject: Native UI QA\r\n\r\nPublic body.\r\n"
     )
     result = subprocess.run(
-        ["/bin/sh", str(resources / "run-from-finder.sh"), str(source)],
+        ["/bin/sh", str(resources / "processing-launcher.sh"), str(source)],
         env={
             **environment,
-            "EML_REMOVER_HOME": str(resources),
-            "EML_REMOVER_UI_REPORT": "1",
-            "EML_REMOVER_REVEAL": "0",
+            "EML_REMOVER_ZIPAPP": str(resources / "remove-eml-attachments.pyz"),
         },
         check=True,
         capture_output=True,
@@ -103,9 +101,6 @@ def test_native_bundle_is_signed_universal_and_processes_current_sources(
     assert envelope["report"]["items"][0]["status"] == "created"
     assert (tmp_path / "public.mime-pruned.eml").is_file()
     _exercise_native_launch(app, source, environment, tmp_path)
-    _exercise_legacy_migration(
-        app, tmp_path, environment, extracted / "integrations/macos-ui"
-    )
     _exercise_installation(
         app, tmp_path, environment, extracted / "integrations/macos-ui"
     )
@@ -122,7 +117,6 @@ def _exercise_installation(
         **environment,
         "HOME": str(home),
         "EML_REMOVER_UI_APP": str(installed),
-        "EML_REMOVER_HOME": str(home / "processor"),
     }
     subprocess.run(
         ["/bin/sh", str(installer / "install.sh"), str(app)],
@@ -262,66 +256,6 @@ def _exercise_runtime_rollback(
         ["/usr/bin/codesign", "--verify", "--deep", "--strict", str(installed)],
         check=True,
         timeout=30,
-    )
-
-
-def _exercise_legacy_migration(
-    app: Path, root: Path, environment: dict[str, str], installer: Path
-) -> None:
-    legacy = root / "legacy.app"
-    shutil.copytree(app, legacy)
-    info_path = legacy / "Contents/Info.plist"
-    info = plistlib.loads(info_path.read_bytes())
-    info["CFBundleIdentifier"] = "org.emlattachmentremover.report"
-    info_path.write_bytes(plistlib.dumps(info))
-    subprocess.run(
-        ["/usr/bin/codesign", "--force", "--sign", "-", str(legacy)],
-        check=True,
-        timeout=30,
-    )
-    home = root / "migration-home"
-    installed = home / "Applications/EML Attachment Remover.app"
-    installed.parent.mkdir(parents=True)
-    shutil.copytree(legacy, installed)
-    configured = {
-        **environment,
-        "HOME": str(home),
-        "EML_REMOVER_UI_APP": str(installed),
-        "EML_REMOVER_HOME": str(home / "processor"),
-    }
-    refused = subprocess.run(
-        ["/bin/sh", str(installer / "install.sh"), str(legacy)],
-        env=configured,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert refused.returncode == 4
-    assert "Application identity differs" in refused.stderr
-    subprocess.run(
-        ["/bin/sh", str(installer / "install.sh"), str(app)],
-        env=configured,
-        check=True,
-        timeout=60,
-    )
-    assert (
-        plistlib.loads((installed / "Contents/Info.plist").read_bytes())[
-            "CFBundleIdentifier"
-        ]
-        == "io.github.resoltico.emlattachmentremover"
-    )
-    backups = list(
-        (home / "Library/Application Support/EML Attachment Remover UI Backups").glob(
-            "previous-*/*.bundle-backup"
-        )
-    )
-    assert len(backups) == 1
-    assert (
-        plistlib.loads((backups[0] / "Contents/Info.plist").read_bytes())[
-            "CFBundleIdentifier"
-        ]
-        == "org.emlattachmentremover.report"
     )
 
 

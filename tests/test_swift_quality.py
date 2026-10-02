@@ -91,11 +91,9 @@ def test_swiftlint_rejects_unsafe_and_oversized_code(
     path = tmp_path / "Invalid.swift"
     path.write_text(source)
     environment = dict(os.environ)
-    developer = Path(
-        subprocess.check_output(["/usr/bin/xcode-select", "-p"], text=True).strip()
-    )
-    if (developer / "usr/lib/sourcekitdInProc.framework").is_dir():
-        environment["TOOLCHAIN_DIR"] = str(developer)
+    environment["TOOLCHAIN_DIR"] = subprocess.check_output(
+        ["/bin/sh", str(UI / "swiftc.sh"), "--toolchain-directory"], text=True
+    ).strip()
     result = subprocess.run(
         [
             _binary("swiftlint"),

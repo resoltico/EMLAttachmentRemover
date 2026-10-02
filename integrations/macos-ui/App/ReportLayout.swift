@@ -3,13 +3,11 @@ import AppKit
 @MainActor
 final class ReportLayout {
   let window: NSWindow
-  let version: String
   var content = NSStackView()
   var footerHost = NSStackView()
   var headline: NSTextField?
-  init(window: NSWindow, version: String) {
+  init(window: NSWindow) {
     self.window = window
-    self.version = version
   }
   func makeContent() {
     trace("make-content")
@@ -49,26 +47,7 @@ final class ReportLayout {
       content.topAnchor.constraint(equalTo: document.topAnchor, constant: 24),
       content.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -12),
     ])
-    let identity = NSStackView()
-    identity.orientation = .horizontal
-    identity.spacing = 14
-    let icon = NSImageView(image: Artwork.image(.identity))
-    icon.setAccessibilityElement(false)
-    icon.widthAnchor.constraint(equalToConstant: 40).isActive = true
-    icon.heightAnchor.constraint(equalToConstant: 40).isActive = true
-    let names = NSStackView(views: [
-      UIControls.label("EML Attachment Remover", size: 18, weight: .semibold),
-      UIControls.label("Version \(version)", color: .secondaryLabelColor),
-    ])
-    names.orientation = .vertical
-    names.alignment = .leading
-    names.spacing = 4
-    identity.addArrangedSubview(icon)
-    identity.addArrangedSubview(names)
-    add(identity)
-    let separator = NSBox(frame: NSRect(x: 0, y: 0, width: 584, height: 64))
-    separator.boxType = .separator
-    add(separator)
+
   }
   func add(_ view: NSView) {
     content.addArrangedSubview(view)
@@ -98,7 +77,8 @@ final class ReportLayout {
   func resizeToContent() {
     window.contentView?.layoutSubtreeIfNeeded()
     let maximum = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
-    let height = min(maximum - 100, max(460, content.fittingSize.height + 85))
+    let height = min(
+      maximum - 100, max(window.minSize.height - 28, content.fittingSize.height + 85))
     guard let view = window.contentView else { return }
     window.setContentSize(NSSize(width: view.bounds.width, height: height))
   }

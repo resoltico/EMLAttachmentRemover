@@ -30,7 +30,7 @@ No local runtime configuration, interpreter installation, private path, QA fixtu
 
 ## Producer
 
-The macOS job builds and qualifies the portable artifacts, builds the native app from an immutable source snapshot, normalizes app directory/document/executable permissions to 0755/0644/0755 before signing, and verifies the complete signature. It packages a sorted ZIP with fixed entry timestamps and explicit Unix permissions. Two independent native builds must produce the same archive bytes under the same runner toolchain; this does not promise identical output across different SDK/compiler versions. The entire candidate set is built and qualified outside the checkout. Only after verification does the producer reserve a same-parent publication directory, verify the copied bytes, and atomically publish it to the requested output; build staging cannot interfere with the source audit.
+The macOS job installs the checksum- and signer-pinned official Swift.org compiler declared in `toolchain.toml`, uses the platform SDK and signing tools from Apple Command Line Tools or Xcode, and builds and qualifies the portable artifacts, builds the native app from an immutable source snapshot, normalizes app directory/document/executable permissions to 0755/0644/0755 before signing, and verifies the complete signature. It packages a sorted ZIP with fixed entry timestamps and explicit Unix permissions. Two independent native builds must produce the same archive bytes under the same runner toolchain; this does not promise identical output across different SDK/compiler versions. The entire candidate set is built and qualified outside the checkout. Only after verification does the producer reserve a same-parent publication directory, verify the copied bytes, and atomically publish it to the requested output; build staging cannot interfere with the source audit.
 
 ## Downloaded-artifact verification and publication
 
@@ -50,7 +50,7 @@ The reviewed design has one source commit, one final artifact manifest, and one 
 
 ## Maintainer audit procedure
 
-Run the complete release producer on macOS, reverify the resulting directory through the same verifier used by publishing, inspect the extracted application and install/update path, and compare each packaged artifact with `SHA256SUMS`. Retain runner/toolchain information and gate evidence. For release review, trace each workflow command to its local equivalent, inspect the tag/commit and changelog body, and verify GitHub asset read-back. Never substitute a manually rebuilt local app for the archive produced by the tagged release job.
+Install the pinned compiler with `uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh`, run the complete release producer on macOS, reverify the resulting directory through the same verifier used by publishing, inspect the extracted application and install/update path, and compare each packaged artifact with `SHA256SUMS`. Retain runner/toolchain information and gate evidence. For release review, trace each workflow command to its local equivalent, inspect the tag/commit and changelog body, and verify GitHub asset read-back. Never substitute a manually rebuilt local app for the archive produced by the tagged release job.
 
 The local `tools/tasks.py ci` plan runs complete delivery production and verification on macOS. On Linux and Windows those two steps explicitly use `--portable-only`; this checks CLI delivery and does not qualify a native release. The publication controller always requires all five files and macOS verification.
 
@@ -63,6 +63,6 @@ The installer stages the selected runtime configuration before changing the app 
 
 ## Application identity and ownership metadata
 
-The permanent bundle identifier is `io.github.resoltico.emlattachmentremover`, based on the repository namespace. Displayed copyright is derived from the copyright notice in the bundled project `LICENSE`. Release verification checks both fields. The installer accepts `org.emlattachmentremover.report` only for an existing user-owned, marked prototype installation being replaced; incoming apps must have the permanent identity. Successful migration retains the prior bundle and the external runtime configuration location.
+The permanent bundle identifier is `io.github.resoltico.emlattachmentremover`, based on the repository namespace. Displayed copyright is derived from the copyright notice in the bundled project `LICENSE`. Release verification checks both fields. App updates require the permanent identity and retain a recoverable prior bundle and runtime configuration.
 
 The separate macOS delivery compatibility workflow builds one current-runner candidate, transfers that exact archive to macOS 14 Intel and macOS 15 Intel, verifies it, and launches its packaged executable through a synthetic processing receipt. GitHub retires macOS 14 hosted runners on November 2, 2026; after that date minimum-OS execution requires a maintained macOS 14 runner rather than silently changing the supported floor.

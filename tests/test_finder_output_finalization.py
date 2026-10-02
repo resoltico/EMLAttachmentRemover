@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.test_v3_macos_shortcuts_runner import RUNNER, _complete, _item
+from tests.test_processing_launcher import RUNNER, _complete, _item
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -51,7 +51,6 @@ def test_exit_120_retains_only_valid_results_and_never_reveals(
             "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
             "EML_REMOVER_PYTHON": sys.executable,
             "EML_REMOVER_ZIPAPP": str(processor),
-            "EML_REMOVER_REVEAL": "1",
             "FINDER_REPORT": encoded,
             "TMPDIR": str(tmp_path),
         },
@@ -62,14 +61,13 @@ def test_exit_120_retains_only_valid_results_and_never_reveals(
     )
     if report_kind in {"complete", "noisy"}:
         assert result.returncode == 120
-        assert "created 1" in result.stdout
+        assert json.loads(result.stdout)["report"]["summary"]["created"] == 1
         assert "Output finalization failed: processor status 120" in result.stdout
         assert "Interrupted:" not in result.stdout
         if report_kind == "noisy":
-            assert "additional diagnostic(s) were omitted" in result.stdout
-            assert result.stdout.index(
-                "Output finalization failed"
-            ) < result.stdout.index("public warning")
+            assert (
+                len(json.loads(result.stdout)["report"]["items"][0]["warnings"]) == 30
+            )
     else:
         assert result.returncode == 70
         assert "invalid processor report" in result.stdout

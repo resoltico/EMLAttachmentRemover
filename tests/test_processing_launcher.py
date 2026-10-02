@@ -14,10 +14,9 @@ import pytest
 RUNNER: Final = (
     Path(__file__).resolve().parents[1]
     / "integrations"
-    / "macos-shortcuts"
-    / "run-from-finder.sh"
+    / "macos-ui"
+    / "processing-launcher.sh"
 )
-INSTALLER: Final = RUNNER.with_name("install.sh")
 STATUSES: Final = (
     "created",
     "existing_verified",
@@ -112,7 +111,6 @@ def _run(
         **os.environ,
         "EML_REMOVER_PYTHON": sys.executable,
         "EML_REMOVER_ZIPAPP": str(zipapp),
-        "EML_REMOVER_REVEAL": "0",
         "FINDER_REPORT": json.dumps(report),
         "FINDER_STATUS": str(status),
     }
@@ -151,17 +149,13 @@ def test_finder_launcher_visibly_projects_every_terminal_category(
     result = _run(tmp_path, report, 9)
     assert result.returncode == 9
     assert not result.stderr
-    assert (
-        "created 1; existing verified 0; failed 1; not run 1; "
-        "published with error 1; cancelled 1" in result.stdout
-    )
-    assert "source-0: WARN: retained" in result.stdout
-    assert "source-1: PARSE_ERROR: broken" in result.stdout
-    assert "source-2: BATCH_FAILURE: later" in result.stdout
-    assert "source-3: PUBLICATION_INCOMPLETE: visible but unproven" in result.stdout
-    assert "source-4: INTERRUPTED: stopped" in result.stdout
-    assert "Batch: BATCH_FAILURE: batch summary" in result.stdout
-    assert "Interrupted: interrupted" in result.stdout
+    envelope = json.loads(result.stdout)
+    assert envelope["report"] == report
+    assert envelope["process_status"] == 9
+    assert envelope["details"] == [
+        "Batch: BATCH_FAILURE: batch summary",
+        "Interrupted: interrupted",
+    ]
 
 
 def test_finder_launcher_fails_closed_for_summary_exit_and_schema_drift(
@@ -207,7 +201,7 @@ def test_finder_launcher_accepts_native_only_posix_output_address(
     publication["final_address"] = _path("native-only", None, "bmF0aXZlLf8uZW1s")
     result = _run(tmp_path, report, 0)
     assert result.returncode == 0
-    assert "created 1" in result.stdout
+    assert json.loads(result.stdout)["report"]["summary"]["created"] == 1
 
 
 def _complete(status: int) -> dict[str, object]:
@@ -231,7 +225,7 @@ def test_finder_launcher_accepts_a_signal_that_arrived_during_delivery(
     """A complete report with status 130 keeps its receipts and says so."""
     result = _run(tmp_path, _complete(0), 130)
     assert result.returncode == 130
-    assert "created 1" in result.stdout
+    assert json.loads(result.stdout)["report"]["summary"]["created"] == 1
     assert "Interrupted: after the report was written" in result.stdout
     assert "invalid processor report" not in result.stdout
 
@@ -267,27 +261,16 @@ def test_finder_launcher_still_rejects_a_truncated_report_on_interruption(
             **os.environ,
             "EML_REMOVER_PYTHON": sys.executable,
             "EML_REMOVER_ZIPAPP": str(zipapp),
-            "EML_REMOVER_REVEAL": "0",
         },
     )
     assert result.returncode == 70
     assert "invalid processor report" in result.stdout
 
 
-def test_installer_prints_the_documented_finder_error_transport() -> None:
-    """The generated Shortcuts command keeps Show Content reachable on failure."""
-    source = INSTALLER.read_text(encoding="utf-8")
-    assert 'f"/bin/sh {shlex.quote(runner)} {arguments} || :"' in source
-    assert 'f"/bin/sh {runner_variable} " + arguments + " || :"' in source
-    assert "Add a Shortcuts 'Show Content' action" in source
-    assert "Shell Script Result as its input" in source
-
-
 def test_native_ui_transport_preserves_receipts_and_invocation_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """The native UI gets admitted receipts even when final invocation fails."""
-    monkeypatch.setenv("EML_REMOVER_UI_REPORT", "1")
     report = _report([_item(0, "created"), _item(1, "published_with_error")], 9)
     result = _run(tmp_path, report, 120)
     assert result.returncode == 120
@@ -297,11 +280,8 @@ def test_native_ui_transport_preserves_receipts_and_invocation_failure(
     assert envelope["details"][0].startswith("Output finalization failed:")
 
 
-def test_native_ui_transport_rejects_unadmitted_reports(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_native_ui_transport_rejects_unadmitted_reports(tmp_path: Path) -> None:
     """Malformed receipt counts cannot reach the UI as machine reports."""
-    monkeypatch.setenv("EML_REMOVER_UI_REPORT", "1")
     report = _report([_item(0, "created")], 9)
     report["summary"] = {}
     result = _run(tmp_path, report, 9)

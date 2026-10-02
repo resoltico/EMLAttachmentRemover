@@ -94,7 +94,15 @@ class WorkflowParityTests(unittest.TestCase):
             )
         ]
         mirrored = {step.mirrors for step in steps}
-        self.assertEqual(_workflow_steps(), mirrored | CI_ONLY)
+        manual = {
+            (
+                'uv run /bin/sh integrations/macos-ui/fuzz.sh "$FUZZ_OUTPUT" '
+                "-runs=-1 -max_total_time=1800"
+            )
+        }
+        guide = (PROJECT_ROOT / "QA.md").read_text()
+        self.assertTrue(all(command in guide for command in manual))
+        self.assertEqual(_workflow_steps(), mirrored | CI_ONLY | manual)
         self.assertFalse(mirrored & CI_ONLY)
 
     def test_linux_image_uses_the_workflow_uv_and_interpreter(self) -> None:

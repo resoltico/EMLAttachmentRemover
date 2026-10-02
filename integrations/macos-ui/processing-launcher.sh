@@ -1,11 +1,10 @@
 #!/bin/sh
-# Finder/Shortcuts launcher for the schema-3 MIME-pruned zipapp.
+# Owned processing and validated JSON transport for the native application.
 
 set -u
 
 PROGRAM_NAME="EML Attachment Remover"
-INSTALL_DIR=${EML_REMOVER_HOME:-"$HOME/Library/Application Support/$PROGRAM_NAME"}
-ZIPAPP=${EML_REMOVER_ZIPAPP:-"$INSTALL_DIR/remove-eml-attachments.pyz"}
+ZIPAPP=${EML_REMOVER_ZIPAPP:-}
 
 fail() {
     code=$1
@@ -25,14 +24,13 @@ find_python() {
 }
 
 [ "$#" -gt 0 ] || fail 2 "no Finder files were supplied"
-[ -f "$ZIPAPP" ] && [ ! -L "$ZIPAPP" ] || fail 3 "zipapp is missing or unsafe; run install.sh first"
+[ -f "$ZIPAPP" ] && [ ! -L "$ZIPAPP" ] || fail 3 "bundled processor is missing or unsafe"
 PYTHON=
 find_python || fail 9 "Python 3.14 was not found; set EML_REMOVER_PYTHON"
 "$PYTHON" -c 'import platform, sys; raise SystemExit(platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 14))' || fail 9 "the selected interpreter is not CPython 3.14"
 
 case ${EML_REMOVER_EXISTING:-verify} in
     error|verify) existing=${EML_REMOVER_EXISTING:-verify} ;;
-    skip|force) fail 2 "EML_REMOVER_EXISTING=skip|force was removed in v3; use error or verify" ;;
     *) fail 2 "EML_REMOVER_EXISTING must be error or verify" ;;
 esac
 
@@ -106,22 +104,18 @@ if [ -n "$WATCHDOG" ]; then
     wait "$WATCHDOG" 2>/dev/null || true
     WATCHDOG=
 fi
-reveal=${EML_REMOVER_REVEAL:-1}
-if [ "$CANCEL_STATUS" -ne 0 ] || [ "$status" -eq 120 ]; then reveal=0; fi
-
-"$PYTHON" - "$REPORT_FILE" "$ERROR_FILE" "$reveal" "$status" "$CANCEL_STATUS" <<'PY'
+"$PYTHON" - "$REPORT_FILE" "$ERROR_FILE" "$status" "$CANCEL_STATUS" <<'PY'
 from __future__ import annotations
 
 import base64
 import binascii
 import json
 import os
-import subprocess
 import sys
 import unicodedata
 from collections.abc import Mapping
 
-report_path, error_path, reveal, processor_status, cancellation_status = sys.argv[1:]
+report_path, error_path, processor_status, cancellation_status = sys.argv[1:]
 STATUSES = (
     "created",
     "existing_verified",
@@ -140,7 +134,6 @@ ITEM_FIELDS = {
     "destination_request", "source", "destination", "transformation", "verification",
     "publication", "warnings", "error",
 }
-MAX_DETAILS = 24
 MAX_TEXT = 512
 INTERRUPTED = 130
 OUTPUT_FINALIZATION = 120
@@ -174,11 +167,6 @@ def error_detail(value: object, label: str) -> tuple[str, str] | None:
     return safe(detail["code"]), safe(detail["message"])
 
 
-def item_display(item: Mapping[str, object]) -> str:
-    source = mapping(item.get("source_request"), "item source request")
-    return safe(source.get("display"))
-
-
 def accepted_path(final: Mapping[str, object]) -> str:
     native = final.get("native_base64")
     text = final.get("text")
@@ -200,7 +188,7 @@ def accepted_path(final: Mapping[str, object]) -> str:
     return text
 
 
-def validate(report: object, status: int) -> tuple[list[str], list[str]]:
+def validate(report: object, status: int) -> list[str]:
     document = mapping(report, "report")
     if set(document) != TOP_LEVEL_FIELDS:
         raise ValueError("unexpected report fields")
@@ -223,7 +211,6 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
         raise ValueError("report items or summary is invalid")
     counts = {name: 0 for name in STATUSES}
     details: list[str] = []
-    outputs: list[str] = []
     for index, raw_item in enumerate(items):
         item = mapping(raw_item, "report item")
         if (
@@ -235,10 +222,7 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
             raise ValueError("report item receipt is invalid")
         item_status = item["status"]
         counts[item_status] += 1
-        display = item_display(item)
-        item_error = error_detail(item.get("error"), "item error")
-        if item_error is not None:
-            details.append(f"{display}: {item_error[0]}: {item_error[1]}")
+        error_detail(item.get("error"), "item error")
         warnings = item.get("warnings")
         if not isinstance(warnings, list):
             raise ValueError("item warnings are invalid")
@@ -246,7 +230,6 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
             detail = error_detail(warning, "item warning")
             if detail is None:
                 raise ValueError("item warning is invalid")
-            details.append(f"{display}: {detail[0]}: {detail[1]}")
         if item_status in {"created", "existing_verified"}:
             publication = mapping(item.get("publication"), "accepted publication")
             final = mapping(publication.get("final_address"), "accepted final address")
@@ -256,7 +239,7 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
                 or final.get("native_utf16le_base64") is not None
             ):
                 raise ValueError("accepted output lacks a verified final address")
-            outputs.append(accepted_path(final))
+            accepted_path(final)
     if (
         any(type(summary.get(name)) is not int or summary[name] != counts[name] for name in STATUSES)
         or type(summary.get("total")) is not int
@@ -290,46 +273,25 @@ def validate(report: object, status: int) -> tuple[list[str], list[str]]:
         details.append("Interrupted: launcher cancelled; available results are complete.")
     elif document["exit_code"] != status and status == INTERRUPTED:
         details.append("Interrupted: after the report was written; its results are complete.")
-    return outputs, details
+    return details
 
 
 try:
     with open(report_path, encoding="utf-8") as report_source:
         report = json.load(report_source)
-    outputs, details = validate(report, int(processor_status))
+    details = validate(report, int(processor_status))
 except (OSError, ValueError, json.JSONDecodeError) as exc:
     print(f"EML Attachment Remover: invalid processor report: {safe(str(exc))}")
     print("Processor diagnostics were withheld because the canonical report was invalid.")
     raise SystemExit(70)
 
-summary = report["summary"]
-if os.environ.get("EML_REMOVER_UI_REPORT") == "1":
-    # This private UI transport follows exactly the same admission checks as text.
-    # Preserve invocation failure independently of successful item receipts.
-    final_status = int(cancellation_status) or int(processor_status)
-    print(json.dumps({
-        "report": report,
-        "process_status": final_status,
-        # Item diagnostics already live in the complete canonical receipt.
-        "details": [detail for detail in details if detail.startswith((
-            "Interrupted:", "Output finalization failed:", "Batch:",
-        ))],
-    }, ensure_ascii=True))
-    raise SystemExit(final_status)
-print(
-    "MIME-pruned EML: "
-    f"created {summary['created']}; existing verified {summary['existing_verified']}; "
-    f"failed {summary['failed']}; not run {summary['not_run']}; "
-    f"published with error {summary['published_with_error']}; cancelled {summary['cancelled']}."
-)
-for detail in details[:MAX_DETAILS]:
-    print(detail)
-if len(details) > MAX_DETAILS:
-    print(f"{len(details) - MAX_DETAILS} additional diagnostic(s) were omitted.")
-if reveal != "0":
-    for output in outputs:
-        subprocess.run(["open", "-R", output], check=False)
-raise SystemExit(int(processor_status))
+final_status = int(cancellation_status) or int(processor_status)
+print(json.dumps({
+    "report": report,
+    "process_status": final_status,
+    "details": details,
+}, ensure_ascii=True))
+raise SystemExit(final_status)
 PY
 validation_status=$?
 if [ "$CANCEL_STATUS" -ne 0 ]; then exit "$CANCEL_STATUS"; fi

@@ -242,6 +242,8 @@ jobs:
       - name: Validate the release tag
         shell: bash
         run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
+      - name: Install the pinned Swift toolchain
+        run: uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh
       - name: Build and qualify the exact release artifact set
         # `release-dist` is ephemeral CI artifact staging, not a maintained checkout
         # distribution directory. Local `tasks.py release` continues to use an

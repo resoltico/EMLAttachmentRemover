@@ -302,7 +302,7 @@ def _preflight(ledger: BatchLedger) -> None:
 
     This deliberately makes a second bounded pass over private spool data.  It
     prevents a corrupt committed record from producing a misleading partial JSON
-    document or a partial set of Finder paths.
+    document or a partial set of accepted output paths.
 
     Raises:
         RuntimeError: If any item lacks a complete terminal state.

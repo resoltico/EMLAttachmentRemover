@@ -94,3 +94,13 @@ Describe supported behavior, assumptions and reasons. Keep history in change or 
 ## Easy to start
 
 Document the shortest setup from a clean checkout, prerequisites and actionable errors. Reuse commands; do not mandate setup wrappers or doctor tools. Declare each toolchain version authoritatively; derive or check required copies. Pin inputs for reproducible builds; retain supported dependency ranges and deliberate compatibility probes.
+
+## Changelog: record release outcomes, not development history
+
+When maintaining `CHANGELOG.md`, record notable outcomes for users, operators, integrators, and contributors. Describe the net difference from the relevant released baseline, its significance, and any required action. Make compatibility changes and security impacts explicit, including breaking changes caused by fixes.
+
+Consolidate related unreleased work into its final outcome. Omit implementation chronology, routine development activity, and wholly reversed, unpublished work with no remaining consequence. Classify against released behaviour, not commit labels; do not present repairs to never-released functionality as fixes to released defects. Preserve meaningful impacts specific to public prereleases.
+
+Record noteworthy internal or verification changes plainly, without invented benefits; do not hide observable effects under Internal. Substantiate claims and preserve useful technical precision without project-plan labels, promotional filler, or unfinished capabilities presented as delivered.
+
+Keep Unreleased and accurate release history. Follow established formatting and retention conventions; do not prune or relocate history without an explicit policy or request. Correct proven errors or material omissions without recasting what shipped.

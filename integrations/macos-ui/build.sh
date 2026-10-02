@@ -9,6 +9,9 @@ PYTHON=${EML_REMOVER_PYTHON:-python3.14}
 TARGET=${1:-"$PROJECT_ROOT/build/EML Attachment Remover.app"}
 [ "$(uname -s)" = Darwin ] || { printf '%s\n' 'The native UI builds on macOS only.' >&2; exit 3; }
 [ ! -L "$TARGET" ] && [ ! -e "$TARGET" ] || { printf '%s\n' 'Use a fresh app build destination.' >&2; exit 4; }
+SWIFT_TOOLCHAIN=$(/bin/sh "$SCRIPT_DIR/swiftc.sh" --toolchain-directory)
+SWIFTC="$SWIFT_TOOLCHAIN/usr/bin/swiftc"
+SDK=$(xcrun --show-sdk-path)
 mkdir -p "$(dirname "$TARGET")"
 STAGING=$(mktemp -d "$(dirname "$TARGET")/.eml-ui-build.XXXXXX")
 trap 'rm -rf "$STAGING"' EXIT
@@ -18,7 +21,7 @@ APP="$STAGING/EML Attachment Remover.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 "$PYTHON" -B "$PROJECT_ROOT/tools/build_zipapp.py" --target "$APP/Contents/Resources/remove-eml-attachments.pyz"
 cp "$SCRIPT_DIR/ARTWORK.md" "$PROJECT_ROOT/LICENSE" "$APP/Contents/Resources/"
-cp "$PROJECT_ROOT/integrations/macos-shortcuts/run-from-finder.sh" "$APP/Contents/Resources/run-from-finder.sh"
+cp "$PROJECT_ROOT/integrations/macos-ui/processing-launcher.sh" "$APP/Contents/Resources/processing-launcher.sh"
 "$PYTHON" - "$PROJECT_ROOT/pyproject.toml" "$APP/Contents/Info.plist" <<'PY'
 import plistlib, sys, tomllib
 from pathlib import Path
@@ -44,11 +47,11 @@ PY
 cp "$SCRIPT_DIR/ReportModel.swift" "$SCRIPT_DIR/CreateIcon.swift" "$SCRIPT_DIR/Artwork.swift" "$STAGING/"
 mkdir "$STAGING/app"
 cp "$SCRIPT_DIR"/App/*.swift "$STAGING/app/"
-xcrun swiftc -parse-as-library -swift-version 6 -warnings-as-errors "$STAGING/Artwork.swift" "$STAGING/CreateIcon.swift" -o "$STAGING/create-icon"
+"$SWIFTC" -sdk "$SDK" -parse-as-library -swift-version 6 -warnings-as-errors "$STAGING/Artwork.swift" "$STAGING/CreateIcon.swift" -o "$STAGING/create-icon"
 "$STAGING/create-icon" "$STAGING/EML.iconset"
 /usr/bin/iconutil -c icns "$STAGING/EML.iconset" -o "$APP/Contents/Resources/EML.icns"
 for ARCH in arm64 x86_64; do
-    xcrun swiftc -swift-version 6 -warnings-as-errors -O \
+    "$SWIFTC" -sdk "$SDK" -swift-version 6 -warnings-as-errors -O \
         -target "$ARCH-apple-macosx14.0" \
         "$STAGING/ReportModel.swift" "$STAGING/Artwork.swift" "$STAGING"/app/*.swift \
         -o "$STAGING/ui-$ARCH"
@@ -63,7 +66,7 @@ for path in [root, *root.rglob('*')]:
     if path.is_symlink(): raise OSError('Unexpected symbolic link in native app')
     path.chmod(0o755 if path.is_dir() else 0o644)
 PY
-chmod 755 "$APP/Contents/MacOS/EMLAttachmentRemover" "$APP/Contents/Resources/run-from-finder.sh"
+chmod 755 "$APP/Contents/MacOS/EMLAttachmentRemover" "$APP/Contents/Resources/processing-launcher.sh"
 # Local signing binds the executable and bundled processing resources. This is not notarization.
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"

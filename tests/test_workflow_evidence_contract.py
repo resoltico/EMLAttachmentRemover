@@ -34,7 +34,8 @@ def test_diagnostic_artifact_names_are_unique_per_run_attempt() -> None:
         for name in ARTIFACT_NAME.findall(path.read_text(encoding="utf-8"))
         if "github.run_id" in name
     ]
-    assert len(names) == 6
+    assert len(names) == 7
+    assert len(set(names)) == len(names)
     assert all(
         name.endswith("-${{ github.run_id }}-${{ github.run_attempt }}")
         for name in names

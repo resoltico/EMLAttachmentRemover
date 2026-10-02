@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 @MainActor
@@ -5,7 +6,12 @@ final class ProcessingRun {
   private var process: Process?
   private var lifetime: FileHandle?
   var isRunning: Bool { process != nil }
-  func interrupt() { if let process, process.isRunning { process.interrupt() } }
+  func interrupt() {
+    if let process, process.isRunning {
+      // The launcher forwards the request; signaling the group sends it twice.
+      Darwin.kill(process.processIdentifier, SIGINT)
+    }
+  }
   func start(
     paths: [String], version: String, preparing: @escaping @MainActor @Sendable () -> Void,
     completed:
@@ -18,7 +24,7 @@ final class ProcessingRun {
         domain: "EMLRuntime", code: 6,
         userInfo: [NSLocalizedDescriptionKey: "The application resources are missing."])
     }
-    child.arguments = [resources.appendingPathComponent("run-from-finder.sh").path] + paths
+    child.arguments = [resources.appendingPathComponent("processing-launcher.sh").path] + paths
     child.environment = try environment(resources: resources)
     let owner = Pipe()
     lifetime = owner.fileHandleForWriting
@@ -75,12 +81,9 @@ final class ProcessingRun {
       }
 
     }
-    environment["EML_REMOVER_HOME"] = resources.path
     environment["EML_REMOVER_ZIPAPP"] =
       resources.appendingPathComponent("remove-eml-attachments.pyz").path
-    environment["EML_REMOVER_UI_REPORT"] = "1"
     environment["EML_REMOVER_UI_OWNER_PIPE"] = "1"
-    environment["EML_REMOVER_REVEAL"] = "0"
     return environment
 
   }

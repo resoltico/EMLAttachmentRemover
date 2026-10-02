@@ -6,24 +6,27 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [4.0.0] - 2026-10-01
 
-
 ### Added
 
-- A native macOS application with original, MIT-licensed project graphics accepts files directly or through Finder and presents processing progress and final reports with the app name and actual processor version, per-file outcomes, expandable diagnostics, and Finder actions. Stop processing interrupts an active batch without undoing completed copies; Done closes a finished report. Forced app termination also stops its owned processing runs. The universal app bundles the processor and requires CPython 3.14 at runtime; build and installation instructions are included.
+- A native macOS application with original, MIT-licensed project graphics accepts files directly or through Finder and presents processing progress and final reports with per-file outcomes, expandable diagnostics, and Finder actions. Stop processing interrupts an active batch without undoing completed copies; Done closes a finished report. Forced app termination also stops its owned processing runs. Task screens focus on processing; About presents version and copyright, and the app menu exposes the full MIT license. The universal app bundles the processor and requires CPython 3.14 at runtime; build and installation instructions are included.
 - GitHub releases include a prebuilt universal macOS application ZIP. It requires macOS 14 or later and an external CPython 3.14 runtime, and is ad-hoc signed without Developer ID or notarization; Gatekeeper may require an app-specific exception.
 - The native app installer records the selected CPython interpreter privately for Finder launches and retains the previous app bundle. Quit the app before updating it; a running installation is refused.
 - Maintainers can run `uv run python tools/tasks.py ci` to reproduce the host-applicable quality, release-build, archive-verification, mutation, and randomized property-exploration checks with both standard and free-threaded CPython. On macOS, mutation testing uses the Linux runner image through Docker; GitHub publication and attestations remain CI operations.
 
 ### Changed
 
-- **Compatibility when migrating the Quick Action:** Finder users can migrate their Quick Action to the native app launch command and remove Show Content. Each batch has its own report window, and an open report does not hold the shortcut open. The shortcut now finishes at application launch; integrations needing processing completion or exit status must continue to use the direct launcher or zipapp.
+- Finder Quick Actions use the native app launch command as their sole action. Each batch has its own report window, and an open report does not hold the shortcut open. The shortcut now finishes at application launch; integrations needing processing completion or exit status must use the CLI installed from the wheel or the standalone zipapp.
 - **Breaking for parsers of human output:** successful and dry-run lines now include the final or planned destination, for example `created: source.eml -> /path/to/source.mime-pruned.eml`. Integrations that parse the former source-only lines should use schema-3 JSON or NUL-delimited `paths0` instead.
 - Automatically derived output names that exceed the destination filesystem's filename limit are shortened to a readable prefix, a stable digest of the complete source name, and `.mime-pruned.eml`. Explicit `--output` names are never changed; callers locating derived copies should use the reported destination.
 - **Compatibility:** report capacity is checked before publication. Inputs whose evidence exceeds the 1 MiB per-record limit or available 64 MiB report capacity are refused with `PARSE_ERROR` before a copy is written; the batch also reserves space for later inputs' terminal records.
 - **Breaking for previously accepted longer paths:** destinations are refused before publication if their resolved final address cannot be obtained or exceeds 4,096 native units (POSIX bytes or Windows UTF-16 code units). Use a shorter resolved destination path if this limit is reached.
 - **Compatibility:** error messages are bounded to 2,048 characters and 12,288 canonical ASCII JSON content bytes, including the truncation marker. Consumers must allow truncated messages and use the error code and publication receipt to interpret the outcome.
 - Large MIME payloads and folded headers require less scanning and copying; human-output runs defer packaging-version lookup unless the version is requested. The scanning optimizations preserve delimiter matching and display escaping behavior.
-- The Finder launcher preserves validated complete reports when CPython exits 120 after buffered-stream finalization fails, explains the failure, retains exit 120, and suppresses reveal actions. Integrators must treat 120 as unsuccessful even if a complete report describes successful copies; the report's processing `exit_code` can differ from the final process status. See [Python's exit contract](https://docs.python.org/3.14/library/sys.html#sys.exit).
+- Native reports retain validated completed results when CPython exits 120 after buffered-stream finalization fails, explain the unsuccessful invocation, and disable copy-reveal actions. The processing `exit_code` in a complete report can differ from the observed process status; automation must treat 120 as unsuccessful. See [Python's exit contract](https://docs.python.org/3.14/library/sys.html#sys.exit).
+
+### Removed
+
+- **Breaking:** The shell-command text-report Quick Action, its presentation switches, and its dedicated installer/uninstaller are removed. Install the CLI from its wheel or invoke the standalone zipapp for synchronous automation; the app installer installs only the app and its runtime selection.
 
 ### Fixed
 
@@ -35,7 +38,6 @@ Notable changes to this project are documented in this file. The format is based
 - Interruption no longer discards completed publication receipts or exposes unfinished terminal rows. Completed creations remain `created`, verified existing outputs remain `existing_verified`, and genuine post-publication failures remain `published_with_error`, with invocation interruption recorded separately. Human and `paths0` reports explain batch failure and interruption on stderr without changing accepted stdout paths or repeating the same notice.
 - Cancellation remains effective while report output or an interruption notice is blocked: after the first signal, delivery allows 10 seconds without accepted-output progress; a repeated signal terminates without waiting for that grace. A signal after a complete report preserves its bytes and selects status 130 with a bounded notice, including JSON error-response finalization. CPython shutdown failures can subsequently change the observed exit to 120.
 - `process_file()` returns a detached, bounded result with removal, payload-hash, candidate, verification, warning, and publication evidence, and closes its internal report storage. Shutdown-time cooperative interruption returns the completed ledger with interruption metadata; controller setup and shutdown release acquired state independently of other cleanup failures and preserve the primary error, avoiding stale invocation state in later calls.
-- Cancelling the Finder launcher still validates and displays available complete results, suppresses reveal, and preserves the launcher's signal status. Its processor has at most 12 seconds to finish, and a repeated launcher signal kills it immediately; invalid or truncated reports remain rejected. Legacy Shortcuts text presentation retains the `|| :` transport so failed and mixed batches can reach Show Content.
 - Packaged installations and zipapps accept a temporary directory beside the installation; only source checkouts exclude their own tree from report temporary storage.
 
 ### Security
@@ -43,6 +45,8 @@ Notable changes to this project are documented in this file. The format is based
 - Private receipt storage stays in owned temporary handles rather than reopening named files: anonymous or unlinked-open storage on POSIX and delete-on-close storage on Windows. Its lifetime no longer depends on Python cleanup running after forced termination.
 
 ### Internal
+
+- Native receipt and path handling have a shared local/CI libFuzzer target with AddressSanitizer, checked-in synthetic regression inputs, explicit presentation invariants, and retained failure artifacts. Production, model-test, and fuzz builds use one checksum-pinned official Swift.org compiler; source builds require its installation alongside Apple’s SDK and signing tools. Prebuilt app users need no Swift toolchain.
 
 - Swift source now has pinned strict formatting and lint gates, structural size and complexity checks, and a central exception approval registry shared with Python. Python method-size checks also cover nested classes. Native presentation, process ownership, runtime configuration, and application lifecycle are separated for review and verification.
 
