@@ -58,8 +58,7 @@ final class ReportLayout {
     row.orientation = .horizontal
     row.alignment = .top
     row.spacing = 12
-    let image = NSImageView(image: Artwork.image(artwork, color: color))
-    image.setAccessibilityElement(false)
+    let image = Artwork.view(artwork, color: color)
     image.widthAnchor.constraint(equalToConstant: 28).isActive = true
     image.heightAnchor.constraint(equalToConstant: 28).isActive = true
     let titleField = UIControls.label(title, size: 24, weight: .semibold)

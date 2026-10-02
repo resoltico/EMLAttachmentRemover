@@ -30,10 +30,14 @@ def test_native_report_model() -> None:
 
 
 @MACOS_ONLY
-def test_native_bundle_is_signed_universal_and_processes_current_sources(
+@pytest.mark.skipif(
+    platform.mac_ver()[0].startswith(("14.", "15.")),
+    reason="Icon Composer compilation requires Xcode 26 or later",
+)
+def test_native_bundle_is_signed_for_host_and_processes_current_sources(
     tmp_path: Path,
 ) -> None:
-    """Fresh bundles admit a real processing receipt and carry both native CPUs."""
+    """A fresh single-CPU bundle admits a real processing receipt."""
     app = tmp_path / "EML Attachment Remover.app"
     environment = {**os.environ, "EML_REMOVER_PYTHON": sys.executable}
     subprocess.run(
@@ -57,7 +61,7 @@ def test_native_bundle_is_signed_universal_and_processes_current_sources(
         text=True,
         timeout=30,
     )
-    assert set(architectures.split()) == {"arm64", "x86_64"}
+    assert architectures.split() == [platform.machine()]
     _assert_no_development_runtime(app / "Contents/MacOS/EMLAttachmentRemover")
     with (app / "Contents/Info.plist").open("rb") as stream:
         metadata = plistlib.load(stream)
@@ -68,6 +72,7 @@ def test_native_bundle_is_signed_universal_and_processes_current_sources(
         archive,
         app / "Contents/Resources/remove-eml-attachments.pyz",
         metadata["CFBundleShortVersionString"],
+        platform.machine(),
     )
     extracted = tmp_path / "download"
     subprocess.run(
@@ -79,8 +84,10 @@ def test_native_bundle_is_signed_universal_and_processes_current_sources(
     resources = app / "Contents/Resources"
     assert metadata["CFBundleIdentifier"] == "io.github.resoltico.emlattachmentremover"
     assert metadata["NSHumanReadableCopyright"] == "Copyright © 2026 Ervins Strauhmanis"
-    assert metadata["CFBundleIconFile"] == "EML.icns"
+    assert metadata["CFBundleIconFile"] == "EML"
+    assert metadata["CFBundleIconName"] == "EML"
     assert (resources / "EML.icns").read_bytes().startswith(b"icns")
+    assert (resources / "Assets.car").stat().st_size > 0
     assert (resources / "LICENSE").read_bytes() == (ROOT / "LICENSE").read_bytes()
     assert (resources / "ARTWORK.md").read_bytes() == (UI / "ARTWORK.md").read_bytes()
     source = tmp_path / "public.eml"
@@ -200,7 +207,7 @@ def test_custom_artwork_has_no_system_symbol_dependencies() -> None:
             assert forbidden not in text, (source.name, forbidden)
     provenance = (UI / "ARTWORK.md").read_text(encoding="utf-8")
     assert "MIT license" in provenance
-    assert "authored from scratch" in provenance
+    assert "original geometric artwork" in provenance
 
 
 def _exercise_runtime_rollback(
@@ -315,7 +322,7 @@ def _exercise_native_launch(
 )
 def test_downloaded_candidate_executes_on_this_os_and_cpu(tmp_path: Path) -> None:
     delivery = Path(os.environ["EML_DELIVERY_DIRECTORY"])
-    archive = next(delivery.glob("*-macos-universal.zip"))
+    archive = next(delivery.glob(f"*-macos-{platform.machine()}.zip"))
     extracted = tmp_path / "downloaded"
     subprocess.run(
         ["/usr/bin/ditto", "-x", "-k", str(archive), str(extracted)],
@@ -331,7 +338,7 @@ def test_downloaded_candidate_executes_on_this_os_and_cpu(tmp_path: Path) -> Non
         tmp_path,
     )
     assert (tmp_path / "candidate.mime-pruned.eml").is_file()
-    if platform.machine() == "arm64":
+    if platform.machine() == "arm64" and platform.mac_ver()[0].startswith("14."):
         translated_machine = subprocess.check_output(
             ["/usr/bin/arch", "-x86_64", "/usr/bin/uname", "-m"],
             text=True,
@@ -340,8 +347,15 @@ def test_downloaded_candidate_executes_on_this_os_and_cpu(tmp_path: Path) -> Non
         assert translated_machine == "x86_64"
         intel_source = tmp_path / "candidate-intel.eml"
         intel_source.write_bytes(b"Subject: Intel slice QA\r\n\r\nPublic body.\r\n")
+        intel_archive = next(delivery.glob("*-macos-x86_64.zip"))
+        intel_extracted = tmp_path / "intel-downloaded"
+        subprocess.run(
+            ["/usr/bin/ditto", "-x", "-k", str(intel_archive), str(intel_extracted)],
+            check=True,
+            timeout=30,
+        )
         _exercise_native_launch(
-            extracted / macos_archive.APP,
+            intel_extracted / macos_archive.APP,
             (intel_source,),
             {**os.environ, "EML_REMOVER_PYTHON": sys.executable},
             tmp_path,

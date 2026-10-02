@@ -33,6 +33,7 @@ APP_FILES: Final = (
     "Contents/Resources/remove-eml-attachments.pyz",
     "Contents/Resources/processing-launcher.sh",
     "Contents/Resources/EML.icns",
+    "Contents/Resources/Assets.car",
     "Contents/Resources/LICENSE",
     "Contents/Resources/ARTWORK.md",
     "Contents/Resources/.eml-ui-installation",
@@ -40,14 +41,20 @@ APP_FILES: Final = (
 )
 
 
-def archive_name(version: str) -> str:
+def archive_name(version: str, architecture: str) -> str:
     """Return the version-bound macOS archive basename.
 
     Returns:
         The macOS ZIP basename containing the supplied release version.
 
+    Raises:
+        ValueError: If the architecture is not a release target.
+
     """
-    return f"eml_attachment_remover-{version}-macos-universal.zip"
+    if architecture not in {"arm64", "x86_64"}:
+        message = "Unsupported macOS architecture"
+        raise ValueError(message)
+    return f"eml_attachment_remover-{version}-macos-{architecture}.zip"
 
 
 def instructions() -> bytes:
@@ -165,8 +172,8 @@ def _extract(archive: Path, destination: Path) -> None:
             path.chmod(surface[item.filename])
 
 
-def _signature(app: Path) -> None:
-    """Require intact ad-hoc signatures and exactly both supported CPU slices.
+def _signature(app: Path, architecture: str) -> None:
+    """Require an intact ad-hoc signature and the selected CPU slice.
 
     Raises:
         ReleaseQualificationError: If the release contract is violated.
@@ -194,15 +201,12 @@ def _signature(app: Path) -> None:
         text=True,
         timeout=30,
     )
-    if "Signature=adhoc" not in description or set(architectures.split()) != {
-        "arm64",
-        "x86_64",
-    }:
+    if "Signature=adhoc" not in description or architectures.split() != [architecture]:
         message = "Native identity or architecture contract failed"
         raise ReleaseQualificationError(message)
 
 
-def verify(archive: Path, zipapp: Path, version: str) -> None:
+def verify(archive: Path, zipapp: Path, version: str, architecture: str) -> None:
     """Check extracted bytes, declared compatibility, installers, and signature.
 
     Raises:
@@ -249,4 +253,9 @@ def verify(archive: Path, zipapp: Path, version: str) -> None:
         ):
             message = "Native bundle/source contract failed"
             raise ReleaseQualificationError(message)
-        _signature(app)
+        if not (app / "Contents/Resources/Assets.car").stat().st_size or not (
+            app / "Contents/Resources/EML.icns"
+        ).read_bytes().startswith(b"icns"):
+            message = "Native icon resources are missing or invalid"
+            raise ReleaseQualificationError(message)
+        _signature(app, architecture)

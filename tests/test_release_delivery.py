@@ -63,13 +63,21 @@ def test_verifier_requires_native_asset_and_checks_its_processor(
         assert delivery.verify(tmp_path) == paths
     portable.assert_called_once_with(
         tmp_path,
-        additional_artifacts=("eml_attachment_remover-4.0.0-macos-universal.zip",),
+        additional_artifacts=(
+            "eml_attachment_remover-4.0.0-macos-arm64.zip",
+            "eml_attachment_remover-4.0.0-macos-x86_64.zip",
+        ),
     )
-    native.assert_called_once_with(
-        tmp_path / "eml_attachment_remover-4.0.0-macos-universal.zip",
-        tmp_path / "remove-eml-attachments.pyz",
-        "4.0.0",
-    )
+    assert native.call_count == 2
+    assert [call.args for call in native.call_args_list] == [
+        (
+            tmp_path / f"eml_attachment_remover-4.0.0-macos-{cpu}.zip",
+            tmp_path / "remove-eml-attachments.pyz",
+            "4.0.0",
+            cpu,
+        )
+        for cpu in delivery.ARCHITECTURES
+    ]
 
 
 def test_native_build_is_fresh_and_records_no_customer_configuration(
@@ -80,17 +88,22 @@ def test_native_build_is_fresh_and_records_no_customer_configuration(
         patch.object(subprocess, "run") as run,
         patch.object(macos_archive, "package") as package,
     ):
-        assert delivery._native(directory) == directory / "native.zip"
+        assert (
+            delivery._native(directory, "arm64", tmp_path / "icon")
+            == directory / "native.zip"
+        )
     assert run.call_args.args[0] == [
         "/bin/sh",
         str(delivery.ROOT / "integrations/macos-ui/build.sh"),
         str(directory / macos_archive.APP),
+        "arm64",
     ]
     assert run.call_args.kwargs["timeout"] == 600
     assert run.call_args.kwargs["check"] is True
     assert run.call_args.kwargs["env"] == {
         **os.environ,
         "EML_REMOVER_PYTHON": sys.executable,
+        "EML_ICON_RESOURCES": str(tmp_path / "icon"),
     }
     package.assert_called_once_with(
         directory / macos_archive.APP, directory / "native.zip"
@@ -104,9 +117,11 @@ def test_delivery_publishes_one_complete_set_or_preserves_empty_destination(
     output = tmp_path / "release"
     output.mkdir()
 
-    def native(directory: Path) -> Path:
+    def native(directory: Path, architecture: str, icon_resources: Path) -> Path:
+        assert architecture in delivery.ARCHITECTURES
+        assert icon_resources.name == "icon-resources"
         result = _native(directory)
-        if failure == "mismatch" and directory.name == "native-b":
+        if failure == "mismatch" and directory.name == "arm64-b":
             result.write_bytes(b"different")
         return result
 
@@ -120,20 +135,23 @@ def test_delivery_publishes_one_complete_set_or_preserves_empty_destination(
         patch.object(sys, "platform", "darwin"),
         patch.object(qualify_release, "qualify_release", side_effect=_portable),
         patch.object(delivery, "_native", side_effect=native),
+        patch.object(subprocess, "run") as compile_icon,
         patch.object(delivery, "verify", side_effect=verify),
     ):
         if failure == "none":
             paths = delivery.build(output)
-            assert len(paths) == 5
+            assert len(paths) == 6
             assert {path.name for path in paths} == {
                 "public.whl",
                 "public.tar.gz",
                 "remove-eml-attachments.pyz",
                 "SHA256SUMS",
-                "eml_attachment_remover-4.0.0-macos-universal.zip",
+                "eml_attachment_remover-4.0.0-macos-arm64.zip",
+                "eml_attachment_remover-4.0.0-macos-x86_64.zip",
             }
             assert all(path.is_file() for path in paths)
-            assert "macos-universal.zip" in (output / "SHA256SUMS").read_text()
+            assert "macos-arm64.zip" in (output / "SHA256SUMS").read_text()
+            assert "macos-x86_64.zip" in (output / "SHA256SUMS").read_text()
         else:
             message = (
                 "Native archives differ between independent builds"
@@ -144,6 +162,7 @@ def test_delivery_publishes_one_complete_set_or_preserves_empty_destination(
                 delivery.build(output)
             assert list(output.iterdir()) == []
             assert list(tmp_path.glob(".release.*")) == []
+    compile_icon.assert_called_once()
 
 
 def test_staged_copy_is_verified(tmp_path: Path) -> None:

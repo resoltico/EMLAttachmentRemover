@@ -275,7 +275,8 @@ jobs:
             release-dist/*.pyz
             release-dist/*.whl
             release-dist/*.tar.gz
-            release-dist/*-macos-universal.zip
+            release-dist/*-macos-arm64.zip
+            release-dist/*-macos-x86_64.zip
             release-dist/SHA256SUMS
           if-no-files-found: error
 

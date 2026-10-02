@@ -26,6 +26,17 @@ def install():
             if plistlib.load(stream).get('CFBundleIdentifier') != identifier:
                 raise OSError('Application identity differs')
     owned_tree(source)
+    physical_arm = subprocess.run(
+        ['/usr/sbin/sysctl', '-n', 'hw.optional.arm64'],
+        capture_output=True, text=True, check=False
+    ).stdout.strip() == '1'
+    required_cpu = 'arm64' if physical_arm else 'x86_64'
+    packaged_cpus = subprocess.check_output(
+        ['/usr/bin/xcrun', 'lipo', '-archs', str(source/'Contents/MacOS/EMLAttachmentRemover')],
+        text=True
+    ).split()
+    if packaged_cpus != [required_cpu]:
+        raise OSError(f'Application CPU does not match this Mac ({required_cpu})')
     executable = str(destination / 'Contents/MacOS/EMLAttachmentRemover')
     processes = subprocess.check_output(['/bin/ps', '-axo', 'pid=,comm='], text=True)
     if any(line.strip().split(None, 1)[-1] == executable for line in processes.splitlines()):

@@ -35,6 +35,7 @@ def _bundle(root: Path) -> Path:
         })
     )
     resources = app / "Contents/Resources"
+    (resources / "EML.icns").write_bytes(b"icns" + b"public")
     (resources / "LICENSE").write_bytes((archive.ROOT / "LICENSE").read_bytes())
     (resources / "ARTWORK.md").write_bytes(
         (archive.ROOT / "integrations/macos-ui/ARTWORK.md").read_bytes()
@@ -58,7 +59,10 @@ def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
     assert first.read_bytes() == second.read_bytes()
     with patch.object(archive, "_signature") as signature:
         archive.verify(
-            first, app / "Contents/Resources/remove-eml-attachments.pyz", "4.0.0"
+            first,
+            app / "Contents/Resources/remove-eml-attachments.pyz",
+            "4.0.0",
+            "arm64",
         )
     assert signature.call_args.args[0].name == "EML Attachment Remover.app"
     extracted = tmp_path / "extracted"
@@ -90,8 +94,8 @@ def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
     )
     assert (extracted / "integrations/macos-ui/RELEASE.md").is_file()
     assert (
-        archive.archive_name("4.0.0")
-        == "eml_attachment_remover-4.0.0-macos-universal.zip"
+        archive.archive_name("4.0.0", "arm64")
+        == "eml_attachment_remover-4.0.0-macos-arm64.zip"
     )
 
 
@@ -172,7 +176,16 @@ def test_untrusted_metadata_is_rejected_before_extraction(
 
 @pytest.mark.parametrize(
     "changed",
-    ["documentation", "version", "processor", "marker", "identifier", "copyright"],
+    [
+        "documentation",
+        "version",
+        "processor",
+        "marker",
+        "identifier",
+        "copyright",
+        "icon-assets",
+        "icon-fallback",
+    ],
 )
 def test_archive_contract_rejects_content_drift(tmp_path: Path, changed: str) -> None:
     app = _bundle(tmp_path)
@@ -189,6 +202,10 @@ def test_archive_contract_rejects_content_drift(tmp_path: Path, changed: str) ->
         info_path.write_bytes(plistlib.dumps(info))
     if changed == "marker":
         (app / "Contents/Resources/.eml-ui-installation").write_bytes(b"invalid")
+    if changed == "icon-assets":
+        (app / "Contents/Resources/Assets.car").write_bytes(b"")
+    if changed == "icon-fallback":
+        (app / "Contents/Resources/EML.icns").write_bytes(b"invalid")
     target = tmp_path / "public.zip"
     archive.package(app, target)
     processor = tmp_path / "processor.pyz"
@@ -208,21 +225,30 @@ def test_archive_contract_rejects_content_drift(tmp_path: Path, changed: str) ->
     message = (
         "Native documentation/installer differs from source"
         if changed == "documentation"
-        else "Native bundle/source contract failed"
+        else (
+            "Native icon resources are missing or invalid"
+            if changed.startswith("icon-")
+            else "Native bundle/source contract failed"
+        )
     )
     with (
         patch.object(archive, "_signature"),
         pytest.raises(ReleaseQualificationError, match="^" + message + "$"),
     ):
-        archive.verify(target, processor, "4.0.0")
+        archive.verify(target, processor, "4.0.0", "arm64")
+
+
+def test_archive_name_rejects_unknown_architecture() -> None:
+    with pytest.raises(ValueError, match="Unsupported macOS architecture"):
+        archive.archive_name("4.0.0", "universal")
 
 
 @pytest.mark.parametrize(
     ("identity", "architectures", "accepted"),
     [
-        ("Signature=adhoc", "arm64 x86_64", True),
-        ("Authority=Developer ID", "arm64 x86_64", False),
-        ("Signature=adhoc", "arm64", False),
+        ("Signature=adhoc", "arm64", True),
+        ("Authority=Developer ID", "arm64", False),
+        ("Signature=adhoc", "arm64 x86_64", False),
     ],
 )
 def test_signature_and_cpu_contract(
@@ -237,13 +263,13 @@ def test_signature_and_cpu_contract(
         patch.object(subprocess, "check_output", return_value=architectures) as slices,
     ):
         if accepted:
-            archive._signature(tmp_path)
+            archive._signature(tmp_path, "arm64")
         else:
             with pytest.raises(
                 ReleaseQualificationError,
                 match=r"^Native identity or architecture contract failed$",
             ):
-                archive._signature(tmp_path)
+                archive._signature(tmp_path, "arm64")
     slices.assert_called_once_with(
         [
             "/usr/bin/xcrun",

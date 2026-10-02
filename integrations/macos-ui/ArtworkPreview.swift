@@ -6,45 +6,97 @@ struct ArtworkPreview {
     let destination = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
     try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
     for kind in Artwork.Kind.allCases {
-      for size in [16, 32, 128, 256] {
+      for size in [16, 28, 32, 128, 256] {
         try save(
-          Artwork.image(kind, size: CGFloat(size)),
+          renderedImage(kind, pixels: size),
           at: destination.appendingPathComponent("\(kind.rawValue)-\(size).png"))
       }
     }
     try save(
-      Artwork.image(.identity, size: 512, appIcon: true),
-      at: destination.appendingPathComponent("app-icon.png"))
+      iconSourceComposite(pixels: 512),
+      at: destination.appendingPathComponent("icon-source.png"))
     try reviewSheet(destination: destination)
+  }
+
+  @MainActor private static func renderedImage(
+    _ kind: Artwork.Kind, pixels: Int, color: NSColor = Artwork.blue
+  ) -> NSImage {
+    precondition(pixels > 0)
+    guard
+      let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .sRGB,
+        bytesPerRow: 0, bitsPerPixel: 0),
+      let context = NSGraphicsContext(bitmapImageRep: bitmap)
+    else {
+      preconditionFailure("Cannot allocate artwork preview")
+    }
+    bitmap.size = NSSize(width: pixels, height: pixels)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    Artwork.draw(kind, in: NSRect(x: 0, y: 0, width: pixels, height: pixels), color: color)
+    NSGraphicsContext.restoreGraphicsState()
+    let image = NSImage(size: NSSize(width: pixels, height: pixels))
+    image.addRepresentation(bitmap)
+    return image
+  }
+
+  @MainActor private static func iconSourceComposite(pixels: Int) -> NSImage {
+    guard
+      let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .sRGB,
+        bytesPerRow: 0, bitsPerPixel: 0),
+      let context = NSGraphicsContext(bitmapImageRep: bitmap)
+    else {
+      preconditionFailure("Cannot allocate icon source preview")
+    }
+    bitmap.size = NSSize(width: pixels, height: pixels)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    Artwork.ink.setFill()
+    NSRect(x: 0, y: 0, width: pixels, height: pixels).fill()
+    Artwork.draw(
+      .identity, in: NSRect(x: 0, y: 0, width: pixels, height: pixels), color: .white)
+    NSGraphicsContext.restoreGraphicsState()
+    let image = NSImage(size: NSSize(width: pixels, height: pixels))
+    image.addRepresentation(bitmap)
+    return image
   }
 
   @MainActor private static func reviewSheet(destination: URL) throws {
     guard
       let bitmap = NSBitmapImageRep(
         bitmapDataPlanes: nil, pixelsWide: 1800, pixelsHigh: 1300, bitsPerSample: 8,
-        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-        bytesPerRow: 0, bitsPerPixel: 0)
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .sRGB,
+        bytesPerRow: 0, bitsPerPixel: 0),
+      let context = NSGraphicsContext(bitmapImageRep: bitmap)
     else {
       throw NSError(domain: "EMLArtwork", code: 1)
     }
     NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+    NSGraphicsContext.current = context
     NSColor(srgbRed: 0.96, green: 0.97, blue: 0.98, alpha: 1).setFill()
     NSRect(x: 0, y: 0, width: 1800, height: 1300).fill()
     text("EML Attachment Remover", x: 80, y: 1215, size: 36, weight: .semibold)
-    text("Original graphics · v4.0.0 review", x: 80, y: 1170, size: 23, color: .darkGray)
-    Artwork.image(.identity, size: 300, appIcon: true).draw(
-      in: NSRect(x: 85, y: 775, width: 300, height: 300))
+    text(
+      "Original vector graphics · state-family review", x: 80, y: 1170, size: 23,
+      color: .darkGray)
+    drawSimulatedIcon(in: NSRect(x: 85, y: 775, width: 300, height: 300))
     text("Application icon", x: 105, y: 710, size: 25, weight: .semibold)
-    text("Retained strips + detached tile", x: 80, y: 670, size: 19, color: .darkGray)
+    text(
+      "Layered source · system applies the final mask", x: 80, y: 670, size: 19,
+      color: .darkGray)
     NSColor.white.setFill()
     NSBezierPath(
       roundedRect: NSRect(x: 490, y: 570, width: 1210, height: 545), xRadius: 22, yRadius: 22
     ).fill()
-    Artwork.image(.identity, size: 65).draw(in: NSRect(x: 535, y: 1000, width: 65, height: 65))
+    renderedImage(.identity, pixels: 65).draw(
+      in: NSRect(x: 535, y: 1000, width: 65, height: 65))
     text("EML Attachment Remover", x: 620, y: 1029, size: 27, weight: .semibold)
-    Artwork.image(
-      .attention, size: 56, color: NSColor(srgbRed: 0.73, green: 0.36, blue: 0.09, alpha: 1)
+    renderedImage(
+      .attention, pixels: 56,
+      color: NSColor(srgbRed: 0.73, green: 0.36, blue: 0.09, alpha: 1)
     ).draw(in: NSRect(x: 530, y: 885, width: 56, height: 56))
     text("Couldn’t create the copy", x: 612, y: 902, size: 34, weight: .semibold)
     text("1 file needs attention", x: 612, y: 863, size: 21, color: .darkGray)
@@ -62,7 +114,7 @@ struct ArtworkPreview {
     text("Done", x: 1550, y: 608, size: 21, color: .white)
     drawIndicators()
     text(
-      "Drawn from original geometry. The preview and application use the same renderer.", x: 80,
+      "Runtime artwork is drawn as vectors. Raster files here exist only for review.", x: 80,
       y: 62, size: 20, color: .darkGray)
     NSGraphicsContext.restoreGraphicsState()
     let image = NSImage(size: NSSize(width: 1800, height: 1300))
@@ -70,23 +122,35 @@ struct ArtworkPreview {
     try save(image, at: destination.appendingPathComponent("original-artwork-review.png"))
   }
 
+  @MainActor private static func drawSimulatedIcon(in rect: NSRect) {
+    NSGraphicsContext.saveGraphicsState()
+    NSBezierPath(
+      roundedRect: rect, xRadius: rect.width * 0.22, yRadius: rect.height * 0.22
+    ).addClip()
+    Artwork.ink.setFill()
+    rect.fill()
+    Artwork.draw(.identity, in: rect, color: .white)
+    NSGraphicsContext.restoreGraphicsState()
+  }
+
   @MainActor private static func drawIndicators() {
-    let labels = ["Identity", "Processing", "Ready", "Attention", "Stopped", "Welcome"]
+    let labels = ["Identity", "Processing", "Ready", "Attention", "Stopped"]
     for (index, kind) in Artwork.Kind.allCases.enumerated() {
-      let x = CGFloat(95 + index * 285)
+      let x = CGFloat(115 + index * 340)
       let color: NSColor =
         kind == .success
         ? NSColor(srgbRed: 0.13, green: 0.49, blue: 0.34, alpha: 1)
         : kind == .attention
-          ? NSColor(srgbRed: 0.73, green: 0.36, blue: 0.09, alpha: 1) : Artwork.blue
-      Artwork.image(kind, size: 125, color: color).draw(
+          ? NSColor(srgbRed: 0.73, green: 0.36, blue: 0.09, alpha: 1)
+          : kind == .stopped ? .secondaryLabelColor : Artwork.blue
+      renderedImage(kind, pixels: 125, color: color).draw(
         in: NSRect(x: x, y: 310, width: 125, height: 125))
       text(labels[index], x: x, y: 260, size: 22, weight: .semibold)
-      Artwork.image(kind, size: 32, color: color).draw(
-        in: NSRect(x: x, y: 195, width: 32, height: 32))
-      Artwork.image(kind, size: 16, color: color).draw(
-        in: NSRect(x: x + 54, y: 201, width: 16, height: 16))
-      text("32 / 16 px", x: x, y: 150, size: 17, color: .darkGray)
+      renderedImage(kind, pixels: 28, color: color).draw(
+        in: NSRect(x: x, y: 195, width: 28, height: 28))
+      renderedImage(kind, pixels: 16, color: color).draw(
+        in: NSRect(x: x + 52, y: 201, width: 16, height: 16))
+      text("28 / 16 px", x: x, y: 150, size: 17, color: .darkGray)
     }
   }
 

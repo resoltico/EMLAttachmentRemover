@@ -6,7 +6,7 @@ The native application presents processing progress and final results for Finder
 
 ## Install a prebuilt release
 
-Download `eml_attachment_remover-VERSION-macos-universal.zip` from the official GitHub Release and extract it. This prebuilt universal app requires macOS 14 or later and CPython 3.14; Swift, Xcode, and Apple Command Line Tools are not installation prerequisites. Install CPython 3.14 first, quit an older app before updating, and run the instructions in the archive's `INSTALL.txt` to record your interpreter and install into `~/Applications`. You can also copy the app there and rely on runtime discovery. Install the wheel or invoke the standalone zipapp for Terminal use.
+Download `eml_attachment_remover-VERSION-macos-arm64.zip` for Apple Silicon or `eml_attachment_remover-VERSION-macos-x86_64.zip` for Intel from the official GitHub Release and extract it. Each prebuilt app requires macOS 14 or later and CPython 3.14; Swift and Xcode are not installation prerequisites. Install CPython 3.14 first, quit an older app before updating, and run the archive's `INSTALL.txt` instructions to record your interpreter and install into `~/Applications`. The installer refuses the wrong CPU. You can also copy the matching app there and rely on runtime discovery. Install the wheel or invoke the standalone zipapp for Terminal use.
 
 The release app is already ad-hoc signed by CI. Customers do not re-sign it. It has no Developer ID and is not notarized, so Gatekeeper may block an internet download. If you trust the official download, follow [Apple's app-specific Open Anyway instructions](https://support.apple.com/102445); device-management policy may prohibit an exception. Signature integrity and Gatekeeper approval are separate checks. Do not disable Gatekeeper or strip quarantine to install this application.
 
@@ -22,12 +22,12 @@ For each update, quit the app, verify and extract the new ZIP, rerun the install
 
 ## Build from source
 
-From a source checkout, building requires macOS, Apple Command Line Tools or Xcode for the macOS SDK and signing tools, the pinned official Swift.org toolchain, and CPython 3.14. Install the compiler with `uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh`; it occupies about 5.2 GB alongside the platform tools. The app contains Apple Silicon and Intel executables targeting macOS 14 or later. It still requires CPython 3.14 at runtime; the native UI does not bundle Python. Only the host architecture and OS used for qualification are live-tested locally.
+From a source checkout, building requires macOS, full Xcode 26 or later for the macOS SDK, Icon Composer `actool` and signing tools, the pinned official Swift.org toolchain, and CPython 3.14. Standalone Icon Composer and Apple Command Line Tools alone cannot compile the layered icon. Install the compiler with `uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh`; it occupies about 5.2 GB alongside Xcode. Select `arm64` or `x86_64`; each resulting app contains one CPU executable targeting macOS 14 or later. The app still requires CPython 3.14 at runtime; it does not bundle Python. Only the host architecture and OS used for qualification are live-tested locally.
 
-Use a fresh destination for every build. The build reads the current working tree, creates a fresh zipapp, compiles both native architectures, and ad-hoc signs the complete bundle. The same signing command runs in GitHub macOS CI; it requires no developer certificate or secret. Ad-hoc signing is not Developer ID signing or notarization.
+Use a fresh destination for every build. The build reads the current working tree, creates a fresh zipapp, compiles the selected architecture and layered icon, and ad-hoc signs the complete bundle. The same signing command runs in GitHub macOS CI; it requires no developer certificate or secret. Ad-hoc signing is not Developer ID signing or notarization.
 
 ```sh
-/bin/sh integrations/macos-ui/build.sh "$HOME/Downloads/EML Attachment Remover.app"
+/bin/sh integrations/macos-ui/build.sh "$HOME/Downloads/EML Attachment Remover.app" "$(uname -m)"
 /bin/sh integrations/macos-ui/install.sh "$HOME/Downloads/EML Attachment Remover.app"
 ```
 
@@ -65,7 +65,7 @@ Maintainers install the pinned quality tools with `uv run /bin/sh integrations/m
 /bin/sh integrations/macos-ui/test.sh
 ```
 
-The normal macOS pytest lanes also compile and test the presentation model, build and verify a fresh signed universal bundle, and process a synthetic EML through its bundled launcher. GUI lifecycle, cancellation, Finder integration, appearance, and keyboard checks require live macOS qualification.
+The current macOS producer lane compiles and tests the presentation model, builds and verifies signed single-CPU bundles, and processes a synthetic EML through its bundled launcher. Older-OS lanes run the downloaded matching app without needing the newer icon compiler. GUI lifecycle, cancellation, Finder integration, appearance, and keyboard checks require live macOS qualification.
 
 Coverage-guided receipt and address fuzzing runs locally and in a separate macOS CI job using the same pinned official Swift.org compiler as production builds, with AddressSanitizer. Customer installs need none of these development tools. See [fuzz setup, limits, reproduction and CI artifacts](../../QA.md#native-receipt-fuzzing).
 

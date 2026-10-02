@@ -5,7 +5,8 @@ Swift, Xcode and personal code signing are not required.
 This app has an ad-hoc integrity signature. It has no Developer ID and is
 not notarized; macOS may block the first launch of an internet download.
 
-1. Download the macOS universal ZIP from the project's official GitHub Release.
+1. Download the macOS arm64 ZIP for Apple Silicon or x86_64 ZIP for Intel
+   from the project's official GitHub Release. The installer checks the CPU.
    Check its checksum/provenance using the release instructions, then extract it.
 2. Install CPython 3.14. Quit any previous EML Attachment Remover instance.
 3. Open Terminal, change directory to the extracted ZIP folder, then run:
