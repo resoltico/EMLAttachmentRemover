@@ -208,12 +208,18 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  fuzz:
+    name: Qualify native receipts with ASan and libFuzzer
+    needs: qualify
+    uses: ./.github/workflows/swift-fuzz.yml
+
   build:
     name: Build complete portable and macOS release assets
     needs:
       - qualify
       - property
       - mutation
+      - fuzz
     runs-on: macos-latest
     timeout-minutes: 30
     permissions:

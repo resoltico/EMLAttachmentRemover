@@ -100,7 +100,7 @@ class WorkflowParityTests(unittest.TestCase):
                 "-runs=-1 -max_total_time=1800"
             )
         }
-        guide = (PROJECT_ROOT / "QA.md").read_text()
+        guide = (PROJECT_ROOT / "QA.md").read_text(encoding="utf-8")
         self.assertTrue(all(command in guide for command in manual))
         self.assertEqual(_workflow_steps(), mirrored | CI_ONLY | manual)
         self.assertFalse(mirrored & CI_ONLY)
@@ -141,6 +141,10 @@ class WorkflowParityTests(unittest.TestCase):
             self.assertIn("enable-cache: auto", content)
             self.assertIn("cache-dependency-glob: uv.lock", content)
             for action in re.findall(r"uses: (\S+)", content):
+                if action.startswith("./"):
+                    self.assertEqual(action, "./.github/workflows/swift-fuzz.yml")
+                    self.assertTrue((PROJECT_ROOT / action).is_file())
+                    continue
                 self.assertRegex(action, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 
     def test_block_scalars_are_read_until_their_indentation_ends(self) -> None:

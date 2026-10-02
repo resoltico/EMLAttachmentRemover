@@ -53,6 +53,10 @@ def test_release_qualification_keeps_its_quality_reports() -> None:
     assert (
         "build/test-results-project-ci.xml\n            build/coverage.xml" in qualify
     )
+    build = release[release.index("  build:") : release.index("  publish:")]
+    assert "      - fuzz\n" in build
+    assert "    uses: ./.github/workflows/swift-fuzz.yml\n" in release
+    assert "  workflow_call:\n" in _text("swift-fuzz.yml")
 
 
 def test_mutation_workers_are_benchmarkable_but_default_to_the_host_policy() -> None:

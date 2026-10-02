@@ -11,12 +11,18 @@ on:
         type: choice
         options: [standard, extended]
         default: standard
+  workflow_call:
+    inputs:
+      campaign:
+        description: Campaign duration
+        type: string
+        default: standard
 
 permissions:
   contents: read
 
 concurrency:
-  group: swift-fuzz-${{ github.event.pull_request.number || github.ref }}
+  group: swift-fuzz-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
