@@ -58,7 +58,7 @@ def test_release_parser_preserves_every_public_option_contract() -> None:
 
 
 def test_strict_environment_is_exact_with_or_without_removed_inputs() -> None:
-    """Remove optional overrides and add only the three strict Python controls."""
+    """Remove optional overrides and add only the four strict Python controls."""
     source_environments = (
         {"PUBLIC_SETTING": "kept"},
         {
@@ -70,6 +70,7 @@ def test_strict_environment_is_exact_with_or_without_removed_inputs() -> None:
     expected = {
         "PUBLIC_SETTING": "kept",
         "PYTHONDEVMODE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONNOUSERSITE": "1",
         "PYTHONWARNINGS": "error",
     }

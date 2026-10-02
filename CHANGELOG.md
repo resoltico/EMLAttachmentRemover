@@ -49,13 +49,13 @@ Notable changes to this project are documented in this file. The format is based
 
 ### Internal
 
-- Native receipt and path handling share a local/CI libFuzzer target with AddressSanitizer, synthetic regression inputs, presentation invariants and retained failure artifacts.
+- Native receipt and path handling share a local/CI libFuzzer target with AddressSanitizer, raw and structured inputs, presentation invariants and deliberate failure controls. Fresh private campaign directories preserve source snapshots, stage outcomes and failure artifacts; bounded stages clean owned processes on timeout or interruption. Model contracts also run with production optimization, and a heap-overflow control verifies sanitizer detection.
 - Swift formatting, lint, size and complexity gates use pinned tools and an exception registry shared with Python; Python method-size checks include nested classes. Native presentation, process ownership, runtime configuration and application lifecycle are separated for review and verification.
 - macOS CI builds and ad-hoc signs the universal app alongside portable CLI assets. Publication requires the complete checksummed set and reverifies the extracted app, both architectures, source-bound installer/documentation files and bundled processor. The release pipeline and audit contract are documented.
 - Setup UV v10.2.0 uses safer cache defaults; Linux base images are digest-pinned. Signal-boundary tests exercise mutation-selected implementations. Standard/free-threaded CPython qualification remains pinned to 3.14.7 pending provider availability of 3.14.8 builds.
 - `quality --native` runs host-dependent checks separately. Shared static checks type-check Linux, macOS and Windows targets; tests check that supported workflow steps have local equivalents.
-- Task timeouts and interruptions stop owned process groups; mutation workers clean per-session temporary storage. Campaigns hold an exclusive checkout lease, verify source-bound equivalence manifests, support configurable worker counts and retain diagnostics for non-killed mutants.
-- Coverage XML survives test or threshold failures. CI preserves release-quality reports and distinct rerun artifacts, cancels superseded pull-request exploration, and sanitizes Hypothesis observations for reported and resolved home, interpreter and project paths, including symlinks.
+- On POSIX, task timeouts and interruptions stop owned process groups; mutation workers clean per-session temporary storage. Campaigns hold an exclusive checkout lease, verify source-bound equivalence manifests, support configurable worker counts and retain diagnostics for non-killed mutants.
+- Release qualification disables child-process bytecode writes, including direct invocations. Coverage XML survives test or threshold failures. CI preserves release-quality reports and distinct rerun artifacts, cancels superseded pull-request exploration, and sanitizes Hypothesis observations for reported and resolved home, interpreter and project paths, including symlinks.
 
 ## [3.0.6] - 2026-09-21
 

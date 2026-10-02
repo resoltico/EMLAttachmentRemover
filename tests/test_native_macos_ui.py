@@ -57,6 +57,7 @@ def test_native_bundle_is_signed_universal_and_processes_current_sources(
         timeout=30,
     )
     assert set(architectures.split()) == {"arm64", "x86_64"}
+    _assert_no_development_runtime(app / "Contents/MacOS/EMLAttachmentRemover")
     with (app / "Contents/Info.plist").open("rb") as stream:
         metadata = plistlib.load(stream)
     # Qualify the customer ZIP, then exercise the extracted launcher and installer.
@@ -319,3 +320,20 @@ def test_downloaded_candidate_executes_on_this_os_and_cpu(tmp_path: Path) -> Non
         tmp_path,
     )
     assert (tmp_path / "candidate.mime-pruned.eml").is_file()
+
+
+def _assert_no_development_runtime(executable: Path) -> None:
+    """Reject sanitizer and fuzzer runtimes in the customer executable."""
+    symbols = subprocess.check_output(
+        ["/usr/bin/nm", str(executable)], text=True, timeout=30
+    )
+    dependencies = subprocess.check_output(
+        ["/usr/bin/otool", "-L", str(executable)], text=True, timeout=30
+    )
+    for development_runtime in (
+        "LLVMFuzzer",
+        "__asan_",
+        "__sanitizer_cov_",
+        "clang_rt",
+    ):
+        assert development_runtime not in symbols + dependencies

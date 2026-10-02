@@ -195,6 +195,7 @@ def _strict_environment() -> dict[str, str]:
         name: value for name, value in os.environ.items() if name not in removed_names
     }
     environment["PYTHONDEVMODE"] = "1"
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
     environment["PYTHONNOUSERSITE"] = "1"
     environment["PYTHONWARNINGS"] = "error"
     return environment

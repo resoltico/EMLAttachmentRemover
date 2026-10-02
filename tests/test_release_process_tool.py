@@ -28,6 +28,7 @@ class ReleaseProcessTests(unittest.TestCase):
         self.assertNotIn("SOURCE_DATE_EPOCH", environment)
         self.assertEqual(environment["PUBLIC"], "value")
         self.assertEqual(environment["PYTHONDEVMODE"], "1")
+        self.assertEqual(environment["PYTHONDONTWRITEBYTECODE"], "1")
         self.assertEqual(environment["PYTHONNOUSERSITE"], "1")
         self.assertEqual(environment["PYTHONWARNINGS"], "error")
 

@@ -23,7 +23,7 @@ permissions:
 
 concurrency:
   group: swift-fuzz-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   receipt-fuzz:
@@ -67,6 +67,8 @@ jobs:
           path: |
             ${{ runner.temp }}/native-fuzz/corpus
             ${{ runner.temp }}/native-fuzz/*.log
+            ${{ runner.temp }}/native-fuzz/sources
+            ${{ runner.temp }}/native-fuzz/seeds
             ${{ runner.temp }}/native-fuzz/invocation.json
             ${{ runner.temp }}/native-fuzz/crash-*
             ${{ runner.temp }}/native-fuzz/timeout-*
