@@ -103,8 +103,13 @@ def _cancelled_process(
 
 def _await_marker(child: subprocess.Popen[bytes], marker: Path) -> None:
     """Wait for complete processing and the actual delivery boundary."""
-    deadline = time.monotonic() + 15
+    # Match the complete case's processing allowance; this precedes cancellation.
+    deadline = time.monotonic() + 30
     while not marker.exists() and time.monotonic() < deadline:
         assert child.poll() is None
         time.sleep(0.01)
-    assert marker.exists()
+    assert marker.exists(), (
+        "Delivery boundary was not reached within the processing allowance; "
+        f"completed outputs: {len(list(marker.parent.glob('*.mime-pruned.eml')))}, "
+        f"process status: {child.poll()}"
+    )
