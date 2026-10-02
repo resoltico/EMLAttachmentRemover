@@ -150,6 +150,14 @@ jobs:
         run: >-
           uv run python tools/finalize_hypothesis_artifacts.py
           --observations
+      - name: Preserve native fuzz regression evidence
+        if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-native-fuzz-tests-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-fuzz-tests
+          if-no-files-found: warn
+          retention-days: 30
       - name: Preserve sanitized property observations
         if: always() && steps.finalize_hypothesis.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
