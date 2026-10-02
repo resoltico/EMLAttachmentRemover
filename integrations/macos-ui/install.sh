@@ -101,7 +101,7 @@ except (OSError, ValueError, subprocess.CalledProcessError) as exc:
     raise SystemExit(4)
 
 PY
-printf '%s\n' 'Replace the Quick Action shell with:'
+printf '%s\n' 'Finder Quick Action shell command:'
 # shellcheck disable=SC2016  # Print literal variables for the Shortcuts action.
 printf '%s\n' '/usr/bin/open -a "$HOME/Applications/EML Attachment Remover.app" -- "$@"'
 printf '%s\n' 'Use this single action with Shortcut Input passed as arguments.'
