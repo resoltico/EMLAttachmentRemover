@@ -82,8 +82,7 @@ uv run python tools/check_mutation_results.py
 The first command skips only the preflight; its final result gate still fails on a
 stale manifest. Review every surviving mutant, update the manifest entries and its
 `source_sha256` to the printed digest, then rerun the final check against the same
-evidence. `--workers auto|1-64` selects Mutmut parallelism; worker count never
-changes a verdict.
+evidence. `--workers auto|1-64` selects Mutmut parallelism. On an overloaded host, test deadlines can turn an equivalent mutant into a misleading kill or interrupt a check. Re-run disputed IDs with fewer workers in an isolated environment and validate the complete named results before accepting the score.
 
 “JUnit XML” names the conventional xUnit2 interchange format emitted by the
 lockfile-pinned pytest runner and sanitized by `tools/junit_report.py`. The project
