@@ -8,6 +8,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Final
@@ -160,7 +161,14 @@ def test_sigterm_cleans_the_active_compile_group(
 
 @pytest.fixture(scope="module")
 def campaign(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    output = tmp_path_factory.mktemp("swift-fuzz") / "campaign"
+    runner = os.environ.get("RUNNER_TEMP")
+    if runner is None:
+        parent = tmp_path_factory.mktemp("swift-fuzz")
+    else:
+        evidence = Path(runner) / "native-fuzz-tests"
+        evidence.mkdir(mode=0o700, parents=True, exist_ok=True)
+        parent = Path(tempfile.mkdtemp(prefix="receipt-", dir=evidence))
+    output = parent / "campaign"
     result = _run(UI, output, "-runs=100", "-max_total_time=5")
     assert result.returncode == 0, result.stdout + result.stderr
     return output

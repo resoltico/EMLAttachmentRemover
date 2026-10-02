@@ -74,4 +74,5 @@ jobs:
           name: compatibility-evidence-${{ matrix.os }}
           path: |
             build/coverage.xml
+            ${{ runner.temp }}/native-fuzz-tests
             build/test-results-project-ci.xml

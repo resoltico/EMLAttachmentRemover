@@ -82,6 +82,7 @@ jobs:
           path: |
             build/test-results-project-ci.xml
             build/coverage.xml
+            ${{ runner.temp }}/native-fuzz-tests
           if-no-files-found: warn
           retention-days: 30
 
@@ -203,6 +204,7 @@ jobs:
             mutants/mutmut-cicd-stats.json
             build/mutmut-results.txt
             build/coverage.xml
+            ${{ runner.temp }}/native-fuzz-tests
             build/test-results-project-ci.xml
             tools/equivalent_mutants.json
           if-no-files-found: warn
