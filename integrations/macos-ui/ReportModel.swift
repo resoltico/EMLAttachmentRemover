@@ -46,7 +46,7 @@ struct Item: Decodable, Sendable {
   var label: String {
     switch status {
     case "created": return "Copy created"
-    case "existing_verified": return "Existing copy verified"
+    case "existing_verified": return "Matching copy already exists"
     case "would_create": return "Copy planned"
     case "cancelled": return "Processing stopped"
     case "not_run": return "Not processed"
@@ -70,10 +70,12 @@ struct Item: Decodable, Sendable {
     if let error { return safeText(error.message) }
     if status == "would_create" { return "A copy was planned; no copy was created for this file." }
     if status == "existing_verified" {
-      return "The existing copy exactly matches the verified result of this run."
+      return
+        "The existing copy exactly matches the copy this run would create. Nothing was overwritten."
     }
     if status == "created" {
-      return "A MIME-pruned EML copy was created and its final address was verified."
+      return
+        "A separate copy was saved after checking its email structure and the content kept from the original. Your original file was not changed."
     }
     if status == "not_run" {
       return "This file was not processed. Review the run details before trying again."
@@ -135,7 +137,10 @@ struct UIReceipt: Decodable, Sendable {
     if successful {
       if report.items.isEmpty { return "Processing complete" }
       if report.summary["would_create", default: 0] > 0 { return "Copy plan ready" }
-      if report.summary["created", default: 0] == 0 { return "Existing copies verified" }
+      if report.summary["created", default: 0] == 0 {
+        return report.items.count == 1
+          ? "A matching copy is already available" : "Matching copies are already available"
+      }
       return report.summary["created", default: 0] == 1
         ? "Your copy is ready" : "Your copies are ready"
     }
@@ -146,7 +151,7 @@ struct UIReceipt: Decodable, Sendable {
   }
   var subtitle: String {
     let labels = [
-      ("created", "created"), ("existing_verified", "existing verified"), ("failed", "failed"),
+      ("created", "created"), ("existing_verified", "already available"), ("failed", "failed"),
       ("published_with_error", "published with an error"), ("cancelled", "stopped"),
       ("not_run", "not processed"), ("would_create", "planned"),
     ]
@@ -159,7 +164,7 @@ struct UIReceipt: Decodable, Sendable {
   var invocationNotice: String? {
     if processStatus == 120 {
       return
-        "Processing results are available, but output finalization failed. This run was unsuccessful."
+        "File results are available, but the run did not finish successfully. Review Details before using any copies."
     }
     if stopped {
       return
@@ -169,7 +174,8 @@ struct UIReceipt: Decodable, Sendable {
     if !successful
       && report.items.allSatisfy({ ["created", "existing_verified"].contains($0.status) })
     {
-      return "The invocation failed despite the available file results. Review the details."
+      return
+        "The run did not finish successfully even though file results are available. Review Details."
     }
     return nil
   }

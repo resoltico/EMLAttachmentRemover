@@ -11,6 +11,7 @@ final class ReportWindow: NSObject, NSWindowDelegate {
   let paths: [String]
   let version =
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+  let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
   var isWelcome: Bool { paths.isEmpty }
   var isRunning: Bool { run.isRunning }
   private var stopping = false
@@ -45,7 +46,7 @@ final class ReportWindow: NSObject, NSWindowDelegate {
   deinit { trace("report-controller released") }
   private func start() {
     layout.heading(
-      "Creating MIME-pruned copies…",
+      "Creating email copies…",
       subtitle: "\(paths.count) file\(paths.count == 1 ? "" : "s") selected", artwork: .processing,
       color: .controlAccentColor)
     let progress = NSProgressIndicator()
@@ -115,7 +116,8 @@ final class ReportWindow: NSObject, NSWindowDelegate {
           ?? items.firstIndex(where: { ["cancelled", "not_run"].contains($0.status) }) ?? 0
       itemsView = ReportItems(receipt: admitted, layout: layout, selected: selected)
       details = ReportDetails(
-        raw: raw, text: ReportText.details(admitted, version: version), receipt: admitted,
+        raw: raw, text: ReportText.details(admitted, version: version, build: build),
+        receipt: admitted,
         layout: layout)
       window.standardWindowButton(.closeButton)?.isEnabled = true
     } catch {
@@ -126,21 +128,22 @@ final class ReportWindow: NSObject, NSWindowDelegate {
       showFailure(
         missingPython
           ? "CPython 3.14 is required"
-          : stopped ? "Processing stopped" : "Couldn’t obtain a verified report",
+          : stopped ? "Processing stopped" : "Couldn’t read the processing results",
         explanation: missingPython
           ? "Processing could not start. Install CPython 3.14 or configure the runtime described in the application setup guide."
-          : "No complete, validated report is available. Files may already have been created; inspect the destination before running again.",
+          : "The app could not confirm the processing results. Files may already have been created; check the destination before trying again.",
         diagnostics: "Process status: \(status)\n\(error.localizedDescription)\n\(diagnostics)")
     }
   }
   private func showWelcome() {
     window.title = "EML Attachment Remover"
     layout.heading(
-      "Create MIME-pruned EML copies", subtitle: "Choose files to get started.", artwork: .identity,
+      "Remove attachments from email copies", subtitle: "Choose EML files to get started.",
+      artwork: .identity,
       color: .controlAccentColor)
     layout.add(
       UIControls.label(
-        "Creates verified working copies while keeping your originals. You can also select EML files in Finder and run your Quick Action.",
+        "Creates separate EML copies with marked attachments and related embedded content removed. Your original files stay unchanged. You can also select EML files in Finder and run your Quick Action.",
         color: .secondaryLabelColor))
     let choose = UIControls.button("Choose files…", action: #selector(chooseFiles), target: self)
     choose.keyEquivalent = "\r"

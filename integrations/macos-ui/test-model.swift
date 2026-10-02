@@ -30,7 +30,7 @@ struct ModelTests {
     precondition(success.successful && success.heading == "Your copy is ready")
     let verified = try UIReceipt.admit(
       envelope(0, "existing_verified", ok: true), status: 0, version: version)
-    precondition(verified.heading == "Existing copies verified")
+    precondition(verified.heading == "A matching copy is already available")
     let planned = try UIReceipt.admit(
       envelope(0, "would_create", ok: true), status: 0, version: version)
     precondition(planned.heading == "Copy plan ready" && planned.report.items[0].acceptedURL == nil)

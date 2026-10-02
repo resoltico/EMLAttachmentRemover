@@ -51,7 +51,7 @@ The running window offers **Stop processing**. This forwards interruption throug
 
 Final reports distinguish created copies, verified existing copies, failures, unprocessed or stopped files, and copies published with an error. Invocation interruption and output-finalization failure remain visible even when item receipts succeeded. Invalid or incomplete reports never imply that no files were created. Finder reveal of a copy is offered only for an accepted verified address during an ordinary completed invocation; other reports can show the source folder.
 
-Details show file outcomes, warning and error codes, and paths; Copy report retains the complete admitted receipt and exact native path evidence. Large detail displays are bounded with an explicit truncation notice; **Copy report** copies the complete report. File lists are virtualized, the content scrolls, and final controls remain accessible below the scrolling content. The application does not upload reports or EML contents.
+Details show the app's release and build, file outcomes, problem and warning messages, and paths. **Copy technical report** copies the complete machine-readable processing report, including exit status, diagnostic codes and exact native path evidence; **Copy technical details** supplies troubleshooting information when a complete report is unavailable. Large detail displays are bounded with an explicit truncation notice; copied technical data remains complete. File lists are virtualized, the content scrolls, and final controls remain accessible below the scrolling content. The application does not upload reports or EML contents.
 
 ## Artwork
 

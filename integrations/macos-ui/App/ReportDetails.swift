@@ -37,12 +37,12 @@ final class ReportDetails: NSObject {
     text.isEditable = false
     text.isSelectable = true
     text.textContainerInset = NSSize(width: 8, height: 8)
-    text.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+    text.font = .systemFont(ofSize: 13)
     let limit = 1_000_000
     text.string =
       detailText.count > limit
       ? String(detailText.prefix(limit))
-        + "\n[Display truncated. Copy report includes the complete receipt.]" : detailText
+        + "\n[More information is available through Copy technical report.]" : detailText
     text.textContainer?.widthTracksTextView = true
     text.autoresizingMask = [.width]
     text.setAccessibilityLabel("Processing report details")
@@ -57,7 +57,7 @@ final class ReportDetails: NSObject {
   func footer() {
     let row = layout.footerHost
     let copy = UIControls.button(
-      receipt == nil ? "Copy diagnostics" : "Copy report",
+      receipt == nil ? "Copy technical details" : "Copy technical report",
       action: #selector(copyContents), target: self)
     row.addArrangedSubview(copy)
     let spacer = NSView()

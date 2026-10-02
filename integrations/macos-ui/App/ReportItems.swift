@@ -94,10 +94,14 @@ final class ReportItems: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     name.lineBreakMode = .byTruncatingMiddle
     name.toolTip = safeText(item.sourceRequest.display)
     append(name)
-    let folder =
-      item.sourceRequest.url?.deletingLastPathComponent().lastPathComponent
-      ?? "See full path in Details"
-    append(UIControls.label(safeText(folder), color: .secondaryLabelColor))
+    let parent = item.sourceRequest.url?.deletingLastPathComponent()
+    let sourceFolder = UIControls.label(
+      parent.map { "Source folder: " + safeText($0.lastPathComponent, multiline: false) }
+        ?? "Source path: See Details", color: .secondaryLabelColor)
+    sourceFolder.toolTip = parent.map {
+      safeText($0.path, multiline: false)
+    }
+    append(sourceFolder)
     let separator = NSBox(frame: NSRect(x: 0, y: 0, width: 584, height: 64))
     separator.boxType = .separator
     append(separator)

@@ -6,6 +6,10 @@ final class ReportLayout {
   var content = NSStackView()
   var footerHost = NSStackView()
   var headline: NSTextField?
+  private let topInset: CGFloat = 24
+  private let bottomInset: CGFloat = 12
+  private let footerGap: CGFloat = 16
+  private let footerBottomInset: CGFloat = 20
   init(window: NSWindow) {
     self.window = window
   }
@@ -36,16 +40,16 @@ final class ReportLayout {
     NSLayoutConstraint.activate([
       footerHost.leadingAnchor.constraint(equalTo: outer.leadingAnchor, constant: 28),
       footerHost.trailingAnchor.constraint(equalTo: outer.trailingAnchor, constant: -28),
-      footerHost.bottomAnchor.constraint(equalTo: outer.bottomAnchor, constant: -20),
+      footerHost.bottomAnchor.constraint(equalTo: outer.bottomAnchor, constant: -footerBottomInset),
       scroll.leadingAnchor.constraint(equalTo: outer.leadingAnchor),
       scroll.trailingAnchor.constraint(equalTo: outer.trailingAnchor),
       scroll.topAnchor.constraint(equalTo: outer.topAnchor),
-      scroll.bottomAnchor.constraint(equalTo: footerHost.topAnchor, constant: -16),
+      scroll.bottomAnchor.constraint(equalTo: footerHost.topAnchor, constant: -footerGap),
       document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
       content.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 28),
       content.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -28),
-      content.topAnchor.constraint(equalTo: document.topAnchor, constant: 24),
-      content.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -12),
+      content.topAnchor.constraint(equalTo: document.topAnchor, constant: topInset),
+      content.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -bottomInset),
     ])
 
   }
@@ -75,10 +79,15 @@ final class ReportLayout {
   }
   func resizeToContent() {
     window.contentView?.layoutSubtreeIfNeeded()
-    let maximum = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
-    let height = min(
-      maximum - 100, max(window.minSize.height - 28, content.fittingSize.height + 85))
     guard let view = window.contentView else { return }
+    let maximum = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
+    let minimum = window.contentRect(forFrameRect: NSRect(origin: .zero, size: window.minSize))
+      .height
+    let required =
+      content.fittingSize.height + topInset + bottomInset + footerGap
+      + footerBottomInset + footerHost.fittingSize.height
+    let height = min(
+      maximum - 100, max(minimum, required))
     window.setContentSize(NSSize(width: view.bounds.width, height: height))
   }
 }
