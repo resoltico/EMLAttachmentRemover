@@ -18,7 +18,7 @@ WORKFLOWS: Final = PROJECT_ROOT / ".github" / "workflows"
 RUN_KEY: Final = re.compile(r"( *(?:- )?)run: (.*)")
 # Workflow steps with no local counterpart, and why.
 CI_ONLY: Final = {
-    # macOS 14 defaults to an older Xcode; select its installed Swift 6 compiler.
+    # macOS 14 defaults to an older SDK; select its installed platform tools.
     "sudo xcode-select --switch /Applications/Xcode_16.2.app/Contents/Developer",
     # Extracts the checksum-manifest digest for GitHub artifact attestation.
     (

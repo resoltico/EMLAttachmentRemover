@@ -158,6 +158,37 @@ def test_finder_launcher_visibly_projects_every_terminal_category(
     ]
 
 
+def test_missing_selected_runtime_never_uses_available_discovery(
+    tmp_path: Path,
+) -> None:
+    """An explicit runtime selection fails instead of silently changing interpreters."""
+    fallback = tmp_path / "bin"
+    fallback.mkdir()
+    interpreter = fallback / "python3.14"
+    interpreter.write_text('#!/bin/sh\nprintf reached > "$FALLBACK_MARKER"\nexit 0\n')
+    interpreter.chmod(0o755)
+    marker = tmp_path / "fallback-used"
+    processor = tmp_path / "processor.pyz"
+    processor.write_text("raise SystemExit(0)\n")
+    result = subprocess.run(
+        ["/bin/sh" if os.name != "nt" else "sh", str(RUNNER), "public.eml"],
+        env={
+            **os.environ,
+            "PATH": str(fallback) + os.pathsep + os.environ["PATH"],
+            "EML_REMOVER_PYTHON": str(tmp_path / "missing-python"),
+            "EML_REMOVER_ZIPAPP": str(processor),
+            "FALLBACK_MARKER": str(marker),
+        },
+        capture_output=True,
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == 9
+    assert b"selected CPython 3.14 runtime is missing" in result.stderr
+    assert not marker.exists()
+    assert not result.stdout
+
+
 def test_finder_launcher_fails_closed_for_summary_exit_and_schema_drift(
     tmp_path: Path,
 ) -> None:

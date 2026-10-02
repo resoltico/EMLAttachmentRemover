@@ -61,7 +61,7 @@ jobs:
           name: compatibility-delivery
           path: release-dist
       - run: uv run --no-project --python 3.14.7 python -B -m tools.release_delivery --verify-directory release-dist
-      - name: Select Swift 6 toolchain on minimum OS
+      - name: Select Apple SDK and platform tools on minimum OS
         if: matrix.os == 'macos-14'
         run: sudo xcode-select --switch /Applications/Xcode_16.2.app/Contents/Developer
       - run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh

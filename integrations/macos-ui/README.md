@@ -33,6 +33,8 @@ Use a fresh destination for every build. The build reads the current working tre
 
 Quit the application before updating it; the installer refuses to replace a running installed bundle. The installer records the selected CPython interpreter in a private runtime configuration outside the app, so Finder launches do not depend on shell environment inheritance. Reinstall with `EML_REMOVER_PYTHON` to change that selection.
 
+An explicit interpreter selection must exist and be executable. If it disappears, processing fails with runtime guidance instead of silently selecting another interpreter. Automatic discovery applies only when no interpreter was selected.
+
 The installer defaults to `~/Applications/EML Attachment Remover.app`, refuses an unowned or unmarked existing bundle, and retains the previous application in a private application-support backup directory. The CLI is installed separately from the wheel or used directly as a zipapp. `EML_REMOVER_PYTHON` selects the build/install interpreter; `EML_REMOVER_UI_APP` selects an alternative app installation path.
 
 ## Finder Quick Action

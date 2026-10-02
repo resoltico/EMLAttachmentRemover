@@ -14,7 +14,8 @@ fail() {
 }
 
 find_python() {
-    if [ -n "${EML_REMOVER_PYTHON:-}" ] && [ -x "$EML_REMOVER_PYTHON" ]; then
+    if [ -n "${EML_REMOVER_PYTHON:-}" ]; then
+        [ -x "$EML_REMOVER_PYTHON" ] || fail 9 "the selected CPython 3.14 runtime is missing or not executable"
         PYTHON=$EML_REMOVER_PYTHON
         return 0
     fi

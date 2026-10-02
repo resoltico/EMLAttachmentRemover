@@ -4,11 +4,11 @@ The v4 release contains a prebuilt native macOS application and the portable Pyt
 
 ## Source and qualification
 
-A `vMAJOR.MINOR.PATCH` tag must match `pyproject.toml` and the changelog entry. The immutable publication controller checks the tag-push event, checked-out commit, remote tag target, release metadata, uploaded asset identities, and published read-back. Qualification runs on Linux, macOS, and Windows with standard and free-threaded CPython, followed by property exploration and the source-bound actionable mutation gate. Failed required jobs prevent publication.
+A `vMAJOR.MINOR.PATCH` tag must match `pyproject.toml` and the changelog entry. The immutable publication controller checks the tag-push event, checked-out commit, remote tag target, release metadata, uploaded asset identities, and published read-back. Qualification runs on Linux, macOS, and Windows with standard and free-threaded CPython, followed by property exploration, the source-bound actionable mutation gate, and native receipt fuzzing with AddressSanitizer. Failed required jobs prevent publication.
 
 ```mermaid
 flowchart LR
-    Tag[Tagged source] --> Gates[Platform, property and mutation gates]
+    Tag[Tagged source] --> Gates[Platform, property, mutation and native fuzz gates]
     Gates --> Build[macOS producer: two independent builds]
     Build --> Assets[Five-file checksummed delivery]
     Assets --> Verify[macOS verifier after artifact transfer]
@@ -40,7 +40,7 @@ Only this verified set is attested and passed to the existing changelog-bound im
 
 ## Customer installation and updates
 
-Customers download and extract the macOS ZIP, install CPython 3.14, and run the bundled installation instructions to install into their user Applications directory and record their chosen interpreter privately. Direct drag/copy installation also works with runtime discovery, but does not configure the optional Terminal integration. Native app use does not require Shortcuts; the Finder Quick Action is an optional launch-only integration. Automation that needs processing completion and exit status uses the direct launcher or zipapp.
+Customers download and extract the macOS ZIP, install CPython 3.14, and run the bundled installation instructions to install into their user Applications directory and record their chosen interpreter privately. Direct drag/copy installation also works with runtime discovery. Native app use does not require Shortcuts; the Finder Quick Action is an optional launch-only integration. Install the CLI from its wheel or invoke the standalone zipapp for automation that needs processing completion and exit status.
 
 Ad-hoc signatures preserve executable/bundle integrity but are not trusted developer identities. A quarantined download may be blocked by Gatekeeper. Users who trust the official download can use the app-specific Privacy & Security → Open Anyway path documented by Apple; managed-machine policy may prohibit it. No installer removes quarantine, disables Gatekeeper, or automatically approves the app. Updates may require renewed approval. A damaged/modified signature is a failure to investigate, not a reason to weaken security checks.
 
@@ -59,7 +59,7 @@ uv run python -B -m tools.release_delivery --output-directory release-dist
 uv run --no-project --python 3.14.7 python -B -m tools.release_delivery --verify-directory release-dist
 ```
 
-The installer stages the selected runtime configuration before changing the app and restores the previous bundle if runtime publication fails. It retains the prior bundle on successful updates. Terminal integration is a separate step; its failure is reported explicitly after app installation, and rerunning the installer retries it.
+The installer stages the selected runtime configuration before changing the app and restores the previous bundle if runtime publication fails. It retains the prior bundle on successful updates. It installs only the app and its runtime selection; CLI installation is independent.
 
 ## Application identity and ownership metadata
 
