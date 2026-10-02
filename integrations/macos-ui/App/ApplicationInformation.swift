@@ -5,10 +5,7 @@ final class ApplicationInformation {
   private var licenseWindow: NSWindow?
 
   func showAbout() {
-    NSApp.orderFrontStandardAboutPanel(options: [
-      .credits: NSAttributedString(
-        string: "MIT License\nRead the full terms in the app’s License menu.")
-    ])
+    NSApp.orderFrontStandardAboutPanel(nil)
   }
 
   func showLicense() {

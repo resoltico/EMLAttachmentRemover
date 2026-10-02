@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Final
 
+from tools.macos_metadata import build_number
 from tools.release_files import ReleaseQualificationError
 
 ROOT: Final = Path(__file__).resolve().parents[1]
@@ -224,7 +225,7 @@ def verify(archive: Path, zipapp: Path, version: str, architecture: str) -> None
         info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
         expected = {
             "CFBundleShortVersionString": version,
-            "CFBundleVersion": version,
+            "CFBundleVersion": build_number(ROOT / "pyproject.toml"),
             "CFBundleIdentifier": "io.github.resoltico.emlattachmentremover",
             "NSHumanReadableCopyright": "Copyright © "
             + next(

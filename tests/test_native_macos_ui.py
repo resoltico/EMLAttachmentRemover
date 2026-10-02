@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 from pathlib import Path
 from typing import Final
 
@@ -85,6 +86,11 @@ def test_native_bundle_is_signed_for_host_and_processes_current_sources(
     assert metadata["CFBundleIdentifier"] == "io.github.resoltico.emlattachmentremover"
     assert metadata["NSHumanReadableCopyright"] == "Copyright © 2026 Ervins Strauhmanis"
     assert metadata["CFBundleIconFile"] == "EML"
+    assert metadata["CFBundleVersion"] == str(
+        tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"][
+            "eml-attachment-remover"
+        ]["macos"]["build-number"]
+    )
     assert metadata["CFBundleIconName"] == "EML"
     assert (resources / "EML.icns").read_bytes().startswith(b"icns")
     assert (resources / "Assets.car").stat().st_size > 0

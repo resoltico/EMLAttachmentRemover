@@ -7,6 +7,7 @@ import plistlib
 import stat
 import struct
 import subprocess
+import tomllib
 import zipfile
 from typing import TYPE_CHECKING
 from unittest.mock import patch
@@ -28,7 +29,11 @@ def _bundle(root: Path) -> Path:
     (app / "Contents/Info.plist").write_bytes(
         plistlib.dumps({
             "CFBundleShortVersionString": "4.0.0",
-            "CFBundleVersion": "4.0.0",
+            "CFBundleVersion": str(
+                tomllib.loads((archive.ROOT / "pyproject.toml").read_text())["tool"][
+                    "eml-attachment-remover"
+                ]["macos"]["build-number"]
+            ),
             "CFBundleIdentifier": "io.github.resoltico.emlattachmentremover",
             "NSHumanReadableCopyright": "Copyright © 2026 Ervins Strauhmanis",
             "LSMinimumSystemVersion": "14.0",
@@ -183,6 +188,7 @@ def test_untrusted_metadata_is_rejected_before_extraction(
         "marker",
         "identifier",
         "copyright",
+        "build-number",
         "icon-assets",
         "icon-fallback",
     ],
@@ -191,14 +197,16 @@ def test_archive_contract_rejects_content_drift(tmp_path: Path, changed: str) ->
     app = _bundle(tmp_path)
     if changed == "version":
         (app / "Contents/Info.plist").write_bytes(plistlib.dumps({}))
-    if changed in {"identifier", "copyright"}:
+    metadata_changes = {
+        "identifier": ("CFBundleIdentifier", "wrong"),
+        "copyright": ("NSHumanReadableCopyright", "wrong"),
+        "build-number": ("CFBundleVersion", "0"),
+    }
+    if changed in metadata_changes:
         info_path = app / "Contents/Info.plist"
         info = plistlib.loads(info_path.read_bytes())
-        info[
-            "CFBundleIdentifier"
-            if changed == "identifier"
-            else "NSHumanReadableCopyright"
-        ] = "wrong"
+        field, value = metadata_changes[changed]
+        info[field] = value
         info_path.write_bytes(plistlib.dumps(info))
     if changed == "marker":
         (app / "Contents/Resources/.eml-ui-installation").write_bytes(b"invalid")

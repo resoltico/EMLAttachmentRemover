@@ -39,6 +39,8 @@ cp "$ICON_OUTPUT/Assets.car" "$ICON_OUTPUT/EML.icns" "$APP/Contents/Resources/"
 "$PYTHON" - "$PROJECT_ROOT/pyproject.toml" "$APP/Contents/Info.plist" "$ICON_OUTPUT/icon-partial.plist" <<'PY'
 import plistlib, sys, tomllib
 from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]).parent))
+from tools.macos_metadata import build_number
 notice = 'Copyright © ' + next(line for line in (Path(sys.argv[1]).parent/'LICENSE').read_text().splitlines() if line.startswith('Copyright (c) ')).removeprefix('Copyright (c) ')
 version = tomllib.loads(Path(sys.argv[1]).read_text())['project']['version']
 with open(sys.argv[2], 'wb') as target:
@@ -50,7 +52,7 @@ with open(sys.argv[2], 'wb') as target:
         'CFBundleExecutable': 'EMLAttachmentRemover',
         'CFBundlePackageType': 'APPL',
         'CFBundleShortVersionString': version,
-        'CFBundleVersion': version,
+        'CFBundleVersion': build_number(Path(sys.argv[1])),
         'LSMinimumSystemVersion': '14.0',
         'NSHighResolutionCapable': True,
         'CFBundleDocumentTypes': [{'CFBundleTypeName': 'EML message', 'CFBundleTypeExtensions': ['eml'], 'CFBundleTypeRole': 'Viewer', 'LSHandlerRank': 'None'}],
