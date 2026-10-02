@@ -1,0 +1,5 @@
+# GitHub provides this hosted preview label, but actionlint 1.7.12 predates it.
+# This only updates actionlint's accepted-label inventory; it does not configure a runner.
+self-hosted-runner:
+  labels:
+    - xcode-27

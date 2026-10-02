@@ -9,9 +9,9 @@ A `vMAJOR.MINOR.PATCH` tag must match `pyproject.toml` and the changelog entry. 
 ```mermaid
 flowchart LR
     Tag[Tagged source] --> Gates[Platform, property, mutation and native fuzz gates]
-    Gates --> Build[macOS producer: two independent builds]
+    Gates --> Build[macOS producer: two builds per CPU]
     Build --> Assets[Six-file checksummed delivery]
-    Assets --> Verify[macOS verifier after artifact transfer]
+    Assets --> Verify[macOS 14, Intel and macOS 27 consumers]
     Verify --> Attest[GitHub provenance attestations]
     Attest --> Publish[Immutable release and asset read-back]
 ```
@@ -29,13 +29,15 @@ flowchart LR
 
 No local runtime configuration, interpreter installation, private path, QA fixture, test result, development environment, cache, or unapproved extra asset belongs in the macOS archive. The app embeds the same exact zipapp bytes as the separately published CLI artifact.
 
+ZIP remains the sole macOS container for this release. The documented installer must record an external CPython interpreter; a disk image with an Applications drag target would bypass that setup. A DMG would not replace Developer ID signing or notarization and would add another container, mounting behavior and verification surface. [Apple's distribution guidance](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution) supports both ZIP and DMG containers. Reconsider a DMG if distribution gains a self-contained app and a tested installer experience; do not publish both formats merely as alternatives.
+
 ## Producer
 
 The macOS job installs the checksum- and signer-pinned official Swift.org compiler declared in `toolchain.toml`, uses a full Xcode 26-or-later installation for the SDK, Icon Composer `actool`, and signing tools, and builds and qualifies the portable artifacts. It compiles the editable icon once per candidate set into `Assets.car` and `EML.icns`; Xcode's compiled asset catalog contains variable timestamps and rendition identifiers, so byte comparison across separate icon compilations is not a valid reproducibility gate. Each architecture is then built twice from the same source and the same compiled icon, permissions are normalized to 0755/0644/0755 before signing, and complete signatures are verified. Each pair of sorted ZIPs must match byte-for-byte under the same runner toolchain; this does not promise identical output across different SDK/compiler versions or independent icon compilations. The entire candidate set is built and qualified outside the checkout. Only after verification does the producer reserve a same-parent publication directory, verify the copied bytes, and atomically publish it.
 
 ## Downloaded-artifact verification and publication
 
-The publisher also runs on macOS. It verifies the exact artifact set and every checksum, checks the portable wheel/source/zipapp contracts, validates each ZIP member allowlist, metadata, size limits and safe paths, extracts into private temporary storage, checks the app version and minimum OS declaration, verifies each archive contains only its named CPU and an intact ad-hoc signature, and compares the bundled processor with the standalone zipapp. It checks the compiled icon resources and that archive documentation and installer support match the tagged source. GitHub artifact transfer carries ZIPs, never loose app directories whose permissions might be lost.
+Before publication, GitHub transfers the build job's exact six-file set to macOS 14 Apple Silicon, macOS 15 Intel and macOS 27 Apple Silicon consumers. Each consumer reverifies the full set, runs the downloaded app on its OS and CPU, and runs the host-native test gate; macOS 14 also exercises the Intel ZIP through Rosetta. Failure on any required consumer blocks publication. The publisher then reverifies the same transferred set and every checksum, checks the portable wheel/source/zipapp contracts, validates each ZIP member allowlist, metadata, size limits and safe paths, extracts into private temporary storage, checks the app version and minimum OS declaration, verifies each archive contains only its named CPU and an intact ad-hoc signature, and compares the bundled processor with the standalone zipapp. It checks the compiled icon resources and that archive documentation and installer support match the tagged source. GitHub artifact transfer carries ZIPs, never loose app directories whose permissions might be lost.
 
 Only this verified set is attested and passed to the existing changelog-bound immutable publisher. GitHub provenance attestations establish build provenance; they are not Developer ID identity, notarization, a malware scan, or Gatekeeper approval.
 
@@ -66,4 +68,4 @@ The installer stages the selected runtime configuration before changing the app 
 
 The permanent bundle identifier is `io.github.resoltico.emlattachmentremover`, based on the repository namespace. Displayed copyright is derived from the copyright notice in the bundled project `LICENSE`. Release verification checks both fields. App updates require the permanent identity and retain a recoverable prior bundle and runtime configuration.
 
-The separate macOS delivery compatibility workflow builds one current-runner candidate set, transfers both exact archives to macOS 14 Apple Silicon and macOS 15 Intel, verifies them, and launches the matching packaged executable through a synthetic processing receipt. The macOS 14 lane also tests the Intel archive under Rosetta. GitHub retires macOS 14 hosted runners on November 2, 2026; after that date minimum-OS execution requires a maintained macOS 14 runner rather than silently changing the supported floor.
+The separate pull-request macOS delivery compatibility workflow builds one current-runner candidate set, transfers both exact archives to macOS 14 Apple Silicon, macOS 15 Intel and macOS 27 Apple Silicon, verifies them, and launches the matching packaged executable through a synthetic processing receipt. The tagged release workflow independently repeats the consumer checks on its own exact artifacts before publication. The macOS 14 lane also tests the Intel archive under Rosetta. GitHub retires macOS 14 hosted runners on November 2, 2026; after that date minimum-OS execution requires a maintained macOS 14 runner rather than silently changing the supported floor.

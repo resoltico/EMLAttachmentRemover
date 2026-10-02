@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-15-intel]
+        os: [macos-14, macos-15-intel, xcode-27]
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONWARNINGS: error

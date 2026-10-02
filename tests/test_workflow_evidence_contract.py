@@ -62,6 +62,23 @@ def test_release_qualification_keeps_its_quality_reports() -> None:
     assert "  workflow_call:\n" in _text("swift-fuzz.yml")
 
 
+def test_publication_waits_for_the_tagged_archives_on_supported_macos() -> None:
+    release = _text("release.yml")
+    compatibility = release[
+        release.index("  compatibility:") : release.index("  publish:")
+    ]
+    publish = release[release.index("  publish:") :]
+    assert "    needs: build\n" in compatibility
+    assert "os: [macos-14, macos-15-intel, xcode-27]" in compatibility
+    assert (
+        "name: release-dist-${{ github.run_id }}-${{ github.run_attempt }}"
+        in compatibility
+    )
+    assert "-m tools.release_delivery --verify-directory release-dist" in compatibility
+    assert "EML_DELIVERY_DIRECTORY: release-dist" in compatibility
+    assert "      - compatibility\n" in publish
+
+
 def test_mutation_workers_are_benchmarkable_but_default_to_the_host_policy() -> None:
     assert "      MUTATION_WORKERS: ${{ inputs.workers || 'auto' }}\n" in _text(
         "mutation.yml"
