@@ -43,7 +43,6 @@ struct ArtworkPreview {
     ).fill()
     Artwork.image(.identity, size: 65).draw(in: NSRect(x: 535, y: 1000, width: 65, height: 65))
     text("EML Attachment Remover", x: 620, y: 1029, size: 27, weight: .semibold)
-    text("Version 4.0.0", x: 620, y: 994, size: 19, color: .darkGray)
     Artwork.image(
       .attention, size: 56, color: NSColor(srgbRed: 0.73, green: 0.36, blue: 0.09, alpha: 1)
     ).draw(in: NSRect(x: 530, y: 885, width: 56, height: 56))

@@ -18,7 +18,7 @@ Review names introduced or affected by the task, including your prose. Fix misle
 
 ## Simplicity
 
-Build the simplest design that fully solves the stated problem: few concepts, special cases and hidden states, with one authoritative place for each fact. Simple does not mean short, clever or quick to write. Keep complexity required for correctness, security, error handling and stated requirements. Flag avoidable complexity in explicit requirements without silently overriding them.
+Build the simplest design that fully solves the stated problem and is easy to understand and change. Minimize concepts, special cases and hidden state, not lines of code. Keep complexity required for correctness, security, error handling and stated requirements. Flag avoidable complexity in explicit requirements without silently overriding them.
 
 **Understand first.** Read relevant code, contracts and tests; validate assumptions before changing them. Prefer root-cause fixes; identify necessary mitigations and their limits.
 
@@ -26,11 +26,11 @@ Build the simplest design that fully solves the stated problem: few concepts, sp
 
 **Before adding anything** (code, file, abstraction, option, dependency, check, document):
 
-- Name the concrete need: a requirement, defect or real risk. Without one, do not add it. Verification and documentation count when tied to required behavior or real risks.
+- Name the concrete need: a requirement, defect, maintenance burden or real risk. Without one, do not add it. Tie verification and documentation to these needs.
 - Do not build speculative options, extension points or compatibility layers. Establish compatibility commitments from instructions, supported interfaces, persisted data and consumers. Coordinate changes with consumers and rollout; break commitments only when authorized.
 - Prefer removing unnecessary work, suitable platform features, existing project code, then a maintained dependency or new code according to total complexity. Do not force reuse or a dependency that fits poorly.
 - Keep one authoritative source per fact; derive or check dependent copies. Avoid hand-maintained derived inventories, not necessary source data. Keep test oracles independent of the logic under test.
-- Avoid duplicate mechanisms for the same responsibility. Do not merge distinct contracts merely because their code looks similar.
+- Avoid needless duplicate mechanisms; share abstractions only when they reduce total complexity. Do not merge distinct contracts merely because their code looks similar.
 
 **Before removing anything:**
 
@@ -94,3 +94,13 @@ Describe supported behavior, assumptions and reasons. Keep history in change or 
 ## Easy to start
 
 Document the shortest setup from a clean checkout, prerequisites and actionable errors. Reuse commands; do not mandate setup wrappers or doctor tools. Declare each toolchain version authoritatively; derive or check required copies. Pin inputs for reproducible builds; retain supported dependency ranges and deliberate compatibility probes.
+
+## Changelog: record release outcomes, not development history
+
+Record notable net changes for users, operators, integrators and contributors against the relevant published baseline. Lead with what changed and who is affected; state breaking changes and necessary action, including breaking fixes. Substantiate claims and retain material commands, public identifiers, limits and non-guarantees. Link detailed explanations rather than narrating implementation; do not invent benefits or present unfinished capabilities as delivered.
+
+Consolidate related pending work into its final outcome. Omit routine churn and wholly reversed, unpublished work with no remaining consequence. Classify against released behaviour, not commit labels. Fold repairs to never-released functionality into the completed feature; retain meaningful consequences for public-prerelease users.
+
+Use established categories consistently and omit empty ones. Internal is for noteworthy implementation, verification or release-process outcomes, not routine churn or concealed compatibility changes, new build requirements or user-visible effects. Keep technical method and protocol identifiers; omit development-phase labels.
+
+Retain Unreleased and release history. Preserve version attribution, dates, links and publication-status distinctions. Published entries may be clarified, consolidated or reclassified without changing what they say shipped; factual corrections require evidence. Do not prune or relocate history without an explicit policy or request, or alter tags or published artifacts when editing the working file.

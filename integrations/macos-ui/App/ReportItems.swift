@@ -46,6 +46,9 @@ final class ReportItems: NSObject, NSTableViewDataSource, NSTableViewDelegate {
       column.width = width
       list.addTableColumn(column)
     }
+    list.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+    list.tableColumns[0].minWidth = 200
+    list.tableColumns[1].minWidth = 140
     list.delegate = self
     list.dataSource = self
     list.rowHeight = 28
@@ -53,9 +56,12 @@ final class ReportItems: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     list.allowsEmptySelection = false
     let scroll = NSScrollView()
     scroll.hasVerticalScroller = true
+    scroll.hasHorizontalScroller = true
+    scroll.autohidesScrollers = true
     scroll.borderType = .bezelBorder
     scroll.documentView = list
-    scroll.heightAnchor.constraint(equalToConstant: 140).isActive = true
+    scroll.heightAnchor.constraint(equalToConstant: min(140, CGFloat(items.count) * 28 + 28))
+      .isActive = true
     layout.add(scroll)
     table = list
     list.selectRowIndexes(IndexSet(integer: selectedRow), byExtendingSelection: false)

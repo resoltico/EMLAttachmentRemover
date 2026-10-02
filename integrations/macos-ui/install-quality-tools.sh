@@ -5,6 +5,7 @@ export PYTHONDONTWRITEBYTECODE=1
 SCRIPT_DIR=$(CDPATH='' cd -P "$(dirname "$0")" && pwd -P)
 PYTHON=${EML_REMOVER_PYTHON:-python}
 TOOLS=${EML_SWIFT_TOOLS:-"$HOME/Library/Application Support/EML Attachment Remover Toolchains"}
+/bin/sh "$SCRIPT_DIR/install-swift-toolchain.sh"
 mkdir -p "$TOOLS"
 "$PYTHON" -B - "$SCRIPT_DIR/toolchain.toml" "$TOOLS" <<'PY'
 import hashlib, tomllib, os, shutil, subprocess, sys, tempfile, urllib.request, zipfile
@@ -39,7 +40,9 @@ for tool in ('swiftlint', 'swift-format'):
             subprocess.run(['git','-C',str(source),'checkout','--quiet',pin['revision']],check=True)
             actual=subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip()
             if actual!=pin['revision']:raise RuntimeError('swift-format source revision differs')
-            subprocess.run(['/usr/bin/xcrun','swift','build','--package-path',str(source),'--scratch-path',str(scratch/'build'),'-c','release','--disable-index-store','--product','swift-format'],check=True)
+            toolchain=Path(subprocess.check_output(['/bin/sh',str(Path(sys.argv[1]).parent/'swiftc.sh'),'--toolchain-directory'],text=True).strip())
+            environment={**os.environ,'SDKROOT':subprocess.check_output(['/usr/bin/xcrun','--show-sdk-path'],text=True).strip()}
+            subprocess.run([str(toolchain/'usr/bin/swift'),'build','--package-path',str(source),'--scratch-path',str(scratch/'build'),'-c','release','--disable-index-store','--product','swift-format'],env=environment,check=True)
             shutil.copy2(scratch/'build/release/swift-format',prepared/tool)
         version=subprocess.check_output([str(prepared/tool),'version' if tool=='swiftlint' else '--version'],text=True).strip()
         if version!=pin['version']:raise RuntimeError('Built Swift tool version differs from pin')

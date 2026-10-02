@@ -1,12 +1,12 @@
 # Native macOS report window
 
-Open the app and choose files, use File → Open EML Files, or invoke the existing Finder Quick Action. Cancelling the file picker does not interrupt another batch.
+Open the app and choose files, use File → Open EML Files, or invoke a Finder Quick Action. Cancelling the file picker does not interrupt another batch.
 
-The native application presents processing progress and final results for Finder Quick Actions. It bundles the same zipapp and validated launcher used by Terminal; it does not parse human output or implement another MIME processor. The window shows the actual bundled processor version.
+The native application presents processing progress and final results for Finder Quick Actions. It bundles the same processor as the CLI and a private, JSON-only processing launcher; it does not parse human output or implement another MIME processor. About and copied diagnostic reports show the bundled processor version. The app menu also exposes the complete bundled MIT license; the Finder copyright field remains a copyright notice.
 
 ## Install a prebuilt release
 
-Download `eml_attachment_remover-VERSION-macos-universal.zip` from the official GitHub Release and extract it. This prebuilt universal app requires macOS 14 or later and CPython 3.14; Swift, Xcode, and Apple Command Line Tools are not installation prerequisites. Install CPython 3.14 first, quit an older app before updating, and run the instructions in the archive's `INSTALL.txt` to record your interpreter and install into `~/Applications`. You can also copy the app there and rely on runtime discovery; that does not configure the optional Terminal launcher.
+Download `eml_attachment_remover-VERSION-macos-universal.zip` from the official GitHub Release and extract it. This prebuilt universal app requires macOS 14 or later and CPython 3.14; Swift, Xcode, and Apple Command Line Tools are not installation prerequisites. Install CPython 3.14 first, quit an older app before updating, and run the instructions in the archive's `INSTALL.txt` to record your interpreter and install into `~/Applications`. You can also copy the app there and rely on runtime discovery. Install the wheel or invoke the standalone zipapp for Terminal use.
 
 The release app is already ad-hoc signed by CI. Customers do not re-sign it. It has no Developer ID and is not notarized, so Gatekeeper may block an internet download. If you trust the official download, follow [Apple's app-specific Open Anyway instructions](https://support.apple.com/102445); device-management policy may prohibit an exception. Signature integrity and Gatekeeper approval are separate checks. Do not disable Gatekeeper or strip quarantine to install this application.
 
@@ -22,7 +22,7 @@ For each update, quit the app, verify and extract the new ZIP, rerun the install
 
 ## Build from source
 
-Building requires macOS, Apple Command Line Tools with Swift 6, and CPython 3.14. The app contains Apple Silicon and Intel executables targeting macOS 14 or later. It still requires CPython 3.14 at runtime; the native UI does not bundle Python. Only the host architecture and OS used for qualification are live-tested locally.
+From a source checkout, building requires macOS, Apple Command Line Tools or Xcode for the macOS SDK and signing tools, the pinned official Swift.org toolchain, and CPython 3.14. Install the compiler with `uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh`; it occupies about 5.2 GB alongside the platform tools. The app contains Apple Silicon and Intel executables targeting macOS 14 or later. It still requires CPython 3.14 at runtime; the native UI does not bundle Python. Only the host architecture and OS used for qualification are live-tested locally.
 
 Use a fresh destination for every build. The build reads the current working tree, creates a fresh zipapp, compiles both native architectures, and ad-hoc signs the complete bundle. The same signing command runs in GitHub macOS CI; it requires no developer certificate or secret. Ad-hoc signing is not Developer ID signing or notarization.
 
@@ -33,23 +33,25 @@ Use a fresh destination for every build. The build reads the current working tre
 
 Quit the application before updating it; the installer refuses to replace a running installed bundle. The installer records the selected CPython interpreter in a private runtime configuration outside the app, so Finder launches do not depend on shell environment inheritance. Reinstall with `EML_REMOVER_PYTHON` to change that selection.
 
-The installer defaults to `~/Applications/EML Attachment Remover.app`, refuses an unowned or unmarked existing bundle, and retains the previous application in a private application-support backup directory. It also updates the direct Terminal launcher and zipapp. `EML_REMOVER_PYTHON` selects the build/install interpreter; `EML_REMOVER_UI_APP` selects an alternative app installation path.
+An explicit interpreter selection must exist and be executable. If it disappears, processing fails with runtime guidance instead of silently selecting another interpreter. Automatic discovery applies only when no interpreter was selected.
+
+The installer defaults to `~/Applications/EML Attachment Remover.app`, refuses an unowned or unmarked existing bundle, and retains the previous application in a private application-support backup directory. The CLI is installed separately from the wheel or used directly as a zipapp. `EML_REMOVER_PYTHON` selects the build/install interpreter; `EML_REMOVER_UI_APP` selects an alternative app installation path.
 
 ## Finder Quick Action
 
-Keep the existing shortcut name if other workflows invoke it. Configure it to receive Files from Finder and use one Run Shell Script action with Shortcut Input passed **as arguments**:
+Create a shortcut that receives Files from Finder and uses one Run Shell Script action with Shortcut Input passed **as arguments**:
 
 ```sh
 /usr/bin/open -a "$HOME/Applications/EML Attachment Remover.app" -- "$@"
 ```
 
-Remove the old Show Content action. The application accepts Finder file-open events and creates a separate processing/report window for each batch; an already open report does not hold the Quick Action open. The shortcut finishes when macOS accepts the application launch, not when processing completes. Automation requiring processing results or exit status must use the direct launcher or zipapp instead.
+Use only this launch action. The application accepts Finder file-open events and creates a separate processing/report window for each batch; an already open report does not hold the Quick Action open. The shortcut finishes when macOS accepts the application launch, not when processing completes. Automation requiring processing results or exit status must use the CLI or standalone zipapp.
 
-The running window offers **Stop processing**. This forwards interruption through the existing launcher and preserves completed item receipts; it does not undo copies. The close control is unavailable while that window's run is active. A private lifetime pipe triggers launcher cancellation if the app disappears, including forced termination. Quitting the application stops its active batches and waits for the launcher to finish. A final report uses **Done**, which closes the report without changing files.
+The running window offers **Stop processing**. This forwards interruption through its private launcher and preserves completed item receipts; it does not undo copies. The close control is unavailable while that window's run is active. A private lifetime pipe triggers launcher cancellation if the app disappears, including forced termination. Quitting the application stops its active batches and waits for the launcher to finish. A final report uses **Done**, which closes the report without changing files.
 
 Final reports distinguish created copies, verified existing copies, failures, unprocessed or stopped files, and copies published with an error. Invocation interruption and output-finalization failure remain visible even when item receipts succeeded. Invalid or incomplete reports never imply that no files were created. Finder reveal of a copy is offered only for an accepted verified address during an ordinary completed invocation; other reports can show the source folder.
 
-Details show file outcomes, warning and error codes, and paths; Copy details retains the complete admitted receipt and exact native path evidence. Large detail displays are bounded with an explicit truncation notice; **Copy details** copies the complete report. File lists are virtualized, the content scrolls, and final controls remain accessible below the scrolling content. The application does not upload reports or EML contents.
+Details show file outcomes, warning and error codes, and paths; Copy report retains the complete admitted receipt and exact native path evidence. Large detail displays are bounded with an explicit truncation notice; **Copy report** copies the complete report. File lists are virtualized, the content scrolls, and final controls remain accessible below the scrolling content. The application does not upload reports or EML contents.
 
 ## Artwork
 
@@ -65,6 +67,12 @@ Maintainers install the pinned quality tools with `uv run /bin/sh integrations/m
 
 The normal macOS pytest lanes also compile and test the presentation model, build and verify a fresh signed universal bundle, and process a synthetic EML through its bundled launcher. GUI lifecycle, cancellation, Finder integration, appearance, and keyboard checks require live macOS qualification.
 
+Coverage-guided receipt and address fuzzing runs locally and in a separate macOS CI job using the same pinned official Swift.org compiler as production builds, with AddressSanitizer. Customer installs need none of these development tools. See [fuzz setup, limits, reproduction and CI artifacts](../../QA.md#native-receipt-fuzzing).
+
 ## Release production
 
 Maintainers use `uv run python -B -m tools.release_delivery --output-directory /absolute/fresh/output` on macOS. The same tool reverifies downloaded CI artifacts with `--verify-directory`. See the [release pipeline and audit contract](RELEASE.md), including the exact asset set, archive checks, signature checks, and publication boundary. Portable-only CLI qualification remains available through `tools/qualify_release.py`; it is not accepted as a complete v4 publication.
+
+## Core and UI boundary
+
+The Python package owns MIME transformation, publication, verification, cancellation outcomes, and the public human/JSON/path reporting interfaces. Filesystem differences remain behind the POSIX and Windows bindings; they do not select a GUI or depend on AppKit or Shortcuts. A GUI invokes the processor, consumes its structured receipts and observed process status, and owns selection, presentation and OS-specific file-reveal actions. The native app's private launcher handles macOS process ownership and transports admitted JSON; it does not provide another processing implementation. Other operating-system frontends can use the same public CLI and report schema without adding macOS presentation code to the core.

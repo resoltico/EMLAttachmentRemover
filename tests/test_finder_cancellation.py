@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.test_v3_macos_shortcuts_runner import RUNNER, _complete
+from tests.test_processing_launcher import RUNNER, _complete
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -31,10 +31,10 @@ def test_cancellation_displays_completed_results_before_cleanup(
     result, revealed = _cancel(tmp_path, target, number)
     expected = 128 + number if target == "launcher" else 130
     assert result.returncode == expected
-    assert "created 1" in result.stdout
+    assert json.loads(result.stdout)["report"]["summary"]["created"] == 1
     assert "Interrupted:" in result.stdout
     assert "invalid processor report" not in result.stdout
-    assert revealed is (target == "processor")
+    assert not revealed
     assert not list(tmp_path.glob("eml-remover-report.*"))
     assert not list(tmp_path.glob("eml-remover-errors.*"))
 
@@ -48,7 +48,7 @@ def test_an_uncooperative_child_cannot_prevent_finalization(
         tmp_path, "launcher", signal.SIGTERM, stubborn=True, repeat=repeat
     )
     assert result.returncode == 143
-    assert "created 1" in result.stdout
+    assert json.loads(result.stdout)["report"]["summary"]["created"] == 1
     assert "launcher cancelled" in result.stdout
     assert not revealed
 
@@ -72,7 +72,7 @@ def test_gui_owner_loss_cancels_the_owned_processor(
     """Closing the GUI lifetime pipe preserves receipts and bounds shutdown."""
     result, revealed = _cancel(tmp_path, "owner", signal.SIGTERM, stubborn=stubborn)
     assert result.returncode == 143
-    assert "created 1" in result.stdout
+    assert json.loads(result.stdout)["report"]["summary"]["created"] == 1
     assert "launcher cancelled" in result.stdout
     assert not revealed
     assert not list(tmp_path.glob("eml-remover-report.*"))
@@ -121,7 +121,6 @@ def _cancel(
         "TMPDIR": str(tmp_path),
         "EML_REMOVER_PYTHON": sys.executable,
         "EML_REMOVER_ZIPAPP": str(processor),
-        "EML_REMOVER_REVEAL": "1",
         "EML_REMOVER_UI_OWNER_PIPE": "1" if target == "owner" else "0",
         "STUBBORN": "1" if stubborn else "0",
         "MARKER": str(marker),

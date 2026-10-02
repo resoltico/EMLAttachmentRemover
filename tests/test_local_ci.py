@@ -52,8 +52,36 @@ class PlanTests(unittest.TestCase):
         native_steps = _plan("darwin")
         swift = [step for step in native_steps if step.mirrors == local_ci.SWIFT_SETUP]
         self.assertEqual(len(swift), 2)
+        fuzz = [
+            step
+            for step in native_steps
+            if step.mirrors in {local_ci.SWIFT_COMPILER_SETUP, local_ci.FUZZ}
+        ]
+        self.assertEqual(
+            [step.mirrors for step in fuzz],
+            [local_ci.SWIFT_COMPILER_SETUP, local_ci.FUZZ],
+        )
+        self.assertEqual(
+            fuzz[1].command,
+            (
+                "uv",
+                "run",
+                "/bin/sh",
+                "integrations/macos-ui/fuzz.sh",
+                str(
+                    Path.home()
+                    / "Library/Application Support/EML Attachment Remover QA"
+                    / "receipt-fuzz"
+                    / "host-ci"
+                ),
+                "-max_total_time=300",
+            ),
+        )
         steps = tuple(
-            step for step in native_steps if step.mirrors != local_ci.SWIFT_SETUP
+            step
+            for step in native_steps
+            if step.mirrors
+            not in {local_ci.SWIFT_SETUP, local_ci.SWIFT_COMPILER_SETUP, local_ci.FUZZ}
         )
         linux = _plan("linux")
         mutation_index = next(

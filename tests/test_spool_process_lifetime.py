@@ -68,7 +68,7 @@ def test_private_directory_has_no_orphaned_receipts_after_process_exit(
     command = [sys.executable, "-B", "-c", SCRIPT, case, str(marker), *sources]
     if case == "complete":
         result = subprocess.run(
-            command, env=environment, capture_output=True, check=False, timeout=30
+            command, env=environment, capture_output=True, check=False, timeout=90
         )
         assert result.returncode == 0, result.stderr
     else:
@@ -103,8 +103,25 @@ def _cancelled_process(
 
 def _await_marker(child: subprocess.Popen[bytes], marker: Path) -> None:
     """Wait for complete processing and the actual delivery boundary."""
-    deadline = time.monotonic() + 15
-    while not marker.exists() and time.monotonic() < deadline:
+    # Disk-backed publication can progress slowly on hosted Windows; only the
+    # later delivery/termination checks exercise the fixed forced-exit deadline.
+    started = time.monotonic()
+    deadline = started + 30
+    ceiling = started + 90
+    completed = 0
+    next_progress_check = started
+    while not marker.exists() and time.monotonic() < min(deadline, ceiling):
         assert child.poll() is None
-        time.sleep(0.01)
-    assert marker.exists()
+        now = time.monotonic()
+        if now >= next_progress_check:
+            current = len(list(marker.parent.glob("*.mime-pruned.eml")))
+            if current > completed:
+                completed = current
+                deadline = now + 30
+            next_progress_check = now + 0.5
+        time.sleep(0.05)
+    assert marker.exists(), (
+        "Delivery boundary was not reached within the processing allowance; "
+        f"completed outputs: {len(list(marker.parent.glob('*.mime-pruned.eml')))}, "
+        f"process status: {child.poll()}"
+    )

@@ -36,12 +36,13 @@ final class ReportDetails: NSObject {
     let text = NSTextView()
     text.isEditable = false
     text.isSelectable = true
-    text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+    text.textContainerInset = NSSize(width: 8, height: 8)
+    text.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
     let limit = 1_000_000
     text.string =
       detailText.count > limit
       ? String(detailText.prefix(limit))
-        + "\n[Display truncated. Copy details includes the full report.]" : detailText
+        + "\n[Display truncated. Copy report includes the complete receipt.]" : detailText
     text.textContainer?.widthTracksTextView = true
     text.autoresizingMask = [.width]
     text.setAccessibilityLabel("Processing report details")
@@ -55,7 +56,9 @@ final class ReportDetails: NSObject {
   }
   func footer() {
     let row = layout.footerHost
-    let copy = UIControls.button("Copy details", action: #selector(copyDetails), target: self)
+    let copy = UIControls.button(
+      receipt == nil ? "Copy diagnostics" : "Copy report",
+      action: #selector(copyContents), target: self)
     row.addArrangedSubview(copy)
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -74,7 +77,7 @@ final class ReportDetails: NSObject {
     }
     layout.resizeToContent()
   }
-  @objc private func copyDetails() {
+  @objc private func copyContents() {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(rawReport, forType: .string)
   }

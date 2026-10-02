@@ -4,11 +4,11 @@ The v4 release contains a prebuilt native macOS application and the portable Pyt
 
 ## Source and qualification
 
-A `vMAJOR.MINOR.PATCH` tag must match `pyproject.toml` and the changelog entry. The immutable publication controller checks the tag-push event, checked-out commit, remote tag target, release metadata, uploaded asset identities, and published read-back. Qualification runs on Linux, macOS, and Windows with standard and free-threaded CPython, followed by property exploration and the source-bound actionable mutation gate. Failed required jobs prevent publication.
+A `vMAJOR.MINOR.PATCH` tag must match `pyproject.toml` and the changelog entry. The immutable publication controller checks the tag-push event, checked-out commit, remote tag target, release metadata, uploaded asset identities, and published read-back. Qualification runs on Linux, macOS, and Windows with standard and free-threaded CPython, followed by property exploration, the source-bound actionable mutation gate, and native receipt fuzzing with AddressSanitizer. Failed required jobs prevent publication.
 
 ```mermaid
 flowchart LR
-    Tag[Tagged source] --> Gates[Platform, property and mutation gates]
+    Tag[Tagged source] --> Gates[Platform, property, mutation and native fuzz gates]
     Gates --> Build[macOS producer: two independent builds]
     Build --> Assets[Five-file checksummed delivery]
     Assets --> Verify[macOS verifier after artifact transfer]
@@ -30,7 +30,7 @@ No local runtime configuration, interpreter installation, private path, QA fixtu
 
 ## Producer
 
-The macOS job builds and qualifies the portable artifacts, builds the native app from an immutable source snapshot, normalizes app directory/document/executable permissions to 0755/0644/0755 before signing, and verifies the complete signature. It packages a sorted ZIP with fixed entry timestamps and explicit Unix permissions. Two independent native builds must produce the same archive bytes under the same runner toolchain; this does not promise identical output across different SDK/compiler versions. The entire candidate set is built and qualified outside the checkout. Only after verification does the producer reserve a same-parent publication directory, verify the copied bytes, and atomically publish it to the requested output; build staging cannot interfere with the source audit.
+The macOS job installs the checksum- and signer-pinned official Swift.org compiler declared in `toolchain.toml`, uses the platform SDK and signing tools from Apple Command Line Tools or Xcode, and builds and qualifies the portable artifacts, builds the native app from an immutable source snapshot, normalizes app directory/document/executable permissions to 0755/0644/0755 before signing, and verifies the complete signature. It packages a sorted ZIP with fixed entry timestamps and explicit Unix permissions. Two independent native builds must produce the same archive bytes under the same runner toolchain; this does not promise identical output across different SDK/compiler versions. The entire candidate set is built and qualified outside the checkout. Only after verification does the producer reserve a same-parent publication directory, verify the copied bytes, and atomically publish it to the requested output; build staging cannot interfere with the source audit.
 
 ## Downloaded-artifact verification and publication
 
@@ -40,7 +40,7 @@ Only this verified set is attested and passed to the existing changelog-bound im
 
 ## Customer installation and updates
 
-Customers download and extract the macOS ZIP, install CPython 3.14, and run the bundled installation instructions to install into their user Applications directory and record their chosen interpreter privately. Direct drag/copy installation also works with runtime discovery, but does not configure the optional Terminal integration. Native app use does not require Shortcuts; the Finder Quick Action is an optional launch-only integration. Automation that needs processing completion and exit status uses the direct launcher or zipapp.
+Customers download and extract the macOS ZIP, install CPython 3.14, and run the bundled installation instructions to install into their user Applications directory and record their chosen interpreter privately. Direct drag/copy installation also works with runtime discovery. Native app use does not require Shortcuts; the Finder Quick Action is an optional launch-only integration. Install the CLI from its wheel or invoke the standalone zipapp for automation that needs processing completion and exit status.
 
 Ad-hoc signatures preserve executable/bundle integrity but are not trusted developer identities. A quarantined download may be blocked by Gatekeeper. Users who trust the official download can use the app-specific Privacy & Security → Open Anyway path documented by Apple; managed-machine policy may prohibit it. No installer removes quarantine, disables Gatekeeper, or automatically approves the app. Updates may require renewed approval. A damaged/modified signature is a failure to investigate, not a reason to weaken security checks.
 
@@ -50,7 +50,7 @@ The reviewed design has one source commit, one final artifact manifest, and one 
 
 ## Maintainer audit procedure
 
-Run the complete release producer on macOS, reverify the resulting directory through the same verifier used by publishing, inspect the extracted application and install/update path, and compare each packaged artifact with `SHA256SUMS`. Retain runner/toolchain information and gate evidence. For release review, trace each workflow command to its local equivalent, inspect the tag/commit and changelog body, and verify GitHub asset read-back. Never substitute a manually rebuilt local app for the archive produced by the tagged release job.
+Install the pinned compiler with `uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh`, run the complete release producer on macOS, reverify the resulting directory through the same verifier used by publishing, inspect the extracted application and install/update path, and compare each packaged artifact with `SHA256SUMS`. Retain runner/toolchain information and gate evidence. For release review, trace each workflow command to its local equivalent, inspect the tag/commit and changelog body, and verify GitHub asset read-back. Never substitute a manually rebuilt local app for the archive produced by the tagged release job.
 
 The local `tools/tasks.py ci` plan runs complete delivery production and verification on macOS. On Linux and Windows those two steps explicitly use `--portable-only`; this checks CLI delivery and does not qualify a native release. The publication controller always requires all five files and macOS verification.
 
@@ -59,10 +59,10 @@ uv run python -B -m tools.release_delivery --output-directory release-dist
 uv run --no-project --python 3.14.7 python -B -m tools.release_delivery --verify-directory release-dist
 ```
 
-The installer stages the selected runtime configuration before changing the app and restores the previous bundle if runtime publication fails. It retains the prior bundle on successful updates. Terminal integration is a separate step; its failure is reported explicitly after app installation, and rerunning the installer retries it.
+The installer stages the selected runtime configuration before changing the app and restores the previous bundle if runtime publication fails. It retains the prior bundle on successful updates. It installs only the app and its runtime selection; CLI installation is independent.
 
 ## Application identity and ownership metadata
 
-The permanent bundle identifier is `io.github.resoltico.emlattachmentremover`, based on the repository namespace. Displayed copyright is derived from the copyright notice in the bundled project `LICENSE`. Release verification checks both fields. The installer accepts `org.emlattachmentremover.report` only for an existing user-owned, marked prototype installation being replaced; incoming apps must have the permanent identity. Successful migration retains the prior bundle and the external runtime configuration location.
+The permanent bundle identifier is `io.github.resoltico.emlattachmentremover`, based on the repository namespace. Displayed copyright is derived from the copyright notice in the bundled project `LICENSE`. Release verification checks both fields. App updates require the permanent identity and retain a recoverable prior bundle and runtime configuration.
 
 The separate macOS delivery compatibility workflow builds one current-runner candidate, transfers that exact archive to macOS 14 Intel and macOS 15 Intel, verifies it, and launches its packaged executable through a synthetic processing receipt. GitHub retires macOS 14 hosted runners on November 2, 2026; after that date minimum-OS execution requires a maintained macOS 14 runner rather than silently changing the supported floor.

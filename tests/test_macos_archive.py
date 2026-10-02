@@ -39,8 +39,8 @@ def _bundle(root: Path) -> Path:
     (resources / "ARTWORK.md").write_bytes(
         (archive.ROOT / "integrations/macos-ui/ARTWORK.md").read_bytes()
     )
-    (resources / "run-from-finder.sh").write_bytes(
-        (archive.ROOT / "integrations/macos-shortcuts/run-from-finder.sh").read_bytes()
+    (resources / "processing-launcher.sh").write_bytes(
+        (archive.ROOT / "integrations/macos-ui/processing-launcher.sh").read_bytes()
     )
     (resources / ".eml-ui-installation").write_bytes(
         b"EML Attachment Remover native UI managed installation\n"
@@ -65,7 +65,7 @@ def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
     archive._extract(first, extracted)
     executables = {
         "EML Attachment Remover.app/Contents/MacOS/EMLAttachmentRemover",
-        "EML Attachment Remover.app/Contents/Resources/run-from-finder.sh",
+        "EML Attachment Remover.app/Contents/Resources/processing-launcher.sh",
     }
     for name in archive._surface():
         mode = 0o755 if name.endswith("/") or name in executables else 0o644

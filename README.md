@@ -192,9 +192,9 @@ treated as a message transport feature.
 
 ## Finder Quick Action
 
-Use the [native macOS application](integrations/macos-ui/README.md) for processing progress, Stop processing, and final report windows. Install the prebuilt app or build it from source, configure the existing shortcut to pass Shortcut Input as arguments to the documented application launch command, and remove Show Content. Each batch gets its own report window; a previous open report does not hold the shortcut open. The shortcut's completion confirms launch, so synchronous automation must use the direct launcher or zipapp.
+Use the [native macOS application](integrations/macos-ui/README.md) for processing progress, Stop processing, and final report windows. Install the prebuilt app or build it from source, create a Finder Quick Action that passes Shortcut Input as arguments to the documented application launch command, as its sole action. Each batch gets its own report window; a previous open report does not hold the shortcut open. The shortcut's completion confirms launch, so synchronous automation must use the CLI or zipapp.
 
-The direct Finder/Terminal launcher defaults to `--existing=verify`, validates schema 3, and forwards cancellation to the processor. It reveals only `created` or `existing_verified` outputs with a final address receipt during an ordinary completed invocation. For native-only POSIX reports it decodes and validates `native_base64`; it never uses the display string as a reveal path. The [legacy text presentation instructions](integrations/macos-shortcuts/README.md) remain available for installations without the native app.
+The Finder Quick Action launches the native application. Use the installed CLI or standalone zipapp for synchronous automation and processing exit statuses; the Quick Action returns when macOS accepts the launch. The native application owns progress, stopping, final reports, and Finder reveal.
 
 ## Verification and release artifacts
 

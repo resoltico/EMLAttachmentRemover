@@ -18,7 +18,7 @@ WORKFLOWS: Final = PROJECT_ROOT / ".github" / "workflows"
 RUN_KEY: Final = re.compile(r"( *(?:- )?)run: (.*)")
 # Workflow steps with no local counterpart, and why.
 CI_ONLY: Final = {
-    # macOS 14 defaults to an older Xcode; select its installed Swift 6 compiler.
+    # macOS 14 defaults to an older SDK; select its installed platform tools.
     "sudo xcode-select --switch /Applications/Xcode_16.2.app/Contents/Developer",
     # Extracts the checksum-manifest digest for GitHub artifact attestation.
     (
@@ -94,7 +94,15 @@ class WorkflowParityTests(unittest.TestCase):
             )
         ]
         mirrored = {step.mirrors for step in steps}
-        self.assertEqual(_workflow_steps(), mirrored | CI_ONLY)
+        manual = {
+            (
+                'uv run /bin/sh integrations/macos-ui/fuzz.sh "$FUZZ_OUTPUT" '
+                "-runs=-1 -max_total_time=1800"
+            )
+        }
+        guide = (PROJECT_ROOT / "QA.md").read_text(encoding="utf-8")
+        self.assertTrue(all(command in guide for command in manual))
+        self.assertEqual(_workflow_steps(), mirrored | CI_ONLY | manual)
         self.assertFalse(mirrored & CI_ONLY)
 
     def test_linux_image_uses_the_workflow_uv_and_interpreter(self) -> None:
@@ -133,6 +141,10 @@ class WorkflowParityTests(unittest.TestCase):
             self.assertIn("enable-cache: auto", content)
             self.assertIn("cache-dependency-glob: uv.lock", content)
             for action in re.findall(r"uses: (\S+)", content):
+                if action.startswith("./"):
+                    self.assertEqual(action, "./.github/workflows/swift-fuzz.yml")
+                    self.assertTrue((PROJECT_ROOT / action).is_file())
+                    continue
                 self.assertRegex(action, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 
     def test_block_scalars_are_read_until_their_indentation_ends(self) -> None:

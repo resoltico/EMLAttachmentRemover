@@ -25,15 +25,13 @@ DOCUMENTS: Final = (
     "integrations/macos-ui/RELEASE.md",
     "integrations/macos-ui/INSTALL.txt",
     "integrations/macos-ui/install.sh",
-    "integrations/macos-shortcuts/install.sh",
-    "integrations/macos-shortcuts/installer-filesystem.sh",
-    "integrations/macos-shortcuts/run-from-finder.sh",
+    "integrations/macos-ui/processing-launcher.sh",
 )
 APP_FILES: Final = (
     "Contents/Info.plist",
     "Contents/MacOS/EMLAttachmentRemover",
     "Contents/Resources/remove-eml-attachments.pyz",
-    "Contents/Resources/run-from-finder.sh",
+    "Contents/Resources/processing-launcher.sh",
     "Contents/Resources/EML.icns",
     "Contents/Resources/LICENSE",
     "Contents/Resources/ARTWORK.md",
@@ -66,7 +64,7 @@ def _surface() -> dict[str, int]:
     files = dict.fromkeys((*DOCUMENTS, "INSTALL.txt"), 0o644)
     files.update({f"{APP}/{name}": 0o644 for name in APP_FILES})
     files[f"{APP}/Contents/MacOS/EMLAttachmentRemover"] = 0o755
-    files[f"{APP}/Contents/Resources/run-from-finder.sh"] = 0o755
+    files[f"{APP}/Contents/Resources/processing-launcher.sh"] = 0o755
     directories = {
         str(parent) + "/"
         for name in files
@@ -239,8 +237,8 @@ def verify(archive: Path, zipapp: Path, version: str) -> None:
             f"{APP}/Contents/Resources/ARTWORK.md": (
                 ROOT / "integrations/macos-ui/ARTWORK.md"
             ).read_bytes(),
-            f"{APP}/Contents/Resources/run-from-finder.sh": (
-                ROOT / "integrations/macos-shortcuts/run-from-finder.sh"
+            f"{APP}/Contents/Resources/processing-launcher.sh": (
+                ROOT / "integrations/macos-ui/processing-launcher.sh"
             ).read_bytes(),
             f"{APP}/Contents/Resources/.eml-ui-installation": (
                 b"EML Attachment Remover native UI managed installation\n"

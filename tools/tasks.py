@@ -74,7 +74,7 @@ STRICT_ENVIRONMENT_REMOVALS: Final = (
 )
 SHELL_SCRIPTS: Final = tuple(
     str(path)
-    for path in sorted((PROJECT_ROOT / "integrations" / "macos-shortcuts").glob("*.sh"))
+    for path in sorted((PROJECT_ROOT / "integrations" / "macos-ui").glob("*.sh"))
 )
 WORKFLOW_FILES: Final = tuple(
     str(path) for path in sorted((PROJECT_ROOT / ".github" / "workflows").glob("*.yml"))

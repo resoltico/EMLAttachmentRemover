@@ -2,7 +2,6 @@
 # Install only our owned native application; preserve the previous bundle.
 set -eu
 umask 077
-SCRIPT_DIR=$(CDPATH='' cd -P "$(dirname "$0")" && pwd -P)
 PYTHON=${EML_REMOVER_PYTHON:-python3.14}
 APP=${1:?Supply the freshly built EML Attachment Remover.app path}
 DESTINATION=${EML_REMOVER_UI_APP:-"$HOME/Applications/EML Attachment Remover.app"}
@@ -16,8 +15,7 @@ def install():
     destination = Path(sys.argv[2]).absolute()
     marker = 'EML Attachment Remover native UI managed installation\n'
     identifier = 'io.github.resoltico.emlattachmentremover'
-    legacy_identifier = 'org.emlattachmentremover.report'
-    def owned_tree(root, *, allow_legacy=False):
+    def owned_tree(root):
         for item in [root, *root.rglob('*')]:
             mode = item.lstat()
             if mode.st_uid != os.geteuid() or not (stat.S_ISDIR(mode.st_mode) or stat.S_ISREG(mode.st_mode)):
@@ -25,8 +23,7 @@ def install():
         if (root/'Contents/Resources/.eml-ui-installation').read_text() != marker:
             raise OSError('Application is not an owned native UI bundle')
         with (root/'Contents/Info.plist').open('rb') as stream:
-            accepted = {identifier, legacy_identifier} if allow_legacy else {identifier}
-            if plistlib.load(stream).get('CFBundleIdentifier') not in accepted:
+            if plistlib.load(stream).get('CFBundleIdentifier') != identifier:
                 raise OSError('Application identity differs')
     owned_tree(source)
     executable = str(destination / 'Contents/MacOS/EMLAttachmentRemover')
@@ -41,7 +38,7 @@ def install():
     if parent_stat.st_uid != os.geteuid() or stat.S_IMODE(parent_stat.st_mode) & 0o022:
         raise OSError('Application directory is not privately owned')
     if destination.exists() or destination.is_symlink():
-        owned_tree(destination, allow_legacy=True)
+        owned_tree(destination)
         if destination == source:
             raise OSError('Source and destination are identical')
     configuration = Path.home()/'Library/Application Support/EML Attachment Remover UI'
@@ -104,13 +101,7 @@ except (OSError, ValueError, subprocess.CalledProcessError) as exc:
     raise SystemExit(4)
 
 PY
-# Keep the direct Terminal integration at exactly the bundled processing build.
-EML_REMOVER_ZIPAPP="$APP/Contents/Resources/remove-eml-attachments.pyz" \
-    /bin/sh "$SCRIPT_DIR/../macos-shortcuts/install.sh" >/dev/null || {
-        printf '%s\n' 'The native app is installed; direct Terminal integration failed. Rerun the installer to retry.' >&2
-        exit 4
-    }
-printf '%s\n' 'Replace the Quick Action shell with:'
+printf '%s\n' 'Finder Quick Action shell command:'
 # shellcheck disable=SC2016  # Print literal variables for the Shortcuts action.
 printf '%s\n' '/usr/bin/open -a "$HOME/Applications/EML Attachment Remover.app" -- "$@"'
-printf '%s\n' 'Remove Show Content. The application owns processing and its final report.'
+printf '%s\n' 'Use this single action with Shortcut Input passed as arguments.'

@@ -34,7 +34,8 @@ def test_diagnostic_artifact_names_are_unique_per_run_attempt() -> None:
         for name in ARTIFACT_NAME.findall(path.read_text(encoding="utf-8"))
         if "github.run_id" in name
     ]
-    assert len(names) == 6
+    assert len(names) == 7
+    assert len(set(names)) == len(names)
     assert all(
         name.endswith("-${{ github.run_id }}-${{ github.run_attempt }}")
         for name in names
@@ -52,6 +53,10 @@ def test_release_qualification_keeps_its_quality_reports() -> None:
     assert (
         "build/test-results-project-ci.xml\n            build/coverage.xml" in qualify
     )
+    build = release[release.index("  build:") : release.index("  publish:")]
+    assert "      - fuzz\n" in build
+    assert "    uses: ./.github/workflows/swift-fuzz.yml\n" in release
+    assert "  workflow_call:\n" in _text("swift-fuzz.yml")
 
 
 def test_mutation_workers_are_benchmarkable_but_default_to_the_host_policy() -> None:

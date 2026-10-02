@@ -23,7 +23,7 @@ enum ReportText {
       readableCount += block.count
       readable.append(block)
       if readableCount > 1_000_000 {
-        readable.append("[Display truncated. Copy details includes the full report.]")
+        readable.append("[Display truncated. Copy report includes the complete receipt.]")
         break
       }
     }

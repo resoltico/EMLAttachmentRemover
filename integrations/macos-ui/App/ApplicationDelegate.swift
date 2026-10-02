@@ -6,14 +6,19 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
   private var quitting = false
   private var pendingQuit: Set<UUID> = []
   private var launched = false
+  private var launchFiles: [String] = []
+  private let information = ApplicationInformation()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     trace("app-launched args=\(CommandLine.arguments.count)")
     configureMenus()
     launched = true
-    let arguments = Array(CommandLine.arguments.dropFirst()).filter { !$0.hasPrefix("-psn_") }
-    if !arguments.isEmpty { openBatch(arguments) }
-    // Finder's file-open event can arrive just after launch.
+    // AppKit delivers launch files through openFiles, including executable arguments.
+    if !launchFiles.isEmpty {
+      let paths = launchFiles
+      launchFiles.removeAll()
+      openBatch(paths)
+    }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
       if self.windows.isEmpty { self.openBatch([]) }
     }
@@ -22,9 +27,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     let menu = NSMenu()
     let root = NSMenuItem()
     let appMenu = NSMenu()
-    appMenu.addItem(
-      withTitle: "About EML Attachment Remover",
-      action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+    configureInformation(appMenu)
     appMenu.addItem(.separator())
     appMenu.addItem(
       withTitle: "Hide EML Attachment Remover", action: #selector(NSApplication.hide(_:)),
@@ -49,9 +52,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     open.target = self
     fileMenu.addItem(.separator())
     fileMenu.addItem(
-      withTitle: "Close Report", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+      withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
     let escape = fileMenu.addItem(
-      withTitle: "Close Report", action: #selector(NSWindow.performClose(_:)),
+      withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)),
       keyEquivalent: "\u{1b}")
     escape.keyEquivalentModifierMask = []
     escape.isHidden = true
@@ -77,9 +80,24 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     NSApp.windowsMenu = windowMenu
     NSApp.mainMenu = menu
   }
+  private func configureInformation(_ menu: NSMenu) {
+    let about = menu.addItem(
+      withTitle: "About EML Attachment Remover", action: #selector(showAbout), keyEquivalent: "")
+    about.target = self
+    let license = menu.addItem(
+      withTitle: "License…", action: #selector(showLicense), keyEquivalent: "")
+    license.target = self
+  }
+  @objc private func showAbout() { information.showAbout() }
+  @objc private func showLicense() { information.showLicense() }
+
   func application(_ sender: NSApplication, openFiles filenames: [String]) {
     trace("open-files count=\(filenames.count)")
-    openBatch(filenames)
+    if launched {
+      openBatch(filenames)
+    } else {
+      launchFiles.append(contentsOf: filenames)
+    }
     sender.reply(toOpenOrPrint: .success)
   }
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool
