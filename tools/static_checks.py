@@ -41,6 +41,8 @@ def run(
     run_command((sys.executable, "tools/lint_exceptions.py"))
     run_command((
         *("actionlint", "-shellcheck", "shellcheck", "-pyflakes", "pyflakes"),
+        "-config-file",
+        str(project_root / ".github/actionlint.yaml"),
         *workflow_files,
     ))
     run_command(("shellcheck", "--shell=sh", *shell_scripts))

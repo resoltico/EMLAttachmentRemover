@@ -46,7 +46,7 @@ final class ReportItems: NSObject, NSTableViewDataSource, NSTableViewDelegate {
       column.width = width
       list.addTableColumn(column)
     }
-    list.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+    list.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
     list.tableColumns[0].minWidth = 200
     list.tableColumns[1].minWidth = 140
     list.delegate = self
@@ -69,11 +69,11 @@ final class ReportItems: NSObject, NSTableViewDataSource, NSTableViewDelegate {
   func numberOfRows(in tableView: NSTableView) -> Int { items.count }
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView?
   {
-    let field = UIControls.label(
-      tableColumn?.identifier.rawValue == "file" ? items[row].name : items[row].label)
+    let isFilename = tableColumn?.identifier.rawValue == "file"
+    let field = UIControls.label(isFilename ? items[row].name : items[row].label)
     field.maximumNumberOfLines = 1
     field.lineBreakMode = .byTruncatingMiddle
-    field.toolTip = safeText(items[row].sourceRequest.display)
+    field.toolTip = isFilename ? safeText(items[row].sourceRequest.display) : items[row].label
     return field
   }
   func tableViewSelectionDidChange(_ notification: Notification) {

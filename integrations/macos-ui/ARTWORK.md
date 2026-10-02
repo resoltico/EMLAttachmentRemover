@@ -6,6 +6,8 @@ The application icon and custom interface graphics are original geometric artwor
 
 `Artwork.swift` is the single geometry source for interface artwork. The application draws that geometry directly in an `NSView`, so normal UI rendering remains vector-based at the actual layout size and resolves dynamic AppKit colors in the current appearance. `ArtworkPreview.swift` uses the same geometry to create explicit sRGB PNG review artifacts; those bitmaps are QA output and are not the application's runtime artwork.
 
+The review exporter uses the same semantic accent and status colors as the application. Its simulated icon is a geometry study, not a rendering of the compiled Icon Composer document. Review compiled app icons in Icon Composer and the supported operating systems; the poster cannot establish their materials, mask, appearance variants, or older-system compatibility. The macOS test suite compiles and runs the exporter and checks its image dimensions and sRGB metadata.
+
 The state graphics are deliberately decorative: the adjacent text owns status meaning and accessibility. The graphics therefore reinforce rather than replace the textual processing state.
 
 ## Application icon

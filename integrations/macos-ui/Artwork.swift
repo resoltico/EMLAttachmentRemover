@@ -7,7 +7,6 @@ enum Artwork {
     case identity, processing, success, attention, stopped
   }
 
-  static let blue = NSColor(srgbRed: 0.12, green: 0.36, blue: 0.68, alpha: 1)
   static let coral = NSColor(srgbRed: 0.94, green: 0.39, blue: 0.27, alpha: 1)
   static let ink = NSColor(srgbRed: 0.08, green: 0.16, blue: 0.25, alpha: 1)
 

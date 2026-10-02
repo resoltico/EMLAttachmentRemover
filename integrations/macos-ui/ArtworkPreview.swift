@@ -2,6 +2,15 @@ import AppKit
 
 @main
 struct ArtworkPreview {
+  private static func sRGBBitmap(width: Int, height: Int) -> NSBitmapImageRep? {
+    // Tag the empty allocation before drawing, so its graphics context uses sRGB.
+    NSBitmapImageRep(
+      bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
+      samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+      bytesPerRow: 0, bitsPerPixel: 0
+    )?.retagging(with: .sRGB)
+  }
+
   @MainActor static func main() throws {
     let destination = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
     try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
@@ -19,14 +28,11 @@ struct ArtworkPreview {
   }
 
   @MainActor private static func renderedImage(
-    _ kind: Artwork.Kind, pixels: Int, color: NSColor = Artwork.blue
+    _ kind: Artwork.Kind, pixels: Int, color: NSColor = .controlAccentColor
   ) -> NSImage {
     precondition(pixels > 0)
     guard
-      let bitmap = NSBitmapImageRep(
-        bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
-        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .sRGB,
-        bytesPerRow: 0, bitsPerPixel: 0),
+      let bitmap = sRGBBitmap(width: pixels, height: pixels),
       let context = NSGraphicsContext(bitmapImageRep: bitmap)
     else {
       preconditionFailure("Cannot allocate artwork preview")
@@ -43,10 +49,7 @@ struct ArtworkPreview {
 
   @MainActor private static func iconSourceComposite(pixels: Int) -> NSImage {
     guard
-      let bitmap = NSBitmapImageRep(
-        bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
-        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .sRGB,
-        bytesPerRow: 0, bitsPerPixel: 0),
+      let bitmap = sRGBBitmap(width: pixels, height: pixels),
       let context = NSGraphicsContext(bitmapImageRep: bitmap)
     else {
       preconditionFailure("Cannot allocate icon source preview")
@@ -66,10 +69,7 @@ struct ArtworkPreview {
 
   @MainActor private static func reviewSheet(destination: URL) throws {
     guard
-      let bitmap = NSBitmapImageRep(
-        bitmapDataPlanes: nil, pixelsWide: 1800, pixelsHigh: 1300, bitsPerSample: 8,
-        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .sRGB,
-        bytesPerRow: 0, bitsPerPixel: 0),
+      let bitmap = sRGBBitmap(width: 1800, height: 1300),
       let context = NSGraphicsContext(bitmapImageRep: bitmap)
     else {
       throw NSError(domain: "EMLArtwork", code: 1)
@@ -83,9 +83,9 @@ struct ArtworkPreview {
       "Original vector graphics · state-family review", x: 80, y: 1170, size: 23,
       color: .darkGray)
     drawSimulatedIcon(in: NSRect(x: 85, y: 775, width: 300, height: 300))
-    text("Application icon", x: 105, y: 710, size: 25, weight: .semibold)
+    text("Icon geometry study", x: 105, y: 710, size: 25, weight: .semibold)
     text(
-      "Layered source · system applies the final mask", x: 80, y: 670, size: 19,
+      "Materials and mask are illustrative.", x: 80, y: 670, size: 19,
       color: .darkGray)
     NSColor.white.setFill()
     NSBezierPath(
@@ -96,7 +96,7 @@ struct ArtworkPreview {
     text("EML Attachment Remover", x: 620, y: 1029, size: 27, weight: .semibold)
     renderedImage(
       .attention, pixels: 56,
-      color: NSColor(srgbRed: 0.73, green: 0.36, blue: 0.09, alpha: 1)
+      color: .systemOrange
     ).draw(in: NSRect(x: 530, y: 885, width: 56, height: 56))
     text("Couldn’t create the copy", x: 612, y: 902, size: 34, weight: .semibold)
     text("1 file needs attention", x: 612, y: 863, size: 21, color: .darkGray)
@@ -107,14 +107,14 @@ struct ArtworkPreview {
       y: 707, size: 21)
     text("Move or rename the existing output, then run again.", x: 545, y: 668, size: 21)
     text("Details · 1 error · 1 warning", x: 545, y: 607, size: 19, color: .darkGray)
-    Artwork.blue.setFill()
+    NSColor.controlAccentColor.setFill()
     NSBezierPath(
       roundedRect: NSRect(x: 1510, y: 595, width: 130, height: 48), xRadius: 12, yRadius: 12
     ).fill()
     text("Done", x: 1550, y: 608, size: 21, color: .white)
     drawIndicators()
     text(
-      "Runtime artwork is drawn as vectors. Raster files here exist only for review.", x: 80,
+      "Geometry review only. Check compiled icons and live UI appearances separately.", x: 80,
       y: 62, size: 20, color: .darkGray)
     NSGraphicsContext.restoreGraphicsState()
     let image = NSImage(size: NSSize(width: 1800, height: 1300))
@@ -139,10 +139,10 @@ struct ArtworkPreview {
       let x = CGFloat(115 + index * 340)
       let color: NSColor =
         kind == .success
-        ? NSColor(srgbRed: 0.13, green: 0.49, blue: 0.34, alpha: 1)
+        ? .systemGreen
         : kind == .attention
-          ? NSColor(srgbRed: 0.73, green: 0.36, blue: 0.09, alpha: 1)
-          : kind == .stopped ? .secondaryLabelColor : Artwork.blue
+          ? .systemOrange
+          : kind == .stopped ? .secondaryLabelColor : .controlAccentColor
       renderedImage(kind, pixels: 125, color: color).draw(
         in: NSRect(x: x, y: 310, width: 125, height: 125))
       text(labels[index], x: x, y: 260, size: 22, weight: .semibold)

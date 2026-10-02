@@ -268,6 +268,8 @@ Before release, live-test the existing Finder Quick Action and direct Terminal l
 
 The v4 publisher requires both prebuilt macOS CPU ZIPs in addition to the portable artifacts. Both production and downloaded-artifact verification run on macOS through `python -B -m tools.release_delivery`; a portable-only qualification cannot publish a v4 release. The [release pipeline contract](integrations/macos-ui/RELEASE.md) documents the six-file set, independent builds, archive permissions and extraction, source checks, ad-hoc signing, installation, and publication boundaries.
 
+Native layout checks use production views with the optimized compiler to exercise the batch table at its 560-point minimum width and at 1,000 points: file names gain the extra space, result text fits, and result tooltips describe the result. Native artwork checks compile and run the review exporter and inspect PNG dimensions and sRGB metadata. Its icon study illustrates geometry; actual compiled icons, materials and appearance variants still need visual qualification in Icon Composer and on supported operating systems.
+
 ## Swift quality and exception governance
 
 On macOS, run `uv run /bin/sh integrations/macos-ui/install-quality-tools.sh` once, then `uv run python tools/tasks.py quality`. The same quality task runs the Swift gate in both standard and free-threaded native lanes. `EML_SWIFT_TOOLS` optionally selects an external versioned tool directory; tool caches and build products never belong in the checkout or application. The tool versions, upstream revisions, installer signer, and release checksums are authoritative in `integrations/macos-ui/toolchain.toml`.
