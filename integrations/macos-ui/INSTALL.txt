@@ -12,11 +12,12 @@ not notarized; macOS may block the first launch of an internet download.
 3. Open Terminal, change directory to the extracted ZIP folder, then run:
    EML_REMOVER_PYTHON=/absolute/path/to/python3.14 /bin/sh integrations/macos-ui/install.sh "EML Attachment Remover.app"
    Replace the placeholder with your real Python executable path. The installer
-   records it privately, installs into ~/Applications, and updates CLI support.
+   records it privately and installs the app into ~/Applications. Install the
+   CLI separately from the wheel or invoke the standalone zipapp.
    Alternatively copy the app into ~/Applications and use runtime discovery.
 4. Open ~/Applications/EML Attachment Remover.app in Finder.
-5. If macOS blocks the app because its developer cannot be verified, dismiss
-   the warning with Done or OK; do not move the app to the Bin.
+5. If macOS blocks the app with an unidentified-developer or cannot-check-
+   for-malicious-software warning, dismiss the warning with Done or OK; do not move the app to the Bin.
 6. Open System Settings > Privacy & Security and scroll to Security.
    If an entry for EML Attachment Remover appears, select Open Anyway.
    Authenticate with your Mac password or Touch ID if macOS requests it,

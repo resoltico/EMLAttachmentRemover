@@ -6,13 +6,15 @@ and observations stay outside this repository and public CI artifacts.
 
 ## Required local gates
 
-UV 0.12.21 is required by `pyproject.toml`; CI and the digest-pinned local Linux image use that version. Direct tool dependencies and the transitive lockfile are current as of 2026-10-01. Pyflakes 4 and Setup UV 10 are included; workflow caches use Setup UV's safer `auto` default, with release asset build/publish caches disabled. Hatchling's build-system and development pins agree, and pytest's required Hypothesis plugin is checked against its development dependency pin.
+From a clean checkout, run `uv sync --locked --group dev`. On macOS, also install the pinned Swift toolchain and quality tools using the commands below; complete native release production requires full Xcode as described in the [macOS build guide](integrations/macos-ui/README.md#build-from-source). The dependency restore alone does not install those native tools.
+
+UV 0.12.21 is required by `pyproject.toml`; CI and the digest-pinned local Linux image use that version. Dependency declarations and build-system pins are authoritative in `pyproject.toml`, resolved dependencies in `uv.lock`, and native tool pins in `integrations/macos-ui/toolchain.toml`. Workflow caches use Setup UV's `auto` setting, with release asset build/publish caches disabled. Hatchling's build-system and development pins agree, and pytest's required Hypothesis plugin is checked against its development dependency pin.
 
 Signal-tracing tests resolve the implementation selected by the pinned Mutmut trampoline, including its process-local selector, rather than tracing a decorator's unused code object. Tests verify original, statistics, selected-mutant, and unrelated-mutant dispatch while actual calls continue through the trampoline. Shutdown-operation injection wraps the operation and preserves its selected implementation.
 
 During mutation testing, ordinary test subprocesses inherit the generated application source and workspace import paths; installed-artifact tests explicitly remove that override. A regression test verifies parent/child source agreement. A test-only startup hook initializes the child's Mutmut configuration independently of its working directory and journals distinct measured call names; the parent attributes those names to the test before collecting its mapping, including calls preceding immediate process exit. Unexpected in-process hard exits fail the test without killing its mutation worker; actual process-exit behavior runs in exec children. Finite-output mutations have a generous per-test deadline so nontermination becomes a test failure before the runner timeout. Accepted output is checked as it arrives, and real pipe readers stop if output exceeds the expected payload.
 
-CPython 3.14.8 was published on 2026-09-30, but the current Astral managed-build and GitHub Python-version catalogs do not yet provide it. An actual UV installation request fails; the six qualification lanes retain installable 3.14.7/3.14.7t. Python 3.15 is still prerelease. Update the interpreter pin, local plan and all workflow lanes together once the provider offers both standard and free-threaded builds; a consistency test checks the local interpreter pins against `.python-version`.
+Qualification uses the CPython patch version in `.python-version`, with matching standard/free-threaded versions in the local plan and workflow lanes. As checked on 2026-10-03, the pinned UV 0.12.21 catalog has no 3.14.8 entries, although [GitHub’s Python-version catalog](https://github.com/actions/python-versions/blob/main/versions-manifest.json) now lists them. The shared lanes therefore retain 3.14.7/3.14.7t rather than claim that GitHub lacks the newer build. Update the pinned installer and interpreter plan together when both standard and free-threaded builds are available through the selected installer; a consistency test checks the local pins against `.python-version`. This qualification pin does not restrict customers to that patch release: the runtime contract accepts CPython 3.14.
 
 Run every CI gate this host can reproduce before pushing:
 
@@ -123,12 +125,7 @@ real API call in the same interpreter after failed setup or interrupted teardown
 including SIGINT at the proven publisher return. It also verifies monitor ownership
 and explicit wakeup independently of a machine-specific latency threshold.
 
-A local three-round comparison used the exact audited source and current source,
-verified import locations, 35 real small-message dry runs per round, and five
-warm-up exclusions. The audited median was 55.2–55.4 ms; the corrected median was
-2.6–2.7 ms. These measurements establish removal of the polling floor on that host,
-not a universal runtime target. No signal handler invokes synchronization or thread
-management operations.
+No signal handler invokes synchronization or thread-management operations. The wakeup and monitor-ownership tests establish controller behavior; they do not promise a machine-independent runtime or latency target.
 
 The cancellation-finalization design has a separate review of scope-exit catches,
 handler handback, forwarded requests, already delivered JSON, and duplicate notices
@@ -255,14 +252,14 @@ interior `From ` body data.
 
 Before a public release, inspect the schema/Finder consumer and no-replace boundary,
 run packaged artifacts rather than imports alone, and complete the private field
-protocol locally. The release workflow must gate publication on terminal-green
+protocol locally. The release workflow must gate publication on successful
 quality, mutation, archive, checksum, provenance, and artifact-identity jobs.
 
 ## Native macOS presentation qualification
 
 The current macOS producer lane compiles the presentation model and builds fresh locally signed single-CPU apps, verifies their complete bundle signatures and exact architectures, and exercises their bundled launcher against a synthetic EML. Older-OS lanes run the downloaded matching app without rebuilding its icon. Both pull-request and tagged-release compatibility gates run the transferred candidate on macOS 14 Apple Silicon, macOS 15 Intel and macOS 27 Apple Silicon; release publication waits for the tagged build's own consumers. The macOS 14 lane additionally runs the Intel model and downloaded Intel app through Rosetta on that minimum OS. Translation does not replace a physical macOS 14 Intel test. POSIX quality lanes also lint the native integration shell scripts. Native model checks cover created, existing-verified, stopped, unprocessed, failed, published-with-error, and planned results; invocation status 120 or late interruption cannot become success merely because file receipts succeeded. Stopped and unprocessed rows retain their diagnostics without inflating the processing-error badge.
 
-Before release, live-test the existing Finder Quick Action and direct Terminal launcher with public synthetic fixtures. Check successful attachment removal, exact existing-copy verification, conflicts, mixed batches, long and control-character filenames, warning display, selectable Details and complete Copy details, Finder reveal, keyboard Done, and repeated invocation while earlier reports remain open. Hold a real processor after several publications, activate Stop processing in the native UI, resume it to receive interruption, and compare the complete receipt with actual files and owned PID exits. Separately test a processor that cannot cooperate with cancellation, late interruption, output-finalization failure, missing runtime, and invalid reports; clearly identify injected fault cases. Repeat affected checks after remediation and retain the methodology and receipts in private persistent storage outside the checkout. Live GUI qualification is distinct from automated Python coverage and does not imply qualification on other macOS versions or Intel hardware.
+Before release, live-test the existing Finder Quick Action and direct Terminal launcher with public synthetic fixtures. Check successful attachment removal, exact existing-copy verification, conflicts, mixed batches, long and control-character filenames, warning display, selectable Details and complete Copy technical report, Finder reveal, keyboard Done, and repeated invocation while earlier reports remain open. Hold a real processor after several publications, activate Stop processing in the native UI, resume it to receive interruption, and compare the complete receipt with actual files and owned PID exits. Separately test a processor that cannot cooperate with cancellation, late interruption, output-finalization failure, missing runtime, and invalid reports; clearly identify injected fault cases. Repeat affected checks after remediation and retain the methodology and receipts in private persistent storage outside the checkout. Live GUI qualification is distinct from automated Python coverage and does not imply qualification on other macOS versions or Intel hardware.
 
 ## Complete macOS release delivery
 
@@ -282,7 +279,7 @@ Python structural checks discover source, test and tool modules and enforce phys
 
 ## Native receipt fuzzing
 
-The separate `Native receipt fuzzing` GitHub workflow uses the official Swift.org compiler pinned by version, download hash and installer signer in `integrations/macos-ui/toolchain.toml`. The Apple Swift 6.4 compiler tested with our standalone Command Line Tools rejects `-sanitize=fuzzer`. Production builds, model tests, SourceKit linting, and fuzzing use this same compiler toolchain. Apple Command Line Tools or Xcode supply the macOS SDK and platform/signing tools; neither development compiler nor fuzz harness is bundled in the app. The Swift fuzz sources remain subject to the same strict formatting, lint and structural gates as the native app.
+The separate `Native receipt fuzzing` GitHub workflow uses the official Swift.org compiler pinned by version, download hash and installer signer in `integrations/macos-ui/toolchain.toml`. The Apple Swift 6.4 compiler tested with our standalone Command Line Tools rejects `-sanitize=fuzzer`. Production builds, model tests, SourceKit linting, and fuzzing use the pinned official Swift.org compiler toolchain. Apple Command Line Tools or Xcode supply the macOS SDK and platform/signing tools; neither development compiler nor fuzz harness is bundled in the app. The Swift fuzz sources remain subject to the same strict formatting, lint and structural gates as the native app.
 
 Run `uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh` once on macOS, then `uv run /bin/sh integrations/macos-ui/fuzz.sh "$HOME/Library/Application Support/EML Attachment Remover QA/receipt-fuzz-$(date +%Y%m%d-%H%M%S)"`. The runner compiles the actual report model with libFuzzer and AddressSanitizer, explicitly selects the platform SDK, replays every checked-in seed, then explores a writable copy of the corpus outside the checkout. Campaign defaults are authoritative in `integrations/macos-ui/fuzzing.toml`. The default campaign requests 100,000 executions with seed 1 and a five-minute wall-clock limit, a 64 KiB input limit, a 10-second per-input timeout and a 2 GiB RSS limit. These are exploration limits, not changes to the processor's report capacity. A fixed seed aids reproduction but does not guarantee identical exploration across machines or compiler environments.
 

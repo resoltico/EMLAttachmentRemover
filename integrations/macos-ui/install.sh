@@ -8,7 +8,7 @@ DESTINATION=${EML_REMOVER_UI_APP:-"$HOME/Applications/EML Attachment Remover.app
 "$PYTHON" -c 'import platform, sys; raise SystemExit(platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 14))'     || { printf '%s\n' 'The native UI installer requires CPython 3.14.' >&2; exit 9; }
 codesign --verify --deep --strict "$APP"
 "$PYTHON" - "$APP" "$DESTINATION" <<'PY'
-import json, os, plistlib, shutil, stat, subprocess, sys, tempfile
+import json, os, plistlib, shutil, stat, struct, subprocess, sys, tempfile
 from pathlib import Path
 def install():
     source = Path(sys.argv[1]).absolute()
@@ -31,11 +31,14 @@ def install():
         capture_output=True, text=True, check=False
     ).stdout.strip() == '1'
     required_cpu = 'arm64' if physical_arm else 'x86_64'
-    packaged_cpus = subprocess.check_output(
-        ['/usr/bin/xcrun', 'lipo', '-archs', str(source/'Contents/MacOS/EMLAttachmentRemover')],
-        text=True
-    ).split()
-    if packaged_cpus != [required_cpu]:
+    # Mach-O header_64: magic, CPU type, subtype, file type (Apple loader.h/machine.h).
+    with (source/'Contents/MacOS/EMLAttachmentRemover').open('rb') as executable_file:
+        header = executable_file.read(16)
+    expected_cpu = (0x0100000c, 0) if physical_arm else (0x01000007, 3)
+    if len(header) != 16:
+        raise OSError('Application executable header is incomplete')
+    magic, cpu_type, cpu_subtype, file_type = struct.unpack('<4I', header)
+    if (magic, cpu_type, cpu_subtype & 0x00ffffff, file_type) != (0xfeedfacf, *expected_cpu, 2):
         raise OSError(f'Application CPU does not match this Mac ({required_cpu})')
     executable = str(destination / 'Contents/MacOS/EMLAttachmentRemover')
     processes = subprocess.check_output(['/bin/ps', '-axo', 'pid=,comm='], text=True)

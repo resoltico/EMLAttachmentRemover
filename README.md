@@ -12,9 +12,7 @@ Everything else is kept or rejected. In particular, filenames, media types,
 position are never used as weaker evidence that content is disposable. Originals are
 never modified.
 
-For a prebuilt native macOS application, download the Apple Silicon (`arm64`) or Intel (`x86_64`) ZIP matching your Mac from the GitHub Release. It requires macOS 14 and CPython 3.14, but no Swift compiler; see the [first-launch and Gatekeeper setup steps](integrations/macos-ui/README.md#first-launch-and-macos-approval) and [release pipeline](integrations/macos-ui/RELEASE.md).
-
-For a native macOS progress and report window with processing cancellation, app identity, per-file outcomes, and expandable diagnostics, see the [macOS application guide](integrations/macos-ui/README.md). The application requires CPython 3.14 at runtime.
+For a prebuilt native macOS application, download the Apple Silicon (`arm64`) or Intel (`x86_64`) ZIP matching your Mac from the GitHub Release. It requires macOS 14 or later and CPython 3.14, but no Swift compiler; see the [first-launch and Gatekeeper setup steps](integrations/macos-ui/README.md#first-launch-and-macos-approval) and [release pipeline](integrations/macos-ui/RELEASE.md).
 
 ## Rendering boundary
 
@@ -28,8 +26,7 @@ missing related-media placeholders are expected.
 
 ## Use
 
-CPython 3.14 is required. Install from source with `uv tool install .`, or run the
-release zipapp with CPython 3.14:
+CPython 3.14 is required. Install the CLI from a clean source checkout with `uv tool install --python 3.14 .`, or install a downloaded release wheel with `uv tool install --python 3.14 /absolute/path/to/eml_attachment_remover-VERSION-cp314-none-any.whl`. Replace `VERSION` with the downloaded release version. The macOS app installer does not install this CLI. Alternatively, invoke the release zipapp directly with CPython 3.14:
 
 ```sh
 remove-eml-attachments -- "original.eml"
@@ -194,12 +191,9 @@ treated as a message transport feature.
 
 Use the [native macOS application](integrations/macos-ui/README.md) for processing progress, Stop processing, and final report windows. Install the prebuilt app or build it from source, create a Finder Quick Action that passes Shortcut Input as arguments to the documented application launch command, as its sole action. Each batch gets its own report window; a previous open report does not hold the shortcut open. The shortcut's completion confirms launch, so synchronous automation must use the CLI or zipapp.
 
-The Finder Quick Action launches the native application. Use the installed CLI or standalone zipapp for synchronous automation and processing exit statuses; the Quick Action returns when macOS accepts the launch. The native application owns progress, stopping, final reports, and Finder reveal.
-
 ## Verification and release artifacts
 
-The release contains the zipapp, `SHA256SUMS`, and attestations. After downloading all
-assets into one directory, verify them before use:
+The v4 delivery contains the standalone zipapp, a wheel, a source tarball, separate Apple Silicon and Intel app ZIPs, and `SHA256SUMS`; the published release also has GitHub provenance attestations. The complete names and audiences are listed in the [release asset table](integrations/macos-ui/RELEASE.md#exact-release-assets). Download all five artifacts and the manifest into one directory for the full checksum check below. For an individual artifact, compare its SHA-256 digest with its manifest entry. Attestations are verified through GitHub’s CLI, rather than treated as another member of the six-file delivery:
 
 ```sh
 shasum -a 256 --check SHA256SUMS

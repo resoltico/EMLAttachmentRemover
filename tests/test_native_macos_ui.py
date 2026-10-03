@@ -134,6 +134,8 @@ def _exercise_installation(
     install_environment = {
         **environment,
         "HOME": str(home),
+        # Prebuilt installation must not invoke Xcode/Command Line Tools shims.
+        "DEVELOPER_DIR": str(tmp_path / "absent-developer-directory"),
         "EML_REMOVER_UI_APP": str(installed),
     }
     subprocess.run(
