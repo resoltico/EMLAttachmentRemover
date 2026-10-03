@@ -259,7 +259,7 @@ def _validate_windows_namespace(value: str) -> None:
 
 
 def default_destination(source: str) -> str:
-    """Derive the v3 suffix beside the requested directory entry.
+    """Derive the MIME-pruned suffix beside the requested directory entry.
 
     Returns:
         A path retaining the original parent expression and a ``.mime-pruned.eml`` name.

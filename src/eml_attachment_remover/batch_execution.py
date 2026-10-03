@@ -7,7 +7,15 @@ from typing import TYPE_CHECKING
 
 from . import report_stream
 from .cancellation import CancellationSignal, checkpoint, install_cancellation_handlers
-from .domain import AppError, BatchLedger, ExitCode, ItemPhase
+from .domain import (
+    AppError,
+    BatchLedger,
+    ExitCode,
+    FileIdentity,
+    ItemPhase,
+    ItemStatus,
+    LedgerItem,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -78,3 +86,38 @@ def _execute(
     ledger.finalize_not_run("not run")
     report_stream.archive_or_recover(ledger)
     checkpoint()
+
+
+def prepare_candidate(
+    item: LedgerItem,
+    identity: FileIdentity,
+    candidate: Callable[[LedgerItem, FileIdentity], None],
+) -> bool:
+    """Contain item-local preparation faults without hiding backend invariants.
+
+    Returns:
+        Whether candidate preparation completed for this item.
+
+    Raises:
+        AppError: If preparation reports a deliberate invariant or input failure.
+        CancellationSignal: If processing is interrupted.
+        MemoryError: If allocation fails.
+
+    """
+    try:
+        candidate(item, identity)
+    except AppError, CancellationSignal, MemoryError:
+        raise
+    except Exception as error:
+        if item.phase not in {ItemPhase.BOUND, ItemPhase.PARSED, ItemPhase.CLASSIFIED}:
+            raise
+        item.finish(
+            ItemStatus.FAILED,
+            AppError(
+                ExitCode.INTERNAL_ERROR,
+                str(error) or type(error).__name__,
+                phase=item.phase.value,
+            ),
+        )
+        return False
+    return True

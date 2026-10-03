@@ -55,7 +55,7 @@ class DistributionProjectTableTests(unittest.TestCase):
                 'backend-path = ["other"]',
             )
             with self.assertRaisesRegex(
-                DistributionArchiveError, "backend path must be tools"
+                DistributionArchiveError, "^release build backend path must be tools$"
             ):
                 _load(distribution.root)
 

@@ -61,7 +61,7 @@ try:
     seeds.mkdir()
     corpus = output / 'corpus'
     corpus.mkdir()
-    inputs = [root / 'ReportModel.swift', root / 'Fuzz/ReceiptFuzzer.swift',
+    inputs = [root / 'ReportModel.swift', root / 'LauncherFailure.swift', root / 'Fuzz/ReceiptFuzzer.swift',
               root / 'fuzzing.toml', root / 'toolchain.toml', root / 'fuzz.sh', root / 'swiftc.sh',
               root.parents[1] / 'tools/task_process.py']
     seed_paths = sorted((root / 'Fuzz/corpus').iterdir())
@@ -88,7 +88,7 @@ try:
     os.environ['ASAN_SYMBOLIZER_PATH'] = str(Path(toolchain) / 'usr/bin/llvm-symbolizer')
     binary = output / 'receipt-fuzzer'
     run('compile', [*compiler, '-swift-version', '6', '-warnings-as-errors', '-g', '-O',
-        '-parse-as-library', '-sanitize=fuzzer,address', str(sources / 'ReportModel.swift'),
+        '-parse-as-library', '-sanitize=fuzzer,address', str(sources / 'ReportModel.swift'), str(sources / 'LauncherFailure.swift'),
         str(sources / 'ReceiptFuzzer.swift'), '-o', str(binary)], campaign['compile_seconds'])
     base = [str(binary), '-timeout=' + str(campaign['timeout_seconds']),
             '-rss_limit_mb=' + str(campaign['rss_limit_mb']), '-max_len=' + str(campaign['max_length']),

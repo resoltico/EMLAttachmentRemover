@@ -14,9 +14,9 @@ import pytest
 from eml_attachment_remover import (
     batch,
     process_file,
+    report_document,
     report_spool,
     report_stream,
-    reporting_v3,
 )
 from eml_attachment_remover.domain import AppError, BatchLedger, ExitCode, ItemStatus
 from eml_attachment_remover.native_paths import path_value
@@ -102,7 +102,7 @@ def test_repeated_api_calls_leave_no_report_storage_and_keep_evidence(
         assert item.transformation.removals[0].path == (1,)
         assert item.verification is not None
         assert item.verification.digest_matches
-        document = reporting_v3.report(
+        document = report_document.report(
             ledger, "dry-run" if kind == "dry-run" else "apply", 0
         )
         record = document["items"][0]  # type: ignore[index]
@@ -158,7 +158,7 @@ def test_api_preserves_prepublication_evidence_limit(
     source.write_bytes(MESSAGE)
     baseline = process_file(str(source), dry_run=True)
     complete_record = json.dumps(
-        reporting_v3.item_json(baseline.items[0]), ensure_ascii=True
+        report_document.item_json(baseline.items[0]), ensure_ascii=True
     )
     # Size the test budget from public evidence so long persistent test roots
     # do not accidentally exhaust the initial minimal request receipt.

@@ -8,7 +8,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from eml_attachment_remover import report_budget, report_diagnostics, reporting_v3
+from eml_attachment_remover import report_budget, report_diagnostics, report_document
 from eml_attachment_remover.domain import AppError, BatchLedger, ExitCode, ItemStatus
 from eml_attachment_remover.native_paths import path_value
 
@@ -54,7 +54,7 @@ def test_non_bmp_failures_cannot_consume_later_inputs_reservations() -> None:
     ]
     for index in range(len(actual)):
         assert sum(actual[index + 1 :]) <= budget.tail[index]
-    assert reporting_v3.MAX_ERROR_BYTES == report_diagnostics.MAX_ERROR_BYTES
+    assert report_document.MAX_ERROR_BYTES == report_diagnostics.MAX_ERROR_BYTES
 
 
 def test_byte_truncation_keeps_the_longest_prefix_at_an_exact_boundary(

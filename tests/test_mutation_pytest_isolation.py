@@ -31,9 +31,10 @@ def _marker_environment(marker: str) -> Iterator[None]:
         Control while the environment is patched; it is restored afterwards.
 
     """
-    with patch.dict(
-        os.environ, {mutation_pytest_isolation.MUTANT_MARKER_VARIABLE: marker}
-    ):
+    environment = selector_preserving_environment({})
+    if mutation_pytest_isolation.MUTANT_MARKER_VARIABLE not in environment:
+        environment[mutation_pytest_isolation.MUTANT_MARKER_VARIABLE] = marker
+    with patch.dict(os.environ, environment):
         # A mutation campaign sets this for the whole suite; these tests exercise
         # import selection only, with no pytest configuration to record into.
         os.environ.pop(mutation_pytest_isolation.TEMPORARY_ROOT_VARIABLE, None)
@@ -315,3 +316,20 @@ class MutationPytestIsolationTests(unittest.TestCase):
                 self.assertEqual(
                     sys.modules["tools"].__path__, [str(workspace / "tools")]
                 )
+
+
+@pytest.mark.parametrize("package", [None, object()])
+def test_workspace_import_hook_tolerates_an_unloaded_or_nonpackage_module(
+    tmp_path: Path, package: object
+) -> None:
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "pyproject.toml").write_text("[project]\n")
+    unused: Any = object()
+    with (
+        _marker_environment("x__mutmut_1"),
+        patch.object(Path, "cwd", return_value=tmp_path),
+        patch.object(sys, "path", []),
+        patch.dict(sys.modules, {"tools": package}),
+    ):
+        mutation_pytest_isolation.pytest_load_initial_conftests(unused, unused, [])
+        assert sys.path == [str(tmp_path)]

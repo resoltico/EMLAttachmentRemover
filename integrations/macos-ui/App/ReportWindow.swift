@@ -76,7 +76,7 @@ final class ReportWindow: NSObject, NSWindowDelegate {
     } catch {
       showFailure(
         "Couldn’t start processing",
-        explanation: "Check the CPython 3.14 runtime configuration and application installation.",
+        explanation: launchExplanation(error),
         diagnostics: error.localizedDescription)
     }
   }
@@ -123,15 +123,12 @@ final class ReportWindow: NSObject, NSWindowDelegate {
     } catch {
       let stopped = stopping || [129, 130, 143].contains(status)
       let diagnostics = String(decoding: stderr, as: UTF8.self)
-      let missingPython =
-        status == 9 && (diagnostics.contains("Python 3.14") || diagnostics.contains("CPython 3.14"))
+      let launcherFailure = error as? LauncherFailure
+      let heading = stopped ? "Processing stopped" : "Couldn’t read the processing results"
       showFailure(
-        missingPython
-          ? "CPython 3.14 is required"
-          : stopped ? "Processing stopped" : "Couldn’t read the processing results",
-        explanation: missingPython
-          ? "Processing could not start. Install CPython 3.14 or configure the runtime described in the application setup guide."
-          : "The app could not confirm the processing results. Files may already have been created; check the destination before trying again.",
+        launcherFailure?.heading ?? heading,
+        explanation: launcherFailure?.errorDescription
+          ?? "The app could not confirm the processing results. Files may already have been created; check the destination before trying again.",
         diagnostics: "Process status: \(status)\n\(error.localizedDescription)\n\(diagnostics)")
     }
   }

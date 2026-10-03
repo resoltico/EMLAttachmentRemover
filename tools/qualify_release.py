@@ -190,7 +190,7 @@ def _strict_environment() -> dict[str, str]:
         A fresh child-process environment.
 
     """
-    removed_names = {"PYTHONPATH", "SOURCE_DATE_EPOCH"}
+    removed_names = {"PYTHONPATH"}
     environment = {
         name: value for name, value in os.environ.items() if name not in removed_names
     }

@@ -15,7 +15,12 @@ UI = Path(__file__).resolve().parents[1] / "integrations/macos-ui"
 @pytest.mark.skipif(sys.platform != "darwin", reason="AppKit layout")
 def test_native_batch_results_remain_readable_when_resizing(tmp_path: Path) -> None:
     executable = tmp_path / "layout-tests"
-    sources = [UI / "Artwork.swift", UI / "ReportModel.swift", UI / "test-layout.swift"]
+    sources = [
+        UI / "Artwork.swift",
+        UI / "ReportModel.swift",
+        UI / "LauncherFailure.swift",
+        UI / "test-layout.swift",
+    ]
     sources.extend(
         path
         for path in sorted((UI / "App").glob("*.swift"))

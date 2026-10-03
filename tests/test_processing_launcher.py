@@ -186,7 +186,10 @@ def test_missing_selected_runtime_never_uses_available_discovery(
     assert result.returncode == 9
     assert b"selected CPython 3.14 runtime is missing" in result.stderr
     assert not marker.exists()
-    assert not result.stdout
+    assert json.loads(result.stdout) == {
+        "launcher_error": "python_unavailable",
+        "process_status": 9,
+    }
 
 
 def test_finder_launcher_fails_closed_for_summary_exit_and_schema_drift(

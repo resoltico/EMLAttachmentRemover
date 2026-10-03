@@ -29,12 +29,16 @@ def test_invalid_build_numbers_are_refused(tmp_path: Path, value: str) -> None:
     configuration.write_text(
         f"[tool.eml-attachment-remover.macos]\nbuild-number = {value}\n"
     )
-    with pytest.raises(ValueError, match="must be an integer from 1 to 9999"):
+    with pytest.raises(
+        ValueError, match=r"^Native build-number must be an integer from 1 to 9999$"
+    ):
         build_number(configuration)
 
 
 def test_absent_build_number_has_actionable_guidance(tmp_path: Path) -> None:
     configuration = tmp_path / "pyproject.toml"
     configuration.write_text('[project]\nversion = "4.0.0"\n')
-    with pytest.raises(ValueError, match=r"Declare tool\.eml-attachment-remover"):
+    with pytest.raises(
+        ValueError, match=r"^Declare tool\.eml-attachment-remover\.macos\.build-number$"
+    ):
         build_number(configuration)

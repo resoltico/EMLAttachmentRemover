@@ -65,12 +65,12 @@ with open(sys.argv[2], 'wb') as target:
     plistlib.dump(metadata, target)
 PY
 # Compile an immutable source snapshot for the selected CPU.
-cp "$SCRIPT_DIR/ReportModel.swift" "$SCRIPT_DIR/Artwork.swift" "$STAGING/"
+cp "$SCRIPT_DIR/ReportModel.swift" "$SCRIPT_DIR/LauncherFailure.swift" "$SCRIPT_DIR/Artwork.swift" "$STAGING/"
 mkdir "$STAGING/app"
 cp "$SCRIPT_DIR"/App/*.swift "$STAGING/app/"
 "$SWIFTC" -sdk "$SDK" -swift-version 6 -warnings-as-errors -O \
     -target "$ARCH-apple-macosx14.0" \
-    "$STAGING/ReportModel.swift" "$STAGING/Artwork.swift" "$STAGING"/app/*.swift \
+    "$STAGING/ReportModel.swift" "$STAGING/LauncherFailure.swift" "$STAGING/Artwork.swift" "$STAGING"/app/*.swift \
     -o "$APP/Contents/MacOS/EMLAttachmentRemover"
 printf '%s\n' 'EML Attachment Remover native UI managed installation' > "$APP/Contents/Resources/.eml-ui-installation"
 "$PYTHON" -B - "$APP" <<'PY'

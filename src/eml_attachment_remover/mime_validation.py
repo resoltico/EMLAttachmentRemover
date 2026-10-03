@@ -93,6 +93,28 @@ def _structured(
     return ContentSpec(_ascii_token(token), parameters, decoded)
 
 
+def _field_spec(
+    value: bytes,
+    validator: Callable[[bytes], bytes],
+    field_name: str,
+    *,
+    comments_allowed: bool,
+) -> ContentSpec:
+    """Attach a field name to a structured-value rejection.
+
+    Returns:
+        The admitted structured MIME value.
+
+    Raises:
+        AppError: If structured syntax is malformed.
+
+    """
+    try:
+        return _structured(value, validator, comments_allowed=comments_allowed)
+    except AppError as error:
+        raise AppError(error.code, f"{field_name}: {error.message}") from error
+
+
 def _structured_token(value: bytes) -> bytes:
     """Validate the primary token in a structured MIME field.
 
@@ -171,13 +193,18 @@ def content_specs(
     """
     raw_type = _header_value(headers, b"content-type")
     content_type = (
-        _structured(raw_type, _media_token, comments_allowed=True)
+        _field_spec(raw_type, _media_token, "Content-Type", comments_allowed=True)
         if raw_type
         else ContentSpec("text/plain", {})
     )
     raw_disposition = _header_value(headers, b"content-disposition")
     disposition = (
-        _structured(raw_disposition, _structured_token, comments_allowed=False)
+        _field_spec(
+            raw_disposition,
+            _structured_token,
+            "Content-Disposition",
+            comments_allowed=False,
+        )
         if raw_disposition
         else None
     )

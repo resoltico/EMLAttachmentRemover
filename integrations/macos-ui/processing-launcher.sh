@@ -10,6 +10,13 @@ fail() {
     code=$1
     shift
     printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+    case "$code" in
+        9) kind=python_unavailable ;;
+        3) kind=processor_unavailable ;;
+        7) kind=report_storage_unavailable ;;
+        *) kind=invalid_request ;;
+    esac
+    printf '{"launcher_error":"%s","process_status":%s}\n' "$kind" "$code"
     exit "$code"
 }
 

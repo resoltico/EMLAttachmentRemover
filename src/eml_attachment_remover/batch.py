@@ -22,11 +22,9 @@ from .domain import (
     PublicationReceipt,
     TransformationPlan,
 )
-from .mime_encoding import fingerprint_retained
 from .mime_execution import build_candidate
 from .mime_policy import classify
 from .mime_raw import parse_raw_mime
-from .mime_removals import RemovalIndex
 from .mime_verification import verify_candidate
 from .native_paths import (
     bind_destination,
@@ -104,7 +102,7 @@ class _Inventory:
 
 
 def _destination_for(source: str, options: BatchOptions) -> str:
-    """Compute the explicit or v3 default destination without normalizing a source.
+    """Compute output intent without normalizing the source path.
 
     Returns:
         The exact requested output intent before native destination binding.
@@ -199,9 +197,6 @@ def _candidate(item: LedgerItem, expected_identity: FileIdentity) -> None:
     policy = classify(tree.root)
     checkpoint()
     item.phase = ItemPhase.CLASSIFIED
-    roots = {removal.path for removal in policy.removals}
-    retained_nodes = RemovalIndex.from_roots(roots).retained_nodes(tree.root)
-    retained = fingerprint_retained(tree.raw, list(retained_nodes))
     candidate = build_candidate(tree, policy.removals)
     receipt, independently_recomputed = verify_candidate(
         tree, candidate, policy.removals
@@ -233,10 +228,6 @@ def _candidate(item: LedgerItem, expected_identity: FileIdentity) -> None:
             "code": "RELATED_REFERENCES_MAY_BE_UNRESOLVED",
             "message": "retained HTML may reference removed related components",
         })
-    if retained != independently_recomputed:
-        raise AppError(
-            ExitCode.VERIFICATION_ERROR, "source fingerprint recomputation mismatch"
-        )
     item.phase = ItemPhase.CANDIDATE
 
 
@@ -398,11 +389,12 @@ def _run_item(
     all_identities: set[FileIdentity],
     options: BatchOptions,
 ) -> bool:
+    publication_cause: BaseException | None = None
     try:
-        _candidate(item, identities[item.index])
-        admit(ledger, item)
-        with coherent_operation():
-            publication_cause = _existing_or_publish(item, options, all_identities)
+        if batch_execution.prepare_candidate(item, identities[item.index], _candidate):
+            admit(ledger, item)
+            with coherent_operation():
+                publication_cause = _existing_or_publish(item, options, all_identities)
         checkpoint()
     except AppError as exc:
         _mark(item, exc)

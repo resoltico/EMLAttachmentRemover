@@ -55,6 +55,12 @@ On Windows, the bound destination directory is opened with the write access requ
 for its `FlushFileBuffers` durability receipt. If a filesystem still cannot provide
 that receipt, the visible copy is reported as `published_with_error`, never `created`.
 
+### Input and filesystem limits
+
+Each source file is limited to 128 MiB of raw bytes. Supported transfer encodings do not expand beyond their encoded input, and retained leaf payload spans are disjoint; there is no separate 96 MiB retained-payload limit. This is an input-size limit, not a peak-RAM guarantee: parsing and verification can hold several representations concurrently. Batch processing is limited to 4,096 requests and 4 MiB of cumulative native path bytes; OS command-line limits can be lower. The native app accepts at most 4,095 file paths per launch because Foundation’s 4,096-argument limit also includes the launcher script. Oversized launches are refused before processing; select fewer files and try again.
+
+Publication requires a filesystem that supports the backend’s exclusive atomic publication primitive. If a destination volume does not support it, the command refuses publication rather than exposing a partial copy. For example, macOS exFAT can refuse exclusive rename. Use `--output-dir` to write on a compatible local volume while reading the original from the other volume; the source remains unchanged. Network and FUSE support depends on the specific filesystem and server and has not been universally qualified.
+
 ### Destination and existing policy
 
 ```sh
@@ -99,20 +105,7 @@ available output endpoint; a closed pipe or channel error can prevent completion
 Signals record cancellation requests; explicit checkpoints acknowledge them before
 publication or after a complete publication outcome is committed. A proven copy
 keeps its successful receipt, and genuine post-publication errors keep their error
-status. The invocation controller prepares its monitor before binding its context,
-restores that context independently of cleanup failures, and keeps cooperative
-handlers installed through shutdown. Normal shutdown wakes and joins the monitor
-immediately, without a polling delay. Nested scopes in the same thread share their
-active owner; a copied context in another thread acquires its own owner.
-The API catches cooperative requests through controller shutdown and returns its
-completed ledger with invocation interruption metadata. Final checks inspect each
-controller only after its handler stops accepting requests. Delivery status is
-selected from the retired guard; a late request preserves report bytes and receives
-one interruption explanation.
-The CLI's outer interruption boundary also covers error-response finalization and
-resource release after handlers retire. A complete or partial error document is
-never replaced; late interruption returns 130 with one bounded stderr notice. A
-blocked notice retains the cancellation deadline and repeat-signal escalation.
+status. The API returns completed item evidence with invocation interruption metadata. A late signal preserves any report bytes already delivered and produces one bounded interruption explanation. Complete or partial error documents are never replaced.
 The public API keeps the caller's signal policy outside its owned controller.
 Unresponsive processing is bounded to 10 seconds after the first signal;
 a second signal ends it immediately. An interruption before delivery reports the

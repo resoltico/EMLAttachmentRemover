@@ -1,4 +1,4 @@
-"""Public single-file facade over the v3 batch implementation."""
+"""Public single-file facade over the batch implementation."""
 
 from __future__ import annotations
 

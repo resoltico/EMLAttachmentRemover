@@ -1,0 +1,171 @@
+"""Independent byte-channel and display-encoding report receipts."""
+
+from __future__ import annotations
+
+import io
+import sys
+from typing import TextIO, cast
+
+import pytest
+
+from eml_attachment_remover import report_document
+from eml_attachment_remover.domain import (
+    AppError,
+    BatchLedger,
+    ExitCode,
+    ItemStatus,
+    PathValue,
+    PublicationReceipt,
+)
+
+
+class _RecordingStream:
+    """A deliberately narrow text stream which records each rendered line."""
+
+    def __init__(self, encoding: str | None) -> None:
+        self.encoding = encoding
+        self.writes: list[str] = []
+
+    def write(self, value: str) -> int:
+        self.writes.append(value)
+        return len(value)
+
+
+@pytest.mark.parametrize(
+    ("encoding", "text", "expected"),
+    [
+        (None, "ordinary", "ordinary\n"),
+        ("ascii", "bad-\udcff", "bad-\\udcff\n"),
+    ],
+)
+def test_safe_writes_one_line_with_its_declared_or_fallback_encoding(
+    encoding: str | None, text: str, expected: str
+) -> None:
+    """Human output has a deterministic, lossless fallback for display-only text."""
+    stream = _RecordingStream(encoding)
+    report_document.write_display(cast("TextIO", stream), text)
+    assert stream.writes == [expected]
+
+
+def test_human_output_handles_nonmapping_items_warnings_and_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed display documents never bypass the one-line/error channel contract."""
+    standard = _RecordingStream("utf-8")
+    errors = _RecordingStream("ascii")
+    monkeypatch.setattr(sys, "stdout", standard)
+    monkeypatch.setattr(sys, "stderr", errors)
+    report_document.write_human({
+        "items": [
+            "not-a-record",
+            {
+                "status": "failed",
+                "source_request": {"display": "source-\udcff"},
+                "warnings": [{"code": "W", "message": "warn-\udcff"}],
+                "error": {"code": "PARSE_ERROR", "message": "bad-\udcff"},
+            },
+        ]
+    })
+    assert standard.writes == ["None: <unknown>\n", "failed: source-\\udcff\n"]
+    assert errors.writes == [
+        "source-\\udcff: W: warn-\\udcff\n",
+        "source-\\udcff: PARSE_ERROR: bad-\\udcff\n",
+    ]
+
+
+def test_paths0_uses_text_fallback_only_for_accepted_publications(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-base64 POSIX name remains byte exact and failures remain diagnostic."""
+    ledger = BatchLedger.from_requests([PathValue("input", "input", None)])
+    item = ledger.items[0]
+    item.publication = PublicationReceipt(
+        visibility="visible",
+        identity=None,
+        digest=None,
+        file_sync="succeeded",
+        directory_sync="succeeded",
+        address_verified=True,
+        final_address=PathValue("final-π.eml", "final display", None),
+        temp_cleanup="succeeded",
+    )
+    item.finish(ItemStatus.CREATED)
+    output = io.BytesIO()
+    errors = _RecordingStream("utf-8")
+    monkeypatch.setattr(
+        sys,
+        "stdout",
+        cast("TextIO", type("Out", (), {"buffer": output})()),
+    )
+    monkeypatch.setattr(sys, "stderr", errors)
+    report_document.write_paths0(ledger)
+    assert output.getvalue() == "final-π.eml".encode() + b"\0"
+    assert errors.writes == []
+
+
+def test_json_and_paths0_keep_native_only_paths_machine_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A surrogate-escaped POSIX address never enters JSON text or loses its bytes."""
+    native = b"native-\xff.eml"
+    encoded = report_document._base64(native)  # ruff: ignore[private-member-access] - exact schema evidence.
+    request = PathValue("source-\udcff", "source-\\udcff", encoded)
+    ledger = BatchLedger.from_requests([request])
+    item = ledger.items[0]
+    item.publication = PublicationReceipt(
+        visibility="visible",
+        identity=None,
+        digest=None,
+        file_sync="succeeded",
+        directory_sync="succeeded",
+        address_verified=True,
+        final_address=PathValue("final-\udcff.eml", "final-\\udcff.eml", encoded),
+        temp_cleanup="succeeded",
+    )
+    item.finish(ItemStatus.CREATED)
+    document = report_document.report(ledger, "apply", 0)
+    items = cast("list[dict[str, object]]", document["items"])
+    source_record = items[0]["source_request"]
+    assert cast("dict[str, object]", source_record)["text"] is None
+    output = io.BytesIO()
+    errors = _RecordingStream("utf-8")
+    stream = type("Out", (), {"buffer": output})()
+    monkeypatch.setattr(sys, "stdout", cast("TextIO", stream))
+    monkeypatch.setattr(sys, "stderr", errors)
+    report_document.write_paths0(ledger)
+    assert output.getvalue() == native + b"\0"
+    assert errors.writes == []
+
+
+def test_json_uses_ascii_binary_bytes_when_stdout_has_a_binary_channel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The JSON wire stays UTF-8-compatible ASCII despite a non-UTF-8 text wrapper."""
+    output = io.BytesIO()
+    monkeypatch.setattr(
+        sys,
+        "stdout",
+        cast("TextIO", type("Out", (), {"buffer": output, "encoding": "utf-16"})()),
+    )
+    report_document.write_json({"display": "Ērvins"})
+    assert output.getvalue() == b'{"display": "\\u0112rvins"}\n'
+
+
+def test_paths0_keeps_failed_item_out_of_binary_output_and_reports_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected record never leaks a final name into the NUL-delimited stream."""
+    ledger = BatchLedger.from_requests([PathValue("bad", "bad display", None)])
+    item = ledger.items[0]
+    item.finish(ItemStatus.FAILED, AppError(ExitCode.PARSE_ERROR, "broken"))
+    output = io.BytesIO()
+    errors = _RecordingStream("utf-8")
+    monkeypatch.setattr(
+        sys,
+        "stdout",
+        cast("TextIO", type("Out", (), {"buffer": output})()),
+    )
+    monkeypatch.setattr(sys, "stderr", errors)
+    report_document.write_paths0(ledger)
+    assert output.getvalue() == b""
+    assert errors.writes == ["bad display: PARSE_ERROR: broken\n"]

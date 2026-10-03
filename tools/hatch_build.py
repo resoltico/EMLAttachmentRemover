@@ -109,7 +109,7 @@ def timestamp_wheel(path: Path) -> None:
         if str(parent) != "."
     } - names
     for name in directories:
-        directory = zipfile.ZipInfo(name, ZIP_TIME)
+        directory = zipfile.ZipInfo(name)
         directory.create_system = 3
         directory.external_attr = 0o40755 << 16
         members.append((directory, b""))

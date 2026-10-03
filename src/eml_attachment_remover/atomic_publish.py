@@ -11,7 +11,11 @@ from typing import Final
 from .domain import AppError, ExitCode
 
 RENAME_EXCL: Final = 0x00000004
-_UNSUPPORTED_DIRECTORY_SYNC_ERRNOS: Final = frozenset({22, 45, 95})
+_UNSUPPORTED_DIRECTORY_SYNC_ERRNOS: Final = frozenset({
+    errno.EINVAL,
+    errno.ENOTSUP,
+    errno.EOPNOTSUPP,
+})
 
 
 def _darwin_rename_exclusive(

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
+from tools import build_timestamp
 from tools import macos_archive as archive
 from tools.release_files import ReleaseQualificationError
 
@@ -70,8 +71,16 @@ def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
             "arm64",
         )
     assert signature.call_args.args[0].name == "EML Attachment Remover.app"
+    assert signature.call_args.args[1] == "arm64"
     extracted = tmp_path / "extracted"
     archive._extract(first, extracted)
+    assert {path.stat().st_mtime for path in extracted.rglob("*")} == {
+        build_timestamp.EPOCH
+    }
+    with zipfile.ZipFile(first) as metadata:
+        assert {item.date_time for item in metadata.infolist()} == {
+            build_timestamp.ZIP_TIME
+        }
     executables = {
         "EML Attachment Remover.app/Contents/MacOS/EMLAttachmentRemover",
         "EML Attachment Remover.app/Contents/Resources/processing-launcher.sh",
@@ -241,13 +250,13 @@ def test_archive_contract_rejects_content_drift(tmp_path: Path, changed: str) ->
     )
     with (
         patch.object(archive, "_signature"),
-        pytest.raises(ReleaseQualificationError, match="^" + message + "$"),
+        pytest.raises(ReleaseQualificationError, match=r"^" + message + "$"),
     ):
         archive.verify(target, processor, "4.0.0", "arm64")
 
 
 def test_archive_name_rejects_unknown_architecture() -> None:
-    with pytest.raises(ValueError, match="Unsupported macOS architecture"):
+    with pytest.raises(ValueError, match=r"^Unsupported macOS architecture$"):
         archive.archive_name("4.0.0", "universal")
 
 

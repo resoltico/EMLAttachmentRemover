@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import tempfile
 import uuid
 from contextlib import nullcontext
@@ -24,6 +25,16 @@ if TYPE_CHECKING:
 
 __all__ = ["_hypothesis_config"]
 CHILD_STATS = pytest.StashKey[Path]()
+
+
+@pytest.fixture(autouse=True)  # ruff: ignore[pytest-fixture-autouse] - signal tests own their baseline policy independent of the invoking shell.
+def _controlled_sigint_policy() -> Iterator[None]:
+    previous = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
 
 
 @pytest.fixture(scope="session")

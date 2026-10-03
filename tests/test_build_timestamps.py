@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from tools import build_backend, build_timestamp
+from tools import build_backend, build_timestamp, build_zipapp
 from tools.hatch_build import CustomBuildHook
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -157,6 +157,12 @@ def test_wheel_hook_preserves_contents_and_restores_absolute_datetime(
     hook = cast("CustomBuildHook", SimpleNamespace(target_name="wheel"))
     CustomBuildHook.finalize(hook, "standard", {}, str(path))
     with zipfile.ZipFile(path) as archive:
+        assert set(archive.namelist()) == {"package/", "package/file.py"}
+        directory = archive.getinfo("package/")
+        assert archive.read(directory) == b""
+        assert directory.date_time == build_timestamp.ZIP_TIME
+        assert directory.create_system == 3
+        assert directory.external_attr >> 16 == 0o40755
         assert archive.read("package/file.py") == b"content"
         assert archive.getinfo("package/file.py").date_time == build_timestamp.ZIP_TIME
         assert (
@@ -168,5 +174,42 @@ def test_wheel_hook_preserves_contents_and_restores_absolute_datetime(
 def test_timestamp_field_rejects_conflicting_absolute_times() -> None:
     field = bytearray(build_timestamp.zip_extra())
     field[-1] = 1
-    with pytest.raises(ValueError, match="timestamp field is invalid"):
+    with pytest.raises(ValueError, match=r"^ZIP build timestamp field is invalid$"):
         build_timestamp.zip_epoch(bytes(field))
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [b"", b"x" * 25, build_timestamp.zip_extra()[:6], build_timestamp.zip_extra()[:9]],
+)
+def test_timestamp_field_rejects_wrong_header_or_size(extra: bytes) -> None:
+    with pytest.raises(ValueError, match=r"^ZIP build timestamp field is invalid$"):
+        build_timestamp.zip_epoch(extra)
+
+
+def test_timestamp_field_preserves_unsigned_unix_dates() -> None:
+    assert (
+        build_timestamp.zip_epoch(build_timestamp.zip_extra(3_000_000_000))
+        == 3_000_000_000
+    )
+
+
+def test_direct_zipapp_build_preserves_directory_contract_and_file_datetime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(build_zipapp, "EPOCH", 1_600_000_000)
+    target = build_zipapp.build_zipapp(tmp_path / "processor.pyz", verify=False)
+    assert target.stat().st_mtime == 1_600_000_000
+    with zipfile.ZipFile(target) as archive:
+        directories = {
+            member.filename for member in archive.infolist() if member.is_dir()
+        }
+        assert directories == {
+            "eml_attachment_remover/",
+            "schema/",
+            "eml_attachment_remover-4.0.0.dist-info/",
+        }
+        for name in directories:
+            info = archive.getinfo(name)
+            assert archive.read(info) == b""
+            assert info.external_attr >> 16 == 0o40755

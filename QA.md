@@ -205,7 +205,17 @@ content limit, including the truncation marker. `test_report_diagnostic_budget.p
 checks controls, Unicode, non-BMP characters, escaping, truncation boundaries, and
 cumulative reservations.
 
+## Controller and report implementation boundaries
+
+The invocation controller prepares its monitor before binding its context, restores that context independently of cleanup failures, and keeps cooperative handlers installed through shutdown. Normal shutdown wakes and joins the monitor immediately, without a polling delay. Nested scopes in the same thread share their active owner; a copied context in another thread acquires its own owner. The API catches cooperative requests through controller shutdown and returns its completed ledger with invocation interruption metadata. Final checks inspect each controller only after its handler stops accepting requests. Delivery status is selected from the retired guard; a late request preserves report bytes and receives one interruption explanation. The CLI's outer interruption boundary also covers error-response finalization and resource release after handlers retire. A complete or partial error document is never replaced; late interruption returns 130 with one bounded stderr notice. A blocked notice retains the cancellation deadline and repeat-signal escalation.
+
+Signal tests set and restore a controlled SIGINT baseline independently of the invoking shell; tests of explicitly ignored signals still install SIG_IGN within their own scope. Arbitrary byte and seed-splice MIME properties run under the selected quality/thorough profile; expected syntax or role rejections remain AppError, while accepted results must satisfy candidate verification. These input-space checks supplement branch coverage and mutation tests rather than treating any one of them as exhaustive.
+
 ## MIME and raw-wire evidence
+
+Native launch checks exercise the actual ProcessingRun wrapper as well as the POSIX error explanation. Foundation limits its arguments array to 4,096 entries and can raise an Objective-C exception instead of a Swift error; the script consumes one entry, so the app rejects more than 4,095 file paths before acquiring process resources. OS argument-byte overflow is still handled from the actual launch error. Live file-picker tests cover both count and byte rejection with completed failure screens, enabled Done/close controls, no child processor, and unchanged sources.
+
+The verifier authorizes source removals separately from the planner and independently constructs the expected edited bytes; forged-removal tests require it to reject unauthorized body deletion even when the candidate remains parseable. This is independence of policy and edit checks, not a fully independent source parser: the planner and verifier share the source RawNode tree, and candidate parsing uses the same raw parser. The standard-library structural cross-check supplies another view but does not prove correctness for every malformed input. Keep the separate authorization predicates rather than making a planner mistake self-consistent through shared decision helpers.
 
 `test_live_delivery_boundary.py` processes real synthetic messages and checks
 first-delivery-read recovery, separate stderr progress, partial-output refusal to

@@ -47,14 +47,14 @@ def _cwd() -> int:
     return _START_CWD_HANDLE
 
 
-def _parent(path: str) -> tuple[int, str, str]:
+def _parent(path: str, *, writable: bool = False) -> tuple[int, str, str]:
     parent, basename = ntpath.split(path)
     parent = parent or "."
     drive, tail = ntpath.splitdrive(parent)
     absolute = bool(drive) and tail.startswith(("\\", "/"))
     root = None if absolute else _cwd()
     try:
-        return _api().open_directory(parent, root), parent, basename
+        return _api().open_directory(parent, root, writable=writable), parent, basename
     except OSError as exc:
         raise AppError(
             ExitCode.INPUT_ERROR, f"could not open path parent: {exc}"
@@ -81,7 +81,7 @@ def _read_all(descriptor: int) -> bytes:
 
 
 def _bind_destination(request: str, expanded: str) -> BoundDestination:
-    handle, parent, basename = _parent(expanded)
+    handle, parent, basename = _parent(expanded, writable=True)
     try:
         if not _api().info(handle).directory:
             raise AppError(
@@ -172,7 +172,9 @@ def _open_bound_destination(destination: BoundDestination) -> BoundDirectory:
         bool(drive) and tail.startswith(("\\", "/"))
     )
     try:
-        handle = _api().open_directory(parent, None if absolute else _cwd())
+        handle = _api().open_directory(
+            parent, None if absolute else _cwd(), writable=True
+        )
     except OSError as exc:
         raise AppError(
             ExitCode.WRITE_ERROR, f"could not reopen destination parent: {exc}"

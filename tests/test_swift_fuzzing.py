@@ -240,6 +240,7 @@ def test_optimized_harness_detects_broken_model_contracts(
             "-parse-as-library",
             "-sanitize=fuzzer,address",
             str(model),
+            str(UI / "LauncherFailure.swift"),
             str(UI / "Fuzz/ReceiptFuzzer.swift"),
             "-o",
             str(binary),

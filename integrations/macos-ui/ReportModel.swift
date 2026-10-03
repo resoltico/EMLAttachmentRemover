@@ -56,12 +56,11 @@ struct Item: Decodable, Sendable {
   }
   var isConflict: Bool {
     error?.code == "OUTPUT_CONFLICT"
-      && error?.message == "existing output is not the exact current candidate"
   }
   var explanation: String {
     if isConflict {
       return
-        "The existing output doesn’t match the copy this run would create. Nothing was overwritten.\n\nMove or rename the existing output, then run again."
+        "This destination could not be used safely. Nothing was overwritten.\n\nReview the problem details and destination before trying again."
     }
     if status == "published_with_error" {
       return
@@ -111,6 +110,11 @@ struct UIReceipt: Decodable, Sendable {
     }
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
+    if let failure = try? decoder.decode(LauncherFailure.self, from: data),
+      failure.processStatus == Int(status), failure.hasExpectedStatus
+    {
+      throw failure
+    }
     let receipt = try decoder.decode(UIReceipt.self, from: data)
     guard receipt.processStatus == Int(status), receipt.report.version == version else {
       throw NSError(

@@ -1,7 +1,11 @@
 {
     "schema_version": 1,
-    "source_sha256": "fdefd9e2:abea8b40:426acbcd:94c02e68:b9fd51be:58208220:43bb5f5b:720b4767",
+    "source_sha256": "57a525aa:98d905c2:3240dc5c:38f164d1:185ab784:30b122d2:bd001ae9:c9ea71d4",
     "equivalents": [
+        {
+            "mutant": "eml_attachment_remover.batch.x__run_item__mutmut_1",
+            "rationale": "The unassigned publication cause is inspected only with isinstance against cancellation, KeyboardInterrupt and SystemExit. None and the empty string match none of those types; successful publication replaces the initial value before it is consumed."
+        },
         {
             "mutant": "eml_attachment_remover.cancellation_owner.x\u01c1CancellationOwner\u01c1_reset__mutmut_3",
             "rationale": "Each production cancellation owner is acquired and retired once. After successful reset its token is never observed again; replacing the final cleared sentinel cannot alter context restoration or subsequent API calls, which allocate a fresh owner."
@@ -207,6 +211,14 @@
             "rationale": "typing.cast returns its value without interpreting the type argument. Mutating only the cast type cannot alter the write count, emitted bytes, progress receipts or retry behavior."
         },
         {
+            "mutant": "eml_attachment_remover.report_document.x_write_json__mutmut_20",
+            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii decode the same canonical report bytes."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_document.x_write_json__mutmut_7",
+            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
+        },
+        {
             "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_25",
             "rationale": "The retained ledger uses report_spool_failed only as a truth value; None and False both select in-memory item records."
         },
@@ -297,14 +309,6 @@
         {
             "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_14",
             "rationale": "Python codec names are case-insensitive, so \"ASCII\" selects the identical codec."
-        },
-        {
-            "mutant": "eml_attachment_remover.reporting_v3.x_write_json__mutmut_20",
-            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii decode the same canonical report bytes."
-        },
-        {
-            "mutant": "eml_attachment_remover.reporting_v3.x_write_json__mutmut_7",
-            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
         },
         {
             "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_19",
@@ -447,6 +451,14 @@
             "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
         },
         {
+            "mutant": "tools.macos_archive.x__extract__mutmut_24",
+            "rationale": "The exact native ZIP surface contains multiple members. Every member must have the same DOS timestamp before extraction, so choosing the second rather than first reference admits and rejects exactly the same metadata."
+        },
+        {
+            "mutant": "tools.macos_archive.x__extract__mutmut_27",
+            "rationale": "The exact native ZIP surface contains multiple members. Every member must carry the same canonical absolute-time field before extraction, so either of the first two reference fields produces the same admission and restored times; inconsistent fields are rejected."
+        },
+        {
             "mutant": "tools.macos_archive.x_verify__mutmut_1",
             "rationale": "This changes only the cosmetic eml-native-archive- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
         },
@@ -457,10 +469,6 @@
         {
             "mutant": "tools.macos_archive.x_verify__mutmut_3",
             "rationale": "This changes only the cosmetic eml-native-archive- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.mutation_pytest_isolation.x_pytest_load_initial_conftests__mutmut_19",
-            "rationale": "Omitting getattr's explicit final None default produces the same None value when the preloaded package has no __path__ attribute."
         },
         {
             "mutant": "tools.publish_release.x__context__mutmut_123",
@@ -517,14 +525,6 @@
         {
             "mutant": "tools.release_delivery.x__complete__mutmut_1",
             "rationale": "This changes only the cosmetic eml-release-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.release_delivery.x__complete__mutmut_14",
-            "rationale": "This renames only the first native build directory inside a fresh private workspace. The second build stays in its own distinct directory, input sources and archive bytes are unchanged, and the final public filename is independently selected. The private label has no delivery-contract meaning."
-        },
-        {
-            "mutant": "tools.release_delivery.x__complete__mutmut_15",
-            "rationale": "This renames only the first native build directory inside a fresh private workspace. The second build stays in its own distinct directory, input sources and archive bytes are unchanged, and the final public filename is independently selected. The private label has no delivery-contract meaning."
         },
         {
             "mutant": "tools.release_delivery.x__complete__mutmut_2",
@@ -641,6 +641,10 @@
         {
             "mutant": "tools.smoke_distribution.x__verify_output__mutmut_25",
             "rationale": "The parsed-message contract supplies a body for accepted smoke output; the alternate guard is unreachable on valid output."
+        },
+        {
+            "mutant": "tools.verify_distribution_archives.x__inspect_source_archive__mutmut_16",
+            "rationale": "For an empty source archive the fallback timestamp is never passed to a member or restoration operation. The required nonempty surface is rejected by require_exact_set independently of whether that unused fallback is zero or one."
         }
     ]
 }

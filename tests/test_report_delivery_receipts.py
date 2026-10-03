@@ -13,7 +13,7 @@ import pytest
 from eml_attachment_remover import (
     report_batch_diagnostics,
     report_delivery,
-    reporting_v3,
+    report_document,
 )
 from eml_attachment_remover.cancellation import DeliveryGuard
 from eml_attachment_remover.domain import AppError, ExitCode
@@ -112,7 +112,7 @@ def test_safe_lines_are_escaped_for_the_channel_codec_and_never_fail() -> None:
     """A character the terminal cannot show becomes an escape, not an exception."""
     raw = BytesIO()
     stream = TextIOWrapper(raw, encoding="ascii", newline="")
-    reporting_v3._safe(stream, "caf\u00e9 and \u001b[0m")  # ruff: ignore[private-member-access] - display contract.
+    report_document.write_display(stream, "caf\u00e9 and \u001b[0m")
     stream.flush()
     assert raw.getvalue() == b"caf\\xe9 and \\u001b[0m\n"
 

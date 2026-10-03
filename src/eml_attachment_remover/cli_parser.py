@@ -1,4 +1,4 @@
-"""The intentionally small, breaking v3 command-line surface."""
+"""The intentionally small, supported command-line surface."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ class Parser(argparse.ArgumentParser):
         """Raise the parser's stable usage failure.
 
         Raises:
-            AppError: Always, with the v3 usage exit code.
+            AppError: Always, with the usage exit code.
 
         """
         raise AppError(ExitCode.USAGE, message)
@@ -83,7 +83,7 @@ def build_parser() -> Parser:
     """Construct help that states the MIME-pruned security boundary.
 
     Returns:
-        The fully configured breaking-v3 command-line parser.
+        The fully configured supported command-line parser.
 
     """
     parser = Parser(

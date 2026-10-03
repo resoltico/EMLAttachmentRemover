@@ -216,7 +216,7 @@ def _test(
         report_destination=_test_result_path(profile),
     )
     if observable:
-        _run((sys.executable, "tools/check_v301_property_observations.py"))
+        _run((sys.executable, "tools/check_property_observations.py"))
 
 
 def _coverage() -> None:

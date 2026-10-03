@@ -111,7 +111,7 @@ def _json_error(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run an input-order v3 batch and render exactly one selected channel.
+    """Run an input-order batch and render exactly one selected channel.
 
     Returns:
         The final process status after reportable work is terminalized.

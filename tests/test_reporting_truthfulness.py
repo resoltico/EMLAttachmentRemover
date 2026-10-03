@@ -13,9 +13,9 @@ import pytest
 
 from eml_attachment_remover import (
     native_values,
+    report_document,
     report_spool,
     report_stream,
-    reporting_v3,
 )
 from eml_attachment_remover.domain import PathValue
 
@@ -134,7 +134,7 @@ def test_human_lines_name_the_final_or_planned_destination() -> None:
     """Human output says where each copy is, or would be (finding 8)."""
     final = {"display": "/out/source.mime-pruned.eml"}
     planned = {"parent": {"display": "/plan"}, "basename_base64": _native(b"p.eml")}
-    target = reporting_v3._target_display  # ruff: ignore[private-member-access] - human destination.
+    target = report_document._target_display  # ruff: ignore[private-member-access] - human destination.
     assert target({"publication": {"final_address": final}}) == final["display"]
     assert target({"status": "would_create", "destination": planned}) == "/plan/p.eml"
     assert target({"status": "failed", "destination": planned}) is None

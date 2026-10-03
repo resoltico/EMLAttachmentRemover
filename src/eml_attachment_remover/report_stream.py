@@ -7,7 +7,7 @@ import sys
 from collections.abc import Iterator, Mapping
 from typing import Final, cast
 
-from . import reporting_v3
+from . import report_document
 from ._version import program_version
 from .domain import (
     PROGRAM_NAME,
@@ -83,11 +83,9 @@ def _reservation(item: LedgerItem) -> bytes:
     """
     reservation: dict[str, object] = {
         "index": item.index,
-        "source_request": reporting_v3._path(item.source_request),  # ruff: ignore[private-member-access] - canonical path serializer owner.
+        "source_request": report_document.path_json(item.source_request),
     }
-    return reporting_v3._canonical_json(  # ruff: ignore[private-member-access] - canonical JSON serializer owner.
-        reservation
-    ).encode("ascii")
+    return report_document.canonical_json(reservation).encode("ascii")
 
 
 def recover(ledger: BatchLedger, item: LedgerItem | None = None) -> None:
@@ -121,9 +119,9 @@ def archive(ledger: BatchLedger, item: LedgerItem) -> None:
         raise ReportSpoolError(message)
 
     def encode(record: dict[str, object]) -> bytes:
-        return reporting_v3._canonical_json(record).encode("ascii")  # ruff: ignore[private-member-access] - canonical schema record owner.
+        return report_document.canonical_json(record).encode("ascii")
 
-    record = encode(reporting_v3.item_json(item))
+    record = encode(report_document.item_json(item))
     budget = ledger.report_budget
     if isinstance(budget, ReportBudget) and not budget.fits(
         spool, item.index, len(record)
@@ -190,7 +188,7 @@ def _records(ledger: BatchLedger) -> Iterator[dict[str, object]]:
         return
     spool = ledger.report_spool
     if spool is None:
-        yield from (reporting_v3.item_json(item) for item in ledger.items)
+        yield from (report_document.item_json(item) for item in ledger.items)
         return
     if not isinstance(spool, ReportSpool):
         message = "terminal report spool has an invalid owner"
@@ -261,12 +259,12 @@ def _emergency_records(ledger: BatchLedger) -> Iterator[dict[str, object]]:
                 not isinstance(reservation, dict)
                 or reservation.get("index") != index
                 or reservation.get("source_request")
-                != reporting_v3._path(item.source_request)  # ruff: ignore[private-member-access] - canonical path serializer owner.
+                != report_document.path_json(item.source_request)
                 or not item.terminalized
             ):
                 message = "terminal emergency report spool is corrupt"
                 raise ReportSpoolError(message)
-            record = reporting_v3.item_json(item)
+            record = report_document.item_json(item)
             record["transformation"] = None
             record["warnings"] = []
             yield record
@@ -326,10 +324,10 @@ def _top_level(ledger: BatchLedger, mode: str, exit_code: int) -> dict[str, obje
     if mode == "dry-run":
         accepted.add(ItemStatus.WOULD_CREATE)
     return {
-        "batch_error": reporting_v3._error(ledger.batch_error),  # ruff: ignore[private-member-access] - canonical report field serializer.
+        "batch_error": report_document.error_json(ledger.batch_error),
         "exit_code": exit_code,
         "interrupted": ledger.interruption is not None,
-        "interruption": reporting_v3._interruption(ledger.interruption),  # ruff: ignore[private-member-access] - canonical report field serializer.
+        "interruption": report_document.interruption_json(ledger.interruption),
         "mode": mode,
         "ok": ledger.batch_error is None
         and all(item.status in accepted for item in ledger.items),
@@ -382,7 +380,7 @@ def write_human(ledger: BatchLedger) -> None:
     """Render each terminal spool record without retaining the complete document."""
     _preflight(ledger)
     for record in _records(ledger):
-        reporting_v3.write_human({_ITEM_KEY: [record]})
+        report_document.write_human({_ITEM_KEY: [record]})
     write_batch_error(ledger.batch_error)
 
 
@@ -407,7 +405,7 @@ def _write_record_diagnostics(record: Mapping[str, object]) -> None:
     display = source.get("display") if isinstance(source, Mapping) else "<unknown>"
     error = record.get("error")
     if isinstance(error, Mapping):
-        reporting_v3._safe(  # ruff: ignore[private-member-access] - canonical display writer.
+        report_document.write_display(
             sys.stderr,
             f"{display}: {error.get('code')}: {error.get('message')}",
         )
@@ -415,7 +413,7 @@ def _write_record_diagnostics(record: Mapping[str, object]) -> None:
     if isinstance(warnings, list):
         for warning in warnings:
             if isinstance(warning, Mapping):
-                reporting_v3._safe(  # ruff: ignore[private-member-access] - canonical display writer.
+                report_document.write_display(
                     sys.stderr,
                     f"{display}: {warning.get('code')}: {warning.get('message')}",
                 )

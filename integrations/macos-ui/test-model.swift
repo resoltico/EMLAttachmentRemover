@@ -66,9 +66,45 @@ struct ModelTests {
       _ = try UIReceipt.admit(Data("{}".utf8), status: 0, version: version)
       preconditionFailure("incomplete report accepted")
     } catch {}
+    try checkStartupFailures()
     try checkInvalidUTF8()
     try checkAddresses()
     print("Native report model checks passed.")
+  }
+
+  static func checkStartupFailures() throws {
+    for (kind, status) in [
+      ("python_unavailable", 9), ("processor_unavailable", 3), ("report_storage_unavailable", 7),
+      ("invalid_request", 2),
+    ] {
+      let data = Data("{\"launcher_error\":\"\(kind)\",\"process_status\":\(status)}".utf8)
+      do {
+        _ = try UIReceipt.admit(data, status: Int32(status), version: version)
+        preconditionFailure("startup failure accepted as a report")
+      } catch let failure as LauncherFailure {
+        precondition(failure.hasExpectedStatus && failure.errorDescription != nil)
+      }
+      do {
+        _ = try UIReceipt.admit(data, status: 0, version: version)
+        preconditionFailure("startup status mismatch accepted")
+      } catch {
+        precondition(!(error is LauncherFailure))
+      }
+    }
+    let address = Address(
+      display: "source.eml", text: "source.eml", nativeBase64: nil)
+    let conflict = Item(
+      index: 0, status: "failed", sourceRequest: address, destinationRequest: nil,
+      publication: nil, error: Diagnostic(code: "OUTPUT_CONFLICT", message: "reworded diagnostic"),
+      warnings: [])
+    precondition(conflict.isConflict && conflict.explanation.contains("Nothing was overwritten"))
+    let failure = Item(
+      index: 0, status: "failed", sourceRequest: address, destinationRequest: nil,
+      publication: nil,
+      error: Diagnostic(
+        code: "PARSE_ERROR", message: "existing output is not the exact current candidate"),
+      warnings: [])
+    precondition(!failure.isConflict)
   }
 
   static func checkInvalidUTF8() throws {

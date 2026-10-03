@@ -24,7 +24,9 @@ final class ProcessingRun {
         domain: "EMLRuntime", code: 6,
         userInfo: [NSLocalizedDescriptionKey: "The application resources are missing."])
     }
-    child.arguments = [resources.appendingPathComponent("processing-launcher.sh").path] + paths
+    let arguments = [resources.appendingPathComponent("processing-launcher.sh").path] + paths
+    try validateProcessArguments(arguments)
+    child.arguments = arguments
     child.environment = try environment(resources: resources)
     let owner = Pipe()
     lifetime = owner.fileHandleForWriting

@@ -164,6 +164,13 @@ def test_delivery_publishes_one_complete_set_or_preserves_empty_destination(
             assert list(output.iterdir()) == []
             assert list(tmp_path.glob(".release.*")) == []
     compile_icon.assert_called_once()
+    command = compile_icon.call_args.args[0]
+    assert command[:2] == [
+        "/bin/sh",
+        str(delivery.ROOT / "integrations/macos-ui/compile-icon.sh"),
+    ]
+    assert Path(command[2]).name == "icon-resources"
+    assert compile_icon.call_args.kwargs == {"check": True, "timeout": 180}
 
 
 def test_staged_copy_is_verified(tmp_path: Path) -> None:

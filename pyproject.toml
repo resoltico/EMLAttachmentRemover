@@ -62,7 +62,7 @@ remove-eml-attachments = "eml_attachment_remover.runtime:main"
 implementation = "CPython"
 
 [tool.eml-attachment-remover.macos]
-build-number = 11
+build-number = 14
 
 [tool.hatch.build]
 exclude = ["**/*.py.meta", "**/*.py.spans"]
@@ -159,9 +159,9 @@ max-statements = 40
 "tests/test_tasks_mutation.py" = ["private-member-access"]
 "tests/test_tools.py" = ["private-member-access"]
 "tests/test_version.py" = ["import-private-name", "private-member-access"]
-"tests/test_v3_release_contract.py" = ["private-member-access"]
-"tests/test_v3_tool_junit_contracts.py" = ["private-member-access"]
-"tests/test_v3_tool_zipapp.py" = ["private-member-access"]
+"tests/test_release_contract.py" = ["private-member-access"]
+"tests/test_tool_junit_contracts.py" = ["private-member-access"]
+"tests/test_tool_zipapp.py" = ["private-member-access"]
 "tools/*.py" = [
   "print",
   "subprocess-without-shell-equals-true",

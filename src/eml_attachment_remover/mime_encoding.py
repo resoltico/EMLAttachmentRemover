@@ -14,7 +14,6 @@ from .domain import AppError, ExitCode, RetainedFingerprint
 if TYPE_CHECKING:
     from .mime_raw import RawNode
 
-MAX_RETAINED_DECODED: Final = 96 * 1024 * 1024
 MAX_7BIT_OCTET: Final = 0x7F
 EQUALS: Final = ord("=")
 HEX_PAIR_BYTES: Final = 2
@@ -92,11 +91,7 @@ def fingerprint_retained(
     Returns:
         Ordered encoded and decoded digests for retained leaf payloads only.
 
-    Raises:
-        AppError: If CTE validation or the retained decoded-byte budget fails.
-
     """
-    total = 0
     result: list[RetainedFingerprint] = []
     for node in nodes:
         checkpoint()
@@ -104,11 +99,6 @@ def fingerprint_retained(
             continue
         encoded = payload(raw, node)
         decoded = decode_payload(encoded, node.cte)
-        total += len(decoded)
-        if total > MAX_RETAINED_DECODED:
-            raise AppError(
-                ExitCode.PARSE_ERROR, "retained decoded payload limit exceeded"
-            )
         result.append(
             RetainedFingerprint(
                 node.path,
