@@ -305,14 +305,14 @@ def test_execute_enforces_the_strict_native_argument_budget_with_exact_reasons(
         assert len(ledger.items) == 1
 
     monkeypatch.setattr(batch, "_run_inventory_and_items", run)
-    monkeypatch.setattr(batch, "MAX_CUMULATIVE_NATIVE_ARGUMENT_BYTES", 1)
+    monkeypatch.setattr(batch, "MAX_CUMULATIVE_REQUEST_PATH_BYTES", 1)
     accepted = batch.execute(["x"], _options())
     assert calls == [["x"]]
     assert accepted.items[0].error == AppError(
         ExitCode.BATCH_FAILURE, "not run", phase="batch"
     )
 
-    monkeypatch.setattr(batch, "MAX_CUMULATIVE_NATIVE_ARGUMENT_BYTES", 0)
+    monkeypatch.setattr(batch, "MAX_CUMULATIVE_REQUEST_PATH_BYTES", 0)
     rejected = batch.execute(["x"], _options())
     assert calls == [["x"]]
     assert rejected.items[0].error == AppError(

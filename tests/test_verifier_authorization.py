@@ -6,6 +6,7 @@ import hashlib
 
 import pytest
 
+from eml_attachment_remover import mime_policy, mime_verifier_policy
 from eml_attachment_remover.domain import AppError, ExitCode, Removal, RemovalReason
 from eml_attachment_remover.mime_execution import Candidate, build_candidate
 from eml_attachment_remover.mime_headers import Header
@@ -369,3 +370,21 @@ def test_source_oracle_rejects_nested_related_start_and_accepts_casefolded_type(
     assert malformed.value == AppError(
         ExitCode.PARSE_ERROR, "malformed related start-info"
     )
+
+
+def test_independent_policies_use_the_documented_body_and_protected_type_sets() -> None:
+    expected_text = frozenset({"text/plain", "text/html"})
+    expected_protected = frozenset({
+        "multipart/signed",
+        "multipart/encrypted",
+        "application/pkcs7-mime",
+        "application/x-pkcs7-mime",
+        "application/pkcs7-signature",
+        "application/x-pkcs7-signature",
+        "application/pgp-encrypted",
+        "application/pgp-signature",
+    })
+    assert expected_text == mime_policy.TEXT_TYPES
+    assert expected_text == mime_verifier_policy.TEXT_TYPES
+    assert expected_protected == mime_policy.PROTECTED_TYPES
+    assert expected_protected == mime_verifier_policy.PROTECTED_TYPES

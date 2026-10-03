@@ -58,13 +58,17 @@ struct Item: Decodable, Sendable {
     error?.code == "OUTPUT_CONFLICT"
   }
   var explanation: String {
+    if status == "published_with_error" {
+      return
+        "A copy was published, but the run could not confirm successful completion for this file. Review the details before using it."
+    }
     if isConflict {
       return
         "This destination could not be used safely. Nothing was overwritten.\n\nReview the problem details and destination before trying again."
     }
-    if status == "published_with_error" {
+    if error?.code == "ATOMIC_PUBLICATION_UNSUPPORTED" {
       return
-        "A copy was published, but the run could not confirm successful completion for this file. Review the details before using it."
+        "This destination does not support the safe publication operation required to create a copy. Your original file was not changed.\n\nCopy the EML files to a writable local folder and process those copies. To choose a different destination while keeping the source here, use the CLI’s --output-dir option."
     }
     if let error { return safeText(error.message) }
     if status == "would_create" { return "A copy was planned; no copy was created for this file." }

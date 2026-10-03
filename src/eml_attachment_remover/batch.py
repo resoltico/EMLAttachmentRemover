@@ -39,7 +39,7 @@ from .report_budget import admit, plan
 from .staged_output import PublishedWithError, publish
 
 MAX_BATCH_ITEMS: Final = 4_096
-MAX_CUMULATIVE_NATIVE_ARGUMENT_BYTES: Final = 4 * 1024 * 1024
+MAX_CUMULATIVE_REQUEST_PATH_BYTES: Final = 4 * 1024 * 1024
 MISSING_SOURCE_ADDRESS: Final = "source has no native address"
 MISSING_PUBLICATION_INPUTS: Final = "candidate publication lacks destination or plan"
 
@@ -351,7 +351,7 @@ def execute(
             sources,
             options,
             _run_inventory_and_items,
-            limits=(MAX_BATCH_ITEMS, MAX_CUMULATIVE_NATIVE_ARGUMENT_BYTES),
+            limits=(MAX_BATCH_ITEMS, MAX_CUMULATIVE_REQUEST_PATH_BYTES),
         )
         storage.pop_all()
         return result

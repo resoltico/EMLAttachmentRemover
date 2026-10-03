@@ -301,3 +301,37 @@ def test_paths0_never_emits_an_unaccepted_final_address(
     output, errors = capfd.readouterr()
     assert not output
     assert errors == "source: WRITE_ERROR: failed\n"
+
+
+@pytest.mark.parametrize("backend", ["Darwin", "Linux"])
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (errno.ENOTSUP, ExitCode.ATOMIC_PUBLICATION_UNSUPPORTED),
+        (errno.EOPNOTSUPP, ExitCode.ATOMIC_PUBLICATION_UNSUPPORTED),
+        (errno.EACCES, ExitCode.WRITE_ERROR),
+        (errno.EINVAL, ExitCode.WRITE_ERROR),
+        (errno.ENOSPC, ExitCode.WRITE_ERROR),
+    ],
+)
+def test_atomic_capability_failures_have_a_specific_code_without_guessing_permissions(
+    backend: str, failure: int, expected: ExitCode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    operation = _RenameOperation(-1)
+    library = _RenameLibrary(operation)
+    monkeypatch.setattr(atomic_publish.__dict__["platform"], "system", lambda: backend)
+    monkeypatch.setattr(
+        atomic_publish.__dict__["ctypes"], "CDLL", lambda *_args, **_kwargs: library
+    )
+    monkeypatch.setattr(atomic_publish.__dict__["ctypes"], "get_errno", lambda: failure)
+
+    def reject_link(*_args: object, **_kwargs: object) -> None:
+        raise OSError(failure, "synthetic OS message")
+
+    monkeypatch.setattr(atomic_publish.__dict__["os"], "link", reject_link)
+    with pytest.raises(AppError) as rejected:
+        atomic_publish.publish_no_replace(0, b"stage", b"copy")
+    assert rejected.value.code is expected
+    document = report_document.error_json(rejected.value)
+    assert document is not None
+    assert document["code"] == expected.name

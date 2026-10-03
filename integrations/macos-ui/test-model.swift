@@ -98,6 +98,19 @@ struct ModelTests {
       publication: nil, error: Diagnostic(code: "OUTPUT_CONFLICT", message: "reworded diagnostic"),
       warnings: [])
     precondition(conflict.isConflict && conflict.explanation.contains("Nothing was overwritten"))
+    let unsupported = Item(
+      index: 0, status: "failed", sourceRequest: address, destinationRequest: address,
+      publication: nil,
+      error: Diagnostic(
+        code: "ATOMIC_PUBLICATION_UNSUPPORTED", message: "changed platform wording"),
+      warnings: [])
+    precondition(unsupported.explanation.contains("writable local folder"))
+    precondition(unsupported.explanation.contains("--output-dir"))
+    let visibleConflict = Item(
+      index: 0, status: "published_with_error", sourceRequest: address, destinationRequest: address,
+      publication: nil, error: Diagnostic(code: "OUTPUT_CONFLICT", message: "late conflict"),
+      warnings: [])
+    precondition(visibleConflict.explanation.contains("A copy was published"))
     let failure = Item(
       index: 0, status: "failed", sourceRequest: address, destinationRequest: nil,
       publication: nil,

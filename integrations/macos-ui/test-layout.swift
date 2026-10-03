@@ -39,6 +39,21 @@ struct LayoutTests {
       table.tableColumns[0].width > filenameWidth, "Wider window gives filenames no extra space")
     precondition(
       abs(table.tableColumns[1].width - resultWidth) < 1, "Result column absorbs the extra width")
+    let source = Address(
+      display: "/Public/sample.eml", text: "/Public/sample.eml", nativeBase64: nil)
+    for message in [
+      "two inputs target one destination", "destination parent changed after binding",
+      "destination is not a regular file", "destination already exists",
+    ] {
+      let conflict = Item(
+        index: 0, status: "failed", sourceRequest: source, destinationRequest: source,
+        publication: nil, error: Diagnostic(code: "OUTPUT_CONFLICT", message: message), warnings: []
+      )
+      items.showItem(conflict)
+      let texts = items.card.arrangedSubviews.compactMap { ($0 as? NSTextField)?.stringValue }
+      precondition(texts.contains("Copy not created"))
+      precondition(!texts.contains("An existing copy differs"))
+    }
     withExtendedLifetime((items, details)) {}
     print("Native batch layout checks passed.")
   }

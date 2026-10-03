@@ -43,8 +43,13 @@ def _darwin_rename_exclusive(
     failure = ctypes.get_errno()
     if failure == errno.EEXIST:
         raise AppError(ExitCode.OUTPUT_CONFLICT, "destination already exists")
+    code = (
+        ExitCode.ATOMIC_PUBLICATION_UNSUPPORTED
+        if failure in {errno.ENOTSUP, errno.EOPNOTSUPP}
+        else ExitCode.WRITE_ERROR
+    )
     message = os.strerror(failure)
-    raise AppError(ExitCode.WRITE_ERROR, f"could not publish candidate: {message}")
+    raise AppError(code, f"could not publish candidate: {message}")
 
 
 def _link_exclusive(
@@ -66,9 +71,12 @@ def _link_exclusive(
     except FileExistsError as exc:
         raise AppError(ExitCode.OUTPUT_CONFLICT, "destination already exists") from exc
     except OSError as exc:
-        raise AppError(
-            ExitCode.WRITE_ERROR, f"could not publish candidate: {exc}"
-        ) from exc
+        code = (
+            ExitCode.ATOMIC_PUBLICATION_UNSUPPORTED
+            if exc.errno in {errno.ENOTSUP, errno.EOPNOTSUPP}
+            else ExitCode.WRITE_ERROR
+        )
+        raise AppError(code, f"could not publish candidate: {exc}") from exc
 
 
 def publish_no_replace(

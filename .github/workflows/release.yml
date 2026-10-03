@@ -171,7 +171,7 @@ jobs:
   mutation:
     name: Qualify mutation results for the tagged source
     needs: qualify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:
       contents: read

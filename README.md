@@ -57,9 +57,9 @@ that receipt, the visible copy is reported as `published_with_error`, never `cre
 
 ### Input and filesystem limits
 
-Each source file is limited to 128 MiB of raw bytes. Supported transfer encodings do not expand beyond their encoded input, and retained leaf payload spans are disjoint; there is no separate 96 MiB retained-payload limit. This is an input-size limit, not a peak-RAM guarantee: parsing and verification can hold several representations concurrently. Batch processing is limited to 4,096 requests and 4 MiB of cumulative native path bytes; OS command-line limits can be lower. The native app accepts at most 4,095 file paths per launch because Foundation’s 4,096-argument limit also includes the launcher script. Oversized launches are refused before processing; select fewer files and try again.
+Each source file is limited to 128 MiB of raw bytes. This is an input-size limit, not a peak-RAM guarantee: parsing and verification can hold several representations concurrently. Batch processing is limited to 4,096 requests and 4 MiB of cumulative native path bytes; OS command-line limits can be lower. The native app accepts at most 4,095 file paths per launch because Foundation’s 4,096-argument limit also includes the launcher script. Oversized launches are refused before processing; select fewer files and try again.
 
-Publication requires a filesystem that supports the backend’s exclusive atomic publication primitive. If a destination volume does not support it, the command refuses publication rather than exposing a partial copy. For example, macOS exFAT can refuse exclusive rename. Use `--output-dir` to write on a compatible local volume while reading the original from the other volume; the source remains unchanged. Network and FUSE support depends on the specific filesystem and server and has not been universally qualified.
+Publication requires a filesystem that supports the backend’s exclusive atomic publication primitive. If a destination volume does not support it, the command refuses publication rather than exposing a partial copy. For example, macOS exFAT can refuse exclusive rename. An explicitly unsupported atomic operation is reported as `ATOMIC_PUBLICATION_UNSUPPORTED` (single-input process status 11; mixed batches retain status 9). Use `--output-dir` to write on a compatible local volume while reading the original from the other volume; the source remains unchanged. In the app, copy the EML files to a writable local folder and process those copies. Network and FUSE support depends on the specific filesystem and server and has not been universally qualified.
 
 ### Destination and existing policy
 
@@ -84,39 +84,11 @@ terminal-unsafe path text. Each line names where the copy is, or would be:
 `created: source.eml -> /path/to/source.mime-pruned.eml`; a dry run shows the
 planned destination.
 
-Each report is staged in the requested format and mode and validated before
-delivery. Machine-readable sealing uses bytes throughout, including native POSIX
-filenames. If staging fails after a
-visible publication, retained terminal receipts produce a complete recovery report
-in bounded memory, independently of staging files and spool reads, in the same byte
-format. A staged read failure before stdout accepts its first report byte can also
-recover through fresh memory channels. Stderr progress is tracked separately;
-already emitted diagnostics are not repeated. After any report bytes have been
-accepted, a failure never restarts or appends a replacement document. Receipt
-storage stays owned until delivery resolves. Each recovery channel is limited to
-128 MiB. The CLI owns its authoritative ledger before any input can publish;
-cancellation during reservation, inventory, final archiving, or transition to
-reporting retains every known outcome. Receipt spools use OS-owned temporary
-handles: anonymous/unlinked-open storage on POSIX and delete-on-close storage on
-Windows. Forced termination does not depend on Python cleanup to remove them.
-Human and `paths0` output explain batch failures once on stderr while
-retaining truthful successful item statuses and paths. Delivery still depends on an
-available output endpoint; a closed pipe or channel error can prevent completion.
-Signals record cancellation requests; explicit checkpoints acknowledge them before
-publication or after a complete publication outcome is committed. A proven copy
-keeps its successful receipt, and genuine post-publication errors keep their error
-status. The API returns completed item evidence with invocation interruption metadata. A late signal preserves any report bytes already delivered and produces one bounded interruption explanation. Complete or partial error documents are never replaced.
-The public API keeps the caller's signal policy outside its owned controller.
-Unresponsive processing is bounded to 10 seconds after the first signal;
-a second signal ends it immediately. An interruption before delivery reports the
-interruption and exits 130. Human and `paths0` output include one bounded, safely
-escaped invocation notice on stderr, even when all inputs completed. A signal during
-delivery leaves the document whole and unchanged (its `exit_code` is the processing
-outcome), then exits 130 with an `interrupted by SIGINT after the report was delivered`
-diagnostic. Delivery never waits forever for a reader that stopped draining: after the
-first signal the process allows 10 seconds without output progress, and a second
-signal ends it at once, both with status 130 and possibly a partial document, which is
-never followed by another. Without a signal there is no deadline, so a pager works.
+Reports preserve known publication outcomes if report storage fails. Recovery can replace a failed report only before stdout accepts any report bytes. Partial documents remain invalid and are never restarted or followed by a replacement. Each recovery channel is limited to 128 MiB; a closed or failing output endpoint can prevent completion. Human and `paths0` reports explain batch failures on stderr while retaining successful item statuses and paths.
+
+Cancellation preserves completed copies and genuine publication-error outcomes. The first signal permits a 10-second processing grace period; a second ends processing immediately. The public API preserves the caller’s signal policy outside its owned processing scope. Interrupted invocations select status 130, and the API returns completed item evidence with interruption metadata.
+
+A signal received during report delivery preserves the document’s processing `exit_code` and selects process status 130. A completed report receives one bounded interruption notice on stderr. If output stops progressing after a signal, delivery allows 10 seconds without progress; a second signal ends it immediately. Either can leave a partial document, which is never replaced. Without a signal, output has no deadline, so a pager can wait for its reader.
 
 These are application-selected statuses. CPython can change the final process
 exit to **120** if interpreter cleanup fails while flushing a buffered standard
@@ -140,11 +112,7 @@ JSON is one schema-3 report document. Its checked-in contract is
 order, source-bound retained payload hashes, removal reasons, candidate digest,
 verification evidence, and truthful publication receipts. It never reports body
 contents. Error messages are capped at 2,048 characters and 12,288 canonical ASCII
-JSON content bytes, including any truncation marker. Admission reserves the same
-encoded-byte budget. During processing, terminal evidence is streamed through
-bounded private spools; if normal report persistence fails after a visible publication, the command
-returns a complete status-preserving recovery report rather than claiming success.
-That evidence is measured before any copy is written: an input whose report record
+JSON content bytes, including any truncation marker. The prepublication evidence limit applies before any copy is written: an input whose report record
 would exceed 1 MiB (about 3,700 retained MIME parts), or the 64 MiB report capacity,
 fails with `PARSE_ERROR` and no copy is created.
 Path `text` is ordinary Unicode only. For a POSIX path containing surrogate-escaped

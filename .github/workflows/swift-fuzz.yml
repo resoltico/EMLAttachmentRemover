@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   receipt-fuzz:
-    runs-on: macos-latest
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       PYTHONDONTWRITEBYTECODE: "1"
@@ -47,6 +47,8 @@ jobs:
         run: uv sync --locked --group dev --python 3.14.7
         env:
           PYTHONWARNINGS: default
+      - name: Select and verify the pinned delivery SDK
+        run: uv run /bin/sh integrations/macos-ui/ci-sdk.sh >> "$GITHUB_ENV"
       - name: Install the pinned official Swift toolchain
         run: uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh
       - name: Replay regressions and fuzz the native receipt model with ASan

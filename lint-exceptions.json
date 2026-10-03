@@ -5044,7 +5044,7 @@
     {
       "path": "tests/test_report_budget_receipts.py",
       "scope": "test_the_minimal_worst_record_has_this_exact_size_and_outcome",
-      "anchor": "assert report_budget._size(record) == 12775",
+      "anchor": "assert report_budget._size(record) == 12779",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "exact reserve size."

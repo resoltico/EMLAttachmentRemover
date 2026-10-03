@@ -105,9 +105,7 @@ final class ReportItems: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     let separator = NSBox(frame: NSRect(x: 0, y: 0, width: 584, height: 64))
     separator.boxType = .separator
     append(separator)
-    append(
-      UIControls.label(item.isConflict ? "An existing copy differs" : item.label, weight: .semibold)
-    )
+    append(UIControls.label(item.label, weight: .semibold))
     append(UIControls.label(item.explanation))
     let row = NSStackView()
     row.orientation = .horizontal

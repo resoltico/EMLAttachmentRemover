@@ -6,6 +6,8 @@ import importlib
 import tomllib
 from pathlib import Path
 
+from tools import local_ci
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -17,6 +19,7 @@ def test_producer_and_publisher_use_declared_image_and_verified_sdk() -> None:
         ("release.yml", "build"),
         ("release.yml", "publish"),
         ("macos-compatibility.yml", "producer"),
+        ("swift-fuzz.yml", "receipt-fuzz"),
     ]
     for workflow, job in targets:
         config = importlib.import_module("yaml").safe_load(
@@ -52,3 +55,12 @@ def test_producer_and_publisher_use_declared_image_and_verified_sdk() -> None:
         assert "$GITHUB_ENV" in steps[selection]["run"]
     assert pin["xcode-version"] == "26.6"
     assert pin["xcode-build"] == "17F113"
+
+
+def test_mutation_jobs_use_the_local_container_os_generation() -> None:
+    for workflow in ("mutation.yml", "release.yml"):
+        config = importlib.import_module("yaml").safe_load(
+            (ROOT / ".github/workflows" / workflow).read_text()
+        )
+        assert config["jobs"]["mutation"]["runs-on"] == "ubuntu-24.04"
+    assert "FROM ubuntu:24.04@sha256:" in local_ci.LINUX_IMAGE_DEFINITION
