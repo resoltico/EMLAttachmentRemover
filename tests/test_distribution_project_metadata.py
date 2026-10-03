@@ -40,6 +40,25 @@ def _load(root: Path) -> ArchiveContract:
 class DistributionProjectTableTests(unittest.TestCase):
     """Reject every absent required TOML table at its exact boundary."""
 
+    def test_build_datetime_backend_requires_its_exact_source_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            distribution = create_distribution(Path(directory))
+            _replace(
+                distribution.config,
+                'build-backend = "hatchling.build"',
+                'build-backend = "build_backend"\nbackend-path = ["tools"]',
+            )
+            _load(distribution.root)
+            _replace(
+                distribution.config,
+                'backend-path = ["tools"]',
+                'backend-path = ["other"]',
+            )
+            with self.assertRaisesRegex(
+                DistributionArchiveError, "backend path must be tools"
+            ):
+                _load(distribution.root)
+
     def test_every_required_nested_table_is_fail_closed(self) -> None:
         cases: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             (

@@ -139,6 +139,7 @@ def _add_tar_member(
     contract: ArchiveContract,
     files: dict[str, tarfile.TarInfo],
     directories: set[str],
+    timestamp: int = reproducibility.SOURCE_TIMESTAMP,
 ) -> None:
     """Validate and classify one source-archive member."""
     is_directory = member.isdir()
@@ -157,7 +158,7 @@ def _add_tar_member(
         if member.type not in REGULAR_TAR_TYPES:
             message = f"non-regular source-archive member: {member.name!r}"
             raise DistributionArchiveError(message)
-    if not reproducibility.tar_member_normalized(member):
+    if not reproducibility.tar_member_normalized(member, timestamp=timestamp):
         message = f"non-reproducible source-archive metadata: {member.name!r}"
         raise DistributionArchiveError(message)
     if is_directory:
@@ -206,8 +207,10 @@ def _inspect_source_archive(
     expected_files = set(sources) | {"PKG-INFO"}
     members: dict[str, tarfile.TarInfo] = {}
     directories: set[str] = set()
-    for member in archive.getmembers():
-        _add_tar_member(member, contract, members, directories)
+    entries = archive.getmembers()
+    timestamp = int(entries[0].mtime) if entries else 0
+    for member in entries:
+        _add_tar_member(member, contract, members, directories, timestamp)
     contract_module.require_exact_set(
         SOURCE_ARCHIVE_LABEL,
         set(members),
@@ -257,6 +260,7 @@ def _add_zip_member(
     expected_roots: set[str],
     files: dict[str, zipfile.ZipInfo],
     directories: set[str],
+    timestamp: tuple[int, ...] = reproducibility.ZIP_TIMESTAMP,
 ) -> None:
     """Validate and classify one wheel member."""
     if member.flag_bits & 1:
@@ -275,7 +279,9 @@ def _add_zip_member(
         raise DistributionArchiveError(message)
     directory_member = member.is_dir()
     generated = parts[0].endswith(".dist-info")
-    if not reproducibility.wheel_member_normalized(member, generated=generated):
+    if not reproducibility.wheel_member_normalized(
+        member, generated=generated, timestamp=timestamp
+    ):
         message = f"non-reproducible wheel member metadata: {member.filename!r}"
         raise DistributionArchiveError(message)
     if directory_member:
@@ -357,8 +363,10 @@ def _inspect_wheel(archive: zipfile.ZipFile, contract: ArchiveContract) -> bytes
     expected_roots = {PurePosixPath(name).parts[0] for name in expected_files}
     members: dict[str, zipfile.ZipInfo] = {}
     directories: set[str] = set()
-    for member in archive.infolist():
-        _add_zip_member(member, expected_roots, members, directories)
+    entries = archive.infolist()
+    timestamp = entries[0].date_time if entries else ()
+    for member in entries:
+        _add_zip_member(member, expected_roots, members, directories, timestamp)
     contract_module.require_exact_set(WHEEL_LABEL, set(members), expected_files)
     _check_directories(WHEEL_DIRECTORY_LABEL, directories, expected_files)
     _compare_zip_sources(archive, members, sources)

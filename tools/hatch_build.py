@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+import gzip
+import io
 import re
+import tarfile
 import tomllib
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
 from typing import Any, Final, override
+
+if __package__ == "tools":
+    from tools.build_timestamp import EPOCH, ZIP_TIME, zip_extra
+else:
+    from build_timestamp import EPOCH, ZIP_TIME, zip_extra  # type: ignore[import-not-found,no-redef]
 
 from hatchling.builders.config import BuilderConfig
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
@@ -45,4 +54,67 @@ class CustomBuildHook(BuildHookInterface[BuilderConfig]):
     @override
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
         """Apply the metadata-derived tag to standard and editable wheels."""
-        build_data["tag"] = wheel_tag(Path(self.root) / "pyproject.toml")
+        if self.target_name == "wheel":
+            build_data["tag"] = wheel_tag(Path(self.root) / "pyproject.toml")
+
+    @override
+    def finalize(
+        self, version: str, build_data: dict[str, Any], artifact_path: str
+    ) -> None:
+        """Include timestamped directories so source extraction retains build time."""
+        if self.target_name == "wheel":
+            timestamp_wheel(Path(artifact_path))
+            return
+        if self.target_name != "sdist":
+            return
+        path = Path(artifact_path)
+        with tarfile.open(path, "r:gz") as source:
+            members = [(member, source.extractfile(member)) for member in source]
+            contents = [
+                (member, stream.read() if stream else b"") for member, stream in members
+            ]
+        timestamp = EPOCH
+        directories = sorted({
+            str(parent)
+            for member, _ in contents
+            for parent in PurePosixPath(member.name).parents
+            if str(parent) != "."
+        })
+        with (
+            path.open("wb") as output,
+            gzip.GzipFile(
+                filename="", mode="wb", fileobj=output, mtime=timestamp
+            ) as compressed,
+            tarfile.open(fileobj=compressed, mode="w") as target,
+        ):
+            for name in directories:
+                directory = tarfile.TarInfo(name)
+                directory.type = tarfile.DIRTYPE
+                directory.mode = 0o755
+                directory.mtime = timestamp
+                target.addfile(directory)
+            for member, content in contents:
+                target.addfile(member, io.BytesIO(content))
+
+
+def timestamp_wheel(path: Path) -> None:
+    """Attach UTC modification times without changing installed member contents."""
+    with zipfile.ZipFile(path) as source:
+        members = [(member, source.read(member)) for member in source.infolist()]
+    names = {member.filename for member, _content in members}
+    directories = {
+        str(parent) + "/"
+        for name in names
+        for parent in PurePosixPath(name).parents
+        if str(parent) != "."
+    } - names
+    for name in directories:
+        directory = zipfile.ZipInfo(name, ZIP_TIME)
+        directory.create_system = 3
+        directory.external_attr = 0o40755 << 16
+        members.append((directory, b""))
+    with zipfile.ZipFile(path, "w") as target:
+        for member, content in sorted(members, key=lambda item: item[0].filename):
+            member.date_time = ZIP_TIME
+            member.extra = zip_extra()
+            target.writestr(member, content)

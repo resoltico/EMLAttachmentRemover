@@ -109,7 +109,7 @@ class SourceArchiveTests(unittest.TestCase):
             unknown = tarfile.TarInfo(f"{distribution.contract.source_root}/unused")
             unknown.type = tarfile.DIRTYPE
             unknown.mtime = verifier.reproducibility.SOURCE_TIMESTAMP
-            unknown.mode = verifier.reproducibility.SOURCE_MODE
+            unknown.mode = 0o755
             write_source_archive(
                 distribution.source_archive,
                 distribution.contract,

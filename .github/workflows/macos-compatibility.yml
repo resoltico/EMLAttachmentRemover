@@ -27,6 +27,8 @@ jobs:
           PYTHONWARNINGS: default
       - run: uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh
       - run: uv run python -B -m tools.release_delivery --output-directory release-dist
+        env:
+          TZ: UTC
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: compatibility-delivery-${{ github.run_id }}-${{ github.run_attempt }}

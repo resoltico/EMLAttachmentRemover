@@ -147,6 +147,7 @@ class ArchiveDelegationContractTests(unittest.TestCase):
             _contract: object,
             files: dict[str, tarfile.TarInfo],
             _directories: set[str],
+            _timestamp: int,
         ) -> None:
             files["PKG-INFO"] = member
 
@@ -337,6 +338,7 @@ class WheelRootContractTests(unittest.TestCase):
             roots: set[str],
             files: dict[str, zipfile.ZipInfo],
             _directories: set[str],
+            _timestamp: tuple[int, ...],
         ) -> None:
             observed_roots.append(roots.copy())
             files[member.filename] = member

@@ -12,6 +12,7 @@ import tomllib
 from pathlib import Path
 
 from tools import macos_archive, qualify_release, release_files
+from tools.build_timestamp import environment, stamp_tree
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHITECTURES = ("arm64", "x86_64")
@@ -87,6 +88,7 @@ def _native(directory: Path, architecture: str, icon_resources: Path) -> Path:
         ],
         env={
             **os.environ,
+            **environment(),
             "EML_REMOVER_PYTHON": sys.executable,
             "EML_ICON_RESOURCES": str(icon_resources),
         },
@@ -170,6 +172,7 @@ def _publish(output: Path, source: Path, names: tuple[str, ...]) -> tuple[Path, 
     staging = release_files.prepare_output_directory(output)
     try:
         _copy_verified(tuple(source / name for name in names), staging)
+        stamp_tree(staging)
         release_files.publish_staging(staging, output)
     except BaseException as error:
         try:

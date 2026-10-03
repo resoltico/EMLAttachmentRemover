@@ -515,14 +515,6 @@
     },
     {
       "path": "tests/test_build_zipapp_tool.py",
-      "scope": "ZipappArchiveTests.test_zip_info_normalizes_every_reproducibility_field",
-      "anchor": "info = build_zipapp._zip_info(\"public.txt\")",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "White-box regression test exercises the named internal contract; approval is limited to this declaration and source anchor."
-    },
-    {
-      "path": "tests/test_build_zipapp_tool.py",
       "scope": "ZipappSourceTests.test_archive_member_sorting_uses_names_before_byte_payloads",
       "anchor": "members = build_zipapp._archive_members(PUBLIC_METADATA)",
       "tool": "ruff",
@@ -892,7 +884,7 @@
     {
       "path": "tests/test_destination_names.py",
       "scope": "test_prefix_never_splits_a_surrogate_pair_on_windows",
-      "anchor": "assert destination_names._prefix(\"a😀b\", 2) == \"a\"",
+      "anchor": "assert destination_names._prefix(\"a\ud83d\ude00b\", 2) == \"a\"",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "surrogate-pair receipt."
@@ -900,7 +892,7 @@
     {
       "path": "tests/test_destination_names.py",
       "scope": "test_prefix_never_splits_a_surrogate_pair_on_windows",
-      "anchor": "assert destination_names._prefix(\"a😀b\", 3) == \"a😀\"",
+      "anchor": "assert destination_names._prefix(\"a\ud83d\ude00b\", 3) == \"a\ud83d\ude00\"",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "surrogate-pair receipt."
@@ -6884,7 +6876,7 @@
     {
       "path": "tests/test_v3_report_stream_exact_contracts.py",
       "scope": "test_top_level_and_json_writers_are_exact_for_apply_and_dry_run",
-      "anchor": "report_stream._write_pair(\"n\", {\"value\": \"ü\"}, terminal=False)",
+      "anchor": "report_stream._write_pair(\"n\", {\"value\": \"\u00fc\"}, terminal=False)",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "JSON pair contract."
@@ -7724,7 +7716,7 @@
     {
       "path": "tests/test_v3_staged_reporting_tool_exact_receipts_batch10.py",
       "scope": "test_basename_serialization_keeps_one_exact_native_encoding_channel",
-      "anchor": "assert reporting_v3._basename(\"π\") == {",
+      "anchor": "assert reporting_v3._basename(\"\u03c0\") == {",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "Windows basename evidence."
@@ -8954,14 +8946,6 @@
       "reason": "White-box regression test exercises the named internal contract; approval is limited to this declaration and source anchor."
     },
     {
-      "path": "tools/build_zipapp.py",
-      "scope": "<module>",
-      "anchor": "from mutmut_workspace import generated_sidecar",
-      "tool": "mypy",
-      "rules": "import-not-found,no-redef",
-      "reason": "Explicit typing boundary for script-mode imports, dynamic stream interfaces or negative-test fixtures; strict mypy continues checking the enclosing code."
-    },
-    {
       "path": "tools/coverage_xml_lines.py",
       "scope": "<module>",
       "anchor": "from coverage_xml_safety import CoverageXmlError",
@@ -9016,6 +9000,54 @@
       "tool": "mypy",
       "rules": "import-not-found,no-redef",
       "reason": "Explicit typing boundary for script-mode imports, dynamic stream interfaces or negative-test fixtures; strict mypy continues checking the enclosing code."
+    },
+    {
+      "path": "tools/build_backend.py",
+      "scope": "<module>",
+      "anchor": "from build_timestamp import environment",
+      "tool": "mypy",
+      "rules": "import-not-found,no-redef",
+      "reason": "The direct script or PEP 517 backend imports its sibling module from the tools directory; package imports use tools.build_timestamp. Both execution modes are checked."
+    },
+    {
+      "path": "tools/hatch_build.py",
+      "scope": "<module>",
+      "anchor": "from build_timestamp import EPOCH, ZIP_TIME, zip_extra",
+      "tool": "mypy",
+      "rules": "import-not-found,no-redef",
+      "reason": "The direct script or PEP 517 backend imports its sibling module from the tools directory; package imports use tools.build_timestamp. Both execution modes are checked."
+    },
+    {
+      "path": "tools/archive_reproducibility_policy.py",
+      "scope": "<module>",
+      "anchor": "from build_timestamp import EPOCH, ZIP_TIME, zip_extra",
+      "tool": "mypy",
+      "rules": "import-not-found,no-redef",
+      "reason": "Direct script imports resolve sibling modules from tools; package imports resolve the same checked implementations through tools."
+    },
+    {
+      "path": "tools/build_zipapp.py",
+      "scope": "<module>",
+      "anchor": "from archive_reproducibility_policy import zipapp_member as _zip_info",
+      "tool": "mypy",
+      "rules": "import-not-found,no-redef",
+      "reason": "Direct script imports resolve sibling modules from tools; package imports resolve the same checked implementations through tools."
+    },
+    {
+      "path": "tools/build_zipapp.py",
+      "scope": "<module>",
+      "anchor": "from build_timestamp import EPOCH",
+      "tool": "mypy",
+      "rules": "import-not-found,no-redef",
+      "reason": "Direct script imports resolve sibling modules from tools; package imports resolve the same checked implementations through tools."
+    },
+    {
+      "path": "tools/build_zipapp.py",
+      "scope": "<module>",
+      "anchor": "from mutmut_workspace import generated_sidecar",
+      "tool": "mypy",
+      "rules": "import-not-found,no-redef",
+      "reason": "Direct script imports resolve sibling modules from tools; package imports resolve the same checked implementations through tools."
     }
   ],
   "swift_exceptions": []

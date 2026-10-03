@@ -186,7 +186,9 @@ def test_optimized_asan_campaign_replays_seeds_and_records_all_stages(
         "campaign",
     ]
     assert "-sanitize=fuzzer,address" in metadata["stages"][0]["command"]
-    assert "Done 100 runs" in (campaign / "campaign.log").read_text()
+    log = (campaign / "campaign.log").read_text()
+    # libFuzzer can finish one execution beyond the requested run boundary.
+    assert "Done 100 runs" in log or "Done 101 runs" in log
     assert "Executed" in (campaign / "replay.log").read_text()
     assert (campaign.stat().st_mode & 0o077) == 0
 

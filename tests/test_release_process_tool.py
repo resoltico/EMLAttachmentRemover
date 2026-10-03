@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools import qualify_release
+from tools import build_timestamp, qualify_release
 
 
 class ReleaseProcessTests(unittest.TestCase):
@@ -25,7 +25,10 @@ class ReleaseProcessTests(unittest.TestCase):
         ):
             environment = qualify_release._strict_environment()
         self.assertNotIn("PYTHONPATH", environment)
-        self.assertNotIn("SOURCE_DATE_EPOCH", environment)
+        self.assertEqual(
+            environment["SOURCE_DATE_EPOCH"],
+            str(build_timestamp.EPOCH),
+        )
         self.assertEqual(environment["PUBLIC"], "value")
         self.assertEqual(environment["PYTHONDEVMODE"], "1")
         self.assertEqual(environment["PYTHONDONTWRITEBYTECODE"], "1")

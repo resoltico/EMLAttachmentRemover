@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import plistlib
 import stat
 import subprocess
@@ -10,12 +11,13 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Final
 
+from tools.build_timestamp import ZIP_TIME, zip_epoch, zip_extra
 from tools.macos_metadata import build_number
 from tools.release_files import ReleaseQualificationError
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 APP: Final = "EML Attachment Remover.app"
-STAMP: Final = (2020, 2, 2, 0, 0, 0)
+STAMP: Final = ZIP_TIME
 MAX_TOTAL: Final = 128 * 1024 * 1024
 UNIX_SYSTEM: Final = 3
 DOCUMENTS: Final = (
@@ -113,6 +115,7 @@ def package(app: Path, target: Path) -> None:
     with zipfile.ZipFile(target, "w") as archive:
         for name, mode in sorted(surface.items()):
             info = zipfile.ZipInfo(name, STAMP)
+            info.extra = zip_extra()
             info.create_system = UNIX_SYSTEM
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = (
@@ -140,6 +143,8 @@ def _extract(archive: Path, destination: Path) -> None:
         if sum(item.file_size for item in entries) > MAX_TOTAL:
             message = "Native ZIP exceeds the extraction budget"
             raise ReleaseQualificationError(message)
+        stamp = entries[0].date_time
+        timestamp = _timestamp(entries[0].extra)
         for item in entries:
             mode = item.external_attr >> 16
             expected_type = stat.S_IFDIR if item.is_dir() else stat.S_IFREG
@@ -151,13 +156,13 @@ def _extract(archive: Path, destination: Path) -> None:
                 item.compress_type,
             ) != (
                 UNIX_SYSTEM,
-                STAMP,
+                stamp,
                 expected_type,
                 surface[item.filename],
                 zipfile.ZIP_DEFLATED,
             ) or any((
                 item.flag_bits,
-                item.extra,
+                item.extra != zip_extra(timestamp),
                 item.comment,
                 item.is_dir() and item.file_size,
             )):
@@ -171,6 +176,32 @@ def _extract(archive: Path, destination: Path) -> None:
             else:
                 path.write_bytes(source.read(item))
             path.chmod(surface[item.filename])
+        _restore_times(destination, entries, timestamp)
+
+
+def _timestamp(extra: bytes) -> int:
+    """Reject malformed build time metadata before extraction.
+
+    Returns:
+        The archive's absolute build datetime.
+
+    Raises:
+        ReleaseQualificationError: If the field is not canonical.
+
+    """
+    try:
+        return zip_epoch(extra)
+    except ValueError as error:
+        message = "Native ZIP metadata is not canonical"
+        raise ReleaseQualificationError(message) from error
+
+
+def _restore_times(
+    destination: Path, entries: list[zipfile.ZipInfo], timestamp: int
+) -> None:
+    """Restore file times, then directory times after writing their children."""
+    for item in reversed(entries):
+        os.utime(destination / item.filename, (timestamp, timestamp))
 
 
 def _signature(app: Path, architecture: str) -> None:

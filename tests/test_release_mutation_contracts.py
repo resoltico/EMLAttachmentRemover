@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import call, patch
 
 import pytest
-from tools import qualify_release
+from tools import build_timestamp, qualify_release
 
 
 def _release_names() -> tuple[str, str, str]:
@@ -69,6 +69,7 @@ def test_strict_environment_is_exact_with_or_without_removed_inputs() -> None:
     )
     expected = {
         "PUBLIC_SETTING": "kept",
+        "SOURCE_DATE_EPOCH": str(build_timestamp.EPOCH),
         "PYTHONDEVMODE": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONNOUSERSITE": "1",

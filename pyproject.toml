@@ -1,6 +1,7 @@
 [build-system]
 requires = ["hatchling==1.32.4"]
-build-backend = "hatchling.build"
+build-backend = "build_backend"
+backend-path = ["tools"]
 
 [project]
 name = "eml-attachment-remover"
@@ -61,7 +62,7 @@ remove-eml-attachments = "eml_attachment_remover.runtime:main"
 implementation = "CPython"
 
 [tool.eml-attachment-remover.macos]
-build-number = 7
+build-number = 10
 
 [tool.hatch.build]
 exclude = ["**/*.py.meta", "**/*.py.spans"]
@@ -70,7 +71,7 @@ reproducible = true
 [tool.hatch.build.targets.wheel]
 packages = ["src/eml_attachment_remover"]
 
-[tool.hatch.build.targets.wheel.hooks.custom]
+[tool.hatch.build.hooks.custom]
 path = "tools/hatch_build.py"
 
 [tool.hatch.build.targets.sdist]

@@ -194,6 +194,10 @@ def _strict_environment() -> dict[str, str]:
     environment = {
         name: value for name, value in os.environ.items() if name not in removed_names
     }
+    timestamp = importlib.import_module(
+        "tools.build_timestamp" if __package__ else "build_timestamp"
+    )
+    environment.update(timestamp.environment())
     environment["PYTHONDEVMODE"] = "1"
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     environment["PYTHONNOUSERSITE"] = "1"
@@ -308,6 +312,9 @@ def _complete_staging(
     _write_and_verify_manifest(staging, artifact_names)
     final_names = frozenset((*artifact_names, CHECKSUM_FILE_NAME))
     _assert_exact_entries(staging, final_names)
+    importlib.import_module(
+        "tools.build_timestamp" if __package__ else "build_timestamp"
+    ).stamp_tree(staging)
     return final_names
 
 

@@ -37,7 +37,9 @@ def test_wheel_tag_requires_one_exact_cpython_minor(tmp_path: Path) -> None:
 
 def test_build_hook_sets_the_metadata_derived_tag(tmp_path: Path) -> None:
     _project(tmp_path, requires=">=3.14,<3.15")
-    hook = cast("CustomBuildHook", SimpleNamespace(root=str(tmp_path)))
+    hook = cast(
+        "CustomBuildHook", SimpleNamespace(root=str(tmp_path), target_name="wheel")
+    )
     build_data: dict[str, object] = {}
     CustomBuildHook.initialize(hook, "3.0.0", build_data)
     assert build_data == {"tag": "cp314-none-any"}

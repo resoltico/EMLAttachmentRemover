@@ -77,9 +77,15 @@ def load_project_metadata(
     name = _required_text(tables.project, "name")
     requires_python = _required_text(tables.project, "requires-python")
     requirements = _required_string_list(tables.build_system, "requires")
+    backend = _required_text(tables.build_system, "build-backend")
+    if backend == "build_backend" and _required_string_list(
+        tables.build_system, "backend-path"
+    ) != ("tools",):
+        message = "release build backend path must be tools"
+        raise DistributionArchiveError(message)
     hatchling_version = _hatchling_version(
         requirements,
-        _required_text(tables.build_system, "build-backend"),
+        backend,
     )
     package_paths = _required_string_list(tables.wheel, "packages")
     if not package_paths:
@@ -258,7 +264,7 @@ def _hatchling_version(requirements: tuple[str, ...], backend: str) -> str:
         if len(hatchling) == 1
         else None
     )
-    if backend != "hatchling.build" or pinned is None:
+    if backend not in {"hatchling.build", "build_backend"} or pinned is None:
         message = "release backend must be one exactly pinned Hatchling requirement"
         raise DistributionArchiveError(message)
     return pinned.group(1)

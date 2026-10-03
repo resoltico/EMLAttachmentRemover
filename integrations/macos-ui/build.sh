@@ -6,6 +6,8 @@ umask 077
 SCRIPT_DIR=$(CDPATH='' cd -P "$(dirname "$0")" && pwd -P)
 PROJECT_ROOT=$(CDPATH='' cd -P "$SCRIPT_DIR/../.." && pwd -P)
 PYTHON=${EML_REMOVER_PYTHON:-python3.14}
+SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$("$PYTHON" -B -c 'import time; print(int(time.time()) // 2 * 2)')}
+export SOURCE_DATE_EPOCH
 TARGET=${1:-"$PROJECT_ROOT/build/EML Attachment Remover.app"}
 ARCH=${2:-$(uname -m)}
 case "$ARCH" in arm64|x86_64) ;; *) printf '%s\n' 'Choose arm64 or x86_64.' >&2; exit 3 ;; esac
@@ -83,5 +85,12 @@ chmod 755 "$APP/Contents/MacOS/EMLAttachmentRemover" "$APP/Contents/Resources/pr
 # Local signing binds the executable and bundled processing resources. This is not notarization.
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
+"$PYTHON" -B - "$PROJECT_ROOT" "$APP" <<'PYTHON'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from tools.build_timestamp import stamp_tree
+stamp_tree(Path(sys.argv[2]))
+PYTHON
 mv "$APP" "$TARGET"
 printf 'Built: %s\n' "$TARGET"

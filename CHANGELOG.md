@@ -16,6 +16,8 @@ Notable changes to this project are documented in this file. The format is based
 
 ### Changed
 
+- Distribution files and archived files/directories carry the build invocation datetime instead of fixed historical timestamps. Independent build comparisons share that datetime; separate invocations can produce different checksums.
+
 - **Breaking for Finder automation:** Quick Actions only launch the native app and finish at launch, not processing completion. Each batch has its own report window; leaving it open does not hold the shortcut open. Integrations requiring completion or exit status must use the CLI installed from the wheel or the standalone zipapp.
 - **Breaking for human-output parsers:** success and dry-run lines include the final or planned destination, for example `created: source.eml -> /path/to/source.mime-pruned.eml`. Parsers of the former source-only lines should use schema-3 JSON or NUL-delimited `paths0`.
 - Automatically derived names exceeding the destination filesystem's filename limit use a readable prefix, stable digest of the complete source name and `.mime-pruned.eml`. Explicit `--output` names are never changed. Use the reported destination to locate derived copies.

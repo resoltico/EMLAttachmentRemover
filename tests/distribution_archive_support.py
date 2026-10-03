@@ -11,6 +11,7 @@ import zipfile
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from tools.build_timestamp import EPOCH, ZIP_TIME
 from tools.distribution_archive_contract import ArchiveContract
 
 if TYPE_CHECKING:
@@ -129,6 +130,7 @@ def write_source_archive(
     with tarfile.open(path, "w:gz") as archive:
         root = _tar_info(contract.source_root)
         root.type = tarfile.DIRTYPE
+        root.mode = 0o755
         archive.addfile(root)
         for name, source in contract.public_sources.items():
             content = source.read_bytes()
@@ -150,7 +152,7 @@ def _tar_info(name: str) -> tarfile.TarInfo:
 
     """
     member = tarfile.TarInfo(name)
-    member.mtime = 1_580_601_600
+    member.mtime = EPOCH
     member.mode = 0o644
     return member
 
@@ -194,7 +196,7 @@ def write_wheel(
     files[record_name] = _record_text(files, record_name)
     with zipfile.ZipFile(path, "w") as archive:
         for name, content in files.items():
-            member = zipfile.ZipInfo(name, (2020, 2, 2, 0, 0, 0))
+            member = zipfile.ZipInfo(name, ZIP_TIME)
             member.create_system = 3
             member.external_attr = (
                 0o644 if name.startswith(f"{contract.dist_info}/") else 0o100644

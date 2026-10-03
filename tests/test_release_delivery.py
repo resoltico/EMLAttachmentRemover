@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from tools import macos_archive, qualify_release, release_files
+from tools import build_timestamp, macos_archive, qualify_release, release_files
 from tools import release_delivery as delivery
 from tools.release_files import ReleaseQualificationError
 
@@ -102,6 +102,7 @@ def test_native_build_is_fresh_and_records_no_customer_configuration(
     assert run.call_args.kwargs["check"] is True
     assert run.call_args.kwargs["env"] == {
         **os.environ,
+        **build_timestamp.environment(),
         "EML_REMOVER_PYTHON": sys.executable,
         "EML_ICON_RESOURCES": str(tmp_path / "icon"),
     }
