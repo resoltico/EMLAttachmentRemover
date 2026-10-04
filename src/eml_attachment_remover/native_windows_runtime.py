@@ -1,9 +1,12 @@
-"""Typed late binding for Windows-only ctypes and CRT module surfaces."""
+"""Typed late binding and status handling for Windows native operations."""
 
 from __future__ import annotations
 
 import ctypes
 from typing import TYPE_CHECKING, Literal, overload
+
+from .domain import AppError, ExitCode
+from .native_windows_abi import STATUS_NOT_SUPPORTED
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -47,3 +50,17 @@ class Msvcrt:
     def open_osfhandle(handle: int, flags: int) -> int:
         """Transfer one native handle to the CRT with exact binary flags."""  # ruff: ignore[docstring-missing-returns] - exact conversion is immediate.
         return int(__import__("msvcrt").open_osfhandle(handle, flags))
+
+
+def check_publication_support(status: int) -> None:
+    """Reject an explicitly unsupported native publication operation.
+
+    Raises:
+        AppError: If Windows reports STATUS_NOT_SUPPORTED for the rename.
+
+    """
+    if status == STATUS_NOT_SUPPORTED:
+        raise AppError(
+            ExitCode.ATOMIC_PUBLICATION_UNSUPPORTED,
+            "destination does not support exclusive atomic publication",
+        )

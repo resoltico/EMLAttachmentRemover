@@ -6,8 +6,12 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from eml_attachment_remover import native_values, native_windows
-from eml_attachment_remover.domain import AppError, ExitCode
+from eml_attachment_remover import (
+    native_values,
+    native_windows,
+    native_windows_binding,
+)
+from eml_attachment_remover.domain import AppError, BoundDirectory, ExitCode
 from eml_attachment_remover.native_windows import WindowsApi
 from eml_attachment_remover.native_windows_abi import FILE_RENAME_INFORMATION_EX
 
@@ -92,3 +96,38 @@ def test_windows_publish_translates_the_actual_negative_native_status(
         "could not publish candidate: win-5",
     )
     assert ntdll.statuses == [-0x1234]
+
+
+def test_windows_unsupported_publication_survives_the_binding_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ntdll = Ntdll(result=-1073741637)
+    api = object.__new__(WindowsApi)
+    api.__dict__["ntdll"] = ntdll
+    monkeypatch.setattr(native_windows_binding, "_api", lambda: api)
+    monkeypatch.setattr(api, "handle_from_descriptor", lambda _descriptor: 0x1234)
+
+    with pytest.raises(AppError) as captured:
+        native_windows_binding.publish_stage_no_replace(
+            BoundDirectory(0x5678, windows=True), 7, "stage.tmp", "out.eml"
+        )
+    assert captured.value == AppError(
+        ExitCode.ATOMIC_PUBLICATION_UNSUPPORTED,
+        "destination does not support exclusive atomic publication",
+    )
+    assert ntdll.statuses == []
+    assert len(ntdll.packets) == 1
+
+
+@pytest.mark.parametrize("status", [-1073741790, -1073741811, -1073741821])
+def test_windows_other_rename_failures_do_not_claim_unsupported_publication(
+    status: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ntdll = Ntdll(result=status, translated=50)
+    api = object.__new__(WindowsApi)
+    api.__dict__["ntdll"] = ntdll
+    monkeypatch.setattr(native_windows, "_format_error", lambda value: f"win-{value}")
+    with pytest.raises(OSError, match="publish candidate: win-50") as captured:
+        api.publish_no_replace(0x1234, 0x5678, "out.eml")
+    assert captured.value.errno == 50
+    assert ntdll.statuses == [status]

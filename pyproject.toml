@@ -62,7 +62,7 @@ remove-eml-attachments = "eml_attachment_remover.runtime:main"
 implementation = "CPython"
 
 [tool.eml-attachment-remover.macos]
-build-number = 15
+build-number = 16
 
 [tool.hatch.build]
 exclude = ["**/*.py.meta", "**/*.py.spans"]

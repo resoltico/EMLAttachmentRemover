@@ -65,6 +65,7 @@ from .native_windows_abi import (
 from .native_windows_runtime import (
     Msvcrt as _Msvcrt,
 )
+from .native_windows_runtime import check_publication_support
 from .native_windows_runtime import (
     ctypes_attribute as _ctypes_attribute,
 )
@@ -342,6 +343,7 @@ class WindowsApi:
         )
         if result >= 0:
             return
+        check_publication_support(result)
         error = self.ntdll.RtlNtStatusToDosError(result)
         if error in {ERROR_FILE_EXISTS, ERROR_ALREADY_EXISTS}:
             raise FileExistsError(error, "destination already exists", name)
