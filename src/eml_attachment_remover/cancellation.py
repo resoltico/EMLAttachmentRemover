@@ -15,7 +15,7 @@ from .cancellation_owner import CancellationOwner, cleanup_actions
 from .cancellation_state import CURRENT, CancellationState
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Generator
 
 GRACE_SECONDS: Final = 10.0
 REPEAT_SIGNALS: Final = 2
@@ -56,7 +56,7 @@ def cancellation_name(number: int) -> str:
 
 
 @contextmanager
-def _handling(handler: Callable[[int, object], None]) -> Iterator[None]:
+def _handling(handler: Callable[[int, object], None]) -> Generator[None]:
     """Route watched main-thread signals to one handler, restoring prior handlers.
 
     Yields:
@@ -89,7 +89,7 @@ def _handling(handler: Callable[[int, object], None]) -> Iterator[None]:
 
 
 @contextmanager
-def install_cancellation_handlers() -> Iterator[None]:
+def install_cancellation_handlers() -> Generator[None]:
     """Install and restore main-thread cancellation handlers for batch execution.
 
     Yields:
@@ -143,7 +143,7 @@ def _acknowledge(state: CancellationState) -> None:
 
 
 @contextmanager
-def coherent_operation() -> Iterator[None]:
+def coherent_operation() -> Generator[None]:
     """Keep receipt transfer and item construction inside one cooperative operation.
 
     Yields:
@@ -246,7 +246,7 @@ def hard_exit(status: int) -> None:
 @contextmanager
 def delivery_guard(
     clock: Callable[[], float] = time.monotonic,
-) -> Iterator[DeliveryGuard]:
+) -> Generator[DeliveryGuard]:
     """Hold cancellation while one report is delivered, under a bounded grace.
 
     Yields:

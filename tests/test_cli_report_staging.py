@@ -289,7 +289,9 @@ def test_run_retains_the_request_and_stages_for_its_channel(
     for name in ("stdout", "stderr"):
         monkeypatch.setattr(sys, name, TextIOWrapper(BytesIO(), encoding="ascii"))
     monkeypatch.setattr(
-        cli, "execute", lambda *_args, ledger: complete_owned(ledger, _failed())
+        cli,
+        "execute",
+        lambda *_args, ledger, **_kwargs: complete_owned(ledger, _failed()),
     )
     monkeypatch.setattr(report_session, "_write_selected", lambda *_args: None)
     state = cli._RunState()  # ruff: ignore[private-member-access] - retained request.

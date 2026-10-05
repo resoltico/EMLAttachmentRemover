@@ -2,24 +2,37 @@
 # Install only our owned native application; preserve the previous bundle.
 set -eu
 umask 077
-PYTHON=${EML_REMOVER_PYTHON:-python3.14}
 APP=${1:?Supply the freshly built EML Attachment Remover.app path}
 DESTINATION=${EML_REMOVER_UI_APP:-"$HOME/Applications/EML Attachment Remover.app"}
-"$PYTHON" -c 'import platform, sys; raise SystemExit(platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 14))'     || { printf '%s\n' 'The native UI installer requires CPython 3.14.' >&2; exit 9; }
 codesign --verify --deep --strict "$APP"
-"$PYTHON" - "$APP" "$DESTINATION" <<'PY'
+RUNTIME_MODE=$(/usr/libexec/PlistBuddy -c 'Print :EMLRuntimeMode' "$APP/Contents/Info.plist")
+case "$RUNTIME_MODE" in
+    bundled) PYTHON="$APP/Contents/Resources/Runtime/bin/python3.14" ;;
+    external) PYTHON=${EML_REMOVER_PYTHON:-python3.14} ;;
+    *) printf '%s\n' 'Application runtime edition is invalid.' >&2; exit 4 ;;
+esac
+PYTHON=$(command -v "$PYTHON") || { printf '%s\n' 'The selected CPython invocation is unavailable.' >&2; exit 9; }
+"$PYTHON" -I -B -c 'import platform, sys; raise SystemExit(platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 14))' || { printf '%s\n' 'The selected CPython 3.14 runtime is unavailable.' >&2; exit 9; }
+"$PYTHON" -I -B - "$APP" "$DESTINATION" "$RUNTIME_MODE" "$PYTHON" <<'PY'
 import json, os, plistlib, shutil, stat, struct, subprocess, sys, tempfile
 from pathlib import Path
 def install():
     source = Path(sys.argv[1]).absolute()
     destination = Path(sys.argv[2]).absolute()
+    runtime_mode = sys.argv[3]
     marker = 'EML Attachment Remover native UI managed installation\n'
     identifier = 'io.github.resoltico.emlattachmentremover'
     def owned_tree(root):
         for item in [root, *root.rglob('*')]:
             mode = item.lstat()
-            if mode.st_uid != os.geteuid() or not (stat.S_ISDIR(mode.st_mode) or stat.S_ISREG(mode.st_mode)):
-                raise OSError('Application contains an unowned or unsafe entry')
+            runtime_root = root/'Contents/Resources/Runtime'
+            if stat.S_ISLNK(mode.st_mode):
+                if not item.is_relative_to(runtime_root) or item.readlink().is_absolute() or not item.resolve(strict=True).is_relative_to(runtime_root.resolve(strict=True)):
+                    raise OSError('Application contains an escaping or unsafe runtime link')
+            elif not (stat.S_ISDIR(mode.st_mode) or stat.S_ISREG(mode.st_mode)):
+                raise OSError('Application contains an unsafe entry')
+            if mode.st_uid != os.geteuid():
+                raise OSError('Application contains an unowned entry')
         if (root/'Contents/Resources/.eml-ui-installation').read_text() != marker:
             raise OSError('Application is not an owned native UI bundle')
         with (root/'Contents/Info.plist').open('rb') as stream:
@@ -56,30 +69,33 @@ def install():
         if destination == source:
             raise OSError('Source and destination are identical')
     configuration = Path.home()/'Library/Application Support/EML Attachment Remover UI'
-    for ancestor in [configuration, *configuration.parents]:
-        if ancestor.is_symlink():
-            raise OSError('Refusing a symbolic-link runtime configuration ancestor')
-    configuration.mkdir(mode=0o700, parents=True, exist_ok=True)
-    configuration_stat = configuration.stat()
-    if configuration_stat.st_uid != os.geteuid() or stat.S_IMODE(configuration_stat.st_mode) & 0o077:
-        raise OSError('Runtime configuration directory is not privately owned')
     runtime = configuration/'runtime.json'
-    if runtime.exists() or runtime.is_symlink():
-        runtime_stat = runtime.lstat()
-        if not stat.S_ISREG(runtime_stat.st_mode) or runtime_stat.st_uid != os.geteuid():
-            raise OSError('Refusing an unsafe runtime configuration file')
+    if runtime_mode == 'external':
+        for ancestor in [configuration, *configuration.parents]:
+            if ancestor.is_symlink():
+                raise OSError('Refusing a symbolic-link runtime configuration ancestor')
+        configuration.mkdir(mode=0o700, parents=True, exist_ok=True)
+        configuration_stat = configuration.stat()
+        if configuration_stat.st_uid != os.geteuid() or stat.S_IMODE(configuration_stat.st_mode) & 0o077:
+            raise OSError('Runtime configuration directory is not privately owned')
+        runtime = configuration/'runtime.json'
+        if runtime.exists() or runtime.is_symlink():
+            runtime_stat = runtime.lstat()
+            if not stat.S_ISREG(runtime_stat.st_mode) or runtime_stat.st_uid != os.geteuid():
+                raise OSError('Refusing an unsafe runtime configuration file')
     stage = Path(tempfile.mkdtemp(prefix='.eml-ui-install-', dir=destination.parent))
     backup = None
     runtime_temp = None
     try:
-        fd, runtime_temp = tempfile.mkstemp(prefix='.runtime-', dir=configuration)
-        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-            json.dump({'python': str(Path(sys.executable).resolve())}, stream)
-            stream.write('\n')
-            stream.flush()
-            os.fsync(stream.fileno())
+        if runtime_mode == 'external':
+            fd, runtime_temp = tempfile.mkstemp(prefix='.runtime-', dir=configuration)
+            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+                json.dump({'python': str(Path(sys.argv[4]).absolute())}, stream)
+                stream.write('\n')
+                stream.flush()
+                os.fsync(stream.fileno())
         prepared = stage/destination.name
-        shutil.copytree(source, prepared, symlinks=False)
+        shutil.copytree(source, prepared, symlinks=True)
         owned_tree(prepared)
         subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(prepared)], check=True)
         if destination.exists():
@@ -93,7 +109,7 @@ def install():
         try:
             os.rename(prepared, destination)
             try:
-                os.replace(runtime_temp, runtime)
+                if runtime_temp is not None: os.replace(runtime_temp, runtime)
             except BaseException:
                 os.rename(destination, prepared)
                 raise

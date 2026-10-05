@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from eml_attachment_remover.cli_parser import (
@@ -13,6 +15,19 @@ from eml_attachment_remover.cli_parser import (
 from eml_attachment_remover.domain import PROGRAM_NAME, AppError, ExitCode
 
 
+def test_source_channel_selection_preserves_namespace_and_iterable_inputs() -> None:
+    """The parser adds one channel while retaining argparse's container contract."""
+    namespace = SimpleNamespace()
+    parsed = build_parser().parse_args(iter(["source.eml"]), namespace)
+    assert parsed is namespace
+    assert parsed.source == ["source.eml"]
+    requested = build_parser().parse_args(["--request-stdin"])
+    assert requested.request_stdin is True
+    assert requested.source == []
+    with pytest.raises(AppError, match="cannot be combined"):
+        build_parser().parse_args(["--request-stdin", "source.eml"])
+
+
 def test_parser_declares_the_complete_command_surface() -> None:
     parser = build_parser()
     actions = {action.dest: action for action in parser._actions}  # ruff: ignore[private-member-access] - action metadata is an observable CLI receipt.
@@ -20,6 +35,8 @@ def test_parser_declares_the_complete_command_surface() -> None:
     assert tuple(actions) == (
         "help",
         "source",
+        "progress_fd",
+        "request_stdin",
         "output",
         "output_dir",
         "existing",
@@ -32,7 +49,7 @@ def test_parser_declares_the_complete_command_surface() -> None:
         actions["source"].option_strings,
         actions["source"].nargs,
         actions["source"].required,
-    ) == ([], "+", True)
+    ) == ([], "*", False)
     assert (
         actions["output"].option_strings,
         actions["output_dir"].option_strings,
@@ -81,6 +98,8 @@ def test_parser_receives_every_supported_value_and_boolean_option() -> None:
     ])
     assert vars(namespace) == {
         "source": ["source.eml"],
+        "request_stdin": False,
+        "progress_fd": None,
         "output": "copy.eml",
         "output_dir": None,
         "existing": "verify",

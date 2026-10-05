@@ -69,7 +69,27 @@ struct ModelTests {
     try checkStartupFailures()
     try checkInvalidUTF8()
     try checkAddresses()
+    checkDiagnosticGuidance()
     print("Native report model checks passed.")
+  }
+
+  static func checkDiagnosticGuidance() {
+    let address = Address(display: "source.eml", text: "source.eml", nativeBase64: nil)
+    for code in [
+      "INPUT_ERROR", "OUTPUT_CONFLICT", "PARSE_ERROR", "TRANSFORMATION_UNAVAILABLE",
+      "WRITE_ERROR", "VERIFICATION_ERROR", "PUBLICATION_INCOMPLETE",
+      "ATOMIC_PUBLICATION_UNSUPPORTED", "USAGE", "BATCH_FAILURE", "INTERNAL_ERROR",
+      "UNKNOWN_CODE",
+    ] {
+      let error = Diagnostic(code: code, message: "raw internal wording")
+      precondition(error.guidance.contains("Details"))
+      precondition(!error.guidance.contains(error.message))
+      precondition(error.guidance == Diagnostic(code: code, message: "changed wording").guidance)
+      let item = Item(
+        index: 0, status: "published_with_error", sourceRequest: address,
+        destinationRequest: address, publication: nil, error: error, warnings: [])
+      precondition(item.explanation.contains("A copy was published"))
+    }
   }
 
   static func checkStartupFailures() throws {
@@ -105,7 +125,7 @@ struct ModelTests {
         code: "ATOMIC_PUBLICATION_UNSUPPORTED", message: "changed platform wording"),
       warnings: [])
     precondition(unsupported.explanation.contains("writable local folder"))
-    precondition(unsupported.explanation.contains("--output-dir"))
+    precondition(unsupported.explanation.contains("Choose folder"))
     let visibleConflict = Item(
       index: 0, status: "published_with_error", sourceRequest: address, destinationRequest: address,
       publication: nil, error: Diagnostic(code: "OUTPUT_CONFLICT", message: "late conflict"),

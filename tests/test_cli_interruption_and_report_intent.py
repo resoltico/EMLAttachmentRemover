@@ -108,8 +108,13 @@ def test_run_keeps_every_validated_option_and_the_completed_ledger(
     captured: list[BatchOptions] = []
 
     def execute(
-        _sources: list[str], options: BatchOptions, *, ledger: BatchLedger
+        _sources: list[str],
+        options: BatchOptions,
+        *,
+        ledger: BatchLedger,
+        progress: object,
     ) -> BatchLedger:
+        assert progress is None
         captured.append(options)
         ledger.items = expected_ledger.items
         return ledger

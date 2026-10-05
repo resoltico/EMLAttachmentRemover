@@ -16,6 +16,7 @@ from eml_attachment_remover.domain import (
     FileIdentity,
     PathValue,
 )
+from eml_attachment_remover.native_source import read_source_bytes
 from eml_attachment_remover.native_values import path_value
 from eml_attachment_remover.native_windows import WindowsApi, WindowsFileInfo
 from eml_attachment_remover.native_windows_abi import (
@@ -216,7 +217,7 @@ def test_windows_binding_open_failure_does_not_close_unacquired_sentinel_handles
     with pytest.raises(AppError) as read_error:
         native_windows_binding._read_source("request", "C:\\Inbox\\mail.eml")  # ruff: ignore[private-member-access] - failed child open owns only its parent handle.
     assert read_error.value == AppError(
-        ExitCode.INPUT_ERROR, "could not read source: open"
+        ExitCode.INPUT_ERROR, "could not read source request: open"
     )
     assert descriptor_closes == []
     assert api.closed == [101]
@@ -233,9 +234,14 @@ def test_windows_binding_retains_zero_native_handles_and_accepts_the_raw_size_li
     )
     assert api.closed == [0, 101]
 
-    original_read_all = native_windows_binding._read_all  # ruff: ignore[private-member-access] - restore the real bounded-read implementation after the snapshot seam.
+    # Restore the real bounded reader after the snapshot seam.
+    original_read_all = read_source_bytes
     monkeypatch.setattr(native_windows_binding, "MAX_RAW_BYTES", 3)
-    monkeypatch.setattr(native_windows_binding, "_read_all", lambda _fd: b"abc")
+    monkeypatch.setattr(
+        native_windows_binding,
+        "_read_all",
+        lambda _fd, *, max_bytes: b"abc"[: max_bytes + 1],
+    )
     assert native_windows_binding._snapshot("r", "e", "p", "n", 0).size == 3  # ruff: ignore[private-member-access] - inclusive raw-size ceiling receipt.
 
     requests: list[int] = []
@@ -247,7 +253,7 @@ def test_windows_binding_retains_zero_native_handles_and_accepts_the_raw_size_li
         return b""
 
     monkeypatch.setattr(native_windows_binding.__dict__["os"], "read", empty_read)
-    assert native_windows_binding._read_all(0) == b""  # ruff: ignore[private-member-access] - native read chunk is exactly one MiB.
+    assert read_source_bytes(0) == b""  # native read chunk is exactly one MiB.
     assert requests == [1024 * 1024]
 
 

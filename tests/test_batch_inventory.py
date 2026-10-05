@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from eml_attachment_remover import batch as batch_module
+from eml_attachment_remover import batch_inventory
 from eml_attachment_remover.batch import BatchOptions, execute
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import ExitCode, ItemStatus
@@ -44,7 +45,7 @@ def test_inventory_cancellation_marks_active_item_cancelled_and_later_not_run(
     def cancel(_source: str) -> object:
         raise CancellationSignal(15, "SIGTERM")
 
-    monkeypatch.setattr(batch_module, "inspect_source_identity", cancel)
+    monkeypatch.setattr(batch_inventory, "inspect_source_identity", cancel)
     ledger = execute(["first.eml", "second.eml"], _options())
     assert [item.status for item in ledger.items] == [
         ItemStatus.CANCELLED,
@@ -62,7 +63,7 @@ def test_inventory_unknown_exception_is_an_internal_abort_with_full_ledger(
     def explode(_source: str) -> object:
         raise RuntimeError(INVENTORY_FAULT)
 
-    monkeypatch.setattr(batch_module, "inspect_source_identity", explode)
+    monkeypatch.setattr(batch_inventory, "inspect_source_identity", explode)
     ledger = execute(["first.eml", "second.eml"], _options())
     assert [item.status for item in ledger.items] == [
         ItemStatus.FAILED,
@@ -80,7 +81,7 @@ def test_inventory_keyboard_interrupt_is_an_active_cancellation(
     def interrupt(_source: str) -> object:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(batch_module, "inspect_source_identity", interrupt)
+    monkeypatch.setattr(batch_inventory, "inspect_source_identity", interrupt)
     ledger = execute(["first.eml", "second.eml"], _options())
     assert [item.status for item in ledger.items] == [
         ItemStatus.CANCELLED,
@@ -96,7 +97,7 @@ def test_inventory_memory_error_remains_fatal(
     def exhaust(_source: str) -> object:
         raise MemoryError
 
-    monkeypatch.setattr(batch_module, "inspect_source_identity", exhaust)
+    monkeypatch.setattr(batch_inventory, "inspect_source_identity", exhaust)
     with pytest.raises(MemoryError):
         execute(["first.eml"], _options())
 
@@ -150,7 +151,16 @@ def test_destination_collision_inventory_marks_every_exact_output(
     output.mkdir()
     first = _plain(left / "message.eml")
     second = _plain(right / "message.eml")
-    ledger = execute([str(first), str(second)], _options(output_dir=str(output)))
+    ledger = execute(
+        [str(first), str(second)],
+        BatchOptions(
+            dry_run=True,
+            existing="error",
+            fail_fast=False,
+            output=str(output / "same.eml"),
+            output_dir=None,
+        ),
+    )
     assert [item.status for item in ledger.items] == [
         ItemStatus.FAILED,
         ItemStatus.FAILED,
@@ -190,7 +200,10 @@ def test_exact_batch_limit_enters_inventory_before_refusing_the_next_item(
     """Keep the public item limit inclusive and avoid an accidental off-by-one."""
     observed: list[int] = []
 
-    def inventory(_ledger: object, sources: list[str], _options: object) -> None:
+    def inventory(
+        _ledger: object, sources: list[str], _options: object, *, progress: object
+    ) -> None:
+        assert progress is None
         observed.append(len(sources))
 
     monkeypatch.setattr(batch_module, "_run_inventory_and_items", inventory)

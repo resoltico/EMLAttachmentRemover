@@ -20,7 +20,7 @@ import Foundation
   @MainActor static func main() throws {
     let run = ProcessingRun()
     let outcome = Outcome()
-    try run.start(paths: ["public.eml"], version: "4.0.0", preparing: {},
+    try run.start(paths: ["public.eml"], version: "4.0.0", updated: { _ in },
       completed: { result, _, status, _ in
         outcome.completed = true
         if case .success = result { outcome.admitted = status == 130 }
@@ -76,7 +76,8 @@ def test_native_stop_is_not_broadcast_then_forwarded_again(tmp_path: Path) -> No
             "6",
             "-warnings-as-errors",
             str(sources / "App/ProcessingRun.swift"),
-            str(sources / "App/LaunchArguments.swift"),
+            str(sources / "App/RequestTransport.swift"),
+            str(sources / "App/ProgressStream.swift"),
             str(sources / "App/RuntimeConfiguration.swift"),
             str(sources / "App/UITrace.swift"),
             str(sources / "ReportModel.swift"),

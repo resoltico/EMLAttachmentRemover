@@ -107,7 +107,12 @@ def load_project_metadata(
             requires_python,
         ),
         wheel_generator=f"hatchling {hatchling_version}",
-        license_expression=_required_text(tables.project, "license"),
+        license_expression=_required_text(
+            tables.project
+            if "license" in tables.project
+            else configuration["tool"]["eml-attachment-remover"]["licenses"],
+            "license" if "license" in tables.project else "software",
+        ),
         authors=_authors(tables.project),
         keywords=_optional_string_list(tables.project, "keywords"),
         classifiers=_optional_string_list(tables.project, "classifiers"),

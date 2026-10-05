@@ -213,7 +213,8 @@ def test_output_directory_names_are_fitted_to_that_directory(
     """With --output-dir, the limit is asked of that directory, in the host grammar."""
     asked = _limit(monkeypatch, 60)
     source = "s" * 90 + ".eml"
-    name = "s" * (60 - len(_tail(source))) + _tail(source)
+    tail = _tail(source)
+    name = "s" * (60 - len(tail)) + tail
     fitted = destination_names.fitted_default_destination(source, "out/dir")
     assert fitted == os.fspath(Path("out/dir") / name)
     assert asked == ["out/dir"]

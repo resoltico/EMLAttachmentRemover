@@ -70,12 +70,8 @@ GENERATED_ROOT_DIRECTORIES: Final = frozenset({
     *GENERATED_ARTIFACT_ROOT_DIRECTORIES,
     *policy.TOOL_CACHE_DIRECTORY_NAMES,
 })
-OPAQUE_ARCHIVE_SUFFIXES: Final = (
-    ".tar.gz",
-    ".whl",
-    "-macos-arm64.zip",
-    "-macos-x86_64.zip",
-)
+OPAQUE_ARCHIVE_SUFFIXES: Final = policy.OPAQUE_ARCHIVE_SUFFIXES
+
 OPAQUE_ARCHIVE_NAMES: Final = frozenset({"remove-eml-attachments.pyz"})
 
 

@@ -241,6 +241,7 @@ def test_optimized_harness_detects_broken_model_contracts(
             "-sanitize=fuzzer,address",
             str(model),
             str(UI / "LauncherFailure.swift"),
+            str(UI / "App/ProgressStream.swift"),
             str(UI / "Fuzz/ReceiptFuzzer.swift"),
             "-o",
             str(binary),

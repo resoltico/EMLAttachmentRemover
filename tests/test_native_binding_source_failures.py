@@ -380,11 +380,14 @@ def test_posix_snapshot_preserves_all_address_metadata_and_payload_evidence(
 
     monkeypatch.setattr(native_posix.__dict__["os"], "fstat", fstat)
     monkeypatch.setattr(native_posix.__dict__["stat"], "S_ISREG", lambda _mode: True)
-    monkeypatch.setattr(native_posix.__dict__["stat"], "S_IMODE", lambda _mode: 0o640)
     monkeypatch.setattr(
         native_posix.__dict__["stat"], "filemode", lambda _mode: "-rw-r-----"
     )
-    monkeypatch.setattr(native_posix, "_read_all", lambda _descriptor: b"raw")
+    monkeypatch.setattr(
+        native_posix,
+        "_read_all",
+        lambda _descriptor, *, max_bytes: b"raw"[: max_bytes + 1],
+    )
     monkeypatch.setattr(native_posix, "_final_address", lambda _path: final)
     monkeypatch.setattr(native_posix, "path_value", value)
 
@@ -397,7 +400,6 @@ def test_posix_snapshot_preserves_all_address_metadata_and_payload_evidence(
         b"leaf",
         final,
         FileIdentity(21, 22, "-rw-r-----", 23),
-        0o640,
         b"raw",
         hashlib.sha256(b"raw").hexdigest(),
         3,

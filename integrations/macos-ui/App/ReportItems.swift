@@ -7,9 +7,13 @@ final class ReportItems: NSObject, NSTableViewDataSource, NSTableViewDelegate {
   let layout: ReportLayout
   let card = NSStackView()
   var table: NSTableView?
+  var reviewOnlyButton: NSButton?
+  private var visibleItems: [Item]
+  private var listHeightConstraint: NSLayoutConstraint?
   init(receipt: UIReceipt, layout: ReportLayout, selected: Int) {
     self.receipt = receipt
     self.items = receipt.report.items
+    self.visibleItems = receipt.report.items
     self.layout = layout
     super.init()
     if items.count > 1 { makeTable(selectedRow: selected) }
@@ -39,6 +43,12 @@ final class ReportItems: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     table?.scrollRowToVisible(selected)
   }
   func makeTable(selectedRow: Int) {
+    if items.contains(where: ResultPresentation.needsReview) {
+      let filter = NSButton(
+        checkboxWithTitle: "Needs review only", target: self, action: #selector(filterItems))
+      reviewOnlyButton = filter
+      layout.add(filter)
+    }
     let list = NSTableView()
     for (id, title, width) in [("file", "File", 355.0), ("result", "Result", 210.0)] {
       let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
@@ -60,25 +70,58 @@ final class ReportItems: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     scroll.autohidesScrollers = true
     scroll.borderType = .bezelBorder
     scroll.documentView = list
-    scroll.heightAnchor.constraint(equalToConstant: min(140, CGFloat(items.count) * 28 + 28))
-      .isActive = true
     layout.add(scroll)
     table = list
+    listHeightConstraint = scroll.heightAnchor.constraint(equalToConstant: 96)
+    listHeightConstraint?.isActive = true
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(windowResized), name: NSWindow.didResizeNotification,
+      object: layout.window)
+    updateListHeight()
     list.selectRowIndexes(IndexSet(integer: selectedRow), byExtendingSelection: false)
   }
-  func numberOfRows(in tableView: NSTableView) -> Int { items.count }
+  private func listHeight(_ list: NSTableView) -> CGFloat {
+    CGFloat(visibleItems.count) * (list.rowHeight + list.intercellSpacing.height)
+      + (list.headerView?.frame.height ?? 28) + 4
+  }
+  deinit { NotificationCenter.default.removeObserver(self) }
+  @objc private func windowResized(_ notification: Notification) { updateListHeight() }
+  private func updateListHeight() {
+    guard let table, let outer = layout.window.contentView else { return }
+    let natural = listHeight(table)
+    listHeightConstraint?.constant = min(natural, max(min(96, natural), outer.bounds.height * 0.30))
+  }
+  @objc private func filterItems(_ sender: NSButton) {
+    guard let table else { return }
+    let selected =
+      visibleItems.indices.contains(table.selectedRow)
+      ? visibleItems[table.selectedRow].index : nil
+    visibleItems = sender.state == .on ? items.filter(ResultPresentation.needsReview) : items
+    updateListHeight()
+    table.reloadData()
+    let row = visibleItems.firstIndex(where: { $0.index == selected }) ?? 0
+    if visibleItems.indices.contains(row) {
+      table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+      table.scrollRowToVisible(row)
+      showItem(visibleItems[row])
+    }
+    layout.layoutContent()
+  }
+  func numberOfRows(in tableView: NSTableView) -> Int { visibleItems.count }
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView?
   {
     let isFilename = tableColumn?.identifier.rawValue == "file"
-    let field = UIControls.label(isFilename ? items[row].name : items[row].label)
+    let item = visibleItems[row]
+    if !isFilename { return ResultPresentation.cell(item) }
+    let field = UIControls.label(item.name)
     field.maximumNumberOfLines = 1
     field.lineBreakMode = .byTruncatingMiddle
-    field.toolTip = isFilename ? safeText(items[row].sourceRequest.display) : items[row].label
+    field.toolTip = safeText(item.sourceRequest.display)
     return field
   }
   func tableViewSelectionDidChange(_ notification: Notification) {
-    guard let table, items.indices.contains(table.selectedRow) else { return }
-    showItem(items[table.selectedRow])
+    guard let table, visibleItems.indices.contains(table.selectedRow) else { return }
+    showItem(visibleItems[table.selectedRow])
   }
   func showItem(_ item: Item) {
     for view in card.arrangedSubviews {
@@ -107,6 +150,7 @@ final class ReportItems: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     append(separator)
     append(UIControls.label(item.label, weight: .semibold))
     append(UIControls.label(item.explanation))
+    if !item.warnings.isEmpty { append(ResultPresentation.warnings(item)) }
     let row = NSStackView()
     row.orientation = .horizontal
     if item.acceptedURL != nil && receipt.processStatus != 120 && receipt.stopped != true {

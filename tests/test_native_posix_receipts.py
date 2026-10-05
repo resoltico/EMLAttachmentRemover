@@ -18,6 +18,7 @@ from eml_attachment_remover.domain import (
     FileIdentity,
     PathValue,
 )
+from eml_attachment_remover.native_source import read_source_bytes
 
 
 def _metadata() -> SimpleNamespace:
@@ -91,7 +92,7 @@ def test_posix_identity_split_directory_and_read_receipts_are_exact(
 
     monkeypatch.setattr(native_posix, "MAX_RAW_BYTES", 3)
     monkeypatch.setattr(native_posix.__dict__["os"], "read", read)
-    assert native_posix._read_all(23) == b"abc"  # ruff: ignore[private-member-access] - exact raw read assembly.
+    assert read_source_bytes(23, max_bytes=3) == b"abc"  # exact raw read assembly.
     assert read_calls == [(23, 4), (23, 2), (23, 1)]
 
     large_read_calls: list[tuple[int, int]] = []
@@ -102,13 +103,13 @@ def test_posix_identity_split_directory_and_read_receipts_are_exact(
 
     monkeypatch.setattr(native_posix, "MAX_RAW_BYTES", 2 * 1024 * 1024)
     monkeypatch.setattr(native_posix.__dict__["os"], "read", read_large)
-    assert native_posix._read_all(24) == b""  # ruff: ignore[private-member-access] - fixed maximum native read chunk.
+    assert read_source_bytes(24) == b""  # fixed maximum native read chunk.
     assert large_read_calls == [(24, 1024 * 1024)]
 
     monkeypatch.setattr(native_posix, "MAX_RAW_BYTES", 3)
     monkeypatch.setattr(native_posix.__dict__["os"], "read", lambda *_args: b"four")
     with pytest.raises(AppError) as captured:
-        native_posix._read_all(25)  # ruff: ignore[private-member-access] - exact over-limit source failure.
+        read_source_bytes(25, max_bytes=3)  # exact over-limit source failure.
     assert captured.value == AppError(
         ExitCode.INPUT_ERROR, "source exceeds the 128 MiB raw-size limit"
     )
@@ -210,7 +211,7 @@ def test_posix_binding_and_source_open_receipts_close_every_descriptor(
     with pytest.raises(AppError) as captured:
         native_posix._inspect_source_identity("expanded")  # ruff: ignore[private-member-access] - source-open failure.
     assert captured.value == AppError(
-        ExitCode.INPUT_ERROR, "could not inspect source: fault"
+        ExitCode.INPUT_ERROR, "could not inspect source expanded: fault"
     )
     assert closed == [31]
 
@@ -232,7 +233,9 @@ def test_posix_snapshot_and_source_read_receipts_are_complete(
     monkeypatch.setattr(
         native_posix,
         "_read_all",
-        lambda descriptor: b"raw" if descriptor == 44 else b"",
+        lambda descriptor, *, max_bytes: (
+            b"raw"[: max_bytes + 1] if descriptor == 44 else b""
+        ),
     )
     monkeypatch.setattr(
         native_posix, "_final_address", lambda path: _value(f"final:{path}")
@@ -245,7 +248,6 @@ def test_posix_snapshot_and_source_read_receipts_are_complete(
     assert result.basename == b"leaf"
     assert result.final_address == _value("final:44")
     assert result.identity == FileIdentity(11, 12, "-rw-r-----", 13)
-    assert result.mode == 0o640
     assert result.raw == b"raw"
     assert result.digest == hashlib.sha256(b"raw").hexdigest()
     assert result.size == 3

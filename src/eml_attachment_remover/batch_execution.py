@@ -78,9 +78,9 @@ def _execute(
     if not report_stream.start_or_fail(ledger):
         return
     checkpoint()
-    argument_bytes = sum(len(os.fsencode(source)) for source in sources)
-    if len(sources) > limits[0] or argument_bytes > limits[1]:
-        ledger.finalize_not_run("batch exceeds native argument resource limit")
+    path_bytes = sum(len(os.fsencode(source)) for source in sources)
+    if len(sources) > limits[0] or path_bytes > limits[1]:
+        ledger.finalize_not_run("batch exceeds request count or path-byte limit")
     else:
         _process(ledger, sources, options, process)
     ledger.finalize_not_run("not run")

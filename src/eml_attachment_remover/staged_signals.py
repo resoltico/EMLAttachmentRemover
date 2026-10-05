@@ -10,20 +10,21 @@ from typing import TYPE_CHECKING
 from .cancellation_state import CURRENT
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
 
 
 @contextmanager
-def defer_signals() -> Iterator[None]:
+def defer_signals() -> Generator[None]:
     """Defer catchable process signals across one nonterminal publication edge."""
     # Cooperative handlers must see the request immediately; they cannot throw
-    # through this operation. Standalone callers retain the legacy mask boundary.
+    # through this operation. Standalone callers retain the POSIX mask boundary.
     if CURRENT.get() is not None:
         yield
         return
-    mask = getattr(signal, "pthread_" + "sigmask", None)
-    block = getattr(signal, "SIG_" + "BLOCK", None)
-    restore = getattr(signal, "SIG_" + "SETMASK", None)
+    # Capability lookups keep standalone publication usable on non-POSIX hosts.
+    mask = getattr(signal, "pthread_sigmask", None)
+    block = getattr(signal, "SIG_BLOCK", None)
+    restore = getattr(signal, "SIG_SETMASK", None)
     if (
         not callable(mask)
         or not isinstance(block, int)

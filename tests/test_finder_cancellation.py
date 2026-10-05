@@ -105,7 +105,10 @@ def _cancel(
         "    handler = signal.SIG_IGN if os.environ['STUBBORN'] == '1' else stop\n"
         "    signal.signal(number, handler)\n"
         "print(os.environ['REPORT'], flush=True)\n"
-        "Path(os.environ['MARKER']).write_text(str(os.getpid()))\n"
+        "marker = Path(os.environ['MARKER'])\n"
+        "pending = marker.with_suffix('.pending')\n"
+        "pending.write_text(str(os.getpid()))\n"
+        "pending.replace(marker)\n"
         "while True: time.sleep(0.05)\n",
         encoding="utf-8",
     )

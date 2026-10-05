@@ -1,45 +1,31 @@
 EML Attachment Remover — prebuilt macOS application
 
-Requirements: macOS 14 or later and CPython 3.14 installed separately.
-Swift, Xcode and personal code signing are not required.
-This app has an ad-hoc integrity signature. It has no Developer ID and is
-not notarized; macOS may block the first launch of an internet download.
+Both editions require macOS 14 or later. Download arm64 for Apple Silicon or x86_64 for Intel. The main ZIP includes a private CPython runtime; the smaller ZIP with external-python in its name requires your own CPython 3.14. Swift, Xcode and personal code signing are not required.
 
-1. Download the macOS arm64 ZIP for Apple Silicon or x86_64 ZIP for Intel
-   from the project's official GitHub Release. The installer checks the CPU.
-   Check its checksum/provenance using the release instructions, then extract it.
-2. Install CPython 3.14. Quit any previous EML Attachment Remover instance.
-3. Open Terminal, change directory to the extracted ZIP folder, then run:
-   EML_REMOVER_PYTHON=/absolute/path/to/python3.14 /bin/sh integrations/macos-ui/install.sh "EML Attachment Remover.app"
-   Replace the placeholder with your real Python executable path. The installer
-   records it privately and installs the app into ~/Applications. Install the
-   CLI separately from the wheel or invoke the standalone zipapp.
-   Alternatively copy the app into ~/Applications and use runtime discovery.
-4. Open ~/Applications/EML Attachment Remover.app in Finder.
-5. If macOS blocks the app with an unidentified-developer or cannot-check-
-   for-malicious-software warning, dismiss the warning with Done or OK; do not move the app to the Bin.
-6. Open System Settings > Privacy & Security and scroll to Security.
-   If an entry for EML Attachment Remover appears, select Open Anyway.
-   Authenticate with your Mac password or Touch ID if macOS requests it,
-   then confirm Open in the additional warning. Attempt the launch first:
-   Open Anyway generally appears only after macOS blocks that app.
-7. Once the app opens, choose EML files or configure the optional Finder
-   Quick Action described in integrations/macos-ui/README.md.
+1. Download the matching ZIP from the project's official GitHub Release, check its checksum/provenance, then extract it. Quit any previous EML Attachment Remover instance.
+2. For the main bundled edition, copy EML Attachment Remover.app into ~/Applications in Finder. Create that folder inside your home folder if needed. Open the installed app in Finder. You do not install Python separately.
+3. For the external-python edition, install CPython 3.14 first. For automatic installation and private interpreter selection, open Terminal in the extracted ZIP folder and run:
+   EML_REMOVER_PYTHON=/absolute/path/to/python3.14 /bin/sh install.sh "EML Attachment Remover.app"
+   Replace the placeholder with your actual interpreter path. Alternatively copy the app into ~/Applications and use runtime discovery.
+4. The optional managed installer also works for the bundled edition without an external interpreter:
+   /bin/sh install.sh "EML Attachment Remover.app"
+   It uses the app's private interpreter, preserves runtime links and does not change an external-Python preference. Previous managed app bundles are retained in private application-support backups. The installer refuses a CPU mismatch or an update while the destination app is running.
+5. This app is ad-hoc signed without Developer ID or notarization. If macOS blocks the internet download with an unidentified-developer or cannot-check-for-malicious-software warning, dismiss it with Done or OK, keeping the app.
+6. Open System Settings > Privacy & Security, scroll to Security, and select Open Anyway for EML Attachment Remover. Authenticate if requested, then confirm Open in the additional warning. Attempt the app launch first; the exception normally appears only after a blocked launch. Managed-device policy may require administrator assistance or prohibit an exception.
+7. Choose files or folders after the app opens, or select them in Finder and choose Services → Create EML Copies Without Attachments. The app must have been opened once to register its Finder service.
 
-If there is no Open Anyway entry, check whether the app already opens normally.
-If it remains blocked, consult Apple's instructions below; managed-device
-policy may require your administrator's assistance or prohibit an exception.
-Do not disable Gatekeeper globally, strip quarantine, or re-sign the app as a
-routine installation step. An invalid/damaged signature requires investigating
-or downloading a clean official copy, rather than approving the damaged copy.
+If no Open Anyway entry appears, check whether the app already opens. For a damaged or invalid signature, obtain a clean official download. Do not disable Gatekeeper globally, strip quarantine or re-sign release files as routine setup steps.
 
-Updates: quit the app, verify and extract the new release, rerun step 3 with
-your chosen Python, then launch it. A new build may require steps 5–6 again.
-Previous managed app bundles are retained in private application-support backups.
+Updates: quit the app, verify and extract the new matching edition, then replace it in Finder or rerun its managed installation command. A new build may need app-specific macOS approval again. Do not change editions while a batch is running.
 
-A missing-Python message is separate from a Gatekeeper warning. Install CPython
-3.14 and rerun the installer with its actual executable path. CPython 3.15
-is not a supported substitute for this release.
+An external-python edition's missing-Python message is separate from Gatekeeper approval. Install/select CPython 3.14; CPython 3.15 is not a supported substitute. A bundled edition with a missing or damaged private runtime requires a fresh app download, not external runtime configuration.
 
-Apple's instructions: https://support.apple.com/102445
-Shortcut completion confirms launch; use the CLI for synchronous processing status.
+Install the CLI separately from the wheel or invoke the standalone zipapp. Finder-action completion confirms launch; synchronous processing status comes from the CLI.
+
+Apple's app-specific approval instructions: https://support.apple.com/102445
+
+Finder Services: open the installed app once, select EML files or folders in Finder, then choose Services → Create EML Copies Without Attachments. If macOS asks Confirm Service, choose Run Service for your intended selection. This launch acknowledgment does not wait for processing; review the app’s report. The optional Shortcuts Quick Action is separate: in Shortcuts, create a shortcut that receives files and folders from Finder, enable Use as Quick Action, add Run Shell Script with input passed as arguments, and use /usr/bin/open -a "$HOME/Applications/EML Attachment Remover.app" -- "$@". No Show Content action is needed.
+
+License and source: project software uses MPL 2.0; project artwork has separate proprietary terms. Read the bundled LICENSE for both grants. The matching-version source archive supplied alongside these binaries includes the native app and editable artwork. If you redistribute binaries, also make their corresponding MPL-covered source available and tell recipients how to obtain it. Bundled runtime dependencies retain separate upstream notices in Contents/Resources/Runtime/licenses and their package metadata.
+
+Managed-install backups are retained until you remove them. Each update can retain another full app, including its bundled runtime. After checking that the updated app works, use Finder > Go > Go to Folder to open ~/Library/Application Support/EML Attachment Remover UI Backups and move unwanted previous-* folders to Trash. Keep any backup you need for recovery; the installer does not delete your retained versions automatically.

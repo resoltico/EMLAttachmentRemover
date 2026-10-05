@@ -6,8 +6,16 @@ import signal
 import sys
 from contextlib import ExitStack
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from . import report_emergency, report_stream
+from . import (
+    destination_preflight,
+    progress_transport,
+    report_emergency,
+    report_stream,
+    request_owner,
+    selection_collection,
+)
 from .batch import BatchOptions, execute
 from .cancellation import (
     CancellationSignal,
@@ -29,6 +37,9 @@ from .native_paths import path_value
 from .report_delivery import StagedChannels, write_note
 from .report_diagnostics import bounded_message
 from .report_session import ReportSession
+
+if TYPE_CHECKING:
+    from argparse import Namespace
 
 
 @dataclass(slots=True)
@@ -269,6 +280,28 @@ def _run(raw: list[str], state: _RunState, resources: ExitStack) -> int:
     parser = build_parser()
     namespace = parser.parse_args(raw)
     state.intent = OutputIntent.parsed(namespace)
+    with install_cancellation_handlers():
+        progress = (
+            resources.enter_context(progress_transport.open_pipe(namespace.progress_fd))
+            if namespace.progress_fd is not None
+            else None
+        )
+        if namespace.request_stdin:
+            namespace.source = resources.enter_context(request_owner.sources(sys.stdin))
+            state.intent = OutputIntent.parsed(namespace)
+            namespace.source = selection_collection.collect(list(namespace.source))
+            if namespace.output_dir is not None:
+                destination_preflight.check(namespace.output_dir)
+            state.intent = OutputIntent.parsed(namespace)
+        return _configured(namespace, state, resources, progress)
+
+
+def _configured(
+    namespace: Namespace,
+    state: _RunState,
+    resources: ExitStack,
+    progress: progress_transport.ProgressPipe | None = None,
+) -> int:
     validate_arguments(namespace)
     options = BatchOptions(
         bool(namespace.dry_run),
@@ -296,7 +329,13 @@ def _run(raw: list[str], state: _RunState, resources: ExitStack) -> int:
         "dry-run" if options.dry_run else "apply",
     )
     state.session = session
-    with install_cancellation_handlers():
-        execute(list(namespace.source), options, ledger=state.ledger)
-        checkpoint()
-        return session.publish(state.ledger, exit_code(state.ledger))
+    execute(
+        list(namespace.source),
+        options,
+        ledger=state.ledger,
+        progress=progress.update if progress else None,
+    )
+    checkpoint()
+    if progress is not None:
+        progress.reporting()
+    return session.publish(state.ledger, exit_code(state.ledger))

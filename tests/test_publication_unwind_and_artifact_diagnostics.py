@@ -13,7 +13,7 @@ from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.native_paths import bind_destination
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
     from pathlib import Path
 
 
@@ -25,7 +25,7 @@ def test_staged_publish_preserves_inner_and_deferred_exit_failures_together(
     deferred = CancellationSignal(2, "SIGINT")
 
     @contextmanager
-    def defer() -> Iterator[None]:
+    def defer() -> Generator[None]:
         yield  # ruff: ignore[fallible-context-manager] - inject post-yield failure.
         raise deferred
 
@@ -58,7 +58,7 @@ def test_staged_publish_retains_default_cleanup_receipt_when_entry_fails(
         raise failure
 
     @contextmanager
-    def defer() -> Iterator[None]:
+    def defer() -> Generator[None]:
         fail()
         yield
 

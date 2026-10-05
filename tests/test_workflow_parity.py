@@ -18,6 +18,12 @@ WORKFLOWS: Final = PROJECT_ROOT / ".github" / "workflows"
 RUN_KEY: Final = re.compile(r"( *(?:- )?)run: (.*)")
 # Workflow steps with no local counterpart, and why.
 CI_ONLY: Final = {
+    # Authoritative tag eligibility requires the fetched release checkout; local
+    # candidates remain version-only. Real Git regression tests cover the mechanism.
+    (
+        "uv run --no-project python tools/check_release_tag.py "
+        '"$RELEASE_TAG" --require-main'
+    ),
     # Hosted Xcode paths are image-specific; local SDKs are audited separately.
     'uv run /bin/sh integrations/macos-ui/ci-sdk.sh >> "$GITHUB_ENV"',
     # macOS 14 defaults to an older SDK; select its installed platform tools.
@@ -31,7 +37,7 @@ CI_ONLY: Final = {
     ),
     # Publishes the GitHub release; needs the workflow's GH_TOKEN.
     (
-        "uv run --no-project --python 3.14.7 python -B -m tools.publish_release "
+        "uv run --no-project --python 3.14.8 python -B -m tools.publish_release "
         "--assets-directory release-dist"
     ),
 }
@@ -95,7 +101,15 @@ class WorkflowParityTests(unittest.TestCase):
                 workers="auto",
             )
         ]
-        mirrored = {step.mirrors for step in steps}
+        mirrored = {step.mirrors for step in steps if step.mirrors is not None}
+        candidates = [step for step in steps if step.mirrors is None]
+        self.assertTrue(candidates)
+        self.assertTrue(
+            all("tools/check_release_tag.py" in step.command for step in candidates)
+        )
+        self.assertTrue(
+            all("--require-main" not in step.command for step in candidates)
+        )
         manual = {
             (
                 'uv run /bin/sh integrations/macos-ui/fuzz.sh "$FUZZ_OUTPUT" '
@@ -144,10 +158,29 @@ class WorkflowParityTests(unittest.TestCase):
             self.assertIn("cache-dependency-glob: uv.lock", content)
             for action in re.findall(r"uses: (\S+)", content):
                 if action.startswith("./"):
-                    self.assertEqual(action, "./.github/workflows/swift-fuzz.yml")
-                    self.assertTrue((PROJECT_ROOT / action).is_file())
+                    self.assertIn(
+                        action,
+                        {
+                            "./.github/workflows/swift-fuzz.yml",
+                            "./.github/actions/runtime-source",
+                        },
+                    )
+                    target = PROJECT_ROOT / action
+                    target = target / "action.yml" if target.is_dir() else target
+                    self.assertTrue(target.is_file())
                     continue
                 self.assertRegex(action, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
+
+    def test_runtime_cache_action_rechecks_pinned_inputs(self) -> None:
+        content = (
+            PROJECT_ROOT / ".github/actions/runtime-source/action.yml"
+        ).read_text()
+        for action in re.findall(r"uses: (\S+)", content):
+            self.assertRegex(action, r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
+        self.assertIn("runtime-source.toml", content)
+        self.assertIn("tools.macos_runtime_source --directory", content)
+        self.assertIn("EML_RUNTIME_SOURCE_DIRECTORY", content)
+        self.assertNotIn("restore-keys:", content)
 
     def test_block_scalars_are_read_until_their_indentation_ends(self) -> None:
         text = (

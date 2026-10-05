@@ -86,7 +86,7 @@ def test_first_line_header_detection_respects_bounds_and_first_colon() -> None:
 
 
 def test_separator_search_observes_range_and_a_separator_at_zero() -> None:
-    """Separators outside a bounded entity are absent, while index zero is valid."""
+    """Bound the search while accepting a double-newline marker at offset zero."""
     with pytest.raises(AppError) as bounded_absence:
         mime_header_block._find_separator(  # ruff: ignore[private-member-access] - bounded separator-search receipt.
             b"abc\r\n\r\nbody", 0, 3
@@ -96,7 +96,7 @@ def test_separator_search_observes_range_and_a_separator_at_zero() -> None:
     )
     assert mime_header_block._find_separator(  # ruff: ignore[private-member-access] - zero-offset separator receipt.
         b"\r\n\r\nbody", 0, 8
-    ) == (0, 4)
+    ) == (2, 2)
 
 
 def test_delimiter_scanner_rejects_nontransport_tails() -> None:

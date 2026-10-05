@@ -198,3 +198,28 @@ def test_only_supported_stable_versions(version: str) -> None:
 def test_ambiguous_or_invalid_changelogs_fail(text: str, message: str) -> None:
     with pytest.raises(ReleaseError, match="^" + message + "$"):
         extract_release(text, "1.2.3")
+
+
+def test_undated_candidate_preserves_prose_but_cannot_be_published() -> None:
+    """A pending date is valid for review without weakening the publication gate."""
+    text = DOCUMENT.replace(HEADING, "## [1.2.3]\n")
+    assert extract_release(text, "1.2.3", require_date=False) == BODY
+    with pytest.raises(ReleaseError, match="Release heading must have an ISO date"):
+        extract_release(text, "1.2.3")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        DOCUMENT.replace(HEADING, "## [1.2.3]\n").replace(
+            "\n" + FOOTER, "\n## [1.2.2]\n\n- An older change.\n\n" + FOOTER
+        ),
+        DOCUMENT.replace("2026-09-20", "2026-10-XX"),
+        DOCUMENT.replace("2026-09-20", "2026-02-30"),
+    ],
+    ids=["undated-history", "placeholder-date", "impossible-date"],
+)
+def test_candidate_mode_retains_date_validation(text: str) -> None:
+    """Pending notes do not authorize undated history or fabricated explicit dates."""
+    with pytest.raises(ReleaseError):
+        extract_release(text, "1.2.3", require_date=False)

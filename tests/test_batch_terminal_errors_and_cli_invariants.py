@@ -13,6 +13,7 @@ from eml_attachment_remover import (
     report_session,
 )
 from eml_attachment_remover.batch import BatchOptions
+from eml_attachment_remover.batch_inventory import Inventory
 from eml_attachment_remover.domain import (
     AppError,
     BatchLedger,
@@ -134,7 +135,7 @@ def test_inventory_continues_after_a_non_fail_fast_inventory_failure(
     ])
     ledger.items[0].finish(ItemStatus.FAILED, AppError(ExitCode.INPUT_ERROR, "bad"))
     identity = FileIdentity(1, 2, "regular", 3)
-    inventory = batch._Inventory(  # ruff: ignore[private-member-access] - direct planned inventory.
+    inventory = Inventory(  # direct planned inventory.
         {1: identity, 2: identity}, {}, {}
     )
     called: list[int] = []

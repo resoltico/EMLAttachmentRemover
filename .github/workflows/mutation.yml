@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   mutation:
-    name: CPython 3.14.7 mutation gate
+    name: CPython 3.14.8 mutation gate
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -37,12 +37,12 @@ jobs:
       - name: Install uv and CPython
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: 0.12.21
-          python-version: 3.14.7
+          version: 0.12.23
+          python-version: 3.14.8
           enable-cache: auto
           cache-dependency-glob: uv.lock
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python 3.14.7
+        run: uv sync --locked --group dev --python 3.14.8
         env:
           PYTHONWARNINGS: default
       - name: Run a fresh 100% actionable mutation campaign

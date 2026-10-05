@@ -35,7 +35,7 @@ find_python() {
 [ -f "$ZIPAPP" ] && [ ! -L "$ZIPAPP" ] || fail 3 "bundled processor is missing or unsafe"
 PYTHON=
 find_python || fail 9 "Python 3.14 was not found; set EML_REMOVER_PYTHON"
-"$PYTHON" -c 'import platform, sys; raise SystemExit(platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 14))' || fail 9 "the selected interpreter is not CPython 3.14"
+"$PYTHON" -I -B -c 'import platform, sys; raise SystemExit(platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 14))' || fail 9 "the selected interpreter is not CPython 3.14"
 
 case ${EML_REMOVER_EXISTING:-verify} in
     error|verify) existing=${EML_REMOVER_EXISTING:-verify} ;;
@@ -76,9 +76,10 @@ forward() {
 }
 # shellcheck disable=SC2329  # Also delivers a signal caught before child startup.
 interrupt_child() {
+    if [ -n "$WATCHDOG" ]; then return; fi
     if [ -n "$CHILD" ]; then
         kill "-$CANCEL_SIGNAL" "$CHILD" 2>/dev/null || true
-        "$PYTHON" -c 'import os, signal, sys, time; time.sleep(12); os.kill(int(sys.argv[1]), signal.SIGKILL)' "$CHILD" 2>/dev/null &
+        "$PYTHON" -I -B -c 'import os, signal, sys, time; time.sleep(12); os.kill(int(sys.argv[1]), signal.SIGKILL)' "$CHILD" 2>/dev/null &
         WATCHDOG=$!
     fi
 }
@@ -92,13 +93,49 @@ trap 'forward TERM 143' TERM
 if [ "${EML_REMOVER_UI_OWNER_PIPE:-0}" = 1 ]; then
     # Preserve the live input before POSIX shells redirect background stdin.
     exec 3<&0
-    "$PYTHON" -c 'import os, signal, sys; parent = int(sys.argv[1]); sys.stdin.buffer.read(); os.getppid() == parent and os.kill(parent, signal.SIGTERM)' "$$" <&3 3<&- >/dev/null 2>/dev/null &
+    "$PYTHON" -I -B -c '
+import os, select, signal, sys
+parent = int(sys.argv[1])
+if hasattr(select, "kqueue"):
+    monitor = select.kqueue()
+    monitor.control([select.kevent(0, filter=select.KQ_FILTER_READ, flags=select.KQ_EV_ADD | select.KQ_EV_CLEAR)], 0, 0)
+    while not any(event.flags & select.KQ_EV_EOF for event in monitor.control(None, 1, 1)):
+        if os.getppid() != parent: raise SystemExit(0)
+elif hasattr(select, "poll"):
+    monitor = select.poll()
+    monitor.register(0, select.POLLHUP | select.POLLERR)
+    while not monitor.poll(1000):
+        if os.getppid() != parent: raise SystemExit(0)
+else:
+    # The native macOS adapter always uses kqueue; this fallback serves plain
+    # launcher ownership probes on hosts without a non-consuming pipe observer.
+    sys.stdin.buffer.read()
+if os.getppid() == parent: os.kill(parent, signal.SIGTERM)
+' "$$" <&3 3<&- >/dev/null 2>/dev/null &
     OWNER_WATCHER=$!
     exec 3<&-
 fi
 
-"$PYTHON" "$ZIPAPP" --existing="$existing" --output-format json -- "$@" >"$REPORT_FILE" 2>"$ERROR_FILE" &
+exec 3>&2
+exec 4</dev/null
+if [ "${EML_REMOVER_UI_REQUEST_PIPE:-0}" = 1 ]; then
+    # The processor reads the framed selection and then owns this pipe's lifetime.
+    # No second reader may consume request bytes or race its EOF monitor.
+    exec 4<&0
+    set -- --request-stdin
+else
+    set -- -- "$@"
+fi
+if [ "${EML_REMOVER_UI_PROGRESS_PIPE:-0}" = 1 ]; then
+    set -- --progress-fd=3 "$@"
+fi
+if [ -n "${EML_REMOVER_OUTPUT_DIR:-}" ]; then
+    set -- "--output-dir=$EML_REMOVER_OUTPUT_DIR" "$@"
+fi
+"$PYTHON" -I -B "$ZIPAPP" --existing="$existing" --output-format json "$@" <&4 4<&- >"$REPORT_FILE" 2>"$ERROR_FILE" &
 CHILD=$!
+exec 3>&-
+exec 4<&-
 if [ "$CANCEL_STATUS" -ne 0 ]; then interrupt_child; fi
 while :; do
     wait "$CHILD"
@@ -112,7 +149,7 @@ if [ -n "$WATCHDOG" ]; then
     wait "$WATCHDOG" 2>/dev/null || true
     WATCHDOG=
 fi
-"$PYTHON" - "$REPORT_FILE" "$ERROR_FILE" "$status" "$CANCEL_STATUS" <<'PY'
+"$PYTHON" -I -B - "$REPORT_FILE" "$ERROR_FILE" "$status" "$CANCEL_STATUS" <<'PY'
 from __future__ import annotations
 
 import base64

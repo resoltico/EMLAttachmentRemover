@@ -374,7 +374,6 @@ def test_property_terminal_receipts_release_active_payloads(  # type: ignore[mis
         b"synthetic.eml",
         source,
         FileIdentity(1, 2, "-rw-------", 3),
-        0o600,
         payload,
         hashlib.sha256(payload).hexdigest(),
         len(payload),

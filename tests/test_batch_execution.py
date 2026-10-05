@@ -26,6 +26,7 @@ from eml_attachment_remover.native_paths import inspect_source_identity, path_va
 from eml_attachment_remover.staged_output import PublishedWithError
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 
@@ -148,9 +149,13 @@ def test_interruption_after_completed_dry_run_keeps_item_receipts(
     real_run = batch_module._run_inventory_and_items  # ruff: ignore[private-member-access]
 
     def interrupt_after_work(
-        ledger: BatchLedger, sources: list[str], options: BatchOptions
+        ledger: BatchLedger,
+        sources: list[str],
+        options: BatchOptions,
+        *,
+        progress: Callable[[int, int], None] | None,
     ) -> None:
-        real_run(ledger, sources, options)
+        real_run(ledger, sources, options, progress=progress)
         raise CancellationSignal(1, "SIGHUP")
 
     monkeypatch.setattr(batch_module, "_run_inventory_and_items", interrupt_after_work)
@@ -164,8 +169,13 @@ def test_outer_keyboard_interrupt_terminalizes_unstarted_ledger_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def interrupt(
-        _ledger: BatchLedger, _sources: list[str], _options: BatchOptions
+        _ledger: BatchLedger,
+        _sources: list[str],
+        _options: BatchOptions,
+        *,
+        progress: Callable[[int, int], None] | None,
     ) -> None:
+        assert progress is None
         raise KeyboardInterrupt
 
     monkeypatch.setattr(batch_module, "_run_inventory_and_items", interrupt)

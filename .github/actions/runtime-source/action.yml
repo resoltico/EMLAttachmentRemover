@@ -1,0 +1,19 @@
+name: Pinned CPython source archives
+description: Cache authenticated upstream archives while keeping runtime builds fresh
+runs:
+  using: composite
+  steps:
+    - id: runtime-source-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/eml-runtime-source
+        key: eml-runtime-source-${{ runner.os }}-${{ hashFiles('integrations/macos-ui/runtime-source.toml') }}
+    - shell: bash
+      run: |
+        uv run --no-project --python 3.14.8 python -B -m tools.macos_runtime_source --directory "$RUNNER_TEMP/eml-runtime-source"
+        printf 'EML_RUNTIME_SOURCE_DIRECTORY=%s\n' "$RUNNER_TEMP/eml-runtime-source" >> "$GITHUB_ENV"
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: steps.runtime-source-cache.outputs.cache-hit != 'true'
+      with:
+        path: ${{ runner.temp }}/eml-runtime-source
+        key: ${{ steps.runtime-source-cache.outputs.cache-primary-key }}

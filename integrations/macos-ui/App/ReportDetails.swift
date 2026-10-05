@@ -24,13 +24,23 @@ final class ReportDetails: NSObject {
       receipt == nil
       ? ""
       : " · \(errors) error\(errors == 1 ? "" : "s") · \(warnings) warning\(warnings == 1 ? "" : "s")"
-    let disclosure = UIControls.button(
-      "▸ Details" + counts, action: #selector(toggleDetails), target: self)
+    let disclosure = NSButton(title: "", target: self, action: #selector(toggleDetails))
+    disclosure.bezelStyle = .disclosure
+    disclosure.setButtonType(.onOff)
+    disclosure.state = .off
     detailsButton = disclosure
-    disclosure.bezelStyle = .inline
-    let disclosureRow = NSStackView(views: [disclosure])
+    disclosure.setAccessibilityLabel("Processing details" + counts)
+    disclosure.setAccessibilityExpanded(false)
+    let label = UIControls.label("Details" + counts)
+    label.isSelectable = false
+    label.setAccessibilityElement(false)
+    label.addGestureRecognizer(
+      NSClickGestureRecognizer(target: self, action: #selector(toggleDetails)))
+    let disclosureRow = NSStackView(views: [disclosure, label])
     disclosureRow.orientation = .horizontal
-    disclosureRow.alignment = .leading
+    disclosureRow.alignment = .centerY
+    disclosureRow.spacing = 4
+    disclosureRow.edgeInsets = NSEdgeInsets(top: 3, left: 0, bottom: 3, right: 0)
     layout.add(disclosureRow)
     let scroll = NSScrollView()
     let text = NSTextView()
@@ -67,15 +77,15 @@ final class ReportDetails: NSObject {
     done.keyEquivalent = "\r"
     row.addArrangedSubview(done)
     layout.window.defaultButtonCell = done.cell as? NSButtonCell
-    layout.resizeToContent()
+    layout.layoutContent()
   }
   @objc private func toggleDetails() {
     guard let detailsView else { return }
     detailsView.isHidden.toggle()
-    if let title = detailsButton?.title {
-      detailsButton?.title = (detailsView.isHidden ? "▸" : "▾") + String(title.dropFirst())
-    }
-    layout.resizeToContent()
+    detailsButton?.state = detailsView.isHidden ? .off : .on
+    detailsButton?.setAccessibilityExpanded(!detailsView.isHidden)
+    layout.layoutContent()
+    if !detailsView.isHidden { _ = detailsView.scrollToVisible(detailsView.bounds) }
   }
   @objc private func copyContents() {
     NSPasteboard.general.clearContents()

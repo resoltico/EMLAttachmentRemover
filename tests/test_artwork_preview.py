@@ -38,7 +38,7 @@ def test_artwork_preview_compiles_and_exports_srgb(tmp_path: Path) -> None:
     for kind in ("identity", "processing", "success", "attention", "stopped"):
         for size in (16, 28, 32, 128, 256):
             _assert_srgb_png(destination / f"{kind}-{size}.png", (size, size))
-    _assert_srgb_png(destination / "icon-source.png", (512, 512))
+    _assert_srgb_png(destination / "identity-source.png", (512, 512))
     _assert_srgb_png(destination / "original-artwork-review.png", (1800, 1300))
     assert len(list(destination.iterdir())) == 27
 

@@ -11,7 +11,8 @@ from typing import Final
 from .domain import AppError, ExitCode
 
 RENAME_EXCL: Final = 0x00000004
-_UNSUPPORTED_DIRECTORY_SYNC_ERRNOS: Final = frozenset({
+F_FULLFSYNC: Final = 51
+_UNSUPPORTED_SYNC_ERRNOS: Final = frozenset({
     errno.EINVAL,
     errno.ENOTSUP,
     errno.EOPNOTSUPP,
@@ -96,6 +97,31 @@ def publish_no_replace(
     return True
 
 
+def sync_descriptor(descriptor: int) -> None:
+    """Complete fsync and request a hardware-cache flush where Darwin supports it.
+
+    Unsupported full-flush requests retain the portable fsync contract. Neither
+    syscall completion nor hardware acknowledgement proves power-loss survival.
+
+    Raises:
+        OSError: If synchronization fails beyond an unsupported full flush.
+
+    """
+    os.fsync(descriptor)
+    if platform.system() != "Darwin":
+        return
+    library = ctypes.CDLL(None, use_errno=True)
+    operation = library.fcntl
+    operation.argtypes = [ctypes.c_int, ctypes.c_int]
+    operation.restype = ctypes.c_int
+    # F_FULLFSYNC from Apple's sys/fcntl.h; the third argument is ignored.
+    if operation(descriptor, F_FULLFSYNC, ctypes.c_int(0)) == 0:
+        return
+    failure = ctypes.get_errno()
+    if failure not in _UNSUPPORTED_SYNC_ERRNOS:
+        raise OSError(failure, os.strerror(failure))
+
+
 def sync_directory(parent_fd: int) -> str:
     """Return the directory-durability receipt after a visible publication.
 
@@ -108,9 +134,9 @@ def sync_directory(parent_fd: int) -> str:
 
     """
     try:
-        os.fsync(parent_fd)
+        sync_descriptor(parent_fd)
     except OSError as exc:
-        if exc.errno in _UNSUPPORTED_DIRECTORY_SYNC_ERRNOS:
+        if exc.errno in _UNSUPPORTED_SYNC_ERRNOS:
             return "unsupported"
         raise AppError(
             ExitCode.WRITE_ERROR, f"could not sync destination directory: {exc}"

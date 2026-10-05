@@ -14,10 +14,13 @@ enum ReportText {
         lines.append("Output: " + safeText(destination.display))
       }
       if let error = item.error {
-        lines.append("Problem: " + safeText(error.message))
+        lines.append("Problem: " + error.guidance)
+        lines.append("Technical problem (" + safeText(error.code) + "): " + safeText(error.message))
       }
       for warning in item.warnings {
-        lines.append("Warning: " + safeText(warning.message))
+        lines.append("Warning: " + warning.warningGuidance)
+        lines.append(
+          "Technical warning (" + safeText(warning.code) + "): " + safeText(warning.message))
       }
       let block = lines.joined(separator: "\n")
       readableCount += block.count
@@ -28,7 +31,10 @@ enum ReportText {
       }
     }
     if let batchError = admitted.report.batchError {
-      readable.append("Run problem: " + safeText(batchError.message))
+      readable.append("Run problem: " + batchError.guidance)
+      readable.append(
+        "Technical run problem (" + safeText(batchError.code) + "): " + safeText(batchError.message)
+      )
     }
     return readable.joined(separator: "\n\n")
   }

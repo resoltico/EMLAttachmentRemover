@@ -15,13 +15,14 @@ def test_parser_help_and_version_are_complete_public_documents(
 ) -> None:
     """Preserve the complete introductory and machine-discoverable CLI documents."""
     parser = build_parser()
-    expected_help = """usage: remove-eml-attachments [-h] [-o OUTPUT | \
---output-dir OUTPUT_DIR]
+    expected_help = """usage: remove-eml-attachments [-h] [--progress-fd PROGRESS_FD]
+                              [--request-stdin] [-o OUTPUT |
+                              --output-dir OUTPUT_DIR]
                               [--existing {error,verify}] [--dry-run]
                               [--fail-fast]
                               [--output-format {human,json,paths0}]
                               [--version]
-                              source [source ...]
+                              [source ...]
 
 Create structurally verified MIME-pruned EML working copies. Explicit MIME
 attachments and non-root multipart/related components are removed; retained
@@ -33,6 +34,11 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  --progress-fd PROGRESS_FD
+                        write advisory schema-1 progress lines to a pipe
+                        descriptor above stdio
+  --request-stdin       read a framed native-path request; keep its stdin pipe
+                        open until completion
   -o, --output OUTPUT   destination; valid for one source
   --output-dir OUTPUT_DIR
                         destination directory for all sources
@@ -99,13 +105,44 @@ def test_every_parser_action_and_exclusive_group_has_an_exact_receipt() -> None:
             "source",
             "_StoreAction",
             [],
-            "+",
+            "*",
             None,
             None,
             None,
             None,
-            True,
+            False,
             "one or more source EML files",
+            None,
+            None,
+        ),
+        (
+            "progress_fd",
+            "_StoreAction",
+            ["--progress-fd"],
+            None,
+            None,
+            None,
+            int,
+            None,
+            False,
+            "write advisory schema-1 progress lines to a pipe descriptor above stdio",
+            None,
+            None,
+        ),
+        (
+            "request_stdin",
+            "_StoreTrueAction",
+            ["--request-stdin"],
+            0,
+            True,
+            False,
+            None,
+            None,
+            False,
+            (
+                "read a framed native-path request; "
+                "keep its stdin pipe open until completion"
+            ),
             None,
             None,
         ),
@@ -223,6 +260,8 @@ def test_every_parser_action_and_exclusive_group_has_an_exact_receipt() -> None:
             ["one.eml"],
             {
                 "source": ["one.eml"],
+                "request_stdin": False,
+                "progress_fd": None,
                 "output": None,
                 "output_dir": None,
                 "existing": "error",
@@ -235,6 +274,8 @@ def test_every_parser_action_and_exclusive_group_has_an_exact_receipt() -> None:
             ["--output=copy.eml", "--existing", "error", "one.eml"],
             {
                 "source": ["one.eml"],
+                "request_stdin": False,
+                "progress_fd": None,
                 "output": "copy.eml",
                 "output_dir": None,
                 "existing": "error",
@@ -247,6 +288,8 @@ def test_every_parser_action_and_exclusive_group_has_an_exact_receipt() -> None:
             ["--output-dir=copies", "--output-format", "paths0", "one.eml", "two.eml"],
             {
                 "source": ["one.eml", "two.eml"],
+                "request_stdin": False,
+                "progress_fd": None,
                 "output": None,
                 "output_dir": "copies",
                 "existing": "error",
@@ -259,6 +302,8 @@ def test_every_parser_action_and_exclusive_group_has_an_exact_receipt() -> None:
             ["--", "-literal-source.eml"],
             {
                 "source": ["-literal-source.eml"],
+                "request_stdin": False,
+                "progress_fd": None,
                 "output": None,
                 "output_dir": None,
                 "existing": "error",

@@ -17,7 +17,7 @@ from tools import local_ci, tasks
 from tests.local_ci_plan_support import EXPECTED_POSIX_PLAN, commands
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Generator, Mapping, Sequence
 
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
 WORKFLOWS: Final = PROJECT_ROOT / ".github" / "workflows"
@@ -106,7 +106,7 @@ class PlanTests(unittest.TestCase):
             build.command,
             (
                 *("docker", "build", "--quiet"),
-                *("--tag", "eml-attachment-remover-ci:uv-0.12.21"),
+                *("--tag", "eml-attachment-remover-ci:uv-0.12.23"),
                 str(HOST_ROOT / "image"),
             ),
         )
@@ -136,27 +136,27 @@ class PlanTests(unittest.TestCase):
                 *("--env", "PYTHONWARNINGS=error"),
                 *("--env", "MUTATION_WORKERS=4"),
                 *("--env", "UV_PROJECT_ENVIRONMENT=/ci/venv"),
-                *("--env", "UV_PYTHON=3.14.7"),
-                "eml-attachment-remover-ci:uv-0.12.21",
+                *("--env", "UV_PYTHON=3.14.8"),
+                "eml-attachment-remover-ci:uv-0.12.23",
                 *("/bin/sh", "-c"),
                 (
                     "cd /src && tar --exclude=./.venv --exclude=./mutants "
                     "--exclude=./build --exclude=./.hypothesis -cf - . "
                     "| tar -xf - -C /ci/work && cd /ci/work "
                     "&& PYTHONWARNINGS=default uv sync --locked --group dev "
-                    "--python 3.14.7 && exec uv run python tools/tasks.py mutation "
+                    "--python 3.14.8 && exec uv run python tools/tasks.py mutation "
                     '--workers "$MUTATION_WORKERS"'
                 ),
             ),
         )
         self.assertEqual(
             local_ci.LINUX_IMAGE_DEFINITION,
-            "FROM ghcr.io/astral-sh/uv:0.12.21@sha256:"
-            "a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711 AS uv\n"
+            "FROM ghcr.io/astral-sh/uv:0.12.23@sha256:"
+            "61d393e44e249f2e4b526b6c7ddcecce245946826e608e11c93ad4f5bba55b21 AS uv\n"
             "FROM ubuntu:24.04@sha256:"
             "008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3\n"
             "RUN apt-get update && apt-get install -y --no-install-recommends "
-            "ca-certificates && rm -rf /var/lib/apt/lists/* "
+            "ca-certificates git && rm -rf /var/lib/apt/lists/* "
             "&& useradd --create-home --home-dir /ci --uid 1001 runner "
             "&& mkdir -p /ci/.cache/uv /ci/work "
             "&& chown -R runner:runner /ci\n"
@@ -288,7 +288,7 @@ class RunTests(unittest.TestCase):
             alias.symlink_to(real, target_is_directory=True)
 
             @contextmanager
-            def aliased(*_arguments: object, **_options: object) -> Iterator[str]:
+            def aliased(*_arguments: object, **_options: object) -> Generator[str]:
                 yield str(alias)
 
             with (
@@ -362,7 +362,7 @@ class TaskIntegrationTests(unittest.TestCase):
             tasks._ci("v1.0.0", None)  # ruff: ignore[private-member-access] - task contract.
             tasks._ci(None, 3)  # ruff: ignore[private-member-access] - task contract.
             run_step = run_local_ci.call_args_list[0].args[1]
-            run_step(("uv", "sync"), {"UV_PYTHON": "3.14.7"}, 600)
+            run_step(("uv", "sync"), {"UV_PYTHON": "3.14.8"}, 600)
         self.assertEqual(
             [entry.args[0] for entry in run_local_ci.call_args_list],
             [tasks.PROJECT_ROOT, tasks.PROJECT_ROOT],
@@ -381,7 +381,7 @@ class TaskIntegrationTests(unittest.TestCase):
         with patch.object(tasks.mutation_lease, "lease") as leased:
             lease()
         leased.assert_called_once_with(tasks.BUILD_DIRECTORY)
-        environment.assert_called_once_with(environment_updates={"UV_PYTHON": "3.14.7"})
+        environment.assert_called_once_with(environment_updates={"UV_PYTHON": "3.14.8"})
         self.assertEqual(
             run.call_args_list,
             [

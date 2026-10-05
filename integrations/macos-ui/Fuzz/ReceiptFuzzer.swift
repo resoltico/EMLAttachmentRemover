@@ -6,6 +6,7 @@ public func fuzzReceipt(_ bytes: UnsafePointer<UInt8>, _ count: Int) -> Int32 {
     let data = Data(bytes: bytes, count: count)
     checkTextAndAddresses(data)
     checkReceipt(data)
+    checkProgress(data)
     exercisePresentation(structuredReceipt(data))
   }
   return 0
@@ -124,4 +125,18 @@ private func structuredReceipt(_ data: Data) -> UIReceipt {
   return UIReceipt(
     report: report, processStatus: processStatuses[Int(bytes[2]) % processStatuses.count],
     details: [text])
+}
+
+private func checkProgress(_ data: Data) {
+  var stream = ProgressStream()
+  let update = Data(
+    "EML_PROGRESS {\"schema\":1,\"stage\":\"processing\",\"completed\":0,\"total\":1}\n".utf8)
+  let split = data.first.map { Int($0) % update.count } ?? 0
+  precondition(stream.append(update.prefix(split)).isEmpty)
+  let initial = stream.append(update.dropFirst(split))
+  precondition(initial.count == 1 && initial[0].completed == 0 && initial[0].total == 1)
+  for result in stream.append(Data("EML_PROGRESS ".utf8) + data + Data([10])) {
+    precondition(result.schema == 1 && result.total == 1 && (0...1).contains(result.completed))
+  }
+  precondition(stream.finish().count <= 1024 * 1024)
 }

@@ -120,7 +120,7 @@ def test_staged_reread_mismatch_and_unproven_publication_are_exact(
     state.parent = BoundDirectory(41, windows=False)
     state.stage = staged_output._Stage(51, b"stage")  # ruff: ignore[private-member-access] - direct private-stage owner.
     monkeypatch.setattr(staged_output.__dict__["os"], "write", lambda *_args: 9)
-    monkeypatch.setattr(staged_output.__dict__["os"], "fsync", lambda _fd: None)
+    monkeypatch.setattr(staged_output, "sync_descriptor", lambda _fd: None)
     monkeypatch.setattr(staged_output.__dict__["os"], "fchmod", lambda *_args: None)
     monkeypatch.setattr(staged_output.__dict__["os"], "lseek", lambda *_args: 0)
     monkeypatch.setattr(staged_output, "_read_all", lambda _fd: b"changed")
@@ -300,7 +300,14 @@ def test_execute_enforces_the_strict_native_argument_budget_with_exact_reasons(
     """The exact byte limit is permitted; only a larger request is declined."""
     calls: list[list[str]] = []
 
-    def run(ledger: BatchLedger, sources: list[str], _options: BatchOptions) -> None:
+    def run(
+        ledger: BatchLedger,
+        sources: list[str],
+        _options: BatchOptions,
+        *,
+        progress: object,
+    ) -> None:
+        assert progress is None
         calls.append(sources)
         assert len(ledger.items) == 1
 
@@ -317,7 +324,7 @@ def test_execute_enforces_the_strict_native_argument_budget_with_exact_reasons(
     assert calls == [["x"]]
     assert rejected.items[0].error == AppError(
         ExitCode.BATCH_FAILURE,
-        "batch exceeds native argument resource limit",
+        "batch exceeds request count or path-byte limit",
         phase="batch",
     )
 
@@ -328,8 +335,13 @@ def test_execute_records_outer_cancellation_with_the_exact_signal_and_phase(
     """Outer cancellation retains the inventoried signal receipt before finalization."""
 
     def cancel(
-        _ledger: BatchLedger, _sources: list[str], _options: BatchOptions
+        _ledger: BatchLedger,
+        _sources: list[str],
+        _options: BatchOptions,
+        *,
+        progress: object,
     ) -> None:
+        assert progress is None
         raise CancellationSignal(1, "SIGTERM")
 
     monkeypatch.setattr(batch, "_run_inventory_and_items", cancel)
@@ -350,8 +362,13 @@ def test_execute_records_keyboard_interrupt_with_the_exact_inventoried_phase(
     """Keyboard interruption has a stable SIGINT receipt at the outer boundary."""
 
     def cancel(
-        _ledger: BatchLedger, _sources: list[str], _options: BatchOptions
+        _ledger: BatchLedger,
+        _sources: list[str],
+        _options: BatchOptions,
+        *,
+        progress: object,
     ) -> None:
+        assert progress is None
         raise KeyboardInterrupt
 
     monkeypatch.setattr(batch, "_run_inventory_and_items", cancel)

@@ -1,5 +1,4 @@
 """Failure-ownership receipts for the Windows handle binding layer."""
-# ruff: file-ignore[docstring-missing-returns]
 
 from __future__ import annotations
 
@@ -136,7 +135,7 @@ def test_source_inspection_wraps_metadata_failure_and_closes_each_open_handle(
         native_windows_binding._inspect_source_identity("C:\\Inbox\\source.eml")  # ruff: ignore[private-member-access] - metadata failure ownership boundary.
 
     assert captured.value == AppError(
-        ExitCode.INPUT_ERROR, "could not inspect source: metadata"
+        ExitCode.INPUT_ERROR, "could not inspect source C:\\Inbox\\source.eml: metadata"
     )
     assert isinstance(captured.value.__cause__, OSError)
     assert api.children == [(101, "source.eml", False)]
@@ -163,7 +162,7 @@ def test_source_read_accepts_descriptor_zero_and_retires_it_after_snapshot_os_fa
         native_windows_binding._read_source("request", "C:\\Inbox\\source.eml")  # ruff: ignore[private-member-access] - descriptor-transfer cleanup boundary.
 
     assert captured.value == AppError(
-        ExitCode.INPUT_ERROR, "could not read source: snapshot"
+        ExitCode.INPUT_ERROR, "could not read source request: snapshot"
     )
     assert captured.value.__cause__ is cause
     assert descriptor_closures == [0]
@@ -177,7 +176,11 @@ def test_snapshot_rejects_changed_metadata_before_resolving_final_address(
         information={101: [_directory()], 202: [_regular(), _regular(changed=902)]}
     )
     _install(monkeypatch, api)
-    monkeypatch.setattr(native_windows_binding, "_read_all", lambda _fd: b"payload")
+    monkeypatch.setattr(
+        native_windows_binding,
+        "_read_all",
+        lambda _fd, *, max_bytes: b"payload"[: max_bytes + 1],
+    )
 
     with pytest.raises(AppError) as captured:
         native_windows_binding._snapshot("r", "e", "p", "n", 41)  # ruff: ignore[private-member-access] - immutable descriptor metadata receipt.
@@ -193,7 +196,11 @@ def test_snapshot_preserves_absent_final_address_and_complete_content_evidence(
 ) -> None:
     api = TraceApi(final=None)
     _install(monkeypatch, api)
-    monkeypatch.setattr(native_windows_binding, "_read_all", lambda _fd: b"payload")
+    monkeypatch.setattr(
+        native_windows_binding,
+        "_read_all",
+        lambda _fd, *, max_bytes: b"payload"[: max_bytes + 1],
+    )
 
     snapshot = native_windows_binding._snapshot("r", "e", "p", "n", 41)  # ruff: ignore[private-member-access] - complete accepted Windows snapshot.
 
@@ -204,7 +211,6 @@ def test_snapshot_preserves_absent_final_address_and_complete_content_evidence(
         "n",
         None,
         FileIdentity(7, 202, "regular", 901),
-        0o600,
         b"payload",
         hashlib.sha256(b"payload").hexdigest(),
         7,

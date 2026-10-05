@@ -13,7 +13,8 @@ final class ProcessingRun {
     }
   }
   func start(
-    paths: [String], version: String, preparing: @escaping @MainActor @Sendable () -> Void,
+    paths: [String], destination: URL? = nil, version: String,
+    updated: @escaping @MainActor @Sendable (ProcessingUpdate) -> Void,
     completed:
       @escaping @MainActor @Sendable (Result<UIReceipt, Error>, String, Int32, Data) -> Void
   ) throws {
@@ -24,10 +25,11 @@ final class ProcessingRun {
         domain: "EMLRuntime", code: 6,
         userInfo: [NSLocalizedDescriptionKey: "The application resources are missing."])
     }
-    let arguments = [resources.appendingPathComponent("processing-launcher.sh").path] + paths
-    try validateProcessArguments(arguments)
-    child.arguments = arguments
-    child.environment = try environment(resources: resources)
+    let request = try RequestTransport.frame(paths)
+    child.arguments = [
+      resources.appendingPathComponent("processing-launcher.sh").path, "--request-stdin",
+    ]
+    child.environment = try environment(resources: resources, destination: destination)
     let owner = Pipe()
     lifetime = owner.fileHandleForWriting
     child.standardInput = owner.fileHandleForReading
@@ -45,14 +47,18 @@ final class ProcessingRun {
       process = nil
       throw error
     }
+    RequestTransport.send(request, to: owner.fileHandleForWriting)
     // Drain both pipes concurrently. Waiting on one stream first can deadlock.
     let errorReader = DispatchQueue(label: "eml.stderr")
     let group = DispatchGroup()
     let errorBuffer = CapturedOutput()
     group.enter()
     errorReader.async {
-      errorBuffer.set(errors.fileHandleForReading.readDataToEndOfFile())
-      group.leave()
+      defer { group.leave() }
+      errorBuffer.set(
+        ProgressStream.read(errors.fileHandleForReading) { progress in
+          DispatchQueue.main.async { updated(.progress(progress)) }
+        })
     }
     let expectedVersion = version
     DispatchQueue.global(qos: .userInitiated).async {
@@ -61,7 +67,7 @@ final class ProcessingRun {
       group.wait()
       let status = child.terminationStatus
       DispatchQueue.main.async {
-        preparing()
+        updated(.exited)
       }
       let stderr = errorBuffer.get()
       let admitted = Result { try UIReceipt.admit(data, status: status, version: expectedVersion) }
@@ -75,8 +81,19 @@ final class ProcessingRun {
     }
 
   }
-  private func environment(resources: URL) throws -> [String: String] {
+  private func environment(resources: URL, destination: URL?) throws -> [String: String] {
     var environment = ProcessInfo.processInfo.environment
+    if Bundle.main.object(forInfoDictionaryKey: "EMLRuntimeMode") as? String == "bundled" {
+      let python = resources.appendingPathComponent("Runtime/bin/python3.14").path
+      guard FileManager.default.isExecutableFile(atPath: python) else {
+        throw NSError(
+          domain: "EMLBundledRuntime", code: 1,
+          userInfo: [
+            NSLocalizedDescriptionKey: "The bundled CPython runtime is missing or damaged."
+          ])
+      }
+      environment["EML_REMOVER_PYTHON"] = python
+    }
     if environment["EML_REMOVER_PYTHON"] == nil {
       if let configured = try RuntimeConfiguration.python() {
         environment["EML_REMOVER_PYTHON"] = configured
@@ -86,6 +103,9 @@ final class ProcessingRun {
     environment["EML_REMOVER_ZIPAPP"] =
       resources.appendingPathComponent("remove-eml-attachments.pyz").path
     environment["EML_REMOVER_UI_OWNER_PIPE"] = "1"
+    environment["EML_REMOVER_UI_REQUEST_PIPE"] = "1"
+    environment["EML_REMOVER_UI_PROGRESS_PIPE"] = "1"
+    environment["EML_REMOVER_OUTPUT_DIR"] = destination?.path
     return environment
 
   }

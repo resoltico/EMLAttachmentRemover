@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from typing import Final, Never
 
-from .cancellation import checkpoint
-
 if sys.platform == "win32":
     _FCNTL_UNAVAILABLE: Final = "fcntl is unavailable on Windows"
 
@@ -36,7 +34,13 @@ from .domain import (
     PathValue,
     SourceSnapshot,
 )
-from .native_values import MAX_RAW_BYTES, path_value, require_reportable_destination
+from .native_source import read_source_bytes as _read_all
+from .native_values import (
+    MAX_RAW_BYTES,
+    path_value,
+    require_reportable_destination,
+    safe_display,
+)
 
 _CWD_FLAGS: Final = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
@@ -79,27 +83,15 @@ def _parent(path: str) -> tuple[int, str, bytes]:
         return _directory(expression), os.fsdecode(expression), basename
     except OSError as exc:
         raise AppError(
-            ExitCode.INPUT_ERROR, f"could not open path parent: {exc}"
+            ExitCode.INPUT_ERROR,
+            f"could not open path parent {safe_display(path)}: "
+            f"{exc.strerror or str(exc)}",
         ) from exc
 
 
-def _read_all(descriptor: int) -> bytes:
-    chunks: list[bytes] = []
-    size = 0
-    while chunk := os.read(descriptor, min(1024 * 1024, MAX_RAW_BYTES - size + 1)):
-        checkpoint()
-        size += len(chunk)
-        if size > MAX_RAW_BYTES:
-            raise AppError(
-                ExitCode.INPUT_ERROR, "source exceeds the 128 MiB raw-size limit"
-            )
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-def _bind_destination(request: str, expanded: str) -> BoundDestination:
+def _bind_destination(request: str, validated: str) -> BoundDestination:
     try:
-        descriptor, parent, basename = _parent(expanded)
+        descriptor, parent, basename = _parent(validated)
     except AppError as exc:
         message = f"could not open destination parent: {exc.message}"
         raise AppError(ExitCode.WRITE_ERROR, message) from exc
@@ -117,8 +109,23 @@ def _bind_destination(request: str, expanded: str) -> BoundDestination:
         os.close(descriptor)
 
 
-def _inspect_source_identity(expanded: str) -> FileIdentity:
-    parent, _parent_text, basename = _parent(expanded)
+def _inspect_source_identity(validated: str) -> FileIdentity:
+    return _inspect_source(validated, include_address=False)[0]
+
+
+def _inspect_source(
+    validated: str, *, include_address: bool = True
+) -> tuple[FileIdentity, PathValue | None]:
+    """Capture source identity and address from the same opened descriptor.
+
+    Returns:
+        Its identity and available kernel-resolved address.
+
+    Raises:
+        AppError: If the source cannot be opened as a regular file.
+
+    """
+    parent, _parent_text, basename = _parent(validated)
     descriptor: int | None = None
     try:
         descriptor = os.open(
@@ -131,10 +138,14 @@ def _inspect_source_identity(expanded: str) -> FileIdentity:
             raise AppError(
                 ExitCode.INPUT_ERROR, "selected source is not a regular file"
             )
-        return _identity(metadata)
+        return _identity(metadata), _final_address(
+            descriptor
+        ) if include_address else None
     except OSError as exc:
         raise AppError(
-            ExitCode.INPUT_ERROR, f"could not inspect source: {exc}"
+            ExitCode.INPUT_ERROR,
+            f"could not inspect source {safe_display(validated)}: "
+            f"{exc.strerror or str(exc)}",
         ) from exc
     finally:
         if descriptor is not None:
@@ -142,8 +153,8 @@ def _inspect_source_identity(expanded: str) -> FileIdentity:
         os.close(parent)
 
 
-def _read_source(request: str, expanded: str) -> SourceSnapshot:
-    parent, parent_text, basename = _parent(expanded)
+def _read_source(request: str, validated: str) -> SourceSnapshot:
+    parent, parent_text, basename = _parent(validated)
     descriptor: int | None = None
     try:
         descriptor = os.open(
@@ -151,9 +162,13 @@ def _read_source(request: str, expanded: str) -> SourceSnapshot:
             os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0),
             dir_fd=parent,
         )
-        return _snapshot(request, expanded, parent_text, basename, descriptor)
+        return _snapshot(request, validated, parent_text, basename, descriptor)
     except OSError as exc:
-        raise AppError(ExitCode.INPUT_ERROR, f"could not read source: {exc}") from exc
+        raise AppError(
+            ExitCode.INPUT_ERROR,
+            f"could not read source {safe_display(request)}: "
+            f"{exc.strerror or str(exc)}",
+        ) from exc
     finally:
         if descriptor is not None:
             os.close(descriptor)
@@ -161,7 +176,7 @@ def _read_source(request: str, expanded: str) -> SourceSnapshot:
 
 
 def _snapshot(
-    request: str, expanded: str, parent: str, basename: bytes, descriptor: int
+    request: str, validated: str, parent: str, basename: bytes, descriptor: int
 ) -> SourceSnapshot:
     before = os.fstat(descriptor)
     if not stat.S_ISREG(before.st_mode):
@@ -170,7 +185,7 @@ def _snapshot(
         raise AppError(
             ExitCode.INPUT_ERROR, "source exceeds the 128 MiB raw-size limit"
         )
-    raw = _read_all(descriptor)
+    raw = _read_all(descriptor, max_bytes=MAX_RAW_BYTES)
     after = os.fstat(descriptor)
     if _identity(before) != _identity(after) or before.st_mtime_ns != after.st_mtime_ns:
         raise AppError(ExitCode.INPUT_ERROR, "source changed while it was being read")
@@ -178,12 +193,11 @@ def _snapshot(
         raise AppError(ExitCode.INPUT_ERROR, "source read size changed during snapshot")
     return SourceSnapshot(
         path_value(request),
-        path_value(expanded),
+        path_value(validated),
         path_value(parent),
         basename,
         _final_address(descriptor),
         _identity(before),
-        stat.S_IMODE(before.st_mode),
         raw,
         hashlib.sha256(raw).hexdigest(),
         len(raw),
@@ -298,6 +312,7 @@ def _sync_bound_directory(directory: BoundDirectory) -> str:
 
 bind_destination = _bind_destination
 inspect_source_identity = _inspect_source_identity
+inspect_source = _inspect_source
 read_source = _read_source
 open_bound_destination = _open_bound_destination
 close_bound_directory = _close_bound_directory

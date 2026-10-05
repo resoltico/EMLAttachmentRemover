@@ -44,7 +44,7 @@ def test_parser_usage_and_postparse_safety_combinations_are_typed() -> None:
     validate_arguments(parser.parse_args(["one.eml"]))
 
 
-def test_parser_surface_preserves_exact_v3_defaults_and_choices() -> None:
+def test_parser_preserves_defaults_and_supported_choices() -> None:
     """Keep the breaking CLI contract observable beyond parsed happy paths."""
     parser = build_parser()
     namespace = parser.parse_args(["--existing", "verify", "one.eml"])
@@ -56,7 +56,7 @@ def test_parser_surface_preserves_exact_v3_defaults_and_choices() -> None:
         "human",
     )
     actions = {action.dest: action for action in parser._actions}  # ruff: ignore[private-member-access] - parser metadata is public CLI surface.
-    assert actions["source"].nargs == "+"
+    assert actions["source"].nargs == "*"
     assert actions["existing"].choices == ("error", "verify")
     assert actions["output_format"].choices == ("human", "json", "paths0")
 

@@ -32,7 +32,7 @@ def test_build_time_is_current_and_unix_field_is_exact(tmp_path: Path) -> None:
     assert {path.stat().st_mtime for path in (tmp_path, child.parent, child)} == {
         build_timestamp.EPOCH
     }
-    assert build_backend.build_sdist.__module__ == "hatchling.build"
+    assert build_backend.build_sdist.__module__ == "tools.build_backend"
 
 
 @pytest.mark.parametrize("timezone", [None, "UTC"])

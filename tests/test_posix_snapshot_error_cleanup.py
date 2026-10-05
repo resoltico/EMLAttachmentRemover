@@ -47,7 +47,7 @@ def test_source_inspection_wraps_descriptor_failures_and_closes_every_handle(
         native_posix._inspect_source_identity("inbox/x")  # ruff: ignore[private-member-access] - descriptor inspection cleanup boundary.
 
     assert captured.value == AppError(
-        ExitCode.INPUT_ERROR, "could not inspect source: unstatable"
+        ExitCode.INPUT_ERROR, "could not inspect source inbox/x: unstatable"
     )
     assert isinstance(captured.value.__cause__, OSError)
     assert closed == [62, 61]
@@ -106,7 +106,7 @@ def test_source_read_wraps_snapshot_os_errors_with_exact_cleanup_and_context(
     )
     assert opens == [(b"x", expected_flags, 81)]
     assert captured.value == AppError(
-        ExitCode.INPUT_ERROR, "could not read source: read failed"
+        ExitCode.INPUT_ERROR, "could not read source request: read failed"
     )
     assert isinstance(captured.value.__cause__, OSError)
     assert closed == [82, 81]
@@ -148,7 +148,9 @@ def test_snapshot_rejects_each_independent_stability_receipt(
         native_posix.__dict__["os"], "fstat", lambda _fd: next(observations)
     )
     monkeypatch.setattr(native_posix.__dict__["stat"], "S_ISREG", lambda _mode: True)
-    monkeypatch.setattr(native_posix, "_read_all", lambda _fd: raw)
+    monkeypatch.setattr(
+        native_posix, "_read_all", lambda _fd, *, max_bytes: raw[: max_bytes + 1]
+    )
     monkeypatch.setattr(
         native_posix,
         "_identity",

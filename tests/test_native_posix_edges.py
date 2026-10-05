@@ -17,6 +17,7 @@ from eml_attachment_remover.domain import (
     FileIdentity,
     PathValue,
 )
+from eml_attachment_remover.native_source import read_source_bytes
 from eml_attachment_remover.native_values import path_value
 
 
@@ -116,12 +117,12 @@ def test_directory_parent_and_read_boundaries_are_contextual(
 
     reads = iter((b"body", b""))
     monkeypatch.setattr(_module_value("os"), "read", lambda *_args: next(reads))
-    assert native_posix._read_all(3) == b"body"  # ruff: ignore[private-member-access] - source read contract.
+    assert read_source_bytes(3) == b"body"  # source read contract.
     monkeypatch.setattr(native_posix, "MAX_RAW_BYTES", 3)
     reads = iter((b"body", b"more"))
     monkeypatch.setattr(_module_value("os"), "read", lambda *_args: next(reads))
     with pytest.raises(AppError):
-        native_posix._read_all(3)  # ruff: ignore[private-member-access] - raw-size limit.
+        read_source_bytes(3, max_bytes=3)  # raw-size limit.
 
 
 def test_binding_and_source_identity_reject_nonregular_or_missing_entries(
@@ -165,13 +166,17 @@ def test_snapshot_rejects_kind_size_stability_and_final_address_faults(
     monkeypatch.setattr(native_posix, "MAX_RAW_BYTES", 8)
     changed = iter((_metadata(size=1, inode=2), _metadata(size=1, inode=9)))
     monkeypatch.setattr(_module_value("os"), "fstat", lambda _fd: next(changed))
-    monkeypatch.setattr(native_posix, "_read_all", lambda _fd: b"x")
+    monkeypatch.setattr(
+        native_posix, "_read_all", lambda _fd, *, max_bytes: b"x"[: max_bytes + 1]
+    )
     with pytest.raises(AppError):
         native_posix._snapshot("r", "e", "p", b"n", 3)  # ruff: ignore[private-member-access] - source-identity stability boundary.
 
     stable = _metadata(size=2)
     monkeypatch.setattr(_module_value("os"), "fstat", lambda _fd: stable)
-    monkeypatch.setattr(native_posix, "_read_all", lambda _fd: b"x")
+    monkeypatch.setattr(
+        native_posix, "_read_all", lambda _fd, *, max_bytes: b"x"[: max_bytes + 1]
+    )
     with pytest.raises(AppError):
         native_posix._snapshot("r", "e", "p", b"n", 3)  # ruff: ignore[private-member-access] - source-size stability boundary.
 
@@ -291,7 +296,9 @@ def test_posix_binding_and_snapshot_success_paths_are_platform_independent(
     monkeypatch.setattr(native_posix, "_snapshot", lambda *_args: marker)
     assert native_posix.read_source("request", "expanded") is marker
     monkeypatch.setattr(native_posix, "_snapshot", original_snapshot)
-    monkeypatch.setattr(native_posix, "_read_all", lambda _fd: b"x")
+    monkeypatch.setattr(
+        native_posix, "_read_all", lambda _fd, *, max_bytes: b"x"[: max_bytes + 1]
+    )
     monkeypatch.setattr(native_posix, "_final_address", lambda _path: None)
     snapshot = native_posix._snapshot("r", "e", "p", b"n", 7)  # ruff: ignore[private-member-access] - stable descriptor receipt.
     assert snapshot.raw == b"x"

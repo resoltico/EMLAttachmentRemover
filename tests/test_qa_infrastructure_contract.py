@@ -169,7 +169,7 @@ class QaInfrastructureContractTests(unittest.TestCase):
         expected = {
             (system, version)
             for system in ("ubuntu-latest", "macos-latest", "windows-latest")
-            for version in ("3.14.7", "3.14.7t")
+            for version in ("3.14.8", "3.14.8t")
         }
         for name in ("quality.yml", "hypothesis.yml"):
             content = (PROJECT_ROOT / ".github" / "workflows" / name).read_text(
@@ -178,7 +178,7 @@ class QaInfrastructureContractTests(unittest.TestCase):
             actual = {
                 (system, version)
                 for system in ("ubuntu-latest", "macos-latest", "windows-latest")
-                for version in ("3.14.7", "3.14.7t")
+                for version in ("3.14.8", "3.14.8t")
                 if f"- os: {system}\n            python: {version}" in content
             }
             with self.subTest(workflow=name):

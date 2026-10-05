@@ -6,6 +6,7 @@ final class ReportLayout {
   var content = NSStackView()
   var footerHost = NSStackView()
   var headline: NSTextField?
+  var subtitle: NSTextField?
   private let topInset: CGFloat = 24
   private let bottomInset: CGFloat = 12
   private let footerGap: CGFloat = 16
@@ -57,19 +58,19 @@ final class ReportLayout {
     content.addArrangedSubview(view)
     view.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
   }
-  func heading(_ title: String, subtitle: String, artwork: Artwork.Kind, color: NSColor) {
+  func heading(_ title: String, subtitle: String, artwork: Artwork.Kind, tone: Artwork.Tone) {
     let row = NSStackView()
     row.orientation = .horizontal
     row.alignment = .top
     row.spacing = 12
-    let image = Artwork.view(artwork, color: color)
+    let image = Artwork.view(artwork, tone: tone)
     image.widthAnchor.constraint(equalToConstant: 28).isActive = true
     image.heightAnchor.constraint(equalToConstant: 28).isActive = true
     let titleField = UIControls.label(title, size: 24, weight: .semibold)
     headline = titleField
-    let words = NSStackView(views: [
-      titleField, UIControls.label(subtitle, color: .secondaryLabelColor),
-    ])
+    let subtitleField = UIControls.label(subtitle, color: .secondaryLabelColor)
+    self.subtitle = subtitleField
+    let words = NSStackView(views: [titleField, subtitleField])
     words.orientation = .vertical
     words.alignment = .leading
     words.spacing = 6
@@ -77,17 +78,7 @@ final class ReportLayout {
     row.addArrangedSubview(words)
     add(row)
   }
-  func resizeToContent() {
+  func layoutContent() {
     window.contentView?.layoutSubtreeIfNeeded()
-    guard let view = window.contentView else { return }
-    let maximum = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
-    let minimum = window.contentRect(forFrameRect: NSRect(origin: .zero, size: window.minSize))
-      .height
-    let required =
-      content.fittingSize.height + topInset + bottomInset + footerGap
-      + footerBottomInset + footerHost.fittingSize.height
-    let height = min(
-      maximum - 100, max(minimum, required))
-    window.setContentSize(NSSize(width: view.bounds.width, height: height))
   }
 }

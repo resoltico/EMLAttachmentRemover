@@ -53,7 +53,6 @@ def _complete_ledger() -> BatchLedger:
             "source-final", "source final display", "c291cmNlLWZpbmFs"
         ),
         identity=FileIdentity(10, 11, "-regular", 12),
-        mode=0o100600,
         raw=b"source bytes",
         digest="source-sha256",
         size=456,

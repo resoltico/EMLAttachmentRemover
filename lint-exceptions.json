@@ -2,17 +2,9 @@
   "schema": 1,
   "exceptions": [
     {
-      "path": "src/eml_attachment_remover/native_values.py",
-      "scope": "validate_argument",
-      "anchor": "expanded = os.path.expanduser(value)",
-      "tool": "ruff",
-      "rules": "os-path-expanduser",
-      "reason": "Path normalizes terminal syntax before validation."
-    },
-    {
       "path": "src/eml_attachment_remover/staged_receipt.py",
       "scope": "_verify_literal_address",
-      "anchor": "",
+      "anchor": "raise AppError(ExitCode.VERIFICATION_ERROR, 'final address did not resolve to published destination')",
       "tool": "ruff",
       "rules": "raise-within-try",
       "reason": "the literal descriptor needs common cleanup."
@@ -44,7 +36,39 @@
     {
       "path": "src/eml_attachment_remover/staged_receipt.py",
       "scope": "read_final_receipt",
-      "anchor": "",
+      "anchor": "raise AppError(ExitCode.WRITE_ERROR, 'published destination identity mismatch')",
+      "tool": "ruff",
+      "rules": "raise-within-try",
+      "reason": "the literal descriptor needs common cleanup."
+    },
+    {
+      "path": "src/eml_attachment_remover/staged_receipt.py",
+      "scope": "read_final_receipt",
+      "anchor": "raise AppError(ExitCode.WRITE_ERROR, 'final destination handle changed')",
+      "tool": "ruff",
+      "rules": "raise-within-try",
+      "reason": "the literal descriptor needs common cleanup."
+    },
+    {
+      "path": "src/eml_attachment_remover/staged_receipt.py",
+      "scope": "read_final_receipt",
+      "anchor": "raise AppError(ExitCode.VERIFICATION_ERROR, 'final destination changed')",
+      "tool": "ruff",
+      "rules": "raise-within-try",
+      "reason": "the literal descriptor needs common cleanup."
+    },
+    {
+      "path": "src/eml_attachment_remover/staged_receipt.py",
+      "scope": "read_final_receipt",
+      "anchor": "raise AppError(ExitCode.WRITE_ERROR, 'final destination entry changed')",
+      "tool": "ruff",
+      "rules": "raise-within-try",
+      "reason": "the literal descriptor needs common cleanup."
+    },
+    {
+      "path": "src/eml_attachment_remover/staged_receipt.py",
+      "scope": "read_final_receipt",
+      "anchor": "raise AppError(ExitCode.WRITE_ERROR, 'could not prove published final address')",
       "tool": "ruff",
       "rules": "raise-within-try",
       "reason": "the literal descriptor needs common cleanup."
@@ -92,7 +116,7 @@
     {
       "path": "src/eml_attachment_remover/report_delivery.py",
       "scope": "_staging_file",
-      "anchor": "",
+      "anchor": "staged = tempfile.TemporaryFile(mode='w+', encoding=encoding, newline='', dir=root)",
       "tool": "ruff",
       "rules": "open-file-with-context-handler",
       "reason": "owned by the run's ExitStack."
@@ -363,22 +387,6 @@
     },
     {
       "path": "tests/test_native_posix_edges.py",
-      "scope": "test_directory_parent_and_read_boundaries_are_contextual",
-      "anchor": "assert native_posix._read_all(3) == b\"body\"",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "source read contract."
-    },
-    {
-      "path": "tests/test_native_posix_edges.py",
-      "scope": "test_directory_parent_and_read_boundaries_are_contextual",
-      "anchor": "native_posix._read_all(3)",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "source read contract."
-    },
-    {
-      "path": "tests/test_native_posix_edges.py",
       "scope": "test_binding_and_source_identity_reject_nonregular_or_missing_entries",
       "anchor": "native_posix._bind_destination(\"request\", \"expanded\")",
       "tool": "ruff",
@@ -514,22 +522,6 @@
       "reason": "exact parent-handle boundary."
     },
     {
-      "path": "tests/test_windows_binding_receipts.py",
-      "scope": "test_read_all_requests_one_extra_byte_and_preserves_chunk_order",
-      "anchor": "assert native_windows_binding._read_all(41) == b\"abc\"",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "inclusive raw-size ceiling."
-    },
-    {
-      "path": "tests/test_windows_binding_receipts.py",
-      "scope": "test_read_all_requests_one_extra_byte_and_preserves_chunk_order",
-      "anchor": "native_windows_binding._read_all(41)",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "inclusive raw-size ceiling."
-    },
-    {
       "path": "tests/test_publication_owner_and_tool_failure_contracts.py",
       "scope": "_state",
       "anchor": "return staged_output._PublicationState(",
@@ -660,7 +652,7 @@
     {
       "path": "tests/test_windows_source_snapshot_failure_cleanup.py",
       "scope": "test_reopening_relative_destination_accepts_ctime_only_change_but_closes_type_swap",
-      "anchor": "",
+      "anchor": "native_windows_binding._open_bound_destination(_destination('relative', expected))",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "metadata failure ownership boundary."
@@ -696,14 +688,6 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "strict input-to-ledger pairing."
-    },
-    {
-      "path": "tests/test_batch_terminal_errors_and_cli_invariants.py",
-      "scope": "test_inventory_continues_after_a_non_fail_fast_inventory_failure",
-      "anchor": "inventory = batch._Inventory(",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "direct planned inventory."
     },
     {
       "path": "tests/test_batch_terminal_errors_and_cli_invariants.py",
@@ -1164,26 +1148,10 @@
     {
       "path": "tests/test_windows_binding_roots_and_handle_lifetimes.py",
       "scope": "test_windows_binding_retains_zero_native_handles_and_accepts_the_raw_size_limit",
-      "anchor": "original_read_all = native_windows_binding._read_all",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "restore the real bounded-read implementation after the snapshot seam."
-    },
-    {
-      "path": "tests/test_windows_binding_roots_and_handle_lifetimes.py",
-      "scope": "test_windows_binding_retains_zero_native_handles_and_accepts_the_raw_size_limit",
       "anchor": "assert native_windows_binding._snapshot(\"r\", \"e\", \"p\", \"n\", 0).size == 3",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "inclusive raw-size ceiling receipt."
-    },
-    {
-      "path": "tests/test_windows_binding_roots_and_handle_lifetimes.py",
-      "scope": "test_windows_binding_retains_zero_native_handles_and_accepts_the_raw_size_limit",
-      "anchor": "assert native_windows_binding._read_all(0) == b\"\"",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "native read chunk is exactly one MiB."
     },
     {
       "path": "tests/test_windows_binding_roots_and_handle_lifetimes.py",
@@ -1196,7 +1164,7 @@
     {
       "path": "tests/test_windows_binding_roots_and_handle_lifetimes.py",
       "scope": "test_windows_native_adapter_keeps_handle_value_and_binary_descriptor_flags.Kernel",
-      "anchor": "",
+      "anchor": "def CloseHandle(value: Pointer) -> int:",
       "tool": "ruff",
       "rules": "invalid-function-name",
       "reason": "forward-slash UNC must bypass the captured root."
@@ -1212,7 +1180,7 @@
     {
       "path": "tests/test_windows_binding_roots_and_handle_lifetimes.py",
       "scope": "test_windows_native_relative_open_keeps_boolean_intent_and_null_handle_diagnostic.Ntdll",
-      "anchor": "",
+      "anchor": "def NtCreateFile(self, *arguments: object) -> int:",
       "tool": "ruff",
       "rules": "invalid-function-name",
       "reason": "forward-slash UNC must bypass the captured root."
@@ -1484,7 +1452,7 @@
     {
       "path": "tests/test_windows_object_attribute_layout.py",
       "scope": "Ntdll",
-      "anchor": "",
+      "anchor": "def NtCreateFile(self, *arguments: object) -> int:",
       "tool": "ruff",
       "rules": "invalid-function-name",
       "reason": "mirrors the Windows ABI entry point."
@@ -1787,30 +1755,6 @@
     },
     {
       "path": "tests/test_native_posix_receipts.py",
-      "scope": "test_posix_identity_split_directory_and_read_receipts_are_exact",
-      "anchor": "assert native_posix._read_all(23) == b\"abc\"",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "exact raw read assembly."
-    },
-    {
-      "path": "tests/test_native_posix_receipts.py",
-      "scope": "test_posix_identity_split_directory_and_read_receipts_are_exact",
-      "anchor": "assert native_posix._read_all(24) == b\"\"",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "fixed maximum native read chunk."
-    },
-    {
-      "path": "tests/test_native_posix_receipts.py",
-      "scope": "test_posix_identity_split_directory_and_read_receipts_are_exact",
-      "anchor": "native_posix._read_all(25)",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "exact over-limit source failure."
-    },
-    {
-      "path": "tests/test_native_posix_receipts.py",
       "scope": "test_posix_binding_refuses_an_unresolvable_parent_and_closes_it",
       "anchor": "native_posix._bind_destination(\"request\", \"expanded\")",
       "tool": "ruff",
@@ -2012,7 +1956,7 @@
     {
       "path": "tests/test_mime_raw_opaque_related_nodes.py",
       "scope": "test_separator_and_entity_header_receipts_preserve_wire_boundaries",
-      "anchor": "assert mime_header_block._find_separator(b\"X: y\\r\\n\\r\\nbody\", 0, 13) == (4, 4)",
+      "anchor": "assert mime_header_block._find_separator(b\"X: y\\r\\n\\r\\nbody\", 0, 13) == (6, 2)",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "exact entity separator receipt."
@@ -2020,7 +1964,7 @@
     {
       "path": "tests/test_mime_raw_opaque_related_nodes.py",
       "scope": "test_separator_and_entity_header_receipts_preserve_wire_boundaries",
-      "anchor": "assert mime_header_block._find_separator(b\"X: y\\n\\nbody\", 0, 10) == (4, 2)",
+      "anchor": "assert mime_header_block._find_separator(b\"X: y\\n\\nbody\", 0, 10) == (5, 1)",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "exact entity separator receipt."
@@ -2028,7 +1972,7 @@
     {
       "path": "tests/test_mime_raw_opaque_related_nodes.py",
       "scope": "test_separator_and_entity_header_receipts_preserve_wire_boundaries",
-      "anchor": "assert mime_header_block._find_separator(b\"X: y\\r\\rbody\", 0, 10) == (4, 2)",
+      "anchor": "assert mime_header_block._find_separator(b\"X: y\\r\\rbody\", 0, 10) == (5, 1)",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "exact entity separator receipt."
@@ -2172,7 +2116,7 @@
     {
       "path": "tests/test_native_path_validation_and_binding_errors.py",
       "scope": "test_native_binding_name_type_rejections_and_private_stage_entropy_are_exact",
-      "anchor": "",
+      "anchor": "assert native_binding._private_stage_name() == b'.eml-remove-' + b'a' * 32 + b'.tmp'",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "trailing separator means no target basename."
@@ -2448,14 +2392,6 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "source-kind snapshot boundary."
-    },
-    {
-      "path": "tests/test_windows_binding_adapter.py",
-      "scope": "test_windows_binding_bounded_read_rejects_oversized_existing_bytes",
-      "anchor": "native_windows_binding._read_all(3)",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "existing-output native bound."
     },
     {
       "path": "tests/test_windows_binding_adapter.py",
@@ -2956,7 +2892,7 @@
     {
       "path": "tests/test_report_native_encoding_and_transform_evidence.py",
       "scope": "test_basename_serialization_keeps_one_exact_native_encoding_channel",
-      "anchor": "assert report_document._basename(\"π\") == {",
+      "anchor": "assert report_document._basename(\"\u03c0\") == {",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "Windows basename evidence."
@@ -3052,7 +2988,7 @@
     {
       "path": "tests/test_windows_relative_open_arguments.py",
       "scope": "Ntdll",
-      "anchor": "",
+      "anchor": "def NtCreateFile(self, *arguments: object) -> int:",
       "tool": "ruff",
       "rules": "invalid-function-name",
       "reason": "mirrors the Windows ABI entry point."
@@ -3532,7 +3468,7 @@
     {
       "path": "tests/test_native_file_types_and_path_evidence.py",
       "scope": "test_windows_info_keeps_zero_attribute_bits_as_regular_and_not_reparse.Kernel",
-      "anchor": "",
+      "anchor": "def GetFileType(_handle: object) -> int:",
       "tool": "ruff",
       "rules": "invalid-function-name",
       "reason": "source kind is checked after an opened descriptor."
@@ -4428,7 +4364,15 @@
     {
       "path": "tests/test_windows_path_forms_and_rename_layout.py",
       "scope": "Ntdll",
-      "anchor": "",
+      "anchor": "def NtSetInformationFile(self, *arguments: object) -> int:",
+      "tool": "ruff",
+      "rules": "invalid-function-name",
+      "reason": "POSIX trailing paths have no leaf entry."
+    },
+    {
+      "path": "tests/test_windows_path_forms_and_rename_layout.py",
+      "scope": "Ntdll",
+      "anchor": "def RtlNtStatusToDosError(self, status: int) -> int:",
       "tool": "ruff",
       "rules": "invalid-function-name",
       "reason": "POSIX trailing paths have no leaf entry."
@@ -4531,7 +4475,7 @@
     },
     {
       "path": "tests/test_batch_candidate_receipts.py",
-      "scope": "test_candidate_records_each_opaque_charset_warning_without_codec_lookup",
+      "scope": "test_candidate_preserves_opaque_charset_without_a_warning",
       "anchor": "batch._candidate(",
       "tool": "ruff",
       "rules": "private-member-access",
@@ -4684,7 +4628,15 @@
     {
       "path": "tests/test_windows_adapter_failures_and_open_intent.py",
       "scope": "test_windows_adapter_reports_exact_unavailable_close_and_sync_diagnostics.Kernel",
-      "anchor": "",
+      "anchor": "def CloseHandle(_value: object) -> int:",
+      "tool": "ruff",
+      "rules": "invalid-function-name",
+      "reason": "mirrors the Windows ABI entry point."
+    },
+    {
+      "path": "tests/test_windows_adapter_failures_and_open_intent.py",
+      "scope": "test_windows_adapter_reports_exact_unavailable_close_and_sync_diagnostics.Kernel",
+      "anchor": "def FlushFileBuffers(_value: object) -> int:",
       "tool": "ruff",
       "rules": "invalid-function-name",
       "reason": "mirrors the Windows ABI entry point."
@@ -4940,7 +4892,7 @@
     {
       "path": "tests/test_posix_open_flags_and_source_cleanup.py",
       "scope": "test_posix_nofollow_open_preserves_nonzero_native_flag_value",
-      "anchor": "",
+      "anchor": "assert native_posix._open_child_nofollow(BoundDirectory(17, windows=False), b'out') == 13",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "exact source-open flag receipt."
@@ -4956,7 +4908,23 @@
     {
       "path": "tests/test_posix_open_flags_and_source_cleanup.py",
       "scope": "test_windows_binding_uses_exact_unc_reopen_roots_and_failure_context",
-      "anchor": "",
+      "anchor": "assert native_windows_binding._open_bound_destination(_bound('\\\\\\\\server\\\\share')) == BoundDirectory(9, windows=True)",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "exact source-open flag receipt."
+    },
+    {
+      "path": "tests/test_posix_open_flags_and_source_cleanup.py",
+      "scope": "test_windows_binding_uses_exact_unc_reopen_roots_and_failure_context",
+      "anchor": "assert native_windows_binding._open_bound_destination(_bound('//server/share')) == BoundDirectory(9, windows=True)",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "exact source-open flag receipt."
+    },
+    {
+      "path": "tests/test_posix_open_flags_and_source_cleanup.py",
+      "scope": "test_windows_binding_uses_exact_unc_reopen_roots_and_failure_context",
+      "anchor": "assert native_windows_binding._open_bound_destination(_bound('D:/inbox')) == BoundDirectory(9, windows=True)",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "exact source-open flag receipt."
@@ -5140,7 +5108,7 @@
     {
       "path": "tests/test_report_stream_exact_contracts.py",
       "scope": "test_top_level_and_json_writers_are_exact_for_apply_and_dry_run",
-      "anchor": "report_stream._write_pair(\"n\", {\"value\": \"ü\"}, terminal=False)",
+      "anchor": "report_stream._write_pair(\"n\", {\"value\": \"\u00fc\"}, terminal=False)",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "JSON pair contract."
@@ -5251,22 +5219,6 @@
     },
     {
       "path": "tests/test_batch_inventory_item_receipts.py",
-      "scope": "_state",
-      "anchor": "return ledger, ledger.items[0], ledger.items[1], batch._Inventory.empty()",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "direct inventory boundary."
-    },
-    {
-      "path": "tests/test_batch_inventory_item_receipts.py",
-      "scope": "test_inventory_item_marks_ordinary_input_error_without_stopping",
-      "anchor": "batch._Inventory,",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "inventory boundary fault injection."
-    },
-    {
-      "path": "tests/test_batch_inventory_item_receipts.py",
       "scope": "test_inventory_item_marks_ordinary_input_error_without_stopping",
       "anchor": "assert not batch._inventory_item(",
       "tool": "ruff",
@@ -5276,14 +5228,6 @@
     {
       "path": "tests/test_batch_inventory_item_receipts.py",
       "scope": "test_inventory_item_records_cancellation_and_stops",
-      "anchor": "batch._Inventory,",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "inventory boundary fault injection."
-    },
-    {
-      "path": "tests/test_batch_inventory_item_receipts.py",
-      "scope": "test_inventory_item_records_cancellation_and_stops",
       "anchor": "assert batch._inventory_item(",
       "tool": "ruff",
       "rules": "private-member-access",
@@ -5292,26 +5236,10 @@
     {
       "path": "tests/test_batch_inventory_item_receipts.py",
       "scope": "test_inventory_item_internalizes_system_and_unknown_failures",
-      "anchor": "batch._Inventory,",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "inventory boundary fault injection."
-    },
-    {
-      "path": "tests/test_batch_inventory_item_receipts.py",
-      "scope": "test_inventory_item_internalizes_system_and_unknown_failures",
       "anchor": "assert batch._inventory_item(",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "inventory cancellation."
-    },
-    {
-      "path": "tests/test_batch_inventory_item_receipts.py",
-      "scope": "test_inventory_item_does_not_translate_memory_exhaustion",
-      "anchor": "batch._Inventory,",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "inventory boundary fault injection."
     },
     {
       "path": "tests/test_batch_inventory_item_receipts.py",
@@ -6468,7 +6396,7 @@
     {
       "path": "tests/test_windows_directory_flush_handle.py",
       "scope": "Kernel",
-      "anchor": "",
+      "anchor": "def FlushFileBuffers(self, value: object) -> int:",
       "tool": "ruff",
       "rules": "invalid-function-name",
       "reason": "mirrors the Windows ABI entry point."
@@ -6556,7 +6484,7 @@
     {
       "path": "tests/test_native_optional_flags_and_relative_opens.py",
       "scope": "test_posix_source_read_and_nofollow_open_default_missing_flags_to_zero",
-      "anchor": "",
+      "anchor": "assert native_posix._open_child_nofollow(BoundDirectory(19, windows=False), b'out') == 6",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "portable optional flags default to zero."
@@ -6803,7 +6731,7 @@
     },
     {
       "path": "tests/test_cli_native_contract.py",
-      "scope": "test_parser_surface_preserves_exact_v3_defaults_and_choices",
+      "scope": "test_parser_preserves_defaults_and_supported_choices",
       "anchor": "actions = {action.dest: action for action in parser._actions}",
       "tool": "ruff",
       "rules": "private-member-access",
@@ -8772,7 +8700,7 @@
     {
       "path": "tests/test_destination_names.py",
       "scope": "test_prefix_never_splits_a_surrogate_pair_on_windows",
-      "anchor": "assert destination_names._prefix(\"a😀b\", 2) == \"a\"",
+      "anchor": "assert destination_names._prefix(\"a\ud83d\ude00b\", 2) == \"a\"",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "surrogate-pair receipt."
@@ -8780,7 +8708,7 @@
     {
       "path": "tests/test_destination_names.py",
       "scope": "test_prefix_never_splits_a_surrogate_pair_on_windows",
-      "anchor": "assert destination_names._prefix(\"a😀b\", 3) == \"a😀\"",
+      "anchor": "assert destination_names._prefix(\"a\ud83d\ude00b\", 3) == \"a\ud83d\ude00\"",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "surrogate-pair receipt."
@@ -8944,6 +8872,30 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "Verify typed rejection and preserved archive datetime at the extraction helper boundary."
+    },
+    {
+      "path": "src/eml_attachment_remover/request_owner.py",
+      "scope": "<module>",
+      "anchor": "from _thread import interrupt_main",
+      "tool": "ruff",
+      "rules": "import-private-name",
+      "reason": "Documented public stdlib API schedules the current main-thread signal handler; a real Windows SIGINT cannot be sent portably without console-wide effects."
+    },
+    {
+      "path": "tools/macos_runtime_source.py",
+      "scope": "download",
+      "anchor": "urllib.request.urlopen(selected[\"url\"], timeout=30) as response,",
+      "tool": "ruff",
+      "rules": "suspicious-url-open-usage",
+      "reason": "Configured pins accept only HTTPS GitHub upstream release URLs; every artifact is bounded and hashed before extraction."
+    },
+    {
+      "path": "src/eml_attachment_remover/batch_progress.py",
+      "scope": "BatchProgress.notify",
+      "anchor": "except Exception:",
+      "tool": "ruff",
+      "rules": "blind-except",
+      "reason": "An advisory observer can fail without changing authoritative processing outcomes; memory exhaustion and process-control signals propagate."
     }
   ],
   "swift_exceptions": []

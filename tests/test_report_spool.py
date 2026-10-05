@@ -217,7 +217,6 @@ def _terminal_peak(item_count: int) -> tuple[int, int]:
                 b"source.eml",
                 source,
                 FileIdentity(1, index, "-rw-------", 3),
-                0o600,
                 payload,
                 "a" * 64,
                 len(payload),

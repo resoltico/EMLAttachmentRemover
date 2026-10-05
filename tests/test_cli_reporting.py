@@ -81,16 +81,20 @@ def test_paths0_emits_only_exact_accepted_destination_bytes(
     assert output.encode() == expected
 
 
-def test_paths0_keeps_success_warnings_on_standard_error(
+def test_paths0_keeps_actionable_success_warnings_on_standard_error(
     tmp_path: Path, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    source = tmp_path / "opaque-charset.eml"
+    source = tmp_path / "related.eml"
     source.write_bytes(
-        b"Content-Type: text/plain; charset=does-not-exist\r\n\r\nbody\r\n"
+        b'Content-Type: multipart/related; boundary=r; start="<root@x>"\r\n\r\n'
+        b"--r\r\nContent-Type: text/html\r\nContent-ID: <root@x>\r\n\r\n"
+        b'<img src="cid:image@x">\r\n'
+        b"--r\r\nContent-Type: image/png\r\nContent-ID: <image@x>\r\n\r\n"
+        b"bytes\r\n--r--\r\n"
     )
     assert main(["--output-format=paths0", str(source)]) == 0
     _output, errors = capfd.readouterr()
-    assert "CHARSET_PRESERVED_OPAQUE" in errors
+    assert "RELATED_REFERENCES_MAY_BE_UNRESOLVED" in errors
     assert str(source) in errors
 
 

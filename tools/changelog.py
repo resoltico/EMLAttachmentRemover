@@ -68,14 +68,14 @@ def _outside_fences(lines: list[str]) -> Iterator[tuple[int, str]]:
     require("Unclosed fence in CHANGELOG.md", condition=not active)
 
 
-def _section(line: str, index: int) -> _Section:
+def _section(line: str, index: int, undated_version: str | None) -> _Section:
     """Parse one supported level-two changelog heading.
 
     Returns:
         One validated version heading and its location.
 
     Raises:
-        ReleaseError: If the heading is not an Unreleased or dated stable version.
+        ReleaseError: If a version/date is invalid or unexpectedly missing.
 
     """
     match = HEADING.fullmatch(line)
@@ -89,16 +89,22 @@ def _section(line: str, index: int) -> _Section:
         require(
             "Invalid stable version", condition=VERSION.fullmatch(version) is not None
         )
-        require("Release heading must have an ISO date", condition=released is not None)
-        try:
-            date.fromisoformat(released or "")
-        except ValueError as error:
-            message = "Invalid release date in CHANGELOG.md"
-            raise ReleaseError(message) from error
+        require(
+            "Release heading must have an ISO date",
+            condition=released is not None or version == undated_version,
+        )
+        if released is not None:
+            try:
+                date.fromisoformat(released)
+            except ValueError as error:
+                message = "Invalid release date in CHANGELOG.md"
+                raise ReleaseError(message) from error
     return _Section(version, index)
 
 
-def _structure(lines: list[str]) -> tuple[list[_Section], int]:
+def _structure(
+    lines: list[str], undated_version: str | None
+) -> tuple[list[_Section], int]:
     """Validate sections and find the optional common reference footer.
 
     Returns:
@@ -123,7 +129,7 @@ def _structure(lines: list[str]) -> tuple[list[_Section], int]:
                 "Reference definitions must form one footer", condition=not line.strip()
             )
         elif re.match(r" {0,3}##(?:[ \t]|$)", line):
-            sections.append(_section(line, index))
+            sections.append(_section(line, index, undated_version))
     footer_is_valid = all(
         not line.strip() or REFERENCE.fullmatch(line) for line in lines[footer:]
     )
@@ -133,8 +139,8 @@ def _structure(lines: list[str]) -> tuple[list[_Section], int]:
     return sections, footer
 
 
-def extract_release(changelog: str, version: str) -> str:
-    """Return selected release content, excluding its validated dated heading.
+def extract_release(changelog: str, version: str, *, require_date: bool = True) -> str:
+    """Return selected prose; publication requires a date, candidate review need not.
 
     Returns:
         Canonical Markdown with one terminal newline.
@@ -148,7 +154,7 @@ def extract_release(changelog: str, version: str) -> str:
         "Invalid changelog encoding", condition="\r" not in text and "\x00" not in text
     )
     lines = text.split("\n")
-    sections, footer = _structure(lines)
+    sections, footer = _structure(lines, None if require_date else version)
     versions = [section.version for section in sections]
     require(
         "Duplicate changelog section", condition=len(versions) == len(set(versions))

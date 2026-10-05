@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from base64 import b64encode
 from contextlib import ExitStack
 from dataclasses import dataclass
-from typing import Final
+from functools import partial
+from typing import TYPE_CHECKING, Final
 
 from . import batch_execution, batch_terminal, report_stream
+from .batch_inventory import Inventory as _Inventory
+from .batch_progress import BatchProgress
 from .cancellation import CancellationSignal, checkpoint, coherent_operation
-from .destination_names import fitted_default_destination
 from .domain import (
     AppError,
     BatchLedger,
@@ -27,9 +28,7 @@ from .mime_policy import classify
 from .mime_raw import parse_raw_mime
 from .mime_verification import verify_candidate
 from .native_paths import (
-    bind_destination,
     existing_identity,
-    inspect_source_identity,
     path_value,
     read_existing,
     read_source,
@@ -43,6 +42,9 @@ MAX_CUMULATIVE_REQUEST_PATH_BYTES: Final = 4 * 1024 * 1024
 MISSING_SOURCE_ADDRESS: Final = "source has no native address"
 MISSING_PUBLICATION_INPUTS: Final = "candidate publication lacks destination or plan"
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 
 @dataclass(frozen=True, slots=True)
 class BatchOptions:
@@ -53,64 +55,6 @@ class BatchOptions:
     fail_fast: bool
     output: str | None
     output_dir: str | None
-
-
-@dataclass(slots=True)
-class _Inventory:
-    """Bounded, file-metadata-only facts retained between batch phases."""
-
-    identities: dict[int, FileIdentity]
-    source_groups: dict[FileIdentity, list[LedgerItem]]
-    destination_groups: dict[tuple[FileIdentity, bytes | str], list[LedgerItem]]
-
-    @classmethod
-    def empty(cls) -> _Inventory:
-        return cls({}, {}, {})
-
-    def add(self, item: LedgerItem, source: str, options: BatchOptions) -> None:
-        """Bind one request and retain its small planning metadata."""
-        destination = _destination_for(source, options)
-        item.destination_request = path_value(destination)
-        identity = inspect_source_identity(source)
-        self.identities[item.index] = identity
-        self.source_groups.setdefault(identity, []).append(item)
-        bound = bind_destination(destination)
-        item.destination = bound
-        item.phase = ItemPhase.INVENTORIED
-        key = (bound.directory_identity, bound.basename)
-        self.destination_groups.setdefault(key, []).append(item)
-
-    def mark_collisions(self) -> None:
-        for group in self.source_groups.values():
-            if len(group) > 1:
-                _mark_collision_group(
-                    group,
-                    AppError(
-                        ExitCode.INPUT_ERROR,
-                        "selected source aliases another input",
-                    ),
-                )
-        for group in self.destination_groups.values():
-            if len(group) > 1:
-                _mark_collision_group(
-                    group,
-                    AppError(
-                        ExitCode.OUTPUT_CONFLICT,
-                        "two inputs target one destination",
-                    ),
-                )
-
-
-def _destination_for(source: str, options: BatchOptions) -> str:
-    """Compute output intent without normalizing the source path.
-
-    Returns:
-        The exact requested output intent before native destination binding.
-
-    """
-    if options.output is not None:
-        return options.output
-    return fitted_default_destination(source, options.output_dir)
 
 
 def _mark(item: LedgerItem, error: AppError) -> None:
@@ -170,11 +114,6 @@ def _inventory_item(
     return False
 
 
-def _mark_collision_group(group: list[LedgerItem], error: AppError) -> None:
-    for item in group:
-        _mark(item, error)
-
-
 def _candidate(item: LedgerItem, expected_identity: FileIdentity) -> None:
     """Bind a source, plan raw-span deletions, and verify the candidate once.
 
@@ -210,15 +149,6 @@ def _candidate(item: LedgerItem, expected_identity: FileIdentity) -> None:
         len(candidate.raw),
         candidate.raw,
     )
-    for fingerprint in independently_recomputed:
-        for name, value in fingerprint.content_type_parameters:
-            if name == b"charset":
-                item.warnings.append({
-                    "code": "CHARSET_PRESERVED_OPAQUE",
-                    "mime_path": fingerprint.source_path,
-                    "charset_base64": b64encode(value).decode(),
-                    "message": "charset label was preserved without codec lookup",
-                })
     item.verification = receipt
     if policy.removals and any(
         removal.reason.value == "RELATED_NONROOT_COMPONENT"
@@ -332,6 +262,7 @@ def execute(
     *,
     retain_evidence: bool = False,
     ledger: BatchLedger | None = None,
+    progress: Callable[[int, int], None] | None = None,
 ) -> BatchLedger:
     """Process every input in order while preserving every terminal ledger record.
 
@@ -350,7 +281,7 @@ def execute(
             ledger,
             sources,
             options,
-            _run_inventory_and_items,
+            partial(_run_inventory_and_items, progress=progress),
             limits=(MAX_BATCH_ITEMS, MAX_CUMULATIVE_REQUEST_PATH_BYTES),
         )
         storage.pop_all()
@@ -358,8 +289,13 @@ def execute(
 
 
 def _run_inventory_and_items(
-    ledger: BatchLedger, sources: list[str], options: BatchOptions
+    ledger: BatchLedger,
+    sources: list[str],
+    options: BatchOptions,
+    *,
+    progress: Callable[[int, int], None] | None = None,
 ) -> None:
+    observer = BatchProgress(len(ledger.items), progress)
     inventory = _inventory(ledger, sources, options)
     if inventory is None:
         return
@@ -372,13 +308,16 @@ def _run_inventory_and_items(
         return
     all_identities = set(inventory.identities.values())
     for item in ledger.items:
+        observer.observe(item)
         if batch_terminal.skip_inventory_failure(
             item, ledger, fail_fast=options.fail_fast
         ):
             return
         if item.status is not None:
             continue
-        if _run_item(item, ledger, inventory.identities, all_identities, options):
+        stop = _run_item(item, ledger, inventory.identities, all_identities, options)
+        observer.observe(item)
+        if stop:
             return
 
 

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from eml_attachment_remover import batch as batch_module
-from eml_attachment_remover import native_binding, staged_output
+from eml_attachment_remover import batch_inventory, native_binding, staged_output
 from eml_attachment_remover.batch import BatchOptions, execute
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import (
@@ -223,7 +223,7 @@ def test_inventory_system_exit_is_ledgered_as_an_internal_abort(
     def abort_inventory(_request: str) -> FileIdentity:
         raise SystemExit
 
-    monkeypatch.setattr(batch_module, "inspect_source_identity", abort_inventory)
+    monkeypatch.setattr(batch_inventory, "inspect_source_identity", abort_inventory)
     ledger = execute([str(source) for source in sources], _options())
     assert [item.status for item in ledger.items] == [
         ItemStatus.FAILED,

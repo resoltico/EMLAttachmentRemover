@@ -123,13 +123,13 @@ def test_path_value_windows_evidence_is_full_utf16_and_has_no_posix_channel(
     )
 
 
-def test_validate_argument_expands_home_but_preserves_dotdot_expression(
+def test_validate_argument_preserves_literal_home_token_and_dotdot_expression(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Expand a user home token without resolving traversal against the filesystem."""
+    """Leave a literal tilde and traversal expression unchanged after validation."""
     monkeypatch.setenv("HOME", os.fspath(tmp_path))
     monkeypatch.setenv("USERPROFILE", os.fspath(tmp_path))
-    expected = os.fspath(tmp_path / "mail" / ".." / "message.eml")
+    expected = "~/mail/../message.eml"
     if os.name == "nt":
         with pytest.raises(AppError) as captured:
             native_values.validate_argument("~/mail/../message.eml")

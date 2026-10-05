@@ -73,6 +73,26 @@ class CustomBuildHook(BuildHookInterface[BuilderConfig]):
             contents = [
                 (member, stream.read() if stream else b"") for member, stream in members
             ]
+        with (Path(self.root) / "pyproject.toml").open("rb") as stream:
+            licenses = tomllib.load(stream)["tool"]["eml-attachment-remover"][
+                "licenses"
+            ]
+        contents = [
+            (
+                member,
+                content.replace(
+                    f"License-Expression: {licenses['source']}\n".encode(),
+                    (
+                        f"License-Expression: {licenses['source']}\n"
+                        "Dynamic: License-Expression\n"
+                    ).encode(),
+                    1,
+                )
+                if member.name.endswith("/PKG-INFO")
+                else content,
+            )
+            for member, content in contents
+        ]
         timestamp = EPOCH
         directories = sorted({
             str(parent)
@@ -94,6 +114,7 @@ class CustomBuildHook(BuildHookInterface[BuilderConfig]):
                 directory.mtime = timestamp
                 target.addfile(directory)
             for member, content in contents:
+                member.size = len(content)
                 target.addfile(member, io.BytesIO(content))
 
 

@@ -33,8 +33,10 @@ if TYPE_CHECKING:
         def wheel_generated_files(self) -> frozenset[str]:
             """Return exact generated dist-info members."""
 
-        def verify_metadata(self, metadata: Message) -> None:
-            """Verify release-critical core metadata."""
+        def verify_pair_metadata(
+            self, source: bytes, wheel: bytes, config: Path
+        ) -> None:
+            """Verify both archive licenses and the shared release metadata."""
 
         def expected_entry_points(self) -> str:
             """Return canonical console entry-point text."""
@@ -443,6 +445,4 @@ def verify_distribution_archives(
     )
     source_metadata = _verify_source_archive(source_archive, contract)
     wheel_metadata = _verify_wheel(wheel, contract)
-    if source_metadata != wheel_metadata:
-        raise DistributionArchiveError(METADATA_MISMATCH_ERROR)
-    contract.verify_metadata(_parse_metadata(source_metadata))
+    contract.verify_pair_metadata(source_metadata, wheel_metadata, project_config)

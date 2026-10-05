@@ -192,7 +192,7 @@ def test_windows_binding_parent_and_missing_address_fail_with_exact_context(
     with pytest.raises(AppError) as parent_error:
         native_windows_binding._parent("inbox\\mail.eml")  # ruff: ignore[private-member-access] - parent-open failure preserves input context.
     assert parent_error.value == AppError(
-        ExitCode.INPUT_ERROR, "could not open path parent: parent"
+        ExitCode.INPUT_ERROR, "could not open path parent inbox\\mail.eml: parent"
     )
     assert isinstance(parent_error.value.__cause__, OSError)
 

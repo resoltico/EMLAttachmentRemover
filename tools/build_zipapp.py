@@ -72,7 +72,10 @@ def _project_metadata() -> ProjectMetadata:
         version=str(project["version"]),
         summary=str(project["description"]),
         requires_python=str(project["requires-python"]),
-        license_expression=str(project["license"]),
+        license_expression=str(
+            project.get("license")
+            or configuration["tool"]["eml-attachment-remover"]["licenses"]["software"]
+        ),
         implementation=str(runtime["implementation"]),
     )
 
@@ -291,6 +294,7 @@ def _verify_archive(path: Path, metadata: ProjectMetadata, *, execute: bool) -> 
             [
                 sys.executable,
                 "-I",
+                "-B",
                 "-X",
                 "dev",
                 "-W",

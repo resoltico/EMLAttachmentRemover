@@ -3,11 +3,69 @@
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
 import tomllib
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 PROJECT_CONFIG: Final = Path(__file__).resolve().parents[1] / "pyproject.toml"
+RELEASE_BRANCH: Final = "refs/remotes/origin/main"
+
+
+def require_release_source(commit: str, git: Callable[..., str]) -> None:
+    """Require full history and a commit reachable from the release branch.
+
+    Raises:
+        RuntimeError: If history or release-branch ancestry cannot be established.
+
+    """
+    if git("rev-parse", "--is-shallow-repository").strip() != "false":
+        message = (
+            "Release ancestry requires full history; "
+            "fetch origin/main without a depth limit"
+        )
+        raise RuntimeError(message)
+    try:
+        git("merge-base", "--is-ancestor", commit, RELEASE_BRANCH)
+    except RuntimeError as error:
+        message = (
+            "Release commit must be reachable from origin/main; fetch full main history"
+        )
+        raise RuntimeError(message) from error
+
+
+def _git(*options: str) -> str:
+    """Read local release history without a shell or inherited input.
+
+    Returns:
+        Git's standard output.
+
+    Raises:
+        RuntimeError: If Git fails or the local inspection times out.
+
+    """
+    executable = shutil.which("git")
+    if executable is None:
+        message = "Git is required for release ancestry; install Git"
+        raise RuntimeError(message)
+    try:
+        return subprocess.run(
+            [executable, "-C", str(PROJECT_CONFIG.parent), *options],
+            input="",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as error:
+        message = (
+            "Could not inspect release history; check the checkout and Git installation"
+        )
+        raise RuntimeError(message) from error
 
 
 def _project_version() -> str:
@@ -41,10 +99,20 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tag", help="release tag to validate")
+    parser.add_argument(
+        "--require-main",
+        action="store_true",
+        help="require full history and main ancestry",
+    )
     arguments = parser.parse_args(argv)
     expected = _expected_tag()
     if arguments.tag != expected:
         parser.error(f"tag must be {expected}, not {arguments.tag}")
+    if arguments.require_main:
+        try:
+            require_release_source(_git("rev-parse", "HEAD").strip(), _git)
+        except RuntimeError as error:
+            parser.error(str(error))
     print(expected)
     return 0
 

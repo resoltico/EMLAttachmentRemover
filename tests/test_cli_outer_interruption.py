@@ -93,7 +93,7 @@ def test_a_late_error_notice_is_not_repeated_if_its_write_is_interrupted(
 
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Generator
     from pathlib import Path
     from types import FrameType
 
@@ -112,9 +112,13 @@ def test_a_reported_processing_interruption_is_not_diagnosed_again_at_cleanup(
     closes: list[int] = []
 
     def completed(
-        sources: list[str], options: BatchOptions, *, ledger: BatchLedger
+        sources: list[str],
+        options: BatchOptions,
+        *,
+        ledger: BatchLedger,
+        progress: Callable[[int, int], None] | None = None,
     ) -> BatchLedger:
-        result = original_execute(sources, options, ledger=ledger)
+        result = original_execute(sources, options, ledger=ledger, progress=progress)
         result.record_interruption("SIGINT", "report")
         return result
 
@@ -133,7 +137,7 @@ def test_a_reported_processing_interruption_is_not_diagnosed_again_at_cleanup(
 
 
 @contextmanager
-def _interrupt(statement: str) -> Iterator[list[int]]:
+def _interrupt(statement: str) -> Generator[list[int]]:
     function = cli._json_error  # ruff: ignore[private-member-access] - JSON error response finalization.
     function = traced_implementation(function)
     lines, first = inspect.getsourcelines(function)

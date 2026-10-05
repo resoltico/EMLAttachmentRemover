@@ -30,37 +30,41 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            python: 3.14.7
+            python: 3.14.8
             static: true
           - os: macos-latest
-            python: 3.14.7
+            python: 3.14.8
           - os: windows-latest
-            python: 3.14.7
+            python: 3.14.8
           - os: ubuntu-latest
-            python: 3.14.7t
+            python: 3.14.8t
           - os: macos-latest
-            python: 3.14.7t
+            python: 3.14.8t
           - os: windows-latest
-            python: 3.14.7t
+            python: 3.14.8t
     steps:
       - name: Check out the tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install uv and CPython
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: 0.12.21
+          version: 0.12.23
           python-version: ${{ matrix.python }}
           enable-cache: auto
           cache-dependency-glob: uv.lock
+      - name: Cache and authenticate runtime source archives
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/runtime-source
+      - name: Validate the release tag and main ancestry
+        shell: bash
+        run: uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
       - name: Install locked development dependencies
         run: uv sync --locked --group dev --python ${{ matrix.python }}
         env:
           PYTHONWARNINGS: default
-      - name: Validate the release tag
-        shell: bash
-        run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
       - name: Require the POSIX integration environment
         if: runner.os != 'Windows'
         shell: bash
@@ -103,36 +107,40 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            python: 3.14.7
+            python: 3.14.8
           - os: macos-latest
-            python: 3.14.7
+            python: 3.14.8
           - os: windows-latest
-            python: 3.14.7
+            python: 3.14.8
           - os: ubuntu-latest
-            python: 3.14.7t
+            python: 3.14.8t
           - os: macos-latest
-            python: 3.14.7t
+            python: 3.14.8t
           - os: windows-latest
-            python: 3.14.7t
+            python: 3.14.8t
     steps:
       - name: Check out the tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install uv and CPython
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: 0.12.21
+          version: 0.12.23
           python-version: ${{ matrix.python }}
           enable-cache: auto
           cache-dependency-glob: uv.lock
+      - name: Cache and authenticate runtime source archives
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/runtime-source
+      - name: Validate the release tag and main ancestry
+        shell: bash
+        run: uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
       - name: Install locked development dependencies
         run: uv sync --locked --group dev --python ${{ matrix.python }}
         env:
           PYTHONWARNINGS: default
-      - name: Validate the release tag
-        shell: bash
-        run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
       - name: Require the POSIX integration environment
         if: runner.os != 'Windows'
         shell: bash
@@ -187,20 +195,24 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install uv and canonical CPython
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: 0.12.21
-          python-version: 3.14.7
+          version: 0.12.23
+          python-version: 3.14.8
           enable-cache: auto
           cache-dependency-glob: uv.lock
+      - name: Cache and authenticate runtime source archives
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/runtime-source
+      - name: Validate the release tag and main ancestry
+        shell: bash
+        run: uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python 3.14.7
+        run: uv sync --locked --group dev --python 3.14.8
         env:
           PYTHONWARNINGS: default
-      - name: Validate the release tag
-        shell: bash
-        run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
       - name: Run a fresh 100% actionable mutation campaign
         run: uv run python tools/tasks.py mutation --workers "$MUTATION_WORKERS"
       - name: Preserve tagged mutation evidence
@@ -245,21 +257,25 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install uv and canonical CPython
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: 0.12.21
-          python-version: 3.14.7
+          version: 0.12.23
+          python-version: 3.14.8
           enable-cache: false
+      - name: Cache and authenticate runtime source archives
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/runtime-source
+      - name: Validate the release tag and main ancestry
+        shell: bash
+        run: uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python 3.14.7
+        run: uv sync --locked --group dev --python 3.14.8
         env:
           PYTHONWARNINGS: default
       - name: Select and verify the pinned delivery SDK
         run: uv run /bin/sh integrations/macos-ui/ci-sdk.sh >> "$GITHUB_ENV"
-      - name: Validate the release tag
-        shell: bash
-        run: uv run python tools/check_release_tag.py "$RELEASE_TAG"
       - name: Install the pinned Swift toolchain
         run: uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh
       - name: Build and qualify the exact release artifact set
@@ -281,6 +297,8 @@ jobs:
             release-dist/*.tar.gz
             release-dist/*-macos-arm64.zip
             release-dist/*-macos-x86_64.zip
+            release-dist/*-macos-arm64-external-python.zip
+            release-dist/*-macos-x86_64-external-python.zip
             release-dist/SHA256SUMS
           if-no-files-found: error
 
@@ -303,15 +321,19 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install uv and canonical CPython
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: 0.12.21
-          python-version: 3.14.7
+          version: 0.12.23
+          python-version: 3.14.8
           enable-cache: auto
           cache-dependency-glob: uv.lock
+      - name: Cache and authenticate runtime source archives
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/runtime-source
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python 3.14.7
+        run: uv sync --locked --group dev --python 3.14.8
         env:
           PYTHONWARNINGS: default
       - name: Download this tag's release assets
@@ -320,7 +342,7 @@ jobs:
           name: release-dist-${{ github.run_id }}-${{ github.run_attempt }}
           path: release-dist
       - name: Reverify downloaded assets on the consumer
-        run: uv run --no-project --python 3.14.7 python -B -m tools.release_delivery --verify-directory release-dist
+        run: uv run --no-project --python 3.14.8 python -B -m tools.release_delivery --verify-directory release-dist
       - name: Select Apple SDK and platform tools on minimum OS
         if: matrix.os == 'macos-14'
         run: sudo xcode-select --switch /Applications/Xcode_16.2.app/Contents/Developer
@@ -359,17 +381,25 @@ jobs:
       artifact-metadata: write
     env:
       PYTHONDONTWRITEBYTECODE: "1"
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - name: Check out the tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install uv and canonical CPython
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: 0.12.21
-          python-version: 3.14.7
+          version: 0.12.23
+          python-version: 3.14.8
           enable-cache: false
+      - name: Cache and authenticate runtime source archives
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/runtime-source
+      - name: Validate the release tag and main ancestry
+        shell: bash
+        run: uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
       - name: Select and verify the pinned delivery SDK
         run: uv run /bin/sh integrations/macos-ui/ci-sdk.sh >> "$GITHUB_ENV"
       - name: Download release assets
@@ -379,7 +409,7 @@ jobs:
           path: release-dist
       - name: Reverify the downloaded exact artifact set
         run: >-
-          uv run --no-project --python 3.14.7 python
+          uv run --no-project --python 3.14.8 python
           -B -m tools.release_delivery --verify-directory release-dist
       - name: Identify the verified checksum manifest
         id: checksum-manifest
@@ -402,7 +432,7 @@ jobs:
           subject-digest: ${{ steps.checksum-manifest.outputs.digest }}
       - name: Publish and verify the changelog-bound release
         run: >-
-          uv run --no-project --python 3.14.7 python -B
+          uv run --no-project --python 3.14.8 python -B
           -m tools.publish_release --assets-directory release-dist
         env:
           GH_TOKEN: ${{ github.token }}

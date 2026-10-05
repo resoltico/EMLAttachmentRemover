@@ -18,7 +18,13 @@ from .domain import (
     PathValue,
     SourceSnapshot,
 )
-from .native_values import MAX_RAW_BYTES, path_value, require_reportable_destination
+from .native_source import read_source_bytes as _read_all
+from .native_values import (
+    MAX_RAW_BYTES,
+    path_value,
+    require_reportable_destination,
+    safe_display,
+)
 from .native_windows import WindowsApi
 
 if TYPE_CHECKING:
@@ -57,7 +63,9 @@ def _parent(path: str, *, writable: bool = False) -> tuple[int, str, str]:
         return _api().open_directory(parent, root, writable=writable), parent, basename
     except OSError as exc:
         raise AppError(
-            ExitCode.INPUT_ERROR, f"could not open path parent: {exc}"
+            ExitCode.INPUT_ERROR,
+            f"could not open path parent {safe_display(path)}: "
+            f"{exc.strerror or str(exc)}",
         ) from exc
 
 
@@ -67,21 +75,8 @@ def _identity(handle: int) -> FileIdentity:
     return FileIdentity(info.volume_serial, info.file_id, file_type, info.change_time)
 
 
-def _read_all(descriptor: int) -> bytes:
-    chunks: list[bytes] = []
-    size = 0
-    while chunk := os.read(descriptor, min(1024 * 1024, MAX_RAW_BYTES - size + 1)):
-        size += len(chunk)
-        if size > MAX_RAW_BYTES:
-            raise AppError(
-                ExitCode.INPUT_ERROR, "source exceeds the 128 MiB raw-size limit"
-            )
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-def _bind_destination(request: str, expanded: str) -> BoundDestination:
-    handle, parent, basename = _parent(expanded, writable=True)
+def _bind_destination(request: str, validated: str) -> BoundDestination:
+    handle, parent, basename = _parent(validated, writable=True)
     try:
         if not _api().info(handle).directory:
             raise AppError(
@@ -98,8 +93,23 @@ def _bind_destination(request: str, expanded: str) -> BoundDestination:
         _api().close(handle)
 
 
-def _inspect_source_identity(expanded: str) -> FileIdentity:
-    parent, _parent_text, basename = _parent(expanded)
+def _inspect_source_identity(validated: str) -> FileIdentity:
+    return _inspect_source(validated, include_address=False)[0]
+
+
+def _inspect_source(
+    validated: str, *, include_address: bool = True
+) -> tuple[FileIdentity, PathValue | None]:
+    """Capture source identity and address from one opened Windows handle.
+
+    Returns:
+        Its identity and available kernel-resolved address.
+
+    Raises:
+        AppError: If the source cannot be opened as a regular file.
+
+    """
+    parent, _parent_text, basename = _parent(validated)
     handle: int | None = None
     try:
         handle = _api().open_child(parent, basename)
@@ -107,10 +117,13 @@ def _inspect_source_identity(expanded: str) -> FileIdentity:
             raise AppError(
                 ExitCode.INPUT_ERROR, "selected source is not a regular file"
             )
-        return _identity(handle)
+        final = _api().final_path(handle) if include_address else None
+        return _identity(handle), None if final is None else path_value(final)
     except OSError as exc:
         raise AppError(
-            ExitCode.INPUT_ERROR, f"could not inspect source: {exc}"
+            ExitCode.INPUT_ERROR,
+            f"could not inspect source {safe_display(validated)}: "
+            f"{exc.strerror or str(exc)}",
         ) from exc
     finally:
         if handle is not None:
@@ -118,17 +131,21 @@ def _inspect_source_identity(expanded: str) -> FileIdentity:
         _api().close(parent)
 
 
-def _read_source(request: str, expanded: str) -> SourceSnapshot:
-    parent, parent_text, basename = _parent(expanded)
+def _read_source(request: str, validated: str) -> SourceSnapshot:
+    parent, parent_text, basename = _parent(validated)
     handle: int | None = None
     descriptor: int | None = None
     try:
         handle = _api().open_child(parent, basename)
         descriptor = _api().descriptor_from_handle(handle, read_only=True)
         handle = None
-        return _snapshot(request, expanded, parent_text, basename, descriptor)
+        return _snapshot(request, validated, parent_text, basename, descriptor)
     except OSError as exc:
-        raise AppError(ExitCode.INPUT_ERROR, f"could not read source: {exc}") from exc
+        raise AppError(
+            ExitCode.INPUT_ERROR,
+            f"could not read source {safe_display(request)}: "
+            f"{exc.strerror or str(exc)}",
+        ) from exc
     finally:
         if descriptor is not None:
             os.close(descriptor)
@@ -138,25 +155,24 @@ def _read_source(request: str, expanded: str) -> SourceSnapshot:
 
 
 def _snapshot(
-    request: str, expanded: str, parent: str, basename: str, descriptor: int
+    request: str, validated: str, parent: str, basename: str, descriptor: int
 ) -> SourceSnapshot:
     reopened = _api().handle_from_descriptor(descriptor)
     before = _api().info(reopened)
     if before.directory or before.size > MAX_RAW_BYTES:
         raise AppError(ExitCode.INPUT_ERROR, "selected source is not a regular file")
-    raw = _read_all(descriptor)
+    raw = _read_all(descriptor, max_bytes=MAX_RAW_BYTES)
     after = _api().info(reopened)
     if before != after or len(raw) != before.size:
         raise AppError(ExitCode.INPUT_ERROR, "source changed while it was being read")
     final = _api().final_path(reopened)
     return SourceSnapshot(
         path_value(request),
-        path_value(expanded),
+        path_value(validated),
         path_value(parent),
         basename,
         None if final is None else path_value(final),
         _identity(reopened),
-        0o600,
         raw,
         hashlib.sha256(raw).hexdigest(),
         len(raw),
@@ -278,6 +294,7 @@ def _sync_bound_directory(directory: BoundDirectory) -> str:
 
 bind_destination = _bind_destination
 inspect_source_identity = _inspect_source_identity
+inspect_source = _inspect_source
 read_source = _read_source
 open_bound_destination = _open_bound_destination
 close_bound_directory = _close_bound_directory

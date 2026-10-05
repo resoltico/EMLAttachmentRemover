@@ -1,4 +1,4 @@
-"""Read the source-controlled native application build number."""
+"""Authoritative native build and Finder service metadata."""
 
 from __future__ import annotations
 
@@ -9,6 +9,17 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 MAX_BUILD_NUMBER: Final = 9999
+EXECUTABLE_NAME: Final = "EMLAttachmentRemover"
+FILE_SERVICES: Final[list[dict[str, object]]] = [
+    {
+        "NSMenuItem": {"default": "Create EML Copies Without Attachments"},
+        "NSMessage": "createEMLCopies",
+        "NSPortName": EXECUTABLE_NAME,
+        "NSSendFileTypes": ["public.email-message", "public.folder"],
+        "NSRestricted": True,
+        "NSRequiredContext": {},
+    },
+]
 
 
 def build_number(configuration: Path) -> str:

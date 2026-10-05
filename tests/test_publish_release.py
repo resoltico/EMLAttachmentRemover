@@ -90,6 +90,10 @@ def event(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _git_output(command: list[str], _payload: str = "") -> str:
     arguments = command[3:]
+    if arguments == ["rev-parse", "--is-shallow-repository"]:
+        return "false\n"
+    if arguments[0] == "merge-base":
+        return ""
     if arguments == ["rev-parse", "HEAD"]:
         return "a" * 40 + "\n"
     if arguments[0] == "status":
@@ -300,3 +304,17 @@ def test_check_uses_the_canonical_changelog_case(
 
     monkeypatch.setattr(Path, "read_bytes", content)
     assert cli.main(["--check"]) == 0
+
+
+def test_publication_rejects_an_undated_candidate_before_network_access(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The real publication path retains its date requirement."""
+    monkeypatch.setattr(cli, "_context", lambda: ("owner/repo", "v1.2.3", "commit"))
+    contents = {
+        "commit:pyproject.toml": METADATA,
+        "commit:CHANGELOG.md": CHANGELOG.replace(" - 2026-09-20", ""),
+    }
+    monkeypatch.setattr(cli, "_git", lambda *args: contents[args[-1]])
+    assert cli.main(["--assets-directory", str(tmp_path)]) == 1
+    assert "Release heading must have an ISO date" in capsys.readouterr().err

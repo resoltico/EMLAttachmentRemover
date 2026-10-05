@@ -65,18 +65,22 @@ def test_verifier_requires_native_asset_and_checks_its_processor(
         tmp_path,
         additional_artifacts=(
             "eml_attachment_remover-4.0.0-macos-arm64.zip",
+            "eml_attachment_remover-4.0.0-macos-arm64-external-python.zip",
             "eml_attachment_remover-4.0.0-macos-x86_64.zip",
+            "eml_attachment_remover-4.0.0-macos-x86_64-external-python.zip",
         ),
     )
-    assert native.call_count == 2
+    assert native.call_count == 4
     assert [call.args for call in native.call_args_list] == [
         (
-            tmp_path / f"eml_attachment_remover-4.0.0-macos-{cpu}.zip",
+            tmp_path / macos_archive.archive_name("4.0.0", cpu, mode),
             tmp_path / "remove-eml-attachments.pyz",
             "4.0.0",
             cpu,
+            mode,
         )
         for cpu in delivery.ARCHITECTURES
+        for mode in macos_archive.RUNTIME_MODES
     ]
 
 
@@ -97,6 +101,7 @@ def test_native_build_is_fresh_and_records_no_customer_configuration(
         str(delivery.ROOT / "integrations/macos-ui/build.sh"),
         str(directory / macos_archive.APP),
         "arm64",
+        "bundled",
     ]
     assert run.call_args.kwargs["timeout"] == 600
     assert run.call_args.kwargs["check"] is True
@@ -118,11 +123,14 @@ def test_delivery_publishes_one_complete_set_or_preserves_empty_destination(
     output = tmp_path / "release"
     output.mkdir()
 
-    def native(directory: Path, architecture: str, icon_resources: Path) -> Path:
+    def native(
+        directory: Path, architecture: str, icon_resources: Path, mode: str
+    ) -> Path:
         assert architecture in delivery.ARCHITECTURES
+        assert mode in macos_archive.RUNTIME_MODES
         assert icon_resources.name == "icon-resources"
         result = _native(directory)
-        if failure == "mismatch" and directory.name == "arm64-b":
+        if failure == "mismatch" and directory.name == "arm64-bundled-b":
             result.write_bytes(b"different")
         return result
 
@@ -141,7 +149,7 @@ def test_delivery_publishes_one_complete_set_or_preserves_empty_destination(
     ):
         if failure == "none":
             paths = delivery.build(output)
-            assert len(paths) == 6
+            assert len(paths) == 8
             assert {path.name for path in paths} == {
                 "public.whl",
                 "public.tar.gz",
@@ -149,6 +157,8 @@ def test_delivery_publishes_one_complete_set_or_preserves_empty_destination(
                 "SHA256SUMS",
                 "eml_attachment_remover-4.0.0-macos-arm64.zip",
                 "eml_attachment_remover-4.0.0-macos-x86_64.zip",
+                "eml_attachment_remover-4.0.0-macos-arm64-external-python.zip",
+                "eml_attachment_remover-4.0.0-macos-x86_64-external-python.zip",
             }
             assert all(path.is_file() for path in paths)
             assert "macos-arm64.zip" in (output / "SHA256SUMS").read_text()

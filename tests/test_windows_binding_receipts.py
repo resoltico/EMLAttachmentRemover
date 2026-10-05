@@ -16,6 +16,7 @@ from eml_attachment_remover.domain import (
     FileIdentity,
     SourceSnapshot,
 )
+from eml_attachment_remover.native_source import read_source_bytes
 from eml_attachment_remover.native_values import path_value
 from eml_attachment_remover.native_windows import WindowsFileInfo
 
@@ -166,7 +167,7 @@ def test_read_all_requests_one_extra_byte_and_preserves_chunk_order(
 
     monkeypatch.setattr(native_windows_binding, "MAX_RAW_BYTES", 3)
     monkeypatch.setattr(native_windows_binding.__dict__["os"], "read", read)
-    assert native_windows_binding._read_all(41) == b"abc"  # ruff: ignore[private-member-access] - inclusive raw-size ceiling.
+    assert read_source_bytes(41, max_bytes=3) == b"abc"  # inclusive raw-size ceiling.
     assert requests == [(41, 4), (41, 2), (41, 1)]
 
     oversized = iter((b"abc", b"d"))
@@ -174,7 +175,7 @@ def test_read_all_requests_one_extra_byte_and_preserves_chunk_order(
         native_windows_binding.__dict__["os"], "read", lambda *_args: next(oversized)
     )
     with pytest.raises(AppError) as captured:
-        native_windows_binding._read_all(41)  # ruff: ignore[private-member-access] - over-ceiling raw-size rejection.
+        read_source_bytes(41, max_bytes=3)  # over-ceiling raw-size rejection.
     assert captured.value == AppError(
         ExitCode.INPUT_ERROR, "source exceeds the 128 MiB raw-size limit"
     )
@@ -256,7 +257,11 @@ def test_source_identity_and_snapshot_transfer_and_close_ownership(
     api.children.clear()
     api.closed.clear()
     descriptor_closures: list[int] = []
-    monkeypatch.setattr(native_windows_binding, "_read_all", lambda _fd: b"payload")
+    monkeypatch.setattr(
+        native_windows_binding,
+        "_read_all",
+        lambda _fd, *, max_bytes: b"payload"[: max_bytes + 1],
+    )
     monkeypatch.setattr(
         native_windows_binding.__dict__["os"], "close", descriptor_closures.append
     )
@@ -270,7 +275,6 @@ def test_source_identity_and_snapshot_transfer_and_close_ownership(
         "source.eml",
         path_value("\\\\?\\C:\\Inbox\\source.eml"),
         expected_identity,
-        0o600,
         b"payload",
         hashlib.sha256(b"payload").hexdigest(),
         7,

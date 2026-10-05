@@ -8,12 +8,13 @@ import pytest
 
 from eml_attachment_remover import batch
 from eml_attachment_remover.batch import BatchOptions
+from eml_attachment_remover.batch_inventory import Inventory
 from eml_attachment_remover.cancellation import CancellationSignal
 from eml_attachment_remover.domain import AppError, BatchLedger, ExitCode, ItemStatus
 from eml_attachment_remover.native_paths import path_value
 
 if TYPE_CHECKING:
-    from eml_attachment_remover.batch import _Inventory
+    from eml_attachment_remover.batch_inventory import Inventory as _Inventory
     from eml_attachment_remover.domain import LedgerItem
 
 
@@ -29,7 +30,12 @@ def _options() -> BatchOptions:
 
 def _state() -> tuple[BatchLedger, LedgerItem, LedgerItem, _Inventory]:
     ledger = BatchLedger.from_requests([path_value("one.eml"), path_value("two.eml")])
-    return ledger, ledger.items[0], ledger.items[1], batch._Inventory.empty()  # ruff: ignore[private-member-access] - direct inventory boundary.
+    return (
+        ledger,
+        ledger.items[0],
+        ledger.items[1],
+        Inventory.empty(),
+    )  # direct inventory boundary.
 
 
 def test_inventory_item_marks_ordinary_input_error_without_stopping(
@@ -39,7 +45,7 @@ def test_inventory_item_marks_ordinary_input_error_without_stopping(
     ledger, item, later, inventory = _state()
     error = AppError(ExitCode.INPUT_ERROR, "unreadable source", phase="requested")
     monkeypatch.setattr(
-        batch._Inventory,  # ruff: ignore[private-member-access] - inventory boundary fault injection.
+        Inventory,
         "add",
         lambda *_arguments: (_ for _ in ()).throw(error),
     )
@@ -63,7 +69,7 @@ def test_inventory_item_records_cancellation_and_stops(
     ):
         ledger, item, later, inventory = _state()
         monkeypatch.setattr(
-            batch._Inventory,  # ruff: ignore[private-member-access] - inventory boundary fault injection.
+            Inventory,
             "add",
             lambda *_arguments, cause=failure: (_ for _ in ()).throw(cause),
         )
@@ -94,7 +100,7 @@ def test_inventory_item_internalizes_system_and_unknown_failures(
     ):
         ledger, item, later, inventory = _state()
         monkeypatch.setattr(
-            batch._Inventory,  # ruff: ignore[private-member-access] - inventory boundary fault injection.
+            Inventory,
             "add",
             lambda *_arguments, cause=failure: (_ for _ in ()).throw(cause),
         )
@@ -115,7 +121,7 @@ def test_inventory_item_does_not_translate_memory_exhaustion(
     """MemoryError is never converted into a recoverable ledger item error."""
     ledger, item, _later, inventory = _state()
     monkeypatch.setattr(
-        batch._Inventory,  # ruff: ignore[private-member-access] - inventory boundary fault injection.
+        Inventory,
         "add",
         lambda *_arguments: (_ for _ in ()).throw(MemoryError()),
     )

@@ -64,7 +64,9 @@ def test_current_changelog_is_the_release_prose_source() -> None:
     with (PROJECT_ROOT / "pyproject.toml").open("rb") as project_file:
         version = str(tomllib.load(project_file)["project"]["version"])
     body = extract_release(
-        (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), version
+        (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"),
+        version,
+        require_date=False,
     )
     assert not body.startswith(f"## [{version}] - ")
     assert body.splitlines()[0] == "### Added"

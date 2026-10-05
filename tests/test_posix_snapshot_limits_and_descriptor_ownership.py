@@ -121,13 +121,16 @@ def test_posix_snapshot_accepts_exact_empty_and_limit_sized_sources(
             native_posix.__dict__["stat"], "filemode", lambda _mode: "-rw-r-----"
         )
         monkeypatch.setattr(native_posix, "MAX_RAW_BYTES", limit)
-        monkeypatch.setattr(native_posix, "_read_all", lambda _fd, body=raw: body)
+        monkeypatch.setattr(
+            native_posix,
+            "_read_all",
+            lambda _fd, *, max_bytes, body=raw: body[: max_bytes + 1],
+        )
         monkeypatch.setattr(native_posix, "_final_address", lambda _path: None)
         snapshot = native_posix._snapshot(  # ruff: ignore[private-member-access] - exact boundary-size receipt.
             "request", "expanded", "parent", b"x", 0
         )
         assert snapshot.identity == FileIdentity(11, 12, "-rw-r-----", 13)
-        assert snapshot.mode == 0o640
         assert snapshot.raw == raw
         assert snapshot.digest == hashlib.sha256(raw).hexdigest()
         assert snapshot.size == len(raw)
@@ -241,8 +244,8 @@ def test_stage_verification_has_distinct_windows_and_posix_mode_receipts(
             False,
             [
                 ("write", 51, b"xy"),
-                ("sync", 51),
                 ("chmod", 51, 0o600),
+                ("sync", 51),
                 ("seek", 51, 0, os.SEEK_SET),
                 ("read", 51),
             ],
@@ -269,8 +272,8 @@ def test_stage_verification_has_distinct_windows_and_posix_mode_receipts(
             ),
         )
         monkeypatch.setattr(
-            staged_output.__dict__["os"],
-            "fsync",
+            staged_output,
+            "sync_descriptor",
             lambda descriptor, events=events: events.append(("sync", descriptor)),
         )
         monkeypatch.setattr(

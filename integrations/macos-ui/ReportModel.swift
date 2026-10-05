@@ -24,6 +24,62 @@ struct Address: Decodable, Sendable {
 struct Diagnostic: Decodable, Sendable {
   let code: String
   let message: String
+  let phase: String?
+
+  init(code: String, message: String, phase: String? = nil) {
+    self.code = code
+    self.message = message
+    self.phase = phase
+  }
+
+  var warningGuidance: String {
+    if code == "RELATED_REFERENCES_MAY_BE_UNRESOLVED" {
+      return
+        "Some embedded images or content may be missing from this copy. Check the copy in your email app."
+    }
+    return "This copy has a warning. Review Details before using it."
+  }
+
+  var guidance: String {
+    if ["selection", "destination"].contains(phase), ["USAGE", "WRITE_ERROR"].contains(code) {
+      return safeText(message)
+    }
+    switch code {
+    case "INPUT_ERROR":
+      return
+        "The app couldn’t read this file safely. Check that the file is available and readable, then review Details before trying again."
+    case "OUTPUT_CONFLICT":
+      return
+        "This destination could not be used safely. Nothing was overwritten.\n\nReview Details and the destination before trying again."
+    case "PARSE_ERROR":
+      return
+        "The email’s structure or content could not be processed safely. Review Details for the reason; a fresh export from your email app may help."
+    case "TRANSFORMATION_UNAVAILABLE":
+      return
+        "The app cannot safely remove attachments from this email’s protected or unsupported content. Review Details; keep the original file."
+    case "WRITE_ERROR":
+      return
+        "The app couldn’t save the copy. Check that the destination is writable and has enough free space. Review Details before trying again."
+    case "VERIFICATION_ERROR":
+      return
+        "The copy did not pass the app’s checks. Review Details before using an existing copy or trying again."
+    case "PUBLICATION_INCOMPLETE":
+      return
+        "The app could not confirm that saving finished safely. Check the destination and review Details before using a copy or trying again."
+    case "ATOMIC_PUBLICATION_UNSUPPORTED":
+      return
+        "This destination does not support the safe publication operation required to create a copy. Your original file was not changed. Review Details for the destination limitation.\n\nOpen the app and use Choose folder to select a writable local folder, then process the files again."
+    case "USAGE", "BATCH_FAILURE":
+      return
+        "The selection could not be processed as requested. Review Details for the request limits or other problem, then try a smaller selection if needed."
+    case "INTERRUPTED":
+      return
+        "Processing was stopped. Stopping does not undo copies already created; review the recorded results."
+    default:
+      return
+        "The app encountered a problem. Check the destination and review Details before using a copy or trying again."
+    }
+  }
 }
 
 struct Publication: Decodable, Sendable {
@@ -62,15 +118,7 @@ struct Item: Decodable, Sendable {
       return
         "A copy was published, but the run could not confirm successful completion for this file. Review the details before using it."
     }
-    if isConflict {
-      return
-        "This destination could not be used safely. Nothing was overwritten.\n\nReview the problem details and destination before trying again."
-    }
-    if error?.code == "ATOMIC_PUBLICATION_UNSUPPORTED" {
-      return
-        "This destination does not support the safe publication operation required to create a copy. Your original file was not changed.\n\nCopy the EML files to a writable local folder and process those copies. To choose a different destination while keeping the source here, use the CLI’s --output-dir option."
-    }
-    if let error { return safeText(error.message) }
+    if let error { return error.guidance }
     if status == "would_create" { return "A copy was planned; no copy was created for this file." }
     if status == "existing_verified" {
       return
@@ -178,7 +226,7 @@ struct UIReceipt: Decodable, Sendable {
       return
         "Stopping does not undo copies already created. The results below describe what completed."
     }
-    if let error = report.batchError { return safeText(error.message) }
+    if let error = report.batchError { return error.guidance }
     if !successful
       && report.items.allSatisfy({ ["created", "existing_verified"].contains($0.status) })
     {

@@ -1,0 +1,11 @@
+[arm64]
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.14.8%2B20261003-aarch64-apple-darwin-pgo%2Blto-full.tar.zst"
+sha256 = "6bb6e246d6c2bdfef5b33e833541c232d99afb37b67a08872f233649f4b64ca7" # pragma: allowlist secret - public upstream integrity pin
+size = 61659605
+target = "aarch64-apple-darwin"
+
+[x86_64]
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.14.8%2B20261003-x86_64-apple-darwin-pgo%2Blto-full.tar.zst"
+sha256 = "8c87267e110eaeb689f8de33bd98a2ea3a1ccccec9f9f1c295a7837a81e432f1" # pragma: allowlist secret - public upstream integrity pin
+size = 61219853
+target = "x86_64-apple-darwin"

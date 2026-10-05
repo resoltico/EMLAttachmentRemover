@@ -177,7 +177,7 @@ def test_posix_source_open_failures_close_only_the_live_parent_descriptor(
     with pytest.raises(AppError) as inspect_error:
         native_posix._inspect_source_identity("mail.eml")  # ruff: ignore[private-member-access] - failed inspection has no child descriptor to release.
     assert inspect_error.value == AppError(
-        ExitCode.INPUT_ERROR, "could not inspect source: open"
+        ExitCode.INPUT_ERROR, "could not inspect source mail.eml: open"
     )
     assert closes == [41]
 
@@ -185,7 +185,7 @@ def test_posix_source_open_failures_close_only_the_live_parent_descriptor(
     with pytest.raises(AppError) as read_error:
         native_posix._read_source("request", "mail.eml")  # ruff: ignore[private-member-access] - failed snapshot open has no child descriptor to release.
     assert read_error.value == AppError(
-        ExitCode.INPUT_ERROR, "could not read source: open"
+        ExitCode.INPUT_ERROR, "could not read source request: open"
     )
     assert closes == [41]
 
@@ -247,7 +247,7 @@ def test_posix_parent_open_failure_keeps_exact_input_error_context(
         native_posix._parent("inbox/mail.eml")  # ruff: ignore[private-member-access] - parent descriptor open failure context.
 
     assert captured.value == AppError(
-        ExitCode.INPUT_ERROR, "could not open path parent: parent"
+        ExitCode.INPUT_ERROR, "could not open path parent inbox/mail.eml: parent"
     )
     assert isinstance(captured.value.__cause__, OSError)
 
@@ -294,7 +294,7 @@ def test_windows_binding_preserves_none_sentinel_and_snapshot_kind_message(
     with pytest.raises(AppError) as inspect_error:
         native_windows_binding._inspect_source_identity("C:\\Inbox\\mail.eml")  # ruff: ignore[private-member-access] - an unopened child cannot be closed as an invented handle.
     assert inspect_error.value == AppError(
-        ExitCode.INPUT_ERROR, "could not inspect source: child"
+        ExitCode.INPUT_ERROR, "could not inspect source C:\\Inbox\\mail.eml: child"
     )
     assert backend.closed == [9]
 

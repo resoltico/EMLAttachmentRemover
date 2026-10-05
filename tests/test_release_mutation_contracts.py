@@ -1,4 +1,3 @@
-# ruff: file-ignore[private-member-access]
 """Exact mutation-sensitive contracts for release qualification."""
 
 from __future__ import annotations

@@ -10,7 +10,7 @@ from unittest.mock import patch
 from tools import mutmut_workspace
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Generator, Mapping
     from pathlib import Path
 
 
@@ -32,7 +32,7 @@ def selector_preserving_environment(values: Mapping[str, str]) -> dict[str, str]
 
 
 @contextmanager
-def explicit_mutmut_marker(marker: str) -> Iterator[None]:
+def explicit_mutmut_marker(marker: str) -> Generator[None]:
     """Inject a marker into workspace policy calls without masking trampolines.
 
     Yields:

@@ -184,7 +184,7 @@ def test_a_minimal_record_drops_every_bulky_section_an_item_holds() -> None:
     identity = FileIdentity(1, 2, "-rw-------", 3)
     item = LedgerItem(0, SOURCE)
     item.source = SourceSnapshot(
-        SOURCE, SOURCE, SOURCE, b"s.eml", SOURCE, identity, 0o600, b"", "a" * 64, 1
+        SOURCE, SOURCE, SOURCE, b"s.eml", SOURCE, identity, b"", "a" * 64, 1
     )
     item.destination = BoundDestination(SOURCE, SOURCE, b"o.eml", identity)
     item.verification = VerificationReceipt(

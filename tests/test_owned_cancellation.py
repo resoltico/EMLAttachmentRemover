@@ -23,6 +23,7 @@ from tests.live_report_support import MESSAGE, inputs
 from tests.trace_implementation_support import traced_implementation
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 
@@ -168,9 +169,14 @@ class _Boundary:
             self.interrupt()
 
     def returned(
-        self, sources: list[str], options: batch.BatchOptions, *, ledger: BatchLedger
+        self,
+        sources: list[str],
+        options: batch.BatchOptions,
+        *,
+        ledger: BatchLedger,
+        progress: Callable[[int, int], None] | None,
     ) -> BatchLedger:
-        result = self.execute(sources, options, ledger=ledger)
+        result = self.execute(sources, options, ledger=ledger, progress=progress)
         assert result is ledger
         self.interrupt()
         return result

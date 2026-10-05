@@ -136,6 +136,7 @@ def test_header_budget_accumulates_every_parsed_entity_exactly(
         - first_start
         + raw.index(b"\r\n\r\n", second_start)
         - second_start
+        + 3 * len(b"\r\n")
     )
     with monkeypatch.context() as context:
         context.setattr(mime_raw, "MAX_TOTAL_HEADERS", total_headers)

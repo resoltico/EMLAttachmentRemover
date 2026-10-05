@@ -191,16 +191,14 @@ def planned_display(destination: Mapping[str, object]) -> str:
 
 
 def validate_argument(value: str) -> str:
-    """Validate then explicitly expand one raw argv path without normalization.
+    """Validate one literal argv path without shell-style expansion.
 
     Returns:
-        The expanded form that preserves all ordinary path traversal components.
+        The exact path expression supplied by the caller.
 
     """
     _validate_file_argument(value)
-    expanded = os.path.expanduser(value)  # ruff: ignore[os-path-expanduser] - Path normalizes terminal syntax before validation.
-    _validate_file_argument(expanded)
-    return expanded
+    return value
 
 
 def _validate_file_argument(value: str) -> None:
@@ -350,3 +348,39 @@ def _validate_windows_components(tail: str) -> None:
             raise AppError(ExitCode.INPUT_ERROR, "path has a trailing dot or space")
         if component.partition(".")[0].upper() in _WINDOWS_RESERVED:
             raise AppError(ExitCode.INPUT_ERROR, "path contains a reserved DOS name")
+
+
+class NativeName:
+    """Require the exact native name type at the platform dispatch boundary."""
+
+    @staticmethod
+    def byte(value: bytes | str) -> bytes:
+        """Return one POSIX byte name or reject an incompatible text value.
+
+        Returns:
+            The unchanged native bytes.
+
+        Raises:
+            TypeError: If the supplied name is not bytes.
+
+        """
+        if isinstance(value, bytes):
+            return value
+        message = "POSIX native name must be bytes"
+        raise TypeError(message)
+
+    @staticmethod
+    def unicode(value: bytes | str) -> str:
+        """Return one Windows Unicode name or reject incompatible bytes.
+
+        Returns:
+            The unchanged native Unicode text.
+
+        Raises:
+            TypeError: If the supplied name is not Unicode text.
+
+        """
+        if isinstance(value, str):
+            return value
+        message = "Windows native name must be Unicode"
+        raise TypeError(message)

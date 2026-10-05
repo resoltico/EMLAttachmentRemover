@@ -19,28 +19,41 @@ from .domain import (
     PathValue,
     SourceSnapshot,
 )
-from .native_values import MAX_RAW_BYTES, validate_argument
+from .native_values import MAX_RAW_BYTES, NativeName, validate_argument
 
 
 def _bind_destination(request: str) -> BoundDestination:
-    expanded = validate_argument(request)
+    validated = validate_argument(request)
     if os.name == "nt":
-        return _windows.bind_destination(request, expanded)
-    return _posix.bind_destination(request, expanded)
+        return _windows.bind_destination(request, validated)
+    return _posix.bind_destination(request, validated)
 
 
 def _inspect_source_identity(request: str) -> FileIdentity:
-    expanded = validate_argument(request)
+    validated = validate_argument(request)
     if os.name == "nt":
-        return _windows.inspect_source_identity(expanded)
-    return _posix.inspect_source_identity(expanded)
+        return _windows.inspect_source_identity(validated)
+    return _posix.inspect_source_identity(validated)
+
+
+def _inspect_source(request: str) -> tuple[FileIdentity, PathValue | None]:
+    """Inspect source identity and address without reading its message bytes.
+
+    Returns:
+        Metadata obtained from one opened platform-native source.
+
+    """
+    validated = validate_argument(request)
+    if os.name == "nt":
+        return _windows.inspect_source(validated)
+    return _posix.inspect_source(validated)
 
 
 def _read_source(request: str) -> SourceSnapshot:
-    expanded = validate_argument(request)
+    validated = validate_argument(request)
     if os.name == "nt":
-        return _windows.read_source(request, expanded)
-    return _posix.read_source(request, expanded)
+        return _windows.read_source(request, validated)
+    return _posix.read_source(request, validated)
 
 
 def _open_bound_destination(destination: BoundDestination) -> BoundDirectory:
@@ -220,48 +233,13 @@ def _read_all(descriptor: int) -> bytes:
     return b"".join(chunks)
 
 
-class _NativeName:
-    """Keep typed native-name validation below the module responsibility budget."""
-
-    @staticmethod
-    def byte(value: bytes | str) -> bytes:
-        """Return one POSIX byte name or reject an incompatible text value.
-
-        Returns:
-            The unchanged native bytes.
-
-        Raises:
-            TypeError: If the supplied name is not bytes.
-
-        """
-        if isinstance(value, bytes):
-            return value
-        message = "POSIX native name must be bytes"
-        raise TypeError(message)
-
-    @staticmethod
-    def unicode(value: bytes | str) -> str:
-        """Return one Windows Unicode name or reject incompatible bytes.
-
-        Returns:
-            The unchanged native Unicode text.
-
-        Raises:
-            TypeError: If the supplied name is not Unicode text.
-
-        """
-        if isinstance(value, str):
-            return value
-        message = "Windows native name must be Unicode"
-        raise TypeError(message)
-
-
-_byte_name = _NativeName.byte
-_unicode_name = _NativeName.unicode
+_byte_name = NativeName.byte
+_unicode_name = NativeName.unicode
 
 
 bind_destination = _bind_destination
 inspect_source_identity = _inspect_source_identity
+inspect_source = _inspect_source
 read_source = _read_source
 open_bound_destination = _open_bound_destination
 close_bound_directory = _close_bound_directory

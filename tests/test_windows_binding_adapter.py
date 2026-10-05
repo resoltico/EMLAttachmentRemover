@@ -16,6 +16,7 @@ from eml_attachment_remover.domain import (
     FileIdentity,
     PathValue,
 )
+from eml_attachment_remover.native_source import read_source_bytes
 from eml_attachment_remover.native_windows import WindowsFileInfo
 
 if TYPE_CHECKING:
@@ -356,7 +357,7 @@ def test_windows_binding_bounded_read_rejects_oversized_existing_bytes(
     )
     monkeypatch.setattr(native_windows_binding, "MAX_RAW_BYTES", 3)
     with pytest.raises(AppError):
-        native_windows_binding._read_all(3)  # ruff: ignore[private-member-access] - existing-output native bound.
+        read_source_bytes(3, max_bytes=3)  # existing-output native bound.
 
 
 def test_windows_binding_cache_parent_and_handle_cleanup_edges(

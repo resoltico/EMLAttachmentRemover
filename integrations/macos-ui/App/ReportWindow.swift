@@ -5,10 +5,16 @@ final class ReportWindow: NSObject, NSWindowDelegate {
   var onClose: (() -> Void)?
   var onStopped: (() -> Void)?
   var onChoose: (() -> Void)?
+  var onFiles: (([String]) -> Void)?
+  var onChooseDestination: (() -> Void)?
+  var onResetDestination: (() -> Void)?
   let window: NSWindow
   let layout: ReportLayout
   let run = ProcessingRun()
   let paths: [String]
+  private(set) var destination: URL?
+  private var destinationLabel: NSTextField?
+  private var resetDestinationButton: NSButton?
   let version =
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
   let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
@@ -17,10 +23,13 @@ final class ReportWindow: NSObject, NSWindowDelegate {
   private var stopping = false
   private var quitting = false
   private var stopButton: NSButton?
+  private var progressBar: NSProgressIndicator?
+  private var progressLabel: NSTextField?
   private var itemsView: ReportItems?
   private var details: ReportDetails?
-  init(paths: [String]) {
+  init(paths: [String], destination: URL? = nil, frame: NSRect? = nil) {
     self.paths = paths
+    self.destination = destination
     window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 640, height: 590),
       styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false
@@ -34,10 +43,10 @@ final class ReportWindow: NSObject, NSWindowDelegate {
       firstName.map {
         $0 + (paths.count > 1 ? " + \(paths.count - 1) more" : "") + " — Processing report"
       } ?? "Processing report"
-    window.minSize = NSSize(width: 560, height: 280)
+    window.minSize = NSSize(width: 560, height: 400)
     window.delegate = self
     window.isReleasedWhenClosed = false
-    window.center()
+    if let frame { window.setFrame(frame, display: false) } else { window.center() }
     layout.makeContent()
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
@@ -46,13 +55,19 @@ final class ReportWindow: NSObject, NSWindowDelegate {
   deinit { trace("report-controller released") }
   private func start() {
     layout.heading(
-      "Creating email copies…",
-      subtitle: "\(paths.count) file\(paths.count == 1 ? "" : "s") selected", artwork: .processing,
-      color: .controlAccentColor)
+      "Preparing selected items…",
+      subtitle: "\(paths.count) item\(paths.count == 1 ? "" : "s") selected", artwork: .processing,
+      tone: .accent)
+    showCapturedDestination()
     let progress = NSProgressIndicator()
     progress.style = .bar
     progress.isIndeterminate = true
     progress.startAnimation(nil)
+    progressBar = progress
+    let progressText = UIControls.label(
+      "Collecting and checking selected files…", color: .secondaryLabelColor)
+    progressLabel = progressText
+    layout.add(progressText)
     layout.add(progress)
     layout.add(
       UIControls.label(
@@ -61,15 +76,11 @@ final class ReportWindow: NSObject, NSWindowDelegate {
     stopButton = stop
     layout.footerHost.addArrangedSubview(stop)
     window.standardWindowButton(.closeButton)?.isEnabled = false
-    layout.resizeToContent()
+    layout.layoutContent()
     do {
       try run.start(
-        paths: paths, version: version,
-        preparing: { [weak self] in
-          self?.stopButton?.isEnabled = false
-          self?.stopButton?.title = "Finishing report…"
-          self?.layout.headline?.stringValue = "Preparing your report…"
-        },
+        paths: paths, destination: destination, version: version,
+        updated: { [weak self] update in self?.updateProgress(update) },
         completed: { [weak self] result, raw, status, stderr in
           self?.finished(result, raw: raw, status: status, stderr: stderr)
         })
@@ -79,6 +90,44 @@ final class ReportWindow: NSObject, NSWindowDelegate {
         explanation: launchExplanation(error),
         diagnostics: error.localizedDescription)
     }
+  }
+  private func updateProgress(_ update: ProcessingUpdate) {
+    switch update {
+    case .exited:
+      stopButton?.isEnabled = false
+      stopButton?.title = "Finishing report…"
+      layout.headline?.stringValue = "Preparing your report…"
+    case .progress(let progress):
+      guard !stopping else { return }
+      layout.subtitle?.stringValue = "\(progress.total) email file\(progress.total == 1 ? "" : "s")"
+      if progress.stage == .reporting {
+        layout.headline?.stringValue = "Preparing your report…"
+        progressLabel?.stringValue = "Collecting the final results…"
+        setProgressMode(indeterminate: true)
+        progressBar?.startAnimation(nil)
+      } else {
+        layout.headline?.stringValue = "Creating email copies…"
+        progressLabel?.stringValue = "Processed \(progress.completed) of \(progress.total) files"
+        setProgressMode(indeterminate: false)
+        progressBar?.maxValue = Double(progress.total)
+        progressBar?.doubleValue = Double(progress.completed)
+      }
+    }
+  }
+  private func setProgressMode(indeterminate: Bool) {
+    guard let previous = progressBar, previous.isIndeterminate != indeterminate,
+      let index = layout.content.arrangedSubviews.firstIndex(of: previous)
+    else { return }
+    // Reusing a started indeterminate control can retain its animated rendering layer.
+    previous.stopAnimation(nil)
+    let replacement = NSProgressIndicator()
+    replacement.style = .bar
+    replacement.isIndeterminate = indeterminate
+    layout.content.removeArrangedSubview(previous)
+    previous.removeFromSuperview()
+    layout.content.insertArrangedSubview(replacement, at: index)
+    replacement.widthAnchor.constraint(equalTo: layout.content.widthAnchor).isActive = true
+    progressBar = replacement
   }
   @objc private func stop() {
     guard isRunning, !stopping else { return }
@@ -95,26 +144,30 @@ final class ReportWindow: NSObject, NSWindowDelegate {
       onStopped?()
       return
     }
+    defer {
+      if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
+    }
     do {
       let admitted = try result.get()
       trace(
         "admitted status=\(admitted.processStatus) heading=\(admitted.heading) counts=\(admitted.subtitle)"
       )
-      window.minSize = NSSize(width: 560, height: 400)
       layout.makeContent()
       layout.heading(
         admitted.heading, subtitle: admitted.subtitle,
         artwork: admitted.successful ? .success : admitted.stopped ? .stopped : .attention,
-        color: admitted.successful
-          ? .systemGreen : admitted.stopped ? .secondaryLabelColor : .systemOrange)
+        tone: admitted.successful ? .success : admitted.stopped ? .neutral : .warning)
       if let notice = admitted.invocationNotice { layout.add(UIControls.label(notice)) }
+      showCapturedDestination()
       let items = admitted.report.items
       let selected =
         admitted.successful
         ? 0
         : items.firstIndex(where: { ["failed", "published_with_error"].contains($0.status) })
           ?? items.firstIndex(where: { ["cancelled", "not_run"].contains($0.status) }) ?? 0
-      itemsView = ReportItems(receipt: admitted, layout: layout, selected: selected)
+      if !["selection", "destination"].contains(admitted.report.batchError?.phase) {
+        itemsView = ReportItems(receipt: admitted, layout: layout, selected: selected)
+      }
       details = ReportDetails(
         raw: raw, text: ReportText.details(admitted, version: version, build: build),
         receipt: admitted,
@@ -135,32 +188,74 @@ final class ReportWindow: NSObject, NSWindowDelegate {
   private func showWelcome() {
     window.title = "EML Attachment Remover"
     layout.heading(
-      "Remove attachments from email copies", subtitle: "Choose EML files to get started.",
+      "Remove attachments from email copies",
+      subtitle: "Choose EML files or folders to get started.",
       artwork: .identity,
-      color: .controlAccentColor)
+      tone: .accent)
     layout.add(
       UIControls.label(
-        "Creates separate EML copies with marked attachments and related embedded content removed. Your original files stay unchanged. You can also select EML files in Finder and run your Quick Action.",
+        "Creates separate EML copies with marked attachments and related embedded content removed. Your original files stay unchanged. In Finder, select EML files or folders and use Services → Create EML Copies Without Attachments.",
         color: .secondaryLabelColor))
-    let choose = UIControls.button("Choose files…", action: #selector(chooseFiles), target: self)
+    let drop = FileDropView(frame: .zero)
+    drop.onFiles = { [weak self] in self?.onFiles?($0) }
+    layout.add(drop)
+    makeDestinationControls()
+    let choose = UIControls.button(
+      "Choose files or folders…", action: #selector(chooseFiles), target: self)
     choose.keyEquivalent = "\r"
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
     layout.footerHost.addArrangedSubview(spacer)
     layout.footerHost.addArrangedSubview(choose)
     window.defaultButtonCell = choose.cell as? NSButtonCell
-    layout.resizeToContent()
+    layout.layoutContent()
   }
   @objc private func chooseFiles() { onChoose?() }
+  @objc private func chooseDestination() { onChooseDestination?() }
+  @objc private func resetDestination() { onResetDestination?() }
+  private var destinationDescription: String {
+    destination.map { safeText($0.path, multiline: false) } ?? "Beside each original file"
+  }
+  private func showCapturedDestination() {
+    layout.add(
+      UIControls.label("Destination: " + destinationDescription, color: .secondaryLabelColor))
+  }
+  private func makeDestinationControls() {
+    let label = UIControls.label(destinationDescription)
+    label.maximumNumberOfLines = 1
+    label.lineBreakMode = .byTruncatingMiddle
+    label.toolTip = destinationDescription
+    label.setAccessibilityLabel("Destination folder")
+    label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    destinationLabel = label
+    let choose = UIControls.button(
+      "Choose folder…", action: #selector(chooseDestination), target: self)
+    let reset = UIControls.button(
+      "Beside originals", action: #selector(resetDestination), target: self)
+    reset.isEnabled = destination != nil
+    resetDestinationButton = reset
+    let row = NSStackView(views: [label, choose, reset])
+    row.orientation = .horizontal
+    row.spacing = 12
+    layout.add(UIControls.label("Save copies to", weight: .semibold))
+    layout.add(row)
+  }
+  func setDestination(_ value: URL?) {
+    guard isWelcome else { return }
+    destination = value
+    destinationLabel?.stringValue = destinationDescription
+    destinationLabel?.toolTip = destinationDescription
+    resetDestinationButton?.isEnabled = destination != nil
+  }
   func closeWelcome() { if isWelcome { window.close() } }
   private func showFailure(_ title: String, explanation: String, diagnostics: String) {
     trace("unverified-report heading=\(title)")
-    window.minSize = NSSize(width: 560, height: 320)
     layout.makeContent()
     layout.heading(
       title, subtitle: "Review the details before trying again.", artwork: .attention,
-      color: .systemOrange)
+      tone: .warning)
     layout.add(UIControls.label(explanation))
+    showCapturedDestination()
     details = ReportDetails(
       raw: diagnostics, text: safeText(diagnostics), receipt: nil, layout: layout)
     window.standardWindowButton(.closeButton)?.isEnabled = true

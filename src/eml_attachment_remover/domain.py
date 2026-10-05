@@ -154,7 +154,6 @@ class SourceSnapshot:
     basename: bytes | str
     final_address: PathValue | None
     identity: FileIdentity
-    mode: int
     raw: bytes
     digest: str
     size: int

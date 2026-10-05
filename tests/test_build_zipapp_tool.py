@@ -328,6 +328,7 @@ class ZipappArchiveTests(unittest.TestCase):
             [
                 sys.executable,
                 "-I",
+                "-B",
                 "-X",
                 "dev",
                 "-W",

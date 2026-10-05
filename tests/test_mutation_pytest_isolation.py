@@ -20,11 +20,11 @@ from tools import mutation_pytest_isolation
 from tests.mutmut_environment_support import selector_preserving_environment
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
 
 
 @contextmanager
-def _marker_environment(marker: str) -> Iterator[None]:
+def _marker_environment(marker: str) -> Generator[None]:
     """Set a mutant marker with basetemp isolation off, as outside Mutmut.
 
     Yields:

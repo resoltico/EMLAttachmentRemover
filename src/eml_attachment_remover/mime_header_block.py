@@ -33,7 +33,9 @@ def _find_separator(raw: bytes, start: int, end: int) -> tuple[int, int]:
     positions = [(position, length) for position, length in matches if position >= 0]
     if not positions:
         raise AppError(ExitCode.PARSE_ERROR, "MIME entity has no header/body separator")
-    return min(positions)
+    position, length = min(positions)
+    # The first newline ends the last field; only the blank line is the separator.
+    return position + length // 2, length // 2
 
 
 def entity_headers(

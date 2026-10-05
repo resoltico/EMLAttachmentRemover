@@ -1,6 +1,6 @@
 {
     "schema_version": 1,
-    "source_sha256": "37bfd0d9:ce561ecb:69bb1b04:f83327c5:62706ad4:96642542:a8aa5ac1:3cec5a87",
+    "source_sha256": "94be1db9:40e0a6c8:2181acdd:d2eb004c:b5105526:f00e7c88:606cb326:05b50e10",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.batch.x__run_item__mutmut_1",
@@ -451,14 +451,6 @@
             "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
         },
         {
-            "mutant": "tools.macos_archive.x__extract__mutmut_24",
-            "rationale": "The exact native ZIP surface contains multiple members. Every member must have the same DOS timestamp before extraction, so choosing the second rather than first reference admits and rejects exactly the same metadata."
-        },
-        {
-            "mutant": "tools.macos_archive.x__extract__mutmut_27",
-            "rationale": "The exact native ZIP surface contains multiple members. Every member must carry the same canonical absolute-time field before extraction, so either of the first two reference fields produces the same admission and restored times; inconsistent fields are rejected."
-        },
-        {
             "mutant": "tools.macos_archive.x_verify__mutmut_1",
             "rationale": "This changes only the cosmetic eml-native-archive- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
         },
@@ -469,38 +461,6 @@
         {
             "mutant": "tools.macos_archive.x_verify__mutmut_3",
             "rationale": "This changes only the cosmetic eml-native-archive- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_123",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event tag string."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_127",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event tag string."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_128",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event tag string."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_129",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event commit string."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_133",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event commit string."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_134",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated event commit string."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_29",
-            "rationale": "The non-empty repository precondition rejects both None and the empty-string default before the value can be used or returned."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_31",
-            "rationale": "Omitting the default produces the same None value as an absent repository; the non-empty repository precondition rejects it before use."
         },
         {
             "mutant": "tools.publish_release.x_main__mutmut_29",

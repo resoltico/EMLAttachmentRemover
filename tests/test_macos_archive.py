@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _bundle(root: Path) -> Path:
+def bundle_fixture(root: Path) -> Path:
     app = root / "input.app"
     for name in archive.APP_FILES:
         path = app / name
@@ -30,6 +30,7 @@ def _bundle(root: Path) -> Path:
     (app / "Contents/Info.plist").write_bytes(
         plistlib.dumps({
             "CFBundleShortVersionString": "4.0.0",
+            "CFBundleExecutable": "EMLAttachmentRemover",
             "CFBundleVersion": str(
                 tomllib.loads((archive.ROOT / "pyproject.toml").read_text())["tool"][
                     "eml-attachment-remover"
@@ -38,14 +39,23 @@ def _bundle(root: Path) -> Path:
             "CFBundleIdentifier": "io.github.resoltico.emlattachmentremover",
             "NSHumanReadableCopyright": "Copyright © 2026 Ervins Strauhmanis",
             "LSMinimumSystemVersion": "14.0",
+            "EMLRuntimeMode": "external",
+            "EMLArchitecture": "arm64",
+            "NSServices": [
+                {
+                    "NSMenuItem": {"default": "Create EML Copies Without Attachments"},
+                    "NSMessage": "createEMLCopies",
+                    "NSPortName": "EMLAttachmentRemover",
+                    "NSSendFileTypes": ["public.email-message", "public.folder"],
+                    "NSRestricted": True,
+                    "NSRequiredContext": {},
+                }
+            ],
         })
     )
     resources = app / "Contents/Resources"
     (resources / "EML.icns").write_bytes(b"icns" + b"public")
     (resources / "LICENSE").write_bytes((archive.ROOT / "LICENSE").read_bytes())
-    (resources / "ARTWORK.md").write_bytes(
-        (archive.ROOT / "integrations/macos-ui/ARTWORK.md").read_bytes()
-    )
     (resources / "processing-launcher.sh").write_bytes(
         (archive.ROOT / "integrations/macos-ui/processing-launcher.sh").read_bytes()
     )
@@ -58,7 +68,7 @@ def _bundle(root: Path) -> Path:
 def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
     tmp_path: Path,
 ) -> None:
-    app = _bundle(tmp_path)
+    app = bundle_fixture(tmp_path)
     first, second = tmp_path / "first.zip", tmp_path / "second.zip"
     archive.package(app, first)
     archive.package(app, second)
@@ -106,7 +116,14 @@ def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
     assert archive.instructions().startswith(
         "EML Attachment Remover — prebuilt macOS application\n\n".encode()
     )
-    assert (extracted / "integrations/macos-ui/RELEASE.md").is_file()
+    assert {path.name for path in extracted.iterdir()} == {
+        "EML Attachment Remover.app",
+        "INSTALL.txt",
+        "LICENSE",
+        "install.sh",
+    }
+    assert not (extracted / "integrations").exists()
+    assert not (extracted / "QA.md").exists()
     assert (
         archive.archive_name("4.0.0", "arm64")
         == "eml_attachment_remover-4.0.0-macos-arm64.zip"
@@ -117,7 +134,7 @@ def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
 def test_package_refuses_missing_or_symbolic_sources(
     tmp_path: Path, *, symbolic: bool
 ) -> None:
-    app = _bundle(tmp_path)
+    app = bundle_fixture(tmp_path)
     executable = app / "Contents/MacOS/EMLAttachmentRemover"
     executable.unlink()
     if symbolic:
@@ -152,7 +169,7 @@ def test_untrusted_metadata_is_rejected_before_extraction(
     tmp_path: Path, attack: str
 ) -> None:
     good, bad = tmp_path / "good.zip", tmp_path / "bad.zip"
-    archive.package(_bundle(tmp_path), good)
+    archive.package(bundle_fixture(tmp_path), good)
     with zipfile.ZipFile(good) as source, zipfile.ZipFile(bad, "w") as target:
         entries = (
             list(reversed(source.infolist()))
@@ -203,9 +220,12 @@ def test_untrusted_metadata_is_rejected_before_extraction(
     ],
 )
 def test_archive_contract_rejects_content_drift(tmp_path: Path, changed: str) -> None:
-    app = _bundle(tmp_path)
+    app = bundle_fixture(tmp_path)
     if changed == "version":
-        (app / "Contents/Info.plist").write_bytes(plistlib.dumps({}))
+        info_path = app / "Contents/Info.plist"
+        info = plistlib.loads(info_path.read_bytes())
+        info["CFBundleShortVersionString"] = "wrong"
+        info_path.write_bytes(plistlib.dumps(info))
     metadata_changes = {
         "identifier": ("CFBundleIdentifier", "wrong"),
         "copyright": ("NSHumanReadableCopyright", "wrong"),
@@ -350,7 +370,7 @@ def test_extraction_budget_accepts_exact_limit_and_rejects_one_byte_over(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "public.zip"
-    archive.package(_bundle(tmp_path), target)
+    archive.package(bundle_fixture(tmp_path), target)
     with zipfile.ZipFile(target) as packaged:
         total = sum(info.file_size for info in packaged.infolist())
     with patch.object(archive, "MAX_TOTAL", total):
@@ -370,7 +390,7 @@ def test_encrypted_flags_are_rejected_before_creating_any_destination(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "public.zip"
-    archive.package(_bundle(tmp_path), target)
+    archive.package(bundle_fixture(tmp_path), target)
     data = bytearray(target.read_bytes())
     with zipfile.ZipFile(target) as packaged:
         offset = packaged.start_dir
