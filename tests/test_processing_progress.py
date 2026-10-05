@@ -281,3 +281,42 @@ def test_reporting_without_attempt_counts_emits_nothing() -> None:
     finally:
         os.close(reader)
         os.close(writer)
+
+
+def test_writable_progress_handle_with_a_bad_crt_write_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Native rights do not hide an independently invalid CRT descriptor."""
+    reader, writer = os.pipe()
+    try:
+
+        def failed(_descriptor: int, _data: bytes) -> int:
+            raise OSError(errno.EBADF, "bad descriptor")
+
+        monkeypatch.setattr(os, "write", failed)
+        with ExitStack() as scope, pytest.raises(AppError, match="must be writable"):
+            scope.enter_context(progress_transport.open_pipe(writer))
+    finally:
+        os.close(reader)
+        os.close(writer)
+
+
+def test_denied_native_progress_access_preserves_descriptor_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject denied kernel access before duplicating or probing the channel."""
+    reader, writer = os.pipe()
+    try:
+        before = os.get_blocking(writer)
+        monkeypatch.setattr(progress_transport.__dict__["os"], "name", "nt")
+        monkeypatch.setattr(
+            progress_transport.__dict__["native_windows_pipe"],
+            "has_write_access",
+            lambda _fd: False,
+        )
+        with ExitStack() as scope, pytest.raises(AppError, match="must be writable"):
+            scope.enter_context(progress_transport.open_pipe(writer))
+        assert os.get_blocking(writer) is before
+    finally:
+        os.close(reader)
+        os.close(writer)

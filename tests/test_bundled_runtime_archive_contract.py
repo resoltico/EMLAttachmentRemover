@@ -9,23 +9,36 @@ import stat
 from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
-import pytest
 from tools import build_timestamp, macos_runtime, macos_runtime_archive
 from tools import macos_archive as archive
 
 from tests.test_macos_archive import bundle_fixture
 
 if TYPE_CHECKING:
+    import zipfile
     from pathlib import Path
 
+    import pytest
 
-@pytest.mark.skipif(
-    os.name == "nt", reason="POSIX runtime link timestamps and permission modes"
-)
+
 def test_bundled_archive_preserves_verified_runtime_resources_and_internal_links(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Portable archive controls supplement actual signed app/runtime tests on Mac."""
+    if os.name == "nt":
+        # Windows cannot stamp symlink inode times; this fixture tests archive
+        # resources/links. POSIX runs below also prove restored modes and times.
+        restore = archive.__dict__["_restore_times"]
+
+        def restore_files(
+            destination: Path, entries: list[zipfile.ZipInfo], timestamp: int
+        ) -> None:
+            ordinary = [
+                item for item in entries if not stat.S_ISLNK(item.external_attr >> 16)
+            ]
+            restore(destination, ordinary, timestamp)
+
+        monkeypatch.setattr(archive, "_restore_times", restore_files)
     app = bundle_fixture(tmp_path)
     info = app / "Contents/Info.plist"
     metadata = plistlib.loads(info.read_bytes())
@@ -51,6 +64,7 @@ def test_bundled_archive_preserves_verified_runtime_resources_and_internal_links
     delivered = extracted / archive.RUNTIME_PREFIX
     assert (delivered / "bin/python3").readlink().as_posix() == "python3.14"
     assert (delivered / "bin/python3").read_bytes() == program.read_bytes()
-    assert stat.S_IMODE((delivered / "bin/python3.14").stat().st_mode) == 0o755
-    assert stat.S_IMODE((delivered / "bin").stat().st_mode) == 0o755
-    assert (delivered / "bin/python3").lstat().st_mtime == build_timestamp.EPOCH
+    if os.name != "nt":
+        assert stat.S_IMODE((delivered / "bin/python3.14").stat().st_mode) == 0o755
+        assert stat.S_IMODE((delivered / "bin").stat().st_mode) == 0o755
+        assert (delivered / "bin/python3").lstat().st_mtime == build_timestamp.EPOCH
