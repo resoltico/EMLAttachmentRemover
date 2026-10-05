@@ -319,3 +319,20 @@ def test_nested_call_approval_does_not_bind_its_containing_function(
     )
     with patch.object(lint, "ROOT", tmp_path):
         assert lint.python_directives(source)[0]["anchor"] == "call(1)"
+
+
+def test_a_decorator_closing_without_an_owning_statement_is_refused(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "example.py"
+    source.write_text(
+        "@decorate(\n 1\n) # ruff: ignore[private-member-access]\n"
+        "def boundary():\n pass\n"
+    )
+    with (
+        patch.object(lint, "ROOT", tmp_path),
+        pytest.raises(
+            ValueError, match=r"^Suppression has no identifiable source statement$"
+        ),
+    ):
+        lint.python_directives(source)

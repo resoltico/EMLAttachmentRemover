@@ -176,3 +176,58 @@ def test_explicit_request_path_bytes_are_bounded_before_folder_scanning(
         selection_collection.collect([source])
     assert captured.value.code is ExitCode.USAGE
     assert captured.value.phase == "selection"
+
+
+def test_folder_replaced_by_a_link_is_refused_before_enumeration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "selected"
+    root.mkdir()
+    (root / "message.eml").write_bytes(b"retained")
+    retained = tmp_path / "retained"
+    original = Path.stat
+    observations = 0
+
+    def changed(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        nonlocal observations
+        snapshot = original(path, follow_symlinks=follow_symlinks)
+        if path == root:
+            observations += 1
+            if observations == 1:
+                root.rename(retained)
+                root.symlink_to(retained, target_is_directory=True)
+        return snapshot
+
+    def forbidden(_path: str) -> AbstractContextManager[Iterator[os.DirEntry[str]]]:
+        pytest.fail("collection enumerated a directory replaced by a link")
+
+    monkeypatch.setattr(Path, "stat", changed)
+    monkeypatch.setattr(os, "scandir", forbidden)
+    with pytest.raises(AppError) as caught:
+        selection_collection.collect([str(root)])
+    assert caught.value.code is ExitCode.INPUT_ERROR
+    assert caught.value.message == "selected folder changed or became a link"
+
+
+def test_folder_link_after_enumeration_is_refused_even_with_the_same_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "selected"
+    root.mkdir()
+    (root / "message.eml").write_bytes(b"retained")
+    retained = tmp_path / "retained"
+    original = os.scandir
+
+    @contextmanager
+    def replaced(path: str) -> Generator[Iterator[os.DirEntry[str]]]:
+        with original(path) as stream:
+            entries = list(stream)
+        root.rename(retained)
+        root.symlink_to(retained, target_is_directory=True)
+        yield iter(entries)
+
+    monkeypatch.setattr(os, "scandir", replaced)
+    with pytest.raises(AppError) as caught:
+        selection_collection.collect([str(root)])
+    assert caught.value.code is ExitCode.INPUT_ERROR
+    assert caught.value.message == "selected folder changed during collection"
