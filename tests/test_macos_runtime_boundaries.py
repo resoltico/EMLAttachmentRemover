@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tomllib
 import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -244,6 +245,8 @@ def test_signature_tool_without_a_full_code_hash_cannot_approve_identity(
 def test_valid_pin_declares_the_expected_runtime_origin_and_cpu() -> None:
     """Read a real complete pin; malformed-source tests cover its rejection controls."""
     selected = macos_runtime_source.pin("arm64")
+    with macos_runtime_source.CONFIG.open("rb") as stream:
+        assert selected == tomllib.load(stream)["arm64"]
     assert selected["target"] == "aarch64-apple-darwin"
     assert selected["size"] > 0
     assert selected["url"].startswith(
@@ -372,9 +375,28 @@ def test_native_code_comparison_requires_matching_full_hashes(
     )
 
     def signature(
-        args: list[str], **_kwargs: object
+        args: list[str], **kwargs: object
     ) -> subprocess.CompletedProcess[str]:
-        assert args[0] == "/usr/bin/codesign"
+        destination = args[-1]
+        if "--force" in args:
+            assert args == [
+                "/usr/bin/codesign",
+                "--force",
+                "--sign",
+                "-",
+                "--identifier",
+                "io.github.resoltico.eml.runtime.verification",
+                destination,
+            ]
+            assert kwargs == {"check": True, "capture_output": True, "timeout": 30}
+        else:
+            assert args == ["/usr/bin/codesign", "-dv", "--verbose=4", destination]
+            assert kwargs == {
+                "check": True,
+                "capture_output": True,
+                "text": True,
+                "timeout": 30,
+            }
         digest = hashlib.sha256(Path(args[-1]).read_bytes()).hexdigest()
         return subprocess.CompletedProcess(
             args, 0, "", "CandidateCDHashFull sha256=" + digest

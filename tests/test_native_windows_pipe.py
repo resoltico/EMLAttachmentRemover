@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import errno
 from types import SimpleNamespace
 
 import pytest
@@ -52,19 +53,45 @@ def test_object_access_information_uses_exact_abi_and_bounded_results(
             return query(handle, kind, output, size, returned)
 
     native = Operation()
+
+    def library(name: str, *, use_last_error: bool) -> SimpleNamespace:
+        assert name == "ntdll"
+        assert use_last_error is True
+        return SimpleNamespace(NtQueryObject=native)
+
+    def attribute(name: str) -> object:
+        assert name == "WinDLL"
+        return library
+
+    def handle(descriptor: int) -> int:
+        assert descriptor == 19
+        return 199
+
     monkeypatch.setattr(
         native_windows_pipe,
         "ctypes_attribute",
-        lambda _name: lambda *_args, **_kwargs: SimpleNamespace(NtQueryObject=native),
+        attribute,
     )
-    monkeypatch.setattr(native_windows_runtime.Msvcrt, "get_osfhandle", lambda _fd: 199)
+    monkeypatch.setattr(native_windows_runtime.Msvcrt, "get_osfhandle", handle)
     if status < 0 or length != 56:
-        with pytest.raises(OSError, match="access information is unavailable"):
+        with pytest.raises(
+            OSError, match="access information is unavailable"
+        ) as caught:
             native_windows_pipe.has_write_access(19)
+        assert caught.value.errno == errno.EBADF
+        assert caught.value.strerror == (
+            "progress pipe access information is unavailable"
+        )
     else:
         assert native_windows_pipe.has_write_access(19) is (access == 2)
     assert calls == [(199, 0, 56)]
     assert native.restype is ctypes.c_int32
-    assert len(native.argtypes) == 5
+    assert native.argtypes == [
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_uint32),
+    ]
     assert native_windows_pipe.ObjectBasicInformation.granted_access.offset == 4
     assert ctypes.sizeof(native_windows_pipe.ObjectBasicInformation) == 56

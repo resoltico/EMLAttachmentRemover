@@ -153,6 +153,30 @@ def _destination() -> BoundDestination:
     )
 
 
+@pytest.mark.parametrize("address", ["\\\\?\\C:\\bound\\message.eml", None])
+def test_windows_inspection_binds_address_to_source_handle(
+    monkeypatch: MonkeyPatch, address: str | None
+) -> None:
+    api = BindingApi(-1, 4)
+    _use_api(monkeypatch, api)
+    queried: list[int] = []
+
+    def final_path(handle: int) -> str | None:
+        queried.append(handle)
+        return address
+
+    monkeypatch.setattr(api, "final_path", final_path)
+    source = "C:\\bound\\message.eml"
+    identity, resolved = native_windows_binding.inspect_source(source)
+    assert identity == FileIdentity(4, 21, "regular", 5)
+    assert (None if resolved is None else resolved.text) == address
+    assert queried == [21]
+    queried.clear()
+    assert native_windows_binding.inspect_source_identity(source) == identity
+    assert queried == []
+    assert api.closed == [21, 10, 21, 10]
+
+
 def test_windows_binding_reads_and_publishes_through_fake_handles(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:

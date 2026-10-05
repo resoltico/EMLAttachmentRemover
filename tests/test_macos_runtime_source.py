@@ -182,18 +182,24 @@ def test_cached_sources_download_once_and_reject_corruption(
 
     def download(path: Path, pin: macos_runtime_source.RuntimePin) -> None:
         downloads.append(pin["target"])
+        assert path.parent.parent == cache
+        assert path.parent.name.startswith(".download-")
         path.write_bytes(content)
         macos_runtime_source.verify(path, pin)
 
     monkeypatch.setattr(macos_runtime_source, "pin", selected)
     monkeypatch.setattr(macos_runtime_source, "download", download)
-    macos_runtime_source.cache(tmp_path)
-    macos_runtime_source.cache(tmp_path)
-    assert downloads == ["arm64", "x86_64"]
-    (tmp_path / "arm64.tar.zst").write_bytes(b"x" * len(content))
+    cache = tmp_path / "nested" / "cache"
+    macos_runtime_source.cache(cache)
+    (cache / "x86_64.tar.zst").unlink()
+    macos_runtime_source.cache(cache)
+    assert downloads == ["arm64", "x86_64", "x86_64"]
+    macos_runtime_source.cache(cache)
+    assert downloads == ["arm64", "x86_64", "x86_64"]
+    (cache / "arm64.tar.zst").write_bytes(b"x" * len(content))
     with pytest.raises(ValueError, match="digest"):
-        macos_runtime_source.cache(tmp_path)
-    assert downloads == ["arm64", "x86_64"]
+        macos_runtime_source.cache(cache)
+    assert downloads == ["arm64", "x86_64", "x86_64"]
 
 
 def test_runtime_bytecode_is_relocatable_and_independently_rebuilt(
