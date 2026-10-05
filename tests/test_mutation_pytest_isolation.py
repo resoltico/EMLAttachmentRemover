@@ -322,16 +322,20 @@ class MutationPytestIsolationTests(unittest.TestCase):
 
 @pytest.mark.parametrize("package", [None, object()])
 def test_workspace_import_hook_tolerates_an_unloaded_or_nonpackage_module(
-    tmp_path: Path, package: object
+    package: object,
 ) -> None:
-    (tmp_path / "tools").mkdir()
-    (tmp_path / "pyproject.toml").write_text("[project]\n")
-    unused: Any = object()
-    with (
-        _marker_environment("x__mutmut_1"),
-        patch.object(Path, "cwd", return_value=tmp_path),
-        patch.object(sys, "path", []),
-        patch.dict(sys.modules, {"tools": package}),
-    ):
-        mutation_pytest_isolation.pytest_load_initial_conftests(unused, unused, [])
-        assert sys.path == [str(tmp_path)]
+    # This hook can mutate pytest's own basetemp before fixtures are created.
+    # Own this fixture independently so even a rejected mutant cannot write there.
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "tools").mkdir()
+        (root / "pyproject.toml").write_text("[project]\n")
+        unused: Any = object()
+        with (
+            _marker_environment("x__mutmut_1"),
+            patch.object(Path, "cwd", return_value=root),
+            patch.object(sys, "path", []),
+            patch.dict(sys.modules, {"tools": package}),
+        ):
+            mutation_pytest_isolation.pytest_load_initial_conftests(unused, unused, [])
+            assert sys.path == [str(root)]
