@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import tempfile
+import tomllib
 import uuid
 from contextlib import nullcontext
 from pathlib import Path
@@ -54,13 +56,21 @@ def _mutated_child_imports(
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
     _child_journal_root: Path,
-    tmp_path: Path,
 ) -> None:
     selector = get_mutant_under_test()
     source = Path(eml_attachment_remover.__file__).resolve().parents[1]
     workspace = source.parent
     if workspace.name == "mutants" and (workspace / "pyproject.toml").is_file():
-        monkeypatch.chdir(tmp_path)
+        working = _child_journal_root / (uuid.uuid4().hex + "-cwd")
+        working.mkdir(mode=0o700)
+        with (workspace / "pyproject.toml").open("rb") as configuration:
+            roots = tomllib.load(configuration)["tool"]["mutmut"]["source_paths"]
+        (working / "pyproject.toml").write_text(
+            "[tool.mutmut]\nsource_paths="
+            + json.dumps([str(workspace / root) for root in roots])
+            + "\n"
+        )
+        monkeypatch.chdir(working)
         checkpoint = os.environ.get(mutation_integrity.CHECKPOINT_VARIABLE)
         if selector == "stats" and checkpoint is not None:
             mutation_integrity.capture(workspace, Path(checkpoint))
