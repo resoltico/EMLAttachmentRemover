@@ -34,10 +34,16 @@ def test_darwin_sync_requests_full_flush_and_does_not_hide_io_errors(
     calls: list[int] = []
     monkeypatch.setattr(atomic_publish.__dict__["os"], "fsync", calls.append)
     monkeypatch.setattr(atomic_publish.__dict__["platform"], "system", lambda: "Darwin")
+
+    def library(name: str | None, *, use_errno: bool) -> SimpleNamespace:
+        assert name is None
+        assert use_errno is True
+        return SimpleNamespace(fcntl=operation)
+
     monkeypatch.setattr(
         atomic_publish.__dict__["ctypes"],
         "CDLL",
-        lambda *_args, **_kwargs: SimpleNamespace(fcntl=operation),
+        library,
     )
     monkeypatch.setattr(atomic_publish.__dict__["ctypes"], "get_errno", lambda: failure)
     if failure == errno.EIO:

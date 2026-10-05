@@ -15,6 +15,31 @@ MESSAGE = b"From: a@example.test\r\n\r\nretained\r\n"
 SUFFIX = ".mime-pruned.eml"
 
 
+@pytest.mark.parametrize(
+    ("host", "source", "folder"),
+    [
+        ("posix", "/Inbox/source.eml", "/Copies"),
+        ("nt", "C:\\Inbox\\source.eml", "C:\\Copies"),
+    ],
+)
+def test_short_chosen_directory_name_has_one_suffix_and_the_address_digest(
+    monkeypatch: pytest.MonkeyPatch,
+    host: str,
+    source: str,
+    folder: str,
+) -> None:
+    monkeypatch.setattr(os, "name", host)
+    monkeypatch.setattr(destination_names, "name_limit", lambda _parent: 255)
+    digest = hashlib.sha256(
+        source.encode("utf-16-le" if host == "nt" else "utf-8")
+    ).hexdigest()[:16]
+    join = ntpath.join if host == "nt" else posixpath.join
+    assert destination_names.fitted_default_destination(source, folder) == join(
+        folder,
+        "source-" + digest + SUFFIX,
+    )
+
+
 def _tail(name: str) -> str:
     """Return the hash-and-suffix tail, computed independently of the fitter.
 
