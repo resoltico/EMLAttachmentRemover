@@ -122,6 +122,7 @@ def test_regular_files_are_refused_as_owned_lifetime_inputs(tmp_path: Path) -> N
         with sources(stream):
             pytest.fail("regular file accepted as an owner pipe")
     assert failure.value.code is ExitCode.USAGE
+    assert failure.value.message == "request input must be a readable pipe"
 
 
 def test_trailing_data_cancels_without_waiting_for_owner_eof() -> None:

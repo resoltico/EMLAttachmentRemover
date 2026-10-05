@@ -209,3 +209,71 @@ def test_frame_byte_budget_accepts_equality_and_refuses_the_next_byte(
     with pytest.raises(AppError) as failure:
         decode(payload + b" ")
     assert failure.value.message == "request frame exceeds its byte limit"
+
+
+def test_request_path_budget_includes_exact_native_byte_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = ["first.eml", "second.eml"]
+    monkeypatch.setattr(
+        request_transport,
+        "MAX_CUMULATIVE_REQUEST_PATH_BYTES",
+        sum(len(os.fsencode(path)) for path in paths),
+    )
+    assert decode(_payload(paths)) == paths
+    with pytest.raises(AppError) as caught:
+        decode(_payload([*paths, "x"]))
+    assert caught.value.code is ExitCode.USAGE
+    assert caught.value.message == "request exceeds its path-byte limit"
+
+
+def test_windows_request_encoding_is_checked_on_every_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(os, "name", "nt")
+    path = "C:\\Inbox\\π-😀.eml"
+    assert decode(_payload([path])) == [path]
+
+
+@pytest.mark.parametrize("failure", [b"", OSError("synthetic pipe failure")])
+def test_request_read_failure_keeps_typed_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: bytes | OSError,
+) -> None:
+    def read(descriptor: int, size: int) -> bytes:
+        assert descriptor == 199
+        assert size == 4
+        if isinstance(failure, OSError):
+            raise failure
+        return failure
+
+    monkeypatch.setattr(os, "read", read)
+    with pytest.raises(AppError) as caught:
+        request_transport.read(199)
+    assert caught.value.code is ExitCode.USAGE
+    assert caught.value.message == (
+        "could not read request pipe"
+        if isinstance(failure, OSError)
+        else "request pipe ended before a complete frame"
+    )
+
+
+def test_fragmented_frame_reads_only_the_remaining_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _payload(["message.eml"])
+    pending = bytearray(_frame(payload))
+    sizes: list[int] = []
+
+    def read(descriptor: int, size: int) -> bytes:
+        assert descriptor == 199
+        sizes.append(size)
+        result = bytes(pending[:1])
+        del pending[:1]
+        return result
+
+    monkeypatch.setattr(os, "read", read)
+    monkeypatch.setattr(request_transport, "MAX_FRAME_BYTES", len(payload))
+    assert request_transport.read(199) == ["message.eml"]
+    assert sizes == [4, 3, 2, 1, *range(len(payload), 0, -1)]
+    assert not pending

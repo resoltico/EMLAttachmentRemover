@@ -233,3 +233,25 @@ def test_backend_wheel_hooks_build_software_only_metadata(
         )
         assert b"License-Expression: MPL-2.0\n" in metadata
         assert not any(name.endswith((".svg", ".icns")) for name in archive.namelist())
+
+
+def test_backend_source_hook_keeps_artwork_license_and_editable_assets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(ROOT)
+    monkeypatch.syspath_prepend(str(ROOT / "tools"))
+    filename = build_backend.build_sdist(str(tmp_path))
+    with tarfile.open(tmp_path / filename) as archive:
+        metadata = archive.extractfile(
+            next(
+                item for item in archive.getmembers() if item.name.endswith("/PKG-INFO")
+            )
+        )
+        assert metadata is not None
+        with metadata:
+            assert (
+                b"License-Expression: MPL-2.0 AND LicenseRef-Proprietary-Artwork\n"
+                in metadata.read()
+            )
+        assert any(name.endswith(".svg") for name in archive.getnames())

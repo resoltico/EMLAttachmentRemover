@@ -218,6 +218,37 @@ def test_runtime_bytecode_is_relocatable_and_independently_rebuilt(
     (source / "licenses").mkdir()
     (source / "PYTHON.json").write_text("{}")
     monkeypatch.setattr(runtime_notices, "apply", lambda _root: None)
+    compile_command = subprocess.run
+
+    def compile_runtime(
+        args: list[str],
+        *,
+        check: bool,
+        capture_output: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert args[:-1] == [
+            sys.executable,
+            "-I",
+            "-B",
+            "-m",
+            "compileall",
+            "-q",
+            "-q",
+            "-f",
+            "--invalidation-mode",
+            "unchecked-hash",
+            "-o",
+            "0",
+            "-d",
+            "python3.14",
+        ]
+        assert (check, capture_output, timeout) == (True, True, 120)
+        return compile_command(
+            args, check=check, capture_output=capture_output, timeout=timeout
+        )
+
+    monkeypatch.setattr(subprocess, "run", compile_runtime)
     actual, expected = tmp_path / "actual", tmp_path / "expected"
     macos_runtime.copy_install(source, actual)
     macos_runtime.copy_install(source, expected)
@@ -238,6 +269,30 @@ def test_runtime_bytecode_is_relocatable_and_independently_rebuilt(
     caches[0].write_bytes(bytecode[:-1] + bytes([bytecode[-1] ^ 1]))
     with pytest.raises(ValueError, match="differs"):
         macos_runtime_archive.verify(actual, expected, "arm64")
+
+
+def test_runtime_resource_modes_and_internal_links_survive_copying(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    executable = source / "install/bin/python"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"synthetic executable mode fixture")
+    executable.chmod(0o401)
+    (executable.parent / "python3").symlink_to("python")
+    module = source / "install/lib/python3.14/example.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("VALUE = 42\n")
+    (source / "licenses").mkdir()
+    (source / "PYTHON.json").write_text("{}")
+    monkeypatch.setattr(runtime_notices, "apply", lambda _root: None)
+    actual = tmp_path / "runtime"
+    macos_runtime.copy_install(source, actual)
+    assert (actual / "bin/python3").is_symlink()
+    if os.name != "nt":
+        assert (actual / "bin/python").stat().st_mode & 0o777 == 0o755
+        assert (actual / "lib").stat().st_mode & 0o777 == 0o755
+        assert (actual / "lib/python3.14/example.py").stat().st_mode & 0o777 == 0o644
 
 
 def test_runtime_preparation_rejects_an_unpinned_compiler(

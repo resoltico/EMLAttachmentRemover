@@ -18,13 +18,13 @@ MAX_DIRECTORIES: Final = 4_096
 
 
 def _key(path: str) -> str:
-    """Return a lexical path key without resolving source aliases.
+    """Anchor a pathname without interpreting shorthand or collapsing traversal.
 
     Returns:
-        A host-normalized absolute pathname.
+        An absolute spelling preserving case and parent traversal.
 
     """
-    return os.path.normcase(os.path.normpath(str(Path(path).expanduser().absolute())))
+    return str(Path(path).absolute())
 
 
 def _link(snapshot: os.stat_result) -> bool:
