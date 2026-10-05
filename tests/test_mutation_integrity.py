@@ -109,6 +109,21 @@ def test_inventory_never_changes_the_execution_selector(tmp_path: Path) -> None:
     assert os.environ.get("MUTANT_UNDER_TEST") == selector
 
 
+def test_owned_directory_repair_traverses_nested_fixtures_and_preserves_files(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "fixtures"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    data = nested / "data"
+    data.write_bytes(b"owned fixture")
+    before = data.stat().st_mode
+    mutation_integrity.restore_test_directories(root)
+    assert nested.is_dir()
+    assert data.read_bytes() == b"owned fixture"
+    assert data.stat().st_mode == before
+
+
 @pytest.mark.skipif(
     os.name == "nt", reason="POSIX mutation fixture permission recovery"
 )
