@@ -26,15 +26,27 @@ def _tree(root: Path) -> None:
         path.chmod(0o755 if path.is_dir() else 0o644)
 
 
-@pytest.mark.parametrize("change", ["added", "removed", "modified", "mode"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "added",
+        "removed",
+        "modified",
+        pytest.param(
+            "mode",
+            marks=pytest.mark.skipif(
+                os.name == "nt",
+                reason="Windows chmod cannot model POSIX execute-bit changes",
+            ),
+        ),
+    ],
+)
 def test_self_declared_runtime_changes_cannot_expand_source_approval(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     change: str,
 ) -> None:
     """Delivered declarations cannot replace the source-derived resource contract."""
-    if os.name == "nt" and change == "mode":
-        pytest.skip("Windows chmod cannot model POSIX execute-bit changes")
     expected = tmp_path / "expected"
     _tree(expected)
     actual = tmp_path / "actual"
