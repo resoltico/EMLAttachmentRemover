@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import errno
 import hashlib
 import io
 import json
@@ -163,8 +164,9 @@ def test_private_runtime_links_must_stay_inside_relocated_tree(tmp_path: Path) -
         macos_runtime.require_links(root)
     link.unlink()
     link.symlink_to("missing")
-    with pytest.raises(FileNotFoundError, match="missing"):
+    with pytest.raises(FileNotFoundError) as missing:
         macos_runtime.require_links(root)
+    assert missing.value.errno == errno.ENOENT
     with pytest.raises(FileNotFoundError, match="absent-runtime"):
         macos_runtime.require_links(tmp_path / "absent-runtime")
 
@@ -352,3 +354,34 @@ def test_runtime_source_command_routes_the_directory_and_has_cli_help(
         timeout=10,
     )
     assert "--directory" in help_result.stdout
+    assert "pinned upstream runtime with its original notices" in help_result.stdout
+
+
+@pytest.mark.parametrize(
+    ("operation", "arguments"),
+    [
+        ("cache", []),
+        ("prepare", []),
+        ("prepare", ["--target", "unused"]),
+        ("prepare", ["--architecture", "arm64"]),
+        ("prepare", ["--target", "unused", "--architecture", "universal"]),
+    ],
+)
+def test_runtime_commands_reject_missing_or_unsupported_inputs_before_work(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    arguments: list[str],
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(
+        macos_runtime, "prepare", lambda *_args, **_kwargs: calls.append("prepare")
+    )
+    monkeypatch.setattr(
+        macos_runtime_source, "cache", lambda _path: calls.append("cache")
+    )
+    monkeypatch.setattr(sys, "argv", ["runtime-command", *arguments])
+    selected = macos_runtime_source if operation == "cache" else macos_runtime
+    with pytest.raises(SystemExit) as caught:
+        selected.main()
+    assert caught.value.code == 2
+    assert calls == []

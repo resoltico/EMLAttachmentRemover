@@ -115,3 +115,46 @@ def test_reparse_directory_entries_are_links_even_without_posix_link_mode(
     assert link(SimpleNamespace(st_mode=stat.S_IFDIR)) is False
     monkeypatch.delattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT")
     assert link(SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=1)) is False
+
+
+@pytest.mark.parametrize("observation", [2, 3])
+@pytest.mark.parametrize("kind", ["reparse", "file"])
+def test_unsafe_directory_observations_stop_before_processing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    observation: int,
+    kind: str,
+) -> None:
+    source = tmp_path / "message.eml"
+    source.write_bytes(b"retained")
+    original = Path.stat
+    calls = 0
+    monkeypatch.setattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 1024, raising=False)
+
+    def snapshot(
+        path: Path, *, follow_symlinks: bool = True
+    ) -> os.stat_result | SimpleNamespace:
+        nonlocal calls
+        value = original(path, follow_symlinks=follow_symlinks)
+        if path == tmp_path:
+            calls += 1
+            if calls == observation:
+                return SimpleNamespace(
+                    st_mode=stat.S_IFDIR if kind == "reparse" else stat.S_IFREG,
+                    st_file_attributes=1024 if kind == "reparse" else 0,
+                    st_dev=value.st_dev,
+                    st_ino=value.st_ino,
+                )
+        return value
+
+    monkeypatch.setattr(Path, "stat", snapshot)
+    with pytest.raises(AppError) as caught:
+        selection_collection.collect([str(tmp_path)])
+    assert caught.value.code is ExitCode.INPUT_ERROR
+    assert caught.value.message == (
+        "selected folder changed or became a link"
+        if observation == 2
+        else "selected folder changed during collection"
+    )
+    assert source.read_bytes() == b"retained"
+    assert not source.with_suffix(".mime-pruned.eml").exists()

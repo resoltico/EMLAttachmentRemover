@@ -35,6 +35,7 @@ def test_empty_preconfigured_namespace_is_a_usage_error() -> None:
     with pytest.raises(AppError, match="required: source") as failure:
         cli_parser.validate_arguments(argparse.Namespace(source=[]))
     assert failure.value.code is ExitCode.USAGE
+    assert failure.value.message == "the following arguments are required: source"
 
 
 def test_non_descriptor_input_has_a_typed_request_error() -> None:
@@ -158,8 +159,9 @@ def test_unretired_monitor_does_not_prevent_descriptor_cleanup(
         def start(self) -> None:
             pass
 
-        def join(self, _timeout: float) -> None:
-            pass
+        @staticmethod
+        def join(_timeout: float) -> None:
+            assert _timeout == GRACE_SECONDS
 
         def is_alive(self) -> bool:
             return self.alive
@@ -172,7 +174,9 @@ def test_unretired_monitor_does_not_prevent_descriptor_cleanup(
     try:
         with os.fdopen(reader, "r") as stream:
             with (
-                pytest.raises(RuntimeError, match="did not stop"),
+                pytest.raises(
+                    RuntimeError, match=r"^request owner monitor did not stop$"
+                ),
                 request_owner.sources(stream),
             ):
                 pass
@@ -180,6 +184,10 @@ def test_unretired_monitor_does_not_prevent_descriptor_cleanup(
             assert os.fstat(reader)
     finally:
         os.close(writer)
+
+
+def test_absent_monitor_cleanup_does_not_attempt_a_join() -> None:
+    request_owner.__dict__["_join"](None)
 
 
 def test_folder_replacement_before_enumeration_is_refused(

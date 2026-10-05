@@ -87,3 +87,22 @@ def test_timestamp_restore_never_follows_links(
         ("program", (1_700_000_000, 1_700_000_000), not supports_no_follow),
     ]
     assert target.read_bytes() == b"preserved"
+
+
+def test_valid_bundle_metadata_includes_the_exact_read_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = plistlib.dumps({"EMLRuntimeMode": "bundled", "EMLArchitecture": "x86_64"})
+    path = tmp_path / "metadata.zip"
+    with zipfile.ZipFile(path, "w") as output:
+        output.writestr(macos_archive.APP + "/Contents/Info.plist", data)
+    monkeypatch.setattr(macos_archive, "MAX_BUNDLE_INFO", len(data))
+    with zipfile.ZipFile(path) as source:
+        assert macos_archive.__dict__["_archive_identity"](source) == (
+            "bundled",
+            "x86_64",
+        )
+        monkeypatch.setattr(macos_archive, "MAX_BUNDLE_INFO", len(data) - 1)
+        with pytest.raises(ReleaseQualificationError) as caught:
+            macos_archive.__dict__["_archive_identity"](source)
+    assert str(caught.value) == "Native bundle metadata exceeds its read budget"

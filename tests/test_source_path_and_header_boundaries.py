@@ -84,6 +84,10 @@ def test_unavailable_kernel_address_does_not_fall_back_to_path_spelling(
     ).items[0]
     assert item.error is not None
     assert item.error.code is ExitCode.INPUT_ERROR
+    assert (
+        item.error.message
+        == "source address is unavailable for automatic output naming"
+    )
     assert not list(output.iterdir())
 
 
