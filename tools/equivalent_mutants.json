@@ -1,6 +1,6 @@
 {
     "schema_version": 1,
-    "source_sha256": "94be1db9:40e0a6c8:2181acdd:d2eb004c:b5105526:f00e7c88:606cb326:05b50e10",
+    "source_sha256": "1b7f2ade:05ad5f27:6657d910:fae47bb2:e27dcd81:270c48e9:70fc7a04:ad6684e7",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.batch.x__run_item__mutmut_1",
@@ -351,20 +351,16 @@
             "rationale": "The fence regex captures one repeated delimiter character at least three times, so its first and second marker bytes are identical."
         },
         {
-            "mutant": "tools.changelog.x__section__mutmut_41",
-            "rationale": "A release heading with a present date capture always contains its required ten date characters, so the fallback expression is unreachable."
-        },
-        {
             "mutant": "tools.changelog.x__structure__mutmut_14",
             "rationale": "Every reference label undergoes the same deterministic normalization before equality comparison, so changing its internal join separator preserves duplicate detection."
         },
         {
             "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_metadata__mutmut_6",
-            "rationale": "Declared metadata field names are lowercase-normalized, making the explicit casefold sort key observationally identical."
+            "rationale": "This changes only the ordering of unsupported field names in a rejection diagnostic. The same complete unsupported-field set is rejected before metadata admission; the contract does not prescribe diagnostic field ordering."
         },
         {
             "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_metadata__mutmut_8",
-            "rationale": "Removing the explicit sort key preserves the only observable unsupported-field contents; rejection is covered independently of display ordering."
+            "rationale": "This changes only the ordering of unsupported field names in a rejection diagnostic. The same complete unsupported-field set is rejected before metadata admission; the contract does not prescribe diagnostic field ordering."
         },
         {
             "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1wheel_sources__mutmut_3",
@@ -467,7 +463,7 @@
             "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode the same committed metadata bytes."
         },
         {
-            "mutant": "tools.publish_release.x_main__mutmut_41",
+            "mutant": "tools.publish_release.x_main__mutmut_43",
             "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode the same committed changelog bytes."
         },
         {
