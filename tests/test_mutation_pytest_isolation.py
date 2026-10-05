@@ -104,7 +104,11 @@ class MutationPytestIsolationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             environment = os.environ.copy()
-            environment["PYTHONPATH"] = str(project)
+            environment["PYTHONPATH"] = os.pathsep.join((
+                str(project / "tests/mutation_child_bootstrap"),
+                str(project),
+            ))
+            environment["EML_MUTATION_CHILD_WORKSPACE"] = str(project)
             environment[mutation_pytest_isolation.TEMPORARY_ROOT_VARIABLE] = str(root)
             command = (
                 sys.executable,
@@ -118,11 +122,9 @@ class MutationPytestIsolationTests(unittest.TestCase):
                 str(suite),
             )
             for _session in range(3):
-                # The project root is the cwd so Mutmut's copied plugin finds its
-                # configuration when this runs inside a mutation workspace.
                 completed = subprocess.run(
                     command,
-                    cwd=project,
+                    cwd=suite,
                     env=environment,
                     check=False,
                     capture_output=True,

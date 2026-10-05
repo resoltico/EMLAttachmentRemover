@@ -182,7 +182,7 @@ def command_runner(
         if profile == MUTATION_PROFILE:
             updates[mutation_integrity.CHECKPOINT_VARIABLE] = str(checkpoint)
         context = (
-            mutation_integrity.guard(project_root / "mutants", checkpoint)
+            mutation_integrity.guard(project_root / "mutants", checkpoint, storage)
             if profile == MUTATION_PROFILE
             else nullcontext()
         )

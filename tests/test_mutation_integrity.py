@@ -83,7 +83,7 @@ def test_integrity_failure_preserves_the_primary_command_error(tmp_path: Path) -
     root, checkpoint = _workspace(tmp_path)
     primary = ValueError("primary campaign failure")
     with pytest.raises(ValueError, match="primary campaign failure") as caught:
-        with mutation_integrity.guard(root, checkpoint):
+        with mutation_integrity.guard(root, checkpoint, tmp_path / "fixtures"):
             raise primary
     assert caught.value is primary
     assert str(caught.value) == "primary campaign failure"
@@ -96,7 +96,7 @@ def test_a_successful_command_still_requires_an_unchanged_workspace(
     root, checkpoint = _workspace(tmp_path)
     mutation_integrity.capture(root, checkpoint)
     with pytest.raises(RuntimeError, match="source inputs changed"):
-        with mutation_integrity.guard(root, checkpoint):
+        with mutation_integrity.guard(root, checkpoint, tmp_path / "fixtures"):
             (root / "src/example.py").write_text("VALUE = 100\n")
 
 
@@ -107,3 +107,88 @@ def test_inventory_never_changes_the_execution_selector(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="unexpected artifacts"):
         mutation_integrity.capture(root, checkpoint)
     assert os.environ.get("MUTANT_UNDER_TEST") == selector
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX mutation fixture permission recovery"
+)
+def test_owned_directory_repair_leaves_links_and_external_permissions_untouched(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "fixtures"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    data = nested / "data"
+    data.write_bytes(b"owned fixture")
+    external = tmp_path / "external"
+    external.mkdir()
+    (root / "link").symlink_to(external, target_is_directory=True)
+    before = external.stat().st_mode
+    nested.chmod(0o000)
+    root.chmod(0o000)
+    try:
+        mutation_integrity.restore_test_directories(root)
+        assert root.stat().st_mode & 0o777 == 0o700
+        assert nested.stat().st_mode & 0o777 == 0o700
+        assert data.read_bytes() == b"owned fixture"
+        assert (root / "link").is_symlink()
+        assert external.stat().st_mode == before
+    finally:
+        root.chmod(0o700)
+        nested.chmod(0o700)
+
+
+@pytest.mark.parametrize("primary", [False, True])
+def test_fixture_repair_failure_does_not_replace_an_existing_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    primary: bool,
+) -> None:
+    root, checkpoint = _workspace(tmp_path)
+    failure = OSError("controlled fixture repair failure")
+
+    def refused(_root: Path) -> None:
+        raise failure
+
+    monkeypatch.setattr(mutation_integrity, "restore_test_directories", refused)
+    if primary:
+        error = ValueError("primary command error")
+        with pytest.raises(ValueError, match="primary command error") as caught:
+            with mutation_integrity.guard(root, checkpoint, tmp_path / "fixtures"):
+                raise error
+        assert caught.value is error
+        assert error.__notes__ == [
+            "mutation workspace integrity checkpoint is missing",
+            str(failure),
+        ]
+    else:
+        with pytest.raises(
+            RuntimeError, match="checkpoint is missing"
+        ) as integrity_failure:
+            with mutation_integrity.guard(root, checkpoint, tmp_path / "fixtures"):
+                pass
+        assert integrity_failure.value.__notes__ == [str(failure)]
+
+
+@pytest.mark.parametrize("primary", [False, True])
+def test_clean_source_guard_retires_owned_storage_and_preserves_a_primary_error(
+    tmp_path: Path,
+    *,
+    primary: bool,
+) -> None:
+    root, checkpoint = _workspace(tmp_path)
+    mutation_integrity.capture(root, checkpoint)
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    if primary:
+        error = ValueError("primary command failure")
+        with pytest.raises(ValueError, match="primary command failure") as caught:
+            with mutation_integrity.guard(root, checkpoint, fixtures):
+                raise error
+        assert caught.value is error
+        assert not getattr(error, "__notes__", [])
+    else:
+        with mutation_integrity.guard(root, checkpoint, fixtures):
+            pass
+    assert fixtures.is_dir()

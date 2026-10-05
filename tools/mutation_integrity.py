@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import stat
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Final
 
@@ -103,7 +104,7 @@ def verify(root: Path, checkpoint: Path) -> None:
 
 
 @contextmanager
-def guard(root: Path, checkpoint: Path) -> Generator[None]:
+def guard(root: Path, checkpoint: Path, fixture_root: Path) -> Generator[None]:
     """Check integrity in the parent, preserving a primary campaign failure.
 
     Yields:
@@ -117,6 +118,32 @@ def guard(root: Path, checkpoint: Path) -> Generator[None]:
             verify(root, checkpoint)
         except (OSError, ValueError, RuntimeError) as integrity_error:
             error.add_note(str(integrity_error))
+        try:
+            restore_test_directories(fixture_root)
+        except OSError as cleanup_error:
+            error.add_note(str(cleanup_error))
         raise
     else:
-        verify(root, checkpoint)
+        try:
+            verify(root, checkpoint)
+        except BaseException as error:
+            try:
+                restore_test_directories(fixture_root)
+            except OSError as cleanup_error:
+                error.add_note(str(cleanup_error))
+            raise
+        else:
+            restore_test_directories(fixture_root)
+
+
+def restore_test_directories(root: Path) -> None:
+    """Restore traversal in owned fixture directories without following links."""
+    try:
+        mode = root.lstat().st_mode
+    except FileNotFoundError:
+        return
+    if not stat.S_ISDIR(mode):
+        return
+    root.chmod(0o700, follow_symlinks=False)
+    for child in root.iterdir():
+        restore_test_directories(child)
