@@ -213,3 +213,20 @@ def test_direct_zipapp_build_preserves_directory_contract_and_file_datetime(
             info = archive.getinfo(name)
             assert archive.read(info) == b""
             assert info.external_attr >> 16 == 0o40755
+
+
+@pytest.mark.parametrize("editable", [False, True])
+def test_backend_wheel_hooks_build_software_only_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, editable: bool
+) -> None:
+    """Exercise hooks under their declared PEP 517 backend-path context."""
+    monkeypatch.chdir(ROOT)
+    monkeypatch.syspath_prepend(str(ROOT / "tools"))
+    build = build_backend.build_editable if editable else build_backend.build_wheel
+    filename = build(str(tmp_path), {}, str(tmp_path))
+    with zipfile.ZipFile(tmp_path / filename) as archive:
+        metadata = archive.read(
+            next(name for name in archive.namelist() if name.endswith("/METADATA"))
+        )
+        assert b"License-Expression: MPL-2.0\n" in metadata
+        assert not any(name.endswith((".svg", ".icns")) for name in archive.namelist())

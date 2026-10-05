@@ -9,6 +9,7 @@ import stat
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Final
 
+from . import native_windows_pipe
 from .domain import AppError, ExitCode
 
 if TYPE_CHECKING:
@@ -71,9 +72,7 @@ def open_pipe(original: int) -> Generator[ProgressPipe]:
     if original < MIN_DESCRIPTOR:
         raise AppError(ExitCode.USAGE, "progress descriptor must be a pipe above stdio")
     try:
-        if not stat.S_ISFIFO(os.fstat(original).st_mode):
-            raise AppError(ExitCode.USAGE, "progress descriptor must be a pipe")
-        blocking = os.get_blocking(original)
+        blocking = _pipe_blocking(original)
         descriptor = os.dup(original)
     except OSError as error:
         raise AppError(ExitCode.USAGE, "progress pipe is unavailable") from error
@@ -92,3 +91,20 @@ def open_pipe(original: int) -> Generator[ProgressPipe]:
             os.set_blocking(descriptor, blocking)
         finally:
             os.close(descriptor)
+
+
+def _pipe_blocking(original: int) -> bool:
+    """Validate a pipe's type and access before borrowing its flags.
+
+    Returns:
+        Its current blocking mode.
+
+    Raises:
+        AppError: If the descriptor cannot carry progress output.
+
+    """
+    if not stat.S_ISFIFO(os.fstat(original).st_mode):
+        raise AppError(ExitCode.USAGE, "progress descriptor must be a pipe")
+    if os.name == "nt" and not native_windows_pipe.has_write_access(original):
+        raise AppError(ExitCode.USAGE, "progress pipe must be writable")
+    return os.get_blocking(original)

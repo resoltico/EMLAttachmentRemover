@@ -258,7 +258,7 @@ class ArchiveContract:
         if source != wheel:
             message = "sdist PKG-INFO and wheel METADATA differ"
             raise DistributionArchiveError(message)
-        self.verify_metadata(BytesParser(policy=policy.default).parsebytes(wheel))
+        self.verify_metadata(parse_metadata(wheel))
 
     def verify_metadata(self, metadata: Message) -> None:
         """Require generated core metadata to match canonical project values.
@@ -334,3 +334,21 @@ class ArchiveContract:
             "Root-Is-Purelib: true\n"
             f"Tag: {self.wheel_tag}\n"
         )
+
+
+def parse_metadata(metadata: bytes) -> Message:
+    """Return parsed core metadata.
+
+    Returns:
+        The parsed generated metadata message.
+
+    Raises:
+        DistributionArchiveError: If the core metadata parser rejects the bytes.
+
+    """
+    try:
+        message: Message = BytesParser(policy=policy.default).parsebytes(metadata)
+    except (UnicodeError, ValueError) as error:
+        message_text = f"cannot parse generated core metadata: {error}"
+        raise DistributionArchiveError(message_text) from error
+    return message

@@ -14,6 +14,9 @@ from tools.build_zipapp import build_zipapp
 from tests.test_processing_launcher import RUNNER
 
 
+@pytest.mark.skipif(
+    os.name == "nt", reason="macOS launcher consumes POSIX path receipts"
+)
 @pytest.mark.parametrize(
     ("kind", "status"), [("default", 0), ("folder", 0), ("missing", 7), ("file", 7)]
 )

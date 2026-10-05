@@ -333,9 +333,9 @@ def _restore_times(
 ) -> None:
     """Restore file times, then directory times after writing their children."""
     for item in reversed(entries):
-        os.utime(
-            destination / item.filename, (timestamp, timestamp), follow_symlinks=False
-        )
+        path = destination / item.filename
+        follow = os.utime not in os.supports_follow_symlinks and not path.is_symlink()
+        os.utime(path, (timestamp, timestamp), follow_symlinks=follow)
 
 
 def _signature(app: Path, architecture: str) -> None:

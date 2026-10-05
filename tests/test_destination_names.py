@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import ntpath
 import os
-from pathlib import Path
+import posixpath
 
 import pytest
 
@@ -216,7 +217,11 @@ def test_output_directory_names_are_fitted_to_that_directory(
     tail = _tail(source)
     name = "s" * (60 - len(tail)) + tail
     fitted = destination_names.fitted_default_destination(source, "out/dir")
-    assert fitted == os.fspath(Path("out/dir") / name)
+    assert fitted == (
+        ntpath.join("out/dir", name)
+        if os.name == "nt"
+        else posixpath.join("out/dir", name)
+    )
     assert asked == ["out/dir"]
 
 

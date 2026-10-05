@@ -97,7 +97,7 @@ def test_actual_owner_eof_reaches_the_current_handler_or_bounded_exit(
         try:
             process.stdin.write(_frame("example.eml"))
             process.stdin.flush()
-            assert process.stdout.readline() == b"ready\n"
+            assert process.stdout.readline().rstrip(b"\r\n") == b"ready"
             process.stdin.close()
             process.stdin = None
             output, errors = process.communicate(timeout=5)
@@ -105,7 +105,7 @@ def test_actual_owner_eof_reaches_the_current_handler_or_bounded_exit(
             if mode == "delivery":
                 assert json.loads(output) == {"guard": 1, "owner": 1}
             elif mode == "processing":
-                assert output == b"SIGINT\n"
+                assert output.rstrip(b"\r\n") == b"SIGINT"
             else:
                 assert output == b""
         finally:
@@ -137,12 +137,12 @@ def test_trailing_data_cancels_without_waiting_for_owner_eof() -> None:
         try:
             process.stdin.write(_frame("example.eml"))
             process.stdin.flush()
-            assert process.stdout.readline() == b"ready\n"
+            assert process.stdout.readline().rstrip(b"\r\n") == b"ready"
             process.stdin.write(b"unexpected trailing input")
             process.stdin.flush()
             assert process.wait(timeout=5) == 130
             output, errors = process.communicate(timeout=2)
-            assert output == b"SIGINT\n", errors
+            assert output.rstrip(b"\r\n") == b"SIGINT", errors
         finally:
             if process.poll() is None:
                 process.kill()

@@ -6,6 +6,9 @@ import csv
 import hashlib
 import io
 import json
+import os
+import subprocess
+import sys
 import tarfile
 from contextlib import ExitStack
 from pathlib import Path
@@ -136,7 +139,7 @@ def test_private_runtime_links_must_stay_inside_relocated_tree(tmp_path: Path) -
     link.symlink_to("python")
     macos_runtime.require_links(root)
     link.unlink()
-    link.symlink_to("../external")
+    link.symlink_to(Path("..") / "external")
     (tmp_path / "external").write_bytes(b"outside")
     with pytest.raises(ValueError, match="escapes"):
         macos_runtime.require_links(root)
@@ -201,6 +204,9 @@ def test_runtime_bytecode_is_relocatable_and_independently_rebuilt(
     module = source / "install/lib/python3.14/example.py"
     module.parent.mkdir(parents=True)
     module.write_text("VALUE = 42\n")
+    stale = module.parent / "__pycache__" / "obsolete.cpython-314.pyc"
+    stale.parent.mkdir()
+    stale.write_bytes(b"obsolete bytecode")
     csv_source = Path(csv.__file__)
     (module.parent / "csv.py").write_bytes(csv_source.read_bytes())
     (source / "licenses").mkdir()
@@ -211,10 +217,11 @@ def test_runtime_bytecode_is_relocatable_and_independently_rebuilt(
     macos_runtime.copy_install(source, expected)
     caches = list(actual.rglob("*.pyc"))
     assert len(caches) == 2
+    assert not (actual / stale.relative_to(source / "install")).exists()
     caches = sorted(caches, key=lambda path: path.name, reverse=True)
     bytecode = caches[0].read_bytes()
     assert int.from_bytes(bytecode[4:8], "little") == 1
-    assert b"python3.14/example.py" in bytecode
+    assert os.fsencode(Path("python3.14") / "example.py") in bytecode
     assert str(tmp_path).encode() not in bytecode
     assert all(
         cache.read_bytes() == (expected / cache.relative_to(actual)).read_bytes()
@@ -225,3 +232,35 @@ def test_runtime_bytecode_is_relocatable_and_independently_rebuilt(
     caches[0].write_bytes(bytecode[:-1] + bytes([bytecode[-1] ^ 1]))
     with pytest.raises(ValueError, match="differs"):
         macos_runtime_archive.verify(actual, expected, "arm64")
+
+
+def test_runtime_preparation_rejects_an_unpinned_compiler(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    (source / "install").mkdir(parents=True)
+    (source / "licenses").mkdir()
+    (source / "PYTHON.json").write_text("{}")
+    (tmp_path / ".python-version").write_text("0.0.0")
+    monkeypatch.setattr(runtime_notices, "apply", lambda _root: None)
+    monkeypatch.setattr(macos_runtime_source, "ROOT", tmp_path)
+    with pytest.raises(ValueError, match="pinned CPython"):
+        macos_runtime.copy_install(source, tmp_path / "runtime")
+
+
+def test_runtime_source_command_routes_the_directory_and_has_cli_help(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[Path] = []
+    monkeypatch.setattr(macos_runtime_source, "cache", calls.append)
+    monkeypatch.setattr(sys, "argv", ["runtime-source", "--directory", str(tmp_path)])
+    assert macos_runtime_source.main() == 0
+    assert calls == [tmp_path]
+    help_result = subprocess.run(
+        [sys.executable, "-B", "-m", "tools.macos_runtime_source", "--help"],
+        check=True,
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    assert "--directory" in help_result.stdout

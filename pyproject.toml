@@ -53,6 +53,7 @@ dev = [
   "ruff==0.16.10",
   "shellcheck-py==0.11.0.1",
   "types-defusedxml==0.7.0.20260504",
+  "editables==0.6",
 ]
 
 [project.scripts]

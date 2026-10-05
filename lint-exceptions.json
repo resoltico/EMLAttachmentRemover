@@ -1074,14 +1074,6 @@
       "reason": "White-box regression test exercises the named internal contract; approval is limited to this declaration and source anchor."
     },
     {
-      "path": "tests/test_distribution_archives.py",
-      "scope": "WheelArchiveTests.test_wheel_without_entrypoints_and_metadata_parse_error_branches",
-      "anchor": "verifier._parse_metadata(b\"public\")",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "White-box regression test exercises the named internal contract; approval is limited to this declaration and source anchor."
-    },
-    {
       "path": "tests/test_windows_binding_roots_and_handle_lifetimes.py",
       "scope": "test_windows_binding_distinguishes_unc_slashes_and_drive_relative_parent_roots",
       "anchor": "assert native_windows_binding._parent(\"//server/share/mail.eml\") == (",

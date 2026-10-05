@@ -206,3 +206,19 @@ def _record_close(closed: list[int]) -> Callable[[int], None]:
         closed.append(descriptor)
 
     return close
+
+
+def test_windows_source_inspection_dispatches_one_metadata_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = (FileIdentity(1, 2, "regular", 3), None)
+    calls: list[str] = []
+
+    def inspect(value: str) -> tuple[FileIdentity, None]:
+        calls.append(value)
+        return expected
+
+    monkeypatch.setattr(native_binding.__dict__["os"], "name", "nt")
+    monkeypatch.setattr(native_binding.__dict__["_windows"], "inspect_source", inspect)
+    assert native_binding.inspect_source("C:\\Inbox\\message.eml") == expected
+    assert calls == ["C:\\Inbox\\message.eml"]

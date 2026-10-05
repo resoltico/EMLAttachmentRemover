@@ -9,14 +9,11 @@ import importlib
 import io
 import tarfile
 import zipfile
-from email import policy
-from email.parser import BytesParser
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final, Protocol, cast
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from email.message import Message
     from pathlib import Path
     from typing import IO
 
@@ -413,21 +410,6 @@ def _verify_wheel(archive_path: Path, contract: ArchiveContract) -> bytes:
     except (OSError, zipfile.BadZipFile) as error:
         message = f"cannot inspect wheel {archive_path}: {error}"
         raise DistributionArchiveError(message) from error
-
-
-def _parse_metadata(metadata: bytes) -> Message:
-    """Return parsed core metadata.
-
-    Returns:
-        The parsed generated metadata message.
-
-    """
-    try:
-        message: Message = BytesParser(policy=policy.compat32).parsebytes(metadata)
-    except (UnicodeError, ValueError) as error:
-        message_text = f"cannot parse generated core metadata: {error}"
-        raise DistributionArchiveError(message_text) from error
-    return message
 
 
 def verify_distribution_archives(

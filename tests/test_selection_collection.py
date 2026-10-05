@@ -157,3 +157,18 @@ def test_directory_replacement_during_scan_refuses_collected_entries(
     assert failure.value.code is ExitCode.INPUT_ERROR
     assert (retained / "message.eml").read_bytes() == b"original body"
     assert not (root / "message.mime-pruned.eml").exists()
+
+
+def test_explicit_request_path_bytes_are_bounded_before_folder_scanning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = str(tmp_path / "missing.eml")
+    monkeypatch.setattr(
+        selection_collection,
+        "MAX_CUMULATIVE_REQUEST_PATH_BYTES",
+        len(os.fsencode(source)) - 1,
+    )
+    with pytest.raises(AppError, match="request-size limit") as captured:
+        selection_collection.collect([source])
+    assert captured.value.code is ExitCode.USAGE
+    assert captured.value.phase == "selection"

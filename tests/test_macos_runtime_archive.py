@@ -33,6 +33,8 @@ def test_self_declared_runtime_changes_cannot_expand_source_approval(
     change: str,
 ) -> None:
     """Delivered declarations cannot replace the source-derived resource contract."""
+    if os.name == "nt" and change == "mode":
+        pytest.skip("Windows chmod cannot model POSIX execute-bit changes")
     expected = tmp_path / "expected"
     _tree(expected)
     actual = tmp_path / "actual"

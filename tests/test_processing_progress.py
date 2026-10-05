@@ -198,11 +198,12 @@ def test_regular_file_is_not_a_progress_channel(tmp_path: Path) -> None:
     target = tmp_path / "untouched"
     target.write_bytes(b"original")
     with target.open("rb") as stream:
-        before = os.get_blocking(stream.fileno())
+        before = os.get_blocking(stream.fileno()) if os.name != "nt" else None
         with ExitStack() as resources, pytest.raises(AppError) as failure:
             resources.enter_context(progress_transport.open_pipe(stream.fileno()))
         assert failure.value.code is ExitCode.USAGE
-        assert os.get_blocking(stream.fileno()) is before
+        if before is not None:
+            assert os.get_blocking(stream.fileno()) is before
     assert target.read_bytes() == b"original"
 
 

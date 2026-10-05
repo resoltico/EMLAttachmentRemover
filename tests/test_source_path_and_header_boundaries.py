@@ -14,8 +14,14 @@ import pytest
 
 from eml_attachment_remover import batch_inventory
 from eml_attachment_remover.batch import BatchOptions, execute
-from eml_attachment_remover.domain import ExitCode, ItemStatus
-from eml_attachment_remover.native_paths import inspect_source
+from eml_attachment_remover.domain import (
+    AppError,
+    BatchLedger,
+    ExitCode,
+    FileIdentity,
+    ItemStatus,
+)
+from eml_attachment_remover.native_paths import inspect_source, path_value
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory symlink spellings")
@@ -168,3 +174,15 @@ def test_missing_source_diagnostic_keeps_requested_directory(tmp_path: Path) -> 
     assert item.error is not None
     assert str(source) in item.error.message
     assert "b'missing.eml'" not in item.error.message
+
+
+def test_collision_inventory_keeps_an_already_terminal_outcome() -> None:
+    ledger = BatchLedger.from_requests([path_value("one"), path_value("two")])
+    first, second = ledger.items
+    error = AppError(ExitCode.INPUT_ERROR, "original failure")
+    first.finish(ItemStatus.FAILED, error)
+    identity = FileIdentity(1, 2, "regular", 3)
+    inventory = batch_inventory.Inventory({}, {identity: [first, second]}, {})
+    inventory.mark_collisions()
+    assert first.error == error
+    assert second.status is ItemStatus.FAILED

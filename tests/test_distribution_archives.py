@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Protocol
 from unittest.mock import MagicMock, patch
 
+from tools import distribution_archive_contract
 from tools import verify_distribution_archives as verifier
 
 from tests.distribution_archive_support import (
@@ -393,10 +394,12 @@ class WheelArchiveTests(unittest.TestCase):
         parser = MagicMock()
         parser.parsebytes.side_effect = ValueError("invalid metadata")
         with (
-            patch.object(verifier, "BytesParser", return_value=parser),
+            patch.object(
+                distribution_archive_contract, "BytesParser", return_value=parser
+            ),
             self.assertRaisesRegex(verifier.DistributionArchiveError, "cannot parse"),
         ):
-            verifier._parse_metadata(b"public")  # ruff: ignore[private-member-access]
+            distribution_archive_contract.parse_metadata(b"public")
 
 
 if __name__ == "__main__":

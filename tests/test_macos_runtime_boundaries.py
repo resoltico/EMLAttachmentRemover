@@ -338,7 +338,7 @@ def test_runtime_entrypoint_publishes_only_after_ordered_native_checks(
     )
     assert macos_runtime.main() == 0
     native = commands[0][2]
-    assert native.endswith("/Runtime/bin/python3.14")
+    assert Path(native).parts[-3:] == ("Runtime", "bin", "python3.14")
     assert commands == [
         ["/usr/bin/lipo", "-archs", native],
         ["/usr/bin/otool", "-l", native],

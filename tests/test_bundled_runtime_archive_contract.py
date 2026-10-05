@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import plistlib
 import shutil
 import stat
 from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
+import pytest
 from tools import build_timestamp, macos_runtime, macos_runtime_archive
 from tools import macos_archive as archive
 
@@ -16,9 +18,10 @@ from tests.test_macos_archive import bundle_fixture
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import pytest
 
-
+@pytest.mark.skipif(
+    os.name == "nt", reason="POSIX runtime link timestamps and permission modes"
+)
 def test_bundled_archive_preserves_verified_runtime_resources_and_internal_links(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
