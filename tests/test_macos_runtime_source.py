@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import tarfile
+import tempfile
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -385,3 +386,28 @@ def test_runtime_commands_reject_missing_or_unsupported_inputs_before_work(
         selected.main()
     assert caught.value.code == 2
     assert calls == []
+
+
+def test_runtime_staging_stays_on_the_destination_volume_and_cleans_up_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive, selected = runtime_archive_fixture(tmp_path)
+    target = tmp_path / "nested" / "runtime"
+    allocated: list[Path] = []
+    temporary_directory = tempfile.TemporaryDirectory
+
+    def staging(
+        *, prefix: str | None, **options: Path
+    ) -> tempfile.TemporaryDirectory[str]:
+        directory = options["dir"]
+        assert directory == target.parent
+        allocated.append(directory)
+        return temporary_directory(prefix=prefix, dir=directory)
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", staging)
+    monkeypatch.setattr(macos_runtime_source, "pin", lambda _cpu: selected)
+    with pytest.raises(ValueError, match=r"^runtime has no native executable code$"):
+        macos_runtime.prepare(target, "arm64", archive)
+    assert allocated == [target.parent]
+    assert not target.exists()
+    assert list(target.parent.iterdir()) == []
