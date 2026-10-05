@@ -94,3 +94,32 @@ def test_supplemental_texts_match_the_reviewed_upstream_notices() -> None:
             ).hexdigest()
             == digest
         )
+
+
+@pytest.mark.parametrize("name", ["other/required.txt", "licenses/../required.txt"])
+def test_existing_notices_cannot_escape_the_declared_license_directory(
+    tmp_path: Path,
+    name: str,
+) -> None:
+    (tmp_path / "licenses").mkdir()
+    notice = tmp_path / name
+    notice.parent.mkdir(parents=True, exist_ok=True)
+    notice.write_bytes(b"present but outside the declared license directory")
+    (tmp_path / "PYTHON.json").write_text(
+        json.dumps({
+            "nested": {"extensions": [{"license_path": name}]},
+        })
+    )
+    with pytest.raises(ValueError, match="declared license notice") as caught:
+        runtime_notices.apply(tmp_path)
+    assert (
+        str(caught.value)
+        == "runtime is missing a safe, nonempty declared license notice"
+    )
+
+
+def test_notice_references_are_collected_through_dictionary_and_list_children() -> None:
+    assert runtime_notices.references({
+        "nested": {"license_path": "licenses/dictionary.txt"},
+        "extensions": [{"license_paths": ["licenses/list.txt"]}],
+    }) == {"licenses/dictionary.txt", "licenses/list.txt"}

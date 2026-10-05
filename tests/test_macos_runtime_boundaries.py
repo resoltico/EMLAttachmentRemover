@@ -311,7 +311,12 @@ def test_runtime_entrypoint_publishes_only_after_ordered_native_checks(
 ) -> None:
     """Portable command controls supplement the actual macOS signing integration."""
     native_archive, selected = native_command_archive_fixture(tmp_path, architecture)
-    monkeypatch.setattr(macos_runtime_source, "pin", lambda _cpu: selected)
+
+    def selected_pin(cpu: str) -> macos_runtime_source.RuntimePin:
+        assert cpu == architecture
+        return selected
+
+    monkeypatch.setattr(macos_runtime_source, "pin", selected_pin)
     commands: list[list[str]] = []
 
     def command(args: list[str], **kwargs: object) -> str:
@@ -325,7 +330,7 @@ def test_runtime_entrypoint_publishes_only_after_ordered_native_checks(
         return ""
 
     monkeypatch.setattr(subprocess, "check_output", command)
-    target = tmp_path / "prepared"
+    target = tmp_path / "nested" / "prepared"
     monkeypatch.setattr(
         sys,
         "argv",

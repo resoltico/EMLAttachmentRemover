@@ -128,6 +128,17 @@ def test_linker_version_is_not_confused_with_deployment_target() -> None:
         "version 99999.0",
     ])
     macos_runtime.require_deployment(["cmd LC_VERSION_MIN_MACOSX", "version 10.15"])
+    macos_runtime.require_deployment([
+        "cmd LC_BUILD_VERSION",
+        "platform 1",
+        "minos 14.0.0",
+    ])
+    with pytest.raises(ValueError, match="unsupported"):
+        macos_runtime.require_deployment([
+            "cmd LC_BUILD_VERSION",
+            "platform 1",
+            "minos 14.0.1",
+        ])
 
 
 def test_private_runtime_links_must_stay_inside_relocated_tree(tmp_path: Path) -> None:
@@ -143,6 +154,12 @@ def test_private_runtime_links_must_stay_inside_relocated_tree(tmp_path: Path) -
     (tmp_path / "external").write_bytes(b"outside")
     with pytest.raises(ValueError, match="escapes"):
         macos_runtime.require_links(root)
+    link.unlink()
+    link.symlink_to("missing")
+    with pytest.raises(FileNotFoundError, match="missing"):
+        macos_runtime.require_links(root)
+    with pytest.raises(FileNotFoundError, match="absent-runtime"):
+        macos_runtime.require_links(tmp_path / "absent-runtime")
 
 
 @pytest.mark.parametrize("consumer", ["build", "verification"])

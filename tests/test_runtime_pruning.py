@@ -61,6 +61,7 @@ def test_nonprocessing_components_are_removed_without_touching_processing_files(
     assert all(not (tmp_path / name).exists() for name in removed)
     assert all((tmp_path / name).read_bytes() == name.encode() for name in retained)
     assert (tmp_path / "bin/python3").readlink().as_posix() == "python3.14"
+    assert not (tmp_path / "share").exists()
 
 
 def test_pruning_a_component_link_does_not_delete_its_target(tmp_path: Path) -> None:
@@ -96,3 +97,20 @@ def test_embedding_library_is_removed_only_for_an_explicit_static_interpreter(
     )
     prune(tmp_path)
     assert library.exists() is not removed
+
+
+@pytest.mark.parametrize("metadata", [[], {}, {"python_config_vars": []}])
+def test_unknown_embedding_configuration_preserves_the_library(
+    tmp_path: Path,
+    metadata: object,
+) -> None:
+    library = tmp_path / "lib/libpython3.14.dylib"
+    library.parent.mkdir()
+    library.write_bytes(b"retained library")
+    (tmp_path / "PYTHON.json").write_text(json.dumps(metadata))
+    share = tmp_path / "share"
+    share.mkdir()
+    (share / "retained.txt").write_bytes(b"retained document")
+    prune(tmp_path)
+    assert library.read_bytes() == b"retained library"
+    assert (share / "retained.txt").read_bytes() == b"retained document"

@@ -263,3 +263,57 @@ def test_orphaned_directive_cannot_create_an_approval(tmp_path: Path) -> None:
         pytest.raises(ValueError, match="no identifiable source statement"),
     ):
         lint.python_directives(source)
+
+
+@pytest.mark.parametrize(
+    ("code", "anchor"),
+    [
+        ("value = [\n 1,\n]", "value = [1]"),
+        ("value = {\n 'a': 1,\n}", "value = {'a': 1}"),
+        ("if (\n True\n):", "if True:\n    pass"),
+        ("if [\n True\n]:", "if [True]:\n    pass"),
+        ("if {\n 1: 2\n}:", "if {1: 2}:\n    pass"),
+    ],
+)
+def test_each_closing_delimiter_binds_the_complete_owning_statement(
+    tmp_path: Path,
+    code: str,
+    anchor: str,
+) -> None:
+    source = tmp_path / "example.py"
+    source.write_text(
+        code
+        + " # ruff: ignore[private-member-access]\n"
+        + (" pass\n" if code.startswith("if ") else "")
+    )
+    with patch.object(lint, "ROOT", tmp_path):
+        assert lint.python_directives(source)[0]["anchor"] == anchor
+
+
+@pytest.mark.parametrize("declaration", ["def", "async def"])
+def test_standalone_approval_identifies_a_decorated_declaration_header(
+    tmp_path: Path,
+    declaration: str,
+) -> None:
+    source = tmp_path / "example.py"
+    source.write_text(
+        "# ruff: ignore[private-member-access]\n@decorate\n"
+        + declaration
+        + " boundary():\n pass\n"
+    )
+    with patch.object(lint, "ROOT", tmp_path):
+        assert (
+            lint.python_directives(source)[0]["anchor"] == declaration + " boundary():"
+        )
+
+
+def test_nested_call_approval_does_not_bind_its_containing_function(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "example.py"
+    source.write_text(
+        "def boundary():\n if True:\n  call(\n   1\n"
+        "  ) # ruff: ignore[private-member-access]\n"
+    )
+    with patch.object(lint, "ROOT", tmp_path):
+        assert lint.python_directives(source)[0]["anchor"] == "call(1)"
