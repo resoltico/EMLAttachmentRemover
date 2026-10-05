@@ -69,6 +69,28 @@ def test_active_uses_the_ambient_marker_by_default(
     )
 
 
+def test_policy_context_is_nested_restored_and_does_not_mask_the_selector(
+    active_workspace: tuple[Path, Path],
+) -> None:
+    _project, root = active_workspace
+    selector = os.environ.get(mutmut_workspace.MARKER)
+    ambient = mutmut_workspace.active(root)
+    with mutmut_workspace.policy_marker("stats"):
+        assert mutmut_workspace.active(root)
+        with mutmut_workspace.policy_marker("not-a-mutmut-marker"):
+            assert not mutmut_workspace.active(root)
+            assert mutmut_workspace.active(root, marker="stats")
+        assert mutmut_workspace.active(root)
+        assert os.environ.get(mutmut_workspace.MARKER) == selector
+    assert mutmut_workspace.active(root) == ambient
+    message = "controlled scope failure"
+    with pytest.raises(ValueError, match="controlled scope failure"):
+        with mutmut_workspace.policy_marker("stats"):
+            raise ValueError(message)
+    assert mutmut_workspace.active(root) == ambient
+    assert os.environ.get(mutmut_workspace.MARKER) == selector
+
+
 def test_active_requires_marker_canonical_name_and_regular_project_file(
     active_workspace: tuple[Path, Path],
 ) -> None:

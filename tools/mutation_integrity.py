@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Final
 
@@ -42,15 +41,8 @@ def _inventory(root: Path) -> dict[str, list[int]]:
         RuntimeError: If the generated workspace contains unapproved artifacts.
 
     """
-    previous = os.environ.get(mutmut_workspace.MARKER)
-    os.environ[mutmut_workspace.MARKER] = "stats"
-    try:
+    with mutmut_workspace.policy_marker("stats"):
         audited = check_repository_hygiene.audit_repository(root)
-    finally:
-        if previous is None:
-            os.environ.pop(mutmut_workspace.MARKER)
-        else:
-            os.environ[mutmut_workspace.MARKER] = previous
     if audited.issues:
         details = [
             f"{issue.path.relative_to(root).as_posix()}: {issue.message}"
