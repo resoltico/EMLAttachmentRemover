@@ -203,7 +203,7 @@ class TaskCommandContractTests(unittest.TestCase):
                     f"--junitxml={storage.parent / 'test-results.xml'}",
                 ),
                 profile="project-development",
-                timeout_seconds=tasks.DEVELOPMENT_TEST_TIMEOUT_SECONDS,
+                timeout_seconds=600,
                 environment_updates={
                     tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE: str(storage),
                 },
@@ -324,7 +324,7 @@ class TaskCommandContractTests(unittest.TestCase):
                         f"--junitxml={storage.parent / 'test-results.xml'}",
                     ),
                     profile="project-ci",
-                    timeout_seconds=600,
+                    timeout_seconds=1800,
                     environment_updates={
                         **coverage_environment,
                         tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE: str(

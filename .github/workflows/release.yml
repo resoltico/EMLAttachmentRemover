@@ -16,7 +16,7 @@ jobs:
   qualify:
     name: Qualify ${{ matrix.os }} / CPython ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
     env:

@@ -288,6 +288,11 @@ def test_check_rejects_bare_cr_without_implicit_normalization(checkout: Path) ->
     assert cli.main(["--check"]) == 1
 
 
+def test_check_accepts_an_undated_candidate(checkout: Path) -> None:
+    (checkout / "CHANGELOG.md").write_text(CHANGELOG.replace(" - 2026-09-20", ""))
+    assert cli.main(["--check"]) == 0
+
+
 def test_check_uses_the_canonical_changelog_case(
     checkout: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

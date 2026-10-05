@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import plistlib
 import stat
 import zipfile
@@ -59,3 +60,30 @@ def test_runtime_link_requires_its_trusted_literal_target(
         )
     assert (runtime / "alias").readlink().as_posix() == "program"
     assert (runtime / "program").read_bytes() == b"original runtime resource"
+
+
+@pytest.mark.parametrize("supports_no_follow", [False, True])
+def test_timestamp_restore_never_follows_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, supports_no_follow: bool
+) -> None:
+    target = tmp_path / "program"
+    target.write_bytes(b"preserved")
+    (tmp_path / "alias").symlink_to("program")
+    calls: list[tuple[str, tuple[int, int], bool]] = []
+
+    def stamp(path: Path, times: tuple[int, int], *, follow_symlinks: bool) -> None:
+        assert type(follow_symlinks) is bool
+        calls.append((path.name, times, follow_symlinks))
+
+    monkeypatch.setattr(os, "utime", stamp)
+    monkeypatch.setattr(
+        os, "supports_follow_symlinks", {stamp} if supports_no_follow else set()
+    )
+    macos_archive.__dict__["_restore_times"](
+        tmp_path, [zipfile.ZipInfo("program"), zipfile.ZipInfo("alias")], 1_700_000_000
+    )
+    assert calls == [
+        ("alias", (1_700_000_000, 1_700_000_000), False),
+        ("program", (1_700_000_000, 1_700_000_000), not supports_no_follow),
+    ]
+    assert target.read_bytes() == b"preserved"

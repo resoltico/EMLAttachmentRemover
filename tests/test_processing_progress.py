@@ -202,6 +202,7 @@ def test_regular_file_is_not_a_progress_channel(tmp_path: Path) -> None:
         with ExitStack() as resources, pytest.raises(AppError) as failure:
             resources.enter_context(progress_transport.open_pipe(stream.fileno()))
         assert failure.value.code is ExitCode.USAGE
+        assert failure.value.message == "progress descriptor must be a pipe"
         if before is not None:
             assert os.get_blocking(stream.fileno()) is before
     assert target.read_bytes() == b"original"
@@ -309,13 +310,23 @@ def test_denied_native_progress_access_preserves_descriptor_flags(
     try:
         before = os.get_blocking(writer)
         monkeypatch.setattr(progress_transport.__dict__["os"], "name", "nt")
+
+        def denied(descriptor: int) -> bool:
+            assert descriptor == writer
+            return False
+
         monkeypatch.setattr(
             progress_transport.__dict__["native_windows_pipe"],
             "has_write_access",
-            lambda _fd: False,
+            denied,
         )
-        with ExitStack() as scope, pytest.raises(AppError, match="must be writable"):
+        with (
+            ExitStack() as scope,
+            pytest.raises(AppError, match="must be writable") as caught,
+        ):
             scope.enter_context(progress_transport.open_pipe(writer))
+        assert caught.value.code is ExitCode.USAGE
+        assert caught.value.message == "progress pipe must be writable"
         assert os.get_blocking(writer) is before
     finally:
         os.close(reader)

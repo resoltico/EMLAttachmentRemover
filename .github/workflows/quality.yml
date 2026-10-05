@@ -18,7 +18,7 @@ jobs:
   quality:
     name: ${{ matrix.os }} / CPython ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       PYTHONDEVMODE: "1"
       PYTHONDONTWRITEBYTECODE: "1"

@@ -6,6 +6,16 @@ import argparse
 import math
 
 
+def test_timeout(profile: str | None) -> int:
+    """Allow full qualification on slower hosts while bounding development runs.
+
+    Returns:
+        The test-process allowance in seconds for the selected profile.
+
+    """
+    return 1_800 if profile in {"project-ci", "project-thorough"} else 600
+
+
 def positive_timeout(value: str) -> float:
     """Parse a positive task timeout.
 

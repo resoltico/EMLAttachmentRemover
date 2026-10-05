@@ -225,6 +225,9 @@ def test_backend_wheel_hooks_build_software_only_metadata(
     build = build_backend.build_editable if editable else build_backend.build_wheel
     filename = build(str(tmp_path), {}, str(tmp_path))
     with zipfile.ZipFile(tmp_path / filename) as archive:
+        assert (
+            any(name.startswith("_editable") for name in archive.namelist()) is editable
+        )
         metadata = archive.read(
             next(name for name in archive.namelist() if name.endswith("/METADATA"))
         )
