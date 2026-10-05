@@ -112,8 +112,13 @@ def test_native_deployment_controls_reject_wrong_os_newer_os_and_missing_command
     lines: list[str],
 ) -> None:
     """CPU identity alone cannot establish minimum-OS compatibility."""
-    with pytest.raises(ValueError, match="runtime binary"):
+    with pytest.raises(ValueError, match="runtime binary") as caught:
         macos_runtime.require_deployment(lines)
+    assert str(caught.value) == (
+        "runtime binary does not target macOS"
+        if "platform 2" in lines
+        else "runtime binary minimum macOS version is unavailable or unsupported"
+    )
 
 
 def test_linker_version_is_not_confused_with_deployment_target() -> None:
@@ -152,7 +157,9 @@ def test_private_runtime_links_must_stay_inside_relocated_tree(tmp_path: Path) -
     link.unlink()
     link.symlink_to(Path("..") / "external")
     (tmp_path / "external").write_bytes(b"outside")
-    with pytest.raises(ValueError, match="escapes"):
+    with pytest.raises(
+        ValueError, match=r"^runtime symbolic link escapes its private installation$"
+    ):
         macos_runtime.require_links(root)
     link.unlink()
     link.symlink_to("missing")
@@ -322,7 +329,10 @@ def test_runtime_preparation_rejects_an_unpinned_compiler(
     (tmp_path / ".python-version").write_text("0.0.0")
     monkeypatch.setattr(runtime_notices, "apply", lambda _root: None)
     monkeypatch.setattr(macos_runtime_source, "ROOT", tmp_path)
-    with pytest.raises(ValueError, match="pinned CPython"):
+    with pytest.raises(
+        ValueError,
+        match=r"^runtime bytecode requires the pinned CPython build interpreter$",
+    ):
         macos_runtime.copy_install(source, tmp_path / "runtime")
 
 

@@ -71,7 +71,7 @@ def test_a_declared_notice_must_be_an_ordinary_nonempty_file(
     "value", [{"license_path": False}, {"license_paths": [1]}, {"license_paths": "x"}]
 )
 def test_malformed_reference_fields_are_refused(value: object) -> None:
-    with pytest.raises(ValueError, match="invalid runtime license reference"):
+    with pytest.raises(ValueError, match=r"^invalid runtime license references$"):
         runtime_notices.references(value)
 
 

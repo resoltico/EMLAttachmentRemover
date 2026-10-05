@@ -45,6 +45,7 @@ def test_empty_folders_and_missing_explicit_files_have_distinct_outcomes(
     with pytest.raises(AppError, match="no EML files") as failure:
         selection_collection.collect([str(tmp_path)])
     assert failure.value.code is ExitCode.USAGE
+    assert failure.value.message == "selection contains no EML files"
     missing = tmp_path / "missing.eml"
     assert selection_collection.collect([str(missing)]) == [str(missing)]
 
@@ -61,6 +62,7 @@ def test_directory_links_do_not_create_traversal_loops(tmp_path: Path) -> None:
     with pytest.raises(AppError, match="directory links") as failure:
         selection_collection.collect([str(link)])
     assert failure.value.code is ExitCode.INPUT_ERROR
+    assert failure.value.message == "directory links are not collected"
 
 
 def test_explicit_file_aliases_reach_backend_collision_validation(
@@ -126,6 +128,7 @@ def test_unreadable_enumeration_never_returns_a_partial_selection(
     with pytest.raises(AppError, match="enumerate selected folder") as failure:
         selection_collection.collect([str(tmp_path)])
     assert failure.value.code is ExitCode.INPUT_ERROR
+    assert failure.value.message == "could not enumerate selected folder"
     assert source.read_bytes() == b"first"
     assert not source.with_suffix(".mime-pruned.eml").exists()
 
@@ -155,6 +158,7 @@ def test_directory_replacement_during_scan_refuses_collected_entries(
     with pytest.raises(AppError, match="changed during collection") as failure:
         selection_collection.collect([str(root)])
     assert failure.value.code is ExitCode.INPUT_ERROR
+    assert failure.value.message == "selected folder changed during collection"
     assert (retained / "message.eml").read_bytes() == b"original body"
     assert not (root / "message.mime-pruned.eml").exists()
 

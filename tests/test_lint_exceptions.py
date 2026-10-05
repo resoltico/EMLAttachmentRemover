@@ -249,7 +249,7 @@ def test_file_wide_inline_policy_cannot_bypass_central_configuration(
     with (
         patch.object(lint, "ROOT", tmp_path),
         pytest.raises(
-            ValueError, match=r"File-wide Ruff policies belong in pyproject\.toml"
+            ValueError, match=r"^File-wide Ruff policies belong in pyproject\.toml$"
         ),
     ):
         lint.python_directives(source)
@@ -260,7 +260,9 @@ def test_orphaned_directive_cannot_create_an_approval(tmp_path: Path) -> None:
     source.write_text("# ruff: ignore[private-member-access]\n")
     with (
         patch.object(lint, "ROOT", tmp_path),
-        pytest.raises(ValueError, match="no identifiable source statement"),
+        pytest.raises(
+            ValueError, match=r"^Suppression has no identifiable source statement$"
+        ),
     ):
         lint.python_directives(source)
 

@@ -43,7 +43,9 @@ def test_runtime_pin_rejects_unapproved_source_urls(
         f'[arm64]\nurl={json.dumps(url)}\nsha256="digest"\nsize=1\ntarget="target"\n'
     )
     monkeypatch.setattr(macos_runtime_source, "CONFIG", config)
-    with pytest.raises(ValueError, match="HTTPS upstream"):
+    with pytest.raises(
+        ValueError, match=r"^runtime source must be an HTTPS upstream GitHub release$"
+    ):
         macos_runtime_source.pin("arm64")
 
 
@@ -54,7 +56,7 @@ def test_runtime_pin_requires_complete_typed_fields(
     config = tmp_path / "runtime-source.toml"
     config.write_text("[arm64]\nsize=true\n")
     monkeypatch.setattr(macos_runtime_source, "CONFIG", config)
-    with pytest.raises(ValueError, match="invalid runtime archive pin"):
+    with pytest.raises(ValueError, match=r"^invalid runtime archive pin$"):
         macos_runtime_source.pin("arm64")
 
 
@@ -133,7 +135,7 @@ def test_runtime_preparation_requires_a_fresh_destination(tmp_path: Path) -> Non
     target.mkdir()
     sentinel = target / "keep"
     sentinel.write_bytes(b"existing")
-    with pytest.raises(ValueError, match="fresh private"):
+    with pytest.raises(ValueError, match=r"^use a fresh private runtime destination$"):
         macos_runtime.prepare(target, "arm64")
     assert sentinel.read_bytes() == b"existing"
 
@@ -144,11 +146,13 @@ def test_empty_or_wrong_cpu_native_code_is_not_approved(
     """Native identity requires code and the selected CPU, beyond ordinary resources."""
     root = tmp_path / "Runtime"
     root.mkdir()
-    with pytest.raises(ValueError, match="no native executable"):
+    with pytest.raises(ValueError, match=r"^runtime has no native executable code$"):
         macos_runtime.require_native(root, "arm64")
     (root / "program").write_bytes(b"\xcf\xfa\xed\xfe" + b"fake-code")
     monkeypatch.setattr(macos_runtime, "_command", lambda _args: "x86_64")
-    with pytest.raises(ValueError, match="architecture differs"):
+    with pytest.raises(
+        ValueError, match=r"^runtime binary architecture differs from selected CPU$"
+    ):
         macos_runtime.require_native(root, "arm64")
 
 
@@ -209,7 +213,7 @@ def test_fresh_download_reference_and_incomplete_native_runtime_refusal(
             reference / "licenses/LICENSE.cpython.txt"
         ).read_bytes() == b"original notice"
     target = tmp_path / "Runtime"
-    with pytest.raises(ValueError, match="no native executable"):
+    with pytest.raises(ValueError, match=r"^runtime has no native executable code$"):
         macos_runtime.prepare(target, "arm64", archive if explicit else None)
     assert not target.exists()
     assert not list(tmp_path.glob(".eml-runtime-build-*"))
@@ -238,7 +242,9 @@ def test_signature_tool_without_a_full_code_hash_cannot_approve_identity(
         "run",
         lambda args, **_kw: subprocess.CompletedProcess(args, 0, "", ""),
     )
-    with pytest.raises(ValueError, match="code identity is unavailable"):
+    with pytest.raises(
+        ValueError, match=r"^runtime native code identity is unavailable$"
+    ):
         macos_runtime_archive.__dict__["_code_hash"](source, tmp_path / "comparison")
 
 
@@ -435,5 +441,5 @@ def test_complete_runtime_pin_refuses_wrong_field_types_and_nonpositive_size(
         + "\n".join(f"{key}={json.dumps(item)}" for key, item in values.items())
     )
     monkeypatch.setattr(macos_runtime_source, "CONFIG", configuration)
-    with pytest.raises(ValueError, match="invalid runtime archive pin"):
+    with pytest.raises(ValueError, match=r"^invalid runtime archive pin$"):
         macos_runtime_source.pin("arm64")
