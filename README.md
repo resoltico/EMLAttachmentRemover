@@ -14,9 +14,9 @@ Everything else is kept or rejected. In particular, filenames, media types,
 position are never used as weaker evidence that content is disposable. Originals are
 never modified.
 
-For a prebuilt native macOS application, download the Apple Silicon (`arm64`) or Intel (`x86_64`) ZIP matching your Mac from the GitHub Release. Both editions require macOS 14 or later. The primary app includes CPython; the smaller `-external-python.zip` edition requires your own CPython 3.14. Neither requires a Swift compiler; see the [first-launch and Gatekeeper setup steps](integrations/macos-ui/README.md#first-launch-and-macos-approval) and [release pipeline](integrations/macos-ui/RELEASE.md).
+For a prebuilt native macOS application, download the Apple Silicon (`arm64`) or Intel (`x86_64`) ZIP matching your Mac from the [v4.0.0 release](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v4.0.0). Both editions require macOS 14 or later. The primary app includes CPython; the smaller `-external-python.zip` edition requires your own CPython 3.14. Neither requires a Swift compiler; see the [first-launch and Gatekeeper setup steps](integrations/macos-ui/README.md#first-launch-and-macos-approval) and [release pipeline](integrations/macos-ui/RELEASE.md).
 
-Automatically named copies sent to `--output-dir` include a stable digest of the kernel-resolved source address, so equal basenames from different folders receive distinct names and subset reruns keep the same destinations. Explicit `--output` names and copies beside originals keep their existing naming behavior. Source aliases and residual collisions remain refused.
+Automatically named copies sent to `--output-dir` include a stable digest of the kernel-resolved source address, so ordinary same-basename inputs from different folders receive distinct names and subset reruns keep the same destinations. Different spellings resolving to the same address share a name; hard links at different addresses and source renames can still produce different names. Explicit `--output` names and copies beside originals keep their existing naming behavior. Source aliases and residual collisions remain refused.
 
 ## Rendering boundary
 
@@ -47,9 +47,9 @@ When that derived name would exceed the destination directory's filename limit (
 bytes on most POSIX filesystems, 255 UTF-16 units on Windows), only the derived name
 is shortened: a readable prefix of the source name, a stable 16-hex digest of the
 complete source name, and the usual suffix, for example
-`long-subject-line-c15a952383e18790.mime-pruned.eml`. The digest keeps the name the
-same on every run, so `--existing=verify` finds it again, and keeps different long
-names apart. An explicit `--output` name is never altered.
+`long-subject-line-c15a952383e18790.mime-pruned.eml`. The digest keeps the name stable for reruns, so `--existing=verify` can find it again, and helps distinguish long names; residual collisions are refused. An explicit `--output` name is never altered.
+
+Filename arguments are literal: the tool does not expand `~`. Let your shell expand home-directory shorthand before invocation or supply an absolute path; quoted `'~/message.eml'` names a literal `~` directory.
 
 The tool preserves kernel path traversal semantics. For example, a path containing a
 symlink and `..` opens the object selected by the kernel, not a lexically normalized
@@ -67,7 +67,7 @@ Publication uses a named staging file, `.eml-remove-<32 hexadecimal characters>.
 
 Each source file is limited to 128 MiB of raw bytes. This is an input-size limit, not a peak-RAM guarantee: parsing and verification can hold several representations concurrently. Batch processing is limited to 4,096 requests and 4 MiB of cumulative native path bytes; OS command-line limits can be lower. The native app transfers the selection through a bounded pipe instead of processor arguments, and supports the same 4,096-input limit. Finder/Shortcuts commands and other command-line callers can still hit OS limits before the app receives a selection. Framed selections outside the request limits are refused before processing.
 
-Publication requires a filesystem that supports the backend’s exclusive atomic publication primitive. If a destination volume does not support it, the command refuses publication rather than exposing a partial copy. For example, macOS exFAT can refuse exclusive rename. An explicitly unsupported atomic operation (POSIX `ENOTSUP`/`EOPNOTSUPP` or Windows `STATUS_NOT_SUPPORTED`) is reported as `ATOMIC_PUBLICATION_UNSUPPORTED` (single-input process status 11; mixed batches retain status 9). Ambiguous failures such as Linux `EPERM` remain `WRITE_ERROR`/7 because they can also indicate permissions; check destination permissions and filesystem support. Use `--output-dir` to write on a compatible local volume while reading the original from the other volume; the source remains unchanged. In the app, copy the EML files to a writable local folder and process those copies. Network and FUSE support depends on the specific filesystem and server and has not been universally qualified.
+Publication requires a filesystem that supports the backend’s exclusive atomic publication primitive. If a destination volume does not support it, the command refuses publication rather than exposing a partial copy. For example, macOS exFAT can refuse exclusive rename. An explicitly unsupported atomic operation (POSIX `ENOTSUP`/`EOPNOTSUPP` or Windows `STATUS_NOT_SUPPORTED`) is reported as `ATOMIC_PUBLICATION_UNSUPPORTED` (single-input process status 11; mixed batches retain status 9). Ambiguous failures such as Linux `EPERM` remain `WRITE_ERROR`/7 because they can also indicate permissions; check destination permissions and filesystem support. Use `--output-dir` to write on a compatible local volume while reading the original from the other volume; the source remains unchanged. In the app, use Save copies to → Choose folder to select a compatible writable destination; the source files stay in place. Network and FUSE support depends on the specific filesystem and server and has not been universally qualified.
 
 ### Destination and existing policy
 
