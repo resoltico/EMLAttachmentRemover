@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import call, patch
 
-from tools import tasks
+from tools import mutation_integrity, tasks
 
 from tests.mutmut_environment_support import selector_preserving_environment
 
@@ -111,6 +111,7 @@ class TaskRunnerTests(unittest.TestCase):
                     ),
                 ),
                 patch.object(tasks, "_run") as run,
+                patch.object(mutation_integrity, "verify"),
             ):
                 tasks._test("project-development")
                 tasks._test("project-thorough")

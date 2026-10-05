@@ -98,3 +98,14 @@ def test_a_successful_command_still_requires_an_unchanged_workspace(
     with pytest.raises(RuntimeError, match="source inputs changed"):
         with mutation_integrity.guard(root, checkpoint):
             (root / "src/example.py").write_text("VALUE = 100\n")
+
+
+def test_inventory_restores_the_caller_marker_after_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, checkpoint = _workspace(tmp_path)
+    monkeypatch.setenv("MUTANT_UNDER_TEST", "caller-marker")
+    (root / "None").write_bytes(b"unexpected output")
+    with pytest.raises(RuntimeError, match="unexpected artifacts"):
+        mutation_integrity.capture(root, checkpoint)
+    assert os.environ["MUTANT_UNDER_TEST"] == "caller-marker"
