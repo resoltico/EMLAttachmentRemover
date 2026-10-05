@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Never
 import pytest
 from mutmut.mutation.trampoline import get_mutant_under_test
 from mutmut.state import state as mutation_state
-from tools import finalize_hypothesis_artifacts, tasks
+from tools import finalize_hypothesis_artifacts, mutation_integrity, tasks
 
 import eml_attachment_remover
 from tests import hypothesis_config as _hypothesis_config
@@ -54,11 +54,16 @@ def _mutated_child_imports(
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
     _child_journal_root: Path,
+    tmp_path: Path,
 ) -> None:
     selector = get_mutant_under_test()
     source = Path(eml_attachment_remover.__file__).resolve().parents[1]
     workspace = source.parent
     if workspace.name == "mutants" and (workspace / "pyproject.toml").is_file():
+        monkeypatch.chdir(tmp_path)
+        checkpoint = os.environ.get(mutation_integrity.CHECKPOINT_VARIABLE)
+        if selector == "stats" and checkpoint is not None:
+            mutation_integrity.capture(workspace, Path(checkpoint))
         bootstrap = workspace / "tests" / "mutation_child_bootstrap"
         monkeypatch.setenv(
             "PYTHONPATH", os.pathsep.join((str(bootstrap), str(source), str(workspace)))

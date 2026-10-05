@@ -326,6 +326,7 @@ def _mutation(*, workers: int | None = None, preflight: bool = True) -> None:
             storage,
             hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE,
             OBSERVABILITY_VARIABLES,
+            PROJECT_ROOT,
         )
 
         mutation_task.run_mutation(

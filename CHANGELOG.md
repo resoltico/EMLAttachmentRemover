@@ -57,7 +57,7 @@ Notable changes to this project are documented in this file. The format is based
 
 ### Internal
 
-- Native receipt, path and progress handling share coverage-guided libFuzzer qualification with AddressSanitizer, raw/structured inputs and deliberate failure controls. Python MIME qualification includes bounded byte mutations and seed splices alongside structured properties; model checks also exercise production optimization.
+- Native receipt, path and progress handling share coverage-guided libFuzzer qualification with AddressSanitizer, raw/structured inputs and deliberate failure controls. Python MIME qualification includes bounded byte mutations and seed splices alongside structured properties; model checks also exercise production optimization. Mutation qualification isolates test working directories and rejects campaigns with changed source inputs or unexpected workspace artifacts.
 - Python and Swift formatting, lint, size and complexity checks use centralized policies and scoped exception approvals. Ambiguous Python directives bind to their owning statement or declaration, and inline file-wide Ruff overrides are rejected.
 - `uv run python tools/tasks.py ci` runs host-applicable quality, release-build, mutation and property checks with standard and free-threaded CPython; macOS mutation campaigns require Docker. Release qualification also checks Windows and separate minimum-OS/Intel/macOS consumers in GitHub CI. Publication requires main-branch ancestry, the complete checksummed asset set, independent build comparisons, archive verification and provenance attestations. Pinned runtime archives are cached and reauthenticated; build products remain fresh. See [QA](QA.md) and the [release contract](integrations/macos-ui/RELEASE.md).
 

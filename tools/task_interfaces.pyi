@@ -73,6 +73,7 @@ class MutationTaskModule(Protocol):
         storage: Path,
         storage_variable: str,
         observability: Sequence[str],
+        project_root: Path,
     ) -> Callable[..., None]: ...
     def show_mutant(
         self,

@@ -178,7 +178,7 @@ class MutationPytestIsolationTests(unittest.TestCase):
             self.assertIsNone(mutation_pytest_isolation._workspace_import_root(root))  # ruff: ignore[private-member-access] - incomplete workspace contract.
 
     def _assert_generated_workspace_hook_is_loaded(self) -> None:
-        current = Path.cwd()
+        current = Path(mutation_pytest_isolation.__file__).resolve().parents[1]
         candidate = current / "mutants"
         workspace = (
             candidate
