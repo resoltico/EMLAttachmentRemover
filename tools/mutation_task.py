@@ -40,7 +40,9 @@ else:
 
 UTF8: Final = "utf-8"
 MUTATION_PROFILE: Final = "project-mutation"
-MUTATION_TIMEOUT_SECONDS: Final = 7_200
+# The full hosted campaign exceeds two hours; retain time for evidence capture
+# inside the workflow's three-hour job limit.
+MUTATION_TIMEOUT_SECONDS: Final = 9_600
 EVIDENCE_TIMEOUT_SECONDS: Final = 120
 FAILURE_GROUP_MESSAGE: Final = "mutation gate failed"
 MUTATION_MAX_WORKERS: Final = 8

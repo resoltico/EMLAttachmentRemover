@@ -120,6 +120,31 @@ def test_nonblocking_request_waits_for_real_delayed_input() -> None:
     assert not worker.is_alive()
 
 
+def test_request_eof_is_rejected_after_one_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An exhausted pipe must fail immediately rather than repeatedly polling EOF."""
+    reader, writer = os.pipe()
+    os.close(writer)
+    original_read = os.read
+    reads = 0
+
+    def read(descriptor: int, size: int) -> bytes:
+        nonlocal reads
+        reads += 1
+        assert reads == 1, "EOF was read again instead of being rejected"
+        return original_read(descriptor, size)
+
+    monkeypatch.setattr(os, "read", read)
+    try:
+        with pytest.raises(
+            AppError, match="request pipe ended before a complete frame"
+        ):
+            request_transport.read(reader)
+    finally:
+        os.close(reader)
+
+
 def test_monitor_read_failure_requests_one_bounded_interruption(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

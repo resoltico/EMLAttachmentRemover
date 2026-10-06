@@ -1,6 +1,6 @@
 {
     "schema_version": 1,
-    "source_sha256": "1b7f2ade:05ad5f27:6657d910:fae47bb2:e27dcd81:270c48e9:70fc7a04:ad6684e7",
+    "source_sha256": "e53599d5:b2592fd6:d3ff15b1:b2bfee7e:7689ea3e:173a9760:84a76d15:2e1c3579",
     "equivalents": [
         {
             "mutant": "eml_attachment_remover.batch.x__run_item__mutmut_1",
@@ -11,12 +11,24 @@
             "rationale": "Inventory handles automatic output-directory naming in its separate source-address branch. This fallback reaches fitted_default_destination only with output_dir=None, so replacing that argument with None preserves every supported destination."
         },
         {
+            "mutant": "eml_attachment_remover.batch_progress.x\u01c1BatchProgress\u01c1notify__mutmut_6",
+            "rationale": "After an observer fails, neither None nor the empty string can invoke that observer again. The latter raises a caught TypeError on later notifications, with no callback invocation or change to completed counts or authoritative batch outcomes."
+        },
+        {
             "mutant": "eml_attachment_remover.cancellation_owner.x\u01c1CancellationOwner\u01c1_reset__mutmut_3",
             "rationale": "Each production cancellation owner is acquired and retired once. After successful reset its token is never observed again; replacing the final cleared sentinel cannot alter context restoration or subsequent API calls, which allocate a fresh owner."
         },
         {
-            "mutant": "eml_attachment_remover.cli.x__cancelled__mutmut_21",
-            "rationale": "The zero-progress error-delivery branch is reached after an exception escapes the initial JSON error handler and the outer resource scope has unwound. Its replacement response runs inside the containing interruption handler; this branch has no later run-state consumer, so using a fresh response state changes no output or exit result."
+            "mutant": "eml_attachment_remover.cli.x__application_error__mutmut_6",
+            "rationale": "The selected OutputIntent is always passed to _json_error here. That truthy intent supplies the mode and source tuple, so the raw-argument fallback is never evaluated; replacing only the unused raw argument with None cannot change the response."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__cancelled__mutmut_12",
+            "rationale": "Production cancellation state retains the selected OutputIntent before any error response begins. This branch passes that truthy intent to _json_error, which does not inspect its raw-argument fallback; None and the empty list therefore produce the same retained-source interruption document."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__cancelled__mutmut_33",
+            "rationale": "Production cancellation state retains the selected OutputIntent before any error response begins. This branch passes that truthy intent to _json_error, which does not inspect its raw-argument fallback; None and the empty list therefore produce the same retained-source interruption document."
         },
         {
             "mutant": "eml_attachment_remover.cli.x__dispatch__mutmut_18",
@@ -25,6 +37,10 @@
         {
             "mutant": "eml_attachment_remover.cli.x__guarded__mutmut_11",
             "rationale": "The run state always supplies captured inferred or parsed intent. The raw argument parameter is therefore not inspected by application-error handling."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__guarded__mutmut_23",
+            "rationale": "This branch explicitly retains the SIGINT name in CancellationSignal. The cancellation response records that name in its error and ledger; its numeric field only seeds a delivery-guard request whose count controls grace and status. Substituting None for this already-named seed changes neither rendered signal identity nor the request count, deadline or exit status."
         },
         {
             "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_1",
@@ -45,6 +61,10 @@
         {
             "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_31",
             "rationale": "The guard always contains a request before result selection: inherited requests or the explicit seed. A retired guard with requests selects 130 independently of the supplied fallback status."
+        },
+        {
+            "mutant": "eml_attachment_remover.cli.x__json_error__mutmut_44",
+            "rationale": "The interrupted signal name has already been recorded in the ledger. This synthetic guard seed is skipped by the late-signal index and is used only through the guard request count for grace, escalation and status; its numeric value is not read or forwarded to the invocation owner."
         },
         {
             "mutant": "eml_attachment_remover.cli_intent.x\u01c1OutputIntent\u01c1inferred__mutmut_12",
@@ -163,6 +183,10 @@
             "rationale": "Python codec lookup is case-insensitive, so the uppercase codec spelling produces identical encoding and decoding."
         },
         {
+            "mutant": "eml_attachment_remover.report_budget.x_terminal_size__mutmut_5",
+            "rationale": "This function returns only the serialized byte count of a copied worst-case record. The JSON tokens true and null both occupy four ASCII bytes; the copied terminalized value is not otherwise consumed or retained, so the reservation size is unchanged."
+        },
+        {
             "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_13",
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
         },
@@ -179,8 +203,32 @@
             "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
         },
         {
+            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_10",
+            "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_11",
+            "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_12",
+            "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_17",
+            "rationale": "A BlockingIOError without characters_written means no bytes were accepted. Both the zero and None fallback enter the same sleep-and-retry branch without stamping progress or advancing the offset."
+        },
+        {
             "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_35",
             "rationale": "Zero and None progress have already continued before this guard. For the remaining integer counts, <0, <=0 and <1 reject exactly the same negative values."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_36",
+            "rationale": "The preceding branch handles None and zero without reaching this comparison. For the remaining integer write counts, accepted < 0 and accepted < 1 reject the same negative counts and accept the same positive counts."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_6",
+            "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
         },
         {
             "mutant": "eml_attachment_remover.report_document.x_write_json__mutmut_20",
@@ -189,6 +237,42 @@
         {
             "mutant": "eml_attachment_remover.report_document.x_write_json__mutmut_7",
             "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_25",
+            "rationale": "The retained report_spool_failed flag is consumed only by truth testing when selecting the record source. False and None both select the direct retained ledger; this flag is not emitted in the report document."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_29",
+            "rationale": "The retained primary spool is None and report_spool_failed is False. Rendering therefore uses only retained ledger items and never reads the emergency spool; leaving that unused owner reference in the copied ledger does not access it or alter the response."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_42",
+            "rationale": "CPython codec lookup treats utf-8 and UTF-8 as the same codec. Changing only the fallback spelling cannot alter the emergency channel bytes or decoded text."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_51",
+            "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_54",
+            "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_61",
+            "rationale": "CPython codec lookup treats ascii and ASCII as the same codec, so JSON and paths0 retain identical byte-channel encoding."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_66",
+            "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_69",
+            "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_79",
+            "rationale": "CPython codec lookup treats utf-8 and UTF-8 as the same codec. Changing only the fallback spelling cannot alter the emergency channel bytes or decoded text."
         },
         {
             "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_28",
@@ -233,6 +317,10 @@
         {
             "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_15",
             "rationale": "json.dumps defaults ensure_ascii to True, so omitting its explicit True argument preserves canonical ASCII output."
+        },
+        {
+            "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_11",
+            "rationale": "json.dumps defaults ensure_ascii to True. Omitting the explicit True preserves the canonical escaped JSON bytes for every value."
         },
         {
             "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_9",
@@ -309,6 +397,10 @@
         {
             "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_21",
             "rationale": "After the except path has closed the literal descriptor it always re-raises, so this reassignment is never read and every sentinel value is indistinguishable."
+        },
+        {
+            "mutant": "eml_attachment_remover.staged_receipt.x_read_final_receipt__mutmut_123",
+            "rationale": "After descriptor closure, the local descriptor is used only by the final nonnegative check. Both -1 and -2 skip a second close; neither sentinel is returned or published."
         },
         {
             "mutant": "tools.build_backend.x__build__mutmut_29",

@@ -8888,6 +8888,38 @@
       "tool": "ruff",
       "rules": "blind-except",
       "reason": "An advisory observer can fail without changing authoritative processing outcomes; memory exhaustion and process-control signals propagate."
+    },
+    {
+      "path": "tests/test_cli_cancellation_recovery.py",
+      "scope": "test_repeated_startup_cancellation_never_delivers_a_second_json_document",
+      "anchor": "state = cli._RunState(",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "Exercise retained CLI cancellation state directly to verify that recovery never delivers a second document or reuses a processing report."
+    },
+    {
+      "path": "tests/test_cli_cancellation_recovery.py",
+      "scope": "test_repeated_startup_cancellation_never_delivers_a_second_json_document",
+      "anchor": "assert cli._cancelled(state, CancellationSignal(2, \"SIGINT\")) == 130",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "Exercise retained CLI cancellation state directly to verify that recovery never delivers a second document or reuses a processing report."
+    },
+    {
+      "path": "tests/test_cli_cancellation_recovery.py",
+      "scope": "test_cancellation_after_reported_interruption_is_quiet_and_successfully_returns",
+      "anchor": "state = cli._RunState(session=session)",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "Exercise retained CLI cancellation state directly to verify that recovery never delivers a second document or reuses a processing report."
+    },
+    {
+      "path": "tests/test_cli_cancellation_recovery.py",
+      "scope": "test_cancellation_after_reported_interruption_is_quiet_and_successfully_returns",
+      "anchor": "assert cli._cancelled(state, CancellationSignal(2, \"SIGINT\")) == 130",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "Exercise retained CLI cancellation state directly to verify that recovery never delivers a second document or reuses a processing report."
     }
   ],
   "swift_exceptions": []
