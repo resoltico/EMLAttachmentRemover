@@ -249,7 +249,12 @@ def test_request_read_failure_keeps_typed_diagnostic(
     monkeypatch: pytest.MonkeyPatch,
     failure: bytes | OSError,
 ) -> None:
+    reads = 0
+
     def read(descriptor: int, size: int) -> bytes:
+        nonlocal reads
+        reads += 1
+        assert reads == 1, "a failed request read was repeated"
         assert descriptor == 199
         assert size == 4
         if isinstance(failure, OSError):
@@ -260,6 +265,7 @@ def test_request_read_failure_keeps_typed_diagnostic(
     with pytest.raises(AppError) as caught:
         request_transport.read(199)
     assert caught.value.code is ExitCode.USAGE
+    assert reads == 1
     assert caught.value.message == (
         "could not read request pipe"
         if isinstance(failure, OSError)

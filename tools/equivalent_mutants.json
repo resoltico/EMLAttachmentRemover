@@ -43,10 +43,6 @@
             "rationale": "This branch explicitly retains the SIGINT name in CancellationSignal. The cancellation response records that name in its error and ledger; its numeric field only seeds a delivery-guard request whose count controls grace and status. Substituting None for this already-named seed changes neither rendered signal identity nor the request count, deadline or exit status."
         },
         {
-            "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_1",
-            "rationale": "This already-started notice branch runs only inside _finish_interruption. A conversion failure is contained there and returns the identical status 130 without attempting another notice."
-        },
-        {
             "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_14",
             "rationale": "Python codec lookup is case-insensitive, so the uppercase codec spelling produces identical encoding and decoding."
         },

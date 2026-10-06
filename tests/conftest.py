@@ -21,6 +21,7 @@ from tools import finalize_hypothesis_artifacts, mutation_integrity, tasks
 import eml_attachment_remover
 from tests import hypothesis_config as _hypothesis_config
 from tests.deadline_support import finite_operation
+from tests.mutation_statistics_support import capture_workspace
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -73,7 +74,7 @@ def _mutated_child_imports(
         monkeypatch.chdir(working)
         checkpoint = os.environ.get(mutation_integrity.CHECKPOINT_VARIABLE)
         if selector == "stats" and checkpoint is not None:
-            mutation_integrity.capture(workspace, Path(checkpoint))
+            capture_workspace(workspace, Path(checkpoint))
         bootstrap = workspace / "tests" / "mutation_child_bootstrap"
         monkeypatch.setenv(
             "PYTHONPATH", os.pathsep.join((str(bootstrap), str(source), str(workspace)))

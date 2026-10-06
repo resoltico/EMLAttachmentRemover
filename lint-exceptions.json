@@ -8920,6 +8920,14 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "Exercise retained CLI cancellation state directly to verify that recovery never delivers a second document or reuses a processing report."
+    },
+    {
+      "path": "tests/mutation_statistics_support.py",
+      "scope": "capture_workspace",
+      "anchor": "calls = mutation_state()._stats",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "The pinned Mutmut call set separates mandatory workspace safety setup from actual test coverage without discarding prior measured calls."
     }
   ],
   "swift_exceptions": []
