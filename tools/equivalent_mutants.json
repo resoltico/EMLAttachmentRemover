@@ -27,10 +27,6 @@
             "rationale": "The run state always supplies captured inferred or parsed intent. The raw argument parameter is therefore not inspected by application-error handling."
         },
         {
-            "mutant": "eml_attachment_remover.cli.x__guarded__mutmut_23",
-            "rationale": "The synthesized KeyboardInterrupt request keeps the SIGINT name. Its number is used only to seed an already-accounted delivery request; output names, request counts, grace timing and status 130 are unchanged."
-        },
-        {
             "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_1",
             "rationale": "This already-started notice branch runs only inside _finish_interruption. A conversion failure is contained there and returns the identical status 130 without attempting another notice."
         },
@@ -649,6 +645,30 @@
         {
             "mutant": "tools.mutation_integrity.x__inventory__mutmut_17",
             "rationale": "The repository audit refuses symbolic public sources before inventory. Inventory runs in clean statistics or after workers retire, so admitted ordinary files have the same stat identity with either follow-symlinks flag."
+        },
+        {
+            "mutant": "tools.mutation_integrity.x_capture__mutmut_10",
+            "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 write identical checkpoint bytes."
+        },
+        {
+            "mutant": "tools.mutation_integrity.x_capture__mutmut_15",
+            "rationale": "Checkpoint verification loads JSON and compares dictionary identities and fingerprint lists, independently of object-key order. Omitting key sorting changes neither the sealed source inventory nor detection of source changes."
+        },
+        {
+            "mutant": "tools.mutation_integrity.x_capture__mutmut_18",
+            "rationale": "Checkpoint verification loads JSON and compares dictionary identities and fingerprint lists, independently of object-key order. Omitting key sorting changes neither the sealed source inventory nor detection of source changes."
+        },
+        {
+            "mutant": "tools.mutation_integrity.x_capture__mutmut_19",
+            "rationale": "Checkpoint verification loads JSON and compares dictionary identities and fingerprint lists, independently of object-key order. Omitting key sorting changes neither the sealed source inventory nor detection of source changes."
+        },
+        {
+            "mutant": "tools.mutation_integrity.x_capture__mutmut_4",
+            "rationale": "The checkpoint is private ASCII JSON because json.dump escapes non-ASCII path names. Default UTF-8 encoding on the qualifying Linux runtime and explicit UTF-8 write the same checkpoint bytes."
+        },
+        {
+            "mutant": "tools.mutation_integrity.x_capture__mutmut_6",
+            "rationale": "The checkpoint is private ASCII JSON because json.dump escapes non-ASCII path names. Default UTF-8 encoding on the qualifying Linux runtime and explicit UTF-8 write the same checkpoint bytes."
         },
         {
             "mutant": "tools.mutation_integrity.x_restore_test_directories__mutmut_5",
