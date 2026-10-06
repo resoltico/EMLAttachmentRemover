@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import cast
 
 from tools.changelog import VERSION, extract_release, require
+from tools.check_release_tag import require_release_source
 from tools.github_release_api import COMMIT, GitHubAPI, run
 from tools.release_delivery import verify as verify_release_directory
 from tools.release_publication import Artifact, Release, publish_release, record
@@ -38,7 +39,7 @@ def _git(*arguments: str) -> str:
 
 
 def _context() -> tuple[str, str, str]:
-    """Validate the exact clean tag-push event context.
+    """Validate a clean tag-push checkout and its ancestry on main.
 
     Returns:
         Repository, tag, and tagged commit SHA.
@@ -53,13 +54,11 @@ def _context() -> tuple[str, str, str]:
         condition=os.environ.get("GITHUB_REF_TYPE") == "tag",
     )
     repository = os.environ.get("GITHUB_REPOSITORY", "")
-    tag = os.environ.get("GITHUB_REF_NAME")
-    commit = os.environ.get("GITHUB_SHA")
+    tag = os.environ.get("GITHUB_REF_NAME", "")
+    commit = os.environ.get("GITHUB_SHA", "")
     require(
         "Invalid tag",
-        condition=isinstance(tag, str)
-        and tag.startswith("v")
-        and VERSION.fullmatch(tag[1:]) is not None,
+        condition=tag.startswith("v") and VERSION.fullmatch(tag[1:]) is not None,
     )
     require("Invalid repository", condition=bool(repository))
     require(
@@ -68,7 +67,7 @@ def _context() -> tuple[str, str, str]:
     )
     require(
         "Invalid event commit",
-        condition=isinstance(commit, str) and COMMIT.fullmatch(commit) is not None,
+        condition=COMMIT.fullmatch(commit) is not None,
     )
     require(
         "Checkout/event commit mismatch",
@@ -78,7 +77,8 @@ def _context() -> tuple[str, str, str]:
         "Tracked files changed",
         condition=not _git("status", "--porcelain", "--untracked-files=no"),
     )
-    return repository, cast("str", tag), cast("str", commit)
+    require_release_source(commit, _git)
+    return repository, tag, commit
 
 
 def _publish(directory: Path) -> str:
@@ -112,7 +112,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             sys.stdout.write(
                 extract_release(
-                    (ROOT / "CHANGELOG.md").read_bytes().decode("utf-8"), version
+                    (ROOT / "CHANGELOG.md").read_bytes().decode("utf-8"),
+                    version,
+                    require_date=False,
                 )
             )
         else:

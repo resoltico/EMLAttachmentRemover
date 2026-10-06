@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Final
 
 WORKFLOWS: Final = Path(__file__).resolve().parents[1] / ".github" / "workflows"
-ARTIFACT_NAME: Final = re.compile(r"^ +name: (.+)$", re.MULTILINE)
+ARTIFACT_NAME: Final = re.compile(r"^          name: (.+)$", re.MULTILINE)
 
 
 def _text(name: str) -> str:
@@ -28,13 +28,16 @@ def test_only_pull_request_exploration_is_cancelled_when_superseded() -> None:
 
 
 def test_diagnostic_artifact_names_are_unique_per_run_attempt() -> None:
-    names = [
-        name
+    steps = [
+        step
         for path in sorted(WORKFLOWS.glob("*.yml"))
-        for name in ARTIFACT_NAME.findall(path.read_text(encoding="utf-8"))
-        if "github.run_id" in name
+        for step in re.split(r"(?m)^      - ", path.read_text(encoding="utf-8"))
+        if "uses: actions/upload-artifact@" in step
     ]
-    assert len(names) == 7
+    names_per_step = [ARTIFACT_NAME.findall(step) for step in steps]
+    assert all(len(found) == 1 for found in names_per_step)
+    names = [found[0] for found in names_per_step]
+    assert names
     assert len(set(names)) == len(names)
     assert all(
         name.endswith("-${{ github.run_id }}-${{ github.run_attempt }}")
@@ -57,6 +60,23 @@ def test_release_qualification_keeps_its_quality_reports() -> None:
     assert "      - fuzz\n" in build
     assert "    uses: ./.github/workflows/swift-fuzz.yml\n" in release
     assert "  workflow_call:\n" in _text("swift-fuzz.yml")
+
+
+def test_publication_waits_for_the_tagged_archives_on_supported_macos() -> None:
+    release = _text("release.yml")
+    compatibility = release[
+        release.index("  compatibility:") : release.index("  publish:")
+    ]
+    publish = release[release.index("  publish:") :]
+    assert "    needs: build\n" in compatibility
+    assert "os: [macos-14, macos-15-intel, xcode-27]" in compatibility
+    assert (
+        "name: release-dist-${{ github.run_id }}-${{ github.run_attempt }}"
+        in compatibility
+    )
+    assert "-m tools.release_delivery --verify-directory release-dist" in compatibility
+    assert "EML_DELIVERY_DIRECTORY: release-dist" in compatibility
+    assert "      - compatibility\n" in publish
 
 
 def test_mutation_workers_are_benchmarkable_but_default_to_the_host_policy() -> None:

@@ -28,6 +28,17 @@ STATUSES: Final = (
 )
 
 
+def test_every_private_interpreter_invocation_is_isolated_and_cache_free() -> None:
+    """All launcher helpers preserve sealed runtimes by disabling bytecode writes."""
+    commands = [
+        line.strip()
+        for line in RUNNER.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith('"$PYTHON" ')
+    ]
+    assert len(commands) == 5
+    assert all(command.startswith('"$PYTHON" -I -B ') for command in commands)
+
+
 def _path(
     display: str, text: str | None = None, native: str | None = None
 ) -> dict[str, str | None]:
@@ -186,7 +197,10 @@ def test_missing_selected_runtime_never_uses_available_discovery(
     assert result.returncode == 9
     assert b"selected CPython 3.14 runtime is missing" in result.stderr
     assert not marker.exists()
-    assert not result.stdout
+    assert json.loads(result.stdout) == {
+        "launcher_error": "python_unavailable",
+        "process_status": 9,
+    }
 
 
 def test_finder_launcher_fails_closed_for_summary_exit_and_schema_drift(

@@ -1,4 +1,3 @@
-# ruff: file-ignore[private-member-access]
 """Close defensive standard-library builder boundaries in smoke fixtures."""
 
 from __future__ import annotations

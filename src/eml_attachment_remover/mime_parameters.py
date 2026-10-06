@@ -177,6 +177,8 @@ def structured_parameters(
 
     """
     segments: dict[bytes, dict[int | None, _Segment]] = {}
+    if pieces and not pieces[-1].strip():
+        pieces = pieces[:-1]
     for piece in pieces:
         name, index, segment = _parameter_piece(piece)
         _store_segment(segments, name, index, segment)

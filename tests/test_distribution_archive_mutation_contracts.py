@@ -47,6 +47,26 @@ class GeneratedMemberBoundaryTests(unittest.TestCase):
 class ArchiveDelegationContractTests(unittest.TestCase):
     """Require safety-relevant arguments at archive helper boundaries."""
 
+    def test_downloaded_source_member_uses_its_archive_datetime(self) -> None:
+        member = tarfile.TarInfo("public-1.0/source.py")
+        member.mtime = 1_600_000_000
+        member.mode = 0o644
+        files: dict[str, tarfile.TarInfo] = {}
+        verifier._add_tar_member(  # ruff: ignore[private-member-access] - consumer must use the archive datetime rather than the current process clock.
+            member, MagicMock(source_root="public-1.0"), files, set(), 1_600_000_000
+        )
+        self.assertEqual(files, {"source.py": member})
+
+    def test_downloaded_wheel_member_uses_its_archive_datetime(self) -> None:
+        member = zipfile.ZipInfo("public/source.py", (2020, 9, 13, 12, 26, 40))
+        member.create_system = 3
+        member.external_attr = 0o100644 << 16
+        files: dict[str, zipfile.ZipInfo] = {}
+        verifier._add_zip_member(  # ruff: ignore[private-member-access] - consumer must use the archive datetime rather than the current process clock.
+            member, {"public"}, files, set(), (2020, 9, 13, 12, 26, 40)
+        )
+        self.assertEqual(files, {"public/source.py": member})
+
     def test_regular_tar_member_is_validated_as_a_file(self) -> None:
         member = tarfile.TarInfo("public-1.0/source.py")
         member.mtime = verifier.reproducibility.SOURCE_TIMESTAMP
@@ -147,6 +167,7 @@ class ArchiveDelegationContractTests(unittest.TestCase):
             _contract: object,
             files: dict[str, tarfile.TarInfo],
             _directories: set[str],
+            _timestamp: int,
         ) -> None:
             files["PKG-INFO"] = member
 
@@ -174,6 +195,15 @@ class ArchiveDelegationContractTests(unittest.TestCase):
             check_directories.call_args.args,
             ("source-archive", set(), {"PKG-INFO"}),
         )
+
+    def test_empty_source_is_refused_as_a_missing_surface(self) -> None:
+        archive = MagicMock()
+        archive.getmembers.return_value = []
+        contract = MagicMock(public_sources={})
+        with self.assertRaises(verifier.DistributionArchiveError):
+            verifier._inspect_source_archive(  # ruff: ignore[private-member-access] - empty untrusted archive must reach the typed surface rejection.
+                archive, contract
+            )
 
 
 class WheelRecordContractTests(unittest.TestCase):
@@ -337,6 +367,7 @@ class WheelRootContractTests(unittest.TestCase):
             roots: set[str],
             files: dict[str, zipfile.ZipInfo],
             _directories: set[str],
+            _timestamp: tuple[int, ...],
         ) -> None:
             observed_roots.append(roots.copy())
             files[member.filename] = member
@@ -365,6 +396,19 @@ class WheelRootContractTests(unittest.TestCase):
         )
         self.assertEqual(require_exact_set.call_args.args[0], "wheel")
         self.assertEqual(check_directories.call_args.args[0], "wheel")
+
+    def test_empty_wheel_is_refused_as_a_missing_surface(self) -> None:
+        archive = MagicMock()
+        archive.infolist.return_value = []
+        contract = MagicMock()
+        contract.wheel_sources.return_value = {}
+        contract.wheel_generated_files.return_value = frozenset({"METADATA"})
+        for members in ([], [zipfile.ZipInfo("public/METADATA")]):
+            archive.infolist.return_value = members
+            with self.assertRaises(verifier.DistributionArchiveError):
+                verifier._inspect_wheel(  # ruff: ignore[private-member-access] - undersized untrusted archives must reach typed rejection.
+                    archive, contract
+                )
 
 
 def _record_hash(content: bytes) -> str:

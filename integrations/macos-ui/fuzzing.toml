@@ -4,3 +4,7 @@ runs = 100000
 max_length = 65536
 timeout_seconds = 10
 rss_limit_mb = 2048
+total_seconds = 300
+compile_seconds = 300
+replay_seconds = 60
+shutdown_seconds = 30

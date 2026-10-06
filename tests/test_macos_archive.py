@@ -7,19 +7,32 @@ import plistlib
 import stat
 import struct
 import subprocess
+import tomllib
 import zipfile
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
+from tools import build_timestamp, macos_runtime_archive
 from tools import macos_archive as archive
 from tools.release_files import ReleaseQualificationError
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Never
 
 
-def _bundle(root: Path) -> Path:
+@pytest.fixture
+def refuse_bundled_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    """External-Python archives must not acquire a bundled runtime reference."""
+
+    def refuse(_architecture: str) -> Never:
+        pytest.fail("External-Python archive requested a bundled runtime reference")
+
+    monkeypatch.setattr(macos_runtime_archive, "reference", refuse)
+
+
+def bundle_fixture(root: Path) -> Path:
     app = root / "input.app"
     for name in archive.APP_FILES:
         path = app / name
@@ -28,17 +41,32 @@ def _bundle(root: Path) -> Path:
     (app / "Contents/Info.plist").write_bytes(
         plistlib.dumps({
             "CFBundleShortVersionString": "4.0.0",
-            "CFBundleVersion": "4.0.0",
+            "CFBundleExecutable": "EMLAttachmentRemover",
+            "CFBundleVersion": str(
+                tomllib.loads((archive.ROOT / "pyproject.toml").read_text())["tool"][
+                    "eml-attachment-remover"
+                ]["macos"]["build-number"]
+            ),
             "CFBundleIdentifier": "io.github.resoltico.emlattachmentremover",
             "NSHumanReadableCopyright": "Copyright © 2026 Ervins Strauhmanis",
             "LSMinimumSystemVersion": "14.0",
+            "EMLRuntimeMode": "external",
+            "EMLArchitecture": "arm64",
+            "NSServices": [
+                {
+                    "NSMenuItem": {"default": "Create EML Copies Without Attachments"},
+                    "NSMessage": "createEMLCopies",
+                    "NSPortName": "EMLAttachmentRemover",
+                    "NSSendFileTypes": ["public.email-message", "public.folder"],
+                    "NSRestricted": True,
+                    "NSRequiredContext": {},
+                }
+            ],
         })
     )
     resources = app / "Contents/Resources"
+    (resources / "EML.icns").write_bytes(b"icns" + b"public")
     (resources / "LICENSE").write_bytes((archive.ROOT / "LICENSE").read_bytes())
-    (resources / "ARTWORK.md").write_bytes(
-        (archive.ROOT / "integrations/macos-ui/ARTWORK.md").read_bytes()
-    )
     (resources / "processing-launcher.sh").write_bytes(
         (archive.ROOT / "integrations/macos-ui/processing-launcher.sh").read_bytes()
     )
@@ -48,21 +76,33 @@ def _bundle(root: Path) -> Path:
     return app
 
 
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
     tmp_path: Path,
 ) -> None:
-    app = _bundle(tmp_path)
+    app = bundle_fixture(tmp_path)
     first, second = tmp_path / "first.zip", tmp_path / "second.zip"
     archive.package(app, first)
     archive.package(app, second)
     assert first.read_bytes() == second.read_bytes()
     with patch.object(archive, "_signature") as signature:
         archive.verify(
-            first, app / "Contents/Resources/remove-eml-attachments.pyz", "4.0.0"
+            first,
+            app / "Contents/Resources/remove-eml-attachments.pyz",
+            "4.0.0",
+            "arm64",
         )
     assert signature.call_args.args[0].name == "EML Attachment Remover.app"
+    assert signature.call_args.args[1] == "arm64"
     extracted = tmp_path / "extracted"
     archive._extract(first, extracted)
+    assert {path.stat().st_mtime for path in extracted.rglob("*")} == {
+        build_timestamp.EPOCH
+    }
+    with zipfile.ZipFile(first) as metadata:
+        assert {item.date_time for item in metadata.infolist()} == {
+            build_timestamp.ZIP_TIME
+        }
     executables = {
         "EML Attachment Remover.app/Contents/MacOS/EMLAttachmentRemover",
         "EML Attachment Remover.app/Contents/Resources/processing-launcher.sh",
@@ -88,18 +128,26 @@ def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
     assert archive.instructions().startswith(
         "EML Attachment Remover — prebuilt macOS application\n\n".encode()
     )
-    assert (extracted / "integrations/macos-ui/RELEASE.md").is_file()
+    assert {path.name for path in extracted.iterdir()} == {
+        "EML Attachment Remover.app",
+        "INSTALL.txt",
+        "LICENSE",
+        "install.sh",
+    }
+    assert not (extracted / "integrations").exists()
+    assert not (extracted / "QA.md").exists()
     assert (
-        archive.archive_name("4.0.0")
-        == "eml_attachment_remover-4.0.0-macos-universal.zip"
+        archive.archive_name("4.0.0", "arm64")
+        == "eml_attachment_remover-4.0.0-macos-arm64.zip"
     )
 
 
 @pytest.mark.parametrize("symbolic", [False, True])
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_package_refuses_missing_or_symbolic_sources(
     tmp_path: Path, *, symbolic: bool
 ) -> None:
-    app = _bundle(tmp_path)
+    app = bundle_fixture(tmp_path)
     executable = app / "Contents/MacOS/EMLAttachmentRemover"
     executable.unlink()
     if symbolic:
@@ -130,11 +178,12 @@ def test_package_refuses_missing_or_symbolic_sources(
         "order",
     ],
 )
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_untrusted_metadata_is_rejected_before_extraction(
     tmp_path: Path, attack: str
 ) -> None:
     good, bad = tmp_path / "good.zip", tmp_path / "bad.zip"
-    archive.package(_bundle(tmp_path), good)
+    archive.package(bundle_fixture(tmp_path), good)
     with zipfile.ZipFile(good) as source, zipfile.ZipFile(bad, "w") as target:
         entries = (
             list(reversed(source.infolist()))
@@ -172,23 +221,43 @@ def test_untrusted_metadata_is_rejected_before_extraction(
 
 @pytest.mark.parametrize(
     "changed",
-    ["documentation", "version", "processor", "marker", "identifier", "copyright"],
+    [
+        "documentation",
+        "version",
+        "processor",
+        "marker",
+        "identifier",
+        "copyright",
+        "build-number",
+        "icon-assets",
+        "icon-fallback",
+    ],
 )
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_archive_contract_rejects_content_drift(tmp_path: Path, changed: str) -> None:
-    app = _bundle(tmp_path)
+    app = bundle_fixture(tmp_path)
     if changed == "version":
-        (app / "Contents/Info.plist").write_bytes(plistlib.dumps({}))
-    if changed in {"identifier", "copyright"}:
         info_path = app / "Contents/Info.plist"
         info = plistlib.loads(info_path.read_bytes())
-        info[
-            "CFBundleIdentifier"
-            if changed == "identifier"
-            else "NSHumanReadableCopyright"
-        ] = "wrong"
+        info["CFBundleShortVersionString"] = "wrong"
+        info_path.write_bytes(plistlib.dumps(info))
+    metadata_changes = {
+        "identifier": ("CFBundleIdentifier", "wrong"),
+        "copyright": ("NSHumanReadableCopyright", "wrong"),
+        "build-number": ("CFBundleVersion", "0"),
+    }
+    if changed in metadata_changes:
+        info_path = app / "Contents/Info.plist"
+        info = plistlib.loads(info_path.read_bytes())
+        field, value = metadata_changes[changed]
+        info[field] = value
         info_path.write_bytes(plistlib.dumps(info))
     if changed == "marker":
         (app / "Contents/Resources/.eml-ui-installation").write_bytes(b"invalid")
+    if changed == "icon-assets":
+        (app / "Contents/Resources/Assets.car").write_bytes(b"")
+    if changed == "icon-fallback":
+        (app / "Contents/Resources/EML.icns").write_bytes(b"invalid")
     target = tmp_path / "public.zip"
     archive.package(app, target)
     processor = tmp_path / "processor.pyz"
@@ -208,21 +277,30 @@ def test_archive_contract_rejects_content_drift(tmp_path: Path, changed: str) ->
     message = (
         "Native documentation/installer differs from source"
         if changed == "documentation"
-        else "Native bundle/source contract failed"
+        else (
+            "Native icon resources are missing or invalid"
+            if changed.startswith("icon-")
+            else "Native bundle/source contract failed"
+        )
     )
     with (
         patch.object(archive, "_signature"),
-        pytest.raises(ReleaseQualificationError, match="^" + message + "$"),
+        pytest.raises(ReleaseQualificationError, match=r"^" + message + "$"),
     ):
-        archive.verify(target, processor, "4.0.0")
+        archive.verify(target, processor, "4.0.0", "arm64")
+
+
+def test_archive_name_rejects_unknown_architecture() -> None:
+    with pytest.raises(ValueError, match=r"^Unsupported macOS architecture$"):
+        archive.archive_name("4.0.0", "universal")
 
 
 @pytest.mark.parametrize(
     ("identity", "architectures", "accepted"),
     [
-        ("Signature=adhoc", "arm64 x86_64", True),
-        ("Authority=Developer ID", "arm64 x86_64", False),
-        ("Signature=adhoc", "arm64", False),
+        ("Signature=adhoc", "arm64", True),
+        ("Authority=Developer ID", "arm64", False),
+        ("Signature=adhoc", "arm64 x86_64", False),
     ],
 )
 def test_signature_and_cpu_contract(
@@ -237,13 +315,13 @@ def test_signature_and_cpu_contract(
         patch.object(subprocess, "check_output", return_value=architectures) as slices,
     ):
         if accepted:
-            archive._signature(tmp_path)
+            archive._signature(tmp_path, "arm64")
         else:
             with pytest.raises(
                 ReleaseQualificationError,
                 match=r"^Native identity or architecture contract failed$",
             ):
-                archive._signature(tmp_path)
+                archive._signature(tmp_path, "arm64")
     slices.assert_called_once_with(
         [
             "/usr/bin/xcrun",
@@ -303,11 +381,12 @@ def _diagnostic(attack: str) -> str:
     return "^" + messages.get(attack, "Native ZIP metadata is not canonical") + "$"
 
 
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_extraction_budget_accepts_exact_limit_and_rejects_one_byte_over(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "public.zip"
-    archive.package(_bundle(tmp_path), target)
+    archive.package(bundle_fixture(tmp_path), target)
     with zipfile.ZipFile(target) as packaged:
         total = sum(info.file_size for info in packaged.infolist())
     with patch.object(archive, "MAX_TOTAL", total):
@@ -323,11 +402,12 @@ def test_extraction_budget_accepts_exact_limit_and_rejects_one_byte_over(
     assert not (tmp_path / "rejected").exists()
 
 
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_encrypted_flags_are_rejected_before_creating_any_destination(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "public.zip"
-    archive.package(_bundle(tmp_path), target)
+    archive.package(bundle_fixture(tmp_path), target)
     data = bytearray(target.read_bytes())
     with zipfile.ZipFile(target) as packaged:
         offset = packaged.start_dir

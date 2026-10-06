@@ -1,16 +1,21 @@
-"""Enforce normalized Hatchling source and wheel member metadata."""
+"""Construct and enforce normalized distribution archive member metadata."""
 
 from __future__ import annotations
 
 import stat
+import zipfile
+
+if __package__:
+    from tools.build_timestamp import EPOCH, ZIP_TIME, zip_extra
+else:
+    from build_timestamp import EPOCH, ZIP_TIME, zip_extra  # type: ignore[import-not-found,no-redef]
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
     import tarfile
-    import zipfile
 
-SOURCE_TIMESTAMP: Final = 1_580_601_600
-ZIP_TIMESTAMP: Final = (2020, 2, 2, 0, 0, 0)
+SOURCE_TIMESTAMP: Final = EPOCH
+ZIP_TIMESTAMP: Final = ZIP_TIME
 SOURCE_MODE: Final = 0o644
 UNIX_ZIP_SYSTEM: Final = 3
 WHEEL_DIRECTORY_MODE: Final = 0o40755
@@ -31,7 +36,9 @@ def regular_wheel_member(member: zipfile.ZipInfo) -> bool:
     return file_type in {0, stat.S_IFREG}
 
 
-def tar_member_normalized(member: tarfile.TarInfo) -> bool:
+def tar_member_normalized(
+    member: tarfile.TarInfo, *, timestamp: int = SOURCE_TIMESTAMP
+) -> bool:
     """Return whether a source member has deterministic identity and mode.
 
     Returns:
@@ -39,13 +46,18 @@ def tar_member_normalized(member: tarfile.TarInfo) -> bool:
 
     """
     return (
-        member.mtime == SOURCE_TIMESTAMP
-        and member.mode == SOURCE_MODE
+        member.mtime == timestamp
+        and member.mode == (0o755 if member.isdir() else SOURCE_MODE)
         and (member.uid, member.gid, member.uname, member.gname) == (0, 0, "", "")
     )
 
 
-def wheel_member_normalized(member: zipfile.ZipInfo, *, generated: bool) -> bool:
+def wheel_member_normalized(
+    member: zipfile.ZipInfo,
+    *,
+    generated: bool,
+    timestamp: tuple[int, ...] = ZIP_TIMESTAMP,
+) -> bool:
     """Return whether a wheel member has deterministic timestamp and mode.
 
     Returns:
@@ -57,7 +69,23 @@ def wheel_member_normalized(member: zipfile.ZipInfo, *, generated: bool) -> bool
     else:
         expected_mode = WHEEL_GENERATED_MODE if generated else WHEEL_SOURCE_MODE
     return (
-        member.date_time == ZIP_TIMESTAMP
+        member.date_time == timestamp
         and member.create_system == UNIX_ZIP_SYSTEM
         and member.external_attr >> 16 == expected_mode
     )
+
+
+def zipapp_member(name: str) -> zipfile.ZipInfo:
+    """Return build-timestamped ZIP metadata for a zipapp file or directory.
+
+    Returns:
+        A Unix ZIP member with the declared build time and normalized mode.
+
+    """
+    info = zipfile.ZipInfo(name, ZIP_TIME)
+    info.extra = zip_extra()
+    info.compress_type = zipfile.ZIP_STORED
+    info.create_system = UNIX_ZIP_SYSTEM
+    mode = WHEEL_DIRECTORY_MODE if name.endswith("/") else WHEEL_SOURCE_MODE
+    info.external_attr = mode << 16
+    return info

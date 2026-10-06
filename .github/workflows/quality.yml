@@ -18,7 +18,7 @@ jobs:
   quality:
     name: ${{ matrix.os }} / CPython ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       PYTHONDEVMODE: "1"
       PYTHONDONTWRITEBYTECODE: "1"
@@ -30,18 +30,18 @@ jobs:
         include:
           # Shared static checks include mypy targets linux, darwin, and win32.
           - os: ubuntu-latest
-            python: 3.14.7
+            python: 3.14.8
             static: true
           - os: macos-latest
-            python: 3.14.7
+            python: 3.14.8
           - os: windows-latest
-            python: 3.14.7
+            python: 3.14.8
           - os: ubuntu-latest
-            python: 3.14.7t
+            python: 3.14.8t
           - os: macos-latest
-            python: 3.14.7t
+            python: 3.14.8t
           - os: windows-latest
-            python: 3.14.7t
+            python: 3.14.8t
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,10 +50,13 @@ jobs:
       - name: Install uv and CPython
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: 0.12.21
+          version: 0.12.23
           python-version: ${{ matrix.python }}
           enable-cache: auto
           cache-dependency-glob: uv.lock
+      - name: Cache and authenticate runtime source archives
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/runtime-source
       - name: Install locked development dependencies
         run: uv sync --locked --group dev --python ${{ matrix.python }}
         env:
@@ -79,5 +82,6 @@ jobs:
           path: |
             build/test-results-project-ci.xml
             build/coverage.xml
+            ${{ runner.temp }}/native-fuzz-tests
           if-no-files-found: warn
           retention-days: 30

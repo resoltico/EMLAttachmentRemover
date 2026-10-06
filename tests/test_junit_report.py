@@ -33,6 +33,18 @@ def _xml(body: str = "public") -> bytes:
 class JunitReportPublicationTests(unittest.TestCase):
     """Require sanitized, valid, atomic machine-readable test evidence."""
 
+    def test_relative_project_text_is_not_replaced_as_an_absolute_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.xml"
+            destination = Path(directory) / "public.xml"
+            source.write_bytes(_xml("public-project/module.py"))
+            junit_report.publish(source, destination, Path("public-project"))
+            failure = ElementTree.fromstring(destination.read_bytes()).find(
+                "testsuite/testcase/failure"
+            )
+            assert failure is not None
+            self.assertEqual(failure.text, "public-project/module.py")
+
     def test_temporary_report_is_beside_hypothesis_storage(self) -> None:
         storage = Path("public-root") / ".hypothesis"
         self.assertEqual(

@@ -36,6 +36,7 @@ class ExitCode(IntEnum):
     VERIFICATION_ERROR = 8
     BATCH_FAILURE = 9
     PUBLICATION_INCOMPLETE = 10
+    ATOMIC_PUBLICATION_UNSUPPORTED = 11
     INTERNAL_ERROR = 70
     INTERRUPTED = 130
 
@@ -153,7 +154,6 @@ class SourceSnapshot:
     basename: bytes | str
     final_address: PathValue | None
     identity: FileIdentity
-    mode: int
     raw: bytes
     digest: str
     size: int

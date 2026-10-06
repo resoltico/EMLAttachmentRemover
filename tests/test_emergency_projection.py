@@ -13,7 +13,7 @@ import pytest
 from eml_attachment_remover import report_emergency
 from eml_attachment_remover.cancellation import delivery_guard
 from eml_attachment_remover.domain import AppError, ExitCode
-from tests.test_v3_reporting_complete_receipts import _complete_ledger
+from tests.test_reporting_complete_receipts import _complete_ledger
 
 
 @pytest.mark.parametrize("encoding", ["ascii", "latin-1", "utf-16"])

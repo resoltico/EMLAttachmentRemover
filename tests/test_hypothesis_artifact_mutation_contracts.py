@@ -20,6 +20,17 @@ from tests.hypothesis_artifact_support import write_observations
 class ArtifactMutationContracts(unittest.TestCase):
     """Pin observable defaults, diagnostics, and public serialization."""
 
+    def test_unsafe_object_labels_are_not_exposed_in_redacted_diagnostics(self) -> None:
+        with self.assertRaises(artifacts.HypothesisArtifactError) as caught:
+            observation_safety.reject_absolute_paths(
+                {"unsafe field label": "/unknown/private/path"}, Path("public.jsonl"), 1
+            )
+        self.assertEqual(
+            str(caught.exception),
+            "machine-specific absolute path remains in Hypothesis observation "
+            "'public.jsonl':1 at $; value redacted",
+        )
+
     def test_path_prefix_spellings_cover_posix_and_windows_forms(self) -> None:
         self.assertEqual(
             observation_safety.path_prefix_variants("/private/project"),

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import tomllib
 from dataclasses import dataclass
+from email import policy
+from email.parser import BytesParser
 from typing import TYPE_CHECKING
 
 try:
@@ -217,6 +220,46 @@ class ArchiveContract:
             "Description-Content-Type": ("text/markdown",),
         }
 
+    def verify_pair_metadata(self, source: bytes, wheel: bytes, config: Path) -> None:
+        """Permit only the declared source/artwork license difference.
+
+        Raises:
+            DistributionArchiveError: If licenses or other metadata differ.
+
+        """
+        with config.open("rb") as stream:
+            configuration = tomllib.load(stream)
+        licenses = (
+            configuration
+            .get("tool", {})
+            .get("eml-attachment-remover", {})
+            .get("licenses")
+        )
+        if licenses is not None:
+            header, separator, body = source.partition(b"\n\n")
+            declaration = (
+                f"License-Expression: {licenses['source']}\n"
+                "Dynamic: License-Expression\n"
+            ).encode()
+            if (header + b"\n").count(declaration) != 1:
+                message = "sdist license declaration differs from project contract"
+                raise DistributionArchiveError(message)
+            source = (
+                (header + b"\n")
+                .replace(
+                    declaration,
+                    f"License-Expression: {licenses['software']}\n".encode(),
+                    1,
+                )
+                .removesuffix(b"\n")
+                + separator
+                + body
+            )
+        if source != wheel:
+            message = "sdist PKG-INFO and wheel METADATA differ"
+            raise DistributionArchiveError(message)
+        self.verify_metadata(parse_metadata(wheel))
+
     def verify_metadata(self, metadata: Message) -> None:
         """Require generated core metadata to match canonical project values.
 
@@ -291,3 +334,21 @@ class ArchiveContract:
             "Root-Is-Purelib: true\n"
             f"Tag: {self.wheel_tag}\n"
         )
+
+
+def parse_metadata(metadata: bytes) -> Message:
+    """Return parsed core metadata.
+
+    Returns:
+        The parsed generated metadata message.
+
+    Raises:
+        DistributionArchiveError: If the core metadata parser rejects the bytes.
+
+    """
+    try:
+        message: Message = BytesParser(policy=policy.default).parsebytes(metadata)
+    except (UnicodeError, ValueError) as error:
+        message_text = f"cannot parse generated core metadata: {error}"
+        raise DistributionArchiveError(message_text) from error
+    return message

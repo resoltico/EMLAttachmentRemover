@@ -20,20 +20,21 @@ from tools import mutation_pytest_isolation
 from tests.mutmut_environment_support import selector_preserving_environment
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
 
 
 @contextmanager
-def _marker_environment(marker: str) -> Iterator[None]:
+def _marker_environment(marker: str) -> Generator[None]:
     """Set a mutant marker with basetemp isolation off, as outside Mutmut.
 
     Yields:
         Control while the environment is patched; it is restored afterwards.
 
     """
-    with patch.dict(
-        os.environ, {mutation_pytest_isolation.MUTANT_MARKER_VARIABLE: marker}
-    ):
+    environment = selector_preserving_environment({})
+    if mutation_pytest_isolation.MUTANT_MARKER_VARIABLE not in environment:
+        environment[mutation_pytest_isolation.MUTANT_MARKER_VARIABLE] = marker
+    with patch.dict(os.environ, environment):
         # A mutation campaign sets this for the whole suite; these tests exercise
         # import selection only, with no pytest configuration to record into.
         os.environ.pop(mutation_pytest_isolation.TEMPORARY_ROOT_VARIABLE, None)
@@ -103,7 +104,11 @@ class MutationPytestIsolationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             environment = os.environ.copy()
-            environment["PYTHONPATH"] = str(project)
+            environment["PYTHONPATH"] = os.pathsep.join((
+                str(project / "tests/mutation_child_bootstrap"),
+                str(project),
+            ))
+            environment["EML_MUTATION_CHILD_WORKSPACE"] = str(project)
             environment[mutation_pytest_isolation.TEMPORARY_ROOT_VARIABLE] = str(root)
             command = (
                 sys.executable,
@@ -117,11 +122,9 @@ class MutationPytestIsolationTests(unittest.TestCase):
                 str(suite),
             )
             for _session in range(3):
-                # The project root is the cwd so Mutmut's copied plugin finds its
-                # configuration when this runs inside a mutation workspace.
                 completed = subprocess.run(
                     command,
-                    cwd=project,
+                    cwd=suite,
                     env=environment,
                     check=False,
                     capture_output=True,
@@ -177,7 +180,7 @@ class MutationPytestIsolationTests(unittest.TestCase):
             self.assertIsNone(mutation_pytest_isolation._workspace_import_root(root))  # ruff: ignore[private-member-access] - incomplete workspace contract.
 
     def _assert_generated_workspace_hook_is_loaded(self) -> None:
-        current = Path.cwd()
+        current = Path(mutation_pytest_isolation.__file__).resolve().parents[1]
         candidate = current / "mutants"
         workspace = (
             candidate
@@ -315,3 +318,24 @@ class MutationPytestIsolationTests(unittest.TestCase):
                 self.assertEqual(
                     sys.modules["tools"].__path__, [str(workspace / "tools")]
                 )
+
+
+@pytest.mark.parametrize("package", [None, object()])
+def test_workspace_import_hook_tolerates_an_unloaded_or_nonpackage_module(
+    package: object,
+) -> None:
+    # This hook can mutate pytest's own basetemp before fixtures are created.
+    # Own this fixture independently so even a rejected mutant cannot write there.
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "tools").mkdir()
+        (root / "pyproject.toml").write_text("[project]\n")
+        unused: Any = object()
+        with (
+            _marker_environment("x__mutmut_1"),
+            patch.object(Path, "cwd", return_value=root),
+            patch.object(sys, "path", []),
+            patch.dict(sys.modules, {"tools": package}),
+        ):
+            mutation_pytest_isolation.pytest_load_initial_conftests(unused, unused, [])
+            assert sys.path == [str(root)]

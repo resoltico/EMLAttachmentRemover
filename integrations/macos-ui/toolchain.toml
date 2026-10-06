@@ -16,3 +16,8 @@ signer = "Developer ID Installer: Swift Open Source (V9AUD2URP3)"
 url = "https://download.swift.org/swift-6.4.0-release/xcode/swift-6.4.0-RELEASE/swift-6.4.0-RELEASE-osx.pkg"
 sha256 = "8fd03185b98fe27f54a54631c2449decf75d5b466ce8e34abbd414141063c6aa" # pragma: allowlist secret - public upstream integrity pin
 
+
+[delivery]
+runner = "macos-26"
+xcode-version = "26.6"
+xcode-build = "17F113"

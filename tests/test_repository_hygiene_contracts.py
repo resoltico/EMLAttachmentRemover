@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
+import pytest
 from tools import check_repository_hygiene as hygiene
 
 from tests.repository_hygiene_support import make_public_root
@@ -28,6 +29,41 @@ def messages_for(audit: hygiene.HygieneAudit, path: Path) -> tuple[str, ...]:
 
     """
     return tuple(issue.message for issue in audit.issues if issue.path == path)
+
+
+def test_generated_tree_refuses_nested_caches_without_reading_cache_contents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_public_root(str(tmp_path))
+    nested = root / "build/nested"
+    nested.mkdir(parents=True)
+    cache_directory = nested / ".pytest_cache"
+    cache_directory.mkdir()
+    cache = nested / ".coverage.worker"
+    cache.write_bytes(b"public synthetic cache")
+    read_bytes = Path.read_bytes
+
+    def read(path: Path) -> bytes:
+        if path == cache:
+            pytest.fail("Prohibited cache contents must not be read")
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", read)
+    audit = hygiene.audit_repository(root)
+    assert messages_for(audit, cache_directory) == (
+        (
+            "repository-local tool cache directory is prohibited because cache "
+            "data is not public evidence; disable caching or use ephemeral storage "
+            "and remove this path"
+        ),
+    )
+    assert messages_for(audit, cache) == (
+        (
+            "repository-local coverage data is prohibited because it can embed "
+            "machine-specific paths; use ephemeral coverage storage and remove "
+            "this path"
+        ),
+    )
 
 
 def test_public_binary_and_read_error_diagnostics_are_exact(tmp_path: Path) -> None:

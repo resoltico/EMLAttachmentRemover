@@ -5,9 +5,12 @@ from __future__ import annotations
 import os
 import re
 import stat
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
 
 MARKER: Final = "MUTANT_UNDER_TEST"
@@ -24,7 +27,25 @@ FIXED_MARKERS: Final = frozenset({
     "stats",
 })
 SOURCE_ROOTS: Final = frozenset({"src", "tools"})
+_POLICY_MARKER: Final[ContextVar[str | None]] = ContextVar(
+    "mutation_workspace_policy_marker", default=None
+)
 MUTANT_PATTERN: Final = re.compile(r".+__mutmut_[1-9][0-9]*\Z")
+
+
+@contextmanager
+def policy_marker(marker: str) -> Generator[None]:
+    """Select workspace classification without changing the execution selector.
+
+    Yields:
+        Control while generated-file classification uses the supplied marker.
+
+    """
+    token = _POLICY_MARKER.set(marker)
+    try:
+        yield
+    finally:
+        _POLICY_MARKER.reset(token)
 
 
 def active(root: Path, *, marker: str | None = None) -> bool:
@@ -34,7 +55,11 @@ def active(root: Path, *, marker: str | None = None) -> bool:
         Whether the root and marker form Mutmut's exact local execution context.
 
     """
-    selected_marker = os.environ.get(MARKER) if marker is None else marker
+    selected_marker = marker
+    if selected_marker is None:
+        selected_marker = _POLICY_MARKER.get()
+    if selected_marker is None:
+        selected_marker = os.environ.get(MARKER)
     project_config = root.parent / "pyproject.toml"
     try:
         project_mode = project_config.lstat().st_mode

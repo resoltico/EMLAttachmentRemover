@@ -254,3 +254,13 @@ def generated_content_messages(
     except OSError as error:
         return (f"cannot read generated file: {error}",)
     return public_content_messages(text)
+
+
+OPAQUE_ARCHIVE_SUFFIXES: Final = (
+    ".tar.gz",
+    ".whl",
+    "-macos-arm64.zip",
+    "-macos-x86_64.zip",
+    "-macos-arm64-external-python.zip",
+    "-macos-x86_64-external-python.zip",
+)

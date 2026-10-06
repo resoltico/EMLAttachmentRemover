@@ -158,7 +158,7 @@ def test_nested_declaration_and_tool_scopes_are_exact(
         "            return 1  # type: ignore[return-value]\n"
     )
     scopes = [
-        ("<module>", "", "mypy", "assignment"),
+        ("<module>", "class Box:", "mypy", "assignment"),
         ("Box", "class Box:", "ruff", "private-member-access"),
         ("Box.operation.inner", "def inner():", "ruff", "a-rule,z-rule"),
         ("Box.operation.inner", "return 1", "mypy", "return-value"),
@@ -203,3 +203,136 @@ def test_swift_approval_addresses_the_reported_physical_line(tmp_path: Path) -> 
     registry.write_text(json.dumps({"exceptions": [], "swift_exceptions": [entry]}))
     with patch.object(lint, "ROOT", tmp_path), patch.object(lint, "REGISTRY", registry):
         assert lint.swift_findings([finding]) == []
+
+
+def test_multiline_and_standalone_directives_bind_distinct_statements(
+    tmp_path: Path,
+) -> None:
+    source, registry = _workspace(tmp_path)
+    source.write_text(
+        "def boundary():\n"
+        "    first._operation(\n        1\n"
+        "    )  # ruff: ignore[private-member-access]\n"
+        "    # ruff: ignore[private-member-access]\n"
+        "    second._operation(2)\n"
+    )
+    with patch.object(lint, "ROOT", tmp_path), patch.object(lint, "REGISTRY", registry):
+        entries = lint.python_directives(source)
+        assert [e["anchor"] for e in entries] == [
+            "first._operation(1)",
+            "second._operation(2)",
+        ]
+        approvals = [
+            {**entry, "reason": "Explicit private boundary probe"} for entry in entries
+        ]
+        registry.write_text(
+            json.dumps({"exceptions": approvals[:1], "swift_exceptions": []})
+        )
+        assert any("Unregistered" in error for error in lint.check())
+        registry.write_text(
+            json.dumps({"exceptions": approvals, "swift_exceptions": []})
+        )
+        assert lint.check() == []
+        source.write_text(
+            source.read_text().replace("second._operation", "other._operation")
+        )
+        errors = lint.check()
+        assert any("Unregistered" in error for error in errors)
+        assert any("Stale" in error for error in errors)
+
+
+def test_file_wide_inline_policy_cannot_bypass_central_configuration(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "example.py"
+    source.write_text("# ruff: file-ignore[private-member-access]\nvalue = 1\n")
+    with (
+        patch.object(lint, "ROOT", tmp_path),
+        pytest.raises(
+            ValueError, match=r"^File-wide Ruff policies belong in pyproject\.toml$"
+        ),
+    ):
+        lint.python_directives(source)
+
+
+def test_orphaned_directive_cannot_create_an_approval(tmp_path: Path) -> None:
+    source = tmp_path / "example.py"
+    source.write_text("# ruff: ignore[private-member-access]\n")
+    with (
+        patch.object(lint, "ROOT", tmp_path),
+        pytest.raises(
+            ValueError, match=r"^Suppression has no identifiable source statement$"
+        ),
+    ):
+        lint.python_directives(source)
+
+
+@pytest.mark.parametrize(
+    ("code", "anchor"),
+    [
+        ("value = [\n 1,\n]", "value = [1]"),
+        ("value = {\n 'a': 1,\n}", "value = {'a': 1}"),
+        ("if (\n True\n):", "if True:\n    pass"),
+        ("if [\n True\n]:", "if [True]:\n    pass"),
+        ("if {\n 1: 2\n}:", "if {1: 2}:\n    pass"),
+    ],
+)
+def test_each_closing_delimiter_binds_the_complete_owning_statement(
+    tmp_path: Path,
+    code: str,
+    anchor: str,
+) -> None:
+    source = tmp_path / "example.py"
+    source.write_text(
+        code
+        + " # ruff: ignore[private-member-access]\n"
+        + (" pass\n" if code.startswith("if ") else "")
+    )
+    with patch.object(lint, "ROOT", tmp_path):
+        assert lint.python_directives(source)[0]["anchor"] == anchor
+
+
+@pytest.mark.parametrize("declaration", ["def", "async def"])
+def test_standalone_approval_identifies_a_decorated_declaration_header(
+    tmp_path: Path,
+    declaration: str,
+) -> None:
+    source = tmp_path / "example.py"
+    source.write_text(
+        "# ruff: ignore[private-member-access]\n@decorate\n"
+        + declaration
+        + " boundary():\n pass\n"
+    )
+    with patch.object(lint, "ROOT", tmp_path):
+        assert (
+            lint.python_directives(source)[0]["anchor"] == declaration + " boundary():"
+        )
+
+
+def test_nested_call_approval_does_not_bind_its_containing_function(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "example.py"
+    source.write_text(
+        "def boundary():\n if True:\n  call(\n   1\n"
+        "  ) # ruff: ignore[private-member-access]\n"
+    )
+    with patch.object(lint, "ROOT", tmp_path):
+        assert lint.python_directives(source)[0]["anchor"] == "call(1)"
+
+
+def test_a_decorator_closing_without_an_owning_statement_is_refused(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "example.py"
+    source.write_text(
+        "@decorate(\n 1\n) # ruff: ignore[private-member-access]\n"
+        "def boundary():\n pass\n"
+    )
+    with (
+        patch.object(lint, "ROOT", tmp_path),
+        pytest.raises(
+            ValueError, match=r"^Suppression has no identifiable source statement$"
+        ),
+    ):
+        lint.python_directives(source)

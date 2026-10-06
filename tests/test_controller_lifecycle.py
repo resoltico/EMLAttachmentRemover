@@ -22,7 +22,7 @@ from tests.live_report_support import MESSAGE
 from tests.trace_implementation_support import traced_implementation
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
     from pathlib import Path
     from types import FrameType
 
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 
 @contextmanager
-def _interrupt(function: object, statement: str) -> Iterator[list[int]]:
+def _interrupt(function: object, statement: str) -> Generator[list[int]]:
     function = traced_implementation(function)
     lines, first = inspect.getsourcelines(function)
     target = next(

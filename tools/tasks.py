@@ -62,8 +62,6 @@ MUTATION_STATISTICS: Final = PROJECT_ROOT / "mutants" / "mutmut-cicd-stats.json"
 MUTATION_RESULTS: Final = BUILD_DIRECTORY / "mutmut-results.txt"
 MUTATION_EQUIVALENTS: Final = PROJECT_ROOT / "tools" / "equivalent_mutants.json"
 MUTATION_DIAGNOSTICS: Final = BUILD_DIRECTORY / "mutation-diagnostics"
-DEVELOPMENT_TEST_TIMEOUT_SECONDS: Final = 600
-THOROUGH_TEST_TIMEOUT_SECONDS: Final = 1_800
 OBSERVABILITY_VARIABLES: Final = (
     "HYPOTHESIS_EXPERIMENTAL_OBSERVABILITY",
     "HYPOTHESIS_EXPERIMENTAL_OBSERVABILITY_NOCOVER",
@@ -191,11 +189,7 @@ def _test(
     """Run the complete test suite under one Hypothesis profile."""
     BUILD_DIRECTORY.mkdir(exist_ok=True)
     if timeout_seconds is None:
-        timeout_seconds = (
-            THOROUGH_TEST_TIMEOUT_SECONDS
-            if profile == "project-thorough"
-            else DEVELOPMENT_TEST_TIMEOUT_SECONDS
-        )
+        timeout_seconds = task_timeout.test_timeout(profile)
     observability_environment = (
         {OBSERVABILITY_VARIABLES[0]: "1"} if observable else None
     )
@@ -216,7 +210,7 @@ def _test(
         report_destination=_test_result_path(profile),
     )
     if observable:
-        _run((sys.executable, "tools/check_v301_property_observations.py"))
+        _run((sys.executable, "tools/check_property_observations.py"))
 
 
 def _coverage() -> None:
@@ -232,6 +226,7 @@ def _coverage() -> None:
                 storage,
                 command,
                 profile=profile,
+                timeout_seconds=task_timeout.test_timeout(profile),
                 environment_updates=coverage_environment,
             )
 
@@ -331,6 +326,7 @@ def _mutation(*, workers: int | None = None, preflight: bool = True) -> None:
             storage,
             hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE,
             OBSERVABILITY_VARIABLES,
+            PROJECT_ROOT,
         )
 
         mutation_task.run_mutation(

@@ -1,5 +1,7 @@
 # EML Attachment Remover
 
+EML Attachment Remover v4 provides a native macOS app and a portable Python command-line processor for creating email copies without attachments.
+
 `remove-eml-attachments` creates a structurally verified **MIME-pruned** EML
 working copy. It preserves every retained original `text/plain` and `text/html`
 representation, in source order and as original payload bytes. It removes only:
@@ -12,9 +14,9 @@ Everything else is kept or rejected. In particular, filenames, media types,
 position are never used as weaker evidence that content is disposable. Originals are
 never modified.
 
-For a prebuilt native macOS application, download the macOS universal ZIP from the GitHub Release. It requires macOS 14 and CPython 3.14, but no Swift compiler; see the [first-launch and Gatekeeper setup steps](integrations/macos-ui/README.md#first-launch-and-macos-approval) and [release pipeline](integrations/macos-ui/RELEASE.md).
+For a prebuilt native macOS application, download the Apple Silicon (`arm64`) or Intel (`x86_64`) ZIP matching your Mac from the [v4.0.0 release](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v4.0.0). Both editions require macOS 14 or later. The primary app includes CPython; the smaller `-external-python.zip` edition requires your own CPython 3.14. Neither requires a Swift compiler; see the [first-launch and Gatekeeper setup steps](integrations/macos-ui/README.md#first-launch-and-macos-approval) and [release pipeline](integrations/macos-ui/RELEASE.md).
 
-For a native macOS progress and report window with processing cancellation, app identity, per-file outcomes, and expandable diagnostics, see the [macOS application guide](integrations/macos-ui/README.md). The application requires CPython 3.14 at runtime.
+Automatically named copies sent to `--output-dir` include a stable digest of the kernel-resolved source address, so ordinary same-basename inputs from different folders receive distinct names and subset reruns keep the same destinations. Different spellings resolving to the same address share a name; hard links at different addresses and source renames can still produce different names. Explicit `--output` names and copies beside originals keep their existing naming behavior. Source aliases and residual collisions remain refused.
 
 ## Rendering boundary
 
@@ -28,8 +30,7 @@ missing related-media placeholders are expected.
 
 ## Use
 
-CPython 3.14 is required. Install from source with `uv tool install .`, or run the
-release zipapp with CPython 3.14:
+CPython 3.14 is required. Install the CLI from a clean source checkout with `uv tool install --python 3.14 .`, or install a downloaded release wheel with `uv tool install --python 3.14 /absolute/path/to/eml_attachment_remover-VERSION-cp314-none-any.whl`. Replace `VERSION` with the downloaded release version. The macOS app installer does not install this CLI. Alternatively, invoke the release zipapp directly with CPython 3.14:
 
 ```sh
 remove-eml-attachments -- "original.eml"
@@ -46,17 +47,27 @@ When that derived name would exceed the destination directory's filename limit (
 bytes on most POSIX filesystems, 255 UTF-16 units on Windows), only the derived name
 is shortened: a readable prefix of the source name, a stable 16-hex digest of the
 complete source name, and the usual suffix, for example
-`long-subject-line-c15a952383e18790.mime-pruned.eml`. The digest keeps the name the
-same on every run, so `--existing=verify` finds it again, and keeps different long
-names apart. An explicit `--output` name is never altered.
+`long-subject-line-c15a952383e18790.mime-pruned.eml`. The digest keeps the name stable for reruns, so `--existing=verify` can find it again, and helps distinguish long names; residual collisions are refused. An explicit `--output` name is never altered.
+
+Filename arguments are literal: the tool does not expand `~`. Let your shell expand home-directory shorthand before invocation or supply an absolute path; quoted `'~/message.eml'` names a literal `~` directory.
 
 The tool preserves kernel path traversal semantics. For example, a path containing a
 symlink and `..` opens the object selected by the kernel, not a lexically normalized
-path. Destination publication is same-directory, private-mode staging followed by an
+path. Destination publication is same-directory staging followed by an
 atomic no-replace operation; the program never replaces an existing derived file.
 On Windows, the bound destination directory is opened with the write access required
 for its `FlushFileBuffers` durability receipt. If a filesystem still cannot provide
 that receipt, the visible copy is reported as `published_with_error`, never `created`.
+
+### Input and filesystem limits
+
+On POSIX, the tool requests mode `0600` (owner read/write) for new copies rather than copying the source mode. Actual access also depends on filesystem, ACL and mount policy. On Windows, new files inherit the destination directory’s ACL; the app does not impose an owner-only Windows ACL. Choose a destination with suitable access permissions for confidential mail.
+
+Publication uses a named staging file, `.eml-remove-<32 hexadecimal characters>.tmp`, in the destination folder. It can contain retained message content and is removed during normal cleanup. SIGKILL, forced termination, a crash, power loss or a cleanup failure can leave it behind; a later run does not scan for or delete old stages. After every app and CLI run using that folder has stopped, you can inspect and delete a leftover staging file that you recognize as belonging to the tool. Do not delete matching files while processing is active. A leftover stage is not a completion receipt; check any final copies independently before retrying.
+
+Each source file is limited to 128 MiB of raw bytes. This is an input-size limit, not a peak-RAM guarantee: parsing and verification can hold several representations concurrently. Batch processing is limited to 4,096 requests and 4 MiB of cumulative native path bytes; OS command-line limits can be lower. The native app transfers the selection through a bounded pipe instead of processor arguments, and supports the same 4,096-input limit. Finder/Shortcuts commands and other command-line callers can still hit OS limits before the app receives a selection. Framed selections outside the request limits are refused before processing.
+
+Publication requires a filesystem that supports the backend’s exclusive atomic publication primitive. If a destination volume does not support it, the command refuses publication rather than exposing a partial copy. For example, macOS exFAT can refuse exclusive rename. An explicitly unsupported atomic operation (POSIX `ENOTSUP`/`EOPNOTSUPP` or Windows `STATUS_NOT_SUPPORTED`) is reported as `ATOMIC_PUBLICATION_UNSUPPORTED` (single-input process status 11; mixed batches retain status 9). Ambiguous failures such as Linux `EPERM` remain `WRITE_ERROR`/7 because they can also indicate permissions; check destination permissions and filesystem support. Use `--output-dir` to write on a compatible local volume while reading the original from the other volume; the source remains unchanged. In the app, use Save copies to → Choose folder to select a compatible writable destination; the source files stay in place. Network and FUSE support depends on the specific filesystem and server and has not been universally qualified.
 
 ### Destination and existing policy
 
@@ -81,52 +92,11 @@ terminal-unsafe path text. Each line names where the copy is, or would be:
 `created: source.eml -> /path/to/source.mime-pruned.eml`; a dry run shows the
 planned destination.
 
-Each report is staged in the requested format and mode and validated before
-delivery. Machine-readable sealing uses bytes throughout, including native POSIX
-filenames. If staging fails after a
-visible publication, retained terminal receipts produce a complete recovery report
-in bounded memory, independently of staging files and spool reads, in the same byte
-format. A staged read failure before stdout accepts its first report byte can also
-recover through fresh memory channels. Stderr progress is tracked separately;
-already emitted diagnostics are not repeated. After any report bytes have been
-accepted, a failure never restarts or appends a replacement document. Receipt
-storage stays owned until delivery resolves. Each recovery channel is limited to
-128 MiB. The CLI owns its authoritative ledger before any input can publish;
-cancellation during reservation, inventory, final archiving, or transition to
-reporting retains every known outcome. Receipt spools use OS-owned temporary
-handles: anonymous/unlinked-open storage on POSIX and delete-on-close storage on
-Windows. Forced termination does not depend on Python cleanup to remove them.
-Human and `paths0` output explain batch failures once on stderr while
-retaining truthful successful item statuses and paths. Delivery still depends on an
-available output endpoint; a closed pipe or channel error can prevent completion.
-Signals record cancellation requests; explicit checkpoints acknowledge them before
-publication or after a complete publication outcome is committed. A proven copy
-keeps its successful receipt, and genuine post-publication errors keep their error
-status. The invocation controller prepares its monitor before binding its context,
-restores that context independently of cleanup failures, and keeps cooperative
-handlers installed through shutdown. Normal shutdown wakes and joins the monitor
-immediately, without a polling delay. Nested scopes in the same thread share their
-active owner; a copied context in another thread acquires its own owner.
-The API catches cooperative requests through controller shutdown and returns its
-completed ledger with invocation interruption metadata. Final checks inspect each
-controller only after its handler stops accepting requests. Delivery status is
-selected from the retired guard; a late request preserves report bytes and receives
-one interruption explanation.
-The CLI's outer interruption boundary also covers error-response finalization and
-resource release after handlers retire. A complete or partial error document is
-never replaced; late interruption returns 130 with one bounded stderr notice. A
-blocked notice retains the cancellation deadline and repeat-signal escalation.
-The public API keeps the caller's signal policy outside its owned controller.
-Unresponsive processing is bounded to 10 seconds after the first signal;
-a second signal ends it immediately. An interruption before delivery reports the
-interruption and exits 130. Human and `paths0` output include one bounded, safely
-escaped invocation notice on stderr, even when all inputs completed. A signal during
-delivery leaves the document whole and unchanged (its `exit_code` is the processing
-outcome), then exits 130 with an `interrupted by SIGINT after the report was delivered`
-diagnostic. Delivery never waits forever for a reader that stopped draining: after the
-first signal the process allows 10 seconds without output progress, and a second
-signal ends it at once, both with status 130 and possibly a partial document, which is
-never followed by another. Without a signal there is no deadline, so a pager works.
+Reports preserve known publication outcomes if report storage fails. Recovery can replace a failed report only before stdout accepts any report bytes. Partial documents remain invalid and are never restarted or followed by a replacement. Each recovery channel is limited to 128 MiB; a closed or failing output endpoint can prevent completion. Human and `paths0` reports explain batch failures on stderr while retaining successful item statuses and paths.
+
+Cancellation preserves completed copies and genuine publication-error outcomes when it completes cooperatively. The first signal permits a 10-second processing grace period; an expired grace or a second signal requests immediate hard termination, including during publication. That hard stop can leave named stages and final copies without a report: JSON stdout can be empty, and an API call can terminate the process without returning a result. It cannot guarantee filesystem cleanup or an exact shutdown deadline during an operating-system stall. Check the destination before retrying. The public API preserves the caller’s signal policy outside its owned processing scope; cooperative interruptions select status 130 and return completed item evidence with interruption metadata.
+
+A signal received during report delivery preserves the document’s processing `exit_code` and selects process status 130. A completed report receives one bounded interruption notice on stderr. If output stops progressing after a signal, delivery allows 10 seconds without progress; a second signal ends it immediately. Either can leave a partial document, which is never replaced. Without a signal, output has no deadline, so a pager can wait for its reader.
 
 These are application-selected statuses. CPython can change the final process
 exit to **120** if interpreter cleanup fails while flushing a buffered standard
@@ -145,16 +115,14 @@ remove-eml-attachments --output-format=json -- "one.eml" "two.eml"
 remove-eml-attachments --output-format=paths0 -- "one.eml" "two.eml"
 ```
 
+For a frontend needing live counts, `--progress-fd=N` writes advisory schema-1 `EML_PROGRESS ` JSON lines to a writable pipe descriptor above stdio. Counts include completed failures and do not prove successful copies; use the final report for outcomes. Slow or closed progress pipes do not stop processing. See [the progress transport contract](QA.md#advisory-processing-progress).
+
 JSON is one schema-3 report document. Its checked-in contract is
 [`schema/report.schema.json`](schema/report.schema.json); it reports every input in
 order, source-bound retained payload hashes, removal reasons, candidate digest,
 verification evidence, and truthful publication receipts. It never reports body
 contents. Error messages are capped at 2,048 characters and 12,288 canonical ASCII
-JSON content bytes, including any truncation marker. Admission reserves the same
-encoded-byte budget. During processing, terminal evidence is streamed through
-bounded private spools; if normal report persistence fails after a visible publication, the command
-returns a complete status-preserving recovery report rather than claiming success.
-That evidence is measured before any copy is written: an input whose report record
+JSON content bytes, including any truncation marker. The prepublication evidence limit applies before any copy is written: an input whose report record
 would exceed 1 MiB (about 3,700 retained MIME parts), or the 64 MiB report capacity,
 fails with `PARSE_ERROR` and no copy is created.
 Path `text` is ordinary Unicode only. For a POSIX path containing surrogate-escaped
@@ -192,14 +160,11 @@ treated as a message transport feature.
 
 ## Finder Quick Action
 
-Use the [native macOS application](integrations/macos-ui/README.md) for processing progress, Stop processing, and final report windows. Install the prebuilt app or build it from source, create a Finder Quick Action that passes Shortcut Input as arguments to the documented application launch command, as its sole action. Each batch gets its own report window; a previous open report does not hold the shortcut open. The shortcut's completion confirms launch, so synchronous automation must use the CLI or zipapp.
-
-The Finder Quick Action launches the native application. Use the installed CLI or standalone zipapp for synchronous automation and processing exit statuses; the Quick Action returns when macOS accepts the launch. The native application owns progress, stopping, final reports, and Finder reveal.
+Use the [native macOS application](integrations/macos-ui/README.md) for processing progress, Stop processing, and final report windows. Install the prebuilt app or build it from source. Finder’s Services → Create EML Copies Without Attachments opens selected EML files or folders in the app; macOS can require Run Service confirmation. For an optional Quick Actions entry, create a Finder Quick Action that passes Shortcut Input as arguments to the documented application launch command, as its sole action. Each batch gets its own report window; a previous open report does not hold the shortcut open. The shortcut's completion confirms launch, so synchronous automation must use the CLI or zipapp.
 
 ## Verification and release artifacts
 
-The release contains the zipapp, `SHA256SUMS`, and attestations. After downloading all
-assets into one directory, verify them before use:
+The v4 delivery contains the standalone zipapp, a wheel, a source tarball, bundled and external-Python app ZIPs for both Apple Silicon and Intel, and `SHA256SUMS`; the published release also has GitHub provenance attestations. The complete names and audiences are listed in the [release asset table](integrations/macos-ui/RELEASE.md#exact-release-assets). Download all seven artifacts and the manifest into one directory for the full checksum check below. For an individual artifact, compare its SHA-256 digest with its manifest entry. Attestations are verified through GitHub’s CLI, rather than treated as another member of the eight-file delivery:
 
 ```sh
 shasum -a 256 --check SHA256SUMS
@@ -209,5 +174,11 @@ python3.14 remove-eml-attachments.pyz --version
 
 The private field corpus is never part of the repository, report, test fixtures, or
 release artifacts. Quality and release procedures are documented in [QA.md](QA.md).
-Repository QA and release commands require UV 0.12.21.
-`uv run python tools/tasks.py release` on macOS writes the complete native and portable candidate to a new external temporary directory and prints that directory; GitHub releases are the authoritative public artifacts. For portable CLI artifacts alone on any supported host, run `uv run python -B tools/qualify_release.py --output-directory /absolute/fresh/output`.
+Repository QA and release commands require UV 0.12.23.
+Development checks require Git 2.28 or later for real release-history verification; packaged app and CLI users do not need Git.
+
+`uv run python tools/tasks.py release` on macOS writes the complete native and portable candidate to a new external temporary directory and prints that directory; GitHub releases are the authoritative public artifacts. Tagged release qualification and publication require the tagged commit to be reachable from `origin/main` with full Git history; release jobs fetch that history. Local version-only candidate checks do not require main ancestry. For portable CLI artifacts alone on any supported host, run `uv run python -B tools/qualify_release.py --output-directory /absolute/fresh/output`.
+
+## License
+
+Project software and documentation use MPL 2.0; the app icon and custom interface artwork have separate proprietary terms in [LICENSE](LICENSE). Artwork may be built and redistributed unchanged with this application, including modified versions of the MPL-covered code; independent artwork reuse or modification requires permission. The matching-version source archive accompanies binary distributions and includes the native Swift app, editable artwork and build inputs. Redistributors must make corresponding MPL-covered source available and inform recipients how to obtain it. Bundled CPython and other third-party components retain their own licensing notices.

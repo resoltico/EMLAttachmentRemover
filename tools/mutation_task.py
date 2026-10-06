@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import shutil
 import subprocess
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
@@ -13,6 +15,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
     from typing import Protocol
+
+    from tools import mutation_integrity
 
     class CommandRunner(Protocol):
         """Describe the task runner used for mutation subprocesses."""
@@ -28,10 +32,17 @@ if TYPE_CHECKING:
         ) -> None:
             """Run one bounded task command."""
 
+else:
+    mutation_integrity = importlib.import_module(
+        "tools.mutation_integrity" if __package__ else "mutation_integrity"
+    )
+
 
 UTF8: Final = "utf-8"
 MUTATION_PROFILE: Final = "project-mutation"
-MUTATION_TIMEOUT_SECONDS: Final = 7_200
+# The full hosted campaign exceeds two hours; retain time for evidence capture
+# inside the workflow's three-hour job limit.
+MUTATION_TIMEOUT_SECONDS: Final = 9_600
 EVIDENCE_TIMEOUT_SECONDS: Final = 120
 FAILURE_GROUP_MESSAGE: Final = "mutation gate failed"
 MUTATION_MAX_WORKERS: Final = 8
@@ -145,6 +156,7 @@ def command_runner(
     storage: Path,
     storage_variable: str,
     observability: Sequence[str],
+    project_root: Path,
 ) -> CommandRunner:
     """Bind the isolated storage and coverage settings every mutation command needs.
 
@@ -168,18 +180,27 @@ def command_runner(
         updates["COVERAGE_FILE"] = str(storage.parent / ".mutmut-coverage")
         updates[storage_variable] = str(storage)
         updates["EML_MUTATION_PYTEST_TEMPORARY_ROOT"] = str(storage)
-        run(
-            command,
-            profile=profile,
-            timeout_seconds=timeout_seconds,
-            environment_updates=updates,
-            environment_removals=(
-                *observability,
-                *coverage_variables,
-                "PYTEST_ADDOPTS",
-                *environment_removals,
-            ),
+        checkpoint = storage.parent / "mutation-workspace.json"
+        if profile == MUTATION_PROFILE:
+            updates[mutation_integrity.CHECKPOINT_VARIABLE] = str(checkpoint)
+        context = (
+            mutation_integrity.guard(project_root / "mutants", checkpoint, storage)
+            if profile == MUTATION_PROFILE
+            else nullcontext()
         )
+        with context:
+            run(
+                command,
+                profile=profile,
+                timeout_seconds=timeout_seconds,
+                environment_updates=updates,
+                environment_removals=(
+                    *observability,
+                    *coverage_variables,
+                    "PYTEST_ADDOPTS",
+                    *environment_removals,
+                ),
+            )
 
     return run_mutation_command
 

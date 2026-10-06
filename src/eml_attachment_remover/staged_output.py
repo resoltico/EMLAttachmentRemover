@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass, replace
 
 from . import native_literal_address, staged_receipt, staged_signals
+from .atomic_publish import sync_descriptor
 from .cancellation import checkpoint
 from .domain import (
     AppError,
@@ -175,9 +176,9 @@ def _verify_staged(state: _PublicationState) -> None:
         checkpoint(before_visibility=True)
         written = os.write(stage.descriptor, state.candidate[position:])
         position = advance_position(position, written, len(state.candidate))
-    os.fsync(stage.descriptor)
     if not parent.windows:
         os.fchmod(stage.descriptor, 0o600)
+    sync_descriptor(stage.descriptor)
     os.lseek(stage.descriptor, 0, os.SEEK_SET)
     if _read_all(stage.descriptor) != state.candidate:
         raise AppError(

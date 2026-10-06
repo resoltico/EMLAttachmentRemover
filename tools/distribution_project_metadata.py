@@ -77,9 +77,15 @@ def load_project_metadata(
     name = _required_text(tables.project, "name")
     requires_python = _required_text(tables.project, "requires-python")
     requirements = _required_string_list(tables.build_system, "requires")
+    backend = _required_text(tables.build_system, "build-backend")
+    if backend == "build_backend" and _required_string_list(
+        tables.build_system, "backend-path"
+    ) != ("tools",):
+        message = "release build backend path must be tools"
+        raise DistributionArchiveError(message)
     hatchling_version = _hatchling_version(
         requirements,
-        _required_text(tables.build_system, "build-backend"),
+        backend,
     )
     package_paths = _required_string_list(tables.wheel, "packages")
     if not package_paths:
@@ -101,7 +107,12 @@ def load_project_metadata(
             requires_python,
         ),
         wheel_generator=f"hatchling {hatchling_version}",
-        license_expression=_required_text(tables.project, "license"),
+        license_expression=_required_text(
+            tables.project
+            if "license" in tables.project
+            else configuration["tool"]["eml-attachment-remover"]["licenses"],
+            "license" if "license" in tables.project else "software",
+        ),
         authors=_authors(tables.project),
         keywords=_optional_string_list(tables.project, "keywords"),
         classifiers=_optional_string_list(tables.project, "classifiers"),
@@ -258,7 +269,7 @@ def _hatchling_version(requirements: tuple[str, ...], backend: str) -> str:
         if len(hatchling) == 1
         else None
     )
-    if backend != "hatchling.build" or pinned is None:
+    if backend not in {"hatchling.build", "build_backend"} or pinned is None:
         message = "release backend must be one exactly pinned Hatchling requirement"
         raise DistributionArchiveError(message)
     return pinned.group(1)

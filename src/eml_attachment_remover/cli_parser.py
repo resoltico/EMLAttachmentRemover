@@ -1,16 +1,16 @@
-"""The intentionally small, breaking v3 command-line surface."""
+"""The intentionally small, supported command-line surface."""
 
 from __future__ import annotations
 
 import argparse
 import re
-from typing import TYPE_CHECKING, Never, TypedDict, Unpack, override
+from typing import TYPE_CHECKING, Never, TypedDict, Unpack, overload, override
 
 from ._version import program_version
 from .domain import PROGRAM_NAME, AppError, ExitCode
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
 VERSION_HELP = "show program's version number and exit"
 NEGATIVE_NUMBER = re.compile(r"^-\d+$|^-\d*\.\d+$")
@@ -19,12 +19,50 @@ NEGATIVE_NUMBER = re.compile(r"^-\d+$|^-\d*\.\d+$")
 class Parser(argparse.ArgumentParser):
     """Raise a typed usage error instead of exiting from a reusable CLI boundary."""
 
+    @overload
+    def parse_args(
+        self, args: Iterable[str] | None = None, namespace: None = None
+    ) -> argparse.Namespace: ...
+
+    @overload
+    def parse_args[Parsed](
+        self, args: Iterable[str] | None = None, namespace: Parsed = ...
+    ) -> Parsed: ...
+
+    @override
+    def parse_args(
+        self,
+        args: Iterable[str] | None = None,
+        namespace: object | None = None,
+    ) -> object:
+        """Require exactly one source channel after argparse resolves all options.
+
+        Returns:
+            The complete namespace, preserving supplied namespace subclasses.
+
+        Raises:
+            AppError: If neither source channel or both source channels were selected.
+
+        """
+        parsed = super().parse_args(args, namespace)
+        requested = getattr(parsed, "request_stdin", False)
+        selected = getattr(parsed, "source", None)
+        if requested and selected:
+            raise AppError(
+                ExitCode.USAGE, "request stdin cannot be combined with source arguments"
+            )
+        if not selected and not requested:
+            raise AppError(
+                ExitCode.USAGE, "the following arguments are required: source"
+            )
+        return parsed
+
     @override
     def error(self, message: str) -> Never:
         """Raise the parser's stable usage failure.
 
         Raises:
-            AppError: Always, with the v3 usage exit code.
+            AppError: Always, with the usage exit code.
 
         """
         raise AppError(ExitCode.USAGE, message)
@@ -83,7 +121,7 @@ def build_parser() -> Parser:
     """Construct help that states the MIME-pruned security boundary.
 
     Returns:
-        The fully configured breaking-v3 command-line parser.
+        The fully configured supported command-line parser.
 
     """
     parser = Parser(
@@ -96,7 +134,20 @@ def build_parser() -> Parser:
             "Retained HTML is not sanitized and may contain unresolved references."
         ),
     )
-    parser.add_argument("source", nargs="+", help="one or more source EML files")
+    parser.add_argument("source", nargs="*", help="one or more source EML files")
+    parser.add_argument(
+        "--progress-fd",
+        type=int,
+        help="write advisory schema-1 progress lines to a pipe descriptor above stdio",
+    )
+    parser.add_argument(
+        "--request-stdin",
+        action="store_true",
+        help=(
+            "read a framed native-path request; "
+            "keep its stdin pipe open until completion"
+        ),
+    )
     destination = parser.add_mutually_exclusive_group()
     destination.add_argument("-o", "--output", help="destination; valid for one source")
     destination.add_argument(
@@ -131,6 +182,8 @@ def validate_arguments(namespace: argparse.Namespace) -> None:
         AppError: If one-source output or dry-run path-channel rules are violated.
 
     """
+    if not namespace.source:
+        raise AppError(ExitCode.USAGE, "the following arguments are required: source")
     if namespace.output is not None and len(namespace.source) != 1:
         raise AppError(
             ExitCode.USAGE, "--output may be used only with exactly one source"

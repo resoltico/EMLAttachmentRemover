@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
     from pathlib import Path
     from types import ModuleType
 
@@ -25,7 +25,7 @@ UNKNOWN_HOLDER: Final = "unknown"
 
 
 @contextmanager
-def lease(build_directory: Path) -> Iterator[None]:
+def lease(build_directory: Path) -> Generator[None]:
     """Own the checkout's ``mutants/`` workspace and evidence until the block ends.
 
     The kernel drops the lock with its holder, so a crashed run never leaves a stale

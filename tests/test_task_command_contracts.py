@@ -203,7 +203,7 @@ class TaskCommandContractTests(unittest.TestCase):
                     f"--junitxml={storage.parent / 'test-results.xml'}",
                 ),
                 profile="project-development",
-                timeout_seconds=tasks.DEVELOPMENT_TEST_TIMEOUT_SECONDS,
+                timeout_seconds=600,
                 environment_updates={
                     tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE: str(storage),
                 },
@@ -248,7 +248,7 @@ class TaskCommandContractTests(unittest.TestCase):
         self.assertEqual(run.call_args_list[0].kwargs["timeout_seconds"], 23)
         self.assertEqual(
             run.call_args_list[1],
-            call((sys.executable, "tools/check_v301_property_observations.py")),
+            call((sys.executable, "tools/check_property_observations.py")),
         )
         self.assertEqual(
             run.call_args_list[0].kwargs["environment_updates"],
@@ -324,7 +324,7 @@ class TaskCommandContractTests(unittest.TestCase):
                         f"--junitxml={storage.parent / 'test-results.xml'}",
                     ),
                     profile="project-ci",
-                    timeout_seconds=600,
+                    timeout_seconds=1800,
                     environment_updates={
                         **coverage_environment,
                         tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE: str(

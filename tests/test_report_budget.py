@@ -12,9 +12,9 @@ from hypothesis import strategies as st
 from eml_attachment_remover import (
     native_values,
     report_budget,
+    report_document,
     report_spool,
     report_stream,
-    reporting_v3,
 )
 from eml_attachment_remover.domain import (
     AppError,
@@ -115,7 +115,7 @@ def test_no_real_terminal_record_exceeds_its_reservation(  # type: ignore[misc]
         publication=_receipt(address),
         error=error,
     )
-    assert _canonical(reporting_v3.item_json(terminal)) <= reserved
+    assert _canonical(report_document.item_json(terminal)) <= reserved
 
 
 def test_the_reservation_is_a_small_fraction_of_the_item_limit() -> None:
@@ -127,9 +127,9 @@ def test_the_reservation_is_a_small_fraction_of_the_item_limit() -> None:
 
 def test_error_messages_are_capped_in_the_serialized_record() -> None:
     """A long exception text cannot outgrow the reserved error."""
-    cap = reporting_v3.MAX_ERROR_MESSAGE
-    long = reporting_v3._error(AppError(ExitCode.PARSE_ERROR, "e" * (cap + 50)))  # ruff: ignore[private-member-access] - serializer cap.
-    exact = reporting_v3._error(AppError(ExitCode.PARSE_ERROR, "e" * cap))  # ruff: ignore[private-member-access] - serializer cap.
+    cap = report_document.MAX_ERROR_MESSAGE
+    long = report_document.error_json(AppError(ExitCode.PARSE_ERROR, "e" * (cap + 50)))
+    exact = report_document.error_json(AppError(ExitCode.PARSE_ERROR, "e" * cap))
     assert long is not None
     assert exact is not None
     assert long["message"] == "e" * (cap - 1) + "…"
@@ -286,5 +286,5 @@ def test_an_actual_record_that_does_not_fit_is_spooled_in_its_minimal_form(
     assert (record["status"], record["warnings"], record["source_request"]) == (
         "failed",
         [],
-        reporting_v3._path(first.source_request),  # ruff: ignore[private-member-access] - schema serializer.
+        report_document.path_json(first.source_request),
     )

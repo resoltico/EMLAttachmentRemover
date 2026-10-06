@@ -33,6 +33,8 @@ def test_generated_file_rules_distinguish_nested_and_root_output() -> None:
     assert not policy.generated_file(".coverage")
     assert policy.generated_file("public.pyc")
     assert policy.generated_root_file(".coverage", mutmut_statistic=False)
+    assert policy.generated_root_file(".coverage.worker", mutmut_statistic=False)
+    assert not policy.generated_file(".coverage.worker")
     assert policy.generated_root_file(
         "mutmut-stats.json",
         mutmut_statistic=True,
@@ -109,6 +111,7 @@ def test_cache_reason_matching_does_not_reject_public_lookalikes() -> None:
         ("credentials-backup", "credential-bearing filename is prohibited"),
         ("credentials_backup", "credential-bearing filename is prohibited"),
         ("id_rsa-old", "private-key filename is prohibited"),
+        ("id_rsa_backup", "private-key filename is prohibited"),
         ("id_rsa.pub", None),
     ],
 )

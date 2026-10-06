@@ -7,11 +7,11 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
 
 
 @contextmanager
-def finite_operation(timeout: float = 5) -> Iterator[None]:
+def finite_operation(timeout: float = 5) -> Generator[None]:
     """Turn a nonterminating Linux mutation into a bounded test failure.
 
     Yields:

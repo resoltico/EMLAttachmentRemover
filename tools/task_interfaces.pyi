@@ -28,6 +28,7 @@ class HypothesisRunner(Protocol):
     ) -> None: ...
 
 class TaskTimeout(Protocol):
+    def test_timeout(self, profile: str | None) -> int: ...
     def positive_timeout(self, value: str) -> float: ...
 
 class TaskTestCommands(Protocol):
@@ -72,6 +73,7 @@ class MutationTaskModule(Protocol):
         storage: Path,
         storage_variable: str,
         observability: Sequence[str],
+        project_root: Path,
     ) -> Callable[..., None]: ...
     def show_mutant(
         self,

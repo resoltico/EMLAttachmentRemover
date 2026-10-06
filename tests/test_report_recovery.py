@@ -224,7 +224,9 @@ def test_cli_cancellation_during_memory_staging_restarts_with_fresh_channels(
         return channels
 
     monkeypatch.setattr(
-        cli, "execute", lambda *_args, ledger: complete_owned(ledger, completed)
+        cli,
+        "execute",
+        lambda *_args, ledger, **_kwargs: complete_owned(ledger, completed),
     )
     monkeypatch.setattr(report_session, "_write_selected", full)
     monkeypatch.setattr(report_emergency, "stage", interrupted)

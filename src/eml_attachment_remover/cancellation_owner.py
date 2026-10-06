@@ -10,7 +10,7 @@ from .cancellation_state import CURRENT, CancellationState
 
 if TYPE_CHECKING:
     import threading
-    from collections.abc import Callable, Iterable, Iterator
+    from collections.abc import Callable, Generator, Iterable
     from contextvars import Token
 
 
@@ -43,7 +43,7 @@ class CancellationOwner:
     token: Token[CancellationState | None] | None = None
 
     @contextmanager
-    def scope(self) -> Iterator[None]:
+    def scope(self) -> Generator[None]:
         """Acquire while cooperative handlers protect setup and all rollback steps.
 
         Yields:

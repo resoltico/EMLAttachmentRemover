@@ -12,8 +12,10 @@ import tomllib
 from pathlib import Path
 
 from tools import macos_archive, qualify_release, release_files
+from tools.build_timestamp import environment, stamp_tree
 
 ROOT = Path(__file__).resolve().parents[1]
+ARCHITECTURES = ("arm64", "x86_64")
 
 
 def _version() -> str:
@@ -43,7 +45,7 @@ def _macos() -> None:
 
 
 def verify(directory: Path) -> tuple[Path, ...]:
-    """Require the exact five-file delivery and verify its extracted native app.
+    """Require all eight delivery files and verify every extracted native edition.
 
     Returns:
         The complete verified artifact and checksum paths.
@@ -52,17 +54,31 @@ def verify(directory: Path) -> tuple[Path, ...]:
     _macos()
     version = _version()
     paths = qualify_release.verify_release_directory(
-        directory, additional_artifacts=(macos_archive.archive_name(version),)
+        directory,
+        additional_artifacts=tuple(
+            macos_archive.archive_name(version, architecture, mode)
+            for architecture in ARCHITECTURES
+            for mode in macos_archive.RUNTIME_MODES
+        ),
     )
-    macos_archive.verify(
-        directory / macos_archive.archive_name(version),
-        directory / "remove-eml-attachments.pyz",
-        version,
-    )
+    for architecture in ARCHITECTURES:
+        for mode in macos_archive.RUNTIME_MODES:
+            macos_archive.verify(
+                directory / macos_archive.archive_name(version, architecture, mode),
+                directory / "remove-eml-attachments.pyz",
+                version,
+                architecture,
+                mode,
+            )
     return paths
 
 
-def _native(directory: Path) -> Path:
+def _native(
+    directory: Path,
+    architecture: str,
+    icon_resources: Path,
+    runtime_mode: str = "bundled",
+) -> Path:
     """Build and package one independently staged ad-hoc signed application.
 
     Returns:
@@ -72,8 +88,19 @@ def _native(directory: Path) -> Path:
     directory.mkdir()
     app = directory / macos_archive.APP
     subprocess.run(
-        ["/bin/sh", str(ROOT / "integrations/macos-ui/build.sh"), str(app)],
-        env={**os.environ, "EML_REMOVER_PYTHON": sys.executable},
+        [
+            "/bin/sh",
+            str(ROOT / "integrations/macos-ui/build.sh"),
+            str(app),
+            architecture,
+            runtime_mode,
+        ],
+        env={
+            **os.environ,
+            **environment(),
+            "EML_REMOVER_PYTHON": sys.executable,
+            "EML_ICON_RESOURCES": str(icon_resources),
+        },
         check=True,
         timeout=600,
     )
@@ -101,22 +128,26 @@ def _complete(staging: Path) -> tuple[str, ...]:
     """Qualify and copy the complete delivery into its reserved staging directory.
 
     Returns:
-        The five verified basenames.
-
-    Raises:
-        ReleaseQualificationError: If independent native archives differ.
+        The eight verified basenames.
 
     """
     with tempfile.TemporaryDirectory(prefix="eml-release-delivery-") as temporary:
         root = Path(temporary)
         portable = root / "artifacts"
         qualify_release.qualify_release(portable)
-        first = _native(root / "native-a")
-        second = _native(root / "native-b")
-        if release_files.sha256(first) != release_files.sha256(second):
-            message = "Native archives differ between independent builds"
-            raise release_files.ReleaseQualificationError(message)
-        shutil.copyfile(first, portable / macos_archive.archive_name(_version()))
+        icon_resources = root / "icon-resources"
+        subprocess.run(
+            [
+                "/bin/sh",
+                str(ROOT / "integrations/macos-ui/compile-icon.sh"),
+                str(icon_resources),
+            ],
+            check=True,
+            timeout=180,
+        )
+        for architecture in ARCHITECTURES:
+            for mode in macos_archive.RUNTIME_MODES:
+                _native_pair(root, portable, architecture, mode, icon_resources)
         artifacts = tuple(
             sorted(
                 file.name for file in portable.iterdir() if file.name != "SHA256SUMS"
@@ -132,7 +163,7 @@ def _publish(output: Path, source: Path, names: tuple[str, ...]) -> tuple[Path, 
     """Copy verified artifacts and atomically publish their complete set.
 
     Returns:
-        The five final paths.
+        The eight final paths.
 
     Raises:
         BaseExceptionGroup: If publication and staging cleanup both fail.
@@ -141,6 +172,7 @@ def _publish(output: Path, source: Path, names: tuple[str, ...]) -> tuple[Path, 
     staging = release_files.prepare_output_directory(output)
     try:
         _copy_verified(tuple(source / name for name in names), staging)
+        stamp_tree(staging)
         release_files.publish_staging(staging, output)
     except BaseException as error:
         try:
@@ -150,6 +182,29 @@ def _publish(output: Path, source: Path, names: tuple[str, ...]) -> tuple[Path, 
             raise BaseExceptionGroup(message, [error, cleanup_error]) from None
         raise
     return tuple(output / name for name in names)
+
+
+def _native_pair(
+    root: Path,
+    portable: Path,
+    architecture: str,
+    mode: str,
+    icons: Path,
+) -> None:
+    """Compare independent same-time builds before adding one approved edition.
+
+    Raises:
+        ReleaseQualificationError: If independent archive bytes differ.
+
+    """
+    first = _native(root / f"{architecture}-{mode}-a", architecture, icons, mode)
+    second = _native(root / f"{architecture}-{mode}-b", architecture, icons, mode)
+    if release_files.sha256(first) != release_files.sha256(second):
+        message = "Native archives differ between independent builds"
+        raise release_files.ReleaseQualificationError(message)
+    shutil.copyfile(
+        first, portable / macos_archive.archive_name(_version(), architecture, mode)
+    )
 
 
 def build(output: Path) -> tuple[Path, ...]:

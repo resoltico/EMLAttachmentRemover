@@ -14,7 +14,8 @@ from unittest.mock import MagicMock, patch
 from tools import local_ci
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
+
 
 HOST_ROOT = Path("/host-ci")
 HOST_PROJECT = Path("/project")
@@ -44,7 +45,7 @@ class LeaseTests(unittest.TestCase):
         events: list[str] = []
 
         @contextmanager
-        def lease() -> Iterator[None]:
+        def lease() -> Generator[None]:
             events.append("acquire")
             try:
                 yield

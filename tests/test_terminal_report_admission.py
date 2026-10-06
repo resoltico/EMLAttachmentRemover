@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from eml_attachment_remover import report_spool, report_stream, reporting_v3
+from eml_attachment_remover import report_document, report_spool, report_stream
 from eml_attachment_remover.domain import (
     AppError,
     BatchLedger,
@@ -63,7 +63,7 @@ def test_every_report_entrypoint_rejects_partially_terminal_rows(
     ledger = BatchLedger([item])
     message = r"^report requested before ledger terminalization$"
     with pytest.raises(RuntimeError, match=message):
-        reporting_v3.report(ledger, "apply", 0)
+        report_document.report(ledger, "apply", 0)
     with pytest.raises(RuntimeError, match=message):
         report_stream._summary(ledger)  # ruff: ignore[private-member-access] - shared terminal admission.
     with pytest.raises(RuntimeError, match=message):

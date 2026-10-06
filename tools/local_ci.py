@@ -19,10 +19,10 @@ if TYPE_CHECKING:
 
     type StepRunner = Callable[[Sequence[str], Mapping[str, str], float], None]
 
-WORKFLOW_PYTHONS: Final = ("3.14.7", "3.14.7t")
+WORKFLOW_PYTHONS: Final = ("3.14.8", "3.14.8t")
 # The shared CI static lane and this local plan explicitly check every mypy target.
 TYPE_PLATFORMS: Final = ("darwin", "linux", "win32")
-CANONICAL_PYTHON: Final = "3.14.7"
+CANONICAL_PYTHON: Final = "3.14.8"
 MATRIX_PYTHON: Final = "${{ matrix.python }}"
 # Each step's leader is itself a process-group owner; it needs time to stop its
 # own group (task_process.DEFAULT_GRACE_SECONDS) before this owner escalates.
@@ -64,12 +64,12 @@ FINALIZE: Final = "uv run python tools/finalize_hypothesis_artifacts.py --observ
 # Linux IDs; other POSIX hosts therefore run mutation in CI's runner image. It uses
 # Docker's native architecture: the code has no architecture-specific branches, and
 # emulated x86_64 campaigns were both slower and killed mid-run.
-LINUX_IMAGE: Final = "eml-attachment-remover-ci:uv-0.12.21"
+LINUX_IMAGE: Final = "eml-attachment-remover-ci:uv-0.12.23"
 UV_IMAGE: Final = (
-    "ghcr.io/astral-sh/uv:0.12.21@sha256:"
+    "ghcr.io/astral-sh/uv:0.12.23@sha256:"
     # Public GHCR image digest.
-    "a7aed3216253ee804de3e2d8afa5073baa"  # pragma: allowlist secret
-    "1a177335345d43845cd4165e43b711"  # pragma: allowlist secret
+    "61d393e44e249f2e4b526b6c7ddcecce"  # pragma: allowlist secret
+    "245946826e608e11c93ad4f5bba55b21"  # pragma: allowlist secret
 )
 UBUNTU_IMAGE: Final = (
     "ubuntu:24.04@sha256:"
@@ -83,7 +83,7 @@ LINUX_IMAGE_DEFINITION: Final = (
     f"FROM {UV_IMAGE} AS uv\n"
     f"FROM {UBUNTU_IMAGE}\n"
     "RUN apt-get update && apt-get install -y --no-install-recommends "
-    "ca-certificates && rm -rf /var/lib/apt/lists/* "
+    "ca-certificates git && rm -rf /var/lib/apt/lists/* "
     "&& useradd --create-home --home-dir /ci --uid 1001 runner "
     "&& mkdir -p /ci/.cache/uv /ci/work "
     "&& chown -R runner:runner /ci\n"
@@ -112,9 +112,9 @@ CI_ONLY_NOTICE: Final = (
 
 @dataclass(frozen=True, slots=True)
 class Step:
-    """One local command and the normalized workflow ``run:`` text it mirrors."""
+    """A local command and its workflow counterpart, if one exists."""
 
-    mirrors: str
+    mirrors: str | None
     command: tuple[str, ...]
     environment: Mapping[str, str]
     timeout_seconds: float
@@ -157,16 +157,18 @@ def _lane(
     """Mirror workflow steps for one interpreter.
 
     Returns:
-        Steps whose commands are their mirrors' words with local values.
+        Commands with local values; candidate-only checks have no workflow counterpart.
 
     """
     environment = _environment(root, python)
     steps: list[Step] = []
-    for mirrors, timeout in entries:
-        words = mirrors.replace(MATRIX_PYTHON, python).split()
+    for template, timeout in entries:
+        words = template.replace(MATRIX_PYTHON, python).split()
         command = tuple(values.get(word, word) for word in words)
         # CI relaxes warnings only for dependency installation.
         installer = {"PYTHONWARNINGS": "default"} if command[1] == "sync" else {}
+        # Candidate builds need version validation, not authoritative tag eligibility.
+        mirrors = None if template == TAG_CHECK else template
         steps.append(Step(mirrors, command, environment | installer, timeout))
     return steps
 

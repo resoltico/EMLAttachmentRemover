@@ -387,7 +387,7 @@ class _Classifier:
 
 
 def classify(root: RawNode) -> PolicyResult:
-    """Return the only deletion plan permitted by the v3 MIME policy.
+    """Return the only deletion plan permitted by the MIME pruning policy.
 
     Returns:
         Closed contextual decisions and permitted removal roots.

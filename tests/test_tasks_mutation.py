@@ -13,7 +13,7 @@ from pathlib import Path
 from subprocess import CalledProcessError
 from unittest.mock import patch
 
-from tools import tasks
+from tools import mutation_integrity, tasks
 
 
 class MutationTaskTests(unittest.TestCase):
@@ -164,8 +164,17 @@ class MutationTaskTests(unittest.TestCase):
                     side_effect=lambda: events.append("capture"),
                 ),
                 patch.object(tasks, "_run", side_effect=record_run) as run,
+                patch.object(mutation_integrity, "verify") as integrity,
             ):
                 tasks._mutation(workers=5)
+                integrity.assert_called_once_with(
+                    mutation_root,
+                    Path(
+                        run.call_args_list[1].kwargs["environment_updates"][
+                            "EML_MUTATION_WORKSPACE_CHECKPOINT"
+                        ]
+                    ),
+                )
         self.assertEqual(events[:4], ["mutation", "cleanup", "coverage", "mutation"])
         self.assertEqual(run.call_count, 4)
         self.assertEqual(

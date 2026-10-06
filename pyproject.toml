@@ -1,6 +1,7 @@
 [build-system]
 requires = ["hatchling==1.32.4"]
-build-backend = "hatchling.build"
+build-backend = "build_backend"
+backend-path = ["tools"]
 
 [project]
 name = "eml-attachment-remover"
@@ -8,7 +9,7 @@ version = "4.0.0"
 description = "Create structurally verified MIME-pruned EML working copies"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
-license = "MIT"
+dynamic = ["license"]
 license-files = ["LICENSE"]
 authors = [
   { name = "Ervins Strauhmanis" },
@@ -45,13 +46,14 @@ dev = [
   "detect-secrets==1.5.0",
   "hatchling==1.32.4",
   "hypothesis==6.168.3",
-  "mypy==2.3.1",
+  "mypy==2.4.0",
   "mutmut==3.8.0",
-  "pyflakes==4.0.1",
+  "pyflakes==4.0.2",
   "pytest==9.1.1",
-  "ruff==0.16.9",
+  "ruff==0.16.10",
   "shellcheck-py==0.11.0.1",
   "types-defusedxml==0.7.0.20260504",
+  "editables==0.6",
 ]
 
 [project.scripts]
@@ -60,6 +62,13 @@ remove-eml-attachments = "eml_attachment_remover.runtime:main"
 [tool.eml-attachment-remover.runtime]
 implementation = "CPython"
 
+[tool.eml-attachment-remover.macos]
+build-number = 33
+
+[tool.eml-attachment-remover.licenses]
+software = "MPL-2.0"
+source = "MPL-2.0 AND LicenseRef-Proprietary-Artwork"
+
 [tool.hatch.build]
 exclude = ["**/*.py.meta", "**/*.py.spans"]
 reproducible = true
@@ -67,7 +76,7 @@ reproducible = true
 [tool.hatch.build.targets.wheel]
 packages = ["src/eml_attachment_remover"]
 
-[tool.hatch.build.targets.wheel.hooks.custom]
+[tool.hatch.build.hooks.custom]
 path = "tools/hatch_build.py"
 
 [tool.hatch.build.targets.sdist]
@@ -92,7 +101,7 @@ include = [
 ]
 
 [tool.uv]
-required-version = "==0.12.21"
+required-version = "==0.12.23"
 
 [tool.ruff]
 target-version = "py314"
@@ -123,6 +132,12 @@ max-returns = 6
 max-statements = 40
 
 [tool.ruff.lint.per-file-ignores]
+# Test-only module policies live here; source directives remain centrally approved.
+"tests/test_windows_source_snapshot_failure_cleanup.py" = ["docstring-missing-returns"]
+"tests/test_release_mutation_contracts.py" = ["private-member-access"]
+"tests/test_smoke_fixture_boundaries.py" = ["private-member-access"]
+"tests/test_zipapp_smoke_mutation_contracts.py" = ["private-member-access"]
+
 "tests/*.py" = [
   "assert",
   "docstring-extraneous-exception",
@@ -155,9 +170,9 @@ max-statements = 40
 "tests/test_tasks_mutation.py" = ["private-member-access"]
 "tests/test_tools.py" = ["private-member-access"]
 "tests/test_version.py" = ["import-private-name", "private-member-access"]
-"tests/test_v3_release_contract.py" = ["private-member-access"]
-"tests/test_v3_tool_junit_contracts.py" = ["private-member-access"]
-"tests/test_v3_tool_zipapp.py" = ["private-member-access"]
+"tests/test_release_contract.py" = ["private-member-access"]
+"tests/test_tool_junit_contracts.py" = ["private-member-access"]
+"tests/test_tool_zipapp.py" = ["private-member-access"]
 "tools/*.py" = [
   "print",
   "subprocess-without-shell-equals-true",

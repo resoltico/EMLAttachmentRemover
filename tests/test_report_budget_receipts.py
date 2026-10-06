@@ -51,7 +51,7 @@ def test_the_worst_words_are_the_longest_enumerated_values() -> None:
     """Statuses, phases, and exit codes are reserved at their longest spelling."""
     assert report_budget.LONGEST_STATUS == ItemStatus.PUBLISHED_WITH_ERROR
     assert report_budget.LONGEST_PHASE == "inventoried"
-    assert report_budget.LONGEST_CODE is ExitCode.TRANSFORMATION_UNAVAILABLE
+    assert report_budget.LONGEST_CODE is ExitCode.ATOMIC_PUBLICATION_UNSUPPORTED
     assert (report_budget.WORST_WORD, report_budget.WORST_NUMBER) == (WORD, 10**30)
     assert report_budget.NEWLINE_BYTES == 1
 
@@ -75,13 +75,13 @@ def test_the_worst_receipt_fills_every_field_with_its_largest_value() -> None:
 def test_the_worst_error_has_the_longest_code_message_and_phase() -> None:
     """Errors after admission carry no MIME path."""
     assert report_budget._worst_error() == AppError(  # ruff: ignore[private-member-access] - reservation error.
-        ExitCode.TRANSFORMATION_UNAVAILABLE, "\x01" * 2048, None, WORD
+        ExitCode.ATOMIC_PUBLICATION_UNSUPPORTED, "\x01" * 2048, None, WORD
     )
 
 
 def test_the_reserved_terminal_record_has_this_exact_size() -> None:
     """One pinned number covers every field of the worst-case terminal record."""
-    assert report_budget.terminal_size(LedgerItem(0, SOURCE)) == 47507
+    assert report_budget.terminal_size(LedgerItem(0, SOURCE)) == 47511
 
 
 def test_the_minimal_worst_record_has_this_exact_size_and_outcome() -> None:
@@ -93,12 +93,12 @@ def test_the_minimal_worst_record_has_this_exact_size_and_outcome() -> None:
         "inventoried",
     )
     assert record["error"] == {
-        "code": "TRANSFORMATION_UNAVAILABLE",
+        "code": "ATOMIC_PUBLICATION_UNSUPPORTED",
         "message": "\x01" * 2048,
         "mime_path": None,
         "phase": WORD,
     }
-    assert report_budget._size(record) == 12775  # ruff: ignore[private-member-access] - exact reserve size.
+    assert report_budget._size(record) == 12779  # ruff: ignore[private-member-access] - exact reserve size.
 
 
 def test_the_minimal_record_keeps_only_identity_outcome_and_a_pathless_error() -> None:
@@ -184,7 +184,7 @@ def test_a_minimal_record_drops_every_bulky_section_an_item_holds() -> None:
     identity = FileIdentity(1, 2, "-rw-------", 3)
     item = LedgerItem(0, SOURCE)
     item.source = SourceSnapshot(
-        SOURCE, SOURCE, SOURCE, b"s.eml", SOURCE, identity, 0o600, b"", "a" * 64, 1
+        SOURCE, SOURCE, SOURCE, b"s.eml", SOURCE, identity, b"", "a" * 64, 1
     )
     item.destination = BoundDestination(SOURCE, SOURCE, b"o.eml", identity)
     item.verification = VerificationReceipt(

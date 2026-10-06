@@ -13,12 +13,16 @@ import tempfile
 import tomllib
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Final
 
 if __package__:
+    from tools.archive_reproducibility_policy import zipapp_member as _zip_info
+    from tools.build_timestamp import EPOCH
     from tools.mutmut_workspace import generated_sidecar
 else:
+    from archive_reproducibility_policy import zipapp_member as _zip_info  # type: ignore[import-not-found,no-redef]
+    from build_timestamp import EPOCH  # type: ignore[import-not-found,no-redef]
     from mutmut_workspace import generated_sidecar  # type: ignore[import-not-found,no-redef]
 
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
@@ -28,7 +32,6 @@ LICENSE_FILE: Final = PROJECT_ROOT / "LICENSE"
 SCHEMA_FILE: Final = PROJECT_ROOT / "schema" / "report.schema.json"
 DEFAULT_TARGET: Final = PROJECT_ROOT / "build" / "remove-eml-attachments.pyz"
 INTERPRETER: Final = "/usr/bin/env python3.14"
-ARCHIVE_MODE: Final = 0o100644 << 16
 CHUNK_SIZE: Final = 65_536
 VERIFY_TIMEOUT_SECONDS: Final = 30
 METADATA_TEMPLATE: Final = """Metadata-Version: 2.4
@@ -69,7 +72,10 @@ def _project_metadata() -> ProjectMetadata:
         version=str(project["version"]),
         summary=str(project["description"]),
         requires_python=str(project["requires-python"]),
-        license_expression=str(project["license"]),
+        license_expression=str(
+            project.get("license")
+            or configuration["tool"]["eml-attachment-remover"]["licenses"]["software"]
+        ),
         implementation=str(runtime["implementation"]),
     )
 
@@ -224,21 +230,14 @@ def _archive_members(metadata: ProjectMetadata) -> tuple[tuple[str, bytes], ...]
         )
         for source in _source_files()
     )
+    directories = {
+        str(parent) + "/"
+        for name, _content in members
+        for parent in PurePosixPath(name).parents
+        if str(parent) != "."
+    }
+    members.extend((name, b"") for name in directories)
     return tuple(sorted(members))
-
-
-def _zip_info(name: str) -> zipfile.ZipInfo:
-    """Return deterministic metadata for one regular archive member.
-
-    Returns:
-        The normalized ZIP member metadata.
-
-    """
-    info = zipfile.ZipInfo(name)
-    info.compress_type = zipfile.ZIP_STORED
-    info.create_system = 3
-    info.external_attr = ARCHIVE_MODE
-    return info
 
 
 def _temporary_path(target: Path) -> Path:
@@ -268,6 +267,8 @@ def _write_archive(target: Path, metadata: ProjectMetadata) -> None:
             for name, content in _archive_members(metadata):
                 archive.writestr(_zip_info(name), content)
 
+    os.utime(target, (EPOCH, EPOCH))
+
 
 def _verify_archive(path: Path, metadata: ProjectMetadata, *, execute: bool) -> None:
     """Check archive integrity, required metadata, and optional execution.
@@ -293,6 +294,7 @@ def _verify_archive(path: Path, metadata: ProjectMetadata, *, execute: bool) -> 
             [
                 sys.executable,
                 "-I",
+                "-B",
                 "-X",
                 "dev",
                 "-W",

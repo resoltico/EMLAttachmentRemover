@@ -38,6 +38,47 @@ def _owner(tree: ast.AST, line: int) -> str:
     )
 
 
+def _source_anchor(tree: ast.AST, lines: list[str], line: int, column: int) -> str:
+    """Bind closing-line or standalone directives to their actual statement.
+
+    Returns:
+        Existing meaningful line text, or the canonical owning statement/header.
+
+    Raises:
+        ValueError: If a suppression has no identifiable source statement.
+
+    """
+    anchor = lines[line - 1][:column].strip()
+    if anchor not in {"", ")", "]", "}", "):", "]:", "}:"}:
+        return anchor
+    statements = [node for node in ast.walk(tree) if isinstance(node, ast.stmt)]
+    if not anchor:
+        following = [node for node in statements if node.lineno > line]
+        selected = min(following, key=lambda node: node.lineno, default=None)
+    else:
+        owning = [
+            node
+            for node in statements
+            if node.lineno <= line <= (node.end_lineno or node.lineno)
+        ]
+        selected = min(
+            owning,
+            key=lambda node: (node.end_lineno or node.lineno) - node.lineno,
+            default=None,
+        )
+    if selected is None:
+        message = "Suppression has no identifiable source statement"
+        raise ValueError(message)
+    text = ast.unparse(selected)
+    if isinstance(selected, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return next(
+            value
+            for value in text.splitlines()
+            if value.startswith(("def ", "async def ", "class "))
+        )
+    return text
+
+
 def python_directives(path: Path) -> list[dict[str, str]]:
     """Identify real comment directives, never lookalikes in strings.
 
@@ -56,6 +97,9 @@ def python_directives(path: Path) -> list[dict[str, str]]:
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
         if token.type != tokenize.COMMENT:
             continue
+        if re.search(r"#\s*ruff:\s*file-ignore", token.string):
+            message = "File-wide Ruff policies belong in pyproject.toml"
+            raise ValueError(message)
         match = DIRECTIVE.search(token.string)
         if not match and re.search(
             r"#\s*(ruff:\s*(ignore|noqa)|type: ignore|noqa)\b", token.string
@@ -67,7 +111,7 @@ def python_directives(path: Path) -> list[dict[str, str]]:
             entries.append({
                 "path": path.relative_to(ROOT).as_posix(),
                 "scope": _owner(tree, line),
-                "anchor": lines[line - 1][: token.start[1]].strip(),
+                "anchor": _source_anchor(tree, lines, line, token.start[1]),
                 "tool": "mypy" if match[1] == "type: ignore" else "ruff",
                 "rules": ",".join(sorted(rule.strip() for rule in match[2].split(","))),
             })

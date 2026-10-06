@@ -2,30 +2,57 @@
 # Install only our owned native application; preserve the previous bundle.
 set -eu
 umask 077
-PYTHON=${EML_REMOVER_PYTHON:-python3.14}
 APP=${1:?Supply the freshly built EML Attachment Remover.app path}
 DESTINATION=${EML_REMOVER_UI_APP:-"$HOME/Applications/EML Attachment Remover.app"}
-"$PYTHON" -c 'import platform, sys; raise SystemExit(platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 14))'     || { printf '%s\n' 'The native UI installer requires CPython 3.14.' >&2; exit 9; }
 codesign --verify --deep --strict "$APP"
-"$PYTHON" - "$APP" "$DESTINATION" <<'PY'
-import json, os, plistlib, shutil, stat, subprocess, sys, tempfile
+RUNTIME_MODE=$(/usr/libexec/PlistBuddy -c 'Print :EMLRuntimeMode' "$APP/Contents/Info.plist")
+case "$RUNTIME_MODE" in
+    bundled) PYTHON="$APP/Contents/Resources/Runtime/bin/python3.14" ;;
+    external) PYTHON=${EML_REMOVER_PYTHON:-python3.14} ;;
+    *) printf '%s\n' 'Application runtime edition is invalid.' >&2; exit 4 ;;
+esac
+PYTHON=$(command -v "$PYTHON") || { printf '%s\n' 'The selected CPython invocation is unavailable.' >&2; exit 9; }
+"$PYTHON" -I -B -c 'import platform, sys; raise SystemExit(platform.python_implementation() != "CPython" or sys.version_info[:2] != (3, 14))' || { printf '%s\n' 'The selected CPython 3.14 runtime is unavailable.' >&2; exit 9; }
+"$PYTHON" -I -B - "$APP" "$DESTINATION" "$RUNTIME_MODE" "$PYTHON" <<'PY'
+import json, os, plistlib, shutil, stat, struct, subprocess, sys, tempfile
 from pathlib import Path
 def install():
     source = Path(sys.argv[1]).absolute()
     destination = Path(sys.argv[2]).absolute()
+    runtime_mode = sys.argv[3]
     marker = 'EML Attachment Remover native UI managed installation\n'
     identifier = 'io.github.resoltico.emlattachmentremover'
     def owned_tree(root):
         for item in [root, *root.rglob('*')]:
             mode = item.lstat()
-            if mode.st_uid != os.geteuid() or not (stat.S_ISDIR(mode.st_mode) or stat.S_ISREG(mode.st_mode)):
-                raise OSError('Application contains an unowned or unsafe entry')
+            runtime_root = root/'Contents/Resources/Runtime'
+            if stat.S_ISLNK(mode.st_mode):
+                if not item.is_relative_to(runtime_root) or item.readlink().is_absolute() or not item.resolve(strict=True).is_relative_to(runtime_root.resolve(strict=True)):
+                    raise OSError('Application contains an escaping or unsafe runtime link')
+            elif not (stat.S_ISDIR(mode.st_mode) or stat.S_ISREG(mode.st_mode)):
+                raise OSError('Application contains an unsafe entry')
+            if mode.st_uid != os.geteuid():
+                raise OSError('Application contains an unowned entry')
         if (root/'Contents/Resources/.eml-ui-installation').read_text() != marker:
             raise OSError('Application is not an owned native UI bundle')
         with (root/'Contents/Info.plist').open('rb') as stream:
             if plistlib.load(stream).get('CFBundleIdentifier') != identifier:
                 raise OSError('Application identity differs')
     owned_tree(source)
+    physical_arm = subprocess.run(
+        ['/usr/sbin/sysctl', '-n', 'hw.optional.arm64'],
+        capture_output=True, text=True, check=False
+    ).stdout.strip() == '1'
+    required_cpu = 'arm64' if physical_arm else 'x86_64'
+    # Mach-O header_64: magic, CPU type, subtype, file type (Apple loader.h/machine.h).
+    with (source/'Contents/MacOS/EMLAttachmentRemover').open('rb') as executable_file:
+        header = executable_file.read(16)
+    expected_cpu = (0x0100000c, 0) if physical_arm else (0x01000007, 3)
+    if len(header) != 16:
+        raise OSError('Application executable header is incomplete')
+    magic, cpu_type, cpu_subtype, file_type = struct.unpack('<4I', header)
+    if (magic, cpu_type, cpu_subtype & 0x00ffffff, file_type) != (0xfeedfacf, *expected_cpu, 2):
+        raise OSError(f'Application CPU does not match this Mac ({required_cpu})')
     executable = str(destination / 'Contents/MacOS/EMLAttachmentRemover')
     processes = subprocess.check_output(['/bin/ps', '-axo', 'pid=,comm='], text=True)
     if any(line.strip().split(None, 1)[-1] == executable for line in processes.splitlines()):
@@ -42,30 +69,33 @@ def install():
         if destination == source:
             raise OSError('Source and destination are identical')
     configuration = Path.home()/'Library/Application Support/EML Attachment Remover UI'
-    for ancestor in [configuration, *configuration.parents]:
-        if ancestor.is_symlink():
-            raise OSError('Refusing a symbolic-link runtime configuration ancestor')
-    configuration.mkdir(mode=0o700, parents=True, exist_ok=True)
-    configuration_stat = configuration.stat()
-    if configuration_stat.st_uid != os.geteuid() or stat.S_IMODE(configuration_stat.st_mode) & 0o077:
-        raise OSError('Runtime configuration directory is not privately owned')
     runtime = configuration/'runtime.json'
-    if runtime.exists() or runtime.is_symlink():
-        runtime_stat = runtime.lstat()
-        if not stat.S_ISREG(runtime_stat.st_mode) or runtime_stat.st_uid != os.geteuid():
-            raise OSError('Refusing an unsafe runtime configuration file')
+    if runtime_mode == 'external':
+        for ancestor in [configuration, *configuration.parents]:
+            if ancestor.is_symlink():
+                raise OSError('Refusing a symbolic-link runtime configuration ancestor')
+        configuration.mkdir(mode=0o700, parents=True, exist_ok=True)
+        configuration_stat = configuration.stat()
+        if configuration_stat.st_uid != os.geteuid() or stat.S_IMODE(configuration_stat.st_mode) & 0o077:
+            raise OSError('Runtime configuration directory is not privately owned')
+        runtime = configuration/'runtime.json'
+        if runtime.exists() or runtime.is_symlink():
+            runtime_stat = runtime.lstat()
+            if not stat.S_ISREG(runtime_stat.st_mode) or runtime_stat.st_uid != os.geteuid():
+                raise OSError('Refusing an unsafe runtime configuration file')
     stage = Path(tempfile.mkdtemp(prefix='.eml-ui-install-', dir=destination.parent))
     backup = None
     runtime_temp = None
     try:
-        fd, runtime_temp = tempfile.mkstemp(prefix='.runtime-', dir=configuration)
-        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-            json.dump({'python': str(Path(sys.executable).resolve())}, stream)
-            stream.write('\n')
-            stream.flush()
-            os.fsync(stream.fileno())
+        if runtime_mode == 'external':
+            fd, runtime_temp = tempfile.mkstemp(prefix='.runtime-', dir=configuration)
+            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+                json.dump({'python': str(Path(sys.argv[4]).absolute())}, stream)
+                stream.write('\n')
+                stream.flush()
+                os.fsync(stream.fileno())
         prepared = stage/destination.name
-        shutil.copytree(source, prepared, symlinks=False)
+        shutil.copytree(source, prepared, symlinks=True)
         owned_tree(prepared)
         subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(prepared)], check=True)
         if destination.exists():
@@ -79,7 +109,7 @@ def install():
         try:
             os.rename(prepared, destination)
             try:
-                os.replace(runtime_temp, runtime)
+                if runtime_temp is not None: os.replace(runtime_temp, runtime)
             except BaseException:
                 os.rename(destination, prepared)
                 raise

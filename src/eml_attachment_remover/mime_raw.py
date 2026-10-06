@@ -207,7 +207,10 @@ def _shallow_node(
         raise AppError(
             ExitCode.PARSE_ERROR, "MIME message exceeds cumulative header limit"
         )
-    content_type, disposition, cte = content_specs(headers)
+    try:
+        content_type, disposition, cte = content_specs(headers)
+    except AppError as error:
+        raise AppError(error.code, error.message, path) from error
     return RawNode(
         path, start, end, body_start, headers, content_type, disposition, cte
     )

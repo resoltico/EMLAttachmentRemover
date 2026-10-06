@@ -14,7 +14,7 @@ import json
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Final
 
-from . import report_spool, reporting_v3
+from . import report_document, report_spool
 from .domain import (
     AppError,
     ExitCode,
@@ -75,7 +75,7 @@ def _worst_error() -> AppError:
 
     """
     return AppError(
-        LONGEST_CODE, "\x01" * (reporting_v3.MAX_ERROR_BYTES // 6), None, WORST_WORD
+        LONGEST_CODE, "\x01" * (report_document.MAX_ERROR_BYTES // 6), None, WORST_WORD
     )
 
 
@@ -108,7 +108,7 @@ def terminal_size(item: LedgerItem) -> int:
         publication=_worst_receipt(),
         error=_worst_error(),
     )
-    return _size(reporting_v3.item_json(worst))
+    return _size(report_document.item_json(worst))
 
 
 def minimal_record(item: LedgerItem, *, worst: bool = False) -> dict[str, object]:
@@ -137,7 +137,7 @@ def minimal_record(item: LedgerItem, *, worst: bool = False) -> dict[str, object
         warnings=[],
         error=error,
     )
-    return reporting_v3.item_json(kept)
+    return report_document.item_json(kept)
 
 
 @dataclass(frozen=True, slots=True)

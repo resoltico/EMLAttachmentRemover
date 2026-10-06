@@ -151,7 +151,7 @@ def _comment_end(value: bytes, start: int) -> int:
     """
     depth = 1
     position = start + 1
-    for _step in range(len(value) - position):
+    while position < len(value):
         next_position, depth = _comment_step(value, position, depth)
         if next_position <= position:
             raise AppError(ExitCode.PARSE_ERROR, "nonadvancing MIME comment cursor")

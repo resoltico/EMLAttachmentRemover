@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
+import signal
 import tempfile
+import tomllib
 import uuid
 from contextlib import nullcontext
 from pathlib import Path
@@ -13,17 +16,28 @@ from typing import TYPE_CHECKING, Never
 import pytest
 from mutmut.mutation.trampoline import get_mutant_under_test
 from mutmut.state import state as mutation_state
-from tools import finalize_hypothesis_artifacts, tasks
+from tools import finalize_hypothesis_artifacts, mutation_integrity, tasks
 
 import eml_attachment_remover
 from tests import hypothesis_config as _hypothesis_config
 from tests.deadline_support import finite_operation
+from tests.mutation_statistics_support import capture_workspace
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
 __all__ = ["_hypothesis_config"]
 CHILD_STATS = pytest.StashKey[Path]()
+
+
+@pytest.fixture(autouse=True)  # ruff: ignore[pytest-fixture-autouse] - signal tests own their baseline policy independent of the invoking shell.
+def _controlled_sigint_policy() -> Iterator[None]:
+    previous = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
 
 
 @pytest.fixture(scope="session")
@@ -48,6 +62,19 @@ def _mutated_child_imports(
     source = Path(eml_attachment_remover.__file__).resolve().parents[1]
     workspace = source.parent
     if workspace.name == "mutants" and (workspace / "pyproject.toml").is_file():
+        working = _child_journal_root / (uuid.uuid4().hex + "-cwd")
+        working.mkdir(mode=0o700)
+        with (workspace / "pyproject.toml").open("rb") as configuration:
+            roots = tomllib.load(configuration)["tool"]["mutmut"]["source_paths"]
+        (working / "pyproject.toml").write_text(
+            "[tool.mutmut]\nsource_paths="
+            + json.dumps([str(workspace / root) for root in roots])
+            + "\n"
+        )
+        monkeypatch.chdir(working)
+        checkpoint = os.environ.get(mutation_integrity.CHECKPOINT_VARIABLE)
+        if selector == "stats" and checkpoint is not None:
+            capture_workspace(workspace, Path(checkpoint))
         bootstrap = workspace / "tests" / "mutation_child_bootstrap"
         monkeypatch.setenv(
             "PYTHONPATH", os.pathsep.join((str(bootstrap), str(source), str(workspace)))

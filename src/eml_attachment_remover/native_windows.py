@@ -65,6 +65,7 @@ from .native_windows_abi import (
 from .native_windows_runtime import (
     Msvcrt as _Msvcrt,
 )
+from .native_windows_runtime import check_publication_support
 from .native_windows_runtime import (
     ctypes_attribute as _ctypes_attribute,
 )
@@ -209,7 +210,9 @@ class WindowsApi:
         """
         return _msvcrt().get_osfhandle(descriptor)
 
-    def open_directory(self, expression: str, root: int | None) -> int:
+    def open_directory(
+        self, expression: str, root: int | None, *, writable: bool = False
+    ) -> int:
         """Open one directory through an absolute or captured-root expression.
 
         Returns:
@@ -220,7 +223,7 @@ class WindowsApi:
 
         """
         if root is None and _is_absolute(expression):
-            return self._create_file_directory(expression)
+            return self._create_file_directory(expression, writable=writable)
         if root is None:
             msg = "relative directory requires the captured working directory"
             raise OSError(msg)
@@ -230,6 +233,7 @@ class WindowsApi:
             directory=True,
             no_follow=False,
             create=False,
+            writable=writable,
         )
 
     def open_child(self, parent: int, name: str, *, no_follow: bool = False) -> int:
@@ -339,6 +343,7 @@ class WindowsApi:
         )
         if result >= 0:
             return
+        check_publication_support(result)
         error = self.ntdll.RtlNtStatusToDosError(result)
         if error in {ERROR_FILE_EXISTS, ERROR_ALREADY_EXISTS}:
             raise FileExistsError(error, "destination already exists", name)
@@ -357,10 +362,13 @@ class WindowsApi:
         if not self.kernel32.FlushFileBuffers(ctypes.c_void_p(handle)):
             self._raise_last("could not sync destination directory")
 
-    def _create_file_directory(self, expression: str) -> int:
+    def _create_file_directory(self, expression: str, *, writable: bool) -> int:
+        access = FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE
+        if writable:
+            access |= FILE_WRITE_DATA
         handle = self.kernel32.CreateFileW(
             expression,
-            FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_DATA | SYNCHRONIZE,
+            access,
             FILE_SHARE_ALL,
             None,
             OPEN_EXISTING,
@@ -371,7 +379,7 @@ class WindowsApi:
             return int(handle)
         return self._raise_last("could not open path parent")
 
-    def _create_relative(
+    def _create_relative(  # ruff: ignore[too-many-arguments] - native relative opens distinguish directory access, creation and reparse semantics.
         self,
         parent: int,
         name: str,
@@ -379,6 +387,7 @@ class WindowsApi:
         directory: bool,
         no_follow: bool,
         create: bool,
+        writable: bool = False,
     ) -> int:
         buffer = ctypes.create_unicode_buffer(name)
         encoded = codecs.utf_16_le_encode(name)[0]
@@ -396,11 +405,11 @@ class WindowsApi:
         if no_follow:
             options |= FILE_OPEN_REPARSE_POINT
         access = FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE
-        if directory:
+        if directory and writable:
             access |= FILE_WRITE_DATA
-        elif create:
+        elif not directory and create:
             access |= FILE_READ_DATA | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | DELETE
-        else:
+        elif not directory:
             access |= FILE_READ_DATA
         result = self.ntdll.NtCreateFile(
             ctypes.byref(handle),

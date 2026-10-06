@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import ntpath
 import os
-from pathlib import Path
+import posixpath
 
 import pytest
 
@@ -12,6 +13,31 @@ from eml_attachment_remover import destination_names
 
 MESSAGE = b"From: a@example.test\r\n\r\nretained\r\n"
 SUFFIX = ".mime-pruned.eml"
+
+
+@pytest.mark.parametrize(
+    ("host", "source", "folder"),
+    [
+        ("posix", "/Inbox/source.eml", "/Copies"),
+        ("nt", "C:\\Inbox\\source.eml", "C:\\Copies"),
+    ],
+)
+def test_short_chosen_directory_name_has_one_suffix_and_the_address_digest(
+    monkeypatch: pytest.MonkeyPatch,
+    host: str,
+    source: str,
+    folder: str,
+) -> None:
+    monkeypatch.setattr(os, "name", host)
+    monkeypatch.setattr(destination_names, "name_limit", lambda _parent: 255)
+    digest = hashlib.sha256(
+        source.encode("utf-16-le" if host == "nt" else "utf-8")
+    ).hexdigest()[:16]
+    join = ntpath.join if host == "nt" else posixpath.join
+    assert destination_names.fitted_default_destination(source, folder) == join(
+        folder,
+        "source-" + digest + SUFFIX,
+    )
 
 
 def _tail(name: str) -> str:
@@ -213,9 +239,14 @@ def test_output_directory_names_are_fitted_to_that_directory(
     """With --output-dir, the limit is asked of that directory, in the host grammar."""
     asked = _limit(monkeypatch, 60)
     source = "s" * 90 + ".eml"
-    name = "s" * (60 - len(_tail(source))) + _tail(source)
+    tail = _tail(source)
+    name = "s" * (60 - len(tail)) + tail
     fitted = destination_names.fitted_default_destination(source, "out/dir")
-    assert fitted == os.fspath(Path("out/dir") / name)
+    assert fitted == (
+        ntpath.join("out/dir", name)
+        if os.name == "nt"
+        else posixpath.join("out/dir", name)
+    )
     assert asked == ["out/dir"]
 
 

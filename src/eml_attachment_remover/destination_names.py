@@ -6,7 +6,6 @@ import hashlib
 import ntpath
 import os
 import posixpath
-from pathlib import Path
 from typing import Final
 
 from .native_values import default_destination
@@ -76,28 +75,34 @@ def _prefix(text: str, budget: int) -> str:
     return text
 
 
-def fit_name(source_name: str, derived: str, limit: int) -> str:
+def fit_name(
+    source_name: str, derived: str, limit: int, *, source_path: str | None = None
+) -> str:
     """Return the derived name, shortened with a stable hash only if it cannot fit.
 
-    The digest covers the complete native source name, so the result is the same on
-    every run and two different long names never share an output.
+    Without a chosen directory, the digest covers the complete native source name.
+    Chosen-directory names use the kernel-resolved source address, independently
+    of batch membership. Any remaining collisions are refused by inventory.
 
     Returns:
         ``derived`` when it fits, else ``<prefix>-<digest>.mime-pruned.eml``.
 
     """
-    if native_length(derived) <= limit:
+    if source_path is None and native_length(derived) <= limit:
         return derived
-    digest = hashlib.sha256(native_bytes(source_name)).hexdigest()[:DIGEST_CHARACTERS]
+    identity = source_name if source_path is None else source_path
+    digest = hashlib.sha256(native_bytes(identity)).hexdigest()[:DIGEST_CHARACTERS]
     tail = f"-{digest}{SUFFIX}"
     # A name only needs shortening when even its stem outgrows the kept prefix, so
     # the prefix never reaches the source's own extension: no need to strip it.
-    return _prefix(source_name, limit - native_length(tail)) + tail
+    prefix = source_name if source_path is None else derived.removesuffix(SUFFIX)
+    return _prefix(prefix, limit - native_length(tail)) + tail
 
 
 def fitted_default_destination(source: str, output_dir: str | None) -> str:
     """Derive the default destination, shortening only its automatic name.
 
+    With an output directory, ``source`` must be the opened source's resolved address.
     The parent expression is preserved exactly; an explicit ``--output`` never
     reaches this function and is never renamed.
 
@@ -105,14 +110,21 @@ def fitted_default_destination(source: str, output_dir: str | None) -> str:
         The destination path intent before native binding.
 
     """
-    default = default_destination(source)
     split = ntpath.split if os.name == "nt" else posixpath.split
+    default = default_destination(
+        split(source)[1] if output_dir is not None else source
+    )
     parent, derived = split(default)
     fitted = fit_name(
         split(source)[1],
         derived,
         name_limit(parent if output_dir is None else output_dir),
+        source_path=source if output_dir is not None else None,
     )
     if output_dir is not None:
-        return os.fspath(Path(output_dir) / fitted)
+        return (
+            ntpath.join(output_dir, fitted)
+            if os.name == "nt"
+            else posixpath.join(output_dir, fitted)
+        )
     return default.removesuffix(derived) + fitted

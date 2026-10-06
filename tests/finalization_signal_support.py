@@ -15,14 +15,14 @@ from eml_attachment_remover.cancellation_state import CancellationState
 from tests.trace_implementation_support import traced_implementation
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
     from types import FrameType
 
     from _typeshed import TraceFunction
 
 
 @contextmanager
-def interrupt_at(boundary: str) -> Iterator[list[int]]:
+def interrupt_at(boundary: str) -> Generator[list[int]]:
     """Record a signal only while the selected invocation still owns its handler.
 
     Yields:

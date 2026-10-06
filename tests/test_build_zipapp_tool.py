@@ -13,7 +13,12 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from tools import build_zipapp, mutmut_workspace
+from tools import (
+    archive_reproducibility_policy,
+    build_timestamp,
+    build_zipapp,
+    mutmut_workspace,
+)
 
 PUBLIC_METADATA = build_zipapp.ProjectMetadata(
     name="public-project",
@@ -260,12 +265,12 @@ class ZipappArchiveTests(unittest.TestCase):
     """Exercise deterministic archive writing, verification, and hashing."""
 
     def test_zip_info_normalizes_every_reproducibility_field(self) -> None:
-        info = build_zipapp._zip_info("public.txt")  # ruff: ignore[private-member-access]
+        info = archive_reproducibility_policy.zipapp_member("public.txt")
         self.assertEqual(info.filename, "public.txt")
-        self.assertEqual(info.date_time, (1980, 1, 1, 0, 0, 0))
+        self.assertEqual(info.date_time, build_timestamp.ZIP_TIME)
         self.assertEqual(info.compress_type, zipfile.ZIP_STORED)
         self.assertEqual(info.create_system, 3)
-        self.assertEqual(info.external_attr, build_zipapp.ARCHIVE_MODE)
+        self.assertEqual(info.external_attr, 0o100644 << 16)
 
     def test_temporary_path_is_an_empty_sibling(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -323,6 +328,7 @@ class ZipappArchiveTests(unittest.TestCase):
             [
                 sys.executable,
                 "-I",
+                "-B",
                 "-X",
                 "dev",
                 "-W",

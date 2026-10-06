@@ -16,6 +16,21 @@ from tests.distribution_archive_support import create_distribution
 class GeneratedMetadataFailClosedTests(unittest.TestCase):
     """Reject unmodeled or unsupported generated metadata fields."""
 
+    def test_unsupported_field_diagnostic_has_case_insensitive_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            distribution = create_distribution(Path(directory))
+            content = distribution.metadata.replace(
+                b"Name: public-project",
+                b"Name: public-project\nZ-extra: one\na-extra: two",
+            )
+            metadata = BytesParser(policy=policy.compat32).parsebytes(content)
+            with self.assertRaises(DistributionArchiveError) as caught:
+                distribution.contract.verify_metadata(metadata)
+        self.assertEqual(
+            str(caught.exception),
+            "generated metadata contains unsupported fields: ['a-extra', 'Z-extra']",
+        )
+
     def test_locked_backend_metadata_version_is_exact(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             distribution = create_distribution(Path(directory))

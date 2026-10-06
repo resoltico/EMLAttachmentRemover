@@ -141,7 +141,7 @@ class MutationTaskContracts(unittest.TestCase):
                     ("mutmut", "run", "--max-children", workers),
                     {
                         "profile": "project-mutation",
-                        "timeout_seconds": 7_200,
+                        "timeout_seconds": 9_600,
                         "environment_updates": {
                             "COVERAGE_RCFILE": str(paths.coverage_config),
                         },

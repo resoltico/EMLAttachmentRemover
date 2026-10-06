@@ -23,7 +23,7 @@ from .domain import AppError, BatchLedger, ExitCode
 from .exit_status import exit_code
 from .report_batch_diagnostics import batch_error_line, interruption_line
 from .report_delivery import StagedChannels, StagedReadError, write_note
-from .reporting_v3 import (
+from .report_document import (
     report,
     write_human,
     write_json,

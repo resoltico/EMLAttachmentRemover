@@ -1,8 +1,8 @@
-# ruff: file-ignore[private-member-access]
 """Exact mutation-sensitive contracts for release qualification."""
 
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 import tempfile
@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import call, patch
 
 import pytest
-from tools import qualify_release
+from tools import build_timestamp, qualify_release
 
 
 def _release_names() -> tuple[str, str, str]:
@@ -58,7 +58,7 @@ def test_release_parser_preserves_every_public_option_contract() -> None:
 
 
 def test_strict_environment_is_exact_with_or_without_removed_inputs() -> None:
-    """Remove optional overrides and add only the three strict Python controls."""
+    """Remove optional overrides and add only the four strict Python controls."""
     source_environments = (
         {"PUBLIC_SETTING": "kept"},
         {
@@ -69,14 +69,22 @@ def test_strict_environment_is_exact_with_or_without_removed_inputs() -> None:
     )
     expected = {
         "PUBLIC_SETTING": "kept",
+        "SOURCE_DATE_EPOCH": str(build_timestamp.EPOCH),
         "PYTHONDEVMODE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONNOUSERSITE": "1",
         "PYTHONWARNINGS": "error",
     }
 
     for environment in source_environments:
-        with patch.object(os.environ, "items", return_value=environment.items()):
+        with (
+            patch.object(os.environ, "items", return_value=environment.items()),
+            patch.object(
+                importlib, "import_module", return_value=build_timestamp
+            ) as loader,
+        ):
             assert qualify_release._strict_environment() == expected
+        loader.assert_called_once_with("tools.build_timestamp")
 
 
 def test_build_and_test_forwards_the_exact_verification_and_command_contracts() -> None:
@@ -191,3 +199,44 @@ def test_publication_rejects_a_broken_symbolic_destination_race() -> None:
 
         assert output.is_symlink()
         assert staging.is_dir()
+
+
+def test_script_mode_build_environment_uses_the_direct_support_module() -> None:
+    with (
+        patch.object(qualify_release, "__package__", None),
+        patch.object(
+            importlib, "import_module", return_value=build_timestamp
+        ) as loader,
+    ):
+        environment = qualify_release._strict_environment()
+    assert environment["SOURCE_DATE_EPOCH"] == str(build_timestamp.EPOCH)
+    loader.assert_called_once_with("build_timestamp")
+
+
+@pytest.mark.parametrize("package", ["tools", None])
+def test_completing_staging_stamps_files_in_module_and_script_modes(
+    tmp_path: Path, package: str | None
+) -> None:
+    names = _release_names()
+    final_names = frozenset((*names, "SHA256SUMS"))
+    with (
+        patch.object(qualify_release, "__package__", package),
+        patch.object(qualify_release, "_build_and_test") as build,
+        patch.object(qualify_release, "_assert_exact_entries") as entries,
+        patch.object(qualify_release, "_write_and_verify_manifest") as manifest,
+        patch.object(
+            importlib, "import_module", return_value=build_timestamp
+        ) as loader,
+        patch.object(build_timestamp, "stamp_tree") as stamp,
+    ):
+        assert qualify_release._complete_staging(tmp_path, names) == final_names
+    build.assert_called_once_with(tmp_path, names)
+    manifest.assert_called_once_with(tmp_path, names)
+    assert entries.call_args_list == [
+        call(tmp_path, frozenset(names)),
+        call(tmp_path, final_names),
+    ]
+    loader.assert_called_once_with(
+        "tools.build_timestamp" if package else "build_timestamp"
+    )
+    stamp.assert_called_once_with(tmp_path)
