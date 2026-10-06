@@ -13,12 +13,23 @@ from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
-from tools import build_timestamp
+from tools import build_timestamp, macos_runtime_archive
 from tools import macos_archive as archive
 from tools.release_files import ReleaseQualificationError
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Never
+
+
+@pytest.fixture
+def refuse_bundled_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    """External-Python archives must not acquire a bundled runtime reference."""
+
+    def refuse(_architecture: str) -> Never:
+        pytest.fail("External-Python archive requested a bundled runtime reference")
+
+    monkeypatch.setattr(macos_runtime_archive, "reference", refuse)
 
 
 def bundle_fixture(root: Path) -> Path:
@@ -65,6 +76,7 @@ def bundle_fixture(root: Path) -> Path:
     return app
 
 
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
     tmp_path: Path,
 ) -> None:
@@ -131,6 +143,7 @@ def test_package_roundtrip_preserves_source_bytes_and_portable_permissions(
 
 
 @pytest.mark.parametrize("symbolic", [False, True])
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_package_refuses_missing_or_symbolic_sources(
     tmp_path: Path, *, symbolic: bool
 ) -> None:
@@ -165,6 +178,7 @@ def test_package_refuses_missing_or_symbolic_sources(
         "order",
     ],
 )
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_untrusted_metadata_is_rejected_before_extraction(
     tmp_path: Path, attack: str
 ) -> None:
@@ -219,6 +233,7 @@ def test_untrusted_metadata_is_rejected_before_extraction(
         "icon-fallback",
     ],
 )
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_archive_contract_rejects_content_drift(tmp_path: Path, changed: str) -> None:
     app = bundle_fixture(tmp_path)
     if changed == "version":
@@ -366,6 +381,7 @@ def _diagnostic(attack: str) -> str:
     return "^" + messages.get(attack, "Native ZIP metadata is not canonical") + "$"
 
 
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_extraction_budget_accepts_exact_limit_and_rejects_one_byte_over(
     tmp_path: Path,
 ) -> None:
@@ -386,6 +402,7 @@ def test_extraction_budget_accepts_exact_limit_and_rejects_one_byte_over(
     assert not (tmp_path / "rejected").exists()
 
 
+@pytest.mark.usefixtures("refuse_bundled_runtime")
 def test_encrypted_flags_are_rejected_before_creating_any_destination(
     tmp_path: Path,
 ) -> None:

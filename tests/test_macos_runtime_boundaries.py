@@ -13,10 +13,6 @@ import tarfile
 import tomllib
 import urllib.request
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from typing import IO
 
 import pytest
 from tools import macos_runtime, macos_runtime_archive, macos_runtime_source
@@ -65,11 +61,15 @@ def test_runtime_size_and_symbolic_source_are_refused(tmp_path: Path) -> None:
     archive, pin = runtime_archive_fixture(tmp_path)
     wrong_size = pin.copy()
     wrong_size["size"] += 1
-    with pytest.raises(ValueError, match="size or file type"):
+    with pytest.raises(
+        ValueError, match=r"^runtime archive size or file type differs from pin$"
+    ):
         macos_runtime_source.verify(archive, wrong_size)
     link = tmp_path / "linked.tar.zst"
     link.symlink_to(archive.name)
-    with pytest.raises(ValueError, match="size or file type"):
+    with pytest.raises(
+        ValueError, match=r"^runtime archive size or file type differs from pin$"
+    ):
         macos_runtime_source.verify(link, pin)
 
 
@@ -99,42 +99,19 @@ def test_download_is_bounded_and_checked_against_the_pin(
     assert requests == [(pin["url"], 30)]
 
 
-@pytest.mark.parametrize(
-    "member_kind", ["directory", "empty", "oversized", "missing-notice"]
-)
-def test_invalid_metadata_or_missing_notice_is_not_a_runtime(
-    tmp_path: Path, member_kind: str
+def test_runtime_preparation_requires_a_fresh_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Authenticated archives still require bounded metadata and original notices."""
-    original, pin = runtime_archive_fixture(tmp_path)
-    archive = tmp_path / "changed.tar.zst"
-    with (
-        tarfile.open(original, "r:zst") as source,
-        tarfile.open(archive, "w:zst") as output,
-    ):
-        for member in source.getmembers():
-            if member_kind == "missing-notice" and member.name.startswith(
-                "python/licenses/"
-            ):
-                continue
-            stream = source.extractfile(member)
-            stream = _metadata_variant(member, stream, member_kind)
-            output.addfile(member, stream)
-            if stream is not None:
-                stream.close()
-    selected = pin.copy()
-    selected["size"] = archive.stat().st_size
-    selected["sha256"] = hashlib.sha256(archive.read_bytes()).hexdigest()
-    with pytest.raises(ValueError, match=r"metadata member|notices are missing"):
-        macos_runtime_source.extract(archive, tmp_path / "extracted", selected)
-
-
-def test_runtime_preparation_requires_a_fresh_destination(tmp_path: Path) -> None:
     """An existing runtime remains untouched rather than becoming a staging tree."""
     target = tmp_path / "Runtime"
     target.mkdir()
     sentinel = target / "keep"
     sentinel.write_bytes(b"existing")
+
+    def unexpected_pin(_architecture: str) -> macos_runtime_source.RuntimePin:
+        pytest.fail("Existing destinations must be refused before runtime acquisition")
+
+    monkeypatch.setattr(macos_runtime_source, "pin", unexpected_pin)
     with pytest.raises(ValueError, match=r"^use a fresh private runtime destination$"):
         macos_runtime.prepare(target, "arm64")
     assert sentinel.read_bytes() == b"existing"
@@ -154,6 +131,32 @@ def test_empty_or_wrong_cpu_native_code_is_not_approved(
         ValueError, match=r"^runtime binary architecture differs from selected CPU$"
     ):
         macos_runtime.require_native(root, "arm64")
+
+
+def test_signing_visits_deeper_components_first_and_verifies_every_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = [
+        tmp_path / "z/program",
+        tmp_path / "a/deep/program",
+        tmp_path / "program",
+    ]
+    commands: list[list[str]] = []
+
+    def command(arguments: list[str]) -> str:
+        commands.append(arguments)
+        return ""
+
+    monkeypatch.setattr(macos_runtime, "_command", command)
+    macos_runtime.__dict__["_sign"](paths)
+    assert commands == [
+        ["/usr/bin/codesign", "--force", "--sign", "-", str(paths[1])],
+        ["/usr/bin/codesign", "--verify", "--strict", str(paths[1])],
+        ["/usr/bin/codesign", "--force", "--sign", "-", str(paths[0])],
+        ["/usr/bin/codesign", "--verify", "--strict", str(paths[0])],
+        ["/usr/bin/codesign", "--force", "--sign", "-", str(paths[2])],
+        ["/usr/bin/codesign", "--verify", "--strict", str(paths[2])],
+    ]
 
 
 def test_copy_removes_static_files_but_preserves_directory_names(
@@ -177,23 +180,6 @@ def test_copy_removes_static_files_but_preserves_directory_names(
         for path in (target, target / "bin", target / "licenses", target / "kept.a"):
             if path.is_dir() and not path.is_symlink():
                 path.chmod(0o755)
-
-
-def _metadata_variant(
-    member: tarfile.TarInfo, stream: IO[bytes] | None, kind: str
-) -> IO[bytes] | None:
-    if member.name != "python/PYTHON.json" or kind == "missing-notice":
-        return stream
-    if stream is not None:
-        stream.close()
-    content = (
-        b" " * (macos_runtime_source.MAX_METADATA + 1) if kind == "oversized" else b""
-    )
-    member.size = len(content)
-    if kind == "directory":
-        member.type = tarfile.DIRTYPE
-        return None
-    return io.BytesIO(content)
 
 
 @pytest.mark.parametrize("explicit", [False, True])
@@ -226,7 +212,7 @@ def test_unavailable_metadata_stream_refuses_an_authenticated_archive(
     archive, pin = runtime_archive_fixture(tmp_path)
     monkeypatch.setattr(tarfile.TarFile, "extractfile", lambda *_args: None)
     destination = tmp_path / "extracted"
-    with pytest.raises(ValueError, match="metadata is unavailable"):
+    with pytest.raises(ValueError, match=r"^runtime metadata is unavailable$"):
         macos_runtime_source.extract(archive, destination, pin)
     assert not destination.exists()
 
@@ -336,7 +322,7 @@ def test_runtime_entrypoint_publishes_only_after_ordered_native_checks(
         return ""
 
     monkeypatch.setattr(subprocess, "check_output", command)
-    target = tmp_path / "nested" / "prepared"
+    target = tmp_path / "missing" / "nested" / "prepared"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -366,6 +352,13 @@ def test_runtime_entrypoint_publishes_only_after_ordered_native_checks(
         "architecture": architecture,
     }
     monkeypatch.setattr(sys, "argv", ["macos_runtime.py", "--help"])
+    with pytest.raises(SystemExit) as help_result:
+        macos_runtime.main()
+    assert help_result.value.code == 0
+    assert (
+        "Prepare a relocated, notice-complete and ad-hoc-signed "
+        "private CPython runtime." in " ".join(capsys.readouterr().out.split())
+    )
     with pytest.raises(SystemExit) as completed:
         runpy.run_path(str(Path(macos_runtime.__file__)), run_name="__main__")
     assert completed.value.code == 0

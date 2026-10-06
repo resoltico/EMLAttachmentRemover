@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import shutil
 import stat
 import subprocess
@@ -60,7 +61,12 @@ def test_self_declared_runtime_changes_cannot_expand_source_approval(
         (actual / "stdlib.py").write_bytes(b"altered source")
     else:
         (actual / "stdlib.py").chmod(0o755)
-    with pytest.raises(ValueError, match="differs"):
+    message = (
+        "runtime resource or native code differs from upstream source: stdlib.py"
+        if change == "modified"
+        else "runtime tree differs from verified upstream source"
+    )
+    with pytest.raises(ValueError, match="^" + re.escape(message) + "$"):
         macos_runtime_archive.verify(actual, expected, "arm64")
 
 

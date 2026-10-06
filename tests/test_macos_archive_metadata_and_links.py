@@ -29,10 +29,26 @@ def test_invalid_edition_or_metadata_size_is_refused_before_reconstruction(
     archive = tmp_path / "invalid.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
         output.writestr(macos_archive.APP + "/Contents/Info.plist", data)
-    with pytest.raises(
-        ReleaseQualificationError, match=r"metadata.*invalid|read budget"
-    ):
+    message = (
+        "Native bundle metadata exceeds its read budget"
+        if mode in {"oversized", "empty"}
+        else "Native runtime edition metadata is invalid"
+    )
+    with pytest.raises(ReleaseQualificationError, match="^" + message + "$"):
         macos_archive.verify(archive, tmp_path / "unused.pyz", "4.0.0", "arm64")
+
+
+def test_one_byte_bundle_metadata_fails_as_invalid_content_within_the_read_budget(
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "invalid-content.zip"
+    with zipfile.ZipFile(archive, "w") as output:
+        output.writestr(macos_archive.APP + "/Contents/Info.plist", b"x")
+    with (
+        zipfile.ZipFile(archive) as source,
+        pytest.raises(plistlib.InvalidFileException),
+    ):
+        macos_archive.__dict__["_archive_identity"](source)
 
 
 @pytest.mark.parametrize("trusted_reference", [False, True])
@@ -49,11 +65,14 @@ def test_runtime_link_requires_its_trusted_literal_target(
     archive = tmp_path / "forged-link.zip"
     with zipfile.ZipFile(archive, "w") as output:
         output.writestr(name, b"../outside")
+    message = (
+        "Native runtime link target differs from source"
+        if trusted_reference
+        else "Native archive links require a trusted runtime reference"
+    )
     with (
         zipfile.ZipFile(archive) as source,
-        pytest.raises(
-            ReleaseQualificationError, match=r"trusted runtime|target differs"
-        ),
+        pytest.raises(ReleaseQualificationError, match="^" + message + "$"),
     ):
         macos_archive.__dict__["_validated_links"](
             source, surface, runtime if trusted_reference else None

@@ -82,14 +82,19 @@ def test_archive_corruption_is_refused_before_extraction(tmp_path: Path) -> None
     content = bytearray(archive.read_bytes())
     content[-1] ^= 1
     archive.write_bytes(content)
-    with pytest.raises(ValueError, match="digest"):
+    with pytest.raises(ValueError, match=r"^runtime archive digest differs from pin$"):
         macos_runtime_source.extract(archive, tmp_path / "extracted", pin)
     assert not (tmp_path / "extracted").exists()
 
 
-def test_escaping_links_are_refused_by_safe_extraction(tmp_path: Path) -> None:
+def test_escaping_links_are_refused_by_safe_extraction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Even a pin-matching archive cannot install an external symbolic link."""
     archive, pin = runtime_archive_fixture(tmp_path, escape=True)
+    monkeypatch.setattr(
+        tarfile.TarFile, "extraction_filter", staticmethod(tarfile.fully_trusted_filter)
+    )
     with pytest.raises(tarfile.FilterError):
         macos_runtime_source.extract(archive, tmp_path / "extracted", pin)
 
@@ -97,7 +102,10 @@ def test_escaping_links_are_refused_by_safe_extraction(tmp_path: Path) -> None:
 def test_runtime_version_must_match_the_repository_interpreter(tmp_path: Path) -> None:
     """A source pin cannot silently select another maintenance version."""
     archive, pin = runtime_archive_fixture(tmp_path, version="3.14.7")
-    with pytest.raises(ValueError, match="metadata differs"):
+    with pytest.raises(
+        ValueError,
+        match=r"^upstream runtime metadata differs from the required contract$",
+    ):
         macos_runtime_source.extract(archive, tmp_path / "extracted", pin)
 
 
@@ -340,7 +348,9 @@ def test_runtime_preparation_rejects_an_unpinned_compiler(
 
 
 def test_runtime_source_command_routes_the_directory_and_has_cli_help(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     calls: list[Path] = []
     monkeypatch.setattr(macos_runtime_source, "cache", calls.append)
@@ -356,6 +366,13 @@ def test_runtime_source_command_routes_the_directory_and_has_cli_help(
     )
     assert "--directory" in help_result.stdout
     assert "pinned upstream runtime with its original notices" in help_result.stdout
+    monkeypatch.setattr(sys, "argv", ["runtime-source", "--help"])
+    with pytest.raises(SystemExit) as selected_help:
+        macos_runtime_source.main()
+    assert selected_help.value.code == 0
+    assert "pinned upstream runtime with its original notices" in (
+        " ".join(capsys.readouterr().out.split())
+    )
 
 
 @pytest.mark.parametrize(

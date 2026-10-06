@@ -131,6 +131,15 @@ def _run(frame: bytes, *, arguments: tuple[str, ...] = ()) -> tuple[int, bytes, 
                 process.wait(timeout=5)
 
 
+def test_one_byte_json_frame_reports_invalid_fields_instead_of_a_size_error() -> None:
+    status, output, errors = _run(_frame(b"0"))
+    assert status == 2, errors
+    report = json.loads(output)
+    assert report["batch_error"]["code"] == "USAGE"
+    assert report["batch_error"]["message"] == "invalid native-path request fields"
+    assert report["items"] == []
+
+
 def test_framed_cli_creates_the_same_copy_without_named_request_storage(
     tmp_path: Path,
 ) -> None:

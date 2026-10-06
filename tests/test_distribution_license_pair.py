@@ -50,3 +50,28 @@ def test_source_license_normalization_preserves_multiline_description(
         )
     else:
         distribution.contract.verify_pair_metadata(source, wheel, distribution.config)
+
+
+@pytest.mark.parametrize("license_last", [False, True])
+def test_license_normalization_keeps_header_like_description_bytes(
+    tmp_path: Path, *, license_last: bool
+) -> None:
+    distribution = create_distribution(tmp_path)
+    with distribution.config.open("a") as stream:
+        stream.write(
+            "\n[tool.eml-attachment-remover.licenses]\n"
+            'software = "MIT"\nsource = "MIT AND LicenseRef-Artwork"\n'
+        )
+    declaration = (
+        b"License-Expression: MIT AND LicenseRef-Artwork\nDynamic: License-Expression\n"
+    )
+    description = b"Public synthetic README\n\n" + declaration + b"\nFinal paragraph.\n"
+    (distribution.root / "README.md").write_bytes(description)
+    header = distribution.metadata.partition(b"\n\n")[0]
+    if license_last:
+        header = header.replace(b"License-Expression: MIT\n", b"")
+        header += b"\nLicense-Expression: MIT"
+    wheel = header + b"\n\n" + description
+    source = (header + b"\n").replace(b"License-Expression: MIT\n", declaration)
+    source = source.removesuffix(b"\n") + b"\n\n" + description
+    distribution.contract.verify_pair_metadata(source, wheel, distribution.config)

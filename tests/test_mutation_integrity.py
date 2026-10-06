@@ -7,9 +7,10 @@ import os
 from typing import TYPE_CHECKING
 
 import pytest
-from tools import mutation_integrity
+from tools import mutation_integrity, mutmut_workspace
 
 if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
     from pathlib import Path
 
 
@@ -43,6 +44,7 @@ def test_changed_source_cannot_be_reapproved_by_a_second_capture(
     tmp_path: Path,
 ) -> None:
     root, checkpoint = _workspace(tmp_path)
+    (root / "src/unchanged.py").write_text("VALUE = 2\n")
     mutation_integrity.capture(root, checkpoint)
     sealed = checkpoint.read_bytes()
     (root / "src/example.py").write_text("VALUE = 100\n")
@@ -73,10 +75,58 @@ def test_missing_and_malformed_checkpoints_cannot_approve_a_campaign(
     root, checkpoint = _workspace(tmp_path)
     if contents is not None:
         checkpoint.write_text(json.dumps(contents))
+    message = (
+        "mutation workspace integrity checkpoint is missing"
+        if contents is None
+        else "mutation workspace integrity checkpoint is invalid"
+    )
+    with pytest.raises(RuntimeError, match="^" + message + "$"):
+        mutation_integrity.verify(root, checkpoint)
+
+
+def test_source_inventory_reports_added_and_removed_inputs(tmp_path: Path) -> None:
+    root, checkpoint = _workspace(tmp_path)
+    (root / "src/unchanged.py").write_text("VALUE = 2\n")
+    mutation_integrity.capture(root, checkpoint)
+    (root / "src/example.py").unlink()
+    (root / "src/added.py").write_text("VALUE = 3\n")
     with pytest.raises(
-        RuntimeError, match=r"checkpoint is missing|checkpoint is invalid"
+        RuntimeError,
+        match=(
+            r"^mutation workspace source inputs changed: "
+            r"src/added\.py, src/example\.py$"
+        ),
     ):
         mutation_integrity.verify(root, checkpoint)
+
+
+def test_inventory_selects_the_generated_artifact_policy_for_the_parent_audit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, checkpoint = _workspace(tmp_path)
+    policy_marker = mutmut_workspace.policy_marker
+    selected: list[str] = []
+
+    def select(marker: str) -> AbstractContextManager[None]:
+        selected.append(marker)
+        return policy_marker(marker)
+
+    monkeypatch.setattr(mutmut_workspace, "policy_marker", select)
+    mutation_integrity.capture(root, checkpoint)
+    assert selected == ["stats"]
+
+
+def test_inventory_identifies_every_unapproved_artifact(tmp_path: Path) -> None:
+    root, checkpoint = _workspace(tmp_path)
+    (root / "None").write_bytes(b"unexpected output")
+    (root / "other").write_bytes(b"unexpected output")
+    with pytest.raises(RuntimeError) as caught:
+        mutation_integrity.capture(root, checkpoint)
+    assert str(caught.value) == (
+        "mutation workspace contains unexpected artifacts: "
+        "None: unexpected top-level regular file; document or remove this path; "
+        "other: unexpected top-level regular file; document or remove this path"
+    )
 
 
 def test_integrity_failure_preserves_the_primary_command_error(tmp_path: Path) -> None:
