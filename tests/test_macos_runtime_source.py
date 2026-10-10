@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from pathlib import Path
 
 import pytest
@@ -407,6 +407,12 @@ def test_runtime_staging_stays_on_the_destination_volume_and_cleans_up_failure(
 
     monkeypatch.setattr(tempfile, "TemporaryDirectory", staging)
     monkeypatch.setattr(macos_runtime_source, "pin", lambda _cpu: selected)
+    # This fixture exercises staging, not execution of its placeholder compiler.
+    monkeypatch.setattr(
+        macos_runtime_source,
+        "pinned_compiler",
+        lambda _source, _arch: nullcontext(Path(sys.executable)),
+    )
     with pytest.raises(ValueError, match=r"^runtime has no native executable code$"):
         macos_runtime.prepare(target, "arm64", archive)
     assert allocated == [target.parent]
