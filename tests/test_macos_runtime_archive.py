@@ -102,7 +102,6 @@ def test_an_internal_but_forged_link_is_not_accepted(
         macos_runtime_archive.verify(actual, expected, "arm64")
 
 
-
 def test_bytecode_diagnostics_distinguish_header_from_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

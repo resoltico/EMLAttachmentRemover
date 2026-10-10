@@ -105,7 +105,6 @@ def _code_hash(path: Path, destination: Path) -> str:
     return values[0]
 
 
-
 def _bytecode_diagnostic(actual: Path, expected: Path) -> str:
     """Identify a mismatched pyc section without loading untrusted code.
 

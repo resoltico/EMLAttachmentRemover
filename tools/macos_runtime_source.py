@@ -155,7 +155,6 @@ def extract(archive: Path, destination: Path, selected: RuntimePin) -> Path:
     return root
 
 
-
 @contextmanager
 def pinned_compiler(source: Path, architecture: str) -> Generator[Path]:
     """Yield a source-authenticated CPython compiler runnable on this host.
