@@ -84,3 +84,9 @@ def test_mutation_workers_are_benchmarkable_but_default_to_the_host_policy() -> 
         "mutation.yml"
     )
     assert "      MUTATION_WORKERS: auto\n" in _text("release.yml")
+
+
+def test_release_and_compatibility_enforce_uv_managed_interpreters() -> None:
+    """CI must not silently switch to newly available system Python builds."""
+    for name in ("macos-compatibility.yml", "release.yml"):
+        assert "env:\n  UV_PYTHON_PREFERENCE: only-managed\n" in _text(name)

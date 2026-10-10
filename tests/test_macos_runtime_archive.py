@@ -102,6 +102,26 @@ def test_an_internal_but_forged_link_is_not_accepted(
         macos_runtime_archive.verify(actual, expected, "arm64")
 
 
+def test_bytecode_diagnostics_distinguish_header_from_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both altered bytecode sections must fail with bounded hash evidence."""
+    expected = tmp_path / "expected"
+    _tree(expected)
+    (expected / "test.pyc").write_bytes(b"A" * 16 + b"trusted")
+    actual = tmp_path / "actual"
+    shutil.copytree(expected, actual)
+    monkeypatch.setattr(macos_runtime, "require_native", lambda _root, _arch: [])
+    (actual / "test.pyc").write_bytes(b"B" + b"A" * 15 + b"trusted")
+    with pytest.raises(ValueError, match="bytecode header") as header:
+        macos_runtime_archive.verify(actual, expected, "arm64")
+    assert "delivered SHA-256=" in str(header.value)
+    assert "expected SHA-256=" in str(header.value)
+    (actual / "test.pyc").write_bytes(b"A" * 16 + b"changed")
+    with pytest.raises(ValueError, match="bytecode payload"):
+        macos_runtime_archive.verify(actual, expected, "arm64")
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS code-signing boundary")
 def test_valid_signatures_do_not_approve_changed_native_code(tmp_path: Path) -> None:
     """Canonical comparison accepts re-signing but refuses a different program."""

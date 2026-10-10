@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from pathlib import Path
 
 import pytest
@@ -263,7 +263,7 @@ def test_runtime_bytecode_is_relocatable_and_independently_rebuilt(
         timeout: int,
     ) -> subprocess.CompletedProcess[bytes]:
         assert args[:-1] == [
-            sys.executable,
+            str(Path(sys.executable)),
             "-I",
             "-B",
             "-m",
@@ -285,8 +285,9 @@ def test_runtime_bytecode_is_relocatable_and_independently_rebuilt(
 
     monkeypatch.setattr(subprocess, "run", compile_runtime)
     actual, expected = tmp_path / "actual", tmp_path / "expected"
-    macos_runtime.copy_install(source, actual)
-    macos_runtime.copy_install(source, expected)
+    compiler = Path(sys.executable)
+    macos_runtime.copy_install(source, actual, compiler)
+    macos_runtime.copy_install(source, expected, compiler)
     caches = list(actual.rglob("*.pyc"))
     assert len(caches) == 2
     assert not (actual / stale.relative_to(source / "install")).exists()
@@ -322,29 +323,12 @@ def test_runtime_resource_modes_and_internal_links_survive_copying(
     (source / "PYTHON.json").write_text("{}")
     monkeypatch.setattr(runtime_notices, "apply", lambda _root: None)
     actual = tmp_path / "runtime"
-    macos_runtime.copy_install(source, actual)
+    macos_runtime.copy_install(source, actual, Path(sys.executable))
     assert (actual / "bin/python3").is_symlink()
     if os.name != "nt":
         assert (actual / "bin/python").stat().st_mode & 0o777 == 0o755
         assert (actual / "lib").stat().st_mode & 0o777 == 0o755
         assert (actual / "lib/python3.14/example.py").stat().st_mode & 0o777 == 0o644
-
-
-def test_runtime_preparation_rejects_an_unpinned_compiler(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    source = tmp_path / "source"
-    (source / "install").mkdir(parents=True)
-    (source / "licenses").mkdir()
-    (source / "PYTHON.json").write_text("{}")
-    (tmp_path / ".python-version").write_text("0.0.0")
-    monkeypatch.setattr(runtime_notices, "apply", lambda _root: None)
-    monkeypatch.setattr(macos_runtime_source, "ROOT", tmp_path)
-    with pytest.raises(
-        ValueError,
-        match=r"^runtime bytecode requires the pinned CPython build interpreter$",
-    ):
-        macos_runtime.copy_install(source, tmp_path / "runtime")
 
 
 def test_runtime_source_command_routes_the_directory_and_has_cli_help(
@@ -423,6 +407,12 @@ def test_runtime_staging_stays_on_the_destination_volume_and_cleans_up_failure(
 
     monkeypatch.setattr(tempfile, "TemporaryDirectory", staging)
     monkeypatch.setattr(macos_runtime_source, "pin", lambda _cpu: selected)
+    # This fixture exercises staging, not execution of its placeholder compiler.
+    monkeypatch.setattr(
+        macos_runtime_source,
+        "pinned_compiler",
+        lambda _source, _arch: nullcontext(Path(sys.executable)),
+    )
     with pytest.raises(ValueError, match=r"^runtime has no native executable code$"):
         macos_runtime.prepare(target, "arm64", archive)
     assert allocated == [target.parent]

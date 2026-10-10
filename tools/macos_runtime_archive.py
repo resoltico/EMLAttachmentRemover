@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import stat
 import subprocess
@@ -35,7 +36,8 @@ def reference(architecture: str) -> Generator[Path]:
             macos_runtime_source.download(archive, selected)
         source = macos_runtime_source.extract(archive, root / "source", selected)
         runtime = root / "Runtime"
-        macos_runtime.copy_install(source, runtime)
+        with macos_runtime_source.pinned_compiler(source, architecture) as compiler:
+            macos_runtime.copy_install(source, runtime, compiler)
         yield runtime
 
 
@@ -103,6 +105,23 @@ def _code_hash(path: Path, destination: Path) -> str:
     return values[0]
 
 
+def _bytecode_diagnostic(actual: Path, expected: Path) -> str:
+    """Identify a mismatched pyc section without loading untrusted code.
+
+    Returns:
+        A bounded description containing both SHA-256 digests.
+
+    """
+    delivered = actual.read_bytes()
+    trusted = expected.read_bytes()
+    section = "header" if delivered[:16] != trusted[:16] else "payload"
+    return (
+        f" (bytecode {section}; delivered SHA-256="
+        f"{hashlib.sha256(delivered).hexdigest()}; expected SHA-256="
+        f"{hashlib.sha256(trusted).hexdigest()})"
+    )
+
+
 def verify(actual: Path, expected: Path, architecture: str) -> None:
     """Require the source-derived tree, resources and canonical native-code identities.
 
@@ -134,4 +153,7 @@ def verify(actual: Path, expected: Path, architecture: str) -> None:
                     "runtime resource or native code differs from upstream source: "
                     + path.relative_to(actual).as_posix()
                 )
-                raise ValueError(message)
+                suffix = (
+                    _bytecode_diagnostic(path, source) if path.suffix == ".pyc" else ""
+                )
+                raise ValueError(message + suffix)

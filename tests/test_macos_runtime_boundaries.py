@@ -12,12 +12,22 @@ import sys
 import tarfile
 import tomllib
 import urllib.request
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
 from tools import macos_runtime, macos_runtime_archive, macos_runtime_source
 
 from tests.test_macos_runtime_source import runtime_archive_fixture
+
+
+def _use_host_compiler_for_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Do not execute synthetic CPython placeholder bytes in unrelated tests."""
+    monkeypatch.setattr(
+        macos_runtime_source,
+        "pinned_compiler",
+        lambda _source, _arch: nullcontext(Path(sys.executable)),
+    )
 
 
 @pytest.mark.parametrize(
@@ -169,14 +179,13 @@ def test_copy_removes_static_files_but_preserves_directory_names(
     (source / "install/kept.a").mkdir()
     target = tmp_path / "Runtime"
     try:
-        macos_runtime.copy_install(source, target)
+        macos_runtime.copy_install(source, target, Path(sys.executable))
         assert not (target / "unused.a").exists()
         assert (target / "kept.a").is_dir()
         assert (
             target / "licenses/LICENSE.cpython.txt"
         ).read_bytes() == b"original notice"
     finally:
-        # Permission-changing mutants must not strand these known private directories.
         for path in (target, target / "bin", target / "licenses", target / "kept.a"):
             if path.is_dir() and not path.is_symlink():
                 path.chmod(0o755)
@@ -191,6 +200,7 @@ def test_fresh_download_reference_and_incomplete_native_runtime_refusal(
     content = archive.read_bytes()
     monkeypatch.delenv("EML_RUNTIME_SOURCE_DIRECTORY", raising=False)
     monkeypatch.setattr(macos_runtime_source, "pin", lambda _cpu: pin)
+    _use_host_compiler_for_fixture(monkeypatch)
     monkeypatch.setattr(
         urllib.request, "urlopen", lambda *_args, **_kw: io.BytesIO(content)
     )
@@ -309,6 +319,7 @@ def test_runtime_entrypoint_publishes_only_after_ordered_native_checks(
         return selected
 
     monkeypatch.setattr(macos_runtime_source, "pin", selected_pin)
+    _use_host_compiler_for_fixture(monkeypatch)
     commands: list[list[str]] = []
 
     def command(args: list[str], **kwargs: object) -> str:

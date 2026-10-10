@@ -6,18 +6,23 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import tarfile
 import tempfile
 import tomllib
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Final, TypedDict
+from typing import TYPE_CHECKING, Final, TypedDict
 from urllib.parse import unquote, urlsplit
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 CONFIG: Final = ROOT / "integrations/macos-ui/runtime-source.toml"
 CHUNK: Final = 1024 * 1024
 MAX_METADATA: Final = 2 * CHUNK
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 class RuntimePin(TypedDict):
@@ -148,6 +153,39 @@ def extract(archive: Path, destination: Path, selected: RuntimePin) -> Path:
         message = "runtime installation or original notices are missing"
         raise ValueError(message)
     return root
+
+
+@contextmanager
+def pinned_compiler(source: Path, architecture: str) -> Generator[Path]:
+    """Yield a source-authenticated CPython compiler runnable on this host.
+
+    The provided source has already passed the pinned-archive extraction.
+    For cross-CPU targets, extract a separate pinned host-native distribution.
+    Never select the compiler from PATH, uv discovery, or sys.executable.
+
+    Yields:
+        The verified native CPython compiler executable.
+
+    Raises:
+        ValueError: If the host or target architecture is unsupported.
+
+    """
+    host = platform.machine()
+    if host not in {"arm64", "x86_64"} or architecture not in {"arm64", "x86_64"}:
+        message = "runtime bytecode compiler requires a supported macOS CPU"
+        raise ValueError(message)
+    if host == architecture:
+        yield source / "install/bin/python3.14"
+        return
+    selected = pin(host)
+    with tempfile.TemporaryDirectory(prefix="eml-runtime-compiler-") as temporary:
+        root = Path(temporary)
+        archive = supplied_archive(selected)
+        if archive is None:
+            archive = root / "source.tar.zst"
+            download(archive, selected)
+        compiler_source = extract(archive, root / "source", selected)
+        yield compiler_source / "install/bin/python3.14"
 
 
 def _require_metadata(member: tarfile.TarInfo) -> None:

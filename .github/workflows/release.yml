@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  UV_PYTHON_PREFERENCE: only-managed
+
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
