@@ -90,3 +90,42 @@ def test_release_and_compatibility_enforce_uv_managed_interpreters() -> None:
     """CI must not silently switch to newly available system Python builds."""
     for name in ("macos-compatibility.yml", "release.yml"):
         assert "env:\n  UV_PYTHON_PREFERENCE: only-managed\n" in _text(name)
+
+
+def test_mutation_requalifies_main_when_assurance_inputs_change() -> None:
+    """Do not leave a source-changing merge without fresh mutation evidence."""
+    workflow = _text("mutation.yml")
+    assert "  push:\n    branches: [main]\n    paths:\n" in workflow
+    for path in (
+        ".github/workflows/mutation.yml",
+        "src/**",
+        "tools/**",
+        "tests/**",
+        ".python-version",
+        "pyproject.toml",
+        "uv.lock",
+    ):
+        assert f'      - "{path}"\n' in workflow
+    assert "  schedule:\n" in workflow
+    assert "  workflow_dispatch:\n" in workflow
+    assert "  cancel-in-progress: false\n" in workflow
+
+
+def test_mac14_consumer_remains_a_true_os14_gate_after_runner_cutover() -> None:
+    """Runner substitution cannot quietly replace minimum-OS execution."""
+    selection = (
+        "matrix.os == 'macos-14' && "
+        "fromJSON(vars.EML_MACOS14_RUNS_ON || '\"macos-14\"') || matrix.os"
+    )
+    action = (
+        Path(__file__).resolve().parents[1]
+        / ".github/actions/sonoma-compatibility/action.yml"
+    ).read_text(encoding="utf-8")
+    for name in ("macos-compatibility.yml", "release.yml"):
+        content = _text(name)
+        assert selection in content
+        assert "os: [macos-14, macos-15-intel, xcode-27]" in content
+        assert "uses: ./.github/actions/sonoma-compatibility" in content
+        assert "sudo xcode-select --switch" not in content
+    for check in ("sw_vers -productVersion", "uname -m", "arch -x86_64", "Xcode 16.2"):
+        assert check in action

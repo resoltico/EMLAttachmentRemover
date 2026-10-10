@@ -308,7 +308,7 @@ jobs:
   compatibility:
     name: Exercise release ZIPs on ${{ matrix.os }}
     needs: build
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'macos-14' && fromJSON(vars.EML_MACOS14_RUNS_ON || '"macos-14"') || matrix.os }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -325,6 +325,9 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Verify minimum macOS 14 host and tools
+        if: matrix.os == 'macos-14'
+        uses: ./.github/actions/sonoma-compatibility
       - name: Install uv and canonical CPython
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -346,9 +349,6 @@ jobs:
           path: release-dist
       - name: Reverify downloaded assets on the consumer
         run: uv run --no-project --python 3.14.8 python -B -m tools.release_delivery --verify-directory release-dist
-      - name: Select Apple SDK and platform tools on minimum OS
-        if: matrix.os == 'macos-14'
-        run: sudo xcode-select --switch /Applications/Xcode_16.2.app/Contents/Developer
       - name: Install pinned Swift quality tools
         run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
       - name: Test the tagged source and downloaded app on this OS
