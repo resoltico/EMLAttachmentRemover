@@ -12,6 +12,7 @@ from tools import macos_runtime, macos_runtime_source
 
 from tests.test_macos_runtime_source import runtime_archive_fixture
 
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX runtime permission normalization")
 def test_runtime_copy_normalizes_noncanonical_source_permissions(
     tmp_path: Path,
