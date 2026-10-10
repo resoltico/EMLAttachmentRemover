@@ -153,6 +153,7 @@ def verify(actual: Path, expected: Path, architecture: str) -> None:
                     "runtime resource or native code differs from upstream source: "
                     + path.relative_to(actual).as_posix()
                 )
-                if path.suffix == ".pyc":
-                    message += _bytecode_diagnostic(path, source)
-                raise ValueError(message)
+                suffix = (
+                    _bytecode_diagnostic(path, source) if path.suffix == ".pyc" else ""
+                )
+                raise ValueError(message + suffix)
