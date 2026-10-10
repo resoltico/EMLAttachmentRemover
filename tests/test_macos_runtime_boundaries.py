@@ -21,7 +21,7 @@ from tools import macos_runtime, macos_runtime_archive, macos_runtime_source
 from tests.test_macos_runtime_source import runtime_archive_fixture
 
 
-def _compile_synthetic_runtime_with_host_python(monkeypatch: pytest.MonkeyPatch) -> None:
+def _use_host_compiler_for_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
     """Do not execute synthetic CPython placeholder bytes in unrelated tests."""
     monkeypatch.setattr(
         macos_runtime_source,
@@ -200,7 +200,7 @@ def test_fresh_download_reference_and_incomplete_native_runtime_refusal(
     content = archive.read_bytes()
     monkeypatch.delenv("EML_RUNTIME_SOURCE_DIRECTORY", raising=False)
     monkeypatch.setattr(macos_runtime_source, "pin", lambda _cpu: pin)
-    _compile_synthetic_runtime_with_host_python(monkeypatch)
+    _use_host_compiler_for_fixture(monkeypatch)
     monkeypatch.setattr(
         urllib.request, "urlopen", lambda *_args, **_kw: io.BytesIO(content)
     )
@@ -319,7 +319,7 @@ def test_runtime_entrypoint_publishes_only_after_ordered_native_checks(
         return selected
 
     monkeypatch.setattr(macos_runtime_source, "pin", selected_pin)
-    _compile_synthetic_runtime_with_host_python(monkeypatch)
+    _use_host_compiler_for_fixture(monkeypatch)
     commands: list[list[str]] = []
 
     def command(args: list[str], **kwargs: object) -> str:
