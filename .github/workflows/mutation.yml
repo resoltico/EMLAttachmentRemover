@@ -1,6 +1,17 @@
 name: Mutation testing
 
 on:
+  # Requalify the exact main commit after Python, tooling or test changes.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mutation.yml"
+      - "src/**"
+      - "tools/**"
+      - "tests/**"
+      - ".python-version"
+      - "pyproject.toml"
+      - "uv.lock"
   schedule:
     - cron: "41 3 * * 4"
   workflow_dispatch:

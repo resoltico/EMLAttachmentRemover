@@ -1,0 +1,30 @@
+name: Minimum supported macOS compatibility
+description: Fail closed unless this runner genuinely exercises Sonoma on Apple Silicon
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        version=$(/usr/bin/sw_vers -productVersion)
+        cpu=$(/usr/bin/uname -m)
+        if [[ $version != 14.* || $cpu != arm64 ]]; then
+          printf 'Minimum-OS gate requires macOS 14 arm64, found %s / %s\n' "$version" "$cpu" >&2
+          exit 1
+        fi
+        if ! /usr/bin/arch -x86_64 /usr/bin/true; then
+          printf 'Minimum-OS gate requires working Rosetta for Intel compatibility\n' >&2
+          exit 1
+        fi
+        developer=/Applications/Xcode_16.2.app/Contents/Developer
+        if [[ ! -d $developer ]]; then
+          printf 'Required Xcode 16.2 is unavailable at %s\n' "$developer" >&2
+          exit 1
+        fi
+        export DEVELOPER_DIR="$developer"
+        selected=$(/usr/bin/xcodebuild -version)
+        if [[ ${selected%%$'\n'*} != 'Xcode 16.2' ]]; then
+          printf 'Required Xcode 16.2 is not selected: %s\n' "$selected" >&2
+          exit 1
+        fi
+        printf 'DEVELOPER_DIR=%s\n' "$developer" >> "$GITHUB_ENV"
