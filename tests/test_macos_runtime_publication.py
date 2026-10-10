@@ -25,6 +25,9 @@ class PublicationFixture:
     source_mode: str
     sign_failure: bool
     events: list[str] = field(default_factory=list)
+    downloaded_archive: Path | None = None
+    extracted_source: Path | None = None
+    staged_runtime: Path | None = None
 
     @property
     def target(self) -> Path:
@@ -63,8 +66,9 @@ class PublicationFixture:
         """Check authenticated fresh acquisition occurs only in staging."""
         assert self.source_mode == "download"
         assert candidate is self.pin
-        assert path.name == "source.tar.zst"
         assert path.parent.parent == self.target.parent
+        assert not self.target.exists()
+        self.downloaded_archive = path
         self.events.append("download")
         path.write_bytes(self.archive.read_bytes())
 
@@ -82,21 +86,26 @@ class PublicationFixture:
         """
         assert candidate is self.pin
         if self.source_mode == "download":
-            assert path.name == "source.tar.zst"
+            assert path == self.downloaded_archive
         else:
             assert path == self.archive
         assert path.read_bytes() == self.archive.read_bytes()
-        assert destination.name == "source"
         assert destination.parent.parent == self.target.parent
+        assert destination != path
+        assert not self.target.exists()
+        self.extracted_source = destination
         self.events.append("extract")
         destination.mkdir()
         return destination
 
     def copy(self, source: Path, staging: Path, compiler: Path) -> None:
         """Populate a stage with a synthetic native artifact."""
-        assert source.name == "source"
-        assert staging == source.parent / "Runtime"
+        assert source == self.extracted_source
+        assert staging.parent == source.parent
+        assert staging != source and staging != self.target
+        assert not self.target.exists()
         assert compiler == self.root / "compiler"
+        self.staged_runtime = staging
         self.events.append("copy")
         staging.mkdir()
         (staging / "native-binary").write_bytes(b"verified synthetic runtime")
@@ -109,6 +118,7 @@ class PublicationFixture:
 
         """
         assert architecture == "arm64"
+        assert staging == self.staged_runtime
         assert (staging / "native-binary").read_bytes() == b"verified synthetic runtime"
         assert not self.target.exists()
         self.events.append("native")
@@ -117,7 +127,7 @@ class PublicationFixture:
     def sign(self, paths: list[Path]) -> None:
         """Verify that signing finishes before the destination appears."""
         assert len(paths) == 1
-        assert paths[0].name == "native-binary"
+        assert paths[0] == self.staged_runtime / "native-binary"
         assert paths[0].read_bytes() == b"verified synthetic runtime"
         assert not self.target.exists()
         self.events.append("sign")
