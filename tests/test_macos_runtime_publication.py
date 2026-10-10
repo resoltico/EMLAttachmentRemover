@@ -28,7 +28,7 @@ class PublicationFixture:
 
     @property
     def target(self) -> Path:
-        """Return the previously absent publication destination.
+        """The previously absent publication destination.
 
         Returns:
             A destination separate from the private staging directory.
