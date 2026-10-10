@@ -12,6 +12,7 @@ import sys
 import tarfile
 import tomllib
 import urllib.request
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -191,6 +192,12 @@ def test_fresh_download_reference_and_incomplete_native_runtime_refusal(
     content = archive.read_bytes()
     monkeypatch.delenv("EML_RUNTIME_SOURCE_DIRECTORY", raising=False)
     monkeypatch.setattr(macos_runtime_source, "pin", lambda _cpu: pin)
+    # The fake source archive contains an intentionally non-executable Python.
+    monkeypatch.setattr(
+        macos_runtime_source,
+        "pinned_compiler",
+        lambda _source, _arch: nullcontext(Path(sys.executable)),
+    )
     monkeypatch.setattr(
         urllib.request, "urlopen", lambda *_args, **_kw: io.BytesIO(content)
     )
@@ -309,6 +316,12 @@ def test_runtime_entrypoint_publishes_only_after_ordered_native_checks(
         return selected
 
     monkeypatch.setattr(macos_runtime_source, "pin", selected_pin)
+    # The Mach-O fixture is not a runnable CPython compiler.
+    monkeypatch.setattr(
+        macos_runtime_source,
+        "pinned_compiler",
+        lambda _source, _arch: nullcontext(Path(sys.executable)),
+    )
     commands: list[list[str]] = []
 
     def command(args: list[str], **kwargs: object) -> str:
