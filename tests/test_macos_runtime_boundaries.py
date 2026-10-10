@@ -21,6 +21,15 @@ from tools import macos_runtime, macos_runtime_archive, macos_runtime_source
 from tests.test_macos_runtime_source import runtime_archive_fixture
 
 
+def _compile_synthetic_runtime_with_host_python(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Do not execute synthetic CPython placeholder bytes in unrelated tests."""
+    monkeypatch.setattr(
+        macos_runtime_source,
+        "pinned_compiler",
+        lambda _source, _arch: nullcontext(Path(sys.executable)),
+    )
+
+
 @pytest.mark.parametrize(
     "url",
     [
@@ -177,7 +186,6 @@ def test_copy_removes_static_files_but_preserves_directory_names(
             target / "licenses/LICENSE.cpython.txt"
         ).read_bytes() == b"original notice"
     finally:
-        # Permission-changing mutants must not strand these known private directories.
         for path in (target, target / "bin", target / "licenses", target / "kept.a"):
             if path.is_dir() and not path.is_symlink():
                 path.chmod(0o755)
@@ -192,12 +200,7 @@ def test_fresh_download_reference_and_incomplete_native_runtime_refusal(
     content = archive.read_bytes()
     monkeypatch.delenv("EML_RUNTIME_SOURCE_DIRECTORY", raising=False)
     monkeypatch.setattr(macos_runtime_source, "pin", lambda _cpu: pin)
-    # The fake source archive contains an intentionally non-executable Python.
-    monkeypatch.setattr(
-        macos_runtime_source,
-        "pinned_compiler",
-        lambda _source, _arch: nullcontext(Path(sys.executable)),
-    )
+    _compile_synthetic_runtime_with_host_python(monkeypatch)
     monkeypatch.setattr(
         urllib.request, "urlopen", lambda *_args, **_kw: io.BytesIO(content)
     )
@@ -316,12 +319,7 @@ def test_runtime_entrypoint_publishes_only_after_ordered_native_checks(
         return selected
 
     monkeypatch.setattr(macos_runtime_source, "pin", selected_pin)
-    # The Mach-O fixture is not a runnable CPython compiler.
-    monkeypatch.setattr(
-        macos_runtime_source,
-        "pinned_compiler",
-        lambda _source, _arch: nullcontext(Path(sys.executable)),
-    )
+    _compile_synthetic_runtime_with_host_python(monkeypatch)
     commands: list[list[str]] = []
 
     def command(args: list[str], **kwargs: object) -> str:
