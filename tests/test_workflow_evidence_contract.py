@@ -115,7 +115,7 @@ def test_mac14_consumer_remains_a_true_os14_gate_after_runner_cutover() -> None:
     """Runner substitution cannot quietly replace minimum-OS execution."""
     selection = (
         "matrix.os == 'macos-14' && "
-        'fromJSON(vars.EML_MACOS14_RUNS_ON || \'"macos-14"\') || matrix.os'
+        "fromJSON(vars.EML_MACOS14_RUNS_ON || '\"macos-14\"') || matrix.os"
     )
     action = (
         Path(__file__).resolve().parents[1]
