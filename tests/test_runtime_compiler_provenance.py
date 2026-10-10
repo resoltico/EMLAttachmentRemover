@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import platform
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from tools import macos_runtime_source
 
 from tests.test_macos_runtime_source import runtime_archive_fixture
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_native_pinned_compiler_never_uses_invoking_python(
