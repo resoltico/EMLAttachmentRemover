@@ -163,12 +163,15 @@ def pinned_compiler(source: Path, architecture: str) -> Generator[Path]:
     For cross-CPU targets, extract a separate pinned host-native distribution.
     Never select the compiler from PATH, uv discovery, or sys.executable.
 
+    Yields:
+        The verified native CPython compiler executable.
+
     Raises:
         ValueError: If the host or target architecture is unsupported.
 
     """
     host = platform.machine()
-    if host not in ("arm64", "x86_64") or architecture not in ("arm64", "x86_64"):
+    if host not in {"arm64", "x86_64"} or architecture not in {"arm64", "x86_64"}:
         message = "runtime bytecode compiler requires a supported macOS CPU"
         raise ValueError(message)
     if host == architecture:
