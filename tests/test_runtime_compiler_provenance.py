@@ -84,5 +84,3 @@ def test_cross_cpu_compiler_downloads_authenticated_source_when_uncached(
         assert chosen.read_bytes() == b"test interpreter"
     assert len(requests) == 1
     assert not requests[0].exists()
-
-
