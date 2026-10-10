@@ -28,17 +28,32 @@ class PublicationFixture:
 
     @property
     def target(self) -> Path:
-        """Return the previously absent publication destination."""
+        """Return the previously absent publication destination.
+
+        Returns:
+            A destination separate from the private staging directory.
+
+        """
         return self.root / "not-yet-created" / "Runtime"
 
     def select(self, architecture: str) -> macos_runtime_source.RuntimePin:
-        """Select the authenticated source without changing its identity."""
+        """Select the authenticated source without changing its identity.
+
+        Returns:
+            The selected pinned source identity.
+
+        """
         assert architecture == "arm64"
         self.events.append("pin")
         return self.pin
 
     def supplied(self, candidate: macos_runtime_source.RuntimePin) -> Path | None:
-        """Optionally supply a previously authenticated archive."""
+        """Optionally supply a previously authenticated archive.
+
+        Returns:
+            The cached source path, or None for fresh download.
+
+        """
         assert candidate is self.pin
         assert self.source_mode != "explicit"
         self.events.append("supplied")
@@ -59,7 +74,12 @@ class PublicationFixture:
         destination: Path,
         candidate: macos_runtime_source.RuntimePin,
     ) -> Path:
-        """Return a synthetic extracted source in the correct staging tree."""
+        """Return a synthetic extracted source in the correct staging tree.
+
+        Returns:
+            The created source directory in private staging.
+
+        """
         assert candidate is self.pin
         if self.source_mode == "download":
             assert path.name == "source.tar.zst"
@@ -82,7 +102,12 @@ class PublicationFixture:
         (staging / "native-binary").write_bytes(b"verified synthetic runtime")
 
     def native(self, staging: Path, architecture: str) -> list[Path]:
-        """Confirm native validation sees staged, never published bytes."""
+        """Confirm native validation sees staged, never published bytes.
+
+        Returns:
+            A list of staged synthetic native-code paths.
+
+        """
         assert architecture == "arm64"
         assert (staging / "native-binary").read_bytes() == b"verified synthetic runtime"
         assert not self.target.exists()
@@ -116,7 +141,12 @@ class PublicationFixture:
         monkeypatch.setattr(macos_runtime, "_sign", self.sign)
 
     def expected_events(self) -> list[str]:
-        """Describe acquisition and publication in observable order."""
+        """Describe acquisition and publication in observable order.
+
+        Returns:
+            The exact expected order of boundary invocations.
+
+        """
         events = ["pin"]
         if self.source_mode != "explicit":
             events.append("supplied")
