@@ -129,9 +129,6 @@ def copy_install(source: Path, target: Path, compiler: Path) -> None:
     Only a source-authenticated compiler from pinned_compiler is permitted.
     Compiler failures propagate with subprocess diagnostics.
 
-    Raises:
-        ValueError: If a runtime link fails validation.
-
     """
     shutil.copytree(source / "install", target, symlinks=True)
     shutil.copytree(source / "licenses", target / "licenses")
