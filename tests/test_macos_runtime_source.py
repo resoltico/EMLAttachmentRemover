@@ -263,7 +263,7 @@ def test_runtime_bytecode_is_relocatable_and_independently_rebuilt(
         timeout: int,
     ) -> subprocess.CompletedProcess[bytes]:
         assert args[:-1] == [
-            sys.executable,
+            str(Path(sys.executable)),
             "-I",
             "-B",
             "-m",
@@ -285,8 +285,9 @@ def test_runtime_bytecode_is_relocatable_and_independently_rebuilt(
 
     monkeypatch.setattr(subprocess, "run", compile_runtime)
     actual, expected = tmp_path / "actual", tmp_path / "expected"
-    macos_runtime.copy_install(source, actual)
-    macos_runtime.copy_install(source, expected)
+    compiler = Path(sys.executable)
+    macos_runtime.copy_install(source, actual, compiler)
+    macos_runtime.copy_install(source, expected, compiler)
     caches = list(actual.rglob("*.pyc"))
     assert len(caches) == 2
     assert not (actual / stale.relative_to(source / "install")).exists()
@@ -322,7 +323,7 @@ def test_runtime_resource_modes_and_internal_links_survive_copying(
     (source / "PYTHON.json").write_text("{}")
     monkeypatch.setattr(runtime_notices, "apply", lambda _root: None)
     actual = tmp_path / "runtime"
-    macos_runtime.copy_install(source, actual)
+    macos_runtime.copy_install(source, actual, Path(sys.executable))
     assert (actual / "bin/python3").is_symlink()
     if os.name != "nt":
         assert (actual / "bin/python").stat().st_mode & 0o777 == 0o755
@@ -330,21 +331,78 @@ def test_runtime_resource_modes_and_internal_links_survive_copying(
         assert (actual / "lib/python3.14/example.py").stat().st_mode & 0o777 == 0o644
 
 
-def test_runtime_preparation_rejects_an_unpinned_compiler(
+def test_native_pinned_compiler_never_uses_invoking_python(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    source = tmp_path / "source"
-    (source / "install").mkdir(parents=True)
-    (source / "licenses").mkdir()
-    (source / "PYTHON.json").write_text("{}")
-    (tmp_path / ".python-version").write_text("0.0.0")
-    monkeypatch.setattr(runtime_notices, "apply", lambda _root: None)
-    monkeypatch.setattr(macos_runtime_source, "ROOT", tmp_path)
-    with pytest.raises(
-        ValueError,
-        match=r"^runtime bytecode requires the pinned CPython build interpreter$",
+    """The verified source's own interpreter is the compiler authority."""
+    monkeypatch.setattr(macos_runtime_source.platform, "machine", lambda: "arm64")
+    source = tmp_path / "authenticated-source"
+    interpreter = source / "install/bin/python3.14"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.write_bytes(b"authenticated interpreter")
+    with macos_runtime_source.pinned_compiler(source, "arm64") as chosen:
+        assert chosen == interpreter
+        assert str(chosen) != sys.executable
+
+
+@pytest.mark.parametrize(
+    ("machine", "architecture"),
+    [("unknown", "arm64"), ("arm64", "unknown")],
+)
+def test_pinned_compiler_rejects_unsupported_cpu(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    machine: str,
+    architecture: str,
+) -> None:
+    """Never fall back to an ambient interpreter on an unexpected CPU."""
+    monkeypatch.setattr(macos_runtime_source.platform, "machine", lambda: machine)
+    with (
+        pytest.raises(ValueError, match="supported macOS CPU"),
+        macos_runtime_source.pinned_compiler(tmp_path, architecture),
     ):
-        macos_runtime.copy_install(source, tmp_path / "runtime")
+        pytest.fail("unknown CPU should have failed before yielding")
+
+
+def test_cross_cpu_compiler_uses_an_independently_verified_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Host-native cross-target compilation must reject altered cached bytes."""
+    archive, selected = runtime_archive_fixture(tmp_path)
+    monkeypatch.setattr(macos_runtime_source.platform, "machine", lambda: "arm64")
+    monkeypatch.setenv("EML_RUNTIME_SOURCE_DIRECTORY", str(tmp_path))
+    monkeypatch.setattr(macos_runtime_source, "pin", lambda _arch: selected)
+    with macos_runtime_source.pinned_compiler(tmp_path, "x86_64") as chosen:
+        assert chosen.read_bytes() == b"test interpreter"
+    corrupted = bytearray(archive.read_bytes())
+    corrupted[-1] ^= 1
+    archive.write_bytes(corrupted)
+    with (
+        pytest.raises(ValueError, match="digest"),
+        macos_runtime_source.pinned_compiler(tmp_path, "x86_64"),
+    ):
+        pytest.fail("altered pinned compiler should never be yielded")
+
+
+def test_cross_cpu_compiler_downloads_authenticated_source_when_uncached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cold cache still requires the independent pin and metadata."""
+    archive, selected = runtime_archive_fixture(tmp_path)
+    monkeypatch.setattr(macos_runtime_source.platform, "machine", lambda: "arm64")
+    monkeypatch.delenv("EML_RUNTIME_SOURCE_DIRECTORY", raising=False)
+    monkeypatch.setattr(macos_runtime_source, "pin", lambda _arch: selected)
+    requests: list[Path] = []
+
+    def download(destination: Path, _selected: macos_runtime_source.RuntimePin) -> None:
+        requests.append(destination)
+        destination.write_bytes(archive.read_bytes())
+
+    monkeypatch.setattr(macos_runtime_source, "download", download)
+    with macos_runtime_source.pinned_compiler(tmp_path, "x86_64") as chosen:
+        assert chosen.read_bytes() == b"test interpreter"
+    assert len(requests) == 1
+    assert not requests[0].exists()
 
 
 def test_runtime_source_command_routes_the_directory_and_has_cli_help(

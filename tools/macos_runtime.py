@@ -6,7 +6,6 @@ import argparse
 import json
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from typing import Final
@@ -124,13 +123,14 @@ def require_deployment(lines: list[str]) -> None:
         raise ValueError(message)
 
 
-def copy_install(source: Path, target: Path) -> None:
+def copy_install(source: Path, target: Path, compiler: Path) -> None:
     """Copy runtime, preserve notices and precompile processing modules.
 
+    Only a source-authenticated compiler from pinned_compiler is permitted.
     Compiler failures propagate with subprocess diagnostics.
 
     Raises:
-        ValueError: If a link or the build interpreter fails validation.
+        ValueError: If a runtime link fails validation.
 
     """
     shutil.copytree(source / "install", target, symlinks=True)
@@ -142,20 +142,13 @@ def copy_install(source: Path, target: Path) -> None:
     for path in sorted(target.rglob("*.a"), reverse=True):
         if path.is_file() or path.is_symlink():
             path.unlink()
-    expected = (macos_runtime_source.ROOT / ".python-version").read_text().strip()
-    if (
-        sys.implementation.name != "cpython"
-        or tuple(map(int, expected.split("."))) != sys.version_info[:3]
-    ):
-        message = "runtime bytecode requires the pinned CPython build interpreter"
-        raise ValueError(message)
     stdlib = target / "lib/python3.14"
     for cache in stdlib.rglob("__pycache__"):
         shutil.rmtree(cache)
     # A fresh compiler process avoids marshal differences from prior string interning.
     subprocess.run(
         [
-            sys.executable,
+            str(compiler),
             "-I",
             "-B",
             "-m",
@@ -215,7 +208,8 @@ def prepare(target: Path, architecture: str, archive: Path | None = None) -> Pat
             macos_runtime_source.download(archive, selected)
         source = macos_runtime_source.extract(archive, staging / "source", selected)
         runtime = staging / "Runtime"
-        copy_install(source, runtime)
+        with macos_runtime_source.pinned_compiler(source, architecture) as compiler:
+            copy_install(source, runtime, compiler)
         _sign(require_native(runtime, architecture))
         runtime.rename(target)
     return target

@@ -169,7 +169,7 @@ def test_copy_removes_static_files_but_preserves_directory_names(
     (source / "install/kept.a").mkdir()
     target = tmp_path / "Runtime"
     try:
-        macos_runtime.copy_install(source, target)
+        macos_runtime.copy_install(source, target, Path(sys.executable))
         assert not (target / "unused.a").exists()
         assert (target / "kept.a").is_dir()
         assert (

@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+
+env:
+  UV_PYTHON_PREFERENCE: only-managed
 concurrency:
   group: macos-delivery-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
