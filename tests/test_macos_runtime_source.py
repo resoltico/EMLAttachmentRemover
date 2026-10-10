@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import os
+import platform
 import subprocess
 import sys
 import tarfile
@@ -335,7 +336,7 @@ def test_native_pinned_compiler_never_uses_invoking_python(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The verified source's own interpreter is the compiler authority."""
-    monkeypatch.setattr(macos_runtime_source.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
     source = tmp_path / "authenticated-source"
     interpreter = source / "install/bin/python3.14"
     interpreter.parent.mkdir(parents=True)
@@ -356,7 +357,7 @@ def test_pinned_compiler_rejects_unsupported_cpu(
     architecture: str,
 ) -> None:
     """Never fall back to an ambient interpreter on an unexpected CPU."""
-    monkeypatch.setattr(macos_runtime_source.platform, "machine", lambda: machine)
+    monkeypatch.setattr(platform, "machine", lambda: machine)
     with (
         pytest.raises(ValueError, match="supported macOS CPU"),
         macos_runtime_source.pinned_compiler(tmp_path, architecture),
@@ -369,7 +370,7 @@ def test_cross_cpu_compiler_uses_an_independently_verified_archive(
 ) -> None:
     """Host-native cross-target compilation must reject altered cached bytes."""
     archive, selected = runtime_archive_fixture(tmp_path)
-    monkeypatch.setattr(macos_runtime_source.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
     monkeypatch.setenv("EML_RUNTIME_SOURCE_DIRECTORY", str(tmp_path))
     monkeypatch.setattr(macos_runtime_source, "pin", lambda _arch: selected)
     with macos_runtime_source.pinned_compiler(tmp_path, "x86_64") as chosen:
@@ -389,7 +390,7 @@ def test_cross_cpu_compiler_downloads_authenticated_source_when_uncached(
 ) -> None:
     """A cold cache still requires the independent pin and metadata."""
     archive, selected = runtime_archive_fixture(tmp_path)
-    monkeypatch.setattr(macos_runtime_source.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
     monkeypatch.delenv("EML_RUNTIME_SOURCE_DIRECTORY", raising=False)
     monkeypatch.setattr(macos_runtime_source, "pin", lambda _arch: selected)
     requests: list[Path] = []
