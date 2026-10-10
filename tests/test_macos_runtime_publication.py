@@ -102,7 +102,8 @@ class PublicationFixture:
         """Populate a stage with a synthetic native artifact."""
         assert source == self.extracted_source
         assert staging.parent == source.parent
-        assert staging != source and staging != self.target
+        assert staging != source
+        assert staging != self.target
         assert not self.target.exists()
         assert compiler == self.root / "compiler"
         self.staged_runtime = staging
@@ -127,6 +128,7 @@ class PublicationFixture:
     def sign(self, paths: list[Path]) -> None:
         """Verify that signing finishes before the destination appears."""
         assert len(paths) == 1
+        assert self.staged_runtime is not None
         assert paths[0] == self.staged_runtime / "native-binary"
         assert paths[0].read_bytes() == b"verified synthetic runtime"
         assert not self.target.exists()
