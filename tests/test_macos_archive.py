@@ -49,7 +49,7 @@ def bundle_fixture(root: Path) -> Path:
             ),
             "CFBundleIdentifier": "io.github.resoltico.emlattachmentremover",
             "NSHumanReadableCopyright": "Copyright © 2026 Ervins Strauhmanis",
-            "LSMinimumSystemVersion": "14.0",
+            "LSMinimumSystemVersion": "15.0",
             "EMLRuntimeMode": "external",
             "EMLArchitecture": "arm64",
             "NSServices": [

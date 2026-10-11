@@ -66,7 +66,7 @@ with open(sys.argv[2], 'wb') as target:
         'LSApplicationCategoryType': 'public.app-category.utilities',
         'CFBundleShortVersionString': version,
         'CFBundleVersion': build_number(Path(sys.argv[1])),
-        'LSMinimumSystemVersion': '14.0',
+        'LSMinimumSystemVersion': '15.0',
         'NSHighResolutionCapable': True,
         'EMLRuntimeMode': sys.argv[4],
         'EMLArchitecture': sys.argv[5],
@@ -83,7 +83,7 @@ cp "$SCRIPT_DIR/ReportModel.swift" "$SCRIPT_DIR/LauncherFailure.swift" "$SCRIPT_
 mkdir "$STAGING/app"
 cp "$SCRIPT_DIR"/App/*.swift "$STAGING/app/"
 "$SWIFTC" -sdk "$SDK" -swift-version 6 -warnings-as-errors -O \
-    -target "$ARCH-apple-macosx14.0" \
+    -target "$ARCH-apple-macosx15.0" \
     "$STAGING/ReportModel.swift" "$STAGING/LauncherFailure.swift" "$STAGING/Artwork.swift" "$STAGING"/app/*.swift \
     -o "$APP/Contents/MacOS/EMLAttachmentRemover"
 printf '%s\n' 'EML Attachment Remover native UI managed installation' > "$APP/Contents/Resources/.eml-ui-installation"

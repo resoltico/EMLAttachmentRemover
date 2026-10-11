@@ -408,7 +408,7 @@ def verify(
                 for line in (ROOT / "LICENSE").read_text().splitlines()
                 if line.startswith("Copyright (c) ")
             ).removeprefix("Copyright (c) "),
-            "LSMinimumSystemVersion": "14.0",
+            "LSMinimumSystemVersion": "15.0",
         }
         required = {
             "INSTALL.txt": instructions(),
