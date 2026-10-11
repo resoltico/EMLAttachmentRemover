@@ -39,6 +39,12 @@ private func checkReceipt(_ data: Data) {
       "Invalid UTF-8 receipt accepted")
     return
   }
+  if !hasValidJSONSyntax(data) {
+    precondition(
+      (try? UIReceipt.admit(data, status: 0, version: "fuzz")) == nil,
+      "Malformed JSON accepted")
+    return
+  }
   let decoder = JSONDecoder()
   decoder.keyDecodingStrategy = .convertFromSnakeCase
   guard let decoded = try? decoder.decode(UIReceipt.self, from: data),

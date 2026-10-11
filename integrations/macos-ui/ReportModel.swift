@@ -160,6 +160,11 @@ struct UIReceipt: Decodable, Sendable {
         domain: "EMLReport", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "The report is not valid UTF-8."])
     }
+    guard hasValidJSONSyntax(data) else {
+      throw NSError(
+        domain: "EMLReport", code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "The report is not valid JSON."])
+    }
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
     if let failure = try? decoder.decode(LauncherFailure.self, from: data),
@@ -255,4 +260,9 @@ func safeText(_ text: String, multiline: Bool = true) -> String {
 
 func hasValidUTF8Encoding(_ data: Data) -> Bool {
   String(decoding: data, as: UTF8.self).utf8.elementsEqual(data)
+}
+
+func hasValidJSONSyntax(_ data: Data) -> Bool {
+  // Foundation JSONDecoder can trap on malformed input instead of throwing.
+  (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil
 }
