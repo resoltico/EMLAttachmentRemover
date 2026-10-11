@@ -137,17 +137,21 @@ class PublicationFixture:
             message = "synthetic signature failure"
             raise ValueError(message)
 
+    def compiler(self, source: Path, architecture: str) -> nullcontext[Path]:
+        """Require the compiler to receive the authenticated source and selected CPU."""
+        assert source is self.extracted_source
+        assert architecture == "arm64"
+        assert not self.target.exists()
+        self.events.append("compiler")
+        return nullcontext(self.root / "compiler")
+
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Replace only external boundaries, not the publication logic."""
         monkeypatch.setattr(macos_runtime_source, "pin", self.select)
         monkeypatch.setattr(macos_runtime_source, "supplied_archive", self.supplied)
         monkeypatch.setattr(macos_runtime_source, "download", self.download)
         monkeypatch.setattr(macos_runtime_source, "extract", self.extract)
-        monkeypatch.setattr(
-            macos_runtime_source,
-            "pinned_compiler",
-            lambda _source, _architecture: nullcontext(self.root / "compiler"),
-        )
+        monkeypatch.setattr(macos_runtime_source, "pinned_compiler", self.compiler)
         monkeypatch.setattr(macos_runtime, "copy_install", self.copy)
         monkeypatch.setattr(macos_runtime, "require_native", self.native)
         monkeypatch.setattr(macos_runtime, "_sign", self.sign)
@@ -164,7 +168,7 @@ class PublicationFixture:
             events.append("supplied")
         if self.source_mode == "download":
             events.append("download")
-        return [*events, "extract", "copy", "native", "sign"]
+        return [*events, "extract", "compiler", "copy", "native", "sign"]
 
 
 @pytest.mark.parametrize("source_mode", ["explicit", "cached", "download"])
