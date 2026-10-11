@@ -79,7 +79,7 @@ interrupt_child() {
     if [ -n "$WATCHDOG" ]; then return; fi
     if [ -n "$CHILD" ]; then
         kill "-$CANCEL_SIGNAL" "$CHILD" 2>/dev/null || true
-        "$PYTHON" -I -B -c 'import os, signal, sys, time; time.sleep(12); os.kill(int(sys.argv[1]), signal.SIGKILL)' "$CHILD" 2>/dev/null &
+        "$PYTHON" -I -B -c 'import os, signal, sys, time; time.sleep(12); os.kill(int(sys.argv[1]), signal.SIGKILL)' "$CHILD" >/dev/null 2>&1 &
         WATCHDOG=$!
     fi
 }
