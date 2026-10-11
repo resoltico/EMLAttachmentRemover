@@ -69,7 +69,7 @@ def test_publication_waits_for_the_tagged_archives_on_supported_macos() -> None:
     ]
     publish = release[release.index("  publish:") :]
     assert "    needs: build\n" in compatibility
-    assert "os: [macos-14, macos-15-intel, xcode-27]" in compatibility
+    assert "os: [macos-15, macos-15-intel, xcode-27]" in compatibility
     assert (
         "artifact-ids: ${{ needs.build.outputs.delivery_artifact_id || '0' }}"
         in compatibility
@@ -143,21 +143,26 @@ def test_mutation_requalifies_main_when_assurance_inputs_change() -> None:
     assert "  cancel-in-progress: false\n" in workflow
 
 
-def test_mac14_consumer_remains_a_true_os14_gate_after_runner_cutover() -> None:
-    """Runner substitution cannot quietly replace minimum-OS execution."""
-    selection = (
-        "matrix.os == 'macos-14' && "
-        "fromJSON(vars.EML_MACOS14_RUNS_ON || '\"macos-14\"') || matrix.os"
-    )
+def test_macos15_consumer_preserves_real_minimum_os_and_rosetta() -> None:
+    """Each qualifying lane must execute on the declared minimum OS and CPU."""
     action = (
         Path(__file__).resolve().parents[1]
-        / ".github/actions/sonoma-compatibility/action.yml"
+        / ".github/actions/sequoia-compatibility/action.yml"
     ).read_text(encoding="utf-8")
     for name in ("macos-compatibility.yml", "release.yml"):
         content = _text(name)
-        assert selection in content
-        assert "os: [macos-14, macos-15-intel, xcode-27]" in content
-        assert "uses: ./.github/actions/sonoma-compatibility" in content
-        assert "sudo xcode-select --switch" not in content
-    for check in ("sw_vers -productVersion", "uname -m", "arch -x86_64", "Xcode 16.2"):
+        assert "runs-on: ${{ matrix.os }}" in content
+        assert "os: [macos-15, macos-15-intel, xcode-27]" in content
+        assert "uses: ./.github/actions/sequoia-compatibility" in content
+        assert "matrix.os == 'macos-15' || matrix.os == 'macos-15-intel'" in content
+        assert "matrix.os == 'macos-15' && 'arm64' || 'x86_64'" in content
+        assert "EML_MACOS14_RUNS_ON" not in content
+        assert "macos-14" not in content
+    for check in ("sw_vers -productVersion", "uname -m", "arch -x86_64"):
         assert check in action
+    assert "15.*" in action
+    assert "arm64" in action and "x86_64" in action
+    assert not (
+        Path(__file__).resolve().parents[1]
+        / ".github/actions/sonoma-compatibility"
+    ).exists()

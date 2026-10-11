@@ -311,14 +311,14 @@ jobs:
   compatibility:
     name: Exercise release ZIPs on ${{ matrix.os }}
     needs: build
-    runs-on: ${{ matrix.os == 'macos-14' && fromJSON(vars.EML_MACOS14_RUNS_ON || '"macos-14"') || matrix.os }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-15-intel, xcode-27]
+        os: [macos-15, macos-15-intel, xcode-27]
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONWARNINGS: error
@@ -328,9 +328,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Verify minimum macOS 14 host and tools
-        if: matrix.os == 'macos-14'
-        uses: ./.github/actions/sonoma-compatibility
+      - name: Verify minimum macOS 15 host and tools
+        if: matrix.os == 'macos-15' || matrix.os == 'macos-15-intel'
+        uses: ./.github/actions/sequoia-compatibility
+        with:
+          architecture: ${{ matrix.os == 'macos-15' && 'arm64' || 'x86_64' }}
       - name: Install uv and canonical CPython
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
