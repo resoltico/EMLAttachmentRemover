@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tools import check_repository_hygiene as hygiene
 
 from tests.repository_hygiene_support import make_public_root
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_only_declared_artifact_roots_accept_opaque_archives(tmp_path: Path) -> None:
