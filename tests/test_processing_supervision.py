@@ -118,6 +118,12 @@ def _confirm_stopped(child: int) -> None:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX launcher signal traps")
+def test_signal_watchdog_cannot_retain_launcher_output_pipes() -> None:
+    """A background watchdog must close both captured output descriptors."""
+    assert '"$CHILD" >/dev/null 2>&1 &' in RUNNER.read_text()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX launcher signal traps")
 def test_signal_after_child_assignment_is_forwarded_only_once(tmp_path: Path) -> None:
     """Force the child-startup race rather than relying on probabilistic timing."""
     runner = tmp_path / "processing-launcher.sh"
@@ -160,7 +166,18 @@ while True: time.sleep(0.01)
         start_new_session=True,
     ) as process:
         try:
-            _output, errors = process.communicate(timeout=5)
+            deadline = time.monotonic() + 15
+            while not ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert ready.exists(), "processor did not reach the signal-ready state"
+            try:
+                _output, errors = process.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                completed = False
+                errors = b""
+            else:
+                completed = True
+            assert completed, "launcher did not finish after child signal readiness"
             assert process.returncode == 143, errors
         finally:
             kill_group = getattr(os, "killpg", None)
