@@ -1,6 +1,6 @@
 EML Attachment Remover — prebuilt macOS application
 
-Both editions require macOS 14 or later. Download arm64 for Apple Silicon or x86_64 for Intel. The main ZIP includes a private CPython runtime; the smaller ZIP with external-python in its name requires your own CPython 3.14. Swift, Xcode and personal code signing are not required.
+Both editions built from this source require macOS 15 or later (Sequoia). Previously published v4.0.0 ZIPs retain their original macOS 14 deployment target. Download arm64 for Apple Silicon or x86_64 for Intel. The main ZIP includes a private CPython runtime; the smaller ZIP with external-python in its name requires your own CPython 3.14. Swift, Xcode and personal code signing are not required.
 
 1. Download the matching ZIP from the project's official GitHub Release, check its checksum/provenance, then extract it. Quit any previous EML Attachment Remover instance.
 2. For the main bundled edition, copy EML Attachment Remover.app into ~/Applications in Finder. Create that folder inside your home folder if needed. Open the installed app in Finder. You do not install Python separately.
