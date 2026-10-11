@@ -71,13 +71,47 @@ def test_publication_waits_for_the_tagged_archives_on_supported_macos() -> None:
     assert "    needs: build\n" in compatibility
     assert "os: [macos-14, macos-15-intel, xcode-27]" in compatibility
     assert (
-        "name: release-dist-${{ github.run_id }}-${{ github.run_attempt }}"
+        "artifact-ids: ${{ needs.build.outputs.delivery_artifact_id || '0' }}"
         in compatibility
     )
     assert "-m tools.release_delivery --verify-directory release-dist" in compatibility
     assert "EML_DELIVERY_DIRECTORY: release-dist" in compatibility
     assert "      - compatibility\n" in publish
 
+
+
+
+def test_delivery_artifact_identity_survives_partial_job_reruns() -> None:
+    """Consumers use the producer's immutable artifact ID, not their retry number."""
+    compatibility = _text("macos-compatibility.yml")
+    release = _text("release.yml")
+    assert (
+        "  producer:\n    runs-on: macos-26\n    outputs:\n"
+        "      delivery_artifact_id: ${{ steps.delivery_upload.outputs.artifact-id }}\n"
+    ) in compatibility
+    assert (
+        "  build:\n    name: Build complete portable and macOS release assets\n"
+        "    outputs:\n"
+        "      delivery_artifact_id: ${{ steps.delivery_upload.outputs.artifact-id }}\n"
+    ) in release
+    assert (
+        "      - id: delivery_upload\n        uses: actions/upload-artifact@"
+        in compatibility
+    )
+    assert "      - name: Upload release assets\n        id: delivery_upload\n" in release
+    assert (
+        "artifact-ids: ${{ needs.producer.outputs.delivery_artifact_id || '0' }}"
+        in compatibility
+    )
+    assert (
+        release.count(
+            "artifact-ids: ${{ needs.build.outputs.delivery_artifact_id || '0' }}"
+        )
+        == 2
+    )
+    # A missing producer output must never select all artifacts.
+    assert " || '0' " in compatibility
+    assert " || '0' " in release
 
 def test_mutation_workers_are_benchmarkable_but_default_to_the_host_policy() -> None:
     assert "      MUTATION_WORKERS: ${{ inputs.workers || 'auto' }}\n" in _text(
