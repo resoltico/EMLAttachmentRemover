@@ -163,6 +163,5 @@ def test_macos15_consumer_preserves_real_minimum_os_and_rosetta() -> None:
     assert "15.*" in action
     assert "arm64" in action and "x86_64" in action
     assert not (
-        Path(__file__).resolve().parents[1]
-        / ".github/actions/sonoma-compatibility"
+        Path(__file__).resolve().parents[1] / ".github/actions/sonoma-compatibility"
     ).exists()
