@@ -96,7 +96,9 @@ def test_delivery_artifact_identity_survives_partial_job_reruns() -> None:
         "      - id: delivery_upload\n        uses: actions/upload-artifact@"
         in compatibility
     )
-    assert "      - name: Upload release assets\n        id: delivery_upload\n" in release
+    assert (
+        "      - name: Upload release assets\n        id: delivery_upload\n" in release
+    )
     assert (
         "artifact-ids: ${{ needs.producer.outputs.delivery_artifact_id || '0' }}"
         in compatibility
