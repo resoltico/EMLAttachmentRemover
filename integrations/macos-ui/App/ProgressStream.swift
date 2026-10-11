@@ -59,9 +59,11 @@ struct ProgressStream {
       return nil
     }
     guard String(data: line.dropFirst(prefix.count), encoding: .utf8) != nil else { return nil }
+    let payload = line.dropFirst(prefix.count)
+    guard hasValidJSONSyntax(payload) else { return nil }
     guard
       let update = try? JSONDecoder().decode(
-        NativeProgress.self, from: line.dropFirst(prefix.count)),
+        NativeProgress.self, from: payload),
       update.schema == 1, (1...4096).contains(update.total),
       (0...update.total).contains(update.completed)
     else { return nil }

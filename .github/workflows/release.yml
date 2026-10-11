@@ -240,6 +240,8 @@ jobs:
 
   build:
     name: Build complete portable and macOS release assets
+    outputs:
+      delivery_artifact_id: ${{ steps.delivery_upload.outputs.artifact-id }}
     needs:
       - qualify
       - property
@@ -291,6 +293,7 @@ jobs:
         env:
           TZ: UTC
       - name: Upload release assets
+        id: delivery_upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-dist-${{ github.run_id }}-${{ github.run_attempt }}
@@ -345,7 +348,7 @@ jobs:
       - name: Download this tag's release assets
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: release-dist-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.build.outputs.delivery_artifact_id || '0' }}
           path: release-dist
       - name: Reverify downloaded assets on the consumer
         run: uv run --no-project --python 3.14.8 python -B -m tools.release_delivery --verify-directory release-dist
@@ -408,7 +411,7 @@ jobs:
       - name: Download release assets
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: release-dist-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.build.outputs.delivery_artifact_id || '0' }}
           path: release-dist
       - name: Reverify the downloaded exact artifact set
         run: >-

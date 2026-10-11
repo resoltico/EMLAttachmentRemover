@@ -455,10 +455,6 @@
             "rationale": "Every reference label undergoes the same deterministic normalization before equality comparison, so changing its internal join separator preserves duplicate detection."
         },
         {
-            "mutant": "tools.check_repository_hygiene.x__inspect_excluded_root__mutmut_40",
-            "rationale": "The downstream opaque-archive check independently requires build, dist or release-dist as the artifact-root name. Passing other generated root names cannot broaden opacity approval."
-        },
-        {
             "mutant": "tools.check_repository_hygiene.x__inspect_reserved_root__mutmut_1",
             "rationale": "Every regular-file caller passes inspect_content explicitly. Calls that use its default require a directory and never enter the content-inspection branch, so the changed default cannot affect an audit."
         },
