@@ -22,11 +22,9 @@ def test_only_declared_artifact_roots_accept_opaque_archives(tmp_path: Path) -> 
 
     audit = hygiene.audit_repository(root)
     rejected_archives = {
-        issue.path
-        for issue in audit.issues
-        if "opaque generated file" in issue.message
+        issue.path for issue in audit.issues if "opaque generated file" in issue.message
     }
     assert {root / name / archive_name for name in cache_roots} <= rejected_archives
-    assert {
-        root / name / archive_name for name in artifact_roots
-    }.isdisjoint(rejected_archives)
+    assert {root / name / archive_name for name in artifact_roots}.isdisjoint(
+        rejected_archives
+    )
