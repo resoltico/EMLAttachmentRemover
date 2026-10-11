@@ -138,7 +138,12 @@ class PublicationFixture:
             raise ValueError(message)
 
     def compiler(self, source: Path, architecture: str) -> nullcontext[Path]:
-        """Require the compiler to receive the authenticated source and selected CPU."""
+        """Require the compiler to receive the authenticated source and selected CPU.
+
+        Returns:
+            A context providing the synthetic authenticated compiler.
+
+        """
         assert source is self.extracted_source
         assert architecture == "arm64"
         assert not self.target.exists()
