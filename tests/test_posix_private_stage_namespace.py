@@ -218,8 +218,7 @@ def test_partial_acquisition_cleanup_releases_handles_and_reports_faults(
     os.mkdir(name, mode=0o700, dir_fd=parent.descriptor)
     directory_fd = os.open(outer, os.O_RDONLY | os.O_DIRECTORY)
     file_fd = os.open(
-        b"candidate", os.O_RDWR | os.O_CREAT | os.O_EXCL,
-        0o600, dir_fd=directory_fd
+        b"candidate", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=directory_fd
     )
     original_close = os.close
 
@@ -279,8 +278,10 @@ def test_private_stage_publish_rejects_untrusted_source(
                 os.symlink(b"unrelated", b"candidate", dir_fd=source_fd)
             else:
                 substitute = os.open(
-                    b"candidate", os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                    0o600, dir_fd=source_fd
+                    b"candidate",
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                    dir_fd=source_fd,
                 )
                 os.write(substitute, b"untrusted")
                 os.close(substitute)
@@ -305,7 +306,7 @@ def test_private_stage_publish_rejects_untrusted_source(
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory-descriptor primitives")
 def test_private_stage_discard_requires_owner_but_accepts_moved_candidate(
-    tmp_path: Path
+    tmp_path: Path,
 ) -> None:
     """The Darwin rename case leaves an empty stage directory to remove."""
     parent = BoundDirectory(os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), False)

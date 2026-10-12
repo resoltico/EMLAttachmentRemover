@@ -275,7 +275,9 @@ def _publish_stage_no_replace(
     stage_name: bytes,
     destination_name: bytes,
 ) -> bool:
-    return native_posix_stage.publish(directory, _stage_fd, stage_name, destination_name)
+    return native_posix_stage.publish(
+        directory, _stage_fd, stage_name, destination_name
+    )
 
 
 def _child_lstat(directory: BoundDirectory, name: bytes) -> FileIdentity | None:

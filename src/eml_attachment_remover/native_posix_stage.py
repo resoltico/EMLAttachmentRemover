@@ -10,12 +10,17 @@ from .domain import AppError, BoundDirectory, ExitCode
 
 _PAYLOAD = b"candidate"
 _DIRECTORY_FLAGS = (
-    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
 )
 _FILE_FLAGS = (
-    os.O_RDWR | os.O_CREAT | os.O_EXCL
-    | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    os.O_RDWR
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
 )
 
 
