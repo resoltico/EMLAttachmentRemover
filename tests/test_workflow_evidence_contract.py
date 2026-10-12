@@ -124,6 +124,20 @@ def test_release_and_compatibility_enforce_uv_managed_interpreters() -> None:
         assert "env:\n  UV_PYTHON_PREFERENCE: only-managed\n" in _text(name)
 
 
+def test_pr_quality_requires_reviewed_mutation_source_binding() -> None:
+    """Catch malformed or stale equivalent manifests before protected merge."""
+    workflow = _text("quality.yml")
+    preflight = (
+        "      - name: Verify source-bound mutation manifest\n"
+        "        if: matrix.static\n"
+        "        run: uv run python tools/check_mutation_results.py --manifest-only\n"
+    )
+    assert preflight in workflow
+    assert workflow.index(preflight) < workflow.index(
+        "      - name: Run the complete quality gate\n"
+    )
+
+
 def test_mutation_requalifies_main_when_assurance_inputs_change() -> None:
     """Do not leave a source-changing merge without fresh mutation evidence."""
     workflow = _text("mutation.yml")

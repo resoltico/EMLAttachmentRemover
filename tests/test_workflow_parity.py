@@ -33,6 +33,9 @@ CI_ONLY: Final = {
         'if [[ ! "$manifest_digest" =~ ^[0-9a-f]{64}$ ]]; then exit 1 fi '
         'printf \'digest=sha256:%s\\n\' "$manifest_digest" >> "$GITHUB_OUTPUT"'
     ),
+    # PR CI validates the source-bound equivalent manifest before merge;
+    # local mutation campaigns already perform this identical preflight.
+    "uv run python tools/check_mutation_results.py --manifest-only",
     # Publishes the GitHub release; needs the workflow's GH_TOKEN.
     (
         "uv run --no-project --python 3.14.8 python -B -m tools.publish_release "
