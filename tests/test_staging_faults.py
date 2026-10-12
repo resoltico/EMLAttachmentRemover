@@ -118,15 +118,6 @@ def test_close_and_verification_faults_are_not_silently_accepted(
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - explicit test cleanup.
 
 
-def test_stage_readback_joins_every_chunk_exactly(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Require staged readback to preserve ordered chunks without separators."""
-    chunks = iter([b"one", b"two", b""])
-    monkeypatch.setattr(os, "read", lambda *_args: next(chunks))
-    assert staged_output._read_all(7) == b"onetwo"  # ruff: ignore[private-member-access] - exact staging readback.
-
-
 @pytest.mark.parametrize("missing", ["stage", "parent"])
 def test_stage_verification_rejects_each_missing_owner_independently(
     tmp_path: Path, missing: str

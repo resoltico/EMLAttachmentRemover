@@ -7802,7 +7802,7 @@
       "reason": "explicit test cleanup."
     },
     {
-      "path": "tests/test_staging_faults.py",
+      "path": "tests/test_staging_mutation_contracts.py",
       "scope": "test_stage_readback_joins_every_chunk_exactly",
       "anchor": "assert staged_output._read_all(7) == b\"onetwo\"",
       "tool": "ruff",
