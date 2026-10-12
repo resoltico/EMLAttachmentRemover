@@ -16,7 +16,7 @@ mkdir "$OUTPUT"
     --notices --warnings --errors --output-partial-info-plist "$OUTPUT/icon-partial.plist" \
     --app-icon EML --include-all-app-icons --enable-on-demand-resources NO \
     --development-region en --target-device mac \
-    --minimum-deployment-target 14.0 --platform macosx
+    --minimum-deployment-target 15.0 --platform macosx
 [ -s "$OUTPUT/Assets.car" ] && [ -s "$OUTPUT/EML.icns" ] && [ -s "$OUTPUT/icon-partial.plist" ] || {
     printf '%s\n' 'actool omitted Assets.car, EML.icns, or icon metadata.' >&2; exit 3;
 }

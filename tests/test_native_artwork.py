@@ -29,9 +29,9 @@ def test_native_artwork_palette_and_appearance_changes(
             "-warnings-as-errors",
             optimization,
             "-target",
-            "arm64-apple-macosx14.0"
+            "arm64-apple-macosx15.0"
             if platform.machine() == "arm64"
-            else "x86_64-apple-macosx14.0",
+            else "x86_64-apple-macosx15.0",
             str(UI / "Artwork.swift"),
             str(UI / "test-artwork.swift"),
             "-o",

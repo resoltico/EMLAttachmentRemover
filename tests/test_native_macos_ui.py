@@ -32,7 +32,7 @@ def test_native_report_model() -> None:
 
 @MACOS_ONLY
 @pytest.mark.skipif(
-    platform.mac_ver()[0].startswith(("14.", "15.")),
+    platform.mac_ver()[0].startswith("15."),
     reason="Icon Composer compilation requires Xcode 26 or later",
 )
 def test_native_bundle_is_signed_for_host_and_processes_current_sources(
@@ -332,7 +332,7 @@ def _exercise_native_launch(
 def test_downloaded_candidate_executes_on_this_os_and_cpu(tmp_path: Path) -> None:
     delivery = Path(os.environ["EML_DELIVERY_DIRECTORY"])
     architectures = [platform.machine()]
-    if platform.machine() == "arm64" and platform.mac_ver()[0].startswith("14."):
+    if platform.machine() == "arm64" and platform.mac_ver()[0].startswith("15."):
         translated_machine = subprocess.check_output(
             ["/usr/bin/arch", "-x86_64", "/usr/bin/uname", "-m"],
             text=True,

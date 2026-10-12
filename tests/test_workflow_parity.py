@@ -161,7 +161,7 @@ class WorkflowParityTests(unittest.TestCase):
                         {
                             "./.github/workflows/swift-fuzz.yml",
                             "./.github/actions/runtime-source",
-                            "./.github/actions/sonoma-compatibility",
+                            "./.github/actions/sequoia-compatibility",
                         },
                     )
                     target = PROJECT_ROOT / action
