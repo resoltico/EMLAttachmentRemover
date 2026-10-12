@@ -354,3 +354,26 @@ def test_posix_directory_close_keeps_independent_handle_failures(
                 native_posix.close_bound_directory(parent)
     assert seen == [902, 901]
     assert parent.private_stage_directory_fd is None
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory-descriptor primitives")
+def test_private_stage_refuses_failed_acl_clearing_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failure to remove an inherited ACL cannot expose confidential bytes."""
+    parent = BoundDirectory(os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), False)
+    name = b".eml-remove-acl-failure.tmp"
+    try:
+        with monkeypatch.context() as context:
+            context.setattr(
+                native_posix_stage.native_posix_acl,
+                "restrict",
+                lambda _fd: (_ for _ in ()).throw(
+                    OSError(errno.EACCES, "ACL denied")
+                ),
+            )
+            with pytest.raises(OSError, match="ACL denied"):
+                native_posix_stage.create(parent, name)
+        assert parent.private_stage_directory_fd is None
+        assert not (tmp_path / os.fsdecode(name)).exists()
+    finally:
+        native_posix.close_bound_directory(parent)

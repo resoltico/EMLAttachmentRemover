@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import stat
 
+from . import native_posix_acl
 from .atomic_publish import publish_no_replace
 from .domain import AppError, BoundDirectory, ExitCode
 
@@ -85,6 +86,7 @@ def create(parent: BoundDirectory, name: bytes) -> int:
     file_fd = -1
     try:
         directory_fd = os.open(name, _DIRECTORY_FLAGS, dir_fd=parent.descriptor)
+        native_posix_acl.restrict(directory_fd)
         if not _same_directory(parent, name, directory_fd):
             raise AppError(
                 ExitCode.OUTPUT_CONFLICT, "private staging directory changed"

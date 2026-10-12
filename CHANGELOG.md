@@ -6,7 +6,7 @@ Notable changes to this project are documented in this file. The format is based
 
 ### Changed
 
-- POSIX publication now uses a private, descriptor-held staging directory. Linux hard-link and macOS exclusive-rename operations use its protected inner candidate rather than a replaceable outer staging name; orphaned POSIX stages are directories rather than files. MIME verifier stale-header checks now derive affected ancestors independently of the executor. Published v4.0.0 artifacts remain unchanged.
+- POSIX publication now uses a private, descriptor-held staging directory; macOS inherited extended ACL entries are cleared before writing the candidate, failing closed on unexpected ACL errors. Linux hard-link and macOS exclusive-rename operations use its protected inner candidate rather than a replaceable outer staging name; orphaned POSIX stages are directories rather than files. MIME verifier stale-header checks now derive affected ancestors independently of the executor. Published v4.0.0 artifacts remain unchanged.
 - **Native application minimum macOS version (future builds):** Raised the deployment target, bundle metadata, compiled icon target and archive verifier from macOS 14.0 to macOS 15.0 for Apple Silicon and Intel apps. Public PR and tagged-release compatibility now qualify macOS 15 Apple Silicon, macOS 15 Intel and Xcode 27 on free standard GitHub-hosted runners; Rosetta still qualifies the Intel app on Apple Silicon. The external Sonoma runner-migration mechanism is retired because macOS 14 support is no longer promised for new builds. Already published v4.0.0 artifacts and their documented macOS 14 requirement are unchanged. [Issue #29](https://github.com/resoltico/EMLAttachmentRemover/issues/29).
 
 ## [4.0.0] - 2026-10-06
