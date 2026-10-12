@@ -355,6 +355,7 @@ def test_posix_directory_close_keeps_independent_handle_failures(
     assert seen == [902, 901]
     assert parent.private_stage_directory_fd is None
 
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory-descriptor primitives")
 def test_private_stage_refuses_failed_acl_clearing_before_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -367,9 +368,7 @@ def test_private_stage_refuses_failed_acl_clearing_before_writing(
             context.setattr(
                 native_posix_stage.native_posix_acl,
                 "restrict",
-                lambda _fd: (_ for _ in ()).throw(
-                    OSError(errno.EACCES, "ACL denied")
-                ),
+                lambda _fd: (_ for _ in ()).throw(OSError(errno.EACCES, "ACL denied")),
             )
             with pytest.raises(OSError, match="ACL denied"):
                 native_posix_stage.create(parent, name)

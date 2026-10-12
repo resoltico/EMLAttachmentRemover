@@ -22,14 +22,20 @@ def _native(
     released: int = 0,
     failure: int = errno.EACCES,
 ) -> tuple[Mock, Mock, Mock]:
-    """Install an exact signature-bearing fake of Darwin's ACL operations."""
+    """Install signature-bearing fakes of Darwin's ACL operations.
+
+    Returns:
+        The fake allocation, set, and release operations, in that order.
+    """
 
     init = Mock(return_value=initialized)
     set_fd = Mock(return_value=written)
     free = Mock(return_value=released)
     library = SimpleNamespace(acl_init=init, acl_set_fd=set_fd, acl_free=free)
     monkeypatch.setattr(native_posix_acl.sys, "platform", "darwin")
-    monkeypatch.setattr(native_posix_acl.ctypes, "CDLL", lambda *_args, **_kwargs: library)
+    monkeypatch.setattr(
+        native_posix_acl.ctypes, "CDLL", lambda *_args, **_kwargs: library
+    )
     monkeypatch.setattr(native_posix_acl.ctypes, "get_errno", lambda: failure)
     return init, set_fd, free
 
