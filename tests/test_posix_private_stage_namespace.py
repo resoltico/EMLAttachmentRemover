@@ -341,7 +341,6 @@ def test_private_stage_discard_requires_owner_but_accepts_moved_candidate(
         native_posix.close_bound_directory(parent)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX directory-descriptor primitives")
 @pytest.mark.parametrize("both_fail", [False, True])
 def test_posix_directory_close_keeps_independent_handle_failures(
     monkeypatch: pytest.MonkeyPatch, *, both_fail: bool
