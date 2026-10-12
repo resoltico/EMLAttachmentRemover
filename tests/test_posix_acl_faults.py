@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import errno
+import os
 from types import SimpleNamespace
-
 from unittest.mock import Mock
 
 import pytest
 
 from eml_attachment_remover import native_posix_acl
+
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX ACL operations")
+
 
 def _native(
     monkeypatch: pytest.MonkeyPatch,
@@ -20,15 +23,14 @@ def _native(
     failure: int = errno.EACCES,
 ) -> tuple[Mock, Mock, Mock]:
     """Install an exact signature-bearing fake of Darwin's ACL operations."""
-    from eml_attachment_remover import native_posix_acl as acl
 
     init = Mock(return_value=initialized)
     set_fd = Mock(return_value=written)
     free = Mock(return_value=released)
     library = SimpleNamespace(acl_init=init, acl_set_fd=set_fd, acl_free=free)
-    monkeypatch.setattr(acl.sys, "platform", "darwin")
-    monkeypatch.setattr(acl.ctypes, "CDLL", lambda *_args, **_kwargs: library)
-    monkeypatch.setattr(acl.ctypes, "get_errno", lambda: failure)
+    monkeypatch.setattr(native_posix_acl.sys, "platform", "darwin")
+    monkeypatch.setattr(native_posix_acl.ctypes, "CDLL", lambda *_args, **_kwargs: library)
+    monkeypatch.setattr(native_posix_acl.ctypes, "get_errno", lambda: failure)
     return init, set_fd, free
 
 
@@ -37,14 +39,14 @@ def test_non_darwin_restricts_mode_without_loading_acl_library(
 ) -> None:
     """The portable POSIX branch needs no platform-specific native library."""
     modes: list[tuple[int, int]] = []
-    monkeypatch.setattr(native_posix_acl.sys, "platform", "linux")
+    monkeypatch.setattr(native_posix_native_posix_acl.sys, "platform", "linux")
     monkeypatch.setattr(
         native_posix_acl.os,
         "fchmod",
         lambda fd, mode: modes.append((fd, mode)),
     )
     monkeypatch.setattr(
-        native_posix_acl.ctypes,
+        native_posix_native_posix_acl.ctypes,
         "CDLL",
         lambda *_args, **_kwargs: pytest.fail("unexpected ACL library load"),
     )
@@ -105,7 +107,7 @@ def test_chmod_failure_never_loads_acl_library(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed restrictive BSD mode cannot be ignored even on macOS."""
-    monkeypatch.setattr(native_posix_acl.sys, "platform", "darwin")
+    monkeypatch.setattr(native_posix_native_posix_acl.sys, "platform", "darwin")
     monkeypatch.setattr(
         native_posix_acl.os,
         "fchmod",
