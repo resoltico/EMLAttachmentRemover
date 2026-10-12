@@ -321,8 +321,10 @@ def test_posix_publication_primitives_are_platform_independent(
     with pytest.raises(AppError):
         native_posix.open_bound_destination(changed)
     assert native_posix.descriptor_identity(7).inode == metadata.st_ino
+    monkeypatch.setattr(native_posix.native_posix_stage, "create", lambda *_args: 7)
+    monkeypatch.setattr(native_posix.native_posix_stage, "publish", lambda *_args: False)
+    monkeypatch.setattr(native_posix.native_posix_stage, "discard", lambda *_args: None)
     assert native_posix.create_private_stage(directory, b"stage") == 7
-    monkeypatch.setattr(native_posix, "publish_no_replace", lambda *_args: False)
     assert (
         native_posix.publish_stage_no_replace(directory, 7, b"stage", b"final") is False
     )
@@ -346,7 +348,7 @@ def test_posix_publication_primitives_are_platform_independent(
     assert native_posix.sync_bound_directory(directory) == "succeeded"
     assert opened
     assert closed
-    assert unlinked == [(b"stage", 7)]
+    assert unlinked == []
 
 
 def _raise_os(*_arguments: object, **_keywords: object) -> object:

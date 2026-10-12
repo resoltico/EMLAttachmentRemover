@@ -20,7 +20,7 @@ _UNSUPPORTED_SYNC_ERRNOS: Final = frozenset({
 
 
 def _darwin_rename_exclusive(
-    parent_fd: int, staged_name: bytes, destination_name: bytes
+    source_fd: int, parent_fd: int, staged_name: bytes, destination_name: bytes
 ) -> None:
     """Move one child name atomically without replacing a destination child.
 
@@ -38,7 +38,7 @@ def _darwin_rename_exclusive(
         ctypes.c_uint,
     ]
     operation.restype = ctypes.c_int
-    result = operation(parent_fd, staged_name, parent_fd, destination_name, RENAME_EXCL)
+    result = operation(source_fd, staged_name, parent_fd, destination_name, RENAME_EXCL)
     if result == 0:
         return
     failure = ctypes.get_errno()
@@ -54,7 +54,7 @@ def _darwin_rename_exclusive(
 
 
 def _link_exclusive(
-    parent_fd: int, staged_name: bytes, destination_name: bytes
+    source_fd: int, parent_fd: int, staged_name: bytes, destination_name: bytes
 ) -> None:
     """Create a second hard link as a portable no-replace publication edge.
 
@@ -66,7 +66,7 @@ def _link_exclusive(
         os.link(
             staged_name,
             destination_name,
-            src_dir_fd=parent_fd,
+            src_dir_fd=source_fd,
             dst_dir_fd=parent_fd,
         )
     except FileExistsError as exc:
@@ -81,7 +81,7 @@ def _link_exclusive(
 
 
 def publish_no_replace(
-    parent_fd: int, staged_name: bytes, destination_name: bytes
+    source_fd: int, parent_fd: int, staged_name: bytes, destination_name: bytes
 ) -> bool:
     """Publish a staged child without replacement and return link-cleanup need.
 
@@ -91,9 +91,9 @@ def publish_no_replace(
 
     """
     if platform.system() == "Darwin":
-        _darwin_rename_exclusive(parent_fd, staged_name, destination_name)
+        _darwin_rename_exclusive(source_fd, parent_fd, staged_name, destination_name)
         return False
-    _link_exclusive(parent_fd, staged_name, destination_name)
+    _link_exclusive(source_fd, parent_fd, staged_name, destination_name)
     return True
 
 

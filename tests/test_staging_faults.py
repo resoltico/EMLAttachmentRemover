@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 from typing import TYPE_CHECKING
 
 import pytest
@@ -80,7 +81,10 @@ def test_stage_creation_owns_every_construction_failure(
         with pytest.raises(KeyboardInterrupt):
             staged_output._create_stage(state)  # ruff: ignore[private-member-access] - constructor-interrupt contract.
     for residual in tmp_path.glob(".eml-remove-*.tmp"):
-        residual.unlink()
+        if residual.is_dir():
+            shutil.rmtree(residual)
+        else:
+            residual.unlink()
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - explicit test cleanup.
 
 
@@ -234,7 +238,10 @@ def test_constructor_and_receipt_dual_failures_are_preserved(
         with pytest.raises(BaseExceptionGroup):
             staged_output._create_stage(state)  # ruff: ignore[private-member-access] - owner/cleanup dual-failure contract.
     for residual in tmp_path.glob(".eml-remove-*.tmp"):
-        residual.unlink()
+        if residual.is_dir():
+            shutil.rmtree(residual)
+        else:
+            residual.unlink()
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - explicit test cleanup.
     receipt_state = _bound_state(tmp_path)
     stage = receipt_state.stage

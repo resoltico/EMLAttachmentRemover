@@ -97,7 +97,7 @@ def test_darwin_rename_binds_errno_aware_native_call_and_exact_arguments(
 
     monkeypatch.setattr(atomic_publish.__dict__["ctypes"], "CDLL", load)
     atomic_publish._darwin_rename_exclusive(  # ruff: ignore[private-member-access] - Darwin no-replace ABI receipt.
-        41, b"stage", b"final"
+        91, 41, b"stage", b"final"
     )
 
     assert calls == [(None, True)]
@@ -109,7 +109,7 @@ def test_darwin_rename_binds_errno_aware_native_call_and_exact_arguments(
         ctypes.c_uint,
     ]
     assert operation.restype is ctypes.c_int
-    assert operation.calls == [(41, b"stage", 41, b"final", atomic_publish.RENAME_EXCL)]
+    assert operation.calls == [(91, b"stage", 41, b"final", atomic_publish.RENAME_EXCL)]
 
 
 def test_darwin_and_link_collisions_keep_the_exact_conflict_receipt(
@@ -127,7 +127,7 @@ def test_darwin_and_link_collisions_keep_the_exact_conflict_receipt(
     )
     with pytest.raises(AppError) as darwin:
         atomic_publish._darwin_rename_exclusive(  # ruff: ignore[private-member-access] - native occupied destination.
-            41, b"stage", b"final"
+            91, 41, b"stage", b"final"
         )
     assert darwin.value == AppError(
         ExitCode.OUTPUT_CONFLICT, "destination already exists"
@@ -141,7 +141,7 @@ def test_darwin_and_link_collisions_keep_the_exact_conflict_receipt(
     )
     with pytest.raises(AppError) as portable:
         atomic_publish._link_exclusive(  # ruff: ignore[private-member-access] - portable occupied destination.
-            41, b"stage", b"final"
+            91, 41, b"stage", b"final"
         )
     assert portable.value == AppError(
         ExitCode.OUTPUT_CONFLICT, "destination already exists"
@@ -168,7 +168,7 @@ def test_atomic_publish_failure_and_directory_sync_keep_exact_os_receipts(
     )
     with pytest.raises(AppError) as rename:
         atomic_publish._darwin_rename_exclusive(  # ruff: ignore[private-member-access] - concrete Darwin failure.
-            41, b"stage", b"final"
+            91, 41, b"stage", b"final"
         )
     assert rename.value == AppError(
         ExitCode.WRITE_ERROR, "could not publish candidate: no space"
@@ -330,7 +330,7 @@ def test_atomic_capability_failures_have_a_specific_code_without_guessing_permis
 
     monkeypatch.setattr(atomic_publish.__dict__["os"], "link", reject_link)
     with pytest.raises(AppError) as rejected:
-        atomic_publish.publish_no_replace(0, b"stage", b"copy")
+        atomic_publish.publish_no_replace(91, 0, b"stage", b"copy")
     assert rejected.value.code is expected
     document = report_document.error_json(rejected.value)
     assert document is not None

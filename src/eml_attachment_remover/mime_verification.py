@@ -147,13 +147,16 @@ def _expected_raw(source: RawMimeTree, roots: set[tuple[int, ...]]) -> bytes:
     """
     nodes = source.by_path
     edits: list[tuple[int, int]] = []
-    index = RemovalIndex.from_roots(roots)
+    RemovalIndex.from_roots(roots)
     for root in roots:
         node = nodes[root]
         if node.delete_start is None or node.delete_end is None:
             raise AppError(ExitCode.VERIFICATION_ERROR, "removal root lacks raw span")
         edits.append((node.delete_start, node.delete_end))
-    for path in index.changed_ancestor_paths(source.root):
+    # A verifier must not share the executor's ancestor traversal: otherwise
+    # one regression could omit the same stale headers on both sides.
+    changed = {root[:length] for root in roots for length in range(len(root))}
+    for path in changed:
         allowed = set(_VERIFIER_CHANGED_HEADERS)
         if path == ():
             allowed.update(_VERIFIER_TRANSPORT_HEADERS)

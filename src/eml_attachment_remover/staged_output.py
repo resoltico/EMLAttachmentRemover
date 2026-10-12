@@ -305,7 +305,7 @@ def _publish_edge(state: _PublicationState) -> None:
     state.kernel_published = True
     _read_final_receipt(state)
     directory_sync = sync_bound_directory(parent)
-    if stage_link_remains:
+    if stage_link_remains or parent.private_stage_directory_fd is not None:
         cleanup_problem = _remove_stage_entry(state)
         if cleanup_problem is not None:
             raise cleanup_problem

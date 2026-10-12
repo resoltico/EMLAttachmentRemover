@@ -153,12 +153,12 @@ def test_darwin_publication_binds_exact_ctypes_abi_and_write_error(
     monkeypatch.setattr(os, "strerror", lambda error: f"native-{error}")
     with pytest.raises(AppError) as raised:
         atomic_publish._darwin_rename_exclusive(  # ruff: ignore[private-member-access] - direct Darwin ABI receipt.
-            41, b"stage.eml", b"final.eml"
+            91, 41, b"stage.eml", b"final.eml"
         )
     assert raised.value == AppError(
         ExitCode.WRITE_ERROR, "could not publish candidate: native-5"
     )
-    assert operation.call_args.args == (41, b"stage.eml", 41, b"final.eml", 4)
+    assert operation.call_args.args == (91, b"stage.eml", 41, b"final.eml", 4)
     assert operation.argtypes == [
         ctypes.c_int,
         ctypes.c_char_p,
@@ -177,11 +177,11 @@ def test_portable_publication_uses_both_descriptor_relative_endpoints(
     monkeypatch.setattr(os, "link", link)
     with pytest.raises(AppError) as raised:
         atomic_publish._link_exclusive(  # ruff: ignore[private-member-access] - direct descriptor-relative publication receipt.
-            29, b"candidate.eml", b"output.eml"
+            91, 29, b"candidate.eml", b"output.eml"
         )
     assert raised.value.code is ExitCode.WRITE_ERROR
     assert (
         str(raised.value) == "could not publish candidate: [Errno 5] permission denied"
     )
     assert link.call_args.args == (b"candidate.eml", b"output.eml")
-    assert link.call_args.kwargs == {"src_dir_fd": 29, "dst_dir_fd": 29}
+    assert link.call_args.kwargs == {"src_dir_fd": 91, "dst_dir_fd": 29}

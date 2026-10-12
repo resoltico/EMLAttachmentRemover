@@ -24,7 +24,8 @@ if sys.platform == "win32":
 else:
     from fcntl import fcntl
 
-from .atomic_publish import publish_no_replace, sync_directory
+from . import native_posix_stage
+from .atomic_publish import sync_directory
 from .domain import (
     AppError,
     BoundDestination,
@@ -244,7 +245,20 @@ def _open_bound_destination(destination: BoundDestination) -> BoundDirectory:
 
 
 def _close_bound_directory(directory: BoundDirectory) -> None:
-    os.close(directory.descriptor)
+    failures: list[BaseException] = []
+    stage_fd = directory.private_stage_directory_fd
+    directory.private_stage_directory_fd = None
+    for handle in (stage_fd, directory.descriptor):
+        if handle is None:
+            continue
+        try:
+            os.close(handle)
+        except BaseException as exc:
+            failures.append(exc)
+    if len(failures) == 1:
+        raise failures[0]
+    if failures:
+        raise BaseExceptionGroup("directory handle cleanup failures", failures)
 
 
 def _descriptor_identity(descriptor: int) -> FileIdentity:
@@ -252,12 +266,7 @@ def _descriptor_identity(descriptor: int) -> FileIdentity:
 
 
 def _create_private_stage(directory: BoundDirectory, name: bytes) -> int:
-    return os.open(
-        name,
-        os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
-        0o600,
-        dir_fd=directory.descriptor,
-    )
+    return native_posix_stage.create(directory, name)
 
 
 def _publish_stage_no_replace(
@@ -266,7 +275,7 @@ def _publish_stage_no_replace(
     stage_name: bytes,
     destination_name: bytes,
 ) -> bool:
-    return publish_no_replace(directory.descriptor, stage_name, destination_name)
+    return native_posix_stage.publish(directory, _stage_fd, stage_name, destination_name)
 
 
 def _child_lstat(directory: BoundDirectory, name: bytes) -> FileIdentity | None:
@@ -303,7 +312,7 @@ def _open_child_nofollow(directory: BoundDirectory, name: bytes) -> int:
 def _discard_private_stage(
     directory: BoundDirectory, _stage_fd: int, name: bytes
 ) -> None:
-    os.unlink(name, dir_fd=directory.descriptor)
+    native_posix_stage.discard(directory, _stage_fd, name)
 
 
 def _sync_bound_directory(directory: BoundDirectory) -> str:

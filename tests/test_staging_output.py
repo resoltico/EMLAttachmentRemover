@@ -197,23 +197,23 @@ def test_cleanup_closes_each_descriptor_after_entry_failure(
 def test_atomic_backend_selects_darwin_and_portable_edges(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    darwin_calls: list[tuple[int, bytes, bytes]] = []
-    portable_calls: list[tuple[int, bytes, bytes]] = []
+    darwin_calls: list[tuple[int, int, bytes, bytes]] = []
+    portable_calls: list[tuple[int, int, bytes, bytes]] = []
 
-    def darwin(parent: int, stage: bytes, destination: bytes) -> None:
-        darwin_calls.append((parent, stage, destination))
+    def darwin(source: int, parent: int, stage: bytes, destination: bytes) -> None:
+        darwin_calls.append((source, parent, stage, destination))
 
-    def portable(parent: int, stage: bytes, destination: bytes) -> None:
-        portable_calls.append((parent, stage, destination))
+    def portable(source: int, parent: int, stage: bytes, destination: bytes) -> None:
+        portable_calls.append((source, parent, stage, destination))
 
     monkeypatch.setattr(atomic_publish, "_darwin_rename_exclusive", darwin)
     monkeypatch.setattr(atomic_publish, "_link_exclusive", portable)
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
-    assert atomic_publish.publish_no_replace(1, b"stage", b"destination") is False
+    assert atomic_publish.publish_no_replace(91, 1, b"stage", b"destination") is False
     monkeypatch.setattr(platform, "system", lambda: "Linux")
-    assert atomic_publish.publish_no_replace(2, b"other", b"final") is True
-    assert darwin_calls == [(1, b"stage", b"destination")]
-    assert portable_calls == [(2, b"other", b"final")]
+    assert atomic_publish.publish_no_replace(92, 2, b"other", b"final") is True
+    assert darwin_calls == [(91, 1, b"stage", b"destination")]
+    assert portable_calls == [(92, 2, b"other", b"final")]
 
 
 @pytest.mark.parametrize(
@@ -232,15 +232,15 @@ def test_darwin_rename_result_is_classified_truthfully(
     monkeypatch.setattr(ctypes, "get_errno", lambda: failure)
     if code is None:
         atomic_publish._darwin_rename_exclusive(  # ruff: ignore[private-member-access] - direct native primitive contract.
-            1, b"stage", b"final"
+            91, 1, b"stage", b"final"
         )
     else:
         with pytest.raises(AppError) as raised:
             atomic_publish._darwin_rename_exclusive(  # ruff: ignore[private-member-access] - direct native primitive contract.
-                1, b"stage", b"final"
+                91, 1, b"stage", b"final"
             )
         assert raised.value.code is code
-    assert operation.call_args.args == (1, b"stage", 1, b"final", 4)
+    assert operation.call_args.args == (91, b"stage", 1, b"final", 4)
 
 
 @pytest.mark.parametrize("failure", [None, FileExistsError(), OSError("link failed")])
@@ -254,12 +254,12 @@ def test_portable_link_result_is_classified_truthfully(
     monkeypatch.setattr(os, "link", link)
     if failure is None:
         atomic_publish._link_exclusive(  # ruff: ignore[private-member-access] - direct portable primitive contract.
-            1, b"stage", b"final"
+            91, 1, b"stage", b"final"
         )
         return
     with pytest.raises(AppError) as raised:
         atomic_publish._link_exclusive(  # ruff: ignore[private-member-access] - direct portable primitive contract.
-            1, b"stage", b"final"
+            91, 1, b"stage", b"final"
         )
     expected = (
         ExitCode.OUTPUT_CONFLICT

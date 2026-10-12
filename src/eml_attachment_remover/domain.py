@@ -171,10 +171,11 @@ class BoundDestination:
 
 @dataclass(slots=True)
 class BoundDirectory:
-    """One active platform directory descriptor and its native-handle kind."""
+    """One bound parent and its optional held private POSIX staging-directory handle."""
 
     descriptor: int
     windows: bool
+    private_stage_directory_fd: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
