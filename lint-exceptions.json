@@ -1804,6 +1804,14 @@
     {
       "path": "tests/test_native_posix_receipts.py",
       "scope": "test_posix_publication_primitives_preserve_exact_kernel_arguments",
+      "anchor": "assert native_posix._create_private_stage(directory, b\"stage\") == 52",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "protected stage delegation."
+    },
+    {
+      "path": "tests/test_native_posix_receipts.py",
+      "scope": "test_posix_publication_primitives_preserve_exact_kernel_arguments",
       "anchor": "assert native_posix._child_lstat(directory, b\"final\") == FileIdentity(",
       "tool": "ruff",
       "rules": "private-member-access",
@@ -2868,7 +2876,7 @@
     {
       "path": "tests/test_report_native_encoding_and_transform_evidence.py",
       "scope": "test_basename_serialization_keeps_one_exact_native_encoding_channel",
-      "anchor": "assert report_document._basename(\"π\") == {",
+      "anchor": "assert report_document._basename(\"\u03c0\") == {",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "Windows basename evidence."
@@ -5084,7 +5092,7 @@
     {
       "path": "tests/test_report_stream_exact_contracts.py",
       "scope": "test_top_level_and_json_writers_are_exact_for_apply_and_dry_run",
-      "anchor": "report_stream._write_pair(\"n\", {\"value\": \"ü\"}, terminal=False)",
+      "anchor": "report_stream._write_pair(\"n\", {\"value\": \"\u00fc\"}, terminal=False)",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "JSON pair contract."
@@ -8676,7 +8684,7 @@
     {
       "path": "tests/test_destination_names.py",
       "scope": "test_prefix_never_splits_a_surrogate_pair_on_windows",
-      "anchor": "assert destination_names._prefix(\"a😀b\", 2) == \"a\"",
+      "anchor": "assert destination_names._prefix(\"a\ud83d\ude00b\", 2) == \"a\"",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "surrogate-pair receipt."
@@ -8684,7 +8692,7 @@
     {
       "path": "tests/test_destination_names.py",
       "scope": "test_prefix_never_splits_a_surrogate_pair_on_windows",
-      "anchor": "assert destination_names._prefix(\"a😀b\", 3) == \"a😀\"",
+      "anchor": "assert destination_names._prefix(\"a\ud83d\ude00b\", 3) == \"a\ud83d\ude00\"",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "surrogate-pair receipt."
@@ -8920,14 +8928,6 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "This exact white-box regression observes the live generated-root scanner handoff to reject artifact-root privileges for tool-cache roots; its private boundary cannot be distinguished through final reports alone."
-    },
-    {
-      "path": "tests/test_native_posix_receipts.py",
-      "scope": "test_posix_publication_primitives_preserve_exact_kernel_arguments",
-      "anchor": "assert native_posix._create_private_stage(directory, b\"stage\") == 52",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "protected stage delegation."
     },
     {
       "path": "tests/test_posix_private_stage_namespace.py",
