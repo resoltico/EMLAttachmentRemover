@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import stat
+from collections.abc import Callable
+from contextlib import suppress
 
 from . import native_posix_acl
 from .atomic_publish import publish_no_replace
@@ -26,7 +28,12 @@ _FILE_FLAGS = (
 
 
 def _same_directory(parent: BoundDirectory, name: bytes, descriptor: int) -> bool:
-    """Check whether the outer name still resolves to the protected directory."""
+    """Check whether the outer name still resolves to the protected directory.
+
+    Returns:
+        Whether the external entry still identifies our private directory.
+
+    """
     try:
         entry = os.stat(name, dir_fd=parent.descriptor, follow_symlinks=False)
     except FileNotFoundError:
@@ -41,32 +48,62 @@ def _same_directory(parent: BoundDirectory, name: bytes, descriptor: int) -> boo
     )
 
 
+def _attempt(failures: list[BaseException], action: Callable[[], None]) -> None:
+    """Attempt one cleanup without suppressing any independent failure."""
+    try:
+        action()
+    except BaseException as exc:  # ruff: ignore[blind-except] - preserve cancellation during independent cleanup.
+        failures.append(exc)
+
+
+def _unlink_candidate(directory_fd: int) -> None:
+    """Remove the inner candidate only if its name still exists."""
+    with suppress(FileNotFoundError):
+        os.unlink(_PAYLOAD, dir_fd=directory_fd)
+
+
+def _remove_private_directory(
+    parent: BoundDirectory, name: bytes, directory_fd: int
+) -> None:
+    """Remove only our original owner-identified private directory."""
+    if _same_directory(parent, name, directory_fd):
+        os.rmdir(name, dir_fd=parent.descriptor)
+
+
+def _require_private_directory(
+    parent: BoundDirectory, name: bytes, directory_fd: int
+) -> None:
+    """Reject an external name that no longer identifies our owned directory.
+
+    Raises:
+        AppError: If ownership, identity or access permissions are inadequate.
+
+    """
+    if not _same_directory(parent, name, directory_fd):
+        raise AppError(
+            ExitCode.OUTPUT_CONFLICT, "private staging directory changed"
+        )
+
+
 def _creation_cleanup(
     parent: BoundDirectory, name: bytes, directory_fd: int, file_fd: int
 ) -> list[BaseException]:
-    """Release acquired handles, removing only our identified private namespace."""
+    """Release acquired owners and record all independent failures.
+
+    Returns:
+        The caught release errors, including any cancellation.
+
+    """
     failures: list[BaseException] = []
     if file_fd >= 0:
-        try:
-            os.close(file_fd)
-        except BaseException as exc:
-            failures.append(exc)
+        _attempt(failures, lambda: os.close(file_fd))
     if directory_fd >= 0:
-        try:
-            os.unlink(_PAYLOAD, dir_fd=directory_fd)
-        except FileNotFoundError:
-            pass
-        except BaseException as exc:
-            failures.append(exc)
-        try:
-            if _same_directory(parent, name, directory_fd):
-                os.rmdir(name, dir_fd=parent.descriptor)
-        except BaseException as exc:
-            failures.append(exc)
-        try:
-            os.close(directory_fd)
-        except BaseException as exc:
-            failures.append(exc)
+        _attempt(failures, lambda: _unlink_candidate(directory_fd))
+        _attempt(
+            failures,
+            lambda: _remove_private_directory(parent, name, directory_fd),
+        )
+        _attempt(failures, lambda: os.close(directory_fd))
     return failures
 
 
@@ -78,6 +115,8 @@ def create(parent: BoundDirectory, name: bytes) -> int:
 
     Raises:
         AppError: If its private directory identity or ownership cannot be proved.
+        BaseExceptionGroup: If acquisition and cleanup fail independently.
+
     """
     if parent.private_stage_directory_fd is not None:
         raise AppError(ExitCode.INTERNAL_ERROR, "private stage already owned")
@@ -87,17 +126,15 @@ def create(parent: BoundDirectory, name: bytes) -> int:
     try:
         directory_fd = os.open(name, _DIRECTORY_FLAGS, dir_fd=parent.descriptor)
         native_posix_acl.restrict(directory_fd)
-        if not _same_directory(parent, name, directory_fd):
-            raise AppError(
-                ExitCode.OUTPUT_CONFLICT, "private staging directory changed"
-            )
+        _require_private_directory(parent, name, directory_fd)
         file_fd = os.open(_PAYLOAD, _FILE_FLAGS, 0o600, dir_fd=directory_fd)
-    except BaseException as primary:
+    except BaseException as primary:  # ruff: ignore[blind-except] - recover owned stage even on cancellation.
         failures = _creation_cleanup(parent, name, directory_fd, file_fd)
         if failures:
-            raise BaseExceptionGroup(
+            combined = BaseExceptionGroup(
                 "private-stage acquisition and cleanup failures", [primary, *failures]
-            ) from primary
+            )
+            raise combined from primary
         raise
     parent.private_stage_directory_fd = directory_fd
     return file_fd
@@ -113,6 +150,7 @@ def publish(
 
     Raises:
         AppError: If the private file's directory entry differs from its handle.
+
     """
     source_fd = parent.private_stage_directory_fd
     if source_fd is None:
@@ -129,15 +167,17 @@ def publish(
 
 
 def discard(parent: BoundDirectory, _stage_fd: int, name: bytes) -> None:
-    """Remove only the protected candidate and its original private directory."""
+    """Remove only the protected candidate and its original private directory.
+
+    Raises:
+        AppError: If the entry no longer names the held protected directory.
+
+    """
     source_fd = parent.private_stage_directory_fd
     if source_fd is None:
         raise AppError(ExitCode.INTERNAL_ERROR, "private stage directory is absent")
-    try:
-        os.unlink(_PAYLOAD, dir_fd=source_fd)
-    except FileNotFoundError:
-        # Darwin rename moves the inner candidate, leaving this name absent.
-        pass
+    # Darwin rename moves the candidate and leaves no source name to remove.
+    _unlink_candidate(source_fd)
     if not _same_directory(parent, name, source_fd):
         raise AppError(
             ExitCode.OUTPUT_CONFLICT, "private stage directory was renamed or replaced"

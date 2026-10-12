@@ -253,12 +253,13 @@ def _close_bound_directory(directory: BoundDirectory) -> None:
             continue
         try:
             os.close(handle)
-        except BaseException as exc:
+        except BaseException as exc:  # ruff: ignore[blind-except] - release both owned handles despite cancellation.
             failures.append(exc)
     if len(failures) == 1:
         raise failures[0]
     if failures:
-        raise BaseExceptionGroup("directory handle cleanup failures", failures)
+        combined = BaseExceptionGroup("directory handle cleanup failures", failures)
+        raise combined
 
 
 def _descriptor_identity(descriptor: int) -> FileIdentity:

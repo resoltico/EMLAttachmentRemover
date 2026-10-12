@@ -8944,6 +8944,30 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "direct partial acquisition cleanup and failure aggregation."
+    },
+    {
+      "path": "src/eml_attachment_remover/native_posix_stage.py",
+      "scope": "_attempt",
+      "anchor": "except BaseException as exc:",
+      "tool": "ruff",
+      "rules": "blind-except",
+      "reason": "Owned staging cleanup must continue closing independent handles even when a cooperative or interpreter-level cancellation interrupts one cleanup operation."
+    },
+    {
+      "path": "src/eml_attachment_remover/native_posix_stage.py",
+      "scope": "create",
+      "anchor": "except BaseException as primary:",
+      "tool": "ruff",
+      "rules": "blind-except",
+      "reason": "The private stage acquisition boundary must release handles and preserve a cancellation/exit exception if it occurs during ownership transfer."
+    },
+    {
+      "path": "src/eml_attachment_remover/native_posix.py",
+      "scope": "_close_bound_directory",
+      "anchor": "except BaseException as exc:",
+      "tool": "ruff",
+      "rules": "blind-except",
+      "reason": "Both retained POSIX descriptors must be released independently, and the full set of cleanup failures\u2014including cancellation\u2014must be preserved."
     }
   ],
   "swift_exceptions": []

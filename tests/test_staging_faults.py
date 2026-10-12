@@ -31,6 +31,15 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+def _remove_residual_stages(directory: Path) -> None:
+    """Remove only test-created abandoned stages after their owner stopped."""
+    for residual in directory.glob(".eml-remove-*.tmp"):
+        if residual.is_dir():
+            shutil.rmtree(residual)
+        else:
+            residual.unlink()
+
+
 def _state(tmp_path: Path, candidate: bytes = b"candidate") -> _PublicationState:
     destination = bind_destination(str(tmp_path / "output.eml"))
     return staged_output._PublicationState(  # ruff: ignore[private-member-access] - direct state-machine fault contract.
@@ -80,11 +89,7 @@ def test_stage_creation_owns_every_construction_failure(
         context.setattr(staged_output, "discard_private_stage", vanished_stage)
         with pytest.raises(KeyboardInterrupt):
             staged_output._create_stage(state)  # ruff: ignore[private-member-access] - constructor-interrupt contract.
-    for residual in tmp_path.glob(".eml-remove-*.tmp"):
-        if residual.is_dir():
-            shutil.rmtree(residual)
-        else:
-            residual.unlink()
+    _remove_residual_stages(tmp_path)
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - explicit test cleanup.
 
 
@@ -237,11 +242,7 @@ def test_constructor_and_receipt_dual_failures_are_preserved(
         context.setattr(staged_output, "_close_descriptor", fail_close)
         with pytest.raises(BaseExceptionGroup):
             staged_output._create_stage(state)  # ruff: ignore[private-member-access] - owner/cleanup dual-failure contract.
-    for residual in tmp_path.glob(".eml-remove-*.tmp"):
-        if residual.is_dir():
-            shutil.rmtree(residual)
-        else:
-            residual.unlink()
+    _remove_residual_stages(tmp_path)
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - explicit test cleanup.
     receipt_state = _bound_state(tmp_path)
     stage = receipt_state.stage

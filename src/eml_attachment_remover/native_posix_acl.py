@@ -14,6 +14,7 @@ def restrict(directory_fd: int) -> None:
     Raises:
         OSError: If owner-private permissions cannot be established.
         BaseExceptionGroup: If applying and releasing the native ACL both fail.
+
     """
     os.fchmod(directory_fd, 0o700)
     if sys.platform != "darwin":
@@ -45,4 +46,5 @@ def restrict(directory_fd: int) -> None:
     if len(failures) == 1:
         raise failures[0]
     if failures:
-        raise BaseExceptionGroup("private staging ACL failures", failures)
+        combined = BaseExceptionGroup("private staging ACL failures", failures)
+        raise combined
