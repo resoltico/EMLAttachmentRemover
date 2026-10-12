@@ -53,11 +53,21 @@ class _FakePOSIX:
         self.closed: list[int] = []
 
     def geteuid(self) -> int:
-        """Return the synthetic effective user identity."""
+        """Return the synthetic effective user identity.
+
+        Returns:
+            The user ID owning the private directory.
+
+        """
         return self.uid
 
     def fstat(self, descriptor: int) -> _Info:
-        """Describe one held descriptor independently of its external name."""
+        """Describe one held descriptor independently of its external name.
+
+        Returns:
+            The identity facts for a live synthetic handle.
+
+        """
         if descriptor == _STAGE:
             return _Info(self.held_kind | self.mode, st_ino=self.held_inode)
         if descriptor == _FILE:
@@ -67,7 +77,12 @@ class _FakePOSIX:
     def stat(
         self, name: bytes, *, dir_fd: int, follow_symlinks: bool
     ) -> _Info:
-        """Inspect one synthetic directory entry without following symlinks."""
+        """Inspect one synthetic directory entry without following symlinks.
+
+        Returns:
+            Its stat-like identity and file type metadata.
+
+        """
         assert not follow_symlinks
         if dir_fd == _PARENT and name == _NAME and self.outer:
             return _Info(
@@ -87,7 +102,12 @@ class _FakePOSIX:
     def open(
         self, name: bytes, _flags: int, mode: int = 0o777, *, dir_fd: int
     ) -> int:
-        """Open the protected directory or create its candidate file."""
+        """Open the protected directory or create its candidate file.
+
+        Returns:
+            The simulated owned directory or candidate descriptor.
+
+        """
         if dir_fd == _PARENT and name == _NAME:
             if self.fail_directory_open:
                 raise OSError(errno.EIO, "directory open failed")
@@ -151,7 +171,12 @@ def test_portable_private_stage_success_and_named_cleanup(
     calls: list[tuple[int, int, bytes, bytes]] = []
 
     def publish(source: int, target: int, source_name: bytes, output: bytes) -> bool:
-        """Capture the protected hard-link source and published destination."""
+        """Capture the protected hard-link source and published destination.
+
+        Returns:
+            Whether the hard-link source remains to be unlinked.
+
+        """
         calls.append((source, target, source_name, output))
         return True
 
@@ -220,7 +245,9 @@ def test_portable_create_releases_every_acquired_owner(
         kernel.fail_file_open = True
     else:
         kernel.entry_inode = 9
-    with pytest.raises((OSError, AppError), match="open failed|private staging directory changed"):
+    with pytest.raises(
+        (OSError, AppError), match="open failed|private staging directory changed"
+    ):
         native_posix_stage.create(parent, _NAME)
     assert parent.private_stage_directory_fd is None
     if failure_point == "directory":
