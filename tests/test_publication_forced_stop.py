@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -66,14 +67,23 @@ def test_forced_stop_discloses_no_receipt_and_never_deletes_visible_output(
         assert stdout == b"", stderr
         assert source.read_bytes() == raw
         stages = list(tmp_path.glob(".eml-remove-*.tmp"))
+        assert len(stages) == 1
+        stage_dir = stages[0]
+        assert stage_dir.is_dir()
+        assert stat.S_IMODE(stage_dir.stat().st_mode) & 0o077 == 0
+        candidate = stage_dir / "candidate"
         if edge == "before":
-            assert len(stages) == 1
-            assert stages[0].read_bytes() == raw
-            assert stages[0].stat().st_mode & 0o777 == 0o600
+            assert candidate.read_bytes() == raw
+            assert stat.S_IMODE(candidate.stat().st_mode) == 0o600
             assert not destination.exists()
         else:
             assert destination.read_bytes() == raw
-            assert all(stage.read_bytes() == raw for stage in stages)
+            if sys.platform == "darwin":
+                # renameatx_np moves the candidate; the private directory remains.
+                assert not candidate.exists()
+            else:
+                # linkat retains the source link until the next directory sync.
+                assert candidate.read_bytes() == raw
     finally:
         if child.poll() is None:
             child.kill()
