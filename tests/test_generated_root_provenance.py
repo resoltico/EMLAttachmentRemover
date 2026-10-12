@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from tests.repository_hygiene_support import make_public_root
 from tools import check_repository_hygiene as hygiene
+
+from tests.repository_hygiene_support import make_public_root
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -24,7 +25,7 @@ def test_generated_scanner_preserves_root_provenance(
         (root / name).mkdir()
 
     observed: dict[str, Path | None] = {}
-    original_scan = hygiene._scan_generated_directory  # noqa: SLF001
+    original_scan = hygiene._scan_generated_directory  # ruff: ignore[SLF001]
 
     def observe(
         directory: Path,
