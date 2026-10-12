@@ -25,7 +25,7 @@ def test_generated_scanner_preserves_root_provenance(
         (root / name).mkdir()
 
     observed: dict[str, Path | None] = {}
-    original_scan = hygiene._scan_generated_directory  # ruff: ignore[SLF001]
+    original_scan = hygiene._scan_generated_directory  # ruff: ignore[private-member-access]
 
     def observe(
         directory: Path,
