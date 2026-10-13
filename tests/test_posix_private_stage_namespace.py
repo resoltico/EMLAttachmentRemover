@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from eml_attachment_remover import native_posix, native_posix_stage
+from eml_attachment_remover import native_posix, native_posix_acl, native_posix_stage
 from eml_attachment_remover.domain import AppError, BoundDirectory, ExitCode
 
 if TYPE_CHECKING:
@@ -397,7 +397,7 @@ def test_private_stage_refuses_failed_acl_clearing_before_writing(
     try:
         with monkeypatch.context() as context:
             context.setattr(
-                native_posix_stage.native_posix_acl,
+                native_posix_acl,
                 "restrict",
                 lambda _fd: (_ for _ in ()).throw(OSError(errno.EACCES, "ACL denied")),
             )

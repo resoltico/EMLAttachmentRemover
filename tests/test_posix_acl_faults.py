@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ctypes
 import errno
 import os
+import platform
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -30,11 +32,11 @@ def _native(
     set_fd = Mock(return_value=written)
     free = Mock(return_value=released)
     library = SimpleNamespace(acl_init=init, acl_set_fd=set_fd, acl_free=free)
-    monkeypatch.setattr(native_posix_acl.sys, "platform", "darwin")
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
     monkeypatch.setattr(
-        native_posix_acl.ctypes, "CDLL", lambda *_args, **_kwargs: library
+        ctypes, "CDLL", lambda *_args, **_kwargs: library
     )
-    monkeypatch.setattr(native_posix_acl.ctypes, "get_errno", lambda: failure)
+    monkeypatch.setattr(ctypes, "get_errno", lambda: failure)
     return init, set_fd, free
 
 
@@ -43,15 +45,15 @@ def test_non_darwin_restricts_mode_without_loading_acl_library(
 ) -> None:
     """The portable POSIX branch needs no platform-specific native library."""
     modes: list[tuple[int, int]] = []
-    monkeypatch.setattr(native_posix_acl.sys, "platform", "linux")
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
     monkeypatch.setattr(
-        native_posix_acl.os,
+        os,
         "fchmod",
         lambda fd, mode: modes.append((fd, mode)),
         raising=False,
     )
     monkeypatch.setattr(
-        native_posix_acl.ctypes,
+        ctypes,
         "CDLL",
         lambda *_args, **_kwargs: pytest.fail("unexpected ACL library load"),
     )
@@ -78,7 +80,7 @@ def test_darwin_acl_clearing_preserves_native_errors(
 ) -> None:
     """Unsupported ACL volumes use mode bits; all other errors fail closed."""
     chmod = Mock()
-    monkeypatch.setattr(native_posix_acl.os, "fchmod", chmod, raising=False)
+    monkeypatch.setattr(os, "fchmod", chmod, raising=False)
     init, set_fd, free = _native(
         monkeypatch, written=written, released=released, failure=error
     )
@@ -100,7 +102,7 @@ def test_acl_init_failure_never_attempts_write_or_free(
 ) -> None:
     """A missing ACL descriptor fails before staging candidate creation."""
     monkeypatch.setattr(
-        native_posix_acl.os, "fchmod", lambda *_args: None, raising=False
+        os, "fchmod", lambda *_args: None, raising=False
     )
     init, set_fd, free = _native(monkeypatch, initialized=0)
     with pytest.raises(OSError, match=os.strerror(errno.EACCES)):
@@ -114,9 +116,9 @@ def test_chmod_failure_never_loads_acl_library(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed restrictive BSD mode cannot be ignored even on macOS."""
-    monkeypatch.setattr(native_posix_acl.sys, "platform", "darwin")
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
     monkeypatch.setattr(
-        native_posix_acl.os,
+        os,
         "fchmod",
         lambda *_args: (_ for _ in ()).throw(OSError(errno.EPERM, "chmod")),
         raising=False,

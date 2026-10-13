@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 
-from eml_attachment_remover import native_posix
+from eml_attachment_remover import native_posix, native_posix_stage
 from eml_attachment_remover.domain import (
     AppError,
     BoundDestination,
@@ -287,7 +287,7 @@ def test_posix_publication_primitives_preserve_exact_kernel_arguments(
         return 52
 
     monkeypatch.setattr(native_posix.__dict__["os"], "open", open_stage)
-    monkeypatch.setattr(native_posix.native_posix_stage, "create", lambda *_args: 52)
+    monkeypatch.setattr(native_posix_stage, "create", lambda *_args: 52)
     assert native_posix._create_private_stage(directory, b"stage") == 52  # ruff: ignore[private-member-access] - protected stage delegation.
     assert opens == []
 

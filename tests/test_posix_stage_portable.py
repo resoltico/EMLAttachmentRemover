@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from eml_attachment_remover import native_posix_stage
+from eml_attachment_remover import native_posix_acl, native_posix_stage
 from eml_attachment_remover.domain import AppError, BoundDirectory
 
 _PARENT = 11
@@ -159,7 +159,7 @@ def _bound(monkeypatch: pytest.MonkeyPatch) -> tuple[_FakePOSIX, BoundDirectory]
     kernel = _FakePOSIX()
     monkeypatch.setattr(native_posix_stage, "os", kernel)
     monkeypatch.setattr(
-        native_posix_stage.native_posix_acl, "restrict", lambda _fd: None
+        native_posix_acl, "restrict", lambda _fd: None
     )
     return kernel, BoundDirectory(_PARENT, windows=False)
 

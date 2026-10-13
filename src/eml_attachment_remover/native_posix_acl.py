@@ -5,7 +5,7 @@ from __future__ import annotations
 import ctypes
 import errno
 import os
-import sys
+import platform
 
 
 def restrict(directory_fd: int) -> None:
@@ -16,7 +16,7 @@ def restrict(directory_fd: int) -> None:
 
     """
     os.fchmod(directory_fd, 0o700)
-    if sys.platform != "darwin":
+    if platform.system() != "Darwin":
         return
     library = ctypes.CDLL(None, use_errno=True)
     initialize = library.acl_init

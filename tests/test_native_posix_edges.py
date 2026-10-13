@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from eml_attachment_remover import native_posix
+from eml_attachment_remover import native_posix, native_posix_stage
 from eml_attachment_remover.domain import (
     AppError,
     BoundDirectory,
@@ -321,11 +321,11 @@ def test_posix_publication_primitives_are_platform_independent(
     with pytest.raises(AppError):
         native_posix.open_bound_destination(changed)
     assert native_posix.descriptor_identity(7).inode == metadata.st_ino
-    monkeypatch.setattr(native_posix.native_posix_stage, "create", lambda *_args: 7)
+    monkeypatch.setattr(native_posix_stage, "create", lambda *_args: 7)
     monkeypatch.setattr(
-        native_posix.native_posix_stage, "publish", lambda *_args: False
+        native_posix_stage, "publish", lambda *_args: False
     )
-    monkeypatch.setattr(native_posix.native_posix_stage, "discard", lambda *_args: None)
+    monkeypatch.setattr(native_posix_stage, "discard", lambda *_args: None)
     assert native_posix.create_private_stage(directory, b"stage") == 7
     assert (
         native_posix.publish_stage_no_replace(directory, 7, b"stage", b"final") is False
