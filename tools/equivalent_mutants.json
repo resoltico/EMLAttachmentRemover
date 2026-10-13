@@ -1,974 +1,974 @@
 {
-    "schema_version": 1,
-    "source_sha256": "f3236adf:b9e248f2:0dae5ea4:ea2206b7:42634f99:c2322e53:600d8f97:55d37854",
-    "equivalents": [
-        {
-            "mutant": "eml_attachment_remover.batch.x__run_item__mutmut_1",
-            "rationale": "The unassigned publication cause is inspected only with isinstance against cancellation, KeyboardInterrupt and SystemExit. None and the empty string match none of those types; successful publication replaces the initial value before it is consumed."
-        },
-        {
-            "mutant": "eml_attachment_remover.batch_inventory.x__destination_for__mutmut_3",
-            "rationale": "Inventory handles automatic output-directory naming in its separate source-address branch. This fallback reaches fitted_default_destination only with output_dir=None, so replacing that argument with None preserves every supported destination."
-        },
-        {
-            "mutant": "eml_attachment_remover.batch_progress.x\u01c1BatchProgress\u01c1notify__mutmut_6",
-            "rationale": "After an observer fails, neither None nor the empty string can invoke that observer again. The latter raises a caught TypeError on later notifications, with no callback invocation or change to completed counts or authoritative batch outcomes."
-        },
-        {
-            "mutant": "eml_attachment_remover.cancellation_owner.x\u01c1CancellationOwner\u01c1_reset__mutmut_3",
-            "rationale": "Each production cancellation owner is acquired and retired once. After successful reset its token is never observed again; replacing the final cleared sentinel cannot alter context restoration or subsequent API calls, which allocate a fresh owner."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__application_error__mutmut_6",
-            "rationale": "The selected OutputIntent is always passed to _json_error here. That truthy intent supplies the mode and source tuple, so the raw-argument fallback is never evaluated; replacing only the unused raw argument with None cannot change the response."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__cancelled__mutmut_12",
-            "rationale": "Production cancellation state retains the selected OutputIntent before any error response begins. This branch passes that truthy intent to _json_error, which does not inspect its raw-argument fallback; None and the empty list therefore produce the same retained-source interruption document."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__cancelled__mutmut_33",
-            "rationale": "Production cancellation state retains the selected OutputIntent before any error response begins. This branch passes that truthy intent to _json_error, which does not inspect its raw-argument fallback; None and the empty list therefore produce the same retained-source interruption document."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__dispatch__mutmut_18",
-            "rationale": "The synthesized KeyboardInterrupt request keeps the SIGINT name. Its number is used only to seed an already-accounted delivery request; output names, request counts, grace timing and status 130 are unchanged."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__guarded__mutmut_11",
-            "rationale": "The run state always supplies captured inferred or parsed intent. The raw argument parameter is therefore not inspected by application-error handling."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__guarded__mutmut_23",
-            "rationale": "This branch explicitly retains the SIGINT name in CancellationSignal. The cancellation response records that name in its error and ledger; its numeric field only seeds a delivery-guard request whose count controls grace and status. Substituting None for this already-named seed changes neither rendered signal identity nor the request count, deadline or exit status."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_14",
-            "rationale": "Python codec lookup is case-insensitive, so the uppercase codec spelling produces identical encoding and decoding."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_20",
-            "rationale": "Production request names are ASCII signal names or the decimal signal-number fallback. The complete notice is therefore ASCII, so removing the encoding error policy cannot change a supported channel's result."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_24",
-            "rationale": "The request name has already formed the notice. The fresh guard uses its seeded numeric value only through request count and grace timing, never to render a reason, so None preserves the same notice and escalation."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_31",
-            "rationale": "The guard always contains a request before result selection: inherited requests or the explicit seed. A retired guard with requests selects 130 independently of the supplied fallback status."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli.x__json_error__mutmut_44",
-            "rationale": "The interrupted signal name has already been recorded in the ledger. This synthetic guard seed is skipped by the late-signal index and is used only through the guard request count for grace, escalation and status; its numeric value is not read or forwarded to the invocation owner."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli_intent.x\u01c1OutputIntent\u01c1inferred__mutmut_12",
-            "rationale": "Inferred non-JSON intent is consumed only by the comparison with json; these alternate non-JSON tags select the same human error and interruption paths and are not serialized."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli_intent.x\u01c1OutputIntent\u01c1inferred__mutmut_13",
-            "rationale": "Inferred non-JSON intent is consumed only by the comparison with json; these alternate non-JSON tags select the same human error and interruption paths and are not serialized."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_19",
-            "rationale": "Only consumption of a standalone dash or negative-number value changes. Those tokens cannot be report-format or dry-run options and are independently excluded from pre-separator source candidates, so every inference consumer is unchanged."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_29",
-            "rationale": "Only consumption of a standalone dash or negative-number value changes. Those tokens cannot be report-format or dry-run options and are independently excluded from pre-separator source candidates, so every inference consumer is unchanged."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli_parser.x_raw_json_requested__mutmut_5",
-            "rationale": "The initial selection is compared only with json and is overwritten by an effective known format; all replacement initial values remain non-JSON."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli_parser.x_raw_json_requested__mutmut_6",
-            "rationale": "The initial selection is compared only with json and is overwritten by an effective known format; all replacement initial values remain non-JSON."
-        },
-        {
-            "mutant": "eml_attachment_remover.cli_parser.x_raw_json_requested__mutmut_7",
-            "rationale": "The initial selection is compared only with json and is overwritten by an effective known format; all replacement initial values remain non-JSON."
-        },
-        {
-            "mutant": "eml_attachment_remover.destination_names.x_fit_name__mutmut_14",
-            "rationale": "Beside-source shortening runs only when the derived stem exceeds the kept-prefix budget. The prefix never reaches the original .eml extension, so using the derived stem instead of the complete source basename retains the identical shortened prefix and digest."
-        },
-        {
-            "mutant": "eml_attachment_remover.destination_names.x_fitted_default_destination__mutmut_9",
-            "rationale": "Splitting a derived full source path and deriving from its basename produce the same derived basename. With an output directory, the source parent is ignored both for name-limit lookup and final joining; the source-address digest is unchanged."
-        },
-        {
-            "mutant": "eml_attachment_remover.destination_names.x_native_bytes__mutmut_9",
-            "rationale": "Python codec lookup is case-insensitive, so UTF-16-LE and utf-16-le encode identical bytes."
-        },
-        {
-            "mutant": "eml_attachment_remover.mime_header_block.x__fields_only_message__mutmut_12",
-            "rationale": "A root entity always starts at offset zero, so end - start and end + start are equal."
-        },
-        {
-            "mutant": "eml_attachment_remover.mime_headers.x_root_header_start__mutmut_6",
-            "rationale": "bytes.startswith treats an omitted start and None start identically as offset zero, which is the only reachable root-envelope start after the preceding guard."
-        },
-        {
-            "mutant": "eml_attachment_remover.mime_headers.x_root_header_start__mutmut_8",
-            "rationale": "bytes.startswith treats an omitted start and None start identically as offset zero, which is the only reachable root-envelope start after the preceding guard."
-        },
-        {
-            "mutant": "eml_attachment_remover.mime_verifier_policy.x\u01c1_SourceAuthorization\u01c1_alternative__mutmut_31",
-            "rationale": "Every permitted alternative branch either retains a supported body or raises before the return; False and None are equally false only in unreachable invalid state."
-        },
-        {
-            "mutant": "eml_attachment_remover.mime_verifier_policy.x\u01c1_SourceAuthorization\u01c1_alternative__mutmut_32",
-            "rationale": "Every permitted alternative branch either retains a supported body or raises before the return; a True initializer is overwritten by the first permitted body result."
-        },
-        {
-            "mutant": "eml_attachment_remover.mime_verifier_policy.x\u01c1_SourceAuthorization\u01c1_mixed__mutmut_10",
-            "rationale": "A mixed container without a retained body is rejected by the caller through truthiness; False and None produce the same rejection."
-        },
-        {
-            "mutant": "eml_attachment_remover.native_binding.x__existing_entry__mutmut_34",
-            "rationale": "Omitting an explicit trailing None passes the same final_address value to ExistingEntry."
-        },
-        {
-            "mutant": "eml_attachment_remover.native_posix.x__inspect_source_identity__mutmut_2",
-            "rationale": "The include_address flag is consumed only by truthiness. None and False both inspect identity without querying an address."
-        },
-        {
-            "mutant": "eml_attachment_remover.native_values.x__native_text__mutmut_19",
-            "rationale": "Python codec names are case-insensitive, so \"UTF-16-LE\" selects the identical codec."
-        },
-        {
-            "mutant": "eml_attachment_remover.native_values.x_planned_display__mutmut_26",
-            "rationale": "Python codec names are case-insensitive, so \"UTF-16-LE\" selects the identical codec."
-        },
-        {
-            "mutant": "eml_attachment_remover.native_values.x_require_reportable_destination__mutmut_12",
-            "rationale": "A UTF-16 encoding has an even byte length, so true division yields the same number compared against the address limit as floor division."
-        },
-        {
-            "mutant": "eml_attachment_remover.native_windows_binding.x__inspect_source_identity__mutmut_2",
-            "rationale": "The include_address flag is consumed only by truthiness. None and False both inspect identity without querying an address."
-        },
-        {
-            "mutant": "eml_attachment_remover.native_windows_binding.x__open_child_nofollow__mutmut_11",
-            "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
-        },
-        {
-            "mutant": "eml_attachment_remover.native_windows_binding.x__open_child_nofollow__mutmut_8",
-            "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
-        },
-        {
-            "mutant": "eml_attachment_remover.progress_transport.x\u01c1ProgressPipe\u01c1emit__mutmut_10",
-            "rationale": "Advisory progress is JSON, not a canonical byte format. Default separators add only insignificant whitespace; all supported stages and bounded counts still fit one atomic pipe record and decode to identical fields."
-        },
-        {
-            "mutant": "eml_attachment_remover.progress_transport.x\u01c1ProgressPipe\u01c1emit__mutmut_12",
-            "rationale": "Advisory progress is JSON, not a canonical byte format. Default separators add only insignificant whitespace; all supported stages and bounded counts still fit one atomic pipe record and decode to identical fields."
-        },
-        {
-            "mutant": "eml_attachment_remover.progress_transport.x\u01c1ProgressPipe\u01c1emit__mutmut_25",
-            "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_batch_diagnostics.x_batch_error_line__mutmut_18",
-            "rationale": "Python codec lookup is case-insensitive, so the uppercase codec spelling produces identical encoding and decoding."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_batch_diagnostics.x_interruption_line__mutmut_11",
-            "rationale": "Python codec lookup is case-insensitive, so the uppercase codec spelling produces identical encoding and decoding."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_budget.x_terminal_size__mutmut_5",
-            "rationale": "This function returns only the serialized byte count of a copied worst-case record. The JSON tokens true and null both occupy four ASCII bytes; the copied terminalized value is not otherwise consumed or retained, so the reservation size is unchanged."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_13",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_17",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_18",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_19",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_10",
-            "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_11",
-            "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_12",
-            "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_17",
-            "rationale": "A BlockingIOError without characters_written means no bytes were accepted. Both the zero and None fallback enter the same sleep-and-retry branch without stamping progress or advancing the offset."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_35",
-            "rationale": "Zero and None progress have already continued before this guard. For the remaining integer counts, <0, <=0 and <1 reject exactly the same negative values."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_36",
-            "rationale": "The preceding branch handles None and zero without reaching this comparison. For the remaining integer write counts, accepted < 0 and accepted < 1 reject the same negative counts and accept the same positive counts."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_6",
-            "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_document.x_write_json__mutmut_20",
-            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii decode the same canonical report bytes."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_document.x_write_json__mutmut_7",
-            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_25",
-            "rationale": "The retained report_spool_failed flag is consumed only by truth testing when selecting the record source. False and None both select the direct retained ledger; this flag is not emitted in the report document."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_29",
-            "rationale": "The retained primary spool is None and report_spool_failed is False. Rendering therefore uses only retained ledger items and never reads the emergency spool; leaving that unused owner reference in the copied ledger does not access it or alter the response."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_42",
-            "rationale": "CPython codec lookup treats utf-8 and UTF-8 as the same codec. Changing only the fallback spelling cannot alter the emergency channel bytes or decoded text."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_51",
-            "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_54",
-            "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_61",
-            "rationale": "CPython codec lookup treats ascii and ASCII as the same codec, so JSON and paths0 retain identical byte-channel encoding."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_66",
-            "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_69",
-            "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_79",
-            "rationale": "CPython codec lookup treats utf-8 and UTF-8 as the same codec. Changing only the fallback spelling cannot alter the emergency channel bytes or decoded text."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1append__mutmut_28",
-            "rationale": "The local committed sentinel is read only by truthiness before being assigned True; None and False both select rollback on failure."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1create__mutmut_2",
-            "rationale": "typing.cast returns its value unchanged; only its runtime-ignored type argument differs."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1create__mutmut_6",
-            "rationale": "typing.cast returns its value unchanged; only its runtime-ignored type argument differs."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1create__mutmut_7",
-            "rationale": "typing.cast returns its value unchanged; only its runtime-ignored type argument differs."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_spool.x\u01c1ReportSpool\u01c1create__mutmut_8",
-            "rationale": "typing.cast returns its value unchanged; only its runtime-ignored type argument differs."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_28",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_32",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_33",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x__reservation__mutmut_10",
-            "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_13",
-            "rationale": "json.dumps treats allow_nan=None and allow_nan=False identically because both values are false."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_15",
-            "rationale": "json.dumps defaults ensure_ascii to True, so omitting its explicit True argument preserves canonical ASCII output."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_11",
-            "rationale": "json.dumps defaults ensure_ascii to True. Omitting the explicit True preserves the canonical escaped JSON bytes for every value."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_9",
-            "rationale": "json.dumps treats allow_nan=None and allow_nan=False identically because both values are false."
-        },
-        {
-            "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_14",
-            "rationale": "Python codec names are case-insensitive, so \"ASCII\" selects the identical codec."
-        },
-        {
-            "mutant": "eml_attachment_remover.request_owner.x__watch__mutmut_7",
-            "rationale": "The nonblocking lifetime monitor cancels on EOF or any data after the frame. Reading at most two bytes instead of one has the same cancellation, wakeable deadline and shutdown result; no remaining payload is admitted."
-        },
-        {
-            "mutant": "eml_attachment_remover.request_transport.x__object__mutmut_3",
-            "rationale": "decode contains every duplicate-field ValueError and replaces it with the fixed USAGE message request is not valid UTF-8 JSON. The internal ValueError message is never serialized or displayed by supported request consumers."
-        },
-        {
-            "mutant": "eml_attachment_remover.request_transport.x__object__mutmut_4",
-            "rationale": "decode contains every duplicate-field ValueError and replaces it with the fixed USAGE message request is not valid UTF-8 JSON. The internal ValueError message is never serialized or displayed by supported request consumers."
-        },
-        {
-            "mutant": "eml_attachment_remover.request_transport.x__object__mutmut_5",
-            "rationale": "decode contains every duplicate-field ValueError and replaces it with the fixed USAGE message request is not valid UTF-8 JSON. The internal ValueError message is never serialized or displayed by supported request consumers."
-        },
-        {
-            "mutant": "eml_attachment_remover.request_transport.x__object__mutmut_6",
-            "rationale": "decode contains every duplicate-field ValueError and replaces it with the fixed USAGE message request is not valid UTF-8 JSON. The internal ValueError message is never serialized or displayed by supported request consumers."
-        },
-        {
-            "mutant": "eml_attachment_remover.request_transport.x__path__mutmut_23",
-            "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
-        },
-        {
-            "mutant": "eml_attachment_remover.request_transport.x_decode__mutmut_17",
-            "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
-        },
-        {
-            "mutant": "eml_attachment_remover.request_transport.x_read__mutmut_14",
-            "rationale": "A zero-size read returns empty bytes without reading the descriptor. decode independently rejects those bytes with the same USAGE frame-byte-limit message, before any selection or publication."
-        },
-        {
-            "mutant": "eml_attachment_remover.request_transport.x_read__mutmut_5",
-            "rationale": "CPython 3.14 int.from_bytes defaults to big byte order, matching the explicit four-byte frame-header interpretation."
-        },
-        {
-            "mutant": "eml_attachment_remover.selection_collection.x__folder__mutmut_2",
-            "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
-        },
-        {
-            "mutant": "eml_attachment_remover.selection_collection.x__folder__mutmut_23",
-            "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
-        },
-        {
-            "mutant": "eml_attachment_remover.selection_collection.x__folder__mutmut_41",
-            "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
-        },
-        {
-            "mutant": "eml_attachment_remover.selection_collection.x__link__mutmut_20",
-            "rationale": "Real Windows stat objects provide st_file_attributes. On POSIX the absent-attribute fallback 1 does not set FILE_ATTRIBUTE_REPARSE_POINT, just like 0, so link classification is unchanged."
-        },
-        {
-            "mutant": "eml_attachment_remover.selection_collection.x_collect__mutmut_6",
-            "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
-        },
-        {
-            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_19",
-            "rationale": "After the except path has closed the literal descriptor it always re-raises, so this reassignment is never read and every sentinel value is indistinguishable."
-        },
-        {
-            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_20",
-            "rationale": "After the except path has closed the literal descriptor it always re-raises, so this reassignment is never read and every sentinel value is indistinguishable."
-        },
-        {
-            "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_21",
-            "rationale": "After the except path has closed the literal descriptor it always re-raises, so this reassignment is never read and every sentinel value is indistinguishable."
-        },
-        {
-            "mutant": "eml_attachment_remover.staged_receipt.x_read_final_receipt__mutmut_123",
-            "rationale": "After descriptor closure, the local descriptor is used only by the final nonnegative check. Both -1 and -2 skip a second close; neither sentinel is returned or published."
-        },
-        {
-            "mutant": "tools.build_backend.x__build__mutmut_29",
-            "rationale": "The project declares only license as dynamic metadata. Resolving that license leaves an empty dynamic list; looking up an absent alternative key produces that same empty list for this project."
-        },
-        {
-            "mutant": "tools.build_backend.x__build__mutmut_30",
-            "rationale": "Hatchling core raw metadata retains this project's declared dynamic license list, so the absent-key fallback is not used by qualified checkout or source-archive builds."
-        },
-        {
-            "mutant": "tools.build_backend.x__build__mutmut_32",
-            "rationale": "Hatchling core raw metadata retains this project's declared dynamic license list, so the absent-key fallback is not used by qualified checkout or source-archive builds."
-        },
-        {
-            "mutant": "tools.build_backend.x__build__mutmut_33",
-            "rationale": "The project declares only license as dynamic metadata. Resolving that license leaves an empty dynamic list; looking up an absent alternative key produces that same empty list for this project."
-        },
-        {
-            "mutant": "tools.build_backend.x__build__mutmut_34",
-            "rationale": "The project declares only license as dynamic metadata. Resolving that license leaves an empty dynamic list; looking up an absent alternative key produces that same empty list for this project."
-        },
-        {
-            "mutant": "tools.build_backend.x_build_editable__mutmut_2",
-            "rationale": "The source flag is consumed only by truthiness when choosing the wheel builder and software license. None and False select the same wheel behavior."
-        },
-        {
-            "mutant": "tools.build_backend.x_build_wheel__mutmut_2",
-            "rationale": "The source flag is consumed only by truthiness when choosing the wheel builder and software license. None and False select the same wheel behavior."
-        },
-        {
-            "mutant": "tools.build_zipapp.x__lexical_absolute__mutmut_3",
-            "rationale": "Path joining with an absolute right operand discards the left operand, so the mutant yields the same absolute path."
-        },
-        {
-            "mutant": "tools.changelog.x__outside_fences__mutmut_1",
-            "rationale": "Before a fence opens, None and the empty string select the same false branch; thereafter active is assigned only a fence string or the empty string."
-        },
-        {
-            "mutant": "tools.changelog.x__outside_fences__mutmut_12",
-            "rationale": "A valid fence token is one repeated delimiter character, so its first and second marker bytes are identical."
-        },
-        {
-            "mutant": "tools.changelog.x__outside_fences__mutmut_14",
-            "rationale": "A valid fence token is one repeated delimiter character, so its first and second marker bytes are identical."
-        },
-        {
-            "mutant": "tools.changelog.x__outside_fences__mutmut_16",
-            "rationale": "After fence closure the active marker is used only for truthiness, so None and the empty string are observationally identical."
-        },
-        {
-            "mutant": "tools.changelog.x__outside_fences__mutmut_27",
-            "rationale": "The fence regex captures one repeated delimiter character at least three times, so its first and second marker bytes are identical."
-        },
-        {
-            "mutant": "tools.changelog.x__structure__mutmut_14",
-            "rationale": "Every reference label undergoes the same deterministic normalization before equality comparison, so changing its internal join separator preserves duplicate detection."
-        },
-        {
-            "mutant": "tools.check_repository_hygiene.x__inspect_reserved_root__mutmut_1",
-            "rationale": "Every regular-file caller passes inspect_content explicitly. Calls that use its default require a directory and never enter the content-inspection branch, so the changed default cannot affect an audit."
-        },
-        {
-            "mutant": "tools.check_repository_hygiene.x__inspect_root_entry__mutmut_43",
-            "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
-        },
-        {
-            "mutant": "tools.check_repository_hygiene.x__scan_generated_directory__mutmut_34",
-            "rationale": "Opaque archives are allowed only as direct children of a recognized artifact root. After descending into a child directory, no path can meet that direct-parent condition, so replacing the inherited artifact root with None preserves every decision."
-        },
-        {
-            "mutant": "tools.check_repository_hygiene.x__scan_generated_directory__mutmut_42",
-            "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
-        },
-        {
-            "mutant": "tools.check_repository_hygiene.x__scan_public_directory__mutmut_40",
-            "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
-        },
-        {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_pair_metadata__mutmut_11",
-            "rationale": "ArchiveContract.read requires the tool and eml-attachment-remover runtime tables before pair verification. Their missing-table defaults are unreachable for a qualified source configuration."
-        },
-        {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_pair_metadata__mutmut_13",
-            "rationale": "ArchiveContract.read requires the tool and eml-attachment-remover runtime tables before pair verification. Their missing-table defaults are unreachable for a qualified source configuration."
-        },
-        {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_pair_metadata__mutmut_15",
-            "rationale": "ArchiveContract.read requires the tool and eml-attachment-remover runtime tables before pair verification. Their missing-table defaults are unreachable for a qualified source configuration."
-        },
-        {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_pair_metadata__mutmut_49",
-            "rationale": "The preceding header check requires exactly one source-only license declaration. Replacing once, twice or without a count replaces that same single declaration and preserves the body."
-        },
-        {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_pair_metadata__mutmut_54",
-            "rationale": "The preceding header check requires exactly one source-only license declaration. Replacing once, twice or without a count replaces that same single declaration and preserves the body."
-        },
-        {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1verify_pair_metadata__mutmut_9",
-            "rationale": "ArchiveContract.read requires the tool and eml-attachment-remover runtime tables before pair verification. Their missing-table defaults are unreachable for a qualified source configuration."
-        },
-        {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1wheel_sources__mutmut_3",
-            "rationale": "Validated package roots are directories; safe_parts directory=None and directory=False accept the same canonical package-root spelling."
-        },
-        {
-            "mutant": "tools.distribution_archive_contract.x\u01c1ArchiveContract\u01c1wheel_sources__mutmut_6",
-            "rationale": "Validated package roots are directories; safe_parts directory=True and directory=False accept the same canonical package-root spelling."
-        },
-        {
-            "mutant": "tools.github_release_api.x__records__mutmut_13",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated collection."
-        },
-        {
-            "mutant": "tools.github_release_api.x__records__mutmut_14",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated collection."
-        },
-        {
-            "mutant": "tools.github_release_api.x__records__mutmut_9",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated collection."
-        },
-        {
-            "mutant": "tools.github_release_api.x_run__mutmut_28",
-            "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 encode identical bytes."
-        },
-        {
-            "mutant": "tools.github_release_api.x_run__mutmut_47",
-            "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode identical bytes."
-        },
-        {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1__init____mutmut_24",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
-        },
-        {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1__init____mutmut_28",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
-        },
-        {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1__init____mutmut_29",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
-        },
-        {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1tag_commit__mutmut_35",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
-        },
-        {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1tag_commit__mutmut_39",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
-        },
-        {
-            "mutant": "tools.github_release_api.x\u01c1_GitHubAPI\u01c1tag_commit__mutmut_40",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
-        },
-        {
-            "mutant": "tools.junit_report.x__statistics_properties__mutmut_18",
-            "rationale": "A property with no parent cannot meet the surrounding testsuites/property shape, so the alternate grandparent lookup is unreachable."
-        },
-        {
-            "mutant": "tools.lint_exceptions.x__source_anchor__mutmut_16",
-            "rationale": "A standalone comment has no statement starting on its own line. The greater-than and greater-than-or-equal searches therefore select the same following statement."
-        },
-        {
-            "mutant": "tools.lint_exceptions.x__source_anchor__mutmut_25",
-            "rationale": "This branch is reached only for a closing punctuation line. Valid parsed Python statements start before that line, so excluding statements starting on the closing line cannot change ownership."
-        },
-        {
-            "mutant": "tools.lint_exceptions.x_check__mutmut_5",
-            "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
-        },
-        {
-            "mutant": "tools.lint_exceptions.x_check__mutmut_59",
-            "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
-        },
-        {
-            "mutant": "tools.lint_exceptions.x_python_directives__mutmut_5",
-            "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
-        },
-        {
-            "mutant": "tools.lint_exceptions.x_swift_findings__mutmut_40",
-            "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
-        },
-        {
-            "mutant": "tools.lint_exceptions.x_swift_findings__mutmut_5",
-            "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
-        },
-        {
-            "mutant": "tools.macos_archive.x__member_bytes__mutmut_27",
-            "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
-        },
-        {
-            "mutant": "tools.macos_archive.x__member_bytes__mutmut_5",
-            "rationale": "For the required ordinary INSTALL.txt source file, instructions() and the generic document branch both read ROOT / DOCUMENTS[\"INSTALL.txt\"] without transforming its bytes. Qualified public source excludes missing or symbolic documents."
-        },
-        {
-            "mutant": "tools.macos_archive.x__member_bytes__mutmut_6",
-            "rationale": "For the required ordinary INSTALL.txt source file, instructions() and the generic document branch both read ROOT / DOCUMENTS[\"INSTALL.txt\"] without transforming its bytes. Qualified public source excludes missing or symbolic documents."
-        },
-        {
-            "mutant": "tools.macos_archive.x__member_bytes__mutmut_7",
-            "rationale": "For the required ordinary INSTALL.txt source file, instructions() and the generic document branch both read ROOT / DOCUMENTS[\"INSTALL.txt\"] without transforming its bytes. Qualified public source excludes missing or symbolic documents."
-        },
-        {
-            "mutant": "tools.macos_archive.x__validate_entries__mutmut_22",
-            "rationale": "The complete native archive has multiple members and requires every member to share the same datetime and canonical timestamp extra field. Choosing the second member as the reference accepts the same complete sets and rejects inconsistent metadata before extraction."
-        },
-        {
-            "mutant": "tools.macos_archive.x__validate_entries__mutmut_25",
-            "rationale": "The complete native archive has multiple members and requires every member to share the same datetime and canonical timestamp extra field. Choosing the second member as the reference accepts the same complete sets and rejects inconsistent metadata before extraction."
-        },
-        {
-            "mutant": "tools.macos_archive.x__validate_entries__mutmut_33",
-            "rationale": "All member names in the current native app surface and both authenticated pinned runtime trees are ASCII. The UTF-8 filename flag alternative is unreachable for these release inputs."
-        },
-        {
-            "mutant": "tools.macos_archive.x__validated_links__mutmut_23",
-            "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
-        },
-        {
-            "mutant": "tools.macos_archive.x_verify__mutmut_1",
-            "rationale": "This changes only the cosmetic eml-native-archive- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.macos_archive.x_verify__mutmut_2",
-            "rationale": "This changes only the cosmetic eml-native-archive- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.macos_archive.x_verify__mutmut_3",
-            "rationale": "This changes only the cosmetic eml-native-archive- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_copy_install__mutmut_37",
-            "rationale": "Static-archive cleanup unlinks only matching ordinary files and symbolic links, retaining directories. rglob does not descend through directory links; changing traversal order removes the same files and retains the same directory tree."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_copy_install__mutmut_39",
-            "rationale": "Static-archive cleanup unlinks only matching ordinary files and symbolic links, retaining directories. rglob does not descend through directory links; changing traversal order removes the same files and retains the same directory tree."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_copy_install__mutmut_43",
-            "rationale": "Static-archive cleanup unlinks only matching ordinary files and symbolic links, retaining directories. rglob does not descend through directory links; changing traversal order removes the same files and retains the same directory tree."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_prepare__mutmut_17",
-            "rationale": "Only the cosmetic prefix of a securely created private staging directory changes. Its parent volume, ownership, cleanup, delivered runtime bytes and final destination remain identical."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_prepare__mutmut_21",
-            "rationale": "Only the cosmetic prefix of a securely created private staging directory changes. Its parent volume, ownership, cleanup, delivered runtime bytes and final destination remain identical."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_prepare__mutmut_22",
-            "rationale": "Only the cosmetic prefix of a securely created private staging directory changes. Its parent volume, ownership, cleanup, delivered runtime bytes and final destination remain identical."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_prepare__mutmut_28",
-            "rationale": "Only an unexposed archive or extraction child name inside fresh private staging changes. The same path is passed through download and extraction, and the final Runtime tree and publication destination are unchanged."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_prepare__mutmut_29",
-            "rationale": "Only an unexposed archive or extraction child name inside fresh private staging changes. The same path is passed through download and extraction, and the final Runtime tree and publication destination are unchanged."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_prepare__mutmut_42",
-            "rationale": "Only an unexposed archive or extraction child name inside fresh private staging changes. The same path is passed through download and extraction, and the final Runtime tree and publication destination are unchanged."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_prepare__mutmut_43",
-            "rationale": "Only an unexposed archive or extraction child name inside fresh private staging changes. The same path is passed through download and extraction, and the final Runtime tree and publication destination are unchanged."
-        },
-        {
-            "mutant": "tools.macos_runtime.x_require_deployment__mutmut_1",
-            "rationale": "The initial selector is compared with command tokens or used as a prefix followed by a space. Every input line is stripped, so an empty initial selector matches no version line, just as None does; command lines replace it before use."
-        },
-        {
-            "mutant": "tools.macos_runtime_archive.x__code_hash__mutmut_52",
-            "rationale": "The trusted codesign command, using the verifier's fixed identifier and private filename, emits one equals sign followed by a 64-character hexadecimal CandidateCDHashFull value. partition and rpartition extract the same hash from that supported tool output."
-        },
-        {
-            "mutant": "tools.macos_runtime_archive.x_verify__mutmut_27",
-            "rationale": "Only a secure private code-comparison directory prefix changes. Its lifetime and the compared native bytes and full code hashes are unaffected."
-        },
-        {
-            "mutant": "tools.macos_runtime_archive.x_verify__mutmut_28",
-            "rationale": "Only a secure private code-comparison directory prefix changes. Its lifetime and the compared native bytes and full code hashes are unaffected."
-        },
-        {
-            "mutant": "tools.macos_runtime_archive.x_verify__mutmut_29",
-            "rationale": "Only a secure private code-comparison directory prefix changes. Its lifetime and the compared native bytes and full code hashes are unaffected."
-        },
-        {
-            "mutant": "tools.macos_runtime_archive.x_verify__mutmut_48",
-            "rationale": "Only one of two distinct private comparison filenames changes. Code signing uses an explicit fixed identifier; these ordinary copied Mach-O filenames do not affect canonical code hashes or the delivered tree."
-        },
-        {
-            "mutant": "tools.macos_runtime_archive.x_verify__mutmut_49",
-            "rationale": "Only one of two distinct private comparison filenames changes. Code signing uses an explicit fixed identifier; these ordinary copied Mach-O filenames do not affect canonical code hashes or the delivered tree."
-        },
-        {
-            "mutant": "tools.macos_runtime_archive.x_verify__mutmut_56",
-            "rationale": "Only one of two distinct private comparison filenames changes. Code signing uses an explicit fixed identifier; these ordinary copied Mach-O filenames do not affect canonical code hashes or the delivered tree."
-        },
-        {
-            "mutant": "tools.macos_runtime_archive.x_verify__mutmut_57",
-            "rationale": "Only one of two distinct private comparison filenames changes. Code signing uses an explicit fixed identifier; these ordinary copied Mach-O filenames do not affect canonical code hashes or the delivered tree."
-        },
-        {
-            "mutant": "tools.macos_runtime_source.x__validate_metadata__mutmut_2",
-            "rationale": "The authoritative .python-version contains only ASCII version digits, dots and a newline. Default UTF-8 decoding on the qualifying Linux runtime and explicit UTF-8 return the same version."
-        },
-        {
-            "mutant": "tools.macos_runtime_source.x__validate_metadata__mutmut_7",
-            "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
-        },
-        {
-            "mutant": "tools.macos_runtime_source.x_cache__mutmut_35",
-            "rationale": "Only a private download staging basename changes. The staged file is still size- and digest-verified and replaced into the same pinned upstream cache filename."
-        },
-        {
-            "mutant": "tools.macos_runtime_source.x_cache__mutmut_36",
-            "rationale": "Only a private download staging basename changes. The staged file is still size- and digest-verified and replaced into the same pinned upstream cache filename."
-        },
-        {
-            "mutant": "tools.macos_runtime_source.x_extract__mutmut_8",
-            "rationale": "The authenticated pins select Zstandard tar archives. CPython 3.14 tarfile.open auto-detects that same compression when the explicit r:zst mode is omitted; mismatching bytes are refused by size and digest first."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x__inventory__mutmut_16",
-            "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x__inventory__mutmut_17",
-            "rationale": "The repository audit refuses symbolic public sources before inventory. Inventory runs in clean statistics or after workers retire, so admitted ordinary files have the same stat identity with either follow-symlinks flag."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_capture__mutmut_10",
-            "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 write identical checkpoint bytes."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_capture__mutmut_15",
-            "rationale": "Checkpoint verification loads JSON and compares dictionary identities and fingerprint lists, independently of object-key order. Omitting key sorting changes neither the sealed source inventory nor detection of source changes."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_capture__mutmut_18",
-            "rationale": "Checkpoint verification loads JSON and compares dictionary identities and fingerprint lists, independently of object-key order. Omitting key sorting changes neither the sealed source inventory nor detection of source changes."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_capture__mutmut_19",
-            "rationale": "Checkpoint verification loads JSON and compares dictionary identities and fingerprint lists, independently of object-key order. Omitting key sorting changes neither the sealed source inventory nor detection of source changes."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_capture__mutmut_4",
-            "rationale": "The checkpoint is private ASCII JSON because json.dump escapes non-ASCII path names. Default UTF-8 encoding on the qualifying Linux runtime and explicit UTF-8 write the same checkpoint bytes."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_capture__mutmut_6",
-            "rationale": "The checkpoint is private ASCII JSON because json.dump escapes non-ASCII path names. Default UTF-8 encoding on the qualifying Linux runtime and explicit UTF-8 write the same checkpoint bytes."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_restore_test_directories__mutmut_5",
-            "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_restore_test_directories__mutmut_7",
-            "rationale": "The parent repairs its owned fixture tree after workers retire. lstat admits only directories and excludes link entries; for those admitted directories the chmod follow-symlinks flag does not change the target or permissions."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_restore_test_directories__mutmut_9",
-            "rationale": "The parent repairs its owned fixture tree after workers retire. lstat admits only directories and excludes link entries; for those admitted directories the chmod follow-symlinks flag does not change the target or permissions."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_verify__mutmut_10",
-            "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
-        },
-        {
-            "mutant": "tools.mutation_integrity.x_verify__mutmut_8",
-            "rationale": "The checkpoint writer emits canonical ASCII JSON, including escaped non-ASCII paths. The qualifying Linux runtime's default UTF-8 decoding therefore produces the same checkpoint as explicit UTF-8."
-        },
-        {
-            "mutant": "tools.mutation_task.x_command_runner__mutmut_25",
-            "rationale": "Only an unexposed private checkpoint basename changes. Capture and the parent integrity guard receive the same changed path, preserving source-change detection and storage cleanup."
-        },
-        {
-            "mutant": "tools.mutation_task.x_command_runner__mutmut_26",
-            "rationale": "Only an unexposed private checkpoint basename changes. Capture and the parent integrity guard receive the same changed path, preserving source-change detection and storage cleanup."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_29",
-            "rationale": "An absent repository is tested by bool before any Git operation or return. None and the empty string produce the identical Invalid repository refusal; present repository strings are unchanged."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_31",
-            "rationale": "An absent repository is tested by bool before any Git operation or return. None and the empty string produce the identical Invalid repository refusal; present repository strings are unchanged."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_42",
-            "rationale": "The replacement fallback and the empty-string fallback both fail the required v-prefixed stable tag grammar and produce the same Invalid tag refusal before remote writes."
-        },
-        {
-            "mutant": "tools.publish_release.x__context__mutmut_50",
-            "rationale": "Both fallback strings fail the 40-hex-character commit grammar and produce the same Invalid event commit refusal before remote writes."
-        },
-        {
-            "mutant": "tools.publish_release.x_main__mutmut_29",
-            "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode the same committed metadata bytes."
-        },
-        {
-            "mutant": "tools.publish_release.x_main__mutmut_33",
-            "rationale": "The candidate checker consumes require_date by truthiness. None and False permit the same selected undated candidate while retaining explicit-date and historical-heading validation."
-        },
-        {
-            "mutant": "tools.publish_release.x_main__mutmut_43",
-            "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode the same committed changelog bytes."
-        },
-        {
-            "mutant": "tools.publish_release.x_project_version__mutmut_21",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated project version."
-        },
-        {
-            "mutant": "tools.publish_release.x_project_version__mutmut_25",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated project version."
-        },
-        {
-            "mutant": "tools.publish_release.x_project_version__mutmut_26",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated project version."
-        },
-        {
-            "mutant": "tools.release_delivery.x__complete__mutmut_1",
-            "rationale": "This changes only the cosmetic eml-release-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.release_delivery.x__complete__mutmut_2",
-            "rationale": "This changes only the cosmetic eml-release-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.release_delivery.x__complete__mutmut_3",
-            "rationale": "This changes only the cosmetic eml-release-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.release_delivery.x__complete__mutmut_8",
-            "rationale": "The portable artifacts directory is an unexposed child of a newly allocated private temporary workspace. Renaming that child preserves its fresh/empty state, artifact contents and final published names; no consumer or source contract depends on this private label."
-        },
-        {
-            "mutant": "tools.release_delivery.x__complete__mutmut_9",
-            "rationale": "The portable artifacts directory is an unexposed child of a newly allocated private temporary workspace. Renaming that child preserves its fresh/empty state, artifact contents and final published names; no consumer or source contract depends on this private label."
-        },
-        {
-            "mutant": "tools.release_delivery.x_build__mutmut_4",
-            "rationale": "This changes only the cosmetic eml-qualified-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.release_delivery.x_build__mutmut_5",
-            "rationale": "This changes only the cosmetic eml-qualified-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.release_delivery.x_build__mutmut_6",
-            "rationale": "This changes only the cosmetic eml-qualified-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
-        },
-        {
-            "mutant": "tools.release_files.x_lexical_absolute__mutmut_3",
-            "rationale": "Path joining with an absolute right operand discards the left operand, so the mutant yields the same absolute path."
-        },
-        {
-            "mutant": "tools.release_publication.x__metadata__mutmut_70",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated draft flag."
-        },
-        {
-            "mutant": "tools.release_publication.x__metadata__mutmut_74",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated draft flag."
-        },
-        {
-            "mutant": "tools.release_publication.x__metadata__mutmut_75",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated draft flag."
-        },
-        {
-            "mutant": "tools.release_publication.x__missing_assets__mutmut_100",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset name."
-        },
-        {
-            "mutant": "tools.release_publication.x__missing_assets__mutmut_101",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset name recorded as seen."
-        },
-        {
-            "mutant": "tools.release_publication.x__missing_assets__mutmut_41",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset lookup."
-        },
-        {
-            "mutant": "tools.release_publication.x__missing_assets__mutmut_45",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset lookup."
-        },
-        {
-            "mutant": "tools.release_publication.x__missing_assets__mutmut_46",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset lookup."
-        },
-        {
-            "mutant": "tools.release_publication.x__missing_assets__mutmut_71",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated plain integer asset size."
-        },
-        {
-            "mutant": "tools.release_publication.x__missing_assets__mutmut_75",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated plain integer asset size."
-        },
-        {
-            "mutant": "tools.release_publication.x__missing_assets__mutmut_76",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated plain integer asset size."
-        },
-        {
-            "mutant": "tools.release_publication.x__missing_assets__mutmut_96",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset name recorded as seen."
-        },
-        {
-            "mutant": "tools.release_publication.x_identifier__mutmut_17",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated positive release identifier."
-        },
-        {
-            "mutant": "tools.release_publication.x_identifier__mutmut_21",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated positive release identifier."
-        },
-        {
-            "mutant": "tools.release_publication.x_identifier__mutmut_22",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated positive release identifier."
-        },
-        {
-            "mutant": "tools.release_publication.x_record__mutmut_13",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
-        },
-        {
-            "mutant": "tools.release_publication.x_record__mutmut_14",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
-        },
-        {
-            "mutant": "tools.release_publication.x_record__mutmut_15",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
-        },
-        {
-            "mutant": "tools.release_publication.x_record__mutmut_9",
-            "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
-        },
-        {
-            "mutant": "tools.release_publication.x\u01c1Artifact\u01c1inspect__mutmut_19",
-            "rationale": "hashlib algorithm names are case-insensitive, so SHA256 and sha256 produce the same digest."
-        },
-        {
-            "mutant": "tools.repository_path_policy.x__component_key__mutmut_9",
-            "rationale": "The component is casefolded immediately before rstrip. ASCII uppercase X cannot remain in that value, so adding X to the stripping character set cannot change its result."
-        },
-        {
-            "mutant": "tools.repository_path_policy.x__component_messages__mutmut_31",
-            "rationale": "The component is casefolded immediately before rstrip. ASCII uppercase X cannot remain in that value, so adding X to the stripping character set cannot change its result."
-        },
-        {
-            "mutant": "tools.runtime_pruning.x__static_interpreter__mutmut_14",
-            "rationale": "When python_config_vars is missing, both None and an empty dictionary lead to absent CONFIG_ARGS and a False static-interpreter decision. Neither permits removal of libpython."
-        },
-        {
-            "mutant": "tools.runtime_pruning.x__static_interpreter__mutmut_16",
-            "rationale": "When python_config_vars is missing, both None and an empty dictionary lead to absent CONFIG_ARGS and a False static-interpreter decision. Neither permits removal of libpython."
-        },
-        {
-            "mutant": "tools.runtime_pruning.x__static_interpreter__mutmut_3",
-            "rationale": "The qualifying Linux runtime uses UTF-8 as its default text encoding, matching the explicit UTF-8 decoding of authenticated upstream PYTHON.json."
-        },
-        {
-            "mutant": "tools.runtime_pruning.x__static_interpreter__mutmut_9",
-            "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
-        },
-        {
-            "mutant": "tools.smoke_distribution.x__verify_output__mutmut_25",
-            "rationale": "The parsed-message contract supplies a body for accepted smoke output; the alternate guard is unreachable on valid output."
-        },
-        {
-            "mutant": "tools.verify_distribution_archives.x__inspect_source_archive__mutmut_16",
-            "rationale": "For an empty source archive the fallback timestamp is never passed to a member or restoration operation. The required nonempty surface is rejected by require_exact_set independently of whether that unused fallback is zero or one."
-        }
-    ]
+  "schema_version": 1,
+  "source_sha256": "5b616c5d:7f8a7f6c:b3390f2f:235b544e:ee15ebdf:040d881b:37afa9b2:462226fc",
+  "equivalents": [
+    {
+      "mutant": "eml_attachment_remover.batch.x__run_item__mutmut_1",
+      "rationale": "The unassigned publication cause is inspected only with isinstance against cancellation, KeyboardInterrupt and SystemExit. None and the empty string match none of those types; successful publication replaces the initial value before it is consumed."
+    },
+    {
+      "mutant": "eml_attachment_remover.batch_inventory.x__destination_for__mutmut_3",
+      "rationale": "Inventory handles automatic output-directory naming in its separate source-address branch. This fallback reaches fitted_default_destination only with output_dir=None, so replacing that argument with None preserves every supported destination."
+    },
+    {
+      "mutant": "eml_attachment_remover.batch_progress.xǁBatchProgressǁnotify__mutmut_6",
+      "rationale": "After an observer fails, neither None nor the empty string can invoke that observer again. The latter raises a caught TypeError on later notifications, with no callback invocation or change to completed counts or authoritative batch outcomes."
+    },
+    {
+      "mutant": "eml_attachment_remover.cancellation_owner.xǁCancellationOwnerǁ_reset__mutmut_3",
+      "rationale": "Each production cancellation owner is acquired and retired once. After successful reset its token is never observed again; replacing the final cleared sentinel cannot alter context restoration or subsequent API calls, which allocate a fresh owner."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__application_error__mutmut_6",
+      "rationale": "The selected OutputIntent is always passed to _json_error here. That truthy intent supplies the mode and source tuple, so the raw-argument fallback is never evaluated; replacing only the unused raw argument with None cannot change the response."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__cancelled__mutmut_12",
+      "rationale": "Production cancellation state retains the selected OutputIntent before any error response begins. This branch passes that truthy intent to _json_error, which does not inspect its raw-argument fallback; None and the empty list therefore produce the same retained-source interruption document."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__cancelled__mutmut_33",
+      "rationale": "Production cancellation state retains the selected OutputIntent before any error response begins. This branch passes that truthy intent to _json_error, which does not inspect its raw-argument fallback; None and the empty list therefore produce the same retained-source interruption document."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__dispatch__mutmut_18",
+      "rationale": "The synthesized KeyboardInterrupt request keeps the SIGINT name. Its number is used only to seed an already-accounted delivery request; output names, request counts, grace timing and status 130 are unchanged."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__guarded__mutmut_11",
+      "rationale": "The run state always supplies captured inferred or parsed intent. The raw argument parameter is therefore not inspected by application-error handling."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__guarded__mutmut_23",
+      "rationale": "This branch explicitly retains the SIGINT name in CancellationSignal. The cancellation response records that name in its error and ledger; its numeric field only seeds a delivery-guard request whose count controls grace and status. Substituting None for this already-named seed changes neither rendered signal identity nor the request count, deadline or exit status."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_14",
+      "rationale": "Python codec lookup is case-insensitive, so the uppercase codec spelling produces identical encoding and decoding."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_20",
+      "rationale": "Production request names are ASCII signal names or the decimal signal-number fallback. The complete notice is therefore ASCII, so removing the encoding error policy cannot change a supported channel's result."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_24",
+      "rationale": "The request name has already formed the notice. The fresh guard uses its seeded numeric value only through request count and grace timing, never to render a reason, so None preserves the same notice and escalation."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__interruption_notice__mutmut_31",
+      "rationale": "The guard always contains a request before result selection: inherited requests or the explicit seed. A retired guard with requests selects 130 independently of the supplied fallback status."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli.x__json_error__mutmut_44",
+      "rationale": "The interrupted signal name has already been recorded in the ledger. This synthetic guard seed is skipped by the late-signal index and is used only through the guard request count for grace, escalation and status; its numeric value is not read or forwarded to the invocation owner."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli_intent.xǁOutputIntentǁinferred__mutmut_12",
+      "rationale": "Inferred non-JSON intent is consumed only by the comparison with json; these alternate non-JSON tags select the same human error and interruption paths and are not serialized."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli_intent.xǁOutputIntentǁinferred__mutmut_13",
+      "rationale": "Inferred non-JSON intent is consumed only by the comparison with json; these alternate non-JSON tags select the same human error and interruption paths and are not serialized."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli_parser.x_raw_json_requested__mutmut_5",
+      "rationale": "The initial selection is compared only with json and is overwritten by an effective known format; all replacement initial values remain non-JSON."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli_parser.x_raw_json_requested__mutmut_6",
+      "rationale": "The initial selection is compared only with json and is overwritten by an effective known format; all replacement initial values remain non-JSON."
+    },
+    {
+      "mutant": "eml_attachment_remover.cli_parser.x_raw_json_requested__mutmut_7",
+      "rationale": "The initial selection is compared only with json and is overwritten by an effective known format; all replacement initial values remain non-JSON."
+    },
+    {
+      "mutant": "eml_attachment_remover.destination_names.x_fit_name__mutmut_14",
+      "rationale": "Beside-source shortening runs only when the derived stem exceeds the kept-prefix budget. The prefix never reaches the original .eml extension, so using the derived stem instead of the complete source basename retains the identical shortened prefix and digest."
+    },
+    {
+      "mutant": "eml_attachment_remover.destination_names.x_fitted_default_destination__mutmut_9",
+      "rationale": "Splitting a derived full source path and deriving from its basename produce the same derived basename. With an output directory, the source parent is ignored both for name-limit lookup and final joining; the source-address digest is unchanged."
+    },
+    {
+      "mutant": "eml_attachment_remover.destination_names.x_native_bytes__mutmut_9",
+      "rationale": "Python codec lookup is case-insensitive, so UTF-16-LE and utf-16-le encode identical bytes."
+    },
+    {
+      "mutant": "eml_attachment_remover.mime_header_block.x__fields_only_message__mutmut_12",
+      "rationale": "A root entity always starts at offset zero, so end - start and end + start are equal."
+    },
+    {
+      "mutant": "eml_attachment_remover.mime_headers.x_root_header_start__mutmut_6",
+      "rationale": "bytes.startswith treats an omitted start and None start identically as offset zero, which is the only reachable root-envelope start after the preceding guard."
+    },
+    {
+      "mutant": "eml_attachment_remover.mime_headers.x_root_header_start__mutmut_8",
+      "rationale": "bytes.startswith treats an omitted start and None start identically as offset zero, which is the only reachable root-envelope start after the preceding guard."
+    },
+    {
+      "mutant": "eml_attachment_remover.mime_verifier_policy.xǁ_SourceAuthorizationǁ_alternative__mutmut_31",
+      "rationale": "Every permitted alternative branch either retains a supported body or raises before the return; False and None are equally false only in unreachable invalid state."
+    },
+    {
+      "mutant": "eml_attachment_remover.mime_verifier_policy.xǁ_SourceAuthorizationǁ_alternative__mutmut_32",
+      "rationale": "Every permitted alternative branch either retains a supported body or raises before the return; a True initializer is overwritten by the first permitted body result."
+    },
+    {
+      "mutant": "eml_attachment_remover.mime_verifier_policy.xǁ_SourceAuthorizationǁ_mixed__mutmut_10",
+      "rationale": "A mixed container without a retained body is rejected by the caller through truthiness; False and None produce the same rejection."
+    },
+    {
+      "mutant": "eml_attachment_remover.native_binding.x__existing_entry__mutmut_34",
+      "rationale": "Omitting an explicit trailing None passes the same final_address value to ExistingEntry."
+    },
+    {
+      "mutant": "eml_attachment_remover.native_posix.x__inspect_source_identity__mutmut_2",
+      "rationale": "The include_address flag is consumed only by truthiness. None and False both inspect identity without querying an address."
+    },
+    {
+      "mutant": "eml_attachment_remover.native_posix_stage.x_create__mutmut_17",
+      "rationale": "The initial unowned directory-descriptor sentinel changes from -1 to -2. Successful os.open overwrites it; failed acquisition passes either negative value to cleanup, which owns only descriptors >= 0. No native syscall, ownership transfer or observable error differs."
+    },
+    {
+      "mutant": "eml_attachment_remover.native_posix_stage.x_create__mutmut_20",
+      "rationale": "The initial unowned candidate-file-descriptor sentinel changes from -1 to -2. A successful open replaces it; failed acquisition checks for descriptor >= 0 before cleanup. Both negative values mean no acquired descriptor and produce identical behavior."
+    },
+    {
+      "mutant": "eml_attachment_remover.native_values.x__native_text__mutmut_19",
+      "rationale": "Python codec names are case-insensitive, so \"UTF-16-LE\" selects the identical codec."
+    },
+    {
+      "mutant": "eml_attachment_remover.native_values.x_planned_display__mutmut_26",
+      "rationale": "Python codec names are case-insensitive, so \"UTF-16-LE\" selects the identical codec."
+    },
+    {
+      "mutant": "eml_attachment_remover.native_values.x_require_reportable_destination__mutmut_12",
+      "rationale": "A UTF-16 encoding has an even byte length, so true division yields the same number compared against the address limit as floor division."
+    },
+    {
+      "mutant": "eml_attachment_remover.native_windows_binding.x__inspect_source_identity__mutmut_2",
+      "rationale": "The include_address flag is consumed only by truthiness. None and False both inspect identity without querying an address."
+    },
+    {
+      "mutant": "eml_attachment_remover.native_windows_binding.x__open_child_nofollow__mutmut_11",
+      "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
+    },
+    {
+      "mutant": "eml_attachment_remover.native_windows_binding.x__open_child_nofollow__mutmut_8",
+      "rationale": "The recursive literal-path call consumes only the parent descriptor and basename; BoundDirectory.windows is not observed there."
+    },
+    {
+      "mutant": "eml_attachment_remover.progress_transport.xǁProgressPipeǁemit__mutmut_10",
+      "rationale": "Advisory progress is JSON, not a canonical byte format. Default separators add only insignificant whitespace; all supported stages and bounded counts still fit one atomic pipe record and decode to identical fields."
+    },
+    {
+      "mutant": "eml_attachment_remover.progress_transport.xǁProgressPipeǁemit__mutmut_12",
+      "rationale": "Advisory progress is JSON, not a canonical byte format. Default separators add only insignificant whitespace; all supported stages and bounded counts still fit one atomic pipe record and decode to identical fields."
+    },
+    {
+      "mutant": "eml_attachment_remover.progress_transport.xǁProgressPipeǁemit__mutmut_25",
+      "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_batch_diagnostics.x_batch_error_line__mutmut_18",
+      "rationale": "Python codec lookup is case-insensitive, so the uppercase codec spelling produces identical encoding and decoding."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_batch_diagnostics.x_interruption_line__mutmut_11",
+      "rationale": "Python codec lookup is case-insensitive, so the uppercase codec spelling produces identical encoding and decoding."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_budget.x_terminal_size__mutmut_5",
+      "rationale": "This function returns only the serialized byte count of a copied worst-case record. The JSON tokens true and null both occupy four ASCII bytes; the copied terminalized value is not otherwise consumed or retained, so the reservation size is unchanged."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_13",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_17",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_18",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__staging_file__mutmut_19",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change behavior."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_10",
+      "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_11",
+      "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_12",
+      "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_17",
+      "rationale": "A BlockingIOError without characters_written means no bytes were accepted. Both the zero and None fallback enter the same sleep-and-retry branch without stamping progress or advancing the offset."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_35",
+      "rationale": "Zero and None progress have already continued before this guard. For the remaining integer counts, <0, <=0 and <1 reject exactly the same negative values."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_36",
+      "rationale": "The preceding branch handles None and zero without reaching this comparison. For the remaining integer write counts, accepted < 0 and accepted < 1 reject the same negative counts and accept the same positive counts."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_delivery.x__write_all__mutmut_6",
+      "rationale": "typing.cast returns its second argument unchanged at runtime and does not evaluate or validate its first argument. Replacing this annotation string, including with None, cannot change the accepted write count or delivery behavior."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_document.x_write_json__mutmut_20",
+      "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii decode the same canonical report bytes."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_document.x_write_json__mutmut_7",
+      "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_25",
+      "rationale": "The retained report_spool_failed flag is consumed only by truth testing when selecting the record source. False and None both select the direct retained ledger; this flag is not emitted in the report document."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_29",
+      "rationale": "The retained primary spool is None and report_spool_failed is False. Rendering therefore uses only retained ledger items and never reads the emergency spool; leaving that unused owner reference in the copied ledger does not access it or alter the response."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_42",
+      "rationale": "CPython codec lookup treats utf-8 and UTF-8 as the same codec. Changing only the fallback spelling cannot alter the emergency channel bytes or decoded text."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_51",
+      "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_54",
+      "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_61",
+      "rationale": "CPython codec lookup treats ascii and ASCII as the same codec, so JSON and paths0 retain identical byte-channel encoding."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_66",
+      "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_69",
+      "rationale": "The mutation campaign requires POSIX fork support and runs on Linux, whose TextIOWrapper default write-newline translation is the same as newline=\"\". Recovery text escapes embedded control characters, so read-side universal-newline translation also has no effect on these rendered channels. This equivalence is scoped to the qualifying POSIX mutation environment; Windows native behavior is covered separately."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_emergency.x_stage__mutmut_79",
+      "rationale": "CPython codec lookup treats utf-8 and UTF-8 as the same codec. Changing only the fallback spelling cannot alter the emergency channel bytes or decoded text."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_spool.xǁReportSpoolǁappend__mutmut_28",
+      "rationale": "The local committed sentinel is read only by truthiness before being assigned True; None and False both select rollback on failure."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_spool.xǁReportSpoolǁcreate__mutmut_2",
+      "rationale": "typing.cast returns its value unchanged; only its runtime-ignored type argument differs."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_spool.xǁReportSpoolǁcreate__mutmut_6",
+      "rationale": "typing.cast returns its value unchanged; only its runtime-ignored type argument differs."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_spool.xǁReportSpoolǁcreate__mutmut_7",
+      "rationale": "typing.cast returns its value unchanged; only its runtime-ignored type argument differs."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_spool.xǁReportSpoolǁcreate__mutmut_8",
+      "rationale": "typing.cast returns its value unchanged; only its runtime-ignored type argument differs."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_28",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_32",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_stream.x__records__mutmut_33",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot change a yielded record."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_stream.x__reservation__mutmut_10",
+      "rationale": "Python codec lookup is case-insensitive, so ASCII and ascii encode identical canonical report bytes."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_13",
+      "rationale": "json.dumps treats allow_nan=None and allow_nan=False identically because both values are false."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_stream.x__write_item_array__mutmut_15",
+      "rationale": "json.dumps defaults ensure_ascii to True, so omitting its explicit True argument preserves canonical ASCII output."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_11",
+      "rationale": "json.dumps defaults ensure_ascii to True. Omitting the explicit True preserves the canonical escaped JSON bytes for every value."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_stream.x__write_pair__mutmut_9",
+      "rationale": "json.dumps treats allow_nan=None and allow_nan=False identically because both values are false."
+    },
+    {
+      "mutant": "eml_attachment_remover.report_stream.x_archive__mutmut_14",
+      "rationale": "Python codec names are case-insensitive, so \"ASCII\" selects the identical codec."
+    },
+    {
+      "mutant": "eml_attachment_remover.request_owner.x__watch__mutmut_7",
+      "rationale": "The nonblocking lifetime monitor cancels on EOF or any data after the frame. Reading at most two bytes instead of one has the same cancellation, wakeable deadline and shutdown result; no remaining payload is admitted."
+    },
+    {
+      "mutant": "eml_attachment_remover.request_transport.x__object__mutmut_3",
+      "rationale": "decode contains every duplicate-field ValueError and replaces it with the fixed USAGE message request is not valid UTF-8 JSON. The internal ValueError message is never serialized or displayed by supported request consumers."
+    },
+    {
+      "mutant": "eml_attachment_remover.request_transport.x__object__mutmut_4",
+      "rationale": "decode contains every duplicate-field ValueError and replaces it with the fixed USAGE message request is not valid UTF-8 JSON. The internal ValueError message is never serialized or displayed by supported request consumers."
+    },
+    {
+      "mutant": "eml_attachment_remover.request_transport.x__object__mutmut_5",
+      "rationale": "decode contains every duplicate-field ValueError and replaces it with the fixed USAGE message request is not valid UTF-8 JSON. The internal ValueError message is never serialized or displayed by supported request consumers."
+    },
+    {
+      "mutant": "eml_attachment_remover.request_transport.x__object__mutmut_6",
+      "rationale": "decode contains every duplicate-field ValueError and replaces it with the fixed USAGE message request is not valid UTF-8 JSON. The internal ValueError message is never serialized or displayed by supported request consumers."
+    },
+    {
+      "mutant": "eml_attachment_remover.request_transport.x__path__mutmut_23",
+      "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
+    },
+    {
+      "mutant": "eml_attachment_remover.request_transport.x_decode__mutmut_17",
+      "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
+    },
+    {
+      "mutant": "eml_attachment_remover.request_transport.x_read__mutmut_14",
+      "rationale": "A zero-size read returns empty bytes without reading the descriptor. decode independently rejects those bytes with the same USAGE frame-byte-limit message, before any selection or publication."
+    },
+    {
+      "mutant": "eml_attachment_remover.request_transport.x_read__mutmut_5",
+      "rationale": "CPython 3.14 int.from_bytes defaults to big byte order, matching the explicit four-byte frame-header interpretation."
+    },
+    {
+      "mutant": "eml_attachment_remover.selection_collection.x__folder__mutmut_2",
+      "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
+    },
+    {
+      "mutant": "eml_attachment_remover.selection_collection.x__folder__mutmut_23",
+      "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
+    },
+    {
+      "mutant": "eml_attachment_remover.selection_collection.x__folder__mutmut_41",
+      "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
+    },
+    {
+      "mutant": "eml_attachment_remover.selection_collection.x__link__mutmut_20",
+      "rationale": "Real Windows stat objects provide st_file_attributes. On POSIX the absent-attribute fallback 1 does not set FILE_ATTRIBUTE_REPARSE_POINT, just like 0, so link classification is unchanged."
+    },
+    {
+      "mutant": "eml_attachment_remover.selection_collection.x_collect__mutmut_6",
+      "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
+    },
+    {
+      "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_19",
+      "rationale": "After the except path has closed the literal descriptor it always re-raises, so this reassignment is never read and every sentinel value is indistinguishable."
+    },
+    {
+      "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_20",
+      "rationale": "After the except path has closed the literal descriptor it always re-raises, so this reassignment is never read and every sentinel value is indistinguishable."
+    },
+    {
+      "mutant": "eml_attachment_remover.staged_receipt.x__verify_literal_address__mutmut_21",
+      "rationale": "After the except path has closed the literal descriptor it always re-raises, so this reassignment is never read and every sentinel value is indistinguishable."
+    },
+    {
+      "mutant": "eml_attachment_remover.staged_receipt.x_read_final_receipt__mutmut_123",
+      "rationale": "After descriptor closure, the local descriptor is used only by the final nonnegative check. Both -1 and -2 skip a second close; neither sentinel is returned or published."
+    },
+    {
+      "mutant": "tools.build_backend.x__build__mutmut_29",
+      "rationale": "The project declares only license as dynamic metadata. Resolving that license leaves an empty dynamic list; looking up an absent alternative key produces that same empty list for this project."
+    },
+    {
+      "mutant": "tools.build_backend.x__build__mutmut_30",
+      "rationale": "Hatchling core raw metadata retains this project's declared dynamic license list, so the absent-key fallback is not used by qualified checkout or source-archive builds."
+    },
+    {
+      "mutant": "tools.build_backend.x__build__mutmut_32",
+      "rationale": "Hatchling core raw metadata retains this project's declared dynamic license list, so the absent-key fallback is not used by qualified checkout or source-archive builds."
+    },
+    {
+      "mutant": "tools.build_backend.x__build__mutmut_33",
+      "rationale": "The project declares only license as dynamic metadata. Resolving that license leaves an empty dynamic list; looking up an absent alternative key produces that same empty list for this project."
+    },
+    {
+      "mutant": "tools.build_backend.x__build__mutmut_34",
+      "rationale": "The project declares only license as dynamic metadata. Resolving that license leaves an empty dynamic list; looking up an absent alternative key produces that same empty list for this project."
+    },
+    {
+      "mutant": "tools.build_backend.x_build_editable__mutmut_2",
+      "rationale": "The source flag is consumed only by truthiness when choosing the wheel builder and software license. None and False select the same wheel behavior."
+    },
+    {
+      "mutant": "tools.build_backend.x_build_wheel__mutmut_2",
+      "rationale": "The source flag is consumed only by truthiness when choosing the wheel builder and software license. None and False select the same wheel behavior."
+    },
+    {
+      "mutant": "tools.build_zipapp.x__lexical_absolute__mutmut_3",
+      "rationale": "Path joining with an absolute right operand discards the left operand, so the mutant yields the same absolute path."
+    },
+    {
+      "mutant": "tools.changelog.x__outside_fences__mutmut_1",
+      "rationale": "Before a fence opens, None and the empty string select the same false branch; thereafter active is assigned only a fence string or the empty string."
+    },
+    {
+      "mutant": "tools.changelog.x__outside_fences__mutmut_12",
+      "rationale": "A valid fence token is one repeated delimiter character, so its first and second marker bytes are identical."
+    },
+    {
+      "mutant": "tools.changelog.x__outside_fences__mutmut_14",
+      "rationale": "A valid fence token is one repeated delimiter character, so its first and second marker bytes are identical."
+    },
+    {
+      "mutant": "tools.changelog.x__outside_fences__mutmut_16",
+      "rationale": "After fence closure the active marker is used only for truthiness, so None and the empty string are observationally identical."
+    },
+    {
+      "mutant": "tools.changelog.x__outside_fences__mutmut_27",
+      "rationale": "The fence regex captures one repeated delimiter character at least three times, so its first and second marker bytes are identical."
+    },
+    {
+      "mutant": "tools.changelog.x__structure__mutmut_14",
+      "rationale": "Every reference label undergoes the same deterministic normalization before equality comparison, so changing its internal join separator preserves duplicate detection."
+    },
+    {
+      "mutant": "tools.check_repository_hygiene.x__inspect_reserved_root__mutmut_1",
+      "rationale": "Every regular-file caller passes inspect_content explicitly. Calls that use its default require a directory and never enter the content-inspection branch, so the changed default cannot affect an audit."
+    },
+    {
+      "mutant": "tools.check_repository_hygiene.x__inspect_root_entry__mutmut_43",
+      "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
+    },
+    {
+      "mutant": "tools.check_repository_hygiene.x__scan_generated_directory__mutmut_34",
+      "rationale": "Opaque archives are allowed only as direct children of a recognized artifact root. After descending into a child directory, no path can meet that direct-parent condition, so replacing the inherited artifact root with None preserves every decision."
+    },
+    {
+      "mutant": "tools.check_repository_hygiene.x__scan_generated_directory__mutmut_42",
+      "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
+    },
+    {
+      "mutant": "tools.check_repository_hygiene.x__scan_public_directory__mutmut_40",
+      "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
+    },
+    {
+      "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁverify_pair_metadata__mutmut_11",
+      "rationale": "ArchiveContract.read requires the tool and eml-attachment-remover runtime tables before pair verification. Their missing-table defaults are unreachable for a qualified source configuration."
+    },
+    {
+      "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁverify_pair_metadata__mutmut_13",
+      "rationale": "ArchiveContract.read requires the tool and eml-attachment-remover runtime tables before pair verification. Their missing-table defaults are unreachable for a qualified source configuration."
+    },
+    {
+      "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁverify_pair_metadata__mutmut_15",
+      "rationale": "ArchiveContract.read requires the tool and eml-attachment-remover runtime tables before pair verification. Their missing-table defaults are unreachable for a qualified source configuration."
+    },
+    {
+      "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁverify_pair_metadata__mutmut_49",
+      "rationale": "The preceding header check requires exactly one source-only license declaration. Replacing once, twice or without a count replaces that same single declaration and preserves the body."
+    },
+    {
+      "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁverify_pair_metadata__mutmut_54",
+      "rationale": "The preceding header check requires exactly one source-only license declaration. Replacing once, twice or without a count replaces that same single declaration and preserves the body."
+    },
+    {
+      "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁverify_pair_metadata__mutmut_9",
+      "rationale": "ArchiveContract.read requires the tool and eml-attachment-remover runtime tables before pair verification. Their missing-table defaults are unreachable for a qualified source configuration."
+    },
+    {
+      "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁwheel_sources__mutmut_3",
+      "rationale": "Validated package roots are directories; safe_parts directory=None and directory=False accept the same canonical package-root spelling."
+    },
+    {
+      "mutant": "tools.distribution_archive_contract.xǁArchiveContractǁwheel_sources__mutmut_6",
+      "rationale": "Validated package roots are directories; safe_parts directory=True and directory=False accept the same canonical package-root spelling."
+    },
+    {
+      "mutant": "tools.github_release_api.x__records__mutmut_13",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated collection."
+    },
+    {
+      "mutant": "tools.github_release_api.x__records__mutmut_14",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated collection."
+    },
+    {
+      "mutant": "tools.github_release_api.x__records__mutmut_9",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated collection."
+    },
+    {
+      "mutant": "tools.github_release_api.x_run__mutmut_28",
+      "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 encode identical bytes."
+    },
+    {
+      "mutant": "tools.github_release_api.x_run__mutmut_47",
+      "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode identical bytes."
+    },
+    {
+      "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_24",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
+    },
+    {
+      "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_28",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
+    },
+    {
+      "mutant": "tools.github_release_api.xǁ_GitHubAPIǁ__init____mutmut_29",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated GitHub CLI executable path."
+    },
+    {
+      "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_35",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
+    },
+    {
+      "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_39",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
+    },
+    {
+      "mutant": "tools.github_release_api.xǁ_GitHubAPIǁtag_commit__mutmut_40",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated commit SHA."
+    },
+    {
+      "mutant": "tools.junit_report.x__statistics_properties__mutmut_18",
+      "rationale": "A property with no parent cannot meet the surrounding testsuites/property shape, so the alternate grandparent lookup is unreachable."
+    },
+    {
+      "mutant": "tools.lint_exceptions.x__source_anchor__mutmut_16",
+      "rationale": "A standalone comment has no statement starting on its own line. The greater-than and greater-than-or-equal searches therefore select the same following statement."
+    },
+    {
+      "mutant": "tools.lint_exceptions.x__source_anchor__mutmut_25",
+      "rationale": "This branch is reached only for a closing punctuation line. Valid parsed Python statements start before that line, so excluding statements starting on the closing line cannot change ownership."
+    },
+    {
+      "mutant": "tools.lint_exceptions.x_check__mutmut_5",
+      "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
+    },
+    {
+      "mutant": "tools.lint_exceptions.x_check__mutmut_59",
+      "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
+    },
+    {
+      "mutant": "tools.lint_exceptions.x_python_directives__mutmut_5",
+      "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
+    },
+    {
+      "mutant": "tools.lint_exceptions.x_swift_findings__mutmut_40",
+      "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
+    },
+    {
+      "mutant": "tools.lint_exceptions.x_swift_findings__mutmut_5",
+      "rationale": "Python codec names are case-insensitive: UTF-8 and utf-8 select the same decoder. This exact mutation changes only the encoding spelling and cannot change parsed approvals, source anchors, diagnostics or exit status."
+    },
+    {
+      "mutant": "tools.macos_archive.x__member_bytes__mutmut_27",
+      "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
+    },
+    {
+      "mutant": "tools.macos_archive.x__member_bytes__mutmut_5",
+      "rationale": "For the required ordinary INSTALL.txt source file, instructions() and the generic document branch both read ROOT / DOCUMENTS[\"INSTALL.txt\"] without transforming its bytes. Qualified public source excludes missing or symbolic documents."
+    },
+    {
+      "mutant": "tools.macos_archive.x__member_bytes__mutmut_6",
+      "rationale": "For the required ordinary INSTALL.txt source file, instructions() and the generic document branch both read ROOT / DOCUMENTS[\"INSTALL.txt\"] without transforming its bytes. Qualified public source excludes missing or symbolic documents."
+    },
+    {
+      "mutant": "tools.macos_archive.x__member_bytes__mutmut_7",
+      "rationale": "For the required ordinary INSTALL.txt source file, instructions() and the generic document branch both read ROOT / DOCUMENTS[\"INSTALL.txt\"] without transforming its bytes. Qualified public source excludes missing or symbolic documents."
+    },
+    {
+      "mutant": "tools.macos_archive.x__validate_entries__mutmut_22",
+      "rationale": "The complete native archive has multiple members and requires every member to share the same datetime and canonical timestamp extra field. Choosing the second member as the reference accepts the same complete sets and rejects inconsistent metadata before extraction."
+    },
+    {
+      "mutant": "tools.macos_archive.x__validate_entries__mutmut_25",
+      "rationale": "The complete native archive has multiple members and requires every member to share the same datetime and canonical timestamp extra field. Choosing the second member as the reference accepts the same complete sets and rejects inconsistent metadata before extraction."
+    },
+    {
+      "mutant": "tools.macos_archive.x__validate_entries__mutmut_33",
+      "rationale": "All member names in the current native app surface and both authenticated pinned runtime trees are ASCII. The UTF-8 filename flag alternative is unreachable for these release inputs."
+    },
+    {
+      "mutant": "tools.macos_archive.x__validated_links__mutmut_23",
+      "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
+    },
+    {
+      "mutant": "tools.macos_archive.x_verify__mutmut_1",
+      "rationale": "This changes only the cosmetic eml-native-archive- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
+    },
+    {
+      "mutant": "tools.macos_archive.x_verify__mutmut_2",
+      "rationale": "This changes only the cosmetic eml-native-archive- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
+    },
+    {
+      "mutant": "tools.macos_archive.x_verify__mutmut_3",
+      "rationale": "This changes only the cosmetic eml-native-archive- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_copy_install__mutmut_37",
+      "rationale": "Static-archive cleanup unlinks only matching ordinary files and symbolic links, retaining directories. rglob does not descend through directory links; changing traversal order removes the same files and retains the same directory tree."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_copy_install__mutmut_39",
+      "rationale": "Static-archive cleanup unlinks only matching ordinary files and symbolic links, retaining directories. rglob does not descend through directory links; changing traversal order removes the same files and retains the same directory tree."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_copy_install__mutmut_43",
+      "rationale": "Static-archive cleanup unlinks only matching ordinary files and symbolic links, retaining directories. rglob does not descend through directory links; changing traversal order removes the same files and retains the same directory tree."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_prepare__mutmut_17",
+      "rationale": "Only the cosmetic prefix of a securely created private staging directory changes. Its parent volume, ownership, cleanup, delivered runtime bytes and final destination remain identical."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_prepare__mutmut_21",
+      "rationale": "Only the cosmetic prefix of a securely created private staging directory changes. Its parent volume, ownership, cleanup, delivered runtime bytes and final destination remain identical."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_prepare__mutmut_22",
+      "rationale": "Only the cosmetic prefix of a securely created private staging directory changes. Its parent volume, ownership, cleanup, delivered runtime bytes and final destination remain identical."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_prepare__mutmut_28",
+      "rationale": "Only an unexposed archive or extraction child name inside fresh private staging changes. The same path is passed through download and extraction, and the final Runtime tree and publication destination are unchanged."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_prepare__mutmut_29",
+      "rationale": "Only an unexposed archive or extraction child name inside fresh private staging changes. The same path is passed through download and extraction, and the final Runtime tree and publication destination are unchanged."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_prepare__mutmut_42",
+      "rationale": "Only an unexposed archive or extraction child name inside fresh private staging changes. The same path is passed through download and extraction, and the final Runtime tree and publication destination are unchanged."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_prepare__mutmut_43",
+      "rationale": "Only an unexposed archive or extraction child name inside fresh private staging changes. The same path is passed through download and extraction, and the final Runtime tree and publication destination are unchanged."
+    },
+    {
+      "mutant": "tools.macos_runtime.x_require_deployment__mutmut_1",
+      "rationale": "The initial selector is compared with command tokens or used as a prefix followed by a space. Every input line is stripped, so an empty initial selector matches no version line, just as None does; command lines replace it before use."
+    },
+    {
+      "mutant": "tools.macos_runtime_archive.x__code_hash__mutmut_52",
+      "rationale": "The trusted codesign command, using the verifier's fixed identifier and private filename, emits one equals sign followed by a 64-character hexadecimal CandidateCDHashFull value. partition and rpartition extract the same hash from that supported tool output."
+    },
+    {
+      "mutant": "tools.macos_runtime_archive.x_verify__mutmut_27",
+      "rationale": "Only a secure private code-comparison directory prefix changes. Its lifetime and the compared native bytes and full code hashes are unaffected."
+    },
+    {
+      "mutant": "tools.macos_runtime_archive.x_verify__mutmut_28",
+      "rationale": "Only a secure private code-comparison directory prefix changes. Its lifetime and the compared native bytes and full code hashes are unaffected."
+    },
+    {
+      "mutant": "tools.macos_runtime_archive.x_verify__mutmut_29",
+      "rationale": "Only a secure private code-comparison directory prefix changes. Its lifetime and the compared native bytes and full code hashes are unaffected."
+    },
+    {
+      "mutant": "tools.macos_runtime_archive.x_verify__mutmut_48",
+      "rationale": "Only one of two distinct private comparison filenames changes. Code signing uses an explicit fixed identifier; these ordinary copied Mach-O filenames do not affect canonical code hashes or the delivered tree."
+    },
+    {
+      "mutant": "tools.macos_runtime_archive.x_verify__mutmut_49",
+      "rationale": "Only one of two distinct private comparison filenames changes. Code signing uses an explicit fixed identifier; these ordinary copied Mach-O filenames do not affect canonical code hashes or the delivered tree."
+    },
+    {
+      "mutant": "tools.macos_runtime_archive.x_verify__mutmut_56",
+      "rationale": "Only one of two distinct private comparison filenames changes. Code signing uses an explicit fixed identifier; these ordinary copied Mach-O filenames do not affect canonical code hashes or the delivered tree."
+    },
+    {
+      "mutant": "tools.macos_runtime_archive.x_verify__mutmut_57",
+      "rationale": "Only one of two distinct private comparison filenames changes. Code signing uses an explicit fixed identifier; these ordinary copied Mach-O filenames do not affect canonical code hashes or the delivered tree."
+    },
+    {
+      "mutant": "tools.macos_runtime_source.x__validate_metadata__mutmut_2",
+      "rationale": "The authoritative .python-version contains only ASCII version digits, dots and a newline. Default UTF-8 decoding on the qualifying Linux runtime and explicit UTF-8 return the same version."
+    },
+    {
+      "mutant": "tools.macos_runtime_source.x__validate_metadata__mutmut_7",
+      "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
+    },
+    {
+      "mutant": "tools.macos_runtime_source.x_cache__mutmut_35",
+      "rationale": "Only a private download staging basename changes. The staged file is still size- and digest-verified and replaced into the same pinned upstream cache filename."
+    },
+    {
+      "mutant": "tools.macos_runtime_source.x_cache__mutmut_36",
+      "rationale": "Only a private download staging basename changes. The staged file is still size- and digest-verified and replaced into the same pinned upstream cache filename."
+    },
+    {
+      "mutant": "tools.macos_runtime_source.x_extract__mutmut_8",
+      "rationale": "The authenticated pins select Zstandard tar archives. CPython 3.14 tarfile.open auto-detects that same compression when the explicit r:zst mode is omitted; mismatching bytes are refused by size and digest first."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x__inventory__mutmut_16",
+      "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x__inventory__mutmut_17",
+      "rationale": "The repository audit refuses symbolic public sources before inventory. Inventory runs in clean statistics or after workers retire, so admitted ordinary files have the same stat identity with either follow-symlinks flag."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_capture__mutmut_10",
+      "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 write identical checkpoint bytes."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_capture__mutmut_15",
+      "rationale": "Checkpoint verification loads JSON and compares dictionary identities and fingerprint lists, independently of object-key order. Omitting key sorting changes neither the sealed source inventory nor detection of source changes."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_capture__mutmut_18",
+      "rationale": "Checkpoint verification loads JSON and compares dictionary identities and fingerprint lists, independently of object-key order. Omitting key sorting changes neither the sealed source inventory nor detection of source changes."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_capture__mutmut_19",
+      "rationale": "Checkpoint verification loads JSON and compares dictionary identities and fingerprint lists, independently of object-key order. Omitting key sorting changes neither the sealed source inventory nor detection of source changes."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_capture__mutmut_4",
+      "rationale": "The checkpoint is private ASCII JSON because json.dump escapes non-ASCII path names. Default UTF-8 encoding on the qualifying Linux runtime and explicit UTF-8 write the same checkpoint bytes."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_capture__mutmut_6",
+      "rationale": "The checkpoint is private ASCII JSON because json.dump escapes non-ASCII path names. Default UTF-8 encoding on the qualifying Linux runtime and explicit UTF-8 write the same checkpoint bytes."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_restore_test_directories__mutmut_5",
+      "rationale": "The flag is consumed as a truth value. None and False select the same no-follow filesystem operation or regular-file cache classification."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_restore_test_directories__mutmut_7",
+      "rationale": "The parent repairs its owned fixture tree after workers retire. lstat admits only directories and excludes link entries; for those admitted directories the chmod follow-symlinks flag does not change the target or permissions."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_restore_test_directories__mutmut_9",
+      "rationale": "The parent repairs its owned fixture tree after workers retire. lstat admits only directories and excludes link entries; for those admitted directories the chmod follow-symlinks flag does not change the target or permissions."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_verify__mutmut_10",
+      "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
+    },
+    {
+      "mutant": "tools.mutation_integrity.x_verify__mutmut_8",
+      "rationale": "The checkpoint writer emits canonical ASCII JSON, including escaped non-ASCII paths. The qualifying Linux runtime's default UTF-8 decoding therefore produces the same checkpoint as explicit UTF-8."
+    },
+    {
+      "mutant": "tools.mutation_task.x_command_runner__mutmut_25",
+      "rationale": "Only an unexposed private checkpoint basename changes. Capture and the parent integrity guard receive the same changed path, preserving source-change detection and storage cleanup."
+    },
+    {
+      "mutant": "tools.mutation_task.x_command_runner__mutmut_26",
+      "rationale": "Only an unexposed private checkpoint basename changes. Capture and the parent integrity guard receive the same changed path, preserving source-change detection and storage cleanup."
+    },
+    {
+      "mutant": "tools.publish_release.x__context__mutmut_29",
+      "rationale": "An absent repository is tested by bool before any Git operation or return. None and the empty string produce the identical Invalid repository refusal; present repository strings are unchanged."
+    },
+    {
+      "mutant": "tools.publish_release.x__context__mutmut_31",
+      "rationale": "An absent repository is tested by bool before any Git operation or return. None and the empty string produce the identical Invalid repository refusal; present repository strings are unchanged."
+    },
+    {
+      "mutant": "tools.publish_release.x__context__mutmut_42",
+      "rationale": "The replacement fallback and the empty-string fallback both fail the required v-prefixed stable tag grammar and produce the same Invalid tag refusal before remote writes."
+    },
+    {
+      "mutant": "tools.publish_release.x__context__mutmut_50",
+      "rationale": "Both fallback strings fail the 40-hex-character commit grammar and produce the same Invalid event commit refusal before remote writes."
+    },
+    {
+      "mutant": "tools.publish_release.x_main__mutmut_29",
+      "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode the same committed metadata bytes."
+    },
+    {
+      "mutant": "tools.publish_release.x_main__mutmut_33",
+      "rationale": "The candidate checker consumes require_date by truthiness. None and False permit the same selected undated candidate while retaining explicit-date and historical-heading validation."
+    },
+    {
+      "mutant": "tools.publish_release.x_main__mutmut_43",
+      "rationale": "Python codec lookup is case-insensitive, so UTF-8 and utf-8 decode the same committed changelog bytes."
+    },
+    {
+      "mutant": "tools.publish_release.x_project_version__mutmut_21",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated project version."
+    },
+    {
+      "mutant": "tools.publish_release.x_project_version__mutmut_25",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated project version."
+    },
+    {
+      "mutant": "tools.publish_release.x_project_version__mutmut_26",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated project version."
+    },
+    {
+      "mutant": "tools.release_delivery.x__complete__mutmut_1",
+      "rationale": "This changes only the cosmetic eml-release-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
+    },
+    {
+      "mutant": "tools.release_delivery.x__complete__mutmut_2",
+      "rationale": "This changes only the cosmetic eml-release-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
+    },
+    {
+      "mutant": "tools.release_delivery.x__complete__mutmut_3",
+      "rationale": "This changes only the cosmetic eml-release-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
+    },
+    {
+      "mutant": "tools.release_delivery.x__complete__mutmut_8",
+      "rationale": "The portable artifacts directory is an unexposed child of a newly allocated private temporary workspace. Renaming that child preserves its fresh/empty state, artifact contents and final published names; no consumer or source contract depends on this private label."
+    },
+    {
+      "mutant": "tools.release_delivery.x__complete__mutmut_9",
+      "rationale": "The portable artifacts directory is an unexposed child of a newly allocated private temporary workspace. Renaming that child preserves its fresh/empty state, artifact contents and final published names; no consumer or source contract depends on this private label."
+    },
+    {
+      "mutant": "tools.release_delivery.x_build__mutmut_4",
+      "rationale": "This changes only the cosmetic eml-qualified-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
+    },
+    {
+      "mutant": "tools.release_delivery.x_build__mutmut_5",
+      "rationale": "This changes only the cosmetic eml-qualified-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
+    },
+    {
+      "mutant": "tools.release_delivery.x_build__mutmut_6",
+      "rationale": "This changes only the cosmetic eml-qualified-delivery- label of a private TemporaryDirectory. Secure creation, location, permissions, ownership and cleanup are unchanged; no public artifact bytes or names depend on that random directory prefix."
+    },
+    {
+      "mutant": "tools.release_files.x_lexical_absolute__mutmut_3",
+      "rationale": "Path joining with an absolute right operand discards the left operand, so the mutant yields the same absolute path."
+    },
+    {
+      "mutant": "tools.release_publication.x__metadata__mutmut_70",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated draft flag."
+    },
+    {
+      "mutant": "tools.release_publication.x__metadata__mutmut_74",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated draft flag."
+    },
+    {
+      "mutant": "tools.release_publication.x__metadata__mutmut_75",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated draft flag."
+    },
+    {
+      "mutant": "tools.release_publication.x__missing_assets__mutmut_100",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset name."
+    },
+    {
+      "mutant": "tools.release_publication.x__missing_assets__mutmut_101",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset name recorded as seen."
+    },
+    {
+      "mutant": "tools.release_publication.x__missing_assets__mutmut_41",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset lookup."
+    },
+    {
+      "mutant": "tools.release_publication.x__missing_assets__mutmut_45",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset lookup."
+    },
+    {
+      "mutant": "tools.release_publication.x__missing_assets__mutmut_46",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset lookup."
+    },
+    {
+      "mutant": "tools.release_publication.x__missing_assets__mutmut_71",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated plain integer asset size."
+    },
+    {
+      "mutant": "tools.release_publication.x__missing_assets__mutmut_75",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated plain integer asset size."
+    },
+    {
+      "mutant": "tools.release_publication.x__missing_assets__mutmut_76",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the already-validated plain integer asset size."
+    },
+    {
+      "mutant": "tools.release_publication.x__missing_assets__mutmut_96",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated remote asset name recorded as seen."
+    },
+    {
+      "mutant": "tools.release_publication.x_identifier__mutmut_17",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated positive release identifier."
+    },
+    {
+      "mutant": "tools.release_publication.x_identifier__mutmut_21",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated positive release identifier."
+    },
+    {
+      "mutant": "tools.release_publication.x_identifier__mutmut_22",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated positive release identifier."
+    },
+    {
+      "mutant": "tools.release_publication.x_record__mutmut_13",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
+    },
+    {
+      "mutant": "tools.release_publication.x_record__mutmut_14",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
+    },
+    {
+      "mutant": "tools.release_publication.x_record__mutmut_15",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
+    },
+    {
+      "mutant": "tools.release_publication.x_record__mutmut_9",
+      "rationale": "typing.cast is erased at runtime, so changing only its type argument cannot alter the validated JSON object."
+    },
+    {
+      "mutant": "tools.release_publication.xǁArtifactǁinspect__mutmut_19",
+      "rationale": "hashlib algorithm names are case-insensitive, so SHA256 and sha256 produce the same digest."
+    },
+    {
+      "mutant": "tools.repository_path_policy.x__component_key__mutmut_9",
+      "rationale": "The component is casefolded immediately before rstrip. ASCII uppercase X cannot remain in that value, so adding X to the stripping character set cannot change its result."
+    },
+    {
+      "mutant": "tools.repository_path_policy.x__component_messages__mutmut_31",
+      "rationale": "The component is casefolded immediately before rstrip. ASCII uppercase X cannot remain in that value, so adding X to the stripping character set cannot change its result."
+    },
+    {
+      "mutant": "tools.runtime_pruning.x__static_interpreter__mutmut_14",
+      "rationale": "When python_config_vars is missing, both None and an empty dictionary lead to absent CONFIG_ARGS and a False static-interpreter decision. Neither permits removal of libpython."
+    },
+    {
+      "mutant": "tools.runtime_pruning.x__static_interpreter__mutmut_16",
+      "rationale": "When python_config_vars is missing, both None and an empty dictionary lead to absent CONFIG_ARGS and a False static-interpreter decision. Neither permits removal of libpython."
+    },
+    {
+      "mutant": "tools.runtime_pruning.x__static_interpreter__mutmut_3",
+      "rationale": "The qualifying Linux runtime uses UTF-8 as its default text encoding, matching the explicit UTF-8 decoding of authenticated upstream PYTHON.json."
+    },
+    {
+      "mutant": "tools.runtime_pruning.x__static_interpreter__mutmut_9",
+      "rationale": "Python codec lookup is case-insensitive. Changing only the codec name to uppercase preserves the encoded or decoded bytes."
+    },
+    {
+      "mutant": "tools.smoke_distribution.x__verify_output__mutmut_25",
+      "rationale": "The parsed-message contract supplies a body for accepted smoke output; the alternate guard is unreachable on valid output."
+    },
+    {
+      "mutant": "tools.verify_distribution_archives.x__inspect_source_archive__mutmut_16",
+      "rationale": "For an empty source archive the fallback timestamp is never passed to a member or restoration operation. The required nonempty surface is rejected by require_exact_set independently of whether that unused fallback is zero or one."
+    }
+  ]
 }
