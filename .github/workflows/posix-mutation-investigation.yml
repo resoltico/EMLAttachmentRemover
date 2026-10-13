@@ -34,24 +34,55 @@ jobs:
         run: uv sync --locked --group dev --python 3.14.8
         env:
           PYTHONWARNINGS: default
-      - name: Exercise all affected POSIX mutants and two unverified equivalences
+      - name: Exercise selected mutants within the production isolation envelope
         shell: bash
         run: |
           set -euo pipefail
-          uv run mutmut run --max-children 3 \
-            'eml_attachment_remover.native_posix.*' \
-            'eml_attachment_remover.native_posix_acl.*' \
-            'eml_attachment_remover.native_posix_stage.*' \
-            'eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_19' \
-            'eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_29'
-      - name: Preserve actual selected mutant statuses and patches
-        if: always()
+          uv run python -B - <<'PY'
+          from dataclasses import replace
+
+          from tools import mutation_task, tasks
+
+          selected = (
+              "eml_attachment_remover.native_posix.*",
+              "eml_attachment_remover.native_posix_acl.*",
+              "eml_attachment_remover.native_posix_stage.*",
+              "eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_19",
+              "eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_29",
+          )
+          canonical = mutation_task.run_mutation
+
+          def focused(paths, actions, executable, **kwargs):
+              original_run = actions.run
+
+              def run(command, **options):
+                  if tuple(command[:2]) == ("mutmut", "run"):
+                      command = (*command, *selected)
+                  return original_run(command, **options)
+
+              return canonical(
+                  paths,
+                  replace(actions, run=run, diagnose=lambda: None),
+                  executable,
+                  **kwargs,
+              )
+
+          mutation_task.run_mutation = focused
+          try:
+              tasks._mutation(workers=3)
+          except ExceptionGroup as error:
+              failures = error.exceptions
+              if (
+                  len(failures) != 1
+                  or "validate statistics failed:" not in str(failures[0])
+              ):
+                  raise
+              print("Expected incomplete global score from intentionally focused probe")
+          PY
+      - name: Preserve selected statuses and bounded source patches
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p build
-          uv run mutmut results --all true > build/selection-all-results.txt
-          uv run mutmut export-cicd-stats
           uv run python -B - <<'PY'
           import subprocess
           from pathlib import Path
@@ -67,25 +98,24 @@ jobs:
               "eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_19",
               "eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_29",
           }
-          source = Path("build/selection-all-results.txt")
+          source = Path("build/mutmut-results.txt")
           selected = sorted(
-              line.strip()
+              line
               for line in source.read_text(encoding="utf-8").splitlines()
-              if line.strip()
-              and (
-                  line.strip().split(": ", 1)[0].startswith(prefixes)
-                  or line.strip().split(": ", 1)[0] in exact
-              )
-              and not line.strip().endswith(": killed")
+              if (line.rpartition(": ")[0].startswith(prefixes)
+                  or line.rpartition(": ")[0] in exact)
+              and not line.endswith(": killed")
           )
           output = Path("build/selected-not-killed.txt")
           output.write_text("".join(line + "\n" for line in selected), encoding="utf-8")
+
           def show(mutant: str) -> str:
               return subprocess.check_output(
                   ("uv", "run", "mutmut", "show", mutant),
                   text=True,
                   timeout=60,
               )
+
           mutation_diagnostics.collect(
               output,
               Path("mutants/mutmut-stats.json"),
@@ -103,7 +133,7 @@ jobs:
           path: |
             build/selected-not-killed.txt
             build/selected-diagnostics/
-            build/selection-all-results.txt
+            build/mutmut-results.txt
             mutants/mutmut-cicd-stats.json
           if-no-files-found: error
           retention-days: 7
