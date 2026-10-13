@@ -351,6 +351,37 @@ def test_posix_publication_primitives_are_platform_independent(
     assert unlinked == []
 
 
+def test_posix_staging_adapters_forward_exact_bound_handles_and_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The native adapter must neither drop nor substitute any publication operand."""
+    parent = BoundDirectory(17, windows=False, private_stage_directory_fd=19)
+    calls: list[tuple[str, tuple[object, ...]]] = []
+
+    def create(bound: BoundDirectory, name: bytes) -> int:
+        calls.append(("create", (bound, name)))
+        return 23
+
+    def publish(bound: BoundDirectory, stage: int, name: bytes, final: bytes) -> bool:
+        calls.append(("publish", (bound, stage, name, final)))
+        return True
+
+    def discard(bound: BoundDirectory, stage: int, name: bytes) -> None:
+        calls.append(("discard", (bound, stage, name)))
+
+    monkeypatch.setattr(native_posix_stage, "create", create)
+    monkeypatch.setattr(native_posix_stage, "publish", publish)
+    monkeypatch.setattr(native_posix_stage, "discard", discard)
+    assert native_posix.create_private_stage(parent, b"hidden") == 23
+    assert native_posix.publish_stage_no_replace(parent, 23, b"hidden", b"final")
+    native_posix.discard_private_stage(parent, 23, b"hidden")
+    assert calls == [
+        ("create", (parent, b"hidden")),
+        ("publish", (parent, 23, b"hidden", b"final")),
+        ("discard", (parent, 23, b"hidden")),
+    ]
+
+
 def _raise_os(*_arguments: object, **_keywords: object) -> object:
     message = "fault"
     raise OSError(message)
