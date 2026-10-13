@@ -14,9 +14,18 @@ if TYPE_CHECKING:
     from typing import Protocol
 
     class MutationManifestModule(Protocol):
+        """Describe the canonical source-bound equivalence validator."""
+
         def load_equivalents(
             self, manifest: Path, source_roots: Sequence[Path]
-        ) -> dict[str, str]: ...
+        ) -> dict[str, str]:
+            """Return exact reviewed IDs and their rationales.
+
+            Returns:
+                Source-bound reviewed equivalents.
+
+            """
+            ...
 
 UTF8: Final = "utf-8"
 KILLED: Final = "killed"
