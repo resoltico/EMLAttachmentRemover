@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict, cast
 from unittest.mock import patch
 
 from tools import mutation_diagnostics
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class _Report(TypedDict):
@@ -74,7 +76,7 @@ def test_unreviewed_survivor_outweighs_hundreds_of_reviewed_equivalences(
     manifest = tmp_path / "tools" / "equivalent_mutants.json"
     with patch(
         "tools.mutation_manifest.load_equivalents",
-        return_value={name: "reviewed" for name in reviewed},
+        return_value=dict.fromkeys(reviewed, "reviewed"),
     ) as loader:
         mutation_diagnostics.collect(
             *paths, lambda mutant: f"patch {mutant}", reviewed_manifest=manifest
@@ -91,7 +93,7 @@ def test_unreviewed_survivor_outweighs_hundreds_of_reviewed_equivalences(
 def test_invalid_review_manifest_cannot_suppress_mutation_failure_diagnostics(
     tmp_path: Path,
 ) -> None:
-    """The strict validator owns admission; a broken review file cannot hide evidence."""
+    """A broken review manifest must not hide unreviewed survivor evidence."""
     paths = _case(tmp_path, "pkg.z.x_unreviewed__mutmut_1: survived\n")
     with patch(
         "tools.mutation_manifest.load_equivalents",
