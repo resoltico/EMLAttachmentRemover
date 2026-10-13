@@ -43,6 +43,7 @@ class _FakePOSIX:
         self.entry_device = 1
         self.file_inode = 3
         self.file_entry_inode = 3
+        self.file_entry_device = 1
         self.owner = 1000
         self.uid = 1000
         self.fail_directory_open = False
@@ -93,7 +94,11 @@ class _FakePOSIX:
                 st_uid=self.owner
             )
         if dir_fd == _STAGE and name == b"candidate" and self.payload:
-            return _Info(self.file_entry_kind | 0o600, st_ino=self.file_entry_inode)
+            return _Info(
+                self.file_entry_kind | 0o600,
+                st_dev=self.file_entry_device,
+                st_ino=self.file_entry_inode,
+            )
         raise FileNotFoundError(errno.ENOENT, "no such synthetic entry")
 
     def mkdir(self, name: bytes, mode: int, *, dir_fd: int) -> None:
@@ -311,7 +316,7 @@ def test_portable_creation_cleanup_retains_all_native_failures(
     assert kernel.closed == [_FILE, _STAGE]
 
 
-@pytest.mark.parametrize("fault", ["held-kind", "entry-kind", "inode"])
+@pytest.mark.parametrize("fault", ["held-kind", "entry-kind", "inode", "device"])
 def test_portable_publish_rejects_source_substitution(
     monkeypatch: pytest.MonkeyPatch, fault: str
 ) -> None:
@@ -322,6 +327,8 @@ def test_portable_publish_rejects_source_substitution(
         kernel.file_kind = stat.S_IFDIR
     elif fault == "entry-kind":
         kernel.file_entry_kind = stat.S_IFDIR
+    elif fault == "device":
+        kernel.file_entry_device = 2
     else:
         kernel.file_entry_inode = 45
     with pytest.raises(AppError, match="private staged file changed"):
