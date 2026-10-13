@@ -1,0 +1,109 @@
+name: Focused POSIX mutation investigation
+on:
+  push:
+    branches:
+      - fix/mutation-qualification-posix-regressions
+    paths:
+      - .github/workflows/posix-mutation-investigation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  investigate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      PYTHONDEVMODE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+      PYTHONWARNINGS: error
+    steps:
+      - name: Check out exact candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and CPython
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: 0.12.23
+          python-version: 3.14.8
+          enable-cache: auto
+          cache-dependency-glob: uv.lock
+      - name: Install locked development dependencies
+        run: uv sync --locked --group dev --python 3.14.8
+        env:
+          PYTHONWARNINGS: default
+      - name: Exercise all affected POSIX mutants and two unverified equivalences
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run mutmut run --max-children 3 \
+            'eml_attachment_remover.native_posix.*' \
+            'eml_attachment_remover.native_posix_acl.*' \
+            'eml_attachment_remover.native_posix_stage.*' \
+            'eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_19' \
+            'eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_29'
+      - name: Preserve actual selected mutant statuses and patches
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          uv run mutmut results --all true > build/selection-all-results.txt
+          uv run mutmut export-cicd-stats
+          uv run python -B - <<'PY'
+          import subprocess
+          from pathlib import Path
+
+          from tools import mutation_diagnostics
+
+          prefixes = (
+              "eml_attachment_remover.native_posix.",
+              "eml_attachment_remover.native_posix_acl.",
+              "eml_attachment_remover.native_posix_stage.",
+          )
+          exact = {
+              "eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_19",
+              "eml_attachment_remover.cli_parser.x__consumed_option_values__mutmut_29",
+          }
+          source = Path("build/selection-all-results.txt")
+          selected = sorted(
+              line.strip()
+              for line in source.read_text(encoding="utf-8").splitlines()
+              if line.strip()
+              and (
+                  line.strip().split(": ", 1)[0].startswith(prefixes)
+                  or line.strip().split(": ", 1)[0] in exact
+              )
+              and not line.strip().endswith(": killed")
+          )
+          output = Path("build/selected-not-killed.txt")
+          output.write_text("".join(line + "\n" for line in selected), encoding="utf-8")
+          def show(mutant: str) -> str:
+              return subprocess.check_output(
+                  ("uv", "run", "mutmut", "show", mutant),
+                  text=True,
+                  timeout=60,
+              )
+          mutation_diagnostics.collect(
+              output,
+              Path("mutants/mutmut-stats.json"),
+              Path("build/selected-diagnostics"),
+              show,
+          )
+          print(f"Selected non-killed mutants: {len(selected)}")
+          print("\n".join(selected))
+          PY
+      - name: Upload focused source-bound findings
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: posix-survivor-investigation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/selected-not-killed.txt
+            build/selected-diagnostics/
+            build/selection-all-results.txt
+            mutants/mutmut-cicd-stats.json
+          if-no-files-found: error
+          retention-days: 7
