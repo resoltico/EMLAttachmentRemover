@@ -82,6 +82,28 @@ def test_every_unkilled_mutant_gets_a_patch_its_status_and_mapped_tests(
     ]
 
 
+def test_a_slow_campaign_preserves_real_survivors_before_pending_mutants(
+    tmp_path: Path,
+) -> None:
+    """Do not spend a bounded diagnostic budget entirely on unfinished mutants."""
+    pending = "".join(
+        f"pkg.a.x_f__mutmut_{n}: not checked\n"
+        for n in range(1, mutation_diagnostics.MAX_MUTANTS + 5)
+    )
+    results, stats = _write(
+        tmp_path,
+        pending + "pkg.z.x_regression__mutmut_1: survived\n",
+    )
+    output = tmp_path / "bundle"
+    mutation_diagnostics.collect(results, stats, output, _show)
+    index = json.loads((output / "index.json").read_text(encoding="utf-8"))
+    assert index["not_killed"] == mutation_diagnostics.MAX_MUTANTS + 5
+    assert index["listed"] == mutation_diagnostics.MAX_MUTANTS
+    assert index["mutants"][0]["mutant"] == "pkg.z.x_regression__mutmut_1"
+    assert index["mutants"][0]["status"] == "survived"
+    assert index["by_status"]["not checked"] == mutation_diagnostics.MAX_MUTANTS + 4
+
+
 def test_the_bundle_is_bounded_and_says_what_it_left_out(tmp_path: Path) -> None:
     """Counts, patch bytes, and test lists are all capped, with truncation recorded."""
     total = mutation_diagnostics.MAX_MUTANTS + 5

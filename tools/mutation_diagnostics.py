@@ -80,7 +80,13 @@ def collect(
     """
     if not results.is_file():
         return
-    survivors = _survivors(results)
+    # In an interrupted campaign, hundreds of pending mutants may sort before
+    # real survivors. Preserve the bounded evidence budget for substantive
+    # survivors first, then the remaining statuses in deterministic name order.
+    survivors = sorted(
+        _survivors(results),
+        key=lambda item: (item[1] != "survived", item[0]),
+    )
     tests = _mapped_tests(stats)
     output.mkdir(parents=True, exist_ok=True)
     for stale in output.iterdir():
