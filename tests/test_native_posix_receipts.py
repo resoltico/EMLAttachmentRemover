@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 
-from eml_attachment_remover import native_posix
+from eml_attachment_remover import native_posix, native_posix_stage
 from eml_attachment_remover.domain import (
     AppError,
     BoundDestination,
@@ -287,21 +287,9 @@ def test_posix_publication_primitives_preserve_exact_kernel_arguments(
         return 52
 
     monkeypatch.setattr(native_posix.__dict__["os"], "open", open_stage)
-    assert native_posix._create_private_stage(directory, b"stage") == 52  # ruff: ignore[private-member-access] - exclusive private-stage create.
-    assert opens == [
-        (
-            b"stage",
-            os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
-            0o600,
-            51,
-        )
-    ]
-
-    with monkeypatch.context() as context:
-        context.delattr(native_posix.__dict__["os"], "O_CLOEXEC", raising=False)
-        opens.clear()
-        assert native_posix._create_private_stage(directory, b"portable") == 52  # ruff: ignore[private-member-access] - portable close-on-exec fallback.
-        assert opens == [(b"portable", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600, 51)]
+    monkeypatch.setattr(native_posix_stage, "create", lambda *_args: 52)
+    assert native_posix._create_private_stage(directory, b"stage") == 52  # ruff: ignore[private-member-access] - protected stage delegation.
+    assert opens == []
 
     metadata = _metadata()
     stats: list[tuple[object, object, object]] = []

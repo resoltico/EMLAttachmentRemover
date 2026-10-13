@@ -28,6 +28,15 @@ def _state(tmp_path: Path, candidate: bytes) -> _PublicationState:
     return state
 
 
+def test_stage_readback_joins_every_chunk_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Require staged readback to preserve ordered chunks without separators."""
+    chunks = iter([b"one", b"two", b""])
+    monkeypatch.setattr(os, "read", lambda *_args: next(chunks))
+    assert staged_output._read_all(7) == b"onetwo"  # ruff: ignore[private-member-access] - exact staging readback.
+
+
 def test_staged_write_accepts_positive_partial_progress(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -1807,15 +1807,7 @@
       "anchor": "assert native_posix._create_private_stage(directory, b\"stage\") == 52",
       "tool": "ruff",
       "rules": "private-member-access",
-      "reason": "exclusive private-stage create."
-    },
-    {
-      "path": "tests/test_native_posix_receipts.py",
-      "scope": "test_posix_publication_primitives_preserve_exact_kernel_arguments",
-      "anchor": "assert native_posix._create_private_stage(directory, b\"portable\") == 52",
-      "tool": "ruff",
-      "rules": "private-member-access",
-      "reason": "portable close-on-exec fallback."
+      "reason": "protected stage delegation."
     },
     {
       "path": "tests/test_native_posix_receipts.py",
@@ -7810,7 +7802,7 @@
       "reason": "explicit test cleanup."
     },
     {
-      "path": "tests/test_staging_faults.py",
+      "path": "tests/test_staging_mutation_contracts.py",
       "scope": "test_stage_readback_joins_every_chunk_exactly",
       "anchor": "assert staged_output._read_all(7) == b\"onetwo\"",
       "tool": "ruff",
@@ -8936,6 +8928,46 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "This exact white-box regression observes the live generated-root scanner handoff to reject artifact-root privileges for tool-cache roots; its private boundary cannot be distinguished through final reports alone."
+    },
+    {
+      "path": "tests/test_posix_private_stage_namespace.py",
+      "scope": "<module>",
+      "anchor": "same_directory = native_posix_stage._same_directory",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "direct private-stage directory-identity negative controls."
+    },
+    {
+      "path": "tests/test_posix_private_stage_namespace.py",
+      "scope": "<module>",
+      "anchor": "creation_cleanup = native_posix_stage._creation_cleanup",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "direct partial acquisition cleanup and failure aggregation."
+    },
+    {
+      "path": "src/eml_attachment_remover/native_posix_stage.py",
+      "scope": "_attempt",
+      "anchor": "except BaseException as exc:",
+      "tool": "ruff",
+      "rules": "blind-except",
+      "reason": "Owned staging cleanup must continue closing independent handles even when a cooperative or interpreter-level cancellation interrupts one cleanup operation."
+    },
+    {
+      "path": "src/eml_attachment_remover/native_posix.py",
+      "scope": "_close_bound_directory",
+      "anchor": "except BaseException as exc:",
+      "tool": "ruff",
+      "rules": "blind-except",
+      "reason": "Both retained POSIX descriptors must be released independently, and the full set of cleanup failures\u2014including cancellation\u2014must be preserved."
+    },
+    {
+      "path": "tests/test_posix_stage_portable.py",
+      "scope": "test_portable_creation_cleanup_retains_all_native_failures",
+      "anchor": "result = native_posix_stage._creation_cleanup(",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "Exercise the real stage-owner cleanup aggregator against simultaneous independent synthetic native release failures on every CI platform."
     }
   ],
   "swift_exceptions": []

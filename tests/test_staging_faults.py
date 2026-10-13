@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 from typing import TYPE_CHECKING
 
 import pytest
@@ -28,6 +29,15 @@ from eml_attachment_remover.staged_output import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _remove_residual_stages(directory: Path) -> None:
+    """Remove only test-created abandoned stages after their owner stopped."""
+    for residual in directory.glob(".eml-remove-*.tmp"):
+        if residual.is_dir():
+            shutil.rmtree(residual)
+        else:
+            residual.unlink()
 
 
 def _state(tmp_path: Path, candidate: bytes = b"candidate") -> _PublicationState:
@@ -79,8 +89,7 @@ def test_stage_creation_owns_every_construction_failure(
         context.setattr(staged_output, "discard_private_stage", vanished_stage)
         with pytest.raises(KeyboardInterrupt):
             staged_output._create_stage(state)  # ruff: ignore[private-member-access] - constructor-interrupt contract.
-    for residual in tmp_path.glob(".eml-remove-*.tmp"):
-        residual.unlink()
+    _remove_residual_stages(tmp_path)
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - explicit test cleanup.
 
 
@@ -107,15 +116,6 @@ def test_close_and_verification_faults_are_not_silently_accepted(
             staged_output._verify_staged(state)  # ruff: ignore[private-member-access] - staged-reread mismatch contract.
         assert raised.value.code is ExitCode.VERIFICATION_ERROR
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - explicit test cleanup.
-
-
-def test_stage_readback_joins_every_chunk_exactly(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Require staged readback to preserve ordered chunks without separators."""
-    chunks = iter([b"one", b"two", b""])
-    monkeypatch.setattr(os, "read", lambda *_args: next(chunks))
-    assert staged_output._read_all(7) == b"onetwo"  # ruff: ignore[private-member-access] - exact staging readback.
 
 
 @pytest.mark.parametrize("missing", ["stage", "parent"])
@@ -233,8 +233,7 @@ def test_constructor_and_receipt_dual_failures_are_preserved(
         context.setattr(staged_output, "_close_descriptor", fail_close)
         with pytest.raises(BaseExceptionGroup):
             staged_output._create_stage(state)  # ruff: ignore[private-member-access] - owner/cleanup dual-failure contract.
-    for residual in tmp_path.glob(".eml-remove-*.tmp"):
-        residual.unlink()
+    _remove_residual_stages(tmp_path)
     staged_output._cleanup(state)  # ruff: ignore[private-member-access] - explicit test cleanup.
     receipt_state = _bound_state(tmp_path)
     stage = receipt_state.stage
