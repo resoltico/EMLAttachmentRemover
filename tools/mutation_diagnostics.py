@@ -27,6 +27,7 @@ if TYPE_CHECKING:
             """
             ...
 
+
 UTF8: Final = "utf-8"
 KILLED: Final = "killed"
 INDEX_NAME: Final = "index.json"
@@ -99,7 +100,7 @@ def _reviewed_ids(manifest: Path) -> frozenset[str]:
     )
     try:
         return frozenset(service.load_equivalents(manifest, source_roots))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         # The strict mutation gate reports the invalid manifest separately.
         # Diagnostics should still describe the unfinished campaign.
         return frozenset()
