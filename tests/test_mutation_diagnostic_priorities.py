@@ -39,7 +39,9 @@ def _index(output: Path) -> _Report:
         The diagnostics index JSON object.
 
     """
-    return cast("_Report", json.loads((output / "index.json").read_text(encoding="utf-8")))
+    return cast(
+        "_Report", json.loads((output / "index.json").read_text(encoding="utf-8"))
+    )
 
 
 def test_slow_campaign_retains_survivors_ahead_of_unfinished_mutants(
