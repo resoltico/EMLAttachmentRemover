@@ -16,12 +16,14 @@ from eml_attachment_remover.domain import AppError, BoundDirectory, ExitCode
 if TYPE_CHECKING:
     from pathlib import Path
 
+_DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory-descriptor primitives")
 def test_private_stage_survives_outer_name_substitution(tmp_path: Path) -> None:
     """Renaming a private directory cannot redirect its held candidate descriptor."""
     parent = BoundDirectory(
-        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), windows=False
+        os.open(tmp_path, _DIRECTORY_FLAGS), windows=False
     )
     name = b".eml-remove-private-stage-test.tmp"
     stage = native_posix_stage.create(parent, name)
@@ -52,7 +54,7 @@ def test_private_stage_survives_outer_name_substitution(tmp_path: Path) -> None:
 def test_private_stage_normal_publication_removes_namespace(tmp_path: Path) -> None:
     """Successful publication removes both the protected file and its directory."""
     parent = BoundDirectory(
-        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), windows=False
+        os.open(tmp_path, _DIRECTORY_FLAGS), windows=False
     )
     name = b".eml-remove-clean-stage-test.tmp"
     stage = native_posix_stage.create(parent, name)
@@ -112,7 +114,7 @@ def test_private_stage_identity_requires_every_guard(
 ) -> None:
     """A directory name, kind, inode, private mode and owner all matter."""
     parent = BoundDirectory(
-        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), windows=False
+        os.open(tmp_path, _DIRECTORY_FLAGS), windows=False
     )
     name = b".eml-remove-identity-stage.tmp"
     stage = native_posix_stage.create(parent, name)
@@ -123,7 +125,7 @@ def test_private_stage_identity_requires_every_guard(
     try:
         _alter_stage(original, displaced, fault)
         if fault == "foreign-owner":
-            actual_uid = os.geteuid()
+            actual_uid = original.stat().st_uid
             with monkeypatch.context() as context:
                 context.setattr(os, "geteuid", lambda: actual_uid + 1)
                 assert not same_directory(parent, name, directory_fd)
@@ -141,7 +143,7 @@ def test_private_stage_identity_requires_every_guard(
 def test_private_stage_refuses_a_second_owned_namespace(tmp_path: Path) -> None:
     """A bound parent must never silently abandon its first staging directory."""
     parent = BoundDirectory(
-        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), windows=False
+        os.open(tmp_path, _DIRECTORY_FLAGS), windows=False
     )
     name = b".eml-remove-first-stage.tmp"
     stage = native_posix_stage.create(parent, name)
@@ -163,7 +165,7 @@ def test_private_stage_create_preserves_failed_acquisition(
 ) -> None:
     """A failed open cannot establish ownership or silently publish anything."""
     parent = BoundDirectory(
-        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), windows=False
+        os.open(tmp_path, _DIRECTORY_FLAGS), windows=False
     )
     name = b".eml-remove-failed-acquisition.tmp"
     original_open = os.open
@@ -204,7 +206,7 @@ def test_private_stage_preserves_both_acquisition_and_cleanup_failures(
 ) -> None:
     """A changed directory and failed descriptor close remain distinct causes."""
     parent = BoundDirectory(
-        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), windows=False
+        os.open(tmp_path, _DIRECTORY_FLAGS), windows=False
     )
     name = b".eml-remove-failed-close.tmp"
     original_close = os.close
@@ -235,12 +237,12 @@ def test_partial_acquisition_cleanup_releases_handles_and_reports_faults(
 ) -> None:
     """Failure cleanup records independent file, unlink, rmdir and fd errors."""
     parent = BoundDirectory(
-        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), windows=False
+        os.open(tmp_path, _DIRECTORY_FLAGS), windows=False
     )
     name = b".eml-remove-partial-acquisition.tmp"
     outer = tmp_path / os.fsdecode(name)
     os.mkdir(name, mode=0o700, dir_fd=parent.descriptor)
-    directory_fd = os.open(outer, os.O_RDONLY | os.O_DIRECTORY)
+    directory_fd = os.open(outer, _DIRECTORY_FLAGS)
     file_fd = os.open(
         b"candidate", os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=directory_fd
     )
@@ -287,7 +289,7 @@ def test_private_stage_publish_rejects_untrusted_source(
 ) -> None:
     """Neither a wrong handle nor a swapped payload can cross visibility."""
     parent = BoundDirectory(
-        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), windows=False
+        os.open(tmp_path, _DIRECTORY_FLAGS), windows=False
     )
     name = b".eml-remove-untrusted-candidate.tmp"
     stage = native_posix_stage.create(parent, name)
@@ -338,7 +340,7 @@ def test_private_stage_discard_requires_owner_but_accepts_moved_candidate(
 ) -> None:
     """The Darwin rename case leaves an empty stage directory to remove."""
     parent = BoundDirectory(
-        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), windows=False
+        os.open(tmp_path, _DIRECTORY_FLAGS), windows=False
     )
     name = b".eml-remove-renamed-candidate.tmp"
     stage = native_posix_stage.create(parent, name)
@@ -391,7 +393,7 @@ def test_private_stage_refuses_failed_acl_clearing_before_writing(
 ) -> None:
     """Failure to remove an inherited ACL cannot expose confidential bytes."""
     parent = BoundDirectory(
-        os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY), windows=False
+        os.open(tmp_path, _DIRECTORY_FLAGS), windows=False
     )
     name = b".eml-remove-acl-failure.tmp"
     try:

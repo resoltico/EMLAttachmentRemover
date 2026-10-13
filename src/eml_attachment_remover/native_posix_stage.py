@@ -42,11 +42,14 @@ def _same_directory(parent: BoundDirectory, name: bytes, descriptor: int) -> boo
     except FileNotFoundError:
         return False
     held = os.fstat(descriptor)
+    get_euid = getattr(os, "geteuid", None)
+    if get_euid is None:
+        return False
     return (
         stat.S_ISDIR(held.st_mode)
         and stat.S_ISDIR(entry.st_mode)
         and (held.st_dev, held.st_ino) == (entry.st_dev, entry.st_ino)
-        and held.st_uid == os.geteuid()
+        and held.st_uid == get_euid()
         and stat.S_IMODE(held.st_mode) & 0o077 == 0
     )
 

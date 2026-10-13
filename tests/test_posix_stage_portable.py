@@ -189,6 +189,19 @@ def test_portable_private_stage_success_and_named_cleanup(
     assert not kernel.outer
 
 
+def test_portable_stage_refuses_missing_effective_uid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Losing the POSIX identity query must fail closed, even in a fake backend."""
+    kernel, parent = _bound(monkeypatch)
+    candidate = native_posix_stage.create(parent, _NAME)
+    with monkeypatch.context() as context:
+        context.delattr(_FakePOSIX, "geteuid")
+        with pytest.raises(AppError, match="private stage directory was renamed"):
+            native_posix_stage.discard(parent, candidate, _NAME)
+    assert kernel.outer
+
+
 @pytest.mark.parametrize(
     "fault",
     ["missing", "entry-type", "held-type", "inode", "owner", "permissions"],
