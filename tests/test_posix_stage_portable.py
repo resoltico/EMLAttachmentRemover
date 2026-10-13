@@ -40,6 +40,7 @@ class _FakePOSIX:
         self.file_entry_kind = stat.S_IFREG
         self.held_inode = 2
         self.entry_inode = 2
+        self.entry_device = 1
         self.file_inode = 3
         self.file_entry_inode = 3
         self.owner = 1000
@@ -86,7 +87,10 @@ class _FakePOSIX:
         assert not follow_symlinks
         if dir_fd == _PARENT and name == _NAME and self.outer:
             return _Info(
-                self.entry_kind | self.mode, st_ino=self.entry_inode, st_uid=self.owner
+                self.entry_kind | self.mode,
+                st_dev=self.entry_device,
+                st_ino=self.entry_inode,
+                st_uid=self.owner
             )
         if dir_fd == _STAGE and name == b"candidate" and self.payload:
             return _Info(self.file_entry_kind | 0o600, st_ino=self.file_entry_inode)
@@ -204,7 +208,7 @@ def test_portable_stage_refuses_missing_effective_uid(
 
 @pytest.mark.parametrize(
     "fault",
-    ["missing", "entry-type", "held-type", "inode", "owner", "permissions"],
+    ["missing", "entry-type", "held-type", "inode", "device", "owner", "permissions"],
 )
 def test_portable_private_stage_rejects_changed_outer_identity(
     monkeypatch: pytest.MonkeyPatch, fault: str
@@ -220,6 +224,8 @@ def test_portable_private_stage_rejects_changed_outer_identity(
         kernel.held_kind = stat.S_IFREG
     elif fault == "inode":
         kernel.entry_inode = 99
+    elif fault == "device":
+        kernel.entry_device = 2
     elif fault == "owner":
         kernel.owner += 1
     else:
