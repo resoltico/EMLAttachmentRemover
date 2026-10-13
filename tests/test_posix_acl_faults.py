@@ -89,13 +89,16 @@ def test_darwin_acl_clearing_preserves_native_errors(
         with pytest.raises(expected) as observed:
             native_posix_acl.restrict(17)
         if isinstance(observed.value, BaseExceptionGroup):
+            assert observed.value.message == "private staging ACL failures"
             assert len(observed.value.exceptions) == 2
             for item in observed.value.exceptions:
                 assert isinstance(item, OSError)
                 assert item.errno == error
+                assert item.strerror == os.strerror(error)
         else:
             assert isinstance(observed.value, OSError)
             assert observed.value.errno == error
+            assert observed.value.strerror == os.strerror(error)
     chmod.assert_called_once_with(17, 0o700)
     load_library.assert_called_once_with(None, use_errno=True)
     init.assert_called_once_with(0)
@@ -115,8 +118,10 @@ def test_acl_init_failure_never_attempts_write_or_free(
     """A missing ACL descriptor fails before staging candidate creation."""
     monkeypatch.setattr(os, "fchmod", lambda *_args: None, raising=False)
     init, set_fd, free, load_library = _native(monkeypatch, initialized=0)
-    with pytest.raises(OSError, match=os.strerror(errno.EACCES)):
+    with pytest.raises(OSError, match=os.strerror(errno.EACCES)) as caught:
         native_posix_acl.restrict(9)
+    assert caught.value.errno == errno.EACCES
+    assert caught.value.strerror == os.strerror(errno.EACCES)
     load_library.assert_called_once_with(None, use_errno=True)
     init.assert_called_once_with(0)
     set_fd.assert_not_called()

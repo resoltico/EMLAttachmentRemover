@@ -382,6 +382,24 @@ def test_posix_staging_adapters_forward_exact_bound_handles_and_names(
     ]
 
 
+def test_posix_identity_inspection_omits_unneeded_final_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An identity-only inspection must not resolve an optional final address."""
+    identity = FileIdentity(7, 11, "regular", 13)
+    calls: list[tuple[str, bool]] = []
+
+    def inspect(
+        validated: str, *, include_address: bool = True
+    ) -> tuple[FileIdentity, None]:
+        calls.append((validated, include_address))
+        return identity, None
+
+    monkeypatch.setattr(native_posix, "_inspect_source", inspect)
+    assert native_posix.inspect_source_identity("selected.eml") is identity
+    assert calls == [("selected.eml", False)]
+
+
 def _raise_os(*_arguments: object, **_keywords: object) -> object:
     message = "fault"
     raise OSError(message)

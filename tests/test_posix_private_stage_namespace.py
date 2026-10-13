@@ -209,6 +209,7 @@ def test_private_stage_preserves_both_acquisition_and_cleanup_failures(
             context.setattr(os, "close", close_then_fail)
             with pytest.raises(BaseExceptionGroup) as caught:
                 native_posix_stage.create(parent, name)
+        assert caught.value.message == "private-stage acquisition and cleanup failures"
         assert len(caught.value.exceptions) == 2
         assert isinstance(caught.value.exceptions[0], AppError)
         assert isinstance(caught.value.exceptions[1], OSError)
@@ -361,6 +362,7 @@ def test_posix_directory_close_keeps_independent_handle_failures(
         if both_fail:
             with pytest.raises(BaseExceptionGroup) as caught:
                 native_posix.close_bound_directory(parent)
+            assert caught.value.message == "directory handle cleanup failures"
             assert len(caught.value.exceptions) == 2
         else:
             with pytest.raises(OSError, match="simulated close failure"):

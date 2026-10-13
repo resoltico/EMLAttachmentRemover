@@ -8968,6 +8968,14 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "Exercise the real stage-owner cleanup aggregator against simultaneous independent synthetic native release failures on every CI platform."
+    },
+    {
+      "path": "tests/test_posix_stage_portable.py",
+      "scope": "test_partial_acquisition_retains_descriptor_zero",
+      "anchor": "cleanup = native_posix_stage._creation_cleanup",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "Assert descriptor zero is retired by partial stage acquisition cleanup, whether owned as the file or directory handle."
     }
   ],
   "swift_exceptions": []
