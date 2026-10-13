@@ -21,7 +21,7 @@ def _native(
     written: int = 0,
     released: int = 0,
     failure: int = errno.EACCES,
-) -> tuple[Mock, Mock, Mock]:
+) -> tuple[Mock, Mock, Mock, Mock]:
     """Install signature-bearing fakes of Darwin's ACL operations.
 
     Returns:
@@ -33,9 +33,10 @@ def _native(
     free = Mock(return_value=released)
     library = SimpleNamespace(acl_init=init, acl_set_fd=set_fd, acl_free=free)
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(ctypes, "CDLL", lambda *_args, **_kwargs: library)
+    load_library = Mock(return_value=library)
+    monkeypatch.setattr(ctypes, "CDLL", load_library)
     monkeypatch.setattr(ctypes, "get_errno", lambda: failure)
-    return init, set_fd, free
+    return init, set_fd, free, load_library
 
 
 def test_non_darwin_restricts_mode_without_loading_acl_library(
@@ -79,20 +80,33 @@ def test_darwin_acl_clearing_preserves_native_errors(
     """Unsupported ACL volumes use mode bits; all other errors fail closed."""
     chmod = Mock()
     monkeypatch.setattr(os, "fchmod", chmod, raising=False)
-    init, set_fd, free = _native(
+    init, set_fd, free, load_library = _native(
         monkeypatch, written=written, released=released, failure=error
     )
     if expected is None:
         native_posix_acl.restrict(17)
     else:
-        with pytest.raises(expected):
+        with pytest.raises(expected) as observed:
             native_posix_acl.restrict(17)
+        if isinstance(observed.value, BaseExceptionGroup):
+            assert len(observed.value.exceptions) == 2
+            for item in observed.value.exceptions:
+                assert isinstance(item, OSError)
+                assert item.errno == error
+        else:
+            assert isinstance(observed.value, OSError)
+            assert observed.value.errno == error
     chmod.assert_called_once_with(17, 0o700)
+    load_library.assert_called_once_with(None, use_errno=True)
     init.assert_called_once_with(0)
+    assert init.argtypes == [ctypes.c_int]
+    assert init.restype is ctypes.c_void_p
     set_fd.assert_called_once_with(17, 41)
+    assert set_fd.argtypes == [ctypes.c_int, ctypes.c_void_p]
+    assert set_fd.restype is ctypes.c_int
     free.assert_called_once_with(41)
-    assert set_fd.argtypes is not None
-    assert set_fd.restype is not None
+    assert free.argtypes == [ctypes.c_void_p]
+    assert free.restype is ctypes.c_int
 
 
 def test_acl_init_failure_never_attempts_write_or_free(
@@ -100,9 +114,10 @@ def test_acl_init_failure_never_attempts_write_or_free(
 ) -> None:
     """A missing ACL descriptor fails before staging candidate creation."""
     monkeypatch.setattr(os, "fchmod", lambda *_args: None, raising=False)
-    init, set_fd, free = _native(monkeypatch, initialized=0)
+    init, set_fd, free, load_library = _native(monkeypatch, initialized=0)
     with pytest.raises(OSError, match=os.strerror(errno.EACCES)):
         native_posix_acl.restrict(9)
+    load_library.assert_called_once_with(None, use_errno=True)
     init.assert_called_once_with(0)
     set_fd.assert_not_called()
     free.assert_not_called()
