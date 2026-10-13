@@ -369,6 +369,27 @@ def test_posix_directory_close_keeps_independent_handle_failures(
     assert parent.private_stage_directory_fd is None
 
 
+@pytest.mark.parametrize("failure_type", [KeyboardInterrupt, SystemExit])
+def test_posix_directory_close_preserves_interruption_and_closes_both_handles(
+    monkeypatch: pytest.MonkeyPatch, failure_type: type[BaseException]
+) -> None:
+    """An interrupted first close never prevents retirement of the parent handle."""
+    parent = BoundDirectory(121, windows=False, private_stage_directory_fd=122)
+    seen: list[int] = []
+
+    def close(descriptor: int) -> None:
+        seen.append(descriptor)
+        if descriptor == 122:
+            raise failure_type
+
+    with monkeypatch.context() as context:
+        context.setattr(os, "close", close)
+        with pytest.raises(failure_type):
+            native_posix.close_bound_directory(parent)
+    assert seen == [122, 121]
+    assert parent.private_stage_directory_fd is None
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory-descriptor primitives")
 def test_private_stage_refuses_failed_acl_clearing_before_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
