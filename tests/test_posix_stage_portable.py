@@ -69,14 +69,14 @@ class _FakePOSIX:
 
         """
         if descriptor == _STAGE:
-            return _Info(self.held_kind | self.mode, st_ino=self.held_inode)
+            return _Info(
+                self.held_kind | self.mode, st_ino=self.held_inode, st_uid=self.owner
+            )
         if descriptor == _FILE:
             return _Info(self.file_kind | 0o600, st_ino=self.file_inode)
         raise OSError(errno.EBADF, "unexpected descriptor")
 
-    def stat(
-        self, name: bytes, *, dir_fd: int, follow_symlinks: bool
-    ) -> _Info:
+    def stat(self, name: bytes, *, dir_fd: int, follow_symlinks: bool) -> _Info:
         """Inspect one synthetic directory entry without following symlinks.
 
         Returns:
@@ -99,9 +99,7 @@ class _FakePOSIX:
             raise FileExistsError(errno.EEXIST, "synthetic directory exists")
         self.outer = True
 
-    def open(
-        self, name: bytes, _flags: int, mode: int = 0o777, *, dir_fd: int
-    ) -> int:
+    def open(self, name: bytes, _flags: int, mode: int = 0o777, *, dir_fd: int) -> int:
         """Open the protected directory or create its candidate file.
 
         Returns:

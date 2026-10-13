@@ -11,6 +11,7 @@ import pytest
 
 from eml_attachment_remover import native_posix_acl
 
+
 def _native(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -98,7 +99,9 @@ def test_acl_init_failure_never_attempts_write_or_free(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing ACL descriptor fails before staging candidate creation."""
-    monkeypatch.setattr(native_posix_acl.os, "fchmod", lambda *_args: None, raising=False)
+    monkeypatch.setattr(
+        native_posix_acl.os, "fchmod", lambda *_args: None, raising=False
+    )
     init, set_fd, free = _native(monkeypatch, initialized=0)
     with pytest.raises(OSError, match=os.strerror(errno.EACCES)):
         native_posix_acl.restrict(9)

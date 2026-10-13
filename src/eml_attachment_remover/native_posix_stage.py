@@ -80,9 +80,7 @@ def _require_private_directory(
 
     """
     if not _same_directory(parent, name, directory_fd):
-        raise AppError(
-            ExitCode.OUTPUT_CONFLICT, "private staging directory changed"
-        )
+        raise AppError(ExitCode.OUTPUT_CONFLICT, "private staging directory changed")
 
 
 def _creation_cleanup(
