@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import pytest
 
 from eml_attachment_remover import native_posix_stage
-from eml_attachment_remover.domain import AppError, BoundDirectory, ExitCode
+from eml_attachment_remover.domain import AppError, BoundDirectory
 
 _PARENT = 11
 _STAGE = 22
@@ -94,7 +94,9 @@ class _FakePOSIX:
 
     def mkdir(self, name: bytes, mode: int, *, dir_fd: int) -> None:
         """Create exactly one owner-private parent-relative staging directory."""
-        assert name == _NAME and mode == 0o700 and dir_fd == _PARENT
+        assert name == _NAME
+        assert mode == 0o700
+        assert dir_fd == _PARENT
         if self.outer or self.fail_mkdir:
             raise FileExistsError(errno.EEXIST, "synthetic directory exists")
         self.outer = True
@@ -128,7 +130,8 @@ class _FakePOSIX:
 
     def unlink(self, name: bytes, *, dir_fd: int) -> None:
         """Remove the inner candidate without touching another parent."""
-        assert name == b"candidate" and dir_fd == _STAGE
+        assert name == b"candidate"
+        assert dir_fd == _STAGE
         if self.fail_unlink:
             raise OSError(errno.EIO, "unlink failed")
         if not self.payload:
@@ -137,7 +140,8 @@ class _FakePOSIX:
 
     def rmdir(self, name: bytes, *, dir_fd: int) -> None:
         """Remove only the empty, owner-identified outer directory."""
-        assert name == _NAME and dir_fd == _PARENT
+        assert name == _NAME
+        assert dir_fd == _PARENT
         if self.fail_rmdir:
             raise OSError(errno.EIO, "rmdir failed")
         if self.payload:
@@ -244,16 +248,19 @@ def test_portable_create_releases_every_acquired_owner(
     else:
         kernel.entry_inode = 9
     with pytest.raises(
-        (OSError, AppError), match="open failed|private staging directory changed"
+        (OSError, AppError), match=r"open failed|private staging directory changed"
     ):
         native_posix_stage.create(parent, _NAME)
     assert parent.private_stage_directory_fd is None
     if failure_point == "directory":
-        assert kernel.outer and kernel.closed == []
+        assert kernel.outer
+        assert kernel.closed == []
     elif failure_point == "candidate":
-        assert not kernel.outer and kernel.closed == [_STAGE]
+        assert not kernel.outer
+        assert kernel.closed == [_STAGE]
     else:
-        assert kernel.outer and kernel.closed == [_STAGE]
+        assert kernel.outer
+        assert kernel.closed == [_STAGE]
 
 
 def test_portable_creation_preserves_independent_cleanup_errors(

@@ -13,7 +13,6 @@ def restrict(directory_fd: int) -> None:
 
     Raises:
         OSError: If owner-private permissions cannot be established.
-        BaseExceptionGroup: If applying and releasing the native ACL both fail.
 
     """
     os.fchmod(directory_fd, 0o700)

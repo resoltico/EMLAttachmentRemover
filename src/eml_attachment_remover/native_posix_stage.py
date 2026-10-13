@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import os
 import stat
-from collections.abc import Callable
 from contextlib import suppress
+from typing import TYPE_CHECKING
 
 from . import native_posix_acl
 from .atomic_publish import publish_no_replace
 from .domain import AppError, BoundDirectory, ExitCode
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _PAYLOAD = b"candidate"
 _DIRECTORY_FLAGS = (
@@ -113,7 +116,6 @@ def create(parent: BoundDirectory, name: bytes) -> int:
 
     Raises:
         AppError: If its private directory identity or ownership cannot be proved.
-        BaseExceptionGroup: If acquisition and cleanup fail independently.
 
     """
     if parent.private_stage_directory_fd is not None:
@@ -126,7 +128,7 @@ def create(parent: BoundDirectory, name: bytes) -> int:
         native_posix_acl.restrict(directory_fd)
         _require_private_directory(parent, name, directory_fd)
         file_fd = os.open(_PAYLOAD, _FILE_FLAGS, 0o600, dir_fd=directory_fd)
-    except BaseException as primary:  # ruff: ignore[blind-except] - recover owned stage even on cancellation.
+    except BaseException as primary:
         failures = _creation_cleanup(parent, name, directory_fd, file_fd)
         if failures:
             combined = BaseExceptionGroup(

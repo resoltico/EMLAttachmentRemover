@@ -8954,14 +8954,6 @@
       "reason": "Owned staging cleanup must continue closing independent handles even when a cooperative or interpreter-level cancellation interrupts one cleanup operation."
     },
     {
-      "path": "src/eml_attachment_remover/native_posix_stage.py",
-      "scope": "create",
-      "anchor": "except BaseException as primary:",
-      "tool": "ruff",
-      "rules": "blind-except",
-      "reason": "The private stage acquisition boundary must release handles and preserve a cancellation/exit exception if it occurs during ownership transfer."
-    },
-    {
       "path": "src/eml_attachment_remover/native_posix.py",
       "scope": "_close_bound_directory",
       "anchor": "except BaseException as exc:",
