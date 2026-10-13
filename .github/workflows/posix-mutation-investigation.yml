@@ -38,6 +38,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # This investigation workflow is branch-only: exclude its temporary
+          # steps from the repository's authoritative workflow-parity audit.
+          # The workflow itself is removed from the eventual PR.
+          rm .github/workflows/posix-mutation-investigation.yml
           uv run python -B - <<'PY'
           from dataclasses import replace
 
@@ -69,7 +73,9 @@ jobs:
 
           mutation_task.run_mutation = focused
           try:
-              tasks._mutation(workers=3)
+              # An investigative partial run is never allowed to qualify the
+              # full mutation gate or bypass its final statistics validator.
+              tasks._mutation(workers=3, preflight=False)
           except ExceptionGroup as error:
               failures = error.exceptions
               if (
