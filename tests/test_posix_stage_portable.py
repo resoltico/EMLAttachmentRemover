@@ -91,7 +91,7 @@ class _FakePOSIX:
                 self.entry_kind | self.mode,
                 st_dev=self.entry_device,
                 st_ino=self.entry_inode,
-                st_uid=self.owner
+                st_uid=self.owner,
             )
         if dir_fd == _STAGE and name == b"candidate" and self.payload:
             return _Info(
@@ -207,8 +207,8 @@ def test_portable_stage_refuses_missing_effective_uid(
     with monkeypatch.context() as context:
         context.delattr(_FakePOSIX, "geteuid")
         with pytest.raises(
-        AppError, match=r"^private stage directory was renamed or replaced$"
-    ):
+            AppError, match=r"^private stage directory was renamed or replaced$"
+        ):
             native_posix_stage.discard(parent, candidate, _NAME)
     assert kernel.outer
 
@@ -323,7 +323,6 @@ def test_portable_creation_cleanup_retains_all_native_failures(
     )
     assert len(result) == 4
     assert kernel.closed == [_FILE, _STAGE]
-
 
 
 @pytest.mark.parametrize(
