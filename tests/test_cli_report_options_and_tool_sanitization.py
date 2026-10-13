@@ -29,9 +29,12 @@ def test_raw_parser_tracks_final_value_options(
     arguments: list[str], consumed: set[int]
 ) -> None:
     """Preparse scanning consumes a lone dash and signed numbers as values."""
-    assert cli_parser._consumed_option_values(  # ruff: ignore[private-member-access] - final value ownership.
-        arguments
-    ) == consumed
+    assert (
+        cli_parser._consumed_option_values(  # ruff: ignore[private-member-access] - final value ownership.
+            arguments
+        )
+        == consumed
+    )
     if arguments == ["source.eml", "--output-format", "json"]:
         assert cli_parser.raw_json_requested(arguments)
 
