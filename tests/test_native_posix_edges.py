@@ -322,9 +322,7 @@ def test_posix_publication_primitives_are_platform_independent(
         native_posix.open_bound_destination(changed)
     assert native_posix.descriptor_identity(7).inode == metadata.st_ino
     monkeypatch.setattr(native_posix_stage, "create", lambda *_args: 7)
-    monkeypatch.setattr(
-        native_posix_stage, "publish", lambda *_args: False
-    )
+    monkeypatch.setattr(native_posix_stage, "publish", lambda *_args: False)
     monkeypatch.setattr(native_posix_stage, "discard", lambda *_args: None)
     assert native_posix.create_private_stage(directory, b"stage") == 7
     assert (

@@ -33,9 +33,7 @@ def _native(
     free = Mock(return_value=released)
     library = SimpleNamespace(acl_init=init, acl_set_fd=set_fd, acl_free=free)
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(
-        ctypes, "CDLL", lambda *_args, **_kwargs: library
-    )
+    monkeypatch.setattr(ctypes, "CDLL", lambda *_args, **_kwargs: library)
     monkeypatch.setattr(ctypes, "get_errno", lambda: failure)
     return init, set_fd, free
 
@@ -101,9 +99,7 @@ def test_acl_init_failure_never_attempts_write_or_free(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing ACL descriptor fails before staging candidate creation."""
-    monkeypatch.setattr(
-        os, "fchmod", lambda *_args: None, raising=False
-    )
+    monkeypatch.setattr(os, "fchmod", lambda *_args: None, raising=False)
     init, set_fd, free = _native(monkeypatch, initialized=0)
     with pytest.raises(OSError, match=os.strerror(errno.EACCES)):
         native_posix_acl.restrict(9)

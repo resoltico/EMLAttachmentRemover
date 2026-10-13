@@ -158,9 +158,7 @@ def _bound(monkeypatch: pytest.MonkeyPatch) -> tuple[_FakePOSIX, BoundDirectory]
     """
     kernel = _FakePOSIX()
     monkeypatch.setattr(native_posix_stage, "os", kernel)
-    monkeypatch.setattr(
-        native_posix_acl, "restrict", lambda _fd: None
-    )
+    monkeypatch.setattr(native_posix_acl, "restrict", lambda _fd: None)
     return kernel, BoundDirectory(_PARENT, windows=False)
 
 
