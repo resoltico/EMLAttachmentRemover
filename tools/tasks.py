@@ -281,6 +281,7 @@ def _capture_mutation_diagnostics() -> None:
         lambda mutant: mutation_task.show_mutant(
             paths, sys.executable, environment, mutant
         ),
+        reviewed_manifest=MUTATION_EQUIVALENTS,
     )
 
 
