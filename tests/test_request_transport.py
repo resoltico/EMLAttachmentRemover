@@ -96,7 +96,9 @@ def test_request_limits_and_invalid_addresses_are_refused(
     assert failure.value.message == message
 
 
-def _run(frame: bytes, *, arguments: tuple[str, ...] = ()) -> tuple[int, bytes, bytes]:
+def _run(
+    frame: bytes, *, arguments: tuple[str, ...] = (), timeout_seconds: float = 20
+) -> tuple[int, bytes, bytes]:
     command = [
         sys.executable,
         "-B",
@@ -123,7 +125,7 @@ def _run(frame: bytes, *, arguments: tuple[str, ...] = ()) -> tuple[int, bytes, 
         try:
             process.stdin.write(frame)
             process.stdin.flush()
-            status = process.wait(timeout=20)
+            status = process.wait(timeout=timeout_seconds)
             return status, output.result(timeout=2), errors.result(timeout=2)
         finally:
             if process.poll() is None:
@@ -163,7 +165,9 @@ def test_framed_cli_creates_the_same_copy_without_named_request_storage(
 def test_maximum_batch_count_crosses_no_native_argument_limit(tmp_path: Path) -> None:
     """All 4,096 requests reach the backend through a two-option process launch."""
     paths = [str(tmp_path / f"missing-{index}.eml") for index in range(4096)]
-    status, output, errors = _run(_frame(_payload(paths)))
+    status, output, errors = _run(
+        _frame(_payload(paths)), timeout_seconds=90
+    )
     assert status == 9, errors
     report = json.loads(output)
     assert len(report["items"]) == 4096

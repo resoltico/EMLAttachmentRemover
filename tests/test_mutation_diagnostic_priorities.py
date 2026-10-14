@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from typing import TYPE_CHECKING, TypedDict, cast
 from unittest.mock import Mock, patch
@@ -140,7 +141,7 @@ def test_reviewed_manifest_resolves_both_supported_import_modes(
     with (
         patch.object(mutation_diagnostics, "__package__", package),
         patch.object(
-            mutation_diagnostics.importlib,
+            importlib,
             "import_module",
             return_value=validator,
         ) as import_module,
