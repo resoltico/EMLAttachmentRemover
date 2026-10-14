@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from typing import TYPE_CHECKING, TypedDict, cast
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import pytest
 from tools import mutation_diagnostics
 
 if TYPE_CHECKING:
@@ -105,3 +107,51 @@ def test_invalid_review_manifest_cannot_suppress_mutation_failure_diagnostics(
             reviewed_manifest=tmp_path / "broken.json",
         )
     assert _index(paths[2])["mutants"][0]["status"] == "survived"
+
+
+def test_surviving_mutants_have_stable_lexical_tiebreaks(tmp_path: Path) -> None:
+    """Evidence order must not depend on how equivalent-priority results arrived."""
+    paths = _case(
+        tmp_path,
+        "pkg.z.x_last__mutmut_1: survived\npkg.a.x_first__mutmut_1: survived\n",
+    )
+    mutation_diagnostics.collect(*paths, lambda mutant: f"patch {mutant}")
+    assert [item["mutant"] for item in _index(paths[2])["mutants"]] == [
+        "pkg.a.x_first__mutmut_1",
+        "pkg.z.x_last__mutmut_1",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("package", "module_name"),
+    [
+        (None, "mutation_manifest"),
+        ("tools", "tools.mutation_manifest"),
+    ],
+)
+def test_reviewed_manifest_resolves_both_supported_import_modes(
+    tmp_path: Path, package: str | None, module_name: str
+) -> None:
+    """Script and package invocation must select their canonical validator."""
+    reviewed_id = "pkg.a.x_reviewed__mutmut_1"
+    paths = _case(tmp_path, f"{reviewed_id}: survived\n")
+    manifest = tmp_path / "tools" / "equivalent_mutants.json"
+    validator = Mock()
+    validator.load_equivalents.return_value = {reviewed_id: "reviewed"}
+    with (
+        patch.object(mutation_diagnostics, "__package__", package),
+        patch.object(
+            importlib,
+            "import_module",
+            return_value=validator,
+        ) as import_module,
+    ):
+        mutation_diagnostics.collect(
+            *paths, lambda mutant: f"patch {mutant}", reviewed_manifest=manifest
+        )
+    import_module.assert_called_once_with(module_name)
+    validator.load_equivalents.assert_called_once_with(
+        manifest,
+        (tmp_path / "src" / "eml_attachment_remover", tmp_path / "tools"),
+    )
+    assert _index(paths[2])["mutants"][0]["mutant"] == reviewed_id

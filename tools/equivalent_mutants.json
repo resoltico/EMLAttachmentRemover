@@ -123,10 +123,6 @@
       "rationale": "Omitting an explicit trailing None passes the same final_address value to ExistingEntry."
     },
     {
-      "mutant": "eml_attachment_remover.native_posix.x__inspect_source_identity__mutmut_2",
-      "rationale": "The include_address flag is consumed only by truthiness. None and False both inspect identity without querying an address."
-    },
-    {
       "mutant": "eml_attachment_remover.native_posix_stage.x_create__mutmut_17",
       "rationale": "The initial unowned directory-descriptor sentinel changes from -1 to -2. Successful os.open overwrites it; failed acquisition passes either negative value to cleanup, which owns only descriptors >= 0. No native syscall, ownership transfer or observable error differs."
     },
@@ -721,6 +717,22 @@
     {
       "mutant": "tools.macos_runtime_source.x_extract__mutmut_8",
       "rationale": "The authenticated pins select Zstandard tar archives. CPython 3.14 tarfile.open auto-detects that same compression when the explicit r:zst mode is omitted; mismatching bytes are refused by size and digest first."
+    },
+    {
+      "mutant": "tools.mutation_diagnostics.x__reviewed_ids__mutmut_2",
+      "rationale": "The first argument of typing.cast is not examined at runtime. Substituting None for the quoted protocol type leaves the exact imported validator module and returned reviewed IDs unchanged."
+    },
+    {
+      "mutant": "tools.mutation_diagnostics.x__reviewed_ids__mutmut_6",
+      "rationale": "The string describing the typing.cast protocol is static type metadata only. This replacement changes neither importlib selection nor validator execution; typing.cast returns its second operand unchanged."
+    },
+    {
+      "mutant": "tools.mutation_diagnostics.x__reviewed_ids__mutmut_7",
+      "rationale": "Changing the quoted typing.cast protocol name to lowercase does not affect the runtime: typing.cast returns the module object without inspecting or resolving that type name."
+    },
+    {
+      "mutant": "tools.mutation_diagnostics.x__reviewed_ids__mutmut_8",
+      "rationale": "Changing only the quoted typing.cast protocol name to uppercase is inert at runtime. The same module is imported, validated and returned by typing.cast."
     },
     {
       "mutant": "tools.mutation_integrity.x__inventory__mutmut_16",
