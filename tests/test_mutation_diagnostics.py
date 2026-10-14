@@ -192,10 +192,19 @@ def test_show_mutant_asks_mutmut_for_exactly_that_mutant() -> None:
 
 def test_the_task_collects_diagnostics_from_the_campaign_evidence() -> None:
     """The task wires the canonical evidence paths and the mutant patch runner."""
-    calls: list[tuple[Path, Path, Path, str]] = []
+    calls: list[tuple[Path, Path, Path, str, Path | None]] = []
 
-    def collect(results: Path, stats: Path, output: Path, show: object) -> None:
-        calls.append((results, stats, output, show("m")))  # type: ignore[operator]
+    def collect(
+        results: Path,
+        stats: Path,
+        output: Path,
+        show: object,
+        *,
+        reviewed_manifest: Path | None = None,
+    ) -> None:
+        calls.append(
+            (results, stats, output, show("m"), reviewed_manifest)  # type: ignore[operator]
+        )
 
     with (
         patch.object(tasks.mutation_diagnostics, "collect", collect),
@@ -208,6 +217,7 @@ def test_the_task_collects_diagnostics_from_the_campaign_evidence() -> None:
             tasks.PROJECT_ROOT / "mutants" / "mutmut-stats.json",
             tasks.BUILD_DIRECTORY / "mutation-diagnostics",
             "m",
+            tasks.MUTATION_EQUIVALENTS,
         )
     ]
 
@@ -346,7 +356,8 @@ def test_the_task_hands_the_evidence_paths_and_environment_to_the_patch_runner()
         seen.append(args)
         return "diff"
 
-    def collect(*args: object) -> None:
+    def collect(*args: object, **kwargs: object) -> None:
+        assert kwargs == {"reviewed_manifest": tasks.MUTATION_EQUIVALENTS}
         args[3]("mutant")  # type: ignore[operator]
 
     with (

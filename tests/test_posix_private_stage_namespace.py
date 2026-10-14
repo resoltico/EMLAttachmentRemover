@@ -209,6 +209,7 @@ def test_private_stage_preserves_both_acquisition_and_cleanup_failures(
             context.setattr(os, "close", close_then_fail)
             with pytest.raises(BaseExceptionGroup) as caught:
                 native_posix_stage.create(parent, name)
+        assert caught.value.message == "private-stage acquisition and cleanup failures"
         assert len(caught.value.exceptions) == 2
         assert isinstance(caught.value.exceptions[0], AppError)
         assert isinstance(caught.value.exceptions[1], OSError)
@@ -361,11 +362,33 @@ def test_posix_directory_close_keeps_independent_handle_failures(
         if both_fail:
             with pytest.raises(BaseExceptionGroup) as caught:
                 native_posix.close_bound_directory(parent)
+            assert caught.value.message == "directory handle cleanup failures"
             assert len(caught.value.exceptions) == 2
         else:
             with pytest.raises(OSError, match="simulated close failure"):
                 native_posix.close_bound_directory(parent)
     assert seen == [902, 901]
+    assert parent.private_stage_directory_fd is None
+
+
+@pytest.mark.parametrize("failure_type", [KeyboardInterrupt, SystemExit])
+def test_posix_directory_close_preserves_interruption_and_closes_both_handles(
+    monkeypatch: pytest.MonkeyPatch, failure_type: type[BaseException]
+) -> None:
+    """An interrupted first close never prevents retirement of the parent handle."""
+    parent = BoundDirectory(121, windows=False, private_stage_directory_fd=122)
+    seen: list[int] = []
+
+    def close(descriptor: int) -> None:
+        seen.append(descriptor)
+        if descriptor == 122:
+            raise failure_type
+
+    with monkeypatch.context() as context:
+        context.setattr(os, "close", close)
+        with pytest.raises(failure_type):
+            native_posix.close_bound_directory(parent)
+    assert seen == [122, 121]
     assert parent.private_stage_directory_fd is None
 
 

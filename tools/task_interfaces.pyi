@@ -110,6 +110,8 @@ class MutationDiagnostics(Protocol):
         stats: Path,
         output: Path,
         show: Callable[[str], str],
+        *,
+        reviewed_manifest: Path | None = ...,
     ) -> None: ...
 
 class MutationLease(Protocol):

@@ -2988,7 +2988,7 @@
     {
       "path": "tests/test_cli_report_options_and_tool_sanitization.py",
       "scope": "test_raw_parser_tracks_final_value_options",
-      "anchor": "assert cli_parser._consumed_option_values(",
+      "anchor": "cli_parser._consumed_option_values(",
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "final value ownership."
@@ -7164,7 +7164,7 @@
     {
       "path": "tests/test_mutation_diagnostics.py",
       "scope": "test_the_task_collects_diagnostics_from_the_campaign_evidence.collect",
-      "anchor": "calls.append((results, stats, output, show(\"m\")))",
+      "anchor": "(results, stats, output, show(\"m\"), reviewed_manifest)",
       "tool": "mypy",
       "rules": "operator",
       "reason": "Explicit typing boundary for script-mode imports, dynamic stream interfaces or negative-test fixtures; strict mypy continues checking the enclosing code."
@@ -8968,6 +8968,14 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "Exercise the real stage-owner cleanup aggregator against simultaneous independent synthetic native release failures on every CI platform."
+    },
+    {
+      "path": "tests/test_posix_stage_portable.py",
+      "scope": "test_partial_acquisition_retains_descriptor_zero",
+      "anchor": "cleanup = native_posix_stage._creation_cleanup",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "Assert descriptor zero is retired by partial stage acquisition cleanup, whether owned as the file or directory handle."
     }
   ],
   "swift_exceptions": []

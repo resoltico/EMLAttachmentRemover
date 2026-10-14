@@ -182,7 +182,7 @@ class MutationTaskContracts(unittest.TestCase):
         self.assertEqual(mutation_task.mutation_worker_count(2), 1)
         self.assertEqual(mutation_task.mutation_worker_count(10), 8)
         self.assertEqual(mutation_task.mutation_worker_count(64), 8)
-        self.assertEqual(mutation_task.mutation_worker_count(4), 2)
+        self.assertEqual(mutation_task.mutation_worker_count(4), 3)
         with patch.object(os, "process_cpu_count", return_value=10):
             self.assertEqual(mutation_task.mutation_worker_count(), 8)
         with patch.object(os, "process_cpu_count", return_value=None):

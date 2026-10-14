@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import pytest
 
 from eml_attachment_remover import native_posix_acl, native_posix_stage
-from eml_attachment_remover.domain import AppError, BoundDirectory
+from eml_attachment_remover.domain import AppError, BoundDirectory, ExitCode
 
 _PARENT = 11
 _STAGE = 22
@@ -40,8 +40,10 @@ class _FakePOSIX:
         self.file_entry_kind = stat.S_IFREG
         self.held_inode = 2
         self.entry_inode = 2
+        self.entry_device = 1
         self.file_inode = 3
         self.file_entry_inode = 3
+        self.file_entry_device = 1
         self.owner = 1000
         self.uid = 1000
         self.fail_directory_open = False
@@ -83,13 +85,20 @@ class _FakePOSIX:
             Its stat-like identity and file type metadata.
 
         """
-        assert not follow_symlinks
+        assert follow_symlinks is False
         if dir_fd == _PARENT and name == _NAME and self.outer:
             return _Info(
-                self.entry_kind | self.mode, st_ino=self.entry_inode, st_uid=self.owner
+                self.entry_kind | self.mode,
+                st_dev=self.entry_device,
+                st_ino=self.entry_inode,
+                st_uid=self.owner,
             )
         if dir_fd == _STAGE and name == b"candidate" and self.payload:
-            return _Info(self.file_entry_kind | 0o600, st_ino=self.file_entry_inode)
+            return _Info(
+                self.file_entry_kind | 0o600,
+                st_dev=self.file_entry_device,
+                st_ino=self.file_entry_inode,
+            )
         raise FileNotFoundError(errno.ENOENT, "no such synthetic entry")
 
     def mkdir(self, name: bytes, mode: int, *, dir_fd: int) -> None:
@@ -197,14 +206,16 @@ def test_portable_stage_refuses_missing_effective_uid(
     candidate = native_posix_stage.create(parent, _NAME)
     with monkeypatch.context() as context:
         context.delattr(_FakePOSIX, "geteuid")
-        with pytest.raises(AppError, match="private stage directory was renamed"):
+        with pytest.raises(
+            AppError, match=r"^private stage directory was renamed or replaced$"
+        ):
             native_posix_stage.discard(parent, candidate, _NAME)
     assert kernel.outer
 
 
 @pytest.mark.parametrize(
     "fault",
-    ["missing", "entry-type", "held-type", "inode", "owner", "permissions"],
+    ["missing", "entry-type", "held-type", "inode", "device", "owner", "permissions"],
 )
 def test_portable_private_stage_rejects_changed_outer_identity(
     monkeypatch: pytest.MonkeyPatch, fault: str
@@ -220,11 +231,15 @@ def test_portable_private_stage_rejects_changed_outer_identity(
         kernel.held_kind = stat.S_IFREG
     elif fault == "inode":
         kernel.entry_inode = 99
+    elif fault == "device":
+        kernel.entry_device = 2
     elif fault == "owner":
         kernel.owner += 1
     else:
         kernel.mode = 0o755
-    with pytest.raises(AppError, match="private stage directory was renamed"):
+    with pytest.raises(
+        AppError, match=r"^private stage directory was renamed or replaced$"
+    ):
         native_posix_stage.discard(parent, stage, _NAME)
 
 
@@ -234,12 +249,12 @@ def test_portable_stage_rejects_unowned_or_unavailable_namespace(
     """Unowned bindings cannot acquire or publish a fabricated file."""
     kernel, parent = _bound(monkeypatch)
     parent.private_stage_directory_fd = _STAGE
-    with pytest.raises(AppError, match="private stage already owned"):
+    with pytest.raises(AppError, match=r"^private stage already owned$"):
         native_posix_stage.create(parent, _NAME)
     parent.private_stage_directory_fd = None
-    with pytest.raises(AppError, match="private stage directory is absent"):
+    with pytest.raises(AppError, match=r"^private stage directory is absent$"):
         native_posix_stage.publish(parent, _FILE, _NAME, b"out")
-    with pytest.raises(AppError, match="private stage directory is absent"):
+    with pytest.raises(AppError, match=r"^private stage directory is absent$"):
         native_posix_stage.discard(parent, _FILE, _NAME)
     kernel.fail_mkdir = True
     with pytest.raises(FileExistsError, match="synthetic directory exists"):
@@ -260,8 +275,12 @@ def test_portable_create_releases_every_acquired_owner(
         kernel.entry_inode = 9
     with pytest.raises(
         (OSError, AppError), match=r"open failed|private staging directory changed"
-    ):
+    ) as failure:
         native_posix_stage.create(parent, _NAME)
+    if failure_point == "identity":
+        assert isinstance(failure.value, AppError)
+        assert failure.value.code == ExitCode.OUTPUT_CONFLICT
+        assert failure.value.message == "private staging directory changed"
     assert parent.private_stage_directory_fd is None
     if failure_point == "directory":
         assert kernel.outer
@@ -281,8 +300,9 @@ def test_portable_creation_preserves_independent_cleanup_errors(
     kernel, parent = _bound(monkeypatch)
     kernel.fail_file_open = True
     kernel.fail_close = True
-    with pytest.raises(BaseExceptionGroup, match="acquisition and cleanup") as failure:
+    with pytest.raises(BaseExceptionGroup) as failure:
         native_posix_stage.create(parent, _NAME)
+    assert failure.value.message == "private-stage acquisition and cleanup failures"
     assert len(failure.value.exceptions) == 2
     assert isinstance(failure.value.exceptions[0], OSError)
     assert kernel.closed == [_STAGE]
@@ -305,7 +325,37 @@ def test_portable_creation_cleanup_retains_all_native_failures(
     assert kernel.closed == [_FILE, _STAGE]
 
 
-@pytest.mark.parametrize("fault", ["held-kind", "entry-kind", "inode"])
+@pytest.mark.parametrize(
+    ("file_fd", "directory_fd"),
+    [(0, -1), (-1, 0)],
+)
+def test_partial_acquisition_retains_descriptor_zero(
+    monkeypatch: pytest.MonkeyPatch, file_fd: int, directory_fd: int
+) -> None:
+    """A valid zero descriptor belongs to the owner and must be retired."""
+    kernel, parent = _bound(monkeypatch)
+    operations: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        native_posix_stage,
+        "_unlink_candidate",
+        lambda fd: operations.append(("unlink", fd)),
+    )
+    monkeypatch.setattr(
+        native_posix_stage,
+        "_remove_private_directory",
+        lambda _parent, _name, fd: operations.append(("rmdir", fd)),
+    )
+    cleanup = native_posix_stage._creation_cleanup  # ruff: ignore[private-member-access] - descriptor-zero ownership regression.
+    assert cleanup(parent, _NAME, directory_fd, file_fd) == []
+    if file_fd == 0:
+        assert kernel.closed == [0]
+        assert operations == []
+    else:
+        assert kernel.closed == [0]
+        assert operations == [("unlink", 0), ("rmdir", 0)]
+
+
+@pytest.mark.parametrize("fault", ["held-kind", "entry-kind", "inode", "device"])
 def test_portable_publish_rejects_source_substitution(
     monkeypatch: pytest.MonkeyPatch, fault: str
 ) -> None:
@@ -316,9 +366,11 @@ def test_portable_publish_rejects_source_substitution(
         kernel.file_kind = stat.S_IFDIR
     elif fault == "entry-kind":
         kernel.file_entry_kind = stat.S_IFDIR
+    elif fault == "device":
+        kernel.file_entry_device = 2
     else:
         kernel.file_entry_inode = 45
-    with pytest.raises(AppError, match="private staged file changed"):
+    with pytest.raises(AppError, match=r"^private staged file changed$"):
         native_posix_stage.publish(parent, candidate, _NAME, b"out")
 
 
