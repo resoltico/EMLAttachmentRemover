@@ -112,8 +112,7 @@ def test_surviving_mutants_have_stable_lexical_tiebreaks(tmp_path: Path) -> None
     """Evidence order must not depend on how equivalent-priority results arrived."""
     paths = _case(
         tmp_path,
-        "pkg.z.x_last__mutmut_1: survived\n"
-        "pkg.a.x_first__mutmut_1: survived\n",
+        "pkg.z.x_last__mutmut_1: survived\npkg.a.x_first__mutmut_1: survived\n",
     )
     mutation_diagnostics.collect(*paths, lambda mutant: f"patch {mutant}")
     assert [item["mutant"] for item in _index(paths[2])["mutants"]] == [
