@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from typing import TYPE_CHECKING
+
+import pytest
 
 from tests.test_swift_fuzzing import MACOS, _run, copied_ui
 
@@ -49,3 +52,32 @@ def test_seed_above_the_configured_input_limit_is_rejected(
     assert metadata["stage"] == "snapshot"
     assert "exceeds configured max_length" in metadata["error"]
     assert not (output / "compile.log").exists()
+
+
+@MACOS
+def test_outer_deadline_preserves_runner_cleanup_and_stops_compiler(
+    copied_ui: Path, tmp_path: Path
+) -> None:
+    (copied_ui / "swiftc.sh").write_text(
+        '#!/bin/sh\ncase "$1" in\n--version) echo fixture;;\n'
+        "--toolchain-directory) echo /fixture;;\n"
+        '*) trap "" INT; sleep 30 & echo $!; wait;;\nesac\n'
+    )
+    output = tmp_path / "campaign"
+    with pytest.raises(subprocess.TimeoutExpired):
+        _run(copied_ui, output, "-runs=100", "-max_total_time=5", timeout_seconds=5)
+    metadata = json.loads((output / "invocation.json").read_text())
+    assert metadata["stage"] == "compile"
+    assert metadata["outcome"] == "failed"
+    assert "KeyboardInterrupt" in metadata["error"]
+    assert metadata["scratch_cleanup"] == "passed"
+    assert not (output / "scratch").exists()
+    child = (output / "compile.log").read_text().strip()
+    state = subprocess.run(
+        ["/bin/ps", "-p", child, "-o", "stat="],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    assert not state.stdout.strip() or state.stdout.strip().startswith("Z")

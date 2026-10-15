@@ -15,6 +15,8 @@ from typing import Final
 
 import pytest
 
+from tests import swift_fuzz_support
+
 ROOT: Final = Path(__file__).resolve().parents[1]
 UI: Final = ROOT / "integrations/macos-ui"
 MACOS: Final = pytest.mark.skipif(
@@ -34,14 +36,11 @@ def _environment() -> dict[str, str]:
     }
 
 
-def _run(ui: Path, output: Path, *options: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["/bin/sh", str(ui / "fuzz.sh"), str(output), *options],
-        env=_environment(),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=45,
+def _run(
+    ui: Path, output: Path, *options: str, timeout_seconds: float | None = None
+) -> subprocess.CompletedProcess[str]:
+    return swift_fuzz_support.run_campaign(
+        ui, output, options, environment=_environment(), timeout_seconds=timeout_seconds
     )
 
 
