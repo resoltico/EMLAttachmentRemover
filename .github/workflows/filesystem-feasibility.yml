@@ -47,6 +47,9 @@ jobs:
           $contract = $LASTEXITCODE
           cargo +1.99.0-${{ matrix.target }} run --locked --manifest-path tests/native-filesystem/Cargo.toml --target ${{ matrix.target }} -- --diagnose-absolute-pinned-name
           $alternative = $LASTEXITCODE
+          cargo +1.99.0-${{ matrix.target }} run --locked --manifest-path tests/native-filesystem/Cargo.toml --target ${{ matrix.target }} -- --diagnose-absolute-write-sharing
+          $unsafeAlternative = $LASTEXITCODE
           Write-Output "Required relative-root contract exit: $contract"
           Write-Output "Proposed absolute-pinned-name experiment exit: $alternative"
-          if ($contract -ne 0 -or $alternative -ne 0) { exit 1 }
+          Write-Output "Unsafe write-sharing diagnostic exit: $unsafeAlternative (never product acceptance)"
+          if ($contract -ne 0 -or $alternative -ne 0 -or $unsafeAlternative -ne 0) { exit 1 }

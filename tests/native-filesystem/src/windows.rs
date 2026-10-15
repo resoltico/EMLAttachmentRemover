@@ -76,6 +76,16 @@ impl OrdinaryToken {
         if unsafe { ImpersonateLoggedOnUser(token.0.as_raw_handle()) } == 0 {
             return Err(std::io::Error::last_os_error().into());
         }
+        let mut admin_member = 1;
+        // SAFETY: null token selects this thread's effective impersonation token;
+        // SID storage and BOOL output remain live for the call.
+        if unsafe { CheckTokenMembership(ptr::null_mut(), disabled.Sid, &mut admin_member) } == 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        assert_eq!(
+            admin_member, 0,
+            "effective token still enables Administrators"
+        );
         println!("PASS: executing with Administrators SID deny-only and privileges disabled");
         Ok(token)
     }
@@ -93,7 +103,7 @@ impl Drop for OrdinaryToken {
 fn wide(path: &OsStr) -> Vec<u16> {
     path.encode_wide().chain(Some(0)).collect()
 }
-fn directory(path: &Path, writable: bool) -> Result<OwnedHandle> {
+fn directory(path: &Path, writable: bool, share_write: bool) -> Result<OwnedHandle> {
     let path = wide(path.as_os_str());
     let access = if writable {
         GENERIC_READ | GENERIC_WRITE
@@ -106,7 +116,7 @@ fn directory(path: &Path, writable: bool) -> Result<OwnedHandle> {
         CreateFileW(
             path.as_ptr(),
             access,
-            FILE_SHARE_READ,
+            FILE_SHARE_READ | if share_write { FILE_SHARE_WRITE } else { 0 },
             ptr::null(),
             OPEN_EXISTING,
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
@@ -218,7 +228,7 @@ fn flush(handle: &OwnedHandle, label: &str) -> Result<()> {
     println!("PASS: {label}");
     Ok(())
 }
-fn assert_write_excluded(path: &Path) -> Result<()> {
+fn write_excluded(path: &Path) -> Result<bool> {
     let name = wide(path.as_os_str());
     // SAFETY: terminated live path; successful handle (which means the guard failed)
     // is immediately owned and dropped. We never attempt an actual mutation.
@@ -236,11 +246,12 @@ fn assert_write_excluded(path: &Path) -> Result<()> {
     if raw != INVALID_HANDLE_VALUE {
         // SAFETY: the unexpected successful raw handle still has one owner.
         drop(unsafe { OwnedHandle::from_raw_handle(raw) });
-        return Err("pin allowed write access needed for in-place junction conversion".into());
+        println!("UNSAFE EXPERIMENT: pinned destination admits concurrent reparse-write handle");
+        return Ok(false);
     }
     assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(32));
     println!("PASS: pinned ordinary directory excludes concurrent reparse-write handle");
-    Ok(())
+    Ok(true)
 }
 
 pub(super) fn run() -> Result<()> {
@@ -271,7 +282,9 @@ pub(super) fn run() -> Result<()> {
     );
     println!("Native Windows machine: {native_machine:#x}; no emulation");
     let _ordinary_token = OrdinaryToken::enter()?;
-    let absolute = std::env::args_os().any(|arg| arg == "--diagnose-absolute-pinned-name");
+    let share_write = std::env::args_os().any(|arg| arg == "--diagnose-absolute-write-sharing");
+    let absolute =
+        share_write || std::env::args_os().any(|arg| arg == "--diagnose-absolute-pinned-name");
     let root = tempfile::tempdir()?;
     let destination = root.path().join("destination");
     std::fs::create_dir(&destination)?;
@@ -280,12 +293,37 @@ pub(super) fn run() -> Result<()> {
     // Hold the resolved expression top down, never allowing write/delete sharing.
     let ancestors: Vec<_> = destination.ancestors().skip(1).collect();
     for ancestor in ancestors.into_iter().rev() {
-        pins.push(directory(ancestor, false)?);
+        pins.push(directory(ancestor, false, false)?);
     }
-    let parent = directory(&destination, true)?;
+    let parent = directory(&destination, true, share_write)?;
+    let mut fs_name = [0u16; 32];
+    // SAFETY: live directory handle; optional outputs null; writable fs-name array
+    // has the stated UTF-16 capacity. This observes the actual test volume.
+    if unsafe {
+        GetVolumeInformationByHandleW(
+            parent.as_raw_handle(),
+            ptr::null_mut(),
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            fs_name.as_mut_ptr(),
+            fs_name.len() as u32,
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let fs_end = fs_name
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(fs_name.len());
+    let fs_name = String::from_utf16(&fs_name[..fs_end])?;
+    assert_eq!(fs_name, "NTFS", "test requires an actual NTFS volume");
+    println!("Observed filesystem: {fs_name}");
     let parent_id = identity(parent.as_raw_handle())?;
-    println!("PASS: resolved ordinary ancestor chain pinned without write/delete sharing");
-    assert_write_excluded(&destination)?;
+    println!("Resolved ordinary ancestor chain pinned; destination write sharing={share_write}");
+    assert_eq!(write_excluded(&destination)?, !share_write);
     flush(&parent, "directory FlushFileBuffers before publication")?;
     let bytes = b"verified synthetic mail";
     let stage = candidate(&destination.join("stage.tmp"), bytes)?;
