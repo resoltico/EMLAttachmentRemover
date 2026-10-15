@@ -124,7 +124,8 @@ fn inspect(path: &Path, verbatim: bool) -> io::Result<()> {
         match part {
             Component::Prefix(prefix) => match prefix.kind() {
                 Prefix::Disk(drive) if !verbatim && drive.is_ascii_alphabetic() => {}
-                Prefix::VerbatimDisk(drive) if verbatim && drive.is_ascii_alphabetic() => {}
+                Prefix::VerbatimDisk(drive)
+                    if verbatim && drive.is_ascii_alphabetic() && units.get(6) == Some(&92) => {}
                 Prefix::UNC(server, share) if !verbatim => {
                     unc_prefix(server, share)?;
                 }
@@ -317,6 +318,7 @@ mod tests {
     fn native_capture_preserves_units_and_rejects_verbatim_dots_before_io() {
         let context = PathContext::capture().unwrap();
         for path in [
+            r"\\?\C:",
             r"\\?\C:relative",
             r"\\?\C:\a\..\b",
             r"\\?\C:\a\.\b",
@@ -338,6 +340,10 @@ mod tests {
             assert!(context.resolve(Path::new(path)).is_err(), "{path}");
         }
         let unpaired = PathBuf::from(OsString::from_wide(&[120, 0xd800]));
+        assert_eq!(
+            context.resolve(Path::new(r"\\?\C:\")).unwrap(),
+            Path::new(r"\\?\C:\")
+        );
         let actual = context.resolve(&unpaired).unwrap();
         assert!(
             actual
