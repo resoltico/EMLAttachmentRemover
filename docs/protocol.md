@@ -35,3 +35,44 @@ rendering, filesystem admission or output delivery. Decoder tests cannot qualify
 those still-required capabilities. Core and filesystem crates have no JSON
 dependency. Request shape and native-byte tests live in the frontend package;
 business path limits remain in core.
+
+## Core diagnostic vocabulary
+
+The core enum owns these stable codes and permitted phases. A source test checks
+this contract table against every code/phase pair. This is a vocabulary and pure
+preparation classification, not evidence that all runner scenarios are implemented.
+Pre-stream `InvalidRequest` remains separate. An allowed INTERRUPTED/publish pair
+does not establish that interruption happened before the edge; the runner must
+later enforce that condition and preserve all observed publication effects.
+
+<!-- error-vocabulary:start -->
+| Code | Allowed phases |
+|---|---|
+| READ_FAILED | admission/collection/read |
+| SOURCE_NOT_REGULAR | admission/collection/read |
+| SOURCE_CHANGED | admission/collection/read/publish |
+| MALFORMED | prepare |
+| LIMIT_EXCEEDED | prepare |
+| PROTECTED | prepare |
+| NO_BODY | prepare |
+| INTERNAL | prepare |
+| INPUT_ADMISSION_FAILED | admission/collection |
+| INPUT_LIMIT_EXCEEDED | admission/collection |
+| NO_INPUTS | admission/collection |
+| OUTPUT_OVERLAP | admission |
+| DESTINATION_COLLISION | admission/existing/publish |
+| DESTINATION_EXISTS | admission/existing/publish |
+| SOURCE_DESTINATION_ALIAS | admission/existing/publish |
+| DESTINATION_UNSUPPORTED | stage/publish |
+| BIND_FAILED | admission/read/stage/address |
+| STAGE_FAILED | stage |
+| WRITE_FAILED | write/publish |
+| FILE_SYNC_FAILED | sync |
+| NAMESPACE_SYNC_FAILED | sync |
+| ADDRESS_CHANGED | address |
+| ADDRESS_UNVERIFIED | address |
+| CLEANUP_FAILED | cleanup |
+| EXISTING_SYNC_FAILED | existing |
+| INTERRUPTED | read/prepare/existing/stage/write/sync/address/publish |
+| OUTPUT_FAILED | delivery |
+<!-- error-vocabulary:end -->

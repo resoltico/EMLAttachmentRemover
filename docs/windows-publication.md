@@ -93,6 +93,69 @@ token. It refuses preexisting impersonation unchanged and restores the verified
 prior no-impersonation state on every entered exit. The guard cannot move across
 threads. This is restricted-owner evidence, not a separate-SID interactive login.
 
+## Proposed creation-boundary revision (unqualified)
+
+This is a design for independent challenge, not an implemented or supported
+Windows publication route. The failed gate above remains required until a
+replacement proves the same product properties on both native Windows CPUs.
+The extracted design pack remains unchanged. Its filesystem contract §6 final
+paragraph calls for a challenged revision when native evidence disproves its
+Win32 route; this proposal retains the owner's fixed behavior and release scope.
+
+The proposal replaces only §6's post-root pathname creation in steps 1–3 and
+the associated claim that directory sharing excludes every in-place reparse
+change. Resolve an explicitly linked output root once, preserve its requested
+address and bound identity, reject subsequent reparse components, and retain
+only the current item's bounded ancestor handles. Open/create each later child
+with a single validated native component relative to the *held parent handle*.
+Use create-only disposition for a new mirrored directory or random candidate,
+and open-only disposition for an existing directory; never infer ownership from
+an open-or-create result. Validate the returned object type, reparse state,
+volume/file identity and actual create disposition. A competing entry is
+accepted only under the existing ordinary-directory rules. No absolute
+`CreateDirectoryW` or pathname `CREATE_NEW` fallback may follow a failed
+relative operation. The candidate remains a held, exclusive object; its bounded
+name, complete bytes, independent verification and synchronization precede the
+already reviewed no-replace rename. Cleanup remains handle/identity based.
+
+The focused API candidate is generated `windows-sys` 0.61.2 `NtCreateFile`
+with `OBJECT_ATTRIBUTES.RootDirectory`, a single-component `UNICODE_STRING`,
+create/open dispositions and explicit file/directory and reparse options.
+[Microsoft documents relative names and these dispositions](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile),
+and [documents `OBJ_DONT_REPARSE`](https://learn.microsoft.com/en-us/windows/win32/api/ntdef/ns-ntdef-_object_attributes).
+Generated bindings for the function and structures exist in the pinned crate;
+that is source feasibility, not a successful GNU LLVM link or native behavior.
+The user-mode documentation describes `RootDirectory` as a handle obtained by
+an earlier `NtCreateFile`; the design must not silently assume the existing
+`CreateFileW` pin satisfies that documented precondition. Challenge a
+consistent relative-open chain and its exact access, sharing, completion,
+buffer-lifetime and ownership rules before adding product FFI. Any accepted
+revision must record explicit supersession of the extracted contract's §6
+`NtCreateFile` exclusion, WP3's Win32-only wording and §10's reviewed unsafe
+scope in this implementation addendum. The existing native
+`NtSetInformationFile` rename correction remains in force.
+
+Unchanged requirements are source/existing-destination nonmutation, bound
+destination confinement, complete verified regular candidate, atomic
+no-replace publication of that held candidate, final destination-inherited
+Windows ACL, file/namespace synchronization, requested-address and identity
+checks, and truthful published/unknown/cleanup outcomes. Relative creation
+alone does not prove the candidate's metadata remains ordinary while its
+temporary access follows an inheritable destination ACL. That property needs
+a separate challenged protection mechanism or native proof; do not infer it
+from exclusive data sharing.
+
+Qualification first needs bounded synthetic tests on both native Windows CPUs
+showing that each relative mirror-directory and candidate-file creation under
+a changed held parent either stays in the originally bound directory or fails,
+with no entry or bytes at the redirected target. Prove actual create-only
+ownership, conflict/no-replace behavior, candidate and final identities,
+requested-address truth, synchronization and owned cleanup. Then run the full
+filesystem contract §10 cases and release-runtime checks. Keep the old-method
+failure as explicit evidence and a negative control; only an implemented
+replacement with an equivalent-or-stronger passing native gate can change the
+product qualification status. A compile-only result cannot do so.
+
 References: [reparse control access](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4aeefef8-92c3-4abc-af7a-a610caf8a165),
 [CreateFile sharing categories](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
 

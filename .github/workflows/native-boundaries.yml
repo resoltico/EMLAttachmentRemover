@@ -47,6 +47,8 @@ jobs:
         run: |
           cargo clippy --locked --package eml-core --all-targets -- -D warnings
           cargo test --locked --package eml-core --test request
+      - name: Native core diagnostic vocabulary
+        run: cargo test --locked --package eml-core --test diagnostic
       - name: Native protocol request decoding
         run: |
           cargo clippy --locked --package remove-eml-attachments --all-targets -- -D warnings

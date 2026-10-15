@@ -9,6 +9,8 @@ jobs:
     name: NTFS / ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
+    env:
+      CREATION_GATE_TEST: windows::test_reparse::tests::attribute_only_writer_must_not_convert_strictly_pinned_directory
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +27,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install native GNU LLVM host
+        id: native_toolchain
         run: |
           rustup toolchain install 1.99.0-${{ matrix.target }} --profile minimal --component rust-mingw
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -33,6 +36,13 @@ jobs:
           $linker = Join-Path $sysroot 'lib/rustlib/${{ matrix.target }}/bin/rust-lld.exe'
           if (!(Test-Path $linker)) { throw 'Missing selected sysroot rust-lld' }
           'CARGO_TARGET_${{ matrix.target }}_LINKER'.ToUpper().Replace('-', '_') + '=' + $linker >> $env:GITHUB_ENV
+      - name: Prepare owned filesystem scratch
+        id: filesystem_scratch
+        run: |
+          $scratch = Join-Path $env:GITHUB_WORKSPACE 'target/native-feasibility/scratch'
+          New-Item -ItemType Directory -Force $scratch | Out-Null
+          'TEMP=' + $scratch >> $env:GITHUB_ENV
+          'TMP=' + $scratch >> $env:GITHUB_ENV
       - name: Native core request resource admission
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
@@ -45,6 +55,16 @@ jobs:
           if ($requestExit -ne 0) { exit $requestExit }
           if (@($requestOutput | Where-Object { $_.ToString() -match '^running [1-9][0-9]* tests?$' }).Count -ne 1) { throw 'Expected nonempty native request tests' }
           if (@($requestOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 1) { throw 'Request tests require nonzero passes and zero failures, ignores or filters' }
+      - name: Native core diagnostic vocabulary
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
+        run: |
+          $diagnosticOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --test diagnostic --target ${{ matrix.target }} -- --color never 2>&1
+          $diagnosticExit = $LASTEXITCODE
+          $diagnosticOutput | ForEach-Object { Write-Output $_ }
+          if ($diagnosticExit -ne 0) { exit $diagnosticExit }
+          if (@($diagnosticOutput | Where-Object { $_.ToString() -match '^running [1-9][0-9]* tests?$' }).Count -ne 1) { throw 'Expected nonempty native diagnostic tests' }
+          if (@($diagnosticOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 1) { throw 'Diagnostic tests require nonzero passes and zero failures, ignores or filters' }
       - name: Native protocol request decoding
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
@@ -55,19 +75,39 @@ jobs:
           if ($decoderExit -ne 0) { exit $decoderExit }
           if (@($decoderOutput | Where-Object { $_.ToString() -match '^running [1-9][0-9]* tests?$' }).Count -ne 1) { throw 'Expected nonempty native decoder tests' }
           if (@($decoderOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 1) { throw 'Decoder tests require nonzero passes and zero failures, ignores or filters' }
-      - name: Record native host and run actual filesystem operations
+      - name: Native filesystem primitive
+        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
         env:
           EXPECTED_TARGET: ${{ matrix.target }}
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
         run: |
           rustc +1.99.0-${{ matrix.target }} -vV
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $env:TEMP = Join-Path $env:GITHUB_WORKSPACE 'target/native-feasibility/scratch'
-          New-Item -ItemType Directory -Force $env:TEMP | Out-Null
-          $env:TMP = $env:TEMP
           cargo +1.99.0-${{ matrix.target }} run --locked --manifest-path tests/native-filesystem/Cargo.toml --target ${{ matrix.target }}
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $probeName = 'windows::test_reparse::tests::attribute_only_writer_must_not_convert_strictly_pinned_directory'
+          exit $LASTEXITCODE
+      - name: Native core naming
+        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
+        run: |
+          cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --lib naming --target ${{ matrix.target }}
+          exit $LASTEXITCODE
+      - name: Native file metadata and path tests
+        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
+        run: |
+          $libraryOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-fs --lib --target ${{ matrix.target }} -- --skip $env:CREATION_GATE_TEST --nocapture --color never 2>&1
+          $libraryExit = $LASTEXITCODE
+          $libraryOutput | ForEach-Object { Write-Output $_ }
+          if ($libraryExit -ne 0) { exit $libraryExit }
+          if (@($libraryOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 1 filtered out;' }).Count -ne 1) { throw 'Expected positive non-gate library tests with only the separately executed creation gate filtered' }
+      - name: Required bound-destination creation gate
+        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
+        run: |
+          $probeName = $env:CREATION_GATE_TEST
           $testListing = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-fs --lib --target ${{ matrix.target }} -- --list
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (@($testListing | Where-Object { $_ -eq ($probeName + ': test') }).Count -ne 1) { throw 'Expected exactly one discovered attribute-only safety test' }
@@ -77,7 +117,3 @@ jobs:
           if ($probeExit -ne 0) { exit $probeExit }
           if (@($probeOutput | Where-Object { $_.ToString().Trim() -eq 'running 1 test' }).Count -ne 1) { throw 'Expected exactly one executed attribute-only safety test' }
           if (@($probeOutput | Where-Object { $_.ToString() -match '^test result: ok\. 1 passed; 0 failed; 0 ignored;' }).Count -ne 1) { throw 'Attribute-only safety test did not pass with zero ignored cases' }
-          cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --lib naming --target ${{ matrix.target }}
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +1.99.0-${{ matrix.target }} test --locked --package eml-fs --lib --target ${{ matrix.target }} -- --skip $probeName --nocapture
-          exit $LASTEXITCODE

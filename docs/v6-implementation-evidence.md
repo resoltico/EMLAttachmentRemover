@@ -347,3 +347,35 @@ subsequently passed all18 with zero failures/ignores/filters. This serial result
 does not close the default-parallel failure or prove cleanup of its earlier
 resources. Independent process-test isolation/lifecycle review remains pending;
 the decoder slice does not alter that code or remove the failing observation.
+
+At exact commit `4f285c83dd9d8f967576ae87921f26a600e73fb9`, all six native
+decoder steps passed 16 tests each, and all six resource-admission steps passed
+nine each, with zero failures/ignores/filters. The
+[Unix/process run38814349629](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38814349629)
+passed all six jobs. The
+[Windows run38814349638](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38814349638)
+passed both independent decoder/admission steps, then failed the unchanged
+creation-protection gate on each CPU (zero passed, one failed, nine filtered).
+Later Windows naming/metadata tests did not execute. These results qualify only
+the implemented decoder/admission slices; executable lifecycle, product workflow,
+archives, GUI and complete platform publication remain incomplete.
+
+## Typed diagnostic and independent Windows check ordering checkpoint
+
+Core now owns 27 semantic codes, 12 phases, their stable spellings and permitted
+phase pairs. Exhaustive pure preparation classification preserves its existing
+MIME refusal domain; `InvalidRequest` remains pre-stream. Three new tests compare
+every pair with the hand-reviewed protocol table and cover preparation and
+interruption boundaries. Local core74 tests passed, zero failures/ignores/filters;
+core all-targets Clippy passed locally and as Windows MSVC compile-only preflight.
+Independent source review reran core74/Clippy and found no concrete defect.
+This does not implement the runner or enforce pre-edge interruption by itself.
+
+The Windows workflow now separates existing primitive, naming and read/path tests
+from the real required creation gate. Independent steps and the gate run after
+successful native-toolchain/scratch setup even if another test step failed;
+there is no continue-on-error. The gate's exact discovery, execution and assertions
+remain intact. Only that separately executed test is filtered from the other
+library run. This ordering is reviewed and actionlint passes; its native outcomes
+remain pending until the next exact-head run. The separately reviewed Windows
+creation proposal remains an unqualified direction, with no product-code change.

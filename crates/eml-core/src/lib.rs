@@ -1,6 +1,7 @@
 //! Reusable immutable message preparation for EML Attachment Remover.
 #![forbid(unsafe_code)]
 
+mod diagnostic;
 mod grammar;
 mod message;
 #[cfg(any(unix, windows))]
@@ -9,6 +10,7 @@ mod plan;
 #[cfg(any(unix, windows))]
 mod request;
 mod verify;
+pub use diagnostic::{ErrorCode, ErrorPhase};
 #[cfg(any(unix, windows))]
 pub use naming::{COPY_SUFFIX, NamingError, copy_basename};
 #[cfg(any(unix, windows))]
@@ -74,6 +76,27 @@ pub enum PreparationError {
         /// Bounded authored explanation, never raw source header text.
         detail: &'static str,
     },
+}
+impl PreparationError {
+    /// Classify pure preparation through the shared semantic vocabulary.
+    /// Native errors and prose never become protocol codes.
+    pub const fn code(&self) -> ErrorCode {
+        match self {
+            Self::Interrupted => ErrorCode::Interrupted,
+            Self::Refused { kind, .. } => match kind {
+                Refusal::Malformed => ErrorCode::Malformed,
+                Refusal::LimitExceeded => ErrorCode::LimitExceeded,
+                Refusal::Protected => ErrorCode::Protected,
+                Refusal::NoBody => ErrorCode::NoBody,
+                Refusal::Internal => ErrorCode::Internal,
+            },
+        }
+    }
+    /// This capability reports only preparation failures, including its own
+    /// cooperative stop. The runner owns other phases and publication effects.
+    pub const fn phase(&self) -> ErrorPhase {
+        ErrorPhase::Prepare
+    }
 }
 impl std::fmt::Display for PreparationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
