@@ -1,6 +1,7 @@
 //! Rust-only repository verification and distribution commands.
 #![forbid(unsafe_code)]
 mod campaign;
+mod distribution;
 mod fuzz;
 mod mutants;
 use clap::{Parser, Subcommand};
@@ -25,6 +26,8 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Print native target policy and expected archive identities; build nothing.
+    Distribution,
     /// Run one bounded pure-preparation fuzz campaign with owned corpus storage.
     Fuzz {
         #[arg(long,default_value_t=60,value_parser=clap::value_parser!(u64).range(1..=900))]
@@ -56,6 +59,14 @@ fn root() -> Result<PathBuf> {
     }
     Err("Run repository tasks from a Git checkout".into())
 }
+fn initialize_controller(root: &std::path::Path) -> Result<()> {
+    let controlled = xtask::process::Controller::new(root, &std::env::current_exe()?)?;
+    controlled.install_signals()?;
+    CONTROLLER
+        .set(controlled)
+        .map_err(|_| "Process controller was already initialized")?;
+    Ok(())
+}
 fn main() -> ExitCode {
     if let Some(exit) = xtask::process::helper_entry() {
         return exit;
@@ -63,14 +74,16 @@ fn main() -> ExitCode {
     let result = (|| {
         let args = Arguments::parse();
         let root = root()?;
-        let controlled = xtask::process::Controller::new(&root, &std::env::current_exe()?)?;
-        controlled.install_signals()?;
-        CONTROLLER
-            .set(controlled)
-            .map_err(|_| "Process controller was already initialized")?;
         match args.task {
-            Task::Fuzz { seconds } => fuzz::run(&root, seconds),
-            Task::Mutants { initial, diff } => mutants::run(&root, initial, diff.as_deref()),
+            Task::Distribution => distribution::run(&root),
+            Task::Fuzz { seconds } => {
+                initialize_controller(&root)?;
+                fuzz::run(&root, seconds)
+            }
+            Task::Mutants { initial, diff } => {
+                initialize_controller(&root)?;
+                mutants::run(&root, initial, diff.as_deref())
+            }
         }
     })();
     match result {

@@ -1,0 +1,36 @@
+# Expected distribution policy, not a record of completed native qualification.
+[policy]
+macos_minimum = "15.0"
+linux_minimum_ubuntu = "22.04"
+linux_glibc_maximum = "2.35"
+windows_rust_minimum = "10"
+
+[[targets]]
+platform = "macos-aarch64"
+target = "aarch64-apple-darwin"
+runner = "macos-15"
+
+[[targets]]
+platform = "macos-x86_64"
+target = "x86_64-apple-darwin"
+runner = "macos-15-intel"
+
+[[targets]]
+platform = "linux-x86_64"
+target = "x86_64-unknown-linux-gnu"
+runner = "ubuntu-22.04"
+
+[[targets]]
+platform = "linux-aarch64"
+target = "aarch64-unknown-linux-gnu"
+runner = "ubuntu-22.04-arm"
+
+[[targets]]
+platform = "windows-x86_64"
+target = "x86_64-pc-windows-gnullvm"
+runner = "windows-2022"
+
+[[targets]]
+platform = "windows-aarch64"
+target = "aarch64-pc-windows-gnullvm"
+runner = "windows-11-arm"

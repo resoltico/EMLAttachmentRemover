@@ -5,6 +5,21 @@ on:
 permissions:
   contents: read
 jobs:
+  distribution:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Derive Unix filesystem evidence matrix
+        id: targets
+        run: |
+          plan=$(cargo xtask distribution)
+          matrix=$(jq -ce '{include: [.native_targets[] | select(.os != "windows") | {platform,target,runner}]} | select(.include | length == 4)' <<< "$plan")
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
   probes:
     strategy:
       fail-fast: false
@@ -25,10 +40,11 @@ jobs:
           cargo test --locked --package xtask --bin xtask
           cargo test --locked --package xtask --test processes -- --test-threads=1
   filesystem:
+    name: Filesystem / ${{ matrix.platform }}
+    needs: distribution
     strategy:
       fail-fast: false
-      matrix:
-        runner: [ubuntu-22.04, ubuntu-22.04-arm, macos-15, macos-15-intel]
+      matrix: ${{ fromJSON(needs.distribution.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
@@ -39,6 +55,8 @@ jobs:
         run: |
           rustc -vV
           uname -a
+      - name: Native distribution planner
+        run: cargo xtask distribution
       - name: Held filesystem and namespace admission tests
         run: |
           cargo clippy --locked --package eml-fs --all-targets -- -D warnings

@@ -156,6 +156,70 @@ failure as explicit evidence and a negative control; only an implemented
 replacement with an equivalent-or-stronger passing native gate can change the
 product qualification status. A compile-only result cannot do so.
 
+## Candidate ACL decision for review (no policy change)
+
+The current requirement remains: filesystem contract §1 requires a complete,
+verified regular candidate, publication of that same held object, and Windows
+copies with the destination directory's inherited ACL. Section 6 creates the
+candidate directly in that directory with its inherited ACL; §7 requires
+truthful post-edge outcomes, §8 allows forced termination after publication,
+and §10 requires shared-directory, inherited-ACL and forced-stop evidence.
+Protocol 1 has fixed publication receipts and error codes, with no ACL-state
+receipt. This section proposes no exception to those requirements.
+
+The candidate question is whether another authority granted
+`FILE_WRITE_ATTRIBUTES` by an inherited ACL could make the staged file a
+reparse object between its last ordinary-file check and the rename edge.
+[Microsoft's file-system protocol](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4aeefef8-92c3-4abc-af7a-a610caf8a165)
+permits reparse-setting access through `FILE_WRITE_ATTRIBUTES` or
+`FILE_WRITE_DATA` and describes a data-file reparse operation, with a specific
+nonempty-stream refusal for the symlink tag. A reparse file can change later
+open behavior. The failed native **directory** test establishes that sharing
+is not a universal barrier to attribute-only opens; it does not prove this
+candidate-file race on the supported NTFS hosts. Nor does attribute-only access
+by itself establish changed message bytes. Candidate integrity remains an
+open technical question requiring a separate proof or refutation.
+
+Two policy paths need different evidence:
+
+1. **Keep the strict inherited-ACL requirement.** Qualify the existing
+   inherited-ACL candidate policy, or find a mechanism that protects its
+   ordinary-file metadata through the no-replace edge while retaining the
+   final inherited ACL at that edge and after a forced stop. The currently
+   reviewed APIs do not yet prove either. A last-moment metadata check alone
+   does not close a possible gap, and the old directory result cannot stand in
+   for candidate evidence. Keep the Windows gate failed until both address
+   confinement and candidate integrity are qualified on each native CPU.
+2. **Possible owner-level contract change, not accepted:** create the candidate
+   with a temporary restrictive security descriptor, publish the held complete
+   object, then apply and verify an ACL derived from the actual bound parent
+   through the held file handle. [NtCreateFile allows a creation security
+   descriptor](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile),
+   [CreatePrivateObjectSecurityEx derives inherited ACEs](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createprivateobjectsecurityex),
+   and [SetSecurityInfo changes security through a handle](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-setsecurityinfo).
+   [Rename does not assign a new default ACL](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights).
+   A successful `Created` could require final ACL verification. If the process
+   stops or ACL application fails after the edge, however, a complete final
+   copy may remain with the temporary restrictive ACL. That is a changed
+   permission guarantee, not merely ordinary failure reporting. A reported
+   failure would use the existing `Failed(Published(...))` effect, but that
+   representation does not itself describe the copy's ACL; a forced stop can
+   leave no item event. Protocol 1 has no structured ACL observation. Concrete
+   protocol review must decide whether existing code/detail is sufficient or
+   an added field is necessary; synchronization and cleanup receipts must not
+   be repurposed as ACL evidence. Reruns cannot silently rewrite an existing
+   copy's ACL. If this path later proves necessary, the owner-level decision is
+   the changed permission/crash guarantee and recovery behavior, not a choice
+   of wire fields. Its contract must state the ACL invariant before, at and
+   after the edge, the forced-stop residual, `Created` conditions, observable
+   failed-published state and recovery action before implementation.
+
+No reviewed API establishes an atomic ACL transition with the existing
+no-replace rename, but this is not a claim that no Windows solution exists.
+First resolve the exact candidate risk under the existing policy and challenge
+the strict path. Do not use the possible policy change to bypass that work or
+turn the current failed Windows gate green.
+
 References: [reparse control access](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4aeefef8-92c3-4abc-af7a-a610caf8a165),
 [CreateFile sharing categories](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
 

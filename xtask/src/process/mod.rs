@@ -1,9 +1,11 @@
 //! Owned verification processes with a separate session, guarded groups and explicit cleanup evidence.
+#[cfg(unix)]
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::{ffi::OsString, io::Read};
 use std::{
-    ffi::OsString,
     fs,
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
     process::{Command, ExitCode, ExitStatus},
     sync::{
@@ -45,9 +47,11 @@ impl ProcessResult {
 }
 /// A developer-only controller using an immutable owned helper executable.
 pub struct Controller {
+    #[cfg(unix)]
     pub(crate) helper: PathBuf,
     pub(crate) root: PathBuf,
     pub(crate) stopped: Arc<AtomicBool>,
+    #[cfg(unix)]
     pub(crate) inspector: PathBuf,
 }
 impl Controller {
@@ -73,9 +77,11 @@ impl Controller {
             fs::set_permissions(&helper, fs::Permissions::from_mode(0o700))?;
         }
         Ok(Self {
+            #[cfg(unix)]
             helper,
             root: root.to_owned(),
             stopped: Arc::new(AtomicBool::new(false)),
+            #[cfg(unix)]
             inspector: PathBuf::from("/bin/ps"),
         })
     }
@@ -154,6 +160,7 @@ impl Controller {
         Ok(fs::read(path)?)
     }
 }
+#[cfg(unix)]
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Request {
@@ -166,6 +173,7 @@ pub(crate) struct Request {
     inspector: Vec<u8>,
     capture: bool,
 }
+#[cfg(unix)]
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub(crate) enum Message {

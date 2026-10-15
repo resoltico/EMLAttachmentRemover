@@ -379,3 +379,47 @@ remain intact. Only that separately executed test is filtered from the other
 library run. This ordering is reviewed and actionlint passes; its native outcomes
 remain pending until the next exact-head run. The separately reviewed Windows
 creation proposal remains an unqualified direction, with no product-code change.
+
+At exact head `5974fecc11a2e896070fd732c65720f3fc462683`, the
+[Unix/process run38815521087](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38815521087)
+passed all six jobs. Diagnostic tests passed three cases on each of the six
+native platforms, with zero failures/ignores/filters. The
+[Windows run38815520996](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38815520996)
+passed primitive, naming (three passed, five intentionally filtered), and the
+previously unrun file metadata/path tests (nine passed, zero failed/ignored,
+one filtered for the separately executed gate) on both CPUs. The helper child
+reexecutes one existing path case; its pass is not another distinct test.
+The four new metadata/read cases cover zero-ID refusal, nonregular-file refusal,
+hard-link identity/excluded writer and changed-parent binding. Both real creation
+gates then failed with zero passed, one failed, nine filtered. Thus the independent
+checks are now observed rather than hidden behind that failure; Windows product
+creation is still unqualified and the default-parallel process issue remains open.
+
+## Distribution identity planner checkpoint
+
+`xtask/distribution.toml` is now the distribution policy authority for the exact
+six platform/target/runner records and deployment/runtime floors. The implemented
+`cargo xtask distribution` command derives native rows, static platform policy
+text and eight sorted expected archive identities. Version comes from actual
+locked/offline Cargo metadata, with workspace/package membership, source and
+manifest checks. Output is bounded metadata, not archives or qualification.
+Both current filesystem evidence matrices now consume those rows; the separate
+process-probe subset retains its own scope. Native Windows planner execution and
+unit tests precede the still-required real creation gate.
+
+Local macOS ARM: all15 xtask main unit tests passed, including six new distribution
+tests (zero failures/ignores/filters). The initial six-test selection intentionally
+filtered the nine existing tests; the complete15 run did not. Independent review
+reran all15 and local all-target Clippy and inspected the real command: version
+6.0.0, six rows, eight expected names, 3,555 output bytes and no campaign-helper
+creation. Local and Windows MSVC all-target Clippy passed; the latter is compile-only
+preflight. Both actual workflow projections produced the required four/two rows
+locally. Formatting, actionlint and whitespace checks passed. Native planner and
+portable tool-unit execution remain pending until the next exact-head CI run.
+
+Static Unix cfg annotations remove Windows-only unused imports/items/fields in
+the controller module without changing Unix forms or behavior. Campaign commands
+still initialize the same controller/signals; the metadata task bypasses them.
+Neither the unresolved default-parallel failure nor Windows publication is fixed
+by this planner. Required check/qualify/archive/notices/release tooling, full native
+products, GUI and artifact qualification remain incomplete.

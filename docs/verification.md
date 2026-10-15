@@ -4,6 +4,18 @@ The v6 workspace and product are still being implemented. The currently availabl
 Rust campaign commands are below; this document does not claim the remaining
 normal/native/archive/GUI gates exist or have passed yet.
 
+`cargo xtask distribution` prints the native target policy and expected archive
+identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.
+It creates no product archive or qualification record. The existing Unix and
+Windows filesystem evidence workflows consume its target rows; their separate
+process-probe subset is unchanged. This metadata task does not initialize the
+Unix campaign controller or signal handlers. Its fixed read-only Cargo metadata
+subprocess has ordinary Cargo lifecycle behavior, without a campaign cleanup or
+execution-deadline guarantee. Windows uses the workflow's explicit native GNU
+LLVM toolchain/target invocation; native execution remains separately evidenced.
+Compiler pins stay in rust-toolchain.toml and xtask/tools.toml; deployment/runtime
+floors in the distribution table are policies, not proof of OS execution.
+
 From a committed clean checkout with the tools in xtask/tools.toml installed:
 
 ```sh
