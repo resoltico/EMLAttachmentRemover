@@ -22,3 +22,20 @@ jobs:
           uname -a
       - name: Real owned process lifetime and signal probes
         run: cargo test --locked --package xtask --test processes -- --test-threads=1
+  filesystem:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-22.04-arm, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record actual compiler and machine
+        run: |
+          rustc -vV
+          uname -a
+      - name: Held filesystem and namespace admission tests
+        run: cargo test --locked --package eml-fs -- --nocapture

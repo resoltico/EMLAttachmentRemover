@@ -70,6 +70,34 @@ Missed/timeouts/incomplete/unclassified results fail; unviable is not caught and
 requires retained compiler evidence/source-local review. No global digest-based
 survivor registry or automatic equivalence waiver is used.
 
+## Bounded preparation campaign observations
+
+Source `8e3ed3277dd7faaaee7b665e0901c4f294d38799`, native macOS ARM64:
+
+- Fuzz run `run-aTbUer`: configured 60 seconds, actual 61 seconds,
+  1,540,438 executions, peak RSS 552 MiB, normal exit, no artifacts. All twelve
+  fixture and ten edge seeds were admitted; locked graphs and inputs were unchanged.
+  Controller reports no cancellation/deadline/survivors and completed cleanup.
+  Independent QA inspected the raw execution/build/control records and accepted
+  this bounded pure-preparation run. It proves no other platform/product gate.
+- Mutation run `run-CgbmO2`: baseline build/test passed 59 tests; all fifteen
+  discovered mutations were attempted (ten edit-range, five authorization).
+  Fourteen individually built and failed guard tests; zero missed or timed out.
+  One authorization FnValue replacement, exactly `Ok(Default::default())`, failed
+  its Build phase with E0277 because `Authorization: Default` is unsatisfied;
+  it had no Test phase. Authorization requires independently derived bytes/proof.
+  Independent QA reviewed the producer, diff, full compiler diagnostic and outcome
+  accounting and classified this single mutation as compiler-unviable, not caught
+  or equivalent. Every viable selected mutation was caught. Original automatic
+  result `qualified:false` remains intact; this paragraph records the separate
+  reviewed disposition and does not turn an unviable mutation into a test result.
+
+Raw retained evidence lives in the owned clean campaign checkout under
+`target/campaign-checkout.EuUzqu/source/target/{fuzz,mutations}/run-*` on this
+implementation host. Those files are execution evidence, not reproducible inputs
+or a replacement for final-head qualification. No full mutation or 900-second fuzz
+campaign was run.
+
 ## Verification process lifetime
 
 Private helpers in the developer xtask establish a fresh session and acknowledge

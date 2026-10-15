@@ -57,6 +57,37 @@ Required cross-UID, ACL/mask, mirrored-edge, substitution, residue, synchronizat
 and native-platform checks remain obligations. Same-UID interleavings or source
 inspection do not establish cross-UID execution or full WP3 acceptance.
 
+### Reviewed permission models
+
+Each held immediate mutation parent is inspected, including after a mount
+crossing and before identity-dependent pathname cleanup. Linux admits the ext2/3/4
+shared magic, tmpfs, XFS and Btrfs permission models; unknown types, including
+OverlayFS, FUSE, NFS, CIFS, 9p and FAT/exFAT, are refused for namespace creation.
+Recognition establishes the reviewed permission model, not full filesystem
+qualification. Every privacy, exclusive-publication and synchronization operation
+must still succeed. tmpfs is volatile: successful fsync reports an OS call, not
+persistent-media survival.
+
+Linux also reads the bounded numeric kernel overflowuid setting and refuses that
+owner value as trust evidence. An unavailable or unusable setting fails closed.
+Numeric ownership is interpreted under the active mount/user mappings. Another
+host UID granted equivalent owner authority by administrator-configured mappings
+belongs to the same-authority exclusion; absence of alternate owner-authority
+aliases is not proved by stat/fstatfs. Idmapped mounts have not been adversarially
+qualified. macOS refuses held volumes with MNT_IGNORE_OWNERSHIP. No mount setting
+or saved owner preference is changed.
+
+Source reads and existing-only comparisons do not require namespace creation
+admission. Local APFS currently rejects invalid UTF-8 names with EILSEQ, so those
+tests record that volume refusal separately from representable-name checks;
+Linux must execute the invalid-byte round trip. Unit cases for model constants
+or ownership flags do not establish a real mount's behavior.
+
+Model references: [Linux VFS deletion](https://github.com/torvalds/linux/blob/v6.8/fs/namei.c#L2931-L3004),
+[POSIX ACL permissions](https://github.com/torvalds/linux/blob/v6.8/fs/posix_acl.c#L375-L443),
+[tmpfs](https://docs.kernel.org/filesystems/tmpfs.html),
+[filesystem ownership mappings](https://www.kernel.org/doc/html/latest/filesystems/idmappings.html).
+
 References: [unlink/unlinkat](https://man7.org/linux/man-pages/man2/unlink.2.html),
 [POSIX ACL mask and mode](https://man7.org/linux/man-pages/man5/acl.5.html),
 [Apple vnode authorization](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_subr.c).

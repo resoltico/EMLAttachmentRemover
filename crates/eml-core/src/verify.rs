@@ -17,6 +17,9 @@ struct Evaluated {
     claims: Vec<Claim>,
     stripped: BTreeSet<String>,
 }
+// No identity-free Default exists: bytes and the retained-structure proof must
+// be independently derived from this message. The generated FnValue mutation
+// Ok(Default::default()) is therefore compiler-unviable, not caught by tests.
 pub(crate) struct Authorization {
     bytes: Vec<u8>,
     proof: Proof,
