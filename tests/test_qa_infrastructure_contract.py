@@ -9,7 +9,14 @@ from pathlib import Path
 from typing import Final
 
 PROJECT_ROOT: Final = Path(__file__).resolve().parents[1]
-EXPECTED_CONDITIONAL_TESTS: Final[frozenset[str]] = frozenset()
+# Interval-timer proofs require POSIX signals; the dispatch wrapper is exercised
+# on every platform by test_trace_implementation.py's four selector cases.
+EXPECTED_CONDITIONAL_TESTS: Final[frozenset[str]] = frozenset({
+    (
+        "tests/test_deadline_support.py:pytestmark:pytest.mark.skipif("
+        "not hasattr(signal, 'SIGALRM'), reason='POSIX operation deadlines')"
+    ),
+})
 
 
 def _decorator_name(call: ast.Call) -> str | None:

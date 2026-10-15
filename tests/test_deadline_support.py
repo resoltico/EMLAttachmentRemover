@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import inspect
 import signal
 import subprocess
 import sys
 import time
 
 import pytest
-from mutmut.mutation.trampoline import wrap_in_trampoline
 
 from tests.deadline_support import finite_main_call
-from tests.trace_implementation_support import traced_implementation
 
 pytestmark = pytest.mark.skipif(
     not hasattr(signal, "SIGALRM"), reason="POSIX operation deadlines"
@@ -65,27 +62,6 @@ def test_preparation_does_not_consume_the_operation_deadline() -> None:
     assert len(calls) == 1
     assert signal.getsignal(alarm) == previous
     assert get_timer(timer_kind) == (0.0, 0.0)
-
-
-def test_operation_wrapper_preserves_selected_mutmut_dispatch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def original() -> str:
-        return "original"
-
-    def selected() -> str:
-        return "selected"
-
-    trampoline = wrap_in_trampoline({
-        "_mutmut_orig": original,
-        selected.__name__: selected,
-    })(original)
-    with monkeypatch.context() as scoped:
-        scoped.setenv("MUTANT_UNDER_TEST", f"{original.__module__}.{selected.__name__}")
-        bounded = finite_main_call(trampoline)
-        assert bounded() == "selected"
-        assert inspect.unwrap(bounded) is original
-        assert traced_implementation(bounded) is selected
 
 
 @pytest.mark.parametrize("mode", ["direct", "bounded"])

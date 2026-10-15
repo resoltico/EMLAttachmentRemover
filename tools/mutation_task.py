@@ -7,6 +7,7 @@ import importlib
 import os
 import shutil
 import subprocess
+import tempfile
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
@@ -166,9 +167,8 @@ def command_runner(
     """
     # Standard-library tempfile users (including subprocess call journals) must
     # share campaign ownership too: a killed worker cannot run their finalizers.
-    # The validated private parent supplies the access boundary.
-    temporary = storage.parent / "tmp"
-    temporary.mkdir()
+    # Keep an independent owner-only mode; a parent search ACL need not inherit.
+    temporary = tempfile.mkdtemp(dir=storage.parent)
     coverage_variables = tuple(
         variable for variable in os.environ if variable.startswith("COVERAGE_")
     )
@@ -185,7 +185,7 @@ def command_runner(
         updates["COVERAGE_FILE"] = str(storage.parent / ".mutmut-coverage")
         updates[storage_variable] = str(storage)
         updates["EML_MUTATION_PYTEST_TEMPORARY_ROOT"] = str(storage)
-        updates.update({name: str(temporary) for name in ("TMPDIR", "TEMP", "TMP")})
+        updates.update(dict.fromkeys(("TMPDIR", "TEMP", "TMP"), temporary))
         checkpoint = storage.parent / "mutation-workspace.json"
         if profile == MUTATION_PROFILE:
             updates[mutation_integrity.CHECKPOINT_VARIABLE] = str(checkpoint)

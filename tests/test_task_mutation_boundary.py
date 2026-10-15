@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -23,31 +24,39 @@ class TaskMutationBoundaryTests(unittest.TestCase):
         retained: list[Path] = []
 
         def action(storage: Path) -> None:
-            runner = tasks.mutation_task.command_runner(
-                tasks._run,
-                storage,
-                tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE,
-                tasks.OBSERVABILITY_VARIABLES,
-                project,
-            )
-            # Simulate a worker that cannot run TemporaryDirectory finalizers.
-            runner((
-                sys.executable,
-                "-c",
-                (
-                    "import os, pathlib, tempfile; "
-                    "root = pathlib.Path(tempfile.mkdtemp(prefix='worker-')); "
-                    "(root / 'journal').write_bytes(b'child calls'); os._exit(0)"
-                ),
-            ))
-            retained.append(storage.parent / "tmp")
+            with patch.object(tasks, "_run", wraps=tasks._run) as run:
+                runner = tasks.mutation_task.command_runner(
+                    run,
+                    storage,
+                    tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE,
+                    tasks.OBSERVABILITY_VARIABLES,
+                    project,
+                )
+                # Simulate a worker that cannot run TemporaryDirectory finalizers.
+                runner((
+                    sys.executable,
+                    "-c",
+                    (
+                        "import os, pathlib, tempfile; "
+                        "root = pathlib.Path(tempfile.mkdtemp(prefix='worker-')); "
+                        "(root / 'journal').write_bytes(b'child calls'); os._exit(0)"
+                    ),
+                ))
+            retained.append(Path(run.call_args.kwargs["environment_updates"]["TMPDIR"]))
+            self.assertEqual(retained[-1].parent, storage.parent)
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(retained[-1].stat().st_mode), 0o700)
             self.assertEqual(len(list(retained[-1].iterdir())), 1)
             self.assertEqual(
                 next(retained[-1].iterdir()).joinpath("journal").read_bytes(),
                 b"child calls",
             )
 
-        tasks.hypothesis_runner.run_isolated(action, project)
+        previous_umask = os.umask(0)
+        try:
+            tasks.hypothesis_runner.run_isolated(action, project)
+        finally:
+            os.umask(previous_umask)
         self.assertFalse(retained[0].parent.exists())
 
     def test_mutation_runner_closure_forwards_exact_isolation_inputs(self) -> None:
@@ -94,13 +103,16 @@ class TaskMutationBoundaryTests(unittest.TestCase):
                 environment_updates={"PUBLIC_UPDATE": "yes"},
                 environment_removals=("PUBLIC_REMOVE",),
             )
+        temporary = Path(run.call_args_list[0].kwargs["environment_updates"]["TMPDIR"])
+        self.assertEqual(temporary.parent, storage.parent)
+        self.assertTrue(temporary.is_dir())
         storage_update = {
             "COVERAGE_FILE": str(storage.parent / ".mutmut-coverage"),
             "EML_MUTATION_PYTEST_TEMPORARY_ROOT": str(storage),
             tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE: str(storage),
-            "TMPDIR": str(storage.parent / "tmp"),
-            "TEMP": str(storage.parent / "tmp"),
-            "TMP": str(storage.parent / "tmp"),
+            "TMPDIR": str(temporary),
+            "TEMP": str(temporary),
+            "TMP": str(temporary),
         }
         common_removals = (
             *tasks.OBSERVABILITY_VARIABLES,
