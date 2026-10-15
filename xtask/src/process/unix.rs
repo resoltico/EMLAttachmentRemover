@@ -345,6 +345,43 @@ pub(crate) fn pin(helper: &Path, session: Pid, group: Option<Pid>) -> Result<Pin
         }
     }
 }
+fn retained_pin_waitability(helper: &Path, session: Pid) -> Result<()> {
+    use rustix::process::{WaitId, WaitIdOptions, kill_process, waitid};
+    let mut first = pin(helper, session, None)?;
+    kill_process(Pid::from_child(&first.child), Signal::KILL)?;
+    let began = Instant::now();
+    loop {
+        match waitid(
+            WaitId::Pid(Pid::from_child(&first.child)),
+            WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG,
+        ) {
+            Ok(Some(_)) => break,
+            Ok(None) if began.elapsed() < Duration::from_secs(2) => {
+                std::thread::sleep(Duration::from_millis(5))
+            }
+            _ => {
+                let _ = first.child.wait();
+                return Err("Exited group pins must remain waitable before reaping".into());
+            }
+        }
+    }
+    // A second owned member must join while the dead first pin is unreaped.
+    let joined = pin(helper, session, Some(first.id));
+    let mut second = match joined {
+        Ok(pin) => pin,
+        Err(error) => {
+            let _ = first.child.wait();
+            return Err(error);
+        }
+    };
+    kill_process_group(first.id, Signal::KILL)?;
+    let first_status = first.child.wait()?;
+    let second_status = second.child.wait()?;
+    if first_status.success() || second_status.success() {
+        return Err("Waitability pin probe did not observe real termination".into());
+    }
+    Ok(())
+}
 #[derive(Clone)]
 struct Row {
     pid: Pid,
@@ -622,6 +659,7 @@ pub(super) fn session_entry() -> ExitCode {
         let signal = stopped.clone();
         ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
         waitable()?;
+        retained_pin_waitability(&helper, session)?;
         frame(
             &mut std::io::stdout().lock(),
             &Message::Ready {

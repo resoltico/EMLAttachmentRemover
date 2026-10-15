@@ -38,6 +38,9 @@ impl Campaign {
         if git(&source, &["rev-parse", "HEAD"])? != sha {
             return Err("Campaign source clone identity differs from admitted HEAD".into());
         }
+        // Cargo resolves configuration from the actual CWD and all ancestors,
+        // including ignored target/.cargo paths between root and snapshot.
+        require_stock_topology(&source)?;
         fs::create_dir(directory.join("tmp"))?;
         Ok(Self {
             directory,
@@ -147,14 +150,24 @@ fn hook_name(name: &str) -> bool {
         "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
         "CARGO_BUILD_RUSTC",
         "CARGO_BUILD_RUSTDOC",
+        "CARGO_BUILD_RUSTFLAGS",
         "RUSTFLAGS",
         "CARGO_ENCODED_RUSTFLAGS",
     ]
     .contains(&name)
         || (name.starts_with("CARGO_TARGET_")
-            && (name.ends_with("_RUNNER") || name.ends_with("_LINKER")))
+            && (name.ends_with("_RUNNER")
+                || name.ends_with("_LINKER")
+                || name.ends_with("_RUSTFLAGS")))
 }
 fn config_hooks(value: &toml::Value) -> bool {
+    if value
+        .get("build")
+        .and_then(|build| build.get("rustflags"))
+        .is_some_and(|flags| flags.as_array().is_none_or(|flags| !flags.is_empty()))
+    {
+        return true;
+    }
     if value
         .get("build")
         .and_then(toml::Value::as_table)
@@ -179,9 +192,34 @@ fn config_hooks(value: &toml::Value) -> bool {
         .get("target")
         .and_then(toml::Value::as_table)
         .is_some_and(|targets| {
-            targets
-                .values()
-                .any(|target| target.get("runner").is_some() || target.get("linker").is_some())
+            targets.iter().any(|(name, target)| {
+                if target.get("runner").is_some() || target.get("linker").is_some() {
+                    return true;
+                }
+                let Some(flags) = target.get("rustflags") else {
+                    return false;
+                };
+                if flags.as_array().is_some_and(Vec::is_empty) {
+                    return false;
+                }
+                let approved = [
+                    "-C",
+                    "linker-flavor=ld.lld",
+                    "-C",
+                    "link-self-contained=yes",
+                    "-C",
+                    "target-feature=+crt-static",
+                ];
+                !["x86_64-pc-windows-gnullvm", "aarch64-pc-windows-gnullvm"]
+                    .contains(&name.as_str())
+                    || flags.as_array().is_none_or(|flags| {
+                        flags.len() != approved.len()
+                            || flags
+                                .iter()
+                                .zip(approved)
+                                .any(|(flag, expected)| flag.as_str() != Some(expected))
+                    })
+            })
         })
     {
         return true;
@@ -222,12 +260,12 @@ mod topology_tests {
         for config in [
             "[build]\nrustc-wrapper='cache'",
             "[target.host]\nrunner='daemon'",
+            "[target.host]\nrustflags=['-C','linker=/wrapper']",
+            "[build]\nrustflags=['-C','linker=/wrapper']",
             "[env]\nRUSTC_WRAPPER='cache'",
         ] {
             assert!(config_hooks(&toml::from_str(config).unwrap()));
         }
-        assert!(!config_hooks(
-            &toml::from_str("[target.host]\nrustflags=['-C','overflow-checks=yes']").unwrap()
-        ));
+        assert!(!config_hooks(&toml::from_str("[target.x86_64-pc-windows-gnullvm]\nrustflags=['-C','linker-flavor=ld.lld','-C','link-self-contained=yes','-C','target-feature=+crt-static']").unwrap()));
     }
 }
