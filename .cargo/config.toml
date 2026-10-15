@@ -5,4 +5,4 @@ rustflags = ["-C", "linker-flavor=ld.lld", "-C", "link-self-contained=yes", "-C"
 rustflags = ["-C", "linker-flavor=ld.lld", "-C", "link-self-contained=yes", "-C", "target-feature=+crt-static"]
 
 [alias]
-xtask = "run --locked --package xtask --"
+xtask = "run --locked --package xtask --bin xtask --"

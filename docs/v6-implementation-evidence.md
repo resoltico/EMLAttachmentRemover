@@ -219,3 +219,34 @@ owned-process deadline test exercises termination/reaping. These tests prove
 controller properties, not actual fuzz execution or native product integration.
 The remaining check/qualify/archive/notices/release entry points are not yet
 implemented or claimed as passing at this checkpoint.
+
+## Verification lifetime correction checkpoint
+
+Independent QA found that the initial developer driver could leave nested
+cargo-mutants process groups after parent termination, accept an overdue observed
+success and resolve origin/main against the clone's different origin. No named
+campaign was run with those known defects.
+
+The replacement uses private developer-only session/pin helpers, parent signal
+and EOF control, startup/waitability admission, scoped same-session group joins,
+unreaped pin custody, bounded freeze/rescan/KILL observations and separate worker/
+deadline/cancellation/survivor/cleanup evidence. Setup capture commands use the
+same controller and separate stdout documents from stderr diagnostics. BASE is
+resolved to an immutable commit in the caller checkout before clone/fetch.
+Compiler/runner/wrapper hooks require explicit review. The actual assumptions
+and failure limits are in verification.md; there is no universal process-table
+snapshot or malicious-daemon sandbox claim.
+
+Local macOS 27 ARM64: 17 actual process probes passed, 0 failed/ignored/filtered,
+including parent INT/TERM/KILL, ordinary-background and nested ignored-TERM
+workers, late group creation, cross-owned-session EPERM, unreaped dead pins,
+TERM-surviving pins, frozen supervisor death HUP/CONT cascade, startup/inspection
+failure, overdue completion and separate JSON/stderr capture. An initial
+post-termination observation failed under PID churn; bounded retries now require
+two stable clean observations rather than treating instability as success.
+A shell SIGCHLD-ignore launch remained waitable on this host; its probe now
+requires either actual startup refusal or complete real waits/cleanup, without
+claiming unsafe disposition inspection. One accidentally empty exact-name
+selection was rejected as evidence and rerun using its full test name (1 passed).
+Clippy with warnings denied and actionlint passed. The new process-probes workflow
+runs actual Linux/macOS counterparts; their results remain pending until execution.

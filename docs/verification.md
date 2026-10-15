@@ -61,8 +61,45 @@ explicitly not applicable and does not cover other changed parser/workflow code.
 
 The driver uses profile mutants, baseline run, one job, copy-target=false,
 test-workspace=false, cap-lints=true, --locked Cargo arguments, 15-second tests,
-120-second builds and a 45-minute total deadline. It checks baseline, each admitted
+120-second per-mutant builds and a 45-minute execution deadline. Baseline
+build time is not capped by cargo-mutants' per-mutant option; it is bounded by
+that outer execution deadline. Additional bounded cleanup grace is recorded
+separately. It checks baseline, each admitted
 mutant identity, execution completeness, per-outcome classifications and counts.
 Missed/timeouts/incomplete/unclassified results fail; unviable is not caught and
 requires retained compiler evidence/source-local review. No global digest-based
 survivor registry or automatic equivalence waiver is used.
+
+## Verification process lifetime
+
+Private helpers in the developer xtask establish a fresh session and acknowledge
+readiness before a worker starts. A root group pin is created and acknowledged
+before the worker joins it. Additional process groups are discovered numerically,
+rechecked through kernel session/group queries, and joined by owned pins; the
+kernel refuses a cross-session join. No guessed group or process-name match
+is signal authority. Pins remain unreaped through the last signal and post-stop
+observations, even when an original group leader has exited.
+
+Parent INT/TERM/HUP adapters only set cancellation state. Normal control code
+closes the parent-only control writer; parent death also produces EOF. Workers
+receive null stdin. Supervisor-owned pin writers are not inherited by workers or
+other helpers. Pins validate their private session/group/nonce handshake, survive
+HUP/INT/TERM and use EOF to terminate their own pinned group. Stopped pins rely on
+the demonstrated orphaned-group HUP/CONT cascade under the reviewed group-parent
+topology; EOF does not itself wake SIGSTOP.
+
+Cleanup freezes the retained root first, then discovers/pins/freezes additional
+groups, requires stable stopped/dead observations, escalates and observes no live
+nonadministrative members. Failed/malformed inspection, unstable quiescence,
+unsupported guardian-group membership, missing result, unexpected survivors or
+unconfirmed cleanup cannot qualify. Worker status, deadline/cancellation and
+cleanup evidence are separate; supervisor exit0 is insufficient. Observed elapsed
+time is checked even when the worker has already exited between polls.
+
+This controls the reviewed pinned tool topology, not arbitrary process escape or
+an atomic universal process-table snapshot. Compiler-wrapper/target-runner hooks
+must be absent or explicitly reviewed; the driver refuses unreviewed effective
+hooks and captures configuration inputs. OS hangs or SIGKILL of the supervisor
+can leave undiscovered groups unconfirmed; pin EOF covers only already pinned
+groups. Missing supervisor completion remains failure. Helpers are developer
+verification resources and are not introduced into the product CLI/app runtime.

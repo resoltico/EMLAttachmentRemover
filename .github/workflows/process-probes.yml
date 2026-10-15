@@ -1,0 +1,24 @@
+name: Verification process lifetime probes
+on:
+  push:
+    branches: [codex/v6-rust-swiftui]
+permissions:
+  contents: read
+jobs:
+  probes:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record actual compiler and machine
+        run: |
+          rustc -vV
+          uname -a
+      - name: Real owned process lifetime and signal probes
+        run: cargo test --locked --package xtask --test processes -- --test-threads=1

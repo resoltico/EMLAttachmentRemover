@@ -5,8 +5,8 @@ use std::{
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, ExitStatus, Stdio},
-    time::{Duration, Instant},
+    process::Command,
+    time::Duration,
 };
 
 pub(crate) struct Campaign {
@@ -16,6 +16,7 @@ pub(crate) struct Campaign {
 }
 impl Campaign {
     pub fn create(root: &Path, role: &str) -> Result<Self> {
+        require_stock_topology(root)?;
         let dirty = git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?;
         if !dirty.is_empty() {
             return Err("Commit the current workspace before a source-isolated campaign; dirty/new inputs must not be omitted".into());
@@ -92,86 +93,13 @@ pub(crate) fn tool_version(root: &Path, tool: &str, pin_name: &str) -> Result<St
     }
     Ok(expected)
 }
-pub(crate) struct ProcessResult {
-    pub status: ExitStatus,
-    pub timed_out: bool,
-    pub elapsed: Duration,
-}
-struct OwnedProcess {
-    child: std::process::Child,
-    reaped: bool,
-}
-impl Drop for OwnedProcess {
-    fn drop(&mut self) {
-        if self.reaped {
-            return;
-        }
-        // This private Child has no other waiter. Its unreaped PID still owns
-        // the process group created at spawn, including ordinary descendants.
-        #[cfg(unix)]
-        {
-            use rustix::process::{Pid, Signal, kill_process_group};
-            let _ = kill_process_group(Pid::from_child(&self.child), Signal::KILL);
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = self.child.kill();
-        }
-        let _ = self.child.wait();
-    }
-}
+pub(crate) type ProcessResult = xtask::process::ProcessResult;
 pub(crate) fn run_logged(
-    mut command: Command,
+    command: Command,
     log: &Path,
     deadline: Duration,
 ) -> Result<ProcessResult> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    let output = File::options().create_new(true).write(true).open(log)?;
-    command
-        .stdout(Stdio::from(output.try_clone()?))
-        .stderr(Stdio::from(output));
-    let started = Instant::now();
-    let mut owned = OwnedProcess {
-        child: command.spawn()?,
-        reaped: false,
-    };
-    loop {
-        if let Some(status) = owned.child.try_wait()? {
-            owned.reaped = true;
-            return Ok(ProcessResult {
-                status,
-                timed_out: false,
-                elapsed: started.elapsed(),
-            });
-        }
-        if started.elapsed() > deadline {
-            #[cfg(unix)]
-            {
-                use rustix::process::{Pid, Signal, kill_process_group};
-                let group = Pid::from_child(&owned.child);
-                let _ = kill_process_group(group, Signal::TERM);
-                // Do not reap between signals: the child's reserved PID prevents PGID reuse.
-                std::thread::sleep(Duration::from_secs(2));
-                let _ = kill_process_group(group, Signal::KILL);
-            }
-            #[cfg(not(unix))]
-            {
-                owned.child.kill()?;
-            }
-            let status = owned.child.wait()?;
-            owned.reaped = true;
-            return Ok(ProcessResult {
-                status,
-                timed_out: true,
-                elapsed: started.elapsed(),
-            });
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    crate::controller()?.run(command, log, deadline)
 }
 pub(crate) fn require_unix_campaign() -> Result<()> {
     if cfg!(unix) {
@@ -181,23 +109,125 @@ pub(crate) fn require_unix_campaign() -> Result<()> {
     }
 }
 
-#[cfg(all(test, unix))]
-mod tests {
+pub(crate) fn effective_configs(root: &Path) -> Vec<PathBuf> {
+    let mut folders = root
+        .ancestors()
+        .map(|path| path.join(".cargo"))
+        .collect::<Vec<_>>();
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|path| PathBuf::from(path).join(".cargo")));
+    if let Some(folder) = cargo_home {
+        folders.push(folder);
+    }
+    let mut files = Vec::new();
+    for folder in folders {
+        let legacy = folder.join("config");
+        let current = folder.join("config.toml");
+        let file = if legacy.is_file() { legacy } else { current };
+        if file.is_file() && !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    files
+}
+fn hook_name(name: &str) -> bool {
+    [
+        "RUSTC_WRAPPER",
+        "RUSTC_WORKSPACE_WRAPPER",
+        "RUSTC",
+        "RUSTDOC",
+        "CC",
+        "CXX",
+        "HOST_CC",
+        "HOST_CXX",
+        "TARGET_CC",
+        "TARGET_CXX",
+        "CARGO_BUILD_RUSTC_WRAPPER",
+        "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+        "CARGO_BUILD_RUSTC",
+        "CARGO_BUILD_RUSTDOC",
+        "RUSTFLAGS",
+        "CARGO_ENCODED_RUSTFLAGS",
+    ]
+    .contains(&name)
+        || (name.starts_with("CARGO_TARGET_")
+            && (name.ends_with("_RUNNER") || name.ends_with("_LINKER")))
+}
+fn config_hooks(value: &toml::Value) -> bool {
+    if value
+        .get("build")
+        .and_then(toml::Value::as_table)
+        .is_some_and(|table| {
+            [
+                "rustc",
+                "rustdoc",
+                "rustc-wrapper",
+                "rustc-workspace-wrapper",
+            ]
+            .iter()
+            .any(|key| {
+                table
+                    .get(*key)
+                    .is_some_and(|value| value.as_str() != Some(""))
+            })
+        })
+    {
+        return true;
+    }
+    if value
+        .get("target")
+        .and_then(toml::Value::as_table)
+        .is_some_and(|targets| {
+            targets
+                .values()
+                .any(|target| target.get("runner").is_some() || target.get("linker").is_some())
+        })
+    {
+        return true;
+    }
+    value
+        .get("env")
+        .and_then(toml::Value::as_table)
+        .is_some_and(|table| {
+            table
+                .iter()
+                .any(|(key, value)| hook_name(key) && value.as_str() != Some(""))
+        })
+}
+fn require_stock_topology(root: &Path) -> Result<()> {
+    for (key, value) in std::env::vars_os() {
+        if key.to_str().is_some_and(hook_name) && !value.is_empty() {
+            return Err("Compiler/runner/wrapper overrides require explicit topology review before a bounded campaign".into());
+        }
+    }
+    for file in effective_configs(root) {
+        let text = fs::read_to_string(file)?;
+        let parsed: toml::Value = toml::from_str(&text)
+            .map_err(|_| "Cannot parse effective Cargo configuration; review it locally")?;
+        if config_hooks(&parsed) {
+            return Err(
+                "Effective Cargo configuration contains an unreviewed compiler/runner/wrapper hook"
+                    .into(),
+            );
+        }
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod topology_tests {
     use super::*;
     #[test]
-    fn deadline_terminates_and_reaps_only_the_owned_process_group() {
-        let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/xtask-tests");
-        fs::create_dir_all(&parent).unwrap();
-        let directory = tempfile::tempdir_in(parent).unwrap();
-        let mut child = Command::new("/bin/sleep");
-        child.arg("30");
-        let result = run_logged(
-            child,
-            &directory.path().join("deadline.log"),
-            Duration::from_millis(20),
-        )
-        .unwrap();
-        assert!(result.timed_out);
-        assert!(!result.status.success());
+    fn wrappers_and_runners_require_review_without_exposing_values() {
+        for config in [
+            "[build]\nrustc-wrapper='cache'",
+            "[target.host]\nrunner='daemon'",
+            "[env]\nRUSTC_WRAPPER='cache'",
+        ] {
+            assert!(config_hooks(&toml::from_str(config).unwrap()));
+        }
+        assert!(!config_hooks(
+            &toml::from_str("[target.host]\nrustflags=['-C','overflow-checks=yes']").unwrap()
+        ));
     }
 }

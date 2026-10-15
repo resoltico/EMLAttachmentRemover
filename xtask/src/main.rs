@@ -10,6 +10,12 @@ use std::{
     path::PathBuf,
     process::{Command, ExitCode},
 };
+static CONTROLLER: std::sync::OnceLock<xtask::process::Controller> = std::sync::OnceLock::new();
+fn controller() -> Result<&'static xtask::process::Controller> {
+    CONTROLLER
+        .get()
+        .ok_or_else(|| "Process controller is not initialized".into())
+}
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 #[derive(Parser)]
 #[command(about = "EML Attachment Remover repository tasks", version)]
@@ -33,14 +39,7 @@ enum Task {
     },
 }
 fn capture(command: &mut Command) -> Result<Vec<u8>> {
-    let result = command.output()?;
-    if !result.stderr.is_empty() {
-        std::io::stderr().write_all(&result.stderr)?;
-    }
-    if !result.status.success() {
-        return Err(format!("Command {command:?} failed with {}", result.status).into());
-    }
-    Ok(result.stdout)
+    controller()?.capture(command)
 }
 fn git(root: &std::path::Path, args: &[&str]) -> Result<String> {
     Ok(
@@ -50,17 +49,25 @@ fn git(root: &std::path::Path, args: &[&str]) -> Result<String> {
     )
 }
 fn root() -> Result<PathBuf> {
-    Ok(PathBuf::from(
-        String::from_utf8(capture(
-            Command::new("git").args(["rev-parse", "--show-toplevel"]),
-        )?)?
-        .trim_end(),
-    ))
+    for path in std::env::current_dir()?.ancestors() {
+        if path.join(".git").exists() {
+            return Ok(path.to_owned());
+        }
+    }
+    Err("Run repository tasks from a Git checkout".into())
 }
 fn main() -> ExitCode {
+    if let Some(exit) = xtask::process::helper_entry() {
+        return exit;
+    }
     let result = (|| {
         let args = Arguments::parse();
         let root = root()?;
+        let controlled = xtask::process::Controller::new(&root, &std::env::current_exe()?)?;
+        controlled.install_signals()?;
+        CONTROLLER
+            .set(controlled)
+            .map_err(|_| "Process controller was already initialized")?;
         match args.task {
             Task::Fuzz { seconds } => fuzz::run(&root, seconds),
             Task::Mutants { initial, diff } => mutants::run(&root, initial, diff.as_deref()),

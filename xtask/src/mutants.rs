@@ -189,6 +189,20 @@ fn validate(outcome: &Outcome, selected: &[Value], version: &str) -> Result<()> 
 pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> {
     require_unix_campaign()?;
     let version = tool_version(root, "mutants", "cargo_mutants")?;
+    let resolved_base = if initial {
+        None
+    } else {
+        let base = base.ok_or("Use --initial or --diff BASE")?;
+        Some(git(
+            root,
+            &[
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                &format!("{base}^{{commit}}"),
+            ],
+        )?)
+    };
     let campaign = Campaign::create(root, "mutations")?;
     let all = discovery(&campaign.source, SELECTION)?;
     let guard_counts = positive_guards(&all)?;
@@ -196,17 +210,17 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
     let selection = if initial {
         SELECTION.to_owned()
     } else {
-        let base = base.ok_or("Use --initial or --diff BASE")?;
-        let resolved = git(
-            &campaign.source,
-            &[
-                "rev-parse",
-                "--verify",
-                "--end-of-options",
-                &format!("{base}^{{commit}}"),
-            ],
+        let resolved = resolved_base
+            .as_deref()
+            .ok_or("Diff base was not admitted")?;
+        capture(
+            Command::new("git")
+                .current_dir(&campaign.source)
+                .args(["fetch", "--no-tags", "--no-recurse-submodules"])
+                .arg(root)
+                .arg(resolved),
         )?;
-        let common = git(&campaign.source, &["merge-base", "HEAD", &resolved])?;
+        let common = git(&campaign.source, &["merge-base", "HEAD", resolved])?;
         let diff = git(
             &campaign.source,
             &[
@@ -284,8 +298,8 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
     let validation = validate(&outcome, &selected, &version);
     campaign.report(&serde_json::json!({"source":campaign.sha,"merge_base":merge_base,"tool_version":version,"discovered":selected.len(),"guard_discovery":guard_counts,
         "executed":outcome.total_mutants,"caught":outcome.caught,"missed":outcome.missed,"unviable":outcome.unviable,"timed_out":outcome.timeout,
-        "command_exit":process.status.code(),"campaign_deadline_exceeded":process.timed_out,"elapsed_ms":process.elapsed.as_millis(),"qualified":validation.is_ok()&&process.status.success()&&!process.timed_out}))?;
-    if !process.status.success() || process.timed_out {
+        "command_exit":process.status.code(),"campaign_deadline_exceeded":process.timed_out,"elapsed_ms":process.elapsed.as_millis(),"qualified":validation.is_ok()&&process.success()}))?;
+    if !process.success() {
         return Err(format!(
             "Mutation process failed; retain {}",
             campaign.directory.display()

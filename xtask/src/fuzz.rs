@@ -87,9 +87,7 @@ fn admit_and_execute(
     seeds: &StableInputs,
     before: &Value,
     after: &Value,
-    command: std::process::Command,
-    log: &Path,
-    deadline: Duration,
+    launch: impl FnOnce() -> Result<crate::campaign::ProcessResult>,
 ) -> Result<crate::campaign::ProcessResult> {
     inputs.verify()?;
     seeds.verify()?;
@@ -99,7 +97,7 @@ fn admit_and_execute(
                 .into(),
         );
     }
-    run_logged(command, log, deadline)
+    launch()
 }
 pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
     require_unix_campaign()?;
@@ -157,6 +155,9 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
                 .ok_or("Package manifest path missing")?,
         ))?;
     }
+    for configuration in crate::campaign::effective_configs(&campaign.source) {
+        inputs.add(configuration)?;
+    }
     let mut seeds = StableInputs::default();
     for file in fixture_files.iter().chain(&edge_files) {
         seeds.add(file.clone())?;
@@ -187,7 +188,7 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
         &campaign.directory.join("build.log"),
         Duration::from_secs(10 * 60),
     )?;
-    if !built.status.success() || built.timed_out {
+    if !built.success() {
         return Err(format!(
             "Fuzz build failed; inspect {}",
             campaign.directory.join("build.log").display()
@@ -223,20 +224,18 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
         std::io::stderr(),
         "Admitting bounded fuzz execution for max_total_time={seconds}"
     )?;
-    let process = admit_and_execute(
-        &inputs,
-        &seeds,
-        &before,
-        &after,
-        command,
-        &campaign.directory.join("campaign.log"),
-        Duration::from_secs(seconds + 30),
-    )?;
+    let process = admit_and_execute(&inputs, &seeds, &before, &after, || {
+        run_logged(
+            command,
+            &campaign.directory.join("campaign.log"),
+            Duration::from_secs(seconds + 30),
+        )
+    })?;
     let log = fs::read_to_string(campaign.directory.join("campaign.log"))?;
     let count = execution_count(&log);
     let artifacts_present = fs::read_dir(&artifacts)?.next().is_some();
     let stable = inputs.verify().and_then(|()| seeds.verify());
-    let qualified = process.status.success()
+    let qualified = process.success()
         && !process.timed_out
         && !artifacts_present
         && count.is_ok()
@@ -301,56 +300,32 @@ mod tests {
         let seeds = StableInputs::default();
         let graph = serde_json::json!({"graph":"admitted"});
         let changed = serde_json::json!({"graph":"changed"});
-        let command = || {
-            let mut command = std::process::Command::new("/bin/sh");
-            command
+        let launch = || {
+            let began = std::time::Instant::now();
+            let status = std::process::Command::new("/bin/sh")
                 .current_dir(directory.path())
-                .args(["-c", "printf executed > invoked"]);
-            command
+                .args(["-c", "printf executed > invoked"])
+                .status()?;
+            Ok(crate::campaign::ProcessResult {
+                status,
+                timed_out: false,
+                cancelled: false,
+                unexpected_survivors: 0,
+                cleanup_complete: true,
+                elapsed: began.elapsed(),
+                cleanup_elapsed: Duration::ZERO,
+            })
         };
-        let log = directory.path().join("process.log");
         fs::write(&input, "drift").unwrap();
-        assert!(
-            admit_and_execute(
-                &inputs,
-                &seeds,
-                &graph,
-                &graph,
-                command(),
-                &log,
-                Duration::from_secs(5)
-            )
-            .is_err()
-        );
+        assert!(admit_and_execute(&inputs, &seeds, &graph, &graph, launch).is_err());
         assert!(!directory.path().join("invoked").exists());
-        assert!(!log.exists());
         fs::write(&input, "admitted").unwrap();
-        assert!(
-            admit_and_execute(
-                &inputs,
-                &seeds,
-                &graph,
-                &changed,
-                command(),
-                &log,
-                Duration::from_secs(5)
-            )
-            .is_err()
-        );
+        assert!(admit_and_execute(&inputs, &seeds, &graph, &changed, launch).is_err());
         assert!(!directory.path().join("invoked").exists());
         assert!(
-            admit_and_execute(
-                &inputs,
-                &seeds,
-                &graph,
-                &graph,
-                command(),
-                &log,
-                Duration::from_secs(5)
-            )
-            .unwrap()
-            .status
-            .success()
+            admit_and_execute(&inputs, &seeds, &graph, &graph, launch)
+                .unwrap()
+                .success()
         );
         assert!(directory.path().join("invoked").exists());
     }
