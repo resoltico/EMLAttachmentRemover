@@ -74,7 +74,7 @@ def _run_steps(text: str) -> Iterator[str]:
         value = match[2]
         if value in {">-", "|"}:
             value = _block(lines[index + 1 :], len(match[1]))
-        yield " ".join(value.split())
+        yield " ".join(value.split()).removeprefix("exec ")
 
 
 def _workflow_steps() -> set[str]:
@@ -195,10 +195,16 @@ class WorkflowParityTests(unittest.TestCase):
             "        run: |\n"
             "          literal   line\n"
             "      - run: inline  text\n"
+            "      - run: exec uv run python tools/tasks.py test\n"
         )
         self.assertEqual(
             list(_run_steps(text)),
-            ["first second", "literal line", "inline text"],
+            [
+                "first second",
+                "literal line",
+                "inline text",
+                "uv run python tools/tasks.py test",
+            ],
         )
 
 

@@ -132,7 +132,8 @@ def test_pr_quality_requires_reviewed_mutation_source_binding() -> None:
     preflight = (
         "      - name: Verify source-bound mutation manifest\n"
         "        if: matrix.static\n"
-        "        run: uv run python tools/check_mutation_results.py --manifest-only\n"
+        "        run: exec uv run python tools/check_mutation_results.py "
+        "--manifest-only\n"
     )
     assert preflight in workflow
     assert workflow.index(preflight) < workflow.index(
@@ -182,3 +183,12 @@ def test_macos15_consumer_preserves_real_minimum_os_and_rosetta() -> None:
     assert not (
         Path(__file__).resolve().parents[1] / ".github/actions/sonoma-compatibility"
     ).exists()
+
+
+def test_hosted_uv_commands_replace_the_bash_wrapper() -> None:
+    for path in WORKFLOWS.glob("*.yml"):
+        workflow = path.read_text(encoding="utf-8")
+        assert "defaults:\n  run:\n    shell: bash\n" in workflow
+        assert not re.search(r"(?m)^ +(?:- )?run: uv ", workflow)
+        assert not re.search(r"(?m)^ +uv ", workflow)
+        assert "exec uv " in workflow

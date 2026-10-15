@@ -9,6 +9,10 @@ on:
     - cron: "23 2 * * 1"
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 permissions:
   contents: read
 
@@ -59,7 +63,7 @@ jobs:
         if: runner.os == 'macOS'
         uses: ./.github/actions/runtime-source
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python ${{ matrix.python }}
+        run: exec uv sync --locked --group dev --python ${{ matrix.python }}
         env:
           PYTHONWARNINGS: default
       - name: Require the POSIX integration environment
@@ -71,10 +75,10 @@ jobs:
         uses: ./.github/actions/swift-quality-cache
       - name: Install pinned Swift quality tools
         if: runner.os == 'macOS'
-        run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
+        run: exec uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
       - name: Run randomized property exploration
         run: >-
-          uv run python tools/tasks.py thorough
+          exec uv run python tools/tasks.py thorough
           --observable --timeout-seconds 3300
       - name: Preserve native fuzz regression evidence
         if: always() && runner.os == 'macOS'
@@ -88,7 +92,7 @@ jobs:
         id: finalize_hypothesis
         if: always()
         run: >-
-          uv run python tools/finalize_hypothesis_artifacts.py
+          exec uv run python tools/finalize_hypothesis_artifacts.py
           --observations
       - name: Publish sanitized Hypothesis observations
         if: always() && steps.finalize_hypothesis.outcome == 'success'
