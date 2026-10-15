@@ -330,7 +330,7 @@ class ArtifactMutationContracts(unittest.TestCase):
             ) as reserve:
                 artifacts._replace_with_temporary(  # ruff: ignore[private-member-access]
                     path,
-                    "public\n",
+                    ("public\n",),
                 )
             self.assertEqual(path.read_text(encoding="utf-8"), "public\n")
         reserve.assert_called_once_with(
@@ -343,15 +343,15 @@ class ArtifactMutationContracts(unittest.TestCase):
         )
 
     def test_observation_reader_explicitly_requests_utf8(self) -> None:
-        real_read_text = Path.read_text
+        real_open = Path.open
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             path = write_observations(root, [{"status": "passed"}])
             with patch.object(
                 Path,
-                "read_text",
+                "open",
                 autospec=True,
-                side_effect=real_read_text,
+                side_effect=real_open,
             ) as read:
                 artifacts.finalize(root, observations=True)
         self.assertIn(call(path, encoding="utf-8"), read.call_args_list)

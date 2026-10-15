@@ -114,7 +114,7 @@ class WorkflowParityTests(unittest.TestCase):
         manual = {
             (
                 'uv run /bin/sh integrations/macos-ui/fuzz.sh "$FUZZ_OUTPUT" '
-                "-runs=-1 -max_total_time=1800"
+                "-max_total_time=1800"
             )
         }
         guide = (PROJECT_ROOT / "QA.md").read_text(encoding="utf-8")

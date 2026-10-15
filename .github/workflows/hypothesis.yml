@@ -13,10 +13,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: hypothesis-${{ github.workflow }}-${{ github.ref }}
-  # A newer PR revision supersedes exploration of the old one; scheduled, push,
-  # and manual campaigns are deliberate and still queue.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: hypothesis-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # Superseded push/PR commits stop; manual and scheduled runs retain their own groups.
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 
 jobs:
   explore:

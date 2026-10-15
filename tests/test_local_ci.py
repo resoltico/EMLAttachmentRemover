@@ -144,7 +144,8 @@ class PlanTests(unittest.TestCase):
                     "--exclude=./build --exclude=./.hypothesis -cf - . "
                     "| tar -xf - -C /ci/work && cd /ci/work "
                     "&& PYTHONWARNINGS=default uv sync --locked --group dev "
-                    "--python 3.14.8 && exec uv run python tools/tasks.py mutation "
+                    "--python 3.14.8 && uv cache prune "
+                    "&& exec uv run python tools/tasks.py mutation "
                     '--workers "$MUTATION_WORKERS"'
                 ),
             ),

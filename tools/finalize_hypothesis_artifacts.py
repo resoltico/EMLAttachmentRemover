@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable, Iterator
 
     from tools import hypothesis_observation_safety as observation_safety
 else:
@@ -105,17 +105,27 @@ def _load_observation(
     return loaded
 
 
-def _atomic_write(path: Path, content: str) -> None:
-    """Atomically replace one observation file with sanitized UTF-8 JSONL."""
+def _atomic_write(path: Path, content: Iterable[str]) -> int:
+    """Atomically replace one observation file with sanitized UTF-8 JSONL.
+
+    Returns:
+        The number of records written.
+
+    """
     try:
-        _replace_with_temporary(path, content)
+        return _replace_with_temporary(path, content)
     except OSError as error:
         message = f"cannot publish sanitized Hypothesis observations {path}: {error}"
         raise HypothesisArtifactError(message) from error
 
 
-def _replace_with_temporary(path: Path, content: str) -> None:
-    """Replace one observation file and remove any temporary residue."""
+def _replace_with_temporary(path: Path, content: Iterable[str]) -> int:
+    """Replace one observation file and remove any temporary residue.
+
+    Returns:
+        The number of records written.
+
+    """
     with tempfile.NamedTemporaryFile(
         mode="w",
         encoding=UTF8,
@@ -126,9 +136,13 @@ def _replace_with_temporary(path: Path, content: str) -> None:
     ) as output:
         temporary = Path(output.name)
         try:
-            output.write(content)
+            records = 0
+            for line in content:
+                output.write(line)
+                records += 1
             output.close()
             temporary.replace(path)
+            return records
         finally:
             with suppress(OSError):
                 temporary.unlink()
@@ -152,29 +166,51 @@ def _sanitize_observation_file(
     if not stat.S_ISREG(mode) or path.suffix != ".jsonl":
         message = f"unexpected Hypothesis observation artifact: {path}"
         raise HypothesisArtifactError(message)
+    return _atomic_write(path, _public_observation_lines(path, replacements))
+
+
+def _public_observation_lines(
+    path: Path,
+    replacements: tuple[tuple[str, str], ...],
+) -> Iterator[str]:
+    """Yield checked public records without retaining a complete observation file.
+
+    Yields:
+        One sanitized JSON record and its line terminator.
+
+    """
     try:
-        lines = path.read_text(encoding=UTF8).splitlines()
+        with path.open(encoding=UTF8) as source:
+            for index, line in enumerate(source, start=1):
+                yield _public_observation_line(
+                    line.rstrip("\n"), path, index, replacements
+                )
     except (OSError, UnicodeError) as error:
         message = f"cannot read Hypothesis observations {path}: {error}"
         raise HypothesisArtifactError(message) from error
-    public: list[observation_safety.JsonValue] = []
-    for index, line in enumerate(lines, start=1):
-        observation = _public_value(
-            _load_observation(line, path, index),
-            replacements,
-            observation_root=True,
-        )
-        _reject_absolute_paths(observation, path, index)
-        public.append(observation)
-    content = "".join(
-        f"{json.dumps(item, sort_keys=True, separators=(',', ':'))}\n"
-        for item in public
+
+
+def _public_observation_line(
+    line: str,
+    path: Path,
+    index: int,
+    replacements: tuple[tuple[str, str], ...],
+) -> str:
+    """Sanitize one record and reject residual private data before staging.
+
+    Returns:
+        One public JSON record with its line terminator.
+
+    """
+    observation = _public_value(
+        _load_observation(line, path, index), replacements, observation_root=True
     )
+    _reject_absolute_paths(observation, path, index)
+    content = json.dumps(observation, sort_keys=True, separators=(",", ":")) + "\n"
     if observation_safety.private_prefix_remains(content, replacements):
         message = f"private path remains in Hypothesis observations {path}"
         raise HypothesisArtifactError(message)
-    _atomic_write(path, content)
-    return len(public)
+    return content
 
 
 def _sanitize_observations(

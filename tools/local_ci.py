@@ -102,6 +102,7 @@ LINUX_SCRIPT: Final = (
     f"&& cd {LINUX_HOME}/work "
     "&& PYTHONWARNINGS=default uv sync --locked --group dev "
     f"--python {CANONICAL_PYTHON} "
+    "&& uv cache prune "
     '&& exec uv run python tools/tasks.py mutation --workers "$MUTATION_WORKERS"'
 )
 CI_ONLY_NOTICE: Final = (

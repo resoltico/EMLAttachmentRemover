@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import ANY, call, patch
@@ -17,8 +18,41 @@ from tests.mutmut_environment_support import selector_preserving_environment
 class TaskMutationBoundaryTests(unittest.TestCase):
     """Keep mutation testing isolated, bounded, and directly testable."""
 
+    def test_hard_exit_child_tempfiles_remain_owned_by_campaign(self) -> None:
+        project = tasks.PROJECT_ROOT
+        retained: list[Path] = []
+
+        def action(storage: Path) -> None:
+            runner = tasks.mutation_task.command_runner(
+                tasks._run,
+                storage,
+                tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE,
+                tasks.OBSERVABILITY_VARIABLES,
+                project,
+            )
+            # Simulate a worker that cannot run TemporaryDirectory finalizers.
+            runner((
+                sys.executable,
+                "-c",
+                (
+                    "import os, pathlib, tempfile; "
+                    "root = pathlib.Path(tempfile.mkdtemp(prefix='worker-')); "
+                    "(root / 'journal').write_bytes(b'child calls'); os._exit(0)"
+                ),
+            ))
+            retained.append(storage.parent / "tmp")
+            self.assertEqual(len(list(retained[-1].iterdir())), 1)
+            self.assertEqual(
+                next(retained[-1].iterdir()).joinpath("journal").read_bytes(),
+                b"child calls",
+            )
+
+        tasks.hypothesis_runner.run_isolated(action, project)
+        self.assertFalse(retained[0].parent.exists())
+
     def test_mutation_runner_closure_forwards_exact_isolation_inputs(self) -> None:
-        storage = Path("/public/private-root/.hypothesis")
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        storage = Path(directory) / ".hypothesis"
         path_bundle = object()
         controlled_environment = {
             "COVERAGE_Z": "z",
@@ -64,6 +98,9 @@ class TaskMutationBoundaryTests(unittest.TestCase):
             "COVERAGE_FILE": str(storage.parent / ".mutmut-coverage"),
             "EML_MUTATION_PYTEST_TEMPORARY_ROOT": str(storage),
             tasks.hypothesis_runner.STORAGE_ENVIRONMENT_VARIABLE: str(storage),
+            "TMPDIR": str(storage.parent / "tmp"),
+            "TEMP": str(storage.parent / "tmp"),
+            "TMP": str(storage.parent / "tmp"),
         }
         common_removals = (
             *tasks.OBSERVABILITY_VARIABLES,

@@ -307,6 +307,7 @@ jobs:
             release-dist/*-macos-x86_64-external-python.zip
             release-dist/SHA256SUMS
           if-no-files-found: error
+          retention-days: 30
 
   compatibility:
     name: Exercise release ZIPs on ${{ matrix.os }}

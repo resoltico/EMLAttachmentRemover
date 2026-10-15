@@ -22,8 +22,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: swift-fuzz-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: swift-fuzz-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # Superseded push/PR commits stop; manual and scheduled runs retain their own groups.
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 
 jobs:
   receipt-fuzz:
@@ -60,7 +61,7 @@ jobs:
         if: ${{ inputs.campaign == 'extended' }}
         env:
           FUZZ_OUTPUT: ${{ runner.temp }}/native-fuzz
-        run: uv run /bin/sh integrations/macos-ui/fuzz.sh "$FUZZ_OUTPUT" -runs=-1 -max_total_time=1800
+        run: uv run /bin/sh integrations/macos-ui/fuzz.sh "$FUZZ_OUTPUT" -max_total_time=1800
       - name: Preserve corpus, invocation and failure inputs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -76,5 +77,6 @@ jobs:
             ${{ runner.temp }}/native-fuzz/timeout-*
             ${{ runner.temp }}/native-fuzz/oom-*
             ${{ runner.temp }}/native-fuzz/leak-*
+            ${{ runner.temp }}/native-fuzz/slow-unit-*
           if-no-files-found: warn
           retention-days: 30

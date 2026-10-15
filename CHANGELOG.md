@@ -9,6 +9,7 @@ Notable changes to this project are documented in this file. The format is based
 ### Changed
 
 - **Breaking for native app users on macOS 14:** Apple Silicon and Intel app builds now require macOS 15.0 or later. Upgrade macOS before installing these builds; published v4.0.0 apps retain their macOS 14 requirement and remain unchanged. Pull-request and tagged-release compatibility checks cover macOS 15 Apple Silicon, macOS 15 Intel and Xcode 27, with additional Intel checks through Rosetta on Apple Silicon. See the [native release requirements](integrations/macos-ui/RELEASE.md#minimum-native-macos-release-150-sequoia) and [Issue #29](https://github.com/resoltico/EMLAttachmentRemover/issues/29).
+- **Native fuzz runner callers:** `-runs` must be between 1 and the configured 100,000-execution ceiling; unlimited `-runs=-1` and larger requests are refused. For extended exploration, omit `-runs` and use `-max_total_time=1800`; the execution ceiling still applies.
 
 ### Fixed
 
@@ -24,6 +25,9 @@ Notable changes to this project are documented in this file. The format is based
 
 - Release and compatibility consumers select the exact producer's artifact ID, including partial workflow reruns, instead of selecting delivery artifacts by name.
 - Corrected source-bound mutation-equivalence evidence and added pull-request validation of its full source digest. Relevant main-branch changes trigger mutation campaigns; bounded diagnostics prioritize unreviewed survivors. Expanded failure controls cover runtime authentication and publication, POSIX staging and ACLs, generated-root provenance, CLI reporting and mutation diagnostics.
+- Superseded push and pull-request assurance campaigns cancel while manual and scheduled runs retain separate concurrency groups. All workflow evidence and delivery-transport artifacts explicitly expire after 30 days; public release assets remain available separately.
+- Mutation workers keep standard temporary files inside campaign-owned cleanup storage. Native fuzzing removes compiler scratch, disables core dumps, caps each stage's diagnostics at 8 MiB and avoids redundant corpus reloads. Hypothesis observation sanitization streams records and uses a same-filesystem move to avoid a second sanitized-tree copy; cross-filesystem publication can still copy. These controls do not impose an aggregate filesystem quota; see the [resource limits](QA.md#native-receipt-fuzzing).
+- Native tool downloads enforce pinned archive sizes while verifying SHA-256, and swift-format fetches only its pinned source revision with disposable build caches. The local Linux mutation cache prunes dangling UV entries while retaining reusable wheels.
 
 ## [4.0.0] - 2026-10-06
 

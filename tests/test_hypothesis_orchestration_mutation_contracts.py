@@ -12,7 +12,7 @@ from tools import hypothesis_publication, hypothesis_run
 
 
 class ObservationPublicationMutationContracts(unittest.TestCase):
-    """Pin canonical observation paths, labels, and copy behavior."""
+    """Pin canonical observation paths, labels, and consuming staging behavior."""
 
     def test_publication_uses_exact_sanitizer_and_filesystem_contract(self) -> None:
         with (
@@ -38,13 +38,13 @@ class ObservationPublicationMutationContracts(unittest.TestCase):
                     "_directory_exists",
                     wraps=hypothesis_publication._directory_exists,  # ruff: ignore[private-member-access]
                 ) as exists,
-                patch.object(shutil, "copytree", wraps=shutil.copytree) as copytree,
+                patch.object(shutil, "move", wraps=shutil.move) as move,
             ):
                 result = hypothesis_publication.publish_observations(
                     source,
                     publication,
                 )
-                copy_source, staged = copytree.call_args.args
+                move_source, staged = move.call_args.args
                 destination = publication / ".hypothesis" / "observed"
                 published_content = (destination / "public.jsonl").read_text()
                 staging_exists = staged.parent.exists()
@@ -64,12 +64,12 @@ class ObservationPublicationMutationContracts(unittest.TestCase):
                 call(destination, "public Hypothesis observations"),
             ],
         )
-        copytree.assert_called_once()
-        self.assertEqual(copy_source, source_observations)
+        move.assert_called_once()
+        self.assertEqual(move_source, source_observations)
         self.assertEqual(staged.name, "observed")
         self.assertTrue(staged.parent.name.startswith(".observed-publication-"))
         self.assertEqual(
-            copytree.call_args.kwargs,
+            move.call_args.kwargs,
             {"copy_function": shutil.copyfile},
         )
         self.assertEqual(published_content, "{}\n")

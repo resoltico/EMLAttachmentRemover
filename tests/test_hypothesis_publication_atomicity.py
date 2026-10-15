@@ -59,7 +59,7 @@ class HypothesisPublicationAtomicityTests(unittest.TestCase):
 
             self.assertTrue((destination / "stale.jsonl").is_file())
 
-    def test_unexpected_copy_interrupt_cleans_staging_and_preserves_prior_set(
+    def test_unexpected_staging_interrupt_cleans_staging_and_preserves_prior_set(
         self,
     ) -> None:
         interrupt = KeyboardInterrupt()
@@ -72,7 +72,7 @@ class HypothesisPublicationAtomicityTests(unittest.TestCase):
                 publication_directory,
             )
             with (
-                patch.object(shutil, "copytree", side_effect=interrupt),
+                patch.object(shutil, "move", side_effect=interrupt),
                 self.assertRaises(KeyboardInterrupt) as raised,
             ):
                 hypothesis_publication.publish_observations(source, publication)
@@ -86,7 +86,9 @@ class HypothesisPublicationAtomicityTests(unittest.TestCase):
                 [],
             )
 
-    def test_partial_copy_failure_preserves_prior_set_and_removes_staging(self) -> None:
+    def test_partial_staging_failure_preserves_prior_set_and_removes_staging(
+        self,
+    ) -> None:
         def fail_after_partial_copy(
             _source: Path,
             destination: Path,
@@ -111,7 +113,7 @@ class HypothesisPublicationAtomicityTests(unittest.TestCase):
                 publication_directory,
             )
             with (
-                patch.object(shutil, "copytree", side_effect=fail_after_partial_copy),
+                patch.object(shutil, "move", side_effect=fail_after_partial_copy),
                 self.assertRaisesRegex(
                     hypothesis_publication.HypothesisPublicationError,
                     "cannot stage public Hypothesis observations",
@@ -371,7 +373,7 @@ class HypothesisPublicationAtomicityTests(unittest.TestCase):
             with (
                 self.subTest(error=type(copy_error).__name__),
                 tempfile.TemporaryDirectory() as directory,
-                patch.object(shutil, "copytree", side_effect=copy_error),
+                patch.object(shutil, "move", side_effect=copy_error),
                 patch.object(shutil, "rmtree", side_effect=OSError("cleanup failed")),
                 self.assertRaises(group_type) as raised,
             ):

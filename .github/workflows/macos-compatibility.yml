@@ -45,6 +45,7 @@ jobs:
           name: compatibility-delivery-${{ github.run_id }}-${{ github.run_attempt }}
           path: release-dist/*
           if-no-files-found: error
+          retention-days: 30
   consumers:
     needs: producer
     runs-on: ${{ matrix.os }}
@@ -94,3 +95,4 @@ jobs:
             build/coverage.xml
             ${{ runner.temp }}/native-fuzz-tests
             build/test-results-project-ci.xml
+          retention-days: 30

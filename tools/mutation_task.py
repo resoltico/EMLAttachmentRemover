@@ -164,6 +164,10 @@ def command_runner(
         A runner that adds the mutation environment to each task command.
 
     """
+    # Standard-library tempfile users (including subprocess call journals) must
+    # share campaign ownership too: a killed worker cannot run their finalizers.
+    temporary = storage.parent / "tmp"
+    temporary.mkdir(mode=0o700, exist_ok=True)
     coverage_variables = tuple(
         variable for variable in os.environ if variable.startswith("COVERAGE_")
     )
@@ -180,11 +184,14 @@ def command_runner(
         updates["COVERAGE_FILE"] = str(storage.parent / ".mutmut-coverage")
         updates[storage_variable] = str(storage)
         updates["EML_MUTATION_PYTEST_TEMPORARY_ROOT"] = str(storage)
+        updates.update({name: str(temporary) for name in ("TMPDIR", "TEMP", "TMP")})
         checkpoint = storage.parent / "mutation-workspace.json"
         if profile == MUTATION_PROFILE:
             updates[mutation_integrity.CHECKPOINT_VARIABLE] = str(checkpoint)
         context = (
-            mutation_integrity.guard(project_root / "mutants", checkpoint, storage)
+            mutation_integrity.guard(
+                project_root / "mutants", checkpoint, storage.parent
+            )
             if profile == MUTATION_PROFILE
             else nullcontext()
         )

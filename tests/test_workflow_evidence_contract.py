@@ -14,26 +14,28 @@ def _text(name: str) -> str:
     return (WORKFLOWS / name).read_text(encoding="utf-8")
 
 
-def test_only_pull_request_exploration_is_cancelled_when_superseded() -> None:
-    hypothesis = _text("hypothesis.yml")
-    assert (
-        "  group: hypothesis-${{ github.workflow }}-${{ github.ref }}\n"
-        "  # A newer PR revision supersedes exploration of the old one; scheduled, "
-        "push,\n"
-        "  # and manual campaigns are deliberate and still queue.\n"
-        "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n"
-    ) in hypothesis
-    for name in ("mutation.yml", "release.yml"):
-        assert "  cancel-in-progress: false\n" in _text(name)
+def test_superseded_commits_cancel_without_cancelling_deliberate_campaigns() -> None:
+    for name in ("mutation.yml", "hypothesis.yml", "swift-fuzz.yml"):
+        workflow = _text(name)
+        assert (
+            "${{ github.event_name }}"
+            in workflow.split("concurrency:\n")[1].split("jobs:")[0]
+        )
+        assert (
+            "  cancel-in-progress: ${{ github.event_name == 'push' || "
+            "github.event_name == 'pull_request' }}\n"
+        ) in workflow
+    assert "  cancel-in-progress: false\n" in _text("release.yml")
 
 
-def test_diagnostic_artifact_names_are_unique_per_run_attempt() -> None:
+def test_diagnostic_artifacts_have_attempt_names_and_explicit_retention() -> None:
     steps = [
         step
         for path in sorted(WORKFLOWS.glob("*.yml"))
         for step in re.split(r"(?m)^      - ", path.read_text(encoding="utf-8"))
         if "uses: actions/upload-artifact@" in step
     ]
+    assert all("          retention-days: 30\n" in step for step in steps)
     names_per_step = [ARTIFACT_NAME.findall(step) for step in steps]
     assert all(len(found) == 1 for found in names_per_step)
     names = [found[0] for found in names_per_step]
@@ -154,7 +156,7 @@ def test_mutation_requalifies_main_when_assurance_inputs_change() -> None:
         assert f'      - "{path}"\n' in workflow
     assert "  schedule:\n" in workflow
     assert "  workflow_dispatch:\n" in workflow
-    assert "  cancel-in-progress: false\n" in workflow
+    assert "${{ github.event_name }}" in workflow
 
 
 def test_macos15_consumer_preserves_real_minimum_os_and_rosetta() -> None:
