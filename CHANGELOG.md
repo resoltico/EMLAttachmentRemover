@@ -4,6 +4,8 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-10-15
+
 ### Changed
 
 - **Breaking for native app users on macOS 14:** Apple Silicon and Intel app builds now require macOS 15.0 or later. Upgrade macOS before installing these builds; published v4.0.0 apps retain their macOS 14 requirement and remain unchanged. Pull-request and tagged-release compatibility checks cover macOS 15 Apple Silicon, macOS 15 Intel and Xcode 27, with additional Intel checks through Rosetta on Apple Silicon. See the [native release requirements](integrations/macos-ui/RELEASE.md#minimum-native-macos-release-150-sequoia) and [Issue #29](https://github.com/resoltico/EMLAttachmentRemover/issues/29).
@@ -192,7 +194,8 @@ This tagged candidate's release workflow stopped before asset publication; its c
 
 - First public release.
 
-[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.6...v4.0.0
 [3.0.6]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.5...v3.0.6
 [3.0.5]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.4...v3.0.5
