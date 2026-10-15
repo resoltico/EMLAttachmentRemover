@@ -165,6 +165,7 @@ class WorkflowParityTests(unittest.TestCase):
                             "./.github/workflows/swift-fuzz.yml",
                             "./.github/actions/runtime-source",
                             "./.github/actions/sequoia-compatibility",
+                            "./.github/actions/swift-quality-cache",
                         },
                     )
                     target = PROJECT_ROOT / action

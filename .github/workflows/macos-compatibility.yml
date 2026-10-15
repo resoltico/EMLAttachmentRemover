@@ -83,6 +83,8 @@ jobs:
           artifact-ids: ${{ needs.producer.outputs.delivery_artifact_id || '0' }}
           path: release-dist
       - run: uv run --no-project --python 3.14.8 python -B -m tools.release_delivery --verify-directory release-dist
+      - name: Restore pinned Swift quality tool cache
+        uses: ./.github/actions/swift-quality-cache
       - run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
       - run: uv run python tools/tasks.py quality --native
         env:

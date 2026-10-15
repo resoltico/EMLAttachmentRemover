@@ -66,6 +66,9 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: test -x /bin/sh
+      - name: Restore pinned Swift quality tool cache
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/swift-quality-cache
       - name: Install pinned Swift quality tools
         if: runner.os == 'macOS'
         run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
