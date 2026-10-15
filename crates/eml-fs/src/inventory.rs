@@ -1,6 +1,6 @@
 //! Native observations and streamed names; ordering/limits/selection belong to core.
 use crate::{
-    BoundDirectory, FileSignature, Identity,
+    BoundDirectory, EntryKind, EntryObservation,
     file::signature,
     unix::{component, identity},
 };
@@ -11,28 +11,6 @@ use std::{
     os::unix::ffi::OsStringExt,
 };
 
-/// Native entry type observed without opening a special file.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EntryKind {
-    /// Ordinary regular file.
-    File,
-    /// Ordinary directory.
-    Directory,
-    /// A final symbolic link, when final-link following was disabled.
-    Symlink,
-    /// FIFO/socket/device or other unsupported kind.
-    Special,
-}
-/// Snapshot metadata, revalidated through a later held handle before processing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct EntryObservation {
-    /// Physical native object identity.
-    pub identity: Identity,
-    /// Native kind, not derived from filename extension.
-    pub kind: EntryKind,
-    /// Change signature for ordinary files only.
-    pub file: Option<FileSignature>,
-}
 /// Streaming directory names; caller must bound discovery before sorting.
 pub struct DirectoryEntries(fs::Dir);
 impl Iterator for DirectoryEntries {

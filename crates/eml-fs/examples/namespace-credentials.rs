@@ -8,7 +8,13 @@ mod probe {
         fs::{self, AtFlags, Mode, OFlags},
         process::{self, Gid, Uid},
     };
-    use std::{ffi::OsStr, io, os::unix::process::CommandExt, path::Path, process::Command};
+    use std::{
+        ffi::OsStr,
+        io,
+        os::unix::{fs::DirBuilderExt, process::CommandExt},
+        path::Path,
+        process::Command,
+    };
     type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
     fn require(value: bool, reason: &str) -> Result<()> {
         if value { Ok(()) } else { Err(reason.into()) }
@@ -112,11 +118,26 @@ mod probe {
                 )?;
                 println!("Other-UID victim rename refused: {error}");
             }
-            "rename" => {
-                std::fs::rename(parent.join("stage"), parent.join("moved"))?;
-                println!(
-                    "Negative control: same actor can rename victim-owned entry in shared nonsticky parent"
-                );
+            "deny-empty-removal" => {
+                let error = std::fs::remove_dir(parent.join("stage"))
+                    .err()
+                    .ok_or("Other UID removed victim empty stage")?;
+                require(
+                    matches!(error.raw_os_error(), Some(libc::EACCES | libc::EPERM)),
+                    "Empty removal denial was not an access-control result",
+                )?;
+                println!("Other-UID empty victim0700 removal refused: {error}");
+            }
+            "replace-empty" => {
+                std::fs::remove_dir(parent.join("stage"))?;
+                std::fs::DirBuilder::new()
+                    .mode(0o700)
+                    .create(parent.join("stage"))?;
+                let held = BoundDirectory::open(parent)?.open_child(OsStr::new("stage"))?;
+                let Identity::Posix { device, inode } = held.identity() else {
+                    return Err("Unexpected identity kind".into());
+                };
+                println!("owned-replacement:{device}:{inode}");
             }
             _ => return Err("Unknown probe action".into()),
         }
@@ -130,6 +151,7 @@ mod probe {
         fixture: &Path,
         control: &Path,
     ) -> Result<()> {
+        println!("Credential action {action}: uid={uid} gid={gid}");
         let status = Command::new(executable)
             .arg("--child")
             .arg(uid.to_string())
@@ -144,6 +166,41 @@ mod probe {
             status.success(),
             "Dropped-credential child failed; this is not passing protection evidence",
         )
+    }
+    fn run_replacement(executable: &Path, actor: u32, fixture: &Path) -> Result<Identity> {
+        let output = Command::new(executable)
+            .arg("--child")
+            .arg(actor.to_string())
+            .arg(actor.to_string())
+            .arg("replace-empty")
+            .arg(fixture)
+            .arg(fixture)
+            .uid(actor)
+            .gid(actor)
+            .output()?;
+        use std::io::Write;
+        io::stdout().write_all(&output.stdout)?;
+        io::stderr().write_all(&output.stderr)?;
+        require(
+            output.status.success(),
+            "Actual empty-directory removal/replacement control failed",
+        )?;
+        let text = std::str::from_utf8(&output.stdout)?;
+        let records: Vec<_> = text
+            .lines()
+            .filter_map(|line| line.strip_prefix("owned-replacement:"))
+            .collect();
+        require(
+            records.len() == 1,
+            "Missing or repeated actor-owned replacement identity",
+        )?;
+        let (device, inode) = records[0]
+            .split_once(':')
+            .ok_or("Malformed replacement identity")?;
+        Ok(Identity::Posix {
+            device: device.parse()?,
+            inode: inode.parse()?,
+        })
     }
     fn root_child(
         parent: &BoundDirectory,
@@ -382,10 +439,8 @@ mod probe {
             )?;
             let path = fixture.directory().requested_path();
             run_child(&executable, victim, victim_gid, "admit", path, control_path)?;
-            let stage = fixture
-                .directory()
-                .observe_child(OsStr::new("stage"), false)?
-                .identity;
+            let stage_handle = fixture.directory().open_child(OsStr::new("stage"))?;
+            let stage = stage_handle.identity();
             let actor_control = if mode == 0o1777 { path } else { control_path };
             run_child(
                 &executable,
@@ -394,6 +449,23 @@ mod probe {
                 "deny-rename",
                 path,
                 actor_control,
+            )?;
+            run_child(
+                &executable,
+                actor,
+                actor,
+                "deny-empty-removal",
+                path,
+                actor_control,
+            )?;
+            require(
+                fixture
+                    .directory()
+                    .observe_child(OsStr::new("stage"), false)?
+                    .identity
+                    == stage
+                    && fs::fstat(&stage_handle)?.st_nlink != 0,
+                "Protected empty stage changed identity or was removed",
             )?;
             // Reclaim only this freshly owned fixture through its retained FD;
             // protect cleanup before any identity check plus namespace removal.
@@ -443,17 +515,35 @@ mod probe {
             Some(Gid::from_raw(victim_gid)),
         )?;
         fs::fchmod(shared.directory(), Mode::from_raw_mode(0o777))?;
+        #[cfg(target_os = "macos")]
         run_child(
             &executable,
             actor,
             actor,
-            "rename",
+            "deny-rename",
             shared.directory().requested_path(),
             shared.directory().requested_path(),
         )?;
+        let replacement = run_replacement(&executable, actor, shared.directory().requested_path())?;
         fs::fchown(shared.directory(), Some(Uid::ROOT), Some(Gid::ROOT))?;
         fs::fchmod(shared.directory(), Mode::from_raw_mode(0o700))?;
-        remove_entry(shared.directory(), "moved", stage_id, true)?;
+        require(
+            fs::fstat(&held)?.st_nlink == 0,
+            "Original held empty directory was not removed",
+        )?;
+        require(
+            replacement != stage_id,
+            "Replacement reused the still-held original identity",
+        )?;
+        let actual = fs::statat(shared.directory(), "stage", AtFlags::SYMLINK_NOFOLLOW)?;
+        require(
+            actual.st_uid == actor && actual.st_mode & 0o777 == 0o700,
+            "Actor replacement ownership/mode mismatch",
+        )?;
+        remove_entry(shared.directory(), "stage", replacement, true)?;
+        println!(
+            "PASS: other UID removed empty victim0700 and replaced its name; held original unlinked, distinct actor identity verified"
+        );
         require(
             shared.remove_empty().state == CleanupState::Complete,
             "Shared fixture cleanup unconfirmed",

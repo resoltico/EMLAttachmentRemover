@@ -1,6 +1,7 @@
 //! Owned private candidates, checked storage, and exact no-replace publication edges.
 use crate::{
-    BoundDirectory, CleanupReceipt, CleanupState, CreatedDirectory, CreationFailure, Identity,
+    BoundDirectory, CleanupReceipt, CleanupState, CreatedDirectory, Identity, PublicationState,
+    StageFailure, StageOperation, SyncMethod, SyncReceipt, SyncState,
     unix::{component, identity},
 };
 use rustix::fs::{self, AtFlags, FileType, Mode, OFlags};
@@ -11,36 +12,6 @@ use std::{
     os::fd::AsFd,
 };
 
-/// Exact requested synchronization method.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SyncMethod {
-    /// Portable fsync.
-    Fsync,
-    /// fsync and Darwin F_FULLFSYNC both completed.
-    FsyncFullfsync,
-    /// fsync completed; only the stronger Darwin request was unsupported.
-    FsyncFullfsyncUnsupported,
-}
-/// Native request result, never inferred from file existence.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SyncState {
-    /// The specified method completed.
-    Succeeded,
-    /// A required request is unsupported.
-    Unsupported,
-    /// A required request failed.
-    Failed,
-}
-/// Receipt for one exact held-object synchronization request.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SyncReceipt {
-    /// Method actually requested.
-    pub method: SyncMethod,
-    /// Result actually observed.
-    pub state: SyncState,
-    /// Native error retained for failure or limited-method evidence.
-    pub native_code: Option<i64>,
-}
 fn unsupported_sync(error: rustix::io::Errno) -> bool {
     [
         rustix::io::Errno::INVAL,
@@ -92,45 +63,6 @@ pub(crate) fn file_sync(fd: impl AsFd) -> SyncReceipt {
     #[cfg(not(target_os = "macos"))]
     portable
 }
-/// Native operation in progress when staging failed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StageOperation {
-    /// Create and validate private owned resources before bytes.
-    Create,
-    /// Write or reread candidate storage.
-    Write,
-    /// Request candidate file synchronization.
-    Sync,
-}
-/// Staging failed before publication; preserves its cause, flush and owned cleanup.
-#[derive(Debug)]
-pub struct StageFailure {
-    /// Native operation, so callers need not parse error prose.
-    pub operation: StageOperation,
-    /// Primary native/storage invariant failure.
-    pub error: io::Error,
-    /// File synchronization, if reached.
-    pub file_sync: Option<SyncReceipt>,
-    /// Actual attempt to remove this operation's owned resources.
-    pub cleanup: CleanupReceipt,
-}
-impl std::fmt::Display for StageFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}; cleanup {:?}", self.error, self.cleanup.state)
-    }
-}
-impl std::error::Error for StageFailure {}
-impl From<CreationFailure> for StageFailure {
-    fn from(error: CreationFailure) -> Self {
-        Self {
-            operation: StageOperation::Create,
-            error: error.error,
-            file_sync: None,
-            cleanup: error.cleanup,
-        }
-    }
-}
-
 /// A fully written, reread and synchronized held candidate. Its file is never
 /// exposed for mutation, and publication accepts this object rather than a path.
 pub struct ReadyCandidate {
@@ -141,16 +73,6 @@ pub struct ReadyCandidate {
     length: u64,
     sync: SyncReceipt,
     state: PublicationState,
-}
-/// Observation of this candidate's no-replace publication attempt.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PublicationState {
-    /// No publication edge succeeded.
-    NotPublished,
-    /// The native no-replace edge succeeded or its identity was reconciled.
-    Published,
-    /// An ambiguous native error could not be reconciled.
-    Unknown,
 }
 /// Retains both the candidate and edge observation, including on errors. A caller
 /// must finish reconciliation/sync/cleanup after Published or Unknown.

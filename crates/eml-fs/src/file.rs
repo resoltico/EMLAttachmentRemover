@@ -1,6 +1,6 @@
 //! Regular-file handles. Reading does not apply destination namespace policy.
 use crate::{
-    BoundDirectory, Identity,
+    BoundDirectory, FileSignature,
     unix::{component, identity},
 };
 use rustix::fs::{self, AtFlags, FileType, Mode, OFlags};
@@ -10,18 +10,6 @@ use std::{
     os::fd::OwnedFd,
 };
 
-/// Observable file change signature, excluding ordinary read-access timestamps.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FileSignature {
-    /// Physical object, never a path-derived identifier.
-    pub identity: Identity,
-    /// Observed byte length.
-    pub size: u64,
-    modified_seconds: i64,
-    modified_nanoseconds: i64,
-    changed_seconds: i64,
-    changed_nanoseconds: i64,
-}
 pub(crate) fn signature(stat: &fs::Stat) -> io::Result<FileSignature> {
     if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
         return Err(io::Error::new(

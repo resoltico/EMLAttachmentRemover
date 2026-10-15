@@ -5,18 +5,21 @@ mod file;
 #[cfg(unix)]
 mod namespace;
 #[cfg(unix)]
-pub use file::{BoundFile, FileSignature};
+pub use file::BoundFile;
+mod observation;
+pub use observation::{EntryKind, EntryObservation, FileSignature};
+mod receipts;
+pub use receipts::{
+    PublicationState, StageFailure, StageOperation, SyncMethod, SyncReceipt, SyncState,
+};
 #[cfg(unix)]
 mod inventory;
 #[cfg(unix)]
-pub use inventory::{DirectoryEntries, EntryKind, EntryObservation};
+pub use inventory::DirectoryEntries;
 #[cfg(unix)]
 mod candidate;
 #[cfg(unix)]
-pub use candidate::{
-    PublicationCandidate, PublicationState, PublishAttempt, ReadyCandidate, StageFailure,
-    StageOperation, SyncMethod, SyncReceipt, SyncState,
-};
+pub use candidate::{PublicationCandidate, PublishAttempt, ReadyCandidate};
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]

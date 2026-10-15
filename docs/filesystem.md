@@ -9,8 +9,10 @@ qualification evidence. The original design archive and checksum remain intact.
 A pathname identity check followed by rmdir/unlinkat is not atomic compare-and-
 delete. A controlled same-UID interleaving checked owned-stage, moved it aside,
 moved another owned empty directory into that name, then removed the replacement.
-This demonstrated the mechanism; it was not a cross-UID exploit test. A different
-UID with suitable nonsticky shared-parent permissions can perform those renames.
+This demonstrated the mechanism; it was not a cross-UID exploit test. Later native
+Linux controls established another UID can rename an owned0700 directory under
+a suitable nonsticky shared parent. Darwin's directory-rename authorization
+differs, as the native checkpoint notes below explain.
 A held private staging descriptor protects its contents, not its outer name.
 
 The correction refuses namespace creation unless the held immediate parent
@@ -132,8 +134,29 @@ the observed nonroot UID/real-GID/sole-group0 state, then performs one safe self
 exec requesting only the permitted real GID. That hop does not request uid or
 clear groups again. The final child must pass unchanged strict IDs/groups,
 no-root-regain and positive controls before filesystem operations. Corrected
-native Mac execution and the added Linux named-ACL-mask cases still require actual
-run evidence. No raw credential code, account or owner-preference change is used.
+native Mac execution still requires its complete scenario set. No raw credential
+code, account or owner-preference change is used.
+
+[Run38795256996](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38795256996)
+at d592bac passed native library Clippy/tests on all four POSIX hosts. Both Linux
+credential probes also passed actual named-ACL write grants, pre-mkdir refusal,
+zero-mask admission/actor denial and cleanup. Both Macs verified normalized UID,
+real/effective GID and groups, root-regain refusal, working own-entry controls and
+private/self-sticky/trusted-root-sticky protection. Their shared-parent negative
+control then failed: Darwin denied another UID renaming the victim0700 directory.
+Thus the overall run remained failed; later foreign-owner cases were not reached.
+
+Darwin24 source requires DELETE and ADD_SUBDIRECTORY on a moved directory even
+for same-parent rename, so assuming Linux's0700 rename result was an invalid test
+oracle. Its empty-directory removal requests DELETE only. The corrected owned
+negative control keeps stage0700, retains its original descriptor, synchronizes
+the observation before the actor, and tests actual rmdir plus an actor-owned
+replacement. It records the replacement's identity, verifies original nlink0 and
+distinct identity, reclaims/protects the parent, then removes only the known owned
+replacement. No product admission is relaxed to obtain an expected test result;
+corrected native execution remains required.
+
+Authorization reference: [Darwin24 rename/rmdir](https://github.com/apple-oss-distributions/xnu/blob/xnu-11417.140.69/bsd/vfs/vfs_subr.c#L8648).
 
 Credential references: [Rust1.99 process setup](https://github.com/rust-lang/rust/blob/1.99.0/library/std/src/sys/process/unix/unix.rs#L302-L330),
 [Darwin credentials](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_prot.c).
