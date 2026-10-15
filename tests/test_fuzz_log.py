@@ -152,6 +152,7 @@ def test_partial_raw_writes_are_completed_and_flushed_or_fail(
         assert sink.contents == content
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="requires POSIX shell pipeline")
 def test_pipeline_propagates_logging_and_command_failures(tmp_path: Path) -> None:
     logger = Path(fuzz_log.__file__).resolve()
     pipeline = '"$1" -c "$2" 2>&1 | "$1" -B "$3" "$4" 16'
