@@ -14,94 +14,18 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE},
-    Security::*,
     Storage::FileSystem::*,
-    System::Threading::{GetCurrentProcess, IsWow64Process2, OpenProcessToken},
+    System::Threading::{GetCurrentProcess, IsWow64Process2},
 };
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-struct RestrictedToken(OwnedHandle);
-impl RestrictedToken {
-    fn enter() -> Result<Self> {
-        let mut raw = ptr::null_mut();
-        // SAFETY: process pseudo-handle is valid; output is a live HANDLE slot.
-        if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE | TOKEN_QUERY, &mut raw) }
-            == 0
-        {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        // SAFETY: successful OpenProcessToken transfers ownership of exactly one handle.
-        let original = unsafe { OwnedHandle::from_raw_handle(raw) };
-        // SID storage is DWORD aligned and larger than SECURITY_MAX_SID_SIZE.
-        let mut sid = [0u32; 20];
-        let mut sid_bytes = size_of_val(&sid) as u32;
-        // SAFETY: buffer size describes allocated writable SID storage; no domain SID required.
-        if unsafe {
-            CreateWellKnownSid(
-                WinBuiltinAdministratorsSid,
-                ptr::null_mut(),
-                sid.as_mut_ptr().cast(),
-                &mut sid_bytes,
-            )
-        } == 0
-        {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        let disabled = SID_AND_ATTRIBUTES {
-            Sid: sid.as_mut_ptr().cast(),
-            Attributes: 0,
-        };
-        let mut restricted = ptr::null_mut();
-        // SAFETY: input token and SID remain live, all optional empty arrays are null,
-        // output points at an owned-handle slot. Admin SID becomes deny-only;
-        // DISABLE_MAX_PRIVILEGE retains SeChangeNotifyPrivilege for directory traversal.
-        if unsafe {
-            CreateRestrictedToken(
-                original.as_raw_handle(),
-                DISABLE_MAX_PRIVILEGE,
-                1,
-                &disabled,
-                0,
-                ptr::null(),
-                0,
-                ptr::null(),
-                &mut restricted,
-            )
-        } == 0
-        {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        // SAFETY: successful CreateRestrictedToken transfers ownership of one handle.
-        let token = Self(unsafe { OwnedHandle::from_raw_handle(restricted) });
-        // SAFETY: token is a live token derived from our process; impersonation is thread local.
-        if unsafe { ImpersonateLoggedOnUser(token.0.as_raw_handle()) } == 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        let mut admin_member = 1;
-        // SAFETY: null token selects this thread's effective impersonation token;
-        // SID storage and BOOL output remain live for the call.
-        if unsafe { CheckTokenMembership(ptr::null_mut(), disabled.Sid, &mut admin_member) } == 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        assert_eq!(
-            admin_member, 0,
-            "effective token still enables Administrators"
-        );
-        println!(
-            "PASS: restricted runner-account thread token; Administrators deny-only, traverse privilege retained"
-        );
-        Ok(token)
-    }
+mod actor {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../support/windows_actor.rs"
+    ));
 }
-impl Drop for RestrictedToken {
-    fn drop(&mut self) {
-        // SAFETY: restores this thread's previous process identity before releasing token.
-        if unsafe { RevertToSelf() } == 0 {
-            // Do not continue an experiment under an unexpectedly retained identity.
-            std::process::abort();
-        }
-    }
-}
+use actor::RestrictedToken;
 
 fn wide(path: &OsStr) -> Vec<u16> {
     path.encode_wide().chain(Some(0)).collect()

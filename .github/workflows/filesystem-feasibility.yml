@@ -45,7 +45,17 @@ jobs:
           $env:TMP = $env:TEMP
           cargo +1.99.0-${{ matrix.target }} run --locked --manifest-path tests/native-filesystem/Cargo.toml --target ${{ matrix.target }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $probeName = 'windows::test_reparse::tests::attribute_only_writer_must_not_convert_strictly_pinned_directory'
+          $testListing = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-fs --lib --target ${{ matrix.target }} -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (@($testListing | Where-Object { $_ -eq ($probeName + ': test') }).Count -ne 1) { throw 'Expected exactly one discovered attribute-only safety test' }
+          $probeOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-fs --lib --target ${{ matrix.target }} -- --exact $probeName --nocapture --color never 2>&1
+          $probeExit = $LASTEXITCODE
+          $probeOutput | ForEach-Object { Write-Output $_ }
+          if ($probeExit -ne 0) { exit $probeExit }
+          if (@($probeOutput | Where-Object { $_.ToString().Trim() -eq 'running 1 test' }).Count -ne 1) { throw 'Expected exactly one executed attribute-only safety test' }
+          if (@($probeOutput | Where-Object { $_.ToString() -match '^test result: ok\. 1 passed; 0 failed; 0 ignored;' }).Count -ne 1) { throw 'Attribute-only safety test did not pass with zero ignored cases' }
           cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --lib naming --target ${{ matrix.target }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +1.99.0-${{ matrix.target }} test --locked --package eml-fs --lib windows::path --target ${{ matrix.target }} -- --nocapture
+          cargo +1.99.0-${{ matrix.target }} test --locked --package eml-fs --lib --target ${{ matrix.target }} -- --skip $probeName --nocapture
           exit $LASTEXITCODE

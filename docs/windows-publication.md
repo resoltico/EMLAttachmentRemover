@@ -55,6 +55,33 @@ Full WP3 still requires actual junction/reparse mutation and pre-existing writer
 controls, source/destination/candidate substitutions, entry conflicts, post-edge
 failures and cleanup cases on both native CPUs. The early gate is not a waiver.
 
+## Attribute-only mutation challenge remains open
+
+The generic-write sharing refusal does not establish attribute-only exclusion.
+The documented filesystem control accepts FILE_WRITE_ATTRIBUTES as an alternative
+to FILE_WRITE_DATA, and CreateFile sharing rules do not classify attribute/EA
+access as data-write sharing. Product pathname-based creation is on hold pending
+the decisive native test, rather than relying on repeated identity checks.
+
+The test uses the same restricted runner-account actor on two empty owned
+directories. It first proves an attribute-only handle with fully compatible
+sharing can set the real mount-point tag, retain the same ID and read a unique
+owned target sentinel. It reuses that already prepared native buffer against the
+strict destination pin, observes tag/held/current-entry identities and cleans
+owned fixtures before adjudicating. Only actual native access/sharing denial can
+count as exclusion; setup, unsupported, resource or other errors fail qualification.
+If conversion succeeds, the sharing-only creation boundary is disproved and needs
+a separately challenged confined creation mechanism before frontend work.
+
+The verification token retains the runner UserSID, observes Administrators as
+deny-only and only SeChangeNotify enabled, using the actual effective thread
+token. It refuses preexisting impersonation unchanged and restores the verified
+prior no-impersonation state on every entered exit. The guard cannot move across
+threads. This is restricted-owner evidence, not a separate-SID interactive login.
+
+References: [reparse control access](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4aeefef8-92c3-4abc-af7a-a610caf8a165),
+[CreateFile sharing categories](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
+
 ## Read, destination and existing-copy handle lifetimes
 
 The reviewed product lifecycle releases inventory directory bindings before

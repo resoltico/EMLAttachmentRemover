@@ -8,10 +8,10 @@ pub struct FileSignature {
     pub identity: Identity,
     /// Observed byte length.
     pub size: u64,
-    pub(crate) modified_seconds: i64,
-    pub(crate) modified_nanoseconds: i64,
-    pub(crate) changed_seconds: i64,
-    pub(crate) changed_nanoseconds: i64,
+    // Equality-only backend-native values: POSIX seconds/nanoseconds;
+    // Windows100ns ticks/0. No access time or cross-platform time conversion.
+    pub(crate) modified_native: [i64; 2],
+    pub(crate) changed_native: [i64; 2],
 }
 /// Native entry type observed without opening a special file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

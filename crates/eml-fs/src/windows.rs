@@ -1,4 +1,14 @@
 //! Generated Windows system calls behind owned, checked native interfaces.
+mod file;
+mod handle;
 pub(crate) mod path;
+pub use file::BoundFile;
 #[cfg(test)]
 pub(crate) mod test_reparse;
+#[cfg(test)]
+mod test_actor {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/support/windows_actor.rs"
+    ));
+}

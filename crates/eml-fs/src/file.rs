@@ -26,10 +26,8 @@ pub(crate) fn signature(stat: &fs::Stat) -> io::Result<FileSignature> {
     Ok(FileSignature {
         identity: identity(stat)?,
         size: stat.st_size as u64,
-        modified_seconds: stat.st_mtime,
-        modified_nanoseconds: nanos(stat.st_mtime_nsec)?,
-        changed_seconds: stat.st_ctime,
-        changed_nanoseconds: nanos(stat.st_ctime_nsec)?,
+        modified_native: [stat.st_mtime, nanos(stat.st_mtime_nsec)?],
+        changed_native: [stat.st_ctime, nanos(stat.st_ctime_nsec)?],
     })
 }
 fn nanos(value: impl TryInto<i64>) -> io::Result<i64> {

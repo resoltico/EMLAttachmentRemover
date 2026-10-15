@@ -144,6 +144,10 @@ fn inspect(path: &Path, verbatim: bool) -> io::Result<()> {
     }
     Ok(())
 }
+pub(crate) fn openable(path: &Path) -> io::Result<Vec<u16>> {
+    inspect(path, true)?;
+    Ok(path.as_os_str().encode_wide().chain(Some(0)).collect())
+}
 fn full_path(path: &Path) -> io::Result<PathBuf> {
     let input: Vec<_> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     let mut output = vec![0; MAX_UNITS + 1];
