@@ -238,6 +238,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(std::io::Error::last_os_error().into());
     }
     let parent = unsafe { OwnedHandle::from_raw_handle(raw) };
+    println!("PASS: destination directory opened with read-only sharing");
+    // Probe namespace feasibility independently: a failed rename must not hide it.
+    // SAFETY: parent owns a live write-capable directory handle.
+    let namespace_before = unsafe { FlushFileBuffers(parent.as_raw_handle()) };
+    if namespace_before == 0 {
+        println!(
+            "FAIL: directory FlushFileBuffers before publication: {}",
+            std::io::Error::last_os_error()
+        );
+    } else {
+        println!("PASS: directory FlushFileBuffers before publication");
+    }
     let mut candidate = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -247,10 +259,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .open(directory.join("stage.tmp"))?;
     candidate.write_all(b"verified synthetic mail")?;
     candidate.sync_all()?;
+    println!("PASS: exclusive candidate created, written and flushed");
     assert!(
         std::fs::rename(&directory, root.path().join("moved")).is_err(),
         "parent rename unexpectedly succeeded"
     );
+    println!("PASS: held destination denies parent rename");
     let rename = |file: &std::fs::File| -> std::io::Result<()> {
         let name: Vec<u16> = "copy.eml".encode_utf16().collect();
         let bytes = offset_of!(FILE_RENAME_INFO, FileName) + (name.len() + 1) * 2;
@@ -286,7 +300,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Ok(())
     };
-    rename(&candidate)?;
+    rename(&candidate)
+        .map_err(|error| format!("held-file RootDirectory-relative FileRenameInfo: {error}"))?;
     let other = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
