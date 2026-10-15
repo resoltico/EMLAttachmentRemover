@@ -16,9 +16,9 @@ use std::{
 };
 const GUARDS: &[&str] = &["authorize_deletions", "check_edit_ranges"];
 const SELECTION: &str = "(authorize_deletions|check_edit_ranges)";
-fn command(source: &Path, selection: &str) -> Command {
-    let mut command = Command::new("cargo");
-    command.current_dir(source).args([
+fn command(campaign: &Campaign, selection: &str) -> Result<Command> {
+    let mut command = campaign.command("cargo")?;
+    command.args([
         "mutants",
         "--no-config",
         "--package",
@@ -26,10 +26,10 @@ fn command(source: &Path, selection: &str) -> Command {
         "--re",
         selection,
     ]);
-    command
+    Ok(command)
 }
-fn discovery(source: &Path, selection: &str) -> Result<Vec<Value>> {
-    let bytes = capture(command(source, selection).args(["--list", "--json"]))?;
+fn discovery(campaign: &Campaign, selection: &str) -> Result<Vec<Value>> {
+    let bytes = capture(command(campaign, selection)?.args(["--list", "--json"]))?;
     let mutants: Vec<Value> = serde_json::from_slice(&bytes)?;
     if mutants.len() > 400 {
         return Err(
@@ -204,7 +204,7 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
         )?)
     };
     let campaign = Campaign::create(root, "mutations")?;
-    let all = discovery(&campaign.source, SELECTION)?;
+    let all = discovery(&campaign, SELECTION)?;
     let guard_counts = positive_guards(&all)?;
     let mut merge_base = None;
     let selection = if initial {
@@ -243,7 +243,7 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
         }
         format!("({})", guards.into_iter().collect::<Vec<_>>().join("|"))
     };
-    let selected = discovery(&campaign.source, &selection)?;
+    let selected = discovery(&campaign, &selection)?;
     if selected.is_empty() {
         return Err("Changed guards require positive mutant discovery".into());
     }
@@ -258,7 +258,7 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
         campaign.sha,
         campaign.directory.display()
     )?;
-    let mut child = campaign.command("cargo");
+    let mut child = campaign.command("cargo")?;
     child
         .args([
             "mutants",

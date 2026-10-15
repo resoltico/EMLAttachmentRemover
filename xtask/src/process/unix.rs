@@ -307,7 +307,10 @@ pub(crate) struct Pin {
     pub(crate) child: Child,
     pub(crate) id: Pid,
 }
-pub(crate) fn pin(helper: &Path, session: Pid, group: Option<Pid>) -> Result<Pin> {
+pub(crate) fn pin(helper: &Path, session: Pid, group: Option<Pid>, until: Instant) -> Result<Pin> {
+    if Instant::now() >= until {
+        return Err("Group pin budget exhausted before spawn".into());
+    }
     let mut entropy = [0u8; 16];
     getrandom::fill(&mut entropy)?;
     let nonce = entropy
@@ -336,8 +339,11 @@ pub(crate) fn pin(helper: &Path, session: Pid, group: Option<Pid>) -> Result<Pin
         let result = BufReader::new(output).read_line(&mut line).map(|_| line);
         let _ = send.send(result);
     });
-    match receive.recv_timeout(Duration::from_secs(2)) {
-        Ok(Ok(line)) if line == "ready\n" => Ok(Pin { child, id }),
+    let remaining = until
+        .saturating_duration_since(Instant::now())
+        .min(Duration::from_secs(2));
+    match receive.recv_timeout(remaining) {
+        Ok(Ok(line)) if line == "ready\n" && Instant::now() < until => Ok(Pin { child, id }),
         _ => {
             let _ = child.kill();
             let _ = child.wait();
@@ -347,18 +353,16 @@ pub(crate) fn pin(helper: &Path, session: Pid, group: Option<Pid>) -> Result<Pin
 }
 fn retained_pin_waitability(helper: &Path, session: Pid) -> Result<()> {
     use rustix::process::{WaitId, WaitIdOptions, kill_process, waitid};
-    let mut first = pin(helper, session, None)?;
+    let until = Instant::now() + Duration::from_secs(2);
+    let mut first = pin(helper, session, None, until)?;
     kill_process(Pid::from_child(&first.child), Signal::KILL)?;
-    let began = Instant::now();
     loop {
         match waitid(
             WaitId::Pid(Pid::from_child(&first.child)),
             WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG,
         ) {
             Ok(Some(_)) => break,
-            Ok(None) if began.elapsed() < Duration::from_secs(2) => {
-                std::thread::sleep(Duration::from_millis(5))
-            }
+            Ok(None) if Instant::now() < until => std::thread::sleep(Duration::from_millis(5)),
             _ => {
                 let _ = first.child.wait();
                 return Err("Exited group pins must remain waitable before reaping".into());
@@ -366,7 +370,7 @@ fn retained_pin_waitability(helper: &Path, session: Pid) -> Result<()> {
         }
     }
     // A second owned member must join while the dead first pin is unreaped.
-    let joined = pin(helper, session, Some(first.id));
+    let joined = pin(helper, session, Some(first.id), until);
     let mut second = match joined {
         Ok(pin) => pin,
         Err(error) => {
@@ -388,7 +392,11 @@ struct Row {
     group: i32,
     state: String,
 }
-fn inspect(program: &Path, session: Pid) -> Result<(Vec<Row>, bool)> {
+fn inspect(program: &Path, session: Pid, until: Instant) -> Result<(Vec<Row>, bool)> {
+    let until = until.min(Instant::now() + Duration::from_secs(2));
+    if Instant::now() >= until {
+        return Err("Inspection budget exhausted before spawn".into());
+    }
     let mut process = Command::new(program)
         .args(["-axo", "pid=,pgid=,state="])
         .stdin(Stdio::null())
@@ -404,15 +412,17 @@ fn inspect(program: &Path, session: Pid) -> Result<(Vec<Row>, bool)> {
             .read_to_end(&mut bytes)
             .map(|_| bytes)
     });
-    let began = Instant::now();
     let status = loop {
-        if let Some(status) = process.try_wait()? {
-            break status;
+        let status = process.try_wait()?;
+        if Instant::now() >= until {
+            if status.is_none() {
+                let _ = process.kill();
+                let _ = process.wait();
+            }
+            return Err("Process inspection exceeded its remaining budget".into());
         }
-        if began.elapsed() > Duration::from_secs(2) {
-            process.kill()?;
-            let _ = process.wait();
-            return Err("Process inspection exceeded its bound".into());
+        if let Some(status) = status {
+            break status;
         }
         std::thread::sleep(Duration::from_millis(5));
     };
@@ -484,7 +494,6 @@ struct Session {
     inspector: PathBuf,
     pins: BTreeMap<i32, Pin>,
     worker: Option<Child>,
-    worker_pid: i32,
     raw_status: Option<i32>,
     cleaned: bool,
 }
@@ -494,12 +503,14 @@ impl Session {
         let mut unexpected = BTreeSet::new();
         let mut detail = None;
         let mut stable = 0;
+        let discovery_until = began + CLEANUP_GRACE / 2;
+        let cleanup_until = began + CLEANUP_GRACE;
         // Freeze the known root first, including cargo-mutants' spawning/reaping threads.
         for pin in self.pins.values() {
             let _ = kill_process_group(pin.id, Signal::STOP);
         }
         while began.elapsed() < CLEANUP_GRACE / 2 {
-            let scan = inspect(&self.inspector, self.id);
+            let scan = inspect(&self.inspector, self.id, discovery_until);
             let (rows, unstable) = match scan {
                 Ok(scan) => scan,
                 Err(error) => {
@@ -515,6 +526,10 @@ impl Session {
             let mut added = false;
             let mut running = false;
             for row in rows {
+                if Instant::now() >= discovery_until {
+                    detail = Some("Cleanup discovery budget exhausted".into());
+                    break;
+                }
                 let pid = number(row.pid);
                 if row.pid == self.id || pins.contains(&pid) {
                     continue;
@@ -524,7 +539,7 @@ impl Session {
                         Some("Unexpected worker joined the supervisor's protected group".into());
                     continue;
                 }
-                if ordinary_exit && pid != self.worker_pid && !row.state.starts_with('Z') {
+                if ordinary_exit && !row.state.starts_with('Z') {
                     unexpected.insert(pid);
                 }
                 if !self.pins.contains_key(&row.group) {
@@ -532,7 +547,7 @@ impl Session {
                         detail = Some("Invalid inspected group ID".into());
                         continue;
                     };
-                    match pin(&self.helper, self.id, Some(group)) {
+                    match pin(&self.helper, self.id, Some(group), discovery_until) {
                         Ok(held) => {
                             self.pins.insert(row.group, held);
                             added = true;
@@ -594,7 +609,7 @@ impl Session {
         }
         let mut clean_observations = 0;
         while began.elapsed() < CLEANUP_GRACE {
-            match inspect(&self.inspector, self.id) {
+            match inspect(&self.inspector, self.id, cleanup_until) {
                 Ok((rows, unstable)) => {
                     if !unstable
                         && !rows
@@ -671,7 +686,7 @@ pub(super) fn session_entry() -> ExitCode {
         let request: Request = serde_json::from_slice(&bytes)?;
         // Refuse an unsupported/malformed inspector before starting any worker.
         let inspector = PathBuf::from(OsString::from_vec(request.inspector.clone()));
-        let _ = inspect(&inspector, session)?;
+        let _ = inspect(&inspector, session, Instant::now() + Duration::from_secs(2))?;
         let lost = stopped.clone();
         std::thread::spawn(move || {
             let mut byte = [0u8; 1];
@@ -684,11 +699,15 @@ pub(super) fn session_entry() -> ExitCode {
             inspector: PathBuf::from(OsString::from_vec(request.inspector)),
             pins: BTreeMap::new(),
             worker: None,
-            worker_pid: 0,
             raw_status: None,
             cleaned: false,
         };
-        let root = pin(&state.helper, session, None)?;
+        let root = pin(
+            &state.helper,
+            session,
+            None,
+            Instant::now() + Duration::from_secs(2),
+        )?;
         let group = root.id;
         state.pins.insert(number(group), root);
         if stopped.load(Ordering::Relaxed) {
@@ -726,7 +745,6 @@ pub(super) fn session_entry() -> ExitCode {
             .process_group(number(group));
         let started = Instant::now();
         let child = worker.spawn()?;
-        state.worker_pid = child.id() as i32;
         state.worker = Some(child);
         let deadline = Duration::from_millis(request.deadline_ms);
         let (timed_out, cancelled) = loop {

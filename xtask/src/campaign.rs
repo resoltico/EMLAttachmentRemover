@@ -48,7 +48,8 @@ impl Campaign {
             sha,
         })
     }
-    pub fn command(&self, program: &str) -> Command {
+    pub fn command(&self, program: &str) -> Result<Command> {
+        require_stock_topology(&self.source)?;
         let mut command = Command::new(program);
         command
             .current_dir(&self.source)
@@ -56,7 +57,7 @@ impl Campaign {
             .env("TMP", self.directory.join("tmp"))
             .env("TEMP", self.directory.join("tmp"));
         command.env("CARGO_TARGET_DIR", self.directory.join("build"));
-        command
+        Ok(command)
     }
     pub fn report(&self, value: &impl Serialize) -> Result<()> {
         let bytes = serde_json::to_vec_pretty(value)?;
@@ -140,6 +141,9 @@ fn hook_name(name: &str) -> bool {
         "RUSTC_WORKSPACE_WRAPPER",
         "RUSTC",
         "RUSTDOC",
+        "RUSTDOCFLAGS",
+        "CARGO_ENCODED_RUSTDOCFLAGS",
+        "CARGO_BUILD_RUSTDOCFLAGS",
         "CC",
         "CXX",
         "HOST_CC",
@@ -155,12 +159,44 @@ fn hook_name(name: &str) -> bool {
         "CARGO_ENCODED_RUSTFLAGS",
     ]
     .contains(&name)
+        || compiler_family(name)
         || (name.starts_with("CARGO_TARGET_")
             && (name.ends_with("_RUNNER")
                 || name.ends_with("_LINKER")
-                || name.ends_with("_RUSTFLAGS")))
+                || name.ends_with("_RUSTFLAGS")
+                || name.ends_with("_RUSTDOCFLAGS")))
+}
+fn compiler_family(name: &str) -> bool {
+    let name = name
+        .strip_prefix("HOST_")
+        .or_else(|| name.strip_prefix("TARGET_"))
+        .unwrap_or(name);
+    [
+        "CC",
+        "CXX",
+        "AR",
+        "RANLIB",
+        "CFLAGS",
+        "CXXFLAGS",
+        "ARFLAGS",
+        "RANLIBFLAGS",
+    ]
+    .iter()
+    .any(|family| {
+        name == *family
+            || name
+                .strip_prefix(family)
+                .is_some_and(|suffix| suffix.starts_with('_'))
+    })
 }
 fn config_hooks(value: &toml::Value) -> bool {
+    if value
+        .get("build")
+        .and_then(|build| build.get("rustdocflags"))
+        .is_some_and(|flags| flags.as_array().is_none_or(|flags| !flags.is_empty()))
+    {
+        return true;
+    }
     if value
         .get("build")
         .and_then(|build| build.get("rustflags"))
@@ -193,7 +229,12 @@ fn config_hooks(value: &toml::Value) -> bool {
         .and_then(toml::Value::as_table)
         .is_some_and(|targets| {
             targets.iter().any(|(name, target)| {
-                if target.get("runner").is_some() || target.get("linker").is_some() {
+                if target.get("runner").is_some()
+                    || target.get("linker").is_some()
+                    || target
+                        .get("rustdocflags")
+                        .is_some_and(|flags| flags.as_array().is_none_or(|flags| !flags.is_empty()))
+                {
                     return true;
                 }
                 let Some(flags) = target.get("rustflags") else {
@@ -267,5 +308,70 @@ mod topology_tests {
             assert!(config_hooks(&toml::from_str(config).unwrap()));
         }
         assert!(!config_hooks(&toml::from_str("[target.x86_64-pc-windows-gnullvm]\nrustflags=['-C','linker-flavor=ld.lld','-C','link-self-contained=yes','-C','target-feature=+crt-static']").unwrap()));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod inherited_configuration_tests {
+    use super::*;
+    #[test]
+    fn target_ancestor_hook_is_rejected_before_command_construction_and_launch() {
+        let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/xtask-tests");
+        fs::create_dir_all(&parent).unwrap();
+        let owned = tempfile::tempdir_in(parent).unwrap();
+        let root = owned.path();
+        let directory = root.join("target/run");
+        let source = directory.join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir(directory.join("tmp")).unwrap();
+        let configuration = root.join("target/.cargo");
+        fs::create_dir_all(&configuration).unwrap();
+        let file = configuration.join("config.toml");
+        fs::write(
+            &file,
+            "[build]\nrustdocflags=['-C','linker=/owned-wrapper']\n",
+        )
+        .unwrap();
+        let campaign = Campaign {
+            directory,
+            source: source.clone(),
+            sha: "synthetic-configuration-test".into(),
+        };
+        assert!(campaign.command("cargo").is_err());
+        assert!(!source.join("invoked").exists());
+        fs::remove_file(file).unwrap();
+        let mut command = campaign.command("/bin/sh").unwrap();
+        assert!(
+            command
+                .args(["-c", "printf actual > invoked"])
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(source.join("invoked").exists());
+    }
+    #[test]
+    fn standard_rustdoc_and_native_compiler_override_families_require_review() {
+        for name in [
+            "RUSTDOCFLAGS",
+            "CARGO_ENCODED_RUSTDOCFLAGS",
+            "CARGO_BUILD_RUSTDOCFLAGS",
+            "CARGO_TARGET_HOST_RUSTDOCFLAGS",
+            "CC_x86_64-unknown-linux-gnu",
+            "CXX_aarch64_apple_darwin",
+            "HOST_AR",
+            "TARGET_RANLIB",
+            "ARFLAGS_host",
+            "RANLIBFLAGS_host",
+        ] {
+            assert!(hook_name(name), "{name}");
+        }
+        for value in [
+            "[build]\nrustdocflags=['-C','linker=/wrapper']",
+            "[target.host]\nrustdocflags=['-C','linker=/wrapper']",
+            "[env]\nCXX_aarch64_apple_darwin='daemon-wrapper'",
+        ] {
+            assert!(config_hooks(&toml::from_str(value).unwrap()));
+        }
     }
 }

@@ -33,7 +33,7 @@ impl StableInputs {
     }
 }
 fn metadata(campaign: &Campaign, compiler: &str, target: &str, build: &Path) -> Result<Value> {
-    let mut command = campaign.command("rustup");
+    let mut command = campaign.command("rustup")?;
     command
         .args([
             "run",
@@ -104,7 +104,7 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
     let version = tool_version(root, "fuzz", "cargo_fuzz")?;
     let compiler = pin(root, "fuzz_compiler")?;
     let campaign = Campaign::create(root, "fuzz")?;
-    let mut rustc = campaign.command("rustup");
+    let mut rustc = campaign.command("rustup")?;
     rustc.args(["run", &compiler, "rustc", "-vV"]);
     let identity = String::from_utf8(capture(&mut rustc)?)?;
     let target = identity
@@ -162,7 +162,7 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
     for file in fixture_files.iter().chain(&edge_files) {
         seeds.add(file.clone())?;
     }
-    let mut command = campaign.command("rustup");
+    let mut command = campaign.command("rustup")?;
     command
         .args([
             "run",

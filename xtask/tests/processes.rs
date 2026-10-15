@@ -288,6 +288,7 @@ fn a_group_in_another_owned_session_is_not_signal_authority() {
         Path::new(env!("CARGO_BIN_EXE_xtask")),
         rustix::process::getsid(None).unwrap(),
         rustix::process::Pid::from_raw(group),
+        std::time::Instant::now() + Duration::from_secs(2),
     )
     .err()
     .expect("Cross-session join unexpectedly succeeded");
@@ -311,14 +312,26 @@ fn a_group_in_another_owned_session_is_not_signal_authority() {
 fn unreaped_dead_pin_still_anchors_group_through_last_signal() {
     let session = rustix::process::getsid(None).unwrap();
     let helper = Path::new(env!("CARGO_BIN_EXE_xtask"));
-    let mut first = controller_source::unix::pin(helper, session, None).unwrap();
+    let mut first = controller_source::unix::pin(
+        helper,
+        session,
+        None,
+        std::time::Instant::now() + Duration::from_secs(2),
+    )
+    .unwrap();
     rustix::process::kill_process(
         rustix::process::Pid::from_child(&first.child),
         rustix::process::Signal::KILL,
     )
     .unwrap();
     std::thread::sleep(Duration::from_millis(30));
-    let mut second = controller_source::unix::pin(helper, session, Some(first.id)).unwrap();
+    let mut second = controller_source::unix::pin(
+        helper,
+        session,
+        Some(first.id),
+        std::time::Instant::now() + Duration::from_secs(2),
+    )
+    .unwrap();
     rustix::process::kill_process_group(first.id, rustix::process::Signal::KILL).unwrap();
     assert!(!first.child.wait().unwrap().success());
     assert!(!second.child.wait().unwrap().success());
@@ -326,9 +339,13 @@ fn unreaped_dead_pin_still_anchors_group_through_last_signal() {
 #[test]
 fn pin_survives_term_then_eof_cleans_its_own_group() {
     let session = rustix::process::getsid(None).unwrap();
-    let mut held =
-        controller_source::unix::pin(Path::new(env!("CARGO_BIN_EXE_xtask")), session, None)
-            .unwrap();
+    let mut held = controller_source::unix::pin(
+        Path::new(env!("CARGO_BIN_EXE_xtask")),
+        session,
+        None,
+        std::time::Instant::now() + Duration::from_secs(2),
+    )
+    .unwrap();
     rustix::process::kill_process(
         rustix::process::Pid::from_child(&held.child),
         rustix::process::Signal::TERM,
@@ -441,4 +458,25 @@ fn inherited_child_signal_policy_requires_waitable_result_or_refusal() {
     assert_eq!(result["cleanup_complete"], true);
     drop(writer);
     assert!(child.wait().unwrap().success());
+}
+#[test]
+fn pin_startup_uses_remaining_absolute_budget_not_a_fresh_timeout() {
+    let session = rustix::process::getsid(None).unwrap();
+    let result = controller_source::unix::pin(
+        Path::new(env!("CARGO_BIN_EXE_process-probe")),
+        session,
+        None,
+        std::time::Instant::now() + Duration::from_millis(20),
+    );
+    assert!(
+        result.is_err(),
+        "A 300ms delayed ACK exceeded its 20ms remaining budget"
+    );
+    let expired = controller_source::unix::pin(
+        Path::new(env!("CARGO_BIN_EXE_xtask")),
+        session,
+        None,
+        std::time::Instant::now() - Duration::from_millis(1),
+    );
+    assert!(expired.is_err());
 }

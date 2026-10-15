@@ -250,3 +250,26 @@ claiming unsafe disposition inspection. One accidentally empty exact-name
 selection was rejected as evidence and rerun using its full test name (1 passed).
 Clippy with warnings denied and actionlint passed. The new process-probes workflow
 runs actual Linux/macOS counterparts; their results remain pending until execution.
+
+## Process controller closure deltas
+
+At 57c8e3c, actual process-probes run38787383185 succeeded on Ubuntu22 x64 and
+macOS15 ARM64: 17 tests on each, Rust1.99.0, no skips. At 26b88b8 the same
+native counterparts succeeded in run38787995601. This is process-boundary
+qualification only, not native product/archive qualification.
+
+Subsequent source fixes propagate one absolute cleanup deadline through each
+inspection, row/pin startup and ACK wait instead of restarting per-group budgets.
+A delayed 300ms pin ACK is rejected under a 20ms remaining budget. Already-reaped
+worker PID numbers are not exempted from unexpected-live-survivor accounting.
+The supervisor's startup now proves dead-unreaped pin retention using safe
+waitid(EXITED|NOWAIT|NOHANG), a second same-group join, last signal and real reaps
+before readiness. Effective Cargo admission runs at the snapshot CWD and at
+command construction; standard Rustdoc/native compiler override families and
+unreviewed build/target flags are covered. A real inherited target/.cargo config
+case blocks command construction/marker launch and its clean positive launches.
+
+Local updated checks: 8 driver unit tests and 18 actual process probes passed,
+no failures/ignores/filters. Clippy with warnings denied and formatting passed.
+The bounded named fuzz/mutation campaigns remain unrun pending independent
+controller closure and exact-revision native probe results.

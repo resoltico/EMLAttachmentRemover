@@ -4,6 +4,12 @@ use std::{path::PathBuf, process::Command, time::Duration};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
     let mode = args.next().ok_or("mode")?;
+    if mode == "--eml-process-pin" {
+        use std::io::Write;
+        std::thread::sleep(Duration::from_millis(300));
+        std::io::stdout().write_all(b"ready\n")?;
+        return Ok(());
+    }
     let root = PathBuf::from(args.next().ok_or("root")?);
     if mode == "marker" {
         #[cfg(unix)]
