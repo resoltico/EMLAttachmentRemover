@@ -22,7 +22,7 @@ pub struct FileSignature {
     changed_seconds: i64,
     changed_nanoseconds: i64,
 }
-fn signature(stat: &fs::Stat) -> io::Result<FileSignature> {
+pub(crate) fn signature(stat: &fs::Stat) -> io::Result<FileSignature> {
     if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

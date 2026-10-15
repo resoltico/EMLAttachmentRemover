@@ -11,10 +11,10 @@ fn unsupported() -> io::Error {
 #[cfg(target_os = "linux")]
 fn linux_model(kind: i64) -> io::Result<()> {
     if [
-        libc::EXT4_SUPER_MAGIC as i64,
-        libc::TMPFS_MAGIC as i64,
-        libc::XFS_SUPER_MAGIC as i64,
-        libc::BTRFS_SUPER_MAGIC as i64,
+        libc::EXT4_SUPER_MAGIC,
+        libc::TMPFS_MAGIC,
+        libc::XFS_SUPER_MAGIC,
+        libc::BTRFS_SUPER_MAGIC,
     ]
     .contains(&kind)
     {

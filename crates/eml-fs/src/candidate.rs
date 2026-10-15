@@ -41,10 +41,18 @@ pub struct SyncReceipt {
     /// Native error retained for failure or limited-method evidence.
     pub native_code: Option<i64>,
 }
+fn unsupported_sync(error: rustix::io::Errno) -> bool {
+    [
+        rustix::io::Errno::INVAL,
+        rustix::io::Errno::NOTSUP,
+        rustix::io::Errno::OPNOTSUPP,
+    ]
+    .contains(&error)
+}
 fn sync_error(method: SyncMethod, error: rustix::io::Errno) -> SyncReceipt {
     SyncReceipt {
         method,
-        state: if matches!(error, rustix::io::Errno::INVAL | rustix::io::Errno::NOTSUP) {
+        state: if unsupported_sync(error) {
             SyncState::Unsupported
         } else {
             SyncState::Failed
@@ -74,13 +82,11 @@ pub(crate) fn file_sync(fd: impl AsFd) -> SyncReceipt {
             state: SyncState::Succeeded,
             native_code: None,
         },
-        Err(error) if matches!(error, rustix::io::Errno::INVAL | rustix::io::Errno::NOTSUP) => {
-            SyncReceipt {
-                method: SyncMethod::FsyncFullfsyncUnsupported,
-                state: SyncState::Succeeded,
-                native_code: Some(i64::from(error.raw_os_error())),
-            }
-        }
+        Err(error) if unsupported_sync(error) => SyncReceipt {
+            method: SyncMethod::FsyncFullfsyncUnsupported,
+            state: SyncState::Succeeded,
+            native_code: Some(i64::from(error.raw_os_error())),
+        },
         Err(error) => sync_error(SyncMethod::FsyncFullfsync, error),
     };
     #[cfg(not(target_os = "macos"))]
@@ -137,11 +143,32 @@ pub enum PublicationState {
 /// must finish reconciliation/sync/cleanup after Published or Unknown.
 pub struct PublishAttempt {
     /// Held file/directory owners remain alive.
-    pub candidate: ReadyCandidate,
+    pub candidate: PublicationCandidate,
     /// Whether the native edge published this candidate.
     pub state: PublicationState,
     /// Native error, even if later identity reconciliation established publication.
     pub error: Option<io::Error>,
+}
+/// Held candidate after its single publication attempt. It can be reconciled or
+/// cleaned but cannot be published again under another final name.
+pub struct PublicationCandidate(ReadyCandidate);
+impl PublicationCandidate {
+    /// Exact object identity retained across the edge.
+    pub fn identity(&self) -> Identity {
+        self.0.identity()
+    }
+    /// File synchronization completed before the edge.
+    pub fn file_sync(&self) -> SyncReceipt {
+        self.0.file_sync()
+    }
+    /// Compare a final entry with the held candidate.
+    pub fn check_final_identity(&self, name: &OsStr) -> io::Result<bool> {
+        self.0.check_final_identity(name)
+    }
+    /// Remove only the owned staging resources; never roll back a final copy.
+    pub fn cleanup(self) -> CleanupReceipt {
+        self.0.cleanup()
+    }
 }
 fn random_name() -> io::Result<OsString> {
     let mut bytes = [0; 16];
@@ -375,9 +402,20 @@ impl ReadyCandidate {
         })();
         if let Err(error) = &result
             && attempted_edge
-            && matches!(
+            && !matches!(
                 error.raw_os_error(),
-                Some(libc::EIO | libc::EINTR | libc::ESTALE | libc::ETIMEDOUT)
+                Some(
+                    libc::EEXIST
+                        | libc::EACCES
+                        | libc::EPERM
+                        | libc::EROFS
+                        | libc::ENOENT
+                        | libc::ENOTDIR
+                        | libc::EINVAL
+                        | libc::ENAMETOOLONG
+                        | libc::EXDEV
+                        | libc::ENOTSUP
+                )
             )
         {
             self.state = PublicationState::Unknown;
@@ -389,7 +427,7 @@ impl ReadyCandidate {
         }
         PublishAttempt {
             state: self.state,
-            candidate: self,
+            candidate: PublicationCandidate(self),
             error: result.err(),
         }
     }
@@ -414,6 +452,36 @@ impl ReadyCandidate {
 mod tests {
     use super::*;
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    #[test]
+    fn only_documented_unsupported_sync_errors_allow_the_limited_method() {
+        for error in [
+            rustix::io::Errno::INVAL,
+            rustix::io::Errno::NOTSUP,
+            rustix::io::Errno::OPNOTSUPP,
+        ] {
+            assert!(unsupported_sync(error));
+            assert_eq!(
+                sync_error(SyncMethod::Fsync, error).state,
+                SyncState::Unsupported
+            );
+        }
+        for error in [
+            rustix::io::Errno::IO,
+            rustix::io::Errno::ACCESS,
+            rustix::io::Errno::NOSPC,
+        ] {
+            assert!(!unsupported_sync(error));
+            assert_eq!(
+                sync_error(SyncMethod::FsyncFullfsync, error).state,
+                SyncState::Failed
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(rustix::io::Errno::NOTSUP.raw_os_error(), 45);
+            assert_eq!(rustix::io::Errno::OPNOTSUPP.raw_os_error(), 102);
+        }
+    }
     fn root() -> tempfile::TempDir {
         let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fs-tests");
         std::fs::create_dir_all(&base).unwrap();
@@ -603,9 +671,39 @@ mod tests {
         let root = root();
         assert!(std::process::Command::new("/bin/chmod").args(["+a", "everyone allow readattr,readsecurity,list,search,directory_inherit,file_inherit"]).arg(root.path()).status().unwrap().success());
         let parent = BoundDirectory::open(root.path()).unwrap();
+        let acl_entries = |path: &std::path::Path| {
+            let listing = std::process::Command::new("/bin/ls")
+                .args(["-den"])
+                .arg(path)
+                .output()
+                .unwrap();
+            assert!(listing.status.success());
+            String::from_utf8(listing.stdout)
+                .unwrap()
+                .lines()
+                .skip(1)
+                .count()
+        };
+        // Independent OS listing must detect a real inherited ACL even with
+        // restrictive mode. This control would reject omitting ACL clearing.
+        let control = root.path().join("inheritance-control");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&control)
+            .unwrap();
+        assert!(acl_entries(&control) > 0);
         let candidate = ready(&parent, b"synthetic bytes");
-        // clear_owned re-inspects the actual descriptor and rejects any remaining
-        // entries. Publication and final0600 are exercised rather than mocked.
+        assert_eq!(acl_entries(candidate.owned.directory().requested_path()), 0);
+        assert_eq!(
+            acl_entries(
+                &candidate
+                    .owned
+                    .directory()
+                    .requested_path()
+                    .join("candidate")
+            ),
+            0
+        );
         assert_eq!(candidate.file_sync().state, SyncState::Succeeded);
         let attempt = candidate.publish(OsStr::new("copy"));
         assert!(attempt.error.is_none());
@@ -618,5 +716,6 @@ mod tests {
                 & 0o777,
             0o600
         );
+        assert_eq!(acl_entries(&root.path().join("copy")), 0);
     }
 }

@@ -88,6 +88,27 @@ Model references: [Linux VFS deletion](https://github.com/torvalds/linux/blob/v6
 [tmpfs](https://docs.kernel.org/filesystems/tmpfs.html),
 [filesystem ownership mappings](https://www.kernel.org/doc/html/latest/filesystems/idmappings.html).
 
+### Native checkpoint evidence
+
+Commit `709fef041ece8de3e4d2076e7ea8fa4428662230` ran the held-filesystem
+crate tests on all four native POSIX runners in [CI38792010023](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38792010023).
+Linux x64/ARM each passed18 tests on actual ext-family f_type0xef53; Mac Intel/ARM
+each passed20 with actual f_flags0x4909000. Compiler host triples matched the CPUs.
+Local Mac tests also passed under invocation-only umask000. These observations
+cover that staging checkpoint, not full WP3 or later source changes.
+
+The native different-UID probe is an explicit developer example, built with
+`cargo build --locked -p eml-fs --example namespace-credentials`. On an isolated
+runner with noninteractive sudo, invoke its executable with the original nonroot
+UID/GID. It verifies the actual dropped credentials and positive controls before
+protection checks. It creates only a fresh owned /tmp fixture, uses held-identity
+cleanup and retains the exact fixture on failure; it never sweeps a pathname.
+Local sudo is unavailable without a password, so local cross-UID execution is
+unrun. The workflow runs this probe on all four POSIX hosts; a missing credential
+or unrelated child failure fails the gate. Linux named-ACL-mask, expanded Darwin
+ACL, full orchestration, Windows product backend and archive/GUI checks remain
+separate obligations.
+
 References: [unlink/unlinkat](https://man7.org/linux/man-pages/man2/unlink.2.html),
 [POSIX ACL mask and mode](https://man7.org/linux/man-pages/man5/acl.5.html),
 [Apple vnode authorization](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_subr.c).

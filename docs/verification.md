@@ -70,6 +70,14 @@ Missed/timeouts/incomplete/unclassified results fail; unviable is not caught and
 requires retained compiler evidence/source-local review. No global digest-based
 survivor registry or automatic equivalence waiver is used.
 
+The single reviewed compiler-invalid structural case is source-local: eml-core
+verify.rs authorize_deletions FnValue `Ok(Default::default())`, with its expected
+authorization Result type, Build-only failure101 and actual local outcome log
+showing only the specific Authorization:Default E0277 cause. Other mutations,
+missing/ambiguous logs, another compiler cause, a Test phase, or more than one
+unviable result fail. Reports retain separate caught/unviable/reviewed_unviable
+counts; reviewed_unviable is never counted as a test catch.
+
 ## Bounded preparation campaign observations
 
 Source `8e3ed3277dd7faaaee7b665e0901c4f294d38799`, native macOS ARM64:

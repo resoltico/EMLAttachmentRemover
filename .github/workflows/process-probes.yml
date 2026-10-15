@@ -21,7 +21,9 @@ jobs:
           rustc -vV
           uname -a
       - name: Real owned process lifetime and signal probes
-        run: cargo test --locked --package xtask --test processes -- --test-threads=1
+        run: |
+          cargo test --locked --package xtask --bin xtask
+          cargo test --locked --package xtask --test processes -- --test-threads=1
   filesystem:
     strategy:
       fail-fast: false
@@ -39,3 +41,9 @@ jobs:
           uname -a
       - name: Held filesystem and namespace admission tests
         run: cargo test --locked --package eml-fs -- --nocapture
+      - name: Real different-UID namespace controls on owned fixtures
+        run: |
+          cargo build --locked --package eml-fs --example namespace-credentials
+          victim_uid=$(id -u)
+          victim_gid=$(id -g)
+          sudo -n "$PWD/target/debug/examples/namespace-credentials" "$victim_uid" "$victim_gid"

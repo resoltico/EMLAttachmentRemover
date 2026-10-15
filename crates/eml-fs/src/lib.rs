@@ -7,11 +7,15 @@ mod namespace;
 #[cfg(unix)]
 pub use file::{BoundFile, FileSignature};
 #[cfg(unix)]
+mod inventory;
+#[cfg(unix)]
+pub use inventory::{DirectoryEntries, EntryKind, EntryObservation};
+#[cfg(unix)]
 mod candidate;
 #[cfg(unix)]
 pub use candidate::{
-    PublicationState, PublishAttempt, ReadyCandidate, StageFailure, SyncMethod, SyncReceipt,
-    SyncState,
+    PublicationCandidate, PublicationState, PublishAttempt, ReadyCandidate, StageFailure,
+    SyncMethod, SyncReceipt, SyncState,
 };
 #[cfg(unix)]
 mod unix;

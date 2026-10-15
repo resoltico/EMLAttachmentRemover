@@ -35,6 +35,7 @@ pub(crate) fn component(name: &OsStr) -> io::Result<()> {
     }
     Ok(())
 }
+#[allow(clippy::unnecessary_cast)] // Darwin dev_t is signed32; Linux dev_t is unsigned64.
 pub(crate) fn identity(stat: &fs::Stat) -> io::Result<Identity> {
     usable_identity(stat.st_dev as u64, stat.st_ino)
 }
