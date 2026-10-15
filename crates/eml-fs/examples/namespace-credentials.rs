@@ -14,6 +14,14 @@ mod probe {
         if value { Ok(()) } else { Err(reason.into()) }
     }
     fn ids(uid: u32, gid: u32) -> Result<()> {
+        println!(
+            "Credential observation: requested uid={uid} gid={gid}; actual ruid={} euid={} rgid={} egid={} groups={:?}",
+            process::getuid().as_raw(),
+            process::geteuid().as_raw(),
+            process::getgid().as_raw(),
+            process::getegid().as_raw(),
+            process::getgroups()?
+        );
         require(
             process::getuid().as_raw() == uid && process::geteuid().as_raw() == uid,
             "Wrong actual real/effective UID",
