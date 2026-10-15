@@ -55,6 +55,45 @@ Full WP3 still requires actual junction/reparse mutation and pre-existing writer
 controls, source/destination/candidate substitutions, entry conflicts, post-edge
 failures and cleanup cases on both native CPUs. The early gate is not a waiver.
 
+## Read, destination and existing-copy handle lifetimes
+
+The reviewed product lifecycle releases inventory directory bindings before
+writes, retaining their identities and reservations. The current source keeps
+its read-only FILE_SHARE_READ file handle and change signature; it does not
+retain a conflicting readonly directory pin when the destination needs write
+access to that same directory. The writable destination uses the strict pinned
+chain above. Win32 sharing checks are symmetric, so reopening another strict
+readonly handle is not a harmless way to observe an already write-pinned parent.
+
+Source revalidation checks both the current requested parent expression against
+its stored parent identity and the source file/signature. The same file ID under
+another parent through a retargeted junction/hardlink is not an unchanged binding.
+An observation-only parent handle may advertise write sharing to coexist with
+the existing strict pin; it requests no write access and never supplies creation
+protection. The strict pin continues denying incompatible writers. Reusing a
+destination pin still requires checking that the requested expression reaches it.
+
+Existing-copy resynchronization consumes/closes the read comparison handle,
+then opens the existing file with read/write access and FILE_SHARE_READ only.
+This is a fresh binding after a gap, not uninterrupted exclusion. Require the
+same full volume/file identity and change signature, reject reparse/special
+objects, repeat all collected-source and same-run-created-output alias guards,
+recompare all candidate bytes plus EOF and before/after stability, flush, then
+qualify parent/requested address while the new handle and destination chain live.
+Do not close the selected source's handle to make this open succeed. No attribute,
+ACL or data changes are allowed. Access, sharing, replacement, alias, stability
+or address failures retain an unsuccessful existing observation without new
+publication. Dry run requests neither write access nor flush.
+
+Both native CPUs must test beside-source creation without self-sharing failure,
+the directory-pin handoff, same-file/different-parent retargeting, controlled
+replacement in the comparison/reopen gap (different bytes, identical bytes with
+different identity, source aliases and same-run output aliases), denied-write
+resync and successful identical-copy resync. This lifecycle clarification is
+reviewed design, not execution evidence for the still-incomplete product backend.
+
 Native API references: [FILE_RENAME_INFORMATION](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information),
 [NtSetInformationFile](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntsetinformationfile),
-[CreateRestrictedToken](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken).
+[CreateRestrictedToken](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken),
+[CreateFile sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[FlushFileBuffers access](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).

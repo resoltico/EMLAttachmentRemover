@@ -92,9 +92,21 @@ pub(crate) fn file_sync(fd: impl AsFd) -> SyncReceipt {
     #[cfg(not(target_os = "macos"))]
     portable
 }
+/// Native operation in progress when staging failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StageOperation {
+    /// Create and validate private owned resources before bytes.
+    Create,
+    /// Write or reread candidate storage.
+    Write,
+    /// Request candidate file synchronization.
+    Sync,
+}
 /// Staging failed before publication; preserves its cause, flush and owned cleanup.
 #[derive(Debug)]
 pub struct StageFailure {
+    /// Native operation, so callers need not parse error prose.
+    pub operation: StageOperation,
     /// Primary native/storage invariant failure.
     pub error: io::Error,
     /// File synchronization, if reached.
@@ -111,6 +123,7 @@ impl std::error::Error for StageFailure {}
 impl From<CreationFailure> for StageFailure {
     fn from(error: CreationFailure) -> Self {
         Self {
+            operation: StageOperation::Create,
             error: error.error,
             file_sync: None,
             cleanup: error.cleanup,
@@ -242,6 +255,7 @@ impl BoundDirectory {
         mut checkpoint: impl FnMut() -> io::Result<()>,
     ) -> Result<ReadyCandidate, StageFailure> {
         let plain_failure = |error| StageFailure {
+            operation: StageOperation::Create,
             error,
             file_sync: None,
             cleanup: CleanupReceipt {
@@ -271,6 +285,7 @@ impl BoundDirectory {
         })?;
         let mut observed = None;
         let mut sync = None;
+        let mut operation = StageOperation::Create;
         let result = (|| -> io::Result<File> {
             let directory = owned.directory();
             directory.check_private()?;
@@ -298,6 +313,7 @@ impl BoundDirectory {
             #[cfg(target_os = "macos")]
             crate::darwin_acl::clear_owned(&file)?;
             validate_file(&file, directory, observed.unwrap(), 0, true)?;
+            operation = StageOperation::Write;
             for chunk in bytes.chunks(64 * 1024) {
                 checkpoint()?;
                 file.write_all(chunk)?;
@@ -325,6 +341,7 @@ impl BoundDirectory {
                 bytes.len() as u64,
                 true,
             )?;
+            operation = StageOperation::Sync;
             checkpoint()?;
             let receipt = file_sync(&file);
             sync = Some(receipt);
@@ -346,6 +363,7 @@ impl BoundDirectory {
                 state: PublicationState::NotPublished,
             }),
             Err(error) => Err(StageFailure {
+                operation,
                 error,
                 file_sync: sync,
                 cleanup: cleanup(owned, observed),
@@ -641,7 +659,7 @@ mod tests {
         let root = root();
         let parent = BoundDirectory::open(root.path()).unwrap();
         let bytes = vec![b'x'; 200_000];
-        for stop_at in [1, 2, 3, 5] {
+        for stop_at in [1, 2, 3, 5, 10] {
             let mut calls = 0;
             let failure = parent
                 .stage_bytes(&bytes, || {
@@ -658,6 +676,14 @@ mod tests {
                 .err()
                 .unwrap();
             assert_eq!(failure.error.kind(), io::ErrorKind::Interrupted);
+            assert_eq!(
+                failure.operation,
+                match stop_at {
+                    1 => StageOperation::Create,
+                    10 => StageOperation::Sync,
+                    _ => StageOperation::Write,
+                }
+            );
             assert!(matches!(
                 failure.cleanup.state,
                 CleanupState::NotNeeded | CleanupState::Complete

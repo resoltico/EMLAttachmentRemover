@@ -15,7 +15,7 @@ mod candidate;
 #[cfg(unix)]
 pub use candidate::{
     PublicationCandidate, PublicationState, PublishAttempt, ReadyCandidate, StageFailure,
-    SyncMethod, SyncReceipt, SyncState,
+    StageOperation, SyncMethod, SyncReceipt, SyncState,
 };
 #[cfg(unix)]
 mod unix;

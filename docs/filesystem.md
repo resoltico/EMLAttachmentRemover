@@ -109,6 +109,35 @@ or unrelated child failure fails the gate. Linux named-ACL-mask, expanded Darwin
 ACL, full orchestration, Windows product backend and archive/GUI checks remain
 separate obligations.
 
+At `fd28788e320fcd5a18d28a7b2636ec12fcd228ba`, the full local workspace passed
+108 tests. The ACL-clearing negative control cloned that exact source, removed
+only the two owned-object clearing calls and compiled successfully. Its inherited-
+ACL test then failed the independent OS listing assertion (one remaining entry,
+expected zero), demonstrating detection. The injected diff, source identity and
+failure log remain under owned `target/acl-negative.zeiiWS`; the faulty checkout
+was removed. This is detection evidence, not a passing product run.
+
+[Native credential run38794094552](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38794094552)
+passed on Linux x64/ARM with actual nonroot IDs, cleared supplementary groups,
+working own-entry controls, private/self-sticky/trusted-root-sticky protections,
+shared nonsticky attack control and foreign-owner refusals, followed by complete
+owned cleanup. Both Macs failed before fixture operations because the dropped
+child's effective GID was0. [Diagnostic run38794335686](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38794335686)
+confirmed real GID20 but effective GID0 and sole group0, despite UID501. Neither
+failed Mac run established filesystem protection.
+
+Pinned Rust clears groups after setgid when uid is requested; Darwin substitutes
+group0 for an empty group list. The reviewed correction first requires precisely
+the observed nonroot UID/real-GID/sole-group0 state, then performs one safe self-
+exec requesting only the permitted real GID. That hop does not request uid or
+clear groups again. The final child must pass unchanged strict IDs/groups,
+no-root-regain and positive controls before filesystem operations. Corrected
+native Mac execution and the added Linux named-ACL-mask cases still require actual
+run evidence. No raw credential code, account or owner-preference change is used.
+
+Credential references: [Rust1.99 process setup](https://github.com/rust-lang/rust/blob/1.99.0/library/std/src/sys/process/unix/unix.rs#L302-L330),
+[Darwin credentials](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_prot.c).
+
 References: [unlink/unlinkat](https://man7.org/linux/man-pages/man2/unlink.2.html),
 [POSIX ACL mask and mode](https://man7.org/linux/man-pages/man5/acl.5.html),
 [Apple vnode authorization](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_subr.c).

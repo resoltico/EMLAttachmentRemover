@@ -1,4 +1,4 @@
-name: Verification process lifetime probes
+name: Native library boundary checks
 on:
   push:
     branches: [codex/v6-rust-swiftui]
@@ -40,7 +40,9 @@ jobs:
           rustc -vV
           uname -a
       - name: Held filesystem and namespace admission tests
-        run: cargo test --locked --package eml-fs -- --nocapture
+        run: |
+          cargo clippy --locked --package eml-fs --all-targets -- -D warnings
+          cargo test --locked --package eml-fs -- --nocapture
       - name: Real different-UID namespace controls on owned fixtures
         run: |
           cargo build --locked --package eml-fs --example namespace-credentials

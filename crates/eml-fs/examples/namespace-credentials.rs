@@ -67,6 +67,17 @@ mod probe {
         let control = Path::new(&args[4]);
         positive(control, uid)?;
         match action {
+            "positive" => {}
+            "deny-create" => {
+                let error = std::fs::create_dir(parent.join("blocked"))
+                    .err()
+                    .ok_or("Masked actor created an entry")?;
+                require(
+                    matches!(error.raw_os_error(), Some(libc::EACCES | libc::EPERM)),
+                    "Creation denial was unrelated to access control",
+                )?;
+                println!("Named-ACL zero-mask actor create refused: {error}");
+            }
             "admit" | "refuse" => {
                 let held = BoundDirectory::open(parent)?;
                 let result = held.create_private_child(OsStr::new("stage"));
@@ -172,12 +183,117 @@ mod probe {
         )?;
         Ok(())
     }
+    #[cfg(target_os = "linux")]
+    fn acl_masks(
+        outer: &BoundDirectory,
+        executable: &Path,
+        victim: u32,
+        victim_gid: u32,
+        actor: u32,
+        control: &Path,
+    ) -> Result<()> {
+        let fixture = root_child(
+            outer,
+            "acl-mask",
+            victim,
+            victim_gid,
+            Mode::from_raw_mode(0o700),
+        )?;
+        let path = fixture.directory().requested_path();
+        let set_mask = |mask: &str| -> Result<()> {
+            require(
+                Command::new("setfacl")
+                    .arg("-m")
+                    .arg(format!("u:{actor}:rwx,m::{mask}"))
+                    .arg(path)
+                    .status()?
+                    .success(),
+                "Native setfacl failed",
+            )?;
+            require(
+                Command::new("getfacl")
+                    .args(["--numeric", "--absolute-names"])
+                    .arg(path)
+                    .status()?
+                    .success(),
+                "Native getfacl failed",
+            )
+        };
+        set_mask("rwx")?;
+        // The named user really has write authority; fail-closed mode-mask
+        // admission must refuse before mkdir, rather than trust base group bits.
+        run_child(executable, actor, actor, "positive", path, path)?;
+        run_child(executable, victim, victim_gid, "refuse", path, control)?;
+        set_mask("---")?;
+        run_child(executable, victim, victim_gid, "admit", path, control)?;
+        let stage = fixture
+            .directory()
+            .observe_child(OsStr::new("stage"), false)?
+            .identity;
+        run_child(executable, actor, actor, "deny-create", path, control)?;
+        fs::fchown(fixture.directory(), Some(Uid::ROOT), Some(Gid::ROOT))?;
+        fs::fchmod(fixture.directory(), Mode::from_raw_mode(0o700))?;
+        remove_entry(fixture.directory(), "stage", stage, true)?;
+        require(
+            fixture.remove_empty().state == CleanupState::Complete,
+            "ACL-mask fixture cleanup unconfirmed",
+        )?;
+        println!(
+            "PASS: actual named-ACL write grant, pre-mkdir refusal, zero-mask product admission and other-UID creation denial"
+        );
+        Ok(())
+    }
     pub fn main() -> Result<()> {
         let args: Vec<_> = std::env::args().skip(1).collect();
         if args.first().map(String::as_str) == Some("--noop") {
             return Ok(());
         }
         if args.first().map(String::as_str) == Some("--child") {
+            #[cfg(target_os = "macos")]
+            {
+                require(args.len() == 6, "Malformed credential launcher")?;
+                let uid: u32 = args[1].parse()?;
+                let gid: u32 = args[2].parse()?;
+                require(
+                    uid != 0
+                        && gid != 0
+                        && process::getuid().as_raw() == uid
+                        && process::geteuid().as_raw() == uid
+                        && process::getgid().as_raw() == gid,
+                    "Darwin credential launcher has wrong UID or real GID",
+                )?;
+                let groups = process::getgroups()?;
+                require(
+                    process::getegid().as_raw() == 0
+                        && groups.len() == 1
+                        && groups[0].as_raw() == 0,
+                    "Darwin launcher did not match the reviewed zero-group normalization state",
+                )?;
+                println!(
+                    "Darwin pre-normalization: ruid={} euid={} rgid={} egid={} groups={:?}",
+                    process::getuid().as_raw(),
+                    process::geteuid().as_raw(),
+                    process::getgid().as_raw(),
+                    process::getegid().as_raw(),
+                    process::getgroups()?
+                );
+                // Rust1.99 clears groups after setgid when uid is requested.
+                // Native Darwin evidence shows that empty group list resets the
+                // effective primary group to0 while the real group stays correct.
+                // A second safe exec requests only our permitted real GID, so it
+                // does not clear groups again. No fixture operation occurs until
+                // the final child strictly verifies all credentials and no regain.
+                let error = Command::new(std::env::current_exe()?)
+                    .arg("--verified-child")
+                    .args(&args[1..])
+                    .gid(gid)
+                    .exec();
+                return Err(error.into());
+            }
+            #[cfg(not(target_os = "macos"))]
+            return child(&args[1..]);
+        }
+        if args.first().map(String::as_str) == Some("--verified-child") {
             return child(&args[1..]);
         }
         require(
@@ -206,6 +322,13 @@ mod probe {
         let foreign = identities
             .next()
             .ok_or("No distinct foreign-owner identity")?;
+        #[cfg(target_os = "linux")]
+        for tool in ["setfacl", "getfacl"] {
+            require(
+                Command::new(tool).arg("--version").status()?.success(),
+                "Install the native POSIX ACL test tools before running this credential gate",
+            )?;
+        }
         let temporary = BoundDirectory::open(Path::new("/tmp"))?;
         let mut random = [0u8; 16];
         getrandom::fill(&mut random)?;
@@ -358,6 +481,15 @@ mod probe {
                 "Foreign fixture cleanup unconfirmed",
             )?;
         }
+        #[cfg(target_os = "linux")]
+        acl_masks(
+            outer.directory(),
+            &executable,
+            victim,
+            victim_gid,
+            actor,
+            control_path,
+        )?;
         require(
             control.remove_empty().state == CleanupState::Complete,
             "Control cleanup unconfirmed",
