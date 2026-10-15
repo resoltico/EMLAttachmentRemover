@@ -38,29 +38,67 @@ fn cfws(value: &[u8], cursor: &mut usize) -> Result<(), PreparationError> {
         if value.get(*cursor) != Some(&b'(') {
             return Ok(());
         }
-        let mut depth = 1;
+        comment(value, cursor)?;
+    }
+}
+fn comment(value: &[u8], cursor: &mut usize) -> Result<(), PreparationError> {
+    let mut depth = 1;
+    *cursor += 1;
+    while depth != 0 {
+        let byte = *value.get(*cursor).ok_or_else(malformed)?;
         *cursor += 1;
-        while depth != 0 {
-            let byte = *value.get(*cursor).ok_or_else(malformed)?;
-            *cursor += 1;
-            match byte {
-                b'\\' => {
-                    if *cursor == value.len() {
-                        return Err(malformed());
-                    }
-                    *cursor += 1;
+        match byte {
+            b'\\' => {
+                if *cursor == value.len() {
+                    return Err(malformed());
                 }
-                b'(' => {
-                    depth += 1;
-                    if depth > 32 {
-                        return Err(limit());
+                *cursor += 1;
+            }
+            b'(' => {
+                depth += 1;
+                if depth > 32 {
+                    return Err(limit());
+                }
+            }
+            b')' => depth -= 1,
+            _ => (),
+        }
+    }
+    Ok(())
+}
+fn unquoted(value: &[u8]) -> Result<Vec<u8>, PreparationError> {
+    let mut cursor = 0;
+    let mut output = Vec::new();
+    let mut whitespace = Vec::new();
+    let mut has_comment = false;
+    while cursor < value.len() {
+        match value[cursor] {
+            b' ' | b'\t' => {
+                whitespace.push(value[cursor]);
+                cursor += 1;
+            }
+            b'(' => {
+                comment(value, &mut cursor)?;
+                has_comment = true;
+            }
+            b')' => return Err(malformed()),
+            byte => {
+                if !output.is_empty() {
+                    if !whitespace.is_empty() {
+                        output.extend_from_slice(&whitespace);
+                    } else if has_comment {
+                        output.push(b' ');
                     }
                 }
-                b')' => depth -= 1,
-                _ => (),
+                whitespace.clear();
+                has_comment = false;
+                output.push(byte);
+                cursor += 1;
             }
         }
     }
+    // Only outside CFWS is discarded; internal literal whitespace is preserved.
+    Ok(output)
 }
 fn read_token<'a>(value: &'a [u8], cursor: &mut usize) -> Result<&'a [u8], PreparationError> {
     cfws(value, cursor)?;
@@ -183,12 +221,7 @@ fn parameter(piece: &[u8]) -> Parameter {
             }
             Ok(value)
         } else {
-            let tail = &piece[cursor..];
-            let end = tail
-                .iter()
-                .rposition(|b| !matches!(b, b' ' | b'\t'))
-                .map_or(0, |n| n + 1);
-            Ok(tail[..end].to_vec())
+            unquoted(&piece[cursor..])
         }
     })()
     .ok();
@@ -381,69 +414,96 @@ pub(crate) fn transfer(value: &[u8]) -> Result<String, PreparationError> {
     }
     Ok(parsed.primary)
 }
-fn decode_words(value: &[u8]) -> String {
-    let mut out = String::new();
-    let mut cursor = 0;
-    while cursor < value.len() {
-        let tail = &value[cursor..];
-        let decoded = (|| -> Option<(usize, String)> {
-            if !tail.starts_with(b"=?") {
-                return None;
-            }
-            let charset_end = tail[2..].iter().position(|b| *b == b'?')? + 2;
-            let encoding = *tail.get(charset_end + 1)?;
-            if tail.get(charset_end + 2) != Some(&b'?') {
-                return None;
-            }
-            let content = charset_end + 3;
-            let end = tail[content..].windows(2).position(|pair| pair == b"?=")? + content;
-            let payload = &tail[content..end];
-            let bytes = match encoding {
-                b'B' | b'b' => base64::engine::general_purpose::STANDARD
-                    .decode(payload)
-                    .ok()?,
-                b'Q' | b'q' => {
-                    let mut result = Vec::new();
-                    let mut p = 0;
-                    while p < payload.len() {
-                        match payload[p] {
-                            b'_' => result.push(b' '),
-                            b'=' => {
-                                let hi = (*payload.get(p + 1)? as char).to_digit(16)?;
-                                let lo = (*payload.get(p + 2)? as char).to_digit(16)?;
-                                result.push((hi * 16 + lo) as u8);
-                                p += 2;
-                            }
-                            byte => result.push(byte),
-                        }
-                        p += 1;
+fn encoded_word(tail: &[u8]) -> Option<(usize, String)> {
+    // RFC 2047 words have a 75-byte maximum. Bounded lookahead prevents
+    // repeated malformed prefixes from rescanning an entire long filename.
+    let tail = &tail[..tail.len().min(75)];
+    if !tail.starts_with(b"=?") {
+        return None;
+    }
+    let charset_end = tail[2..].iter().position(|byte| *byte == b'?')? + 2;
+    let encoding = *tail.get(charset_end + 1)?;
+    if tail.get(charset_end + 2) != Some(&b'?') {
+        return None;
+    }
+    let content = charset_end + 3;
+    let end = tail[content..].windows(2).position(|pair| pair == b"?=")? + content;
+    let payload = &tail[content..end];
+    if payload.is_empty()
+        || payload
+            .iter()
+            .any(|byte| !(33..=126).contains(byte) || *byte == b'?')
+    {
+        return None;
+    }
+    let bytes = match encoding {
+        b'B' | b'b' => base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .ok()?,
+        b'Q' | b'q' => {
+            let mut result = Vec::new();
+            let mut cursor = 0;
+            while cursor < payload.len() {
+                match payload[cursor] {
+                    b'_' => result.push(b' '),
+                    b'=' => {
+                        let hi = (*payload.get(cursor + 1)? as char).to_digit(16)?;
+                        let lo = (*payload.get(cursor + 2)? as char).to_digit(16)?;
+                        result.push((hi * 16 + lo) as u8);
+                        cursor += 2;
                     }
-                    result
+                    byte => result.push(byte),
                 }
-                _ => return None,
-            };
-            let charset = encoding_rs::Encoding::for_label(&tail[2..charset_end])?;
-            let (text, _, errors) = charset.decode(&bytes);
-            if errors {
-                return None;
+                cursor += 1;
             }
-            Some((end + 2, text.into_owned()))
-        })();
-        if let Some((length, text)) = decoded {
-            out.push_str(&text);
+            result
+        }
+        _ => return None,
+    };
+    let charset = encoding_rs::Encoding::for_label(&tail[2..charset_end])?;
+    let (text, _, errors) = charset.decode(&bytes);
+    if errors {
+        None
+    } else {
+        Some((end + 2, text.into_owned()))
+    }
+}
+fn decode_words(value: &[u8]) -> String {
+    let mut output = String::new();
+    let mut cursor = 0;
+    let mut previous_word = false;
+    while cursor < value.len() {
+        if previous_word {
+            let whitespace = value[cursor..]
+                .iter()
+                .take_while(|byte| matches!(byte, b' ' | b'\t'))
+                .count();
+            if whitespace > 0
+                && let Some((length, text)) = encoded_word(&value[cursor + whitespace..])
+            {
+                output.push_str(&text);
+                cursor += whitespace + length;
+                continue;
+            }
+        }
+        let tail = &value[cursor..];
+        if let Some((length, text)) = encoded_word(tail) {
+            output.push_str(&text);
             cursor += length;
+            previous_word = true;
         } else {
             let next = tail
                 .iter()
                 .enumerate()
                 .skip(1)
-                .find(|(_, b)| **b == b'=')
-                .map_or(tail.len(), |(n, _)| n);
-            out.push_str(&String::from_utf8_lossy(&tail[..next]));
+                .find(|(_, byte)| **byte == b'=')
+                .map_or(tail.len(), |(index, _)| index);
+            output.push_str(&String::from_utf8_lossy(&tail[..next]));
             cursor += next;
+            previous_word = false;
         }
     }
-    out
+    output
 }
 pub(crate) fn display_name(
     disposition: Option<&Structured>,

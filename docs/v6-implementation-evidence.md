@@ -167,3 +167,36 @@ from 502 to 503 entity bytes. Exact output bytes already matched the golden.
 `cargo +1.99.0 clippy --workspace --all-targets --locked -- -D warnings` and
 `cargo +1.99.0 fmt --all -- --check`: passed after resolving the reported lints.
 No bounded fuzz/mutation campaign has run yet.
+
+## MIME grammar and adversarial matrix checkpoint
+
+Independent QA reproduced three display/diagnostic defects at 5caf7a6: unquoted
+comments were literal parameter data, malformed encoded-word prefixes could
+rescan quadratically, adjacent valid words retained LWS and invalid Q words
+were decoded, and nested syntax errors lost known source sections. These have
+focused source fixes and independent regressions. The encoded-word scanner uses
+75-byte lookahead rather than a timing-only test. Current grammar clarification
+and deliberately tolerated display syntax are in [mime.md](mime.md).
+
+`cargo +1.99.0 test --workspace --locked`: 57 tests passed (5 unit including
+one differential property, 7 display, 12 resource-boundary, 1 model property,
+20 preparation/golden, 12 structure), 0 failed/ignored/filtered. The model is
+configured for 256 generated trees and the independent mail-parser comparison
+for 64 generated CRLF/identity cases, with owned regression seeds retained
+under target/proptest. The differential checks exact raw leaf spans/types,
+not regenerated/decoded output, and excludes embedded coordinate systems;
+embedded messages remain covered by independent model and golden tests.
+
+A model failure found a renderer-oracle mistake: CR-ending empty child plus
+LF parent framing combines into one CRLF. The model now isolates framing with
+CRLF and retains mixed entity/container transport, and an explicit exact-wire
+regression establishes the merged-terminator entity byte count. Another initial
+differential assertion confused shallow node allocation order with physical
+source order; both independent fact lists are now paired by source offsets.
+Neither correction changed the parser to match a mistaken oracle.
+
+Limits tested at/above their specified boundary include 256 MiB raw input,
+64 levels, 10,000 entities, per-block/aggregate header bytes, per-entity/total
+fields, per-field/total parameter pieces, continuation indices, comment depth,
+media tokens and related start identifiers. These passing tests do not replace
+the still-required bounded fuzz, scoped mutation and deliberate defect runs.

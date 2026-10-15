@@ -1,4 +1,4 @@
-//! Reusable message preparation and copy workflows for EML Attachment Remover.
+//! Reusable immutable message preparation for EML Attachment Remover.
 #![forbid(unsafe_code)]
 
 mod grammar;

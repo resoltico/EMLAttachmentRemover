@@ -348,3 +348,58 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod claim_tests {
+    use super::*;
+    #[test]
+    fn exact_claim_sequence_rejects_missing_extra_duplicate_reordered_wrong_reason_and_ids() {
+        let control = RunControl::default();
+        let message=crate::message::parse(b"Content-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\n\r\nbody\r\n--B\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment\r\n\r\npdf\r\n--B\r\nContent-Type: image/png\r\n\r\npng\r\n--B--\r\n",&control).unwrap();
+        let attachment = Claim {
+            id: 2,
+            reason: RemovalReason::Attachment,
+        };
+        let non_body = Claim {
+            id: 3,
+            reason: RemovalReason::NonBodyPart,
+        };
+        assert!(
+            authorize_deletions(&message, &[attachment.clone(), non_body.clone()], &control)
+                .is_ok()
+        );
+        for claims in [
+            vec![],
+            vec![attachment.clone()],
+            vec![attachment.clone(), non_body.clone(), non_body.clone()],
+            vec![attachment.clone(), attachment.clone()],
+            vec![non_body.clone(), attachment.clone()],
+            vec![
+                Claim {
+                    id: 2,
+                    reason: RemovalReason::RelatedResource,
+                },
+                non_body.clone(),
+            ],
+            vec![
+                Claim {
+                    id: 1,
+                    reason: RemovalReason::NonBodyPart,
+                },
+                non_body.clone(),
+            ],
+            vec![
+                Claim {
+                    id: usize::MAX,
+                    reason: RemovalReason::Attachment,
+                },
+                non_body,
+            ],
+        ] {
+            assert!(
+                authorize_deletions(&message, &claims, &control).is_err(),
+                "{claims:?}"
+            );
+        }
+    }
+}

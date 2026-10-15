@@ -62,6 +62,14 @@ struct Parser<'a, 'control> {
     header_bytes: usize,
     parameters: usize,
 }
+fn located(mut failure: PreparationError, source_section: Option<String>) -> PreparationError {
+    if let PreparationError::Refused { section, .. } = &mut failure
+        && section.is_none()
+    {
+        *section = source_section;
+    }
+    failure
+}
 fn malformed(detail: &'static str) -> PreparationError {
     error(Refusal::Malformed, detail)
 }
@@ -188,6 +196,19 @@ impl Parser<'_, '_> {
         Ok((fields, span.end..span.end, span.end..span.end, envelope))
     }
     fn shallow(
+        &mut self,
+        span: Span,
+        depth: usize,
+        source_section: Option<String>,
+        root: bool,
+        envelope: bool,
+        default: &str,
+    ) -> Result<usize, PreparationError> {
+        let location = source_section.clone();
+        self.shallow_facts(span, depth, source_section, root, envelope, default)
+            .map_err(|failure| located(failure, location))
+    }
+    fn shallow_facts(
         &mut self,
         span: Span,
         depth: usize,
@@ -344,6 +365,11 @@ impl Parser<'_, '_> {
         Ok(children)
     }
     fn expand(&mut self, id: usize, depth: usize) -> Result<(), PreparationError> {
+        let section = self.message.nodes[id].section.clone();
+        self.expand_contents(id, depth)
+            .map_err(|failure| located(failure, section))
+    }
+    fn expand_contents(&mut self, id: usize, depth: usize) -> Result<(), PreparationError> {
         self.control.checkpoint()?;
         let node = &self.message.nodes[id];
         if !node.root && node.disposition.as_deref() == Some("attachment") {
@@ -440,4 +466,33 @@ pub(crate) fn parse<'a>(
     let root = parser.shallow(0..input.len(), 1, None, true, true, "text/plain")?;
     parser.expand(root, 1)?;
     Ok(parser.message)
+}
+
+#[cfg(test)]
+mod differential {
+    use super::*;
+    use mail_parser::{MessageParser, MimeHeaders, PartType};
+    use proptest::prelude::*;
+    proptest! {
+        #![proptest_config(ProptestConfig { cases:64, failure_persistence:Some(Box::new(proptest::test_runner::FileFailurePersistence::Direct(concat!(env!("CARGO_MANIFEST_DIR"),"/../../target/proptest/differential.txt")))),..ProptestConfig::default() })]
+        #[test]
+        fn independent_parser_agrees_on_crlf_identity_leaf_types_and_raw_spans(a in "[A-Za-z0-9 =]{0,128}", b in "[A-Za-z0-9 =]{0,128}") {
+            // Matching syntax subset only: explicit ASCII types, CRLF, identity CTE,
+            // distinct safe boundaries, no embedded-message offset coordinate systems.
+            let wire=format!("MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=outer\r\n\r\n--outer\r\nContent-Type: multipart/alternative; boundary=inner\r\n\r\n--inner\r\nContent-Type: text/plain\r\nContent-Transfer-Encoding: 7bit\r\n\r\n{a}Z\r\n--inner\r\nContent-Type: text/html\r\nContent-Transfer-Encoding: 8bit\r\n\r\n<p>{b}</p>\r\n--inner--\r\n--outer\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: binary\r\n\r\nopaqueZ\r\n--outer--\r\n").into_bytes();
+            let control=RunControl::default();let ours=parse(&wire,&control).unwrap();
+            let independent=MessageParser::default().parse(&wire).unwrap();
+            let mut actual:Vec<_>=ours.nodes.iter().filter(|node|matches!(node.kind,Kind::Leaf)).map(|node|(node.media.clone(),node.body.clone())).collect();
+            let mut expected:Vec<_>=independent.parts.iter().filter(|part|!matches!(part.body,PartType::Multipart(_) | PartType::Message(_))).map(|part| {
+                let media=part.content_type().unwrap();
+                (format!("{}/{}",media.c_type,media.c_subtype.as_deref().unwrap()),part.offset_body as usize..part.offset_end as usize)
+            }).collect();
+            actual.sort_by_key(|(_,span)|span.start); expected.sort_by_key(|(_,span)|span.start);
+            prop_assert_eq!(actual.len(),3);prop_assert_eq!(actual.len(),expected.len());
+            for ((media,span),(other,other_span)) in actual.iter().zip(&expected) {
+                prop_assert_eq!(media,other);prop_assert_eq!(span,other_span);
+                prop_assert_eq!(&wire[span.clone()],&wire[other_span.clone()]);
+            }
+        }
+    }
 }
