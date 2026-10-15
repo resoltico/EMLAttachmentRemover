@@ -301,3 +301,49 @@ The unrelated Windows creation-protection requirement remains failed on both
 native CPUs; [its record](windows-publication.md#native-creation-protection-gate-failed)
 identifies the exact run and tests that did not execute. The real failing check
 is retained in CI; passing request tests cannot qualify publication.
+
+At exact head `a5acea947e71f61258d78d7a57bcebfdebbb2231`, all six native
+request-test executions passed: nine tests each, zero failures/ignores/filters.
+[Unix run38813265190](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38813265190)
+passed all six jobs, including the existing filesystem and process checks.
+[Windows run38813265183](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38813265183)
+passed both request steps, then failed the separate creation-protection test on
+both CPUs (zero passed, one failed, nine filtered each). Later filesystem library
+tests remain unrun in those jobs. These results close only the native pure
+resource-admission slice, not WP4 or Windows publication.
+
+## Protocol request decoder checkpoint
+
+The real frontend package now contains strict request decoding as a library;
+there is no executable or stand-in processor. Local `cargo test --locked --package
+remove-eml-attachments --test request` passed 16 integration tests, zero failures/ignores/filters;
+unit and doctest discovery was zero. The required-nullable omission, unknown and
+duplicate fields, malformed JSON/UTF-8, canonical Base64, host mismatch, native
+units and core path/aggregate limits have independent negative cases. A valid
+request padded to exactly 8 MiB passes; one byte over fails before parsing.
+Error diagnostics are checked for bounded size and absence of request content.
+
+Independent review found that derived deserializers accepted positional arrays
+for required objects and tagged objects for encoding strings. Two regression
+tests each failed against the original decoder before correction. A map-only
+visitor now guards root/input/output objects, and encoding deserialization accepts
+only strings. Both controls and all prior request tests pass after correction;
+missing nullable output remains an error. This is actual input-validation evidence,
+not a claim about the unimplemented stdin reader or event transport.
+
+Frontend all-targets Clippy with warnings denied passed on the local host and
+for Windows MSVC as compile-only preflight. Its native six-platform tests are pending
+at this checkpoint. Lockfile inspection found only the new local package entry;
+no resolved upstream dependency version changed. The eventual executable still
+needs interruptible reading, signals, checked rendering and the core run API.
+
+The broader local `cargo test --locked --workspace` run did not pass: core71,
+filesystem25, decoder16 and xtask9 passed, then the process integration suite
+reported nine passes and nine failures under default parallel execution. Failure
+reports retained under `target/process-tests/` include unsuccessful cleanup
+observations. The existing CI invocation,
+`cargo test --locked --package xtask --test processes -- --test-threads=1`,
+subsequently passed all18 with zero failures/ignores/filters. This serial result
+does not close the default-parallel failure or prove cleanup of its earlier
+resources. Independent process-test isolation/lifecycle review remains pending;
+the decoder slice does not alter that code or remove the failing observation.

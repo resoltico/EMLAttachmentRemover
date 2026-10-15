@@ -18,3 +18,20 @@ detail or NT hex for decisions, and diagnostics never replace Published/Unknown
 evidence. Existing synchronization/cleanup native_code fields retain their defined
 meanings. Pending native I/O retains buffers/handles through completion; an
 unprovable memory lifetime must not fabricate an unpublished receipt.
+
+## Implemented request decoding
+
+The `remove-eml-attachments` package currently provides a transport library, not
+an executable. `decode_request` accepts a complete byte buffer plus the captured
+absolute working directory. It checks the 8 MiB limit, strict protocol-1 JSON,
+required fields (including explicit null for absent output directory), duplicate
+and unknown keys, native encoding and canonical padded Base64. Native bytes are
+converted directly to Unix bytes or Windows UTF-16LE, without Unicode conversion,
+then core resource admission runs. Error values do not retain or echo JSON/path
+content; malformed-document diagnostics expose only parser line/column.
+
+This does not implement interruptible stdin reading, signals, execution, event
+rendering, filesystem admission or output delivery. Decoder tests cannot qualify
+those still-required capabilities. Core and filesystem crates have no JSON
+dependency. Request shape and native-byte tests live in the frontend package;
+business path limits remain in core.
