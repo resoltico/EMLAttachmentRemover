@@ -151,10 +151,23 @@ for same-parent rename, so assuming Linux's0700 rename result was an invalid tes
 oracle. Its empty-directory removal requests DELETE only. The corrected owned
 negative control keeps stage0700, retains its original descriptor, synchronizes
 the observation before the actor, and tests actual rmdir plus an actor-owned
-replacement. It records the replacement's identity, verifies original nlink0 and
-distinct identity, reclaims/protects the parent, then removes only the known owned
+replacement. It records the replacement's identity, retains the original handle,
+verifies distinct native identity, reclaims/protects the parent, then removes only the known owned
 replacement. No product admission is relaxed to obtain an expected test result;
 corrected native execution remains required.
+
+At ac11de0, both Linux probes passed the complete matching empty-removal controls
+and ACL-mask cases. Both Macs executed denied removals in protected parents and
+successful rmdir/replacement in the shared parent, then failed an invalid observer
+expectation that the retained original directory report nlink0. A local owned
+APFS reproduction established successful rmdir with nlink2 through the open
+descriptor. Positive directory link counts therefore never upgrade Unknown
+cleanup to known Residual. The observer now correlates the successful native
+rmdir receipt, retained original handle identity and the independently observed
+distinct actor-owned replacement, recording link counts without assuming APFS
+zero behavior. Unknown cleanup still prevents a Created result; it is never
+rewritten as successful removal. Logs preserve both the actual native operations
+and the failed assertion. The corrected complete native Mac gate remains pending.
 
 Authorization reference: [Darwin24 rename/rmdir](https://github.com/apple-oss-distributions/xnu/blob/xnu-11417.140.69/bsd/vfs/vfs_subr.c#L8648).
 

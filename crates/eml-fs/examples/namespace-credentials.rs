@@ -130,6 +130,7 @@ mod probe {
             }
             "replace-empty" => {
                 std::fs::remove_dir(parent.join("stage"))?;
+                println!("Native rmdir completed on the original empty victim0700 entry");
                 std::fs::DirBuilder::new()
                     .mode(0o700)
                     .create(parent.join("stage"))?;
@@ -509,6 +510,7 @@ mod probe {
             Some(Gid::from_raw(victim_gid)),
         )?;
         let stage_id = held.identity();
+        let before_links = fs::fstat(&held)?.st_nlink;
         fs::fchown(
             shared.directory(),
             Some(Uid::from_raw(victim)),
@@ -527,9 +529,25 @@ mod probe {
         let replacement = run_replacement(&executable, actor, shared.directory().requested_path())?;
         fs::fchown(shared.directory(), Some(Uid::ROOT), Some(Gid::ROOT))?;
         fs::fchmod(shared.directory(), Mode::from_raw_mode(0o700))?;
+        let original = fs::fstat(&held)?;
+        #[allow(clippy::unnecessary_cast)]
+        // Independent native oracle: Darwin dev_t signed32, Linux unsigned64.
+        let retained_id = Identity::Posix {
+            device: original.st_dev as u64,
+            inode: original.st_ino,
+        };
         require(
-            fs::fstat(&held)?.st_nlink == 0,
-            "Original held empty directory was not removed",
+            retained_id == stage_id,
+            "Retained original directory handle changed identity",
+        )?;
+        println!(
+            "Retained original directory link counts before={before_links} after={}; native rmdir receipt and distinct replacement qualify the controlled name removal",
+            original.st_nlink
+        );
+        #[cfg(target_os = "linux")]
+        require(
+            original.st_nlink == 0,
+            "Linux removed directory link-count observation changed",
         )?;
         require(
             replacement != stage_id,
@@ -542,7 +560,7 @@ mod probe {
         )?;
         remove_entry(shared.directory(), "stage", replacement, true)?;
         println!(
-            "PASS: other UID removed empty victim0700 and replaced its name; held original unlinked, distinct actor identity verified"
+            "PASS: native other-UID rmdir and replacement; retained original and distinct actor identity verified"
         );
         require(
             shared.remove_empty().state == CleanupState::Complete,

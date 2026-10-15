@@ -133,11 +133,11 @@ impl CreatedDirectory {
         if receipt.state == CleanupState::Unknown
             && let Ok(stat) = fs::fstat(&self.directory)
         {
-            receipt.state = if stat.st_nlink == 0 {
-                CleanupState::Complete
-            } else {
-                CleanupState::Residual
-            };
+            // APFS can retain a positive directory link count after successful
+            // rmdir. Positive counts do not establish an external residue name.
+            if stat.st_nlink == 0 {
+                receipt.state = CleanupState::Complete;
+            }
         }
         receipt
     }
@@ -380,6 +380,31 @@ mod tests {
             }
         );
     }
+    #[test]
+    fn detached_directory_link_count_is_not_assumed_to_prove_external_residue() {
+        let root = parent();
+        let bound = BoundDirectory::open(root.path()).unwrap();
+        let created = bound.create_private_child(OsStr::new("detached")).unwrap();
+        let held = created.directory().clone();
+        std::fs::remove_dir(root.path().join("detached")).unwrap();
+        let stat = fs::fstat(&held).unwrap();
+        eprintln!(
+            "Actual held directory after successful owned rmdir: identity={:?}, nlink={}",
+            held.identity(),
+            stat.st_nlink
+        );
+        assert!(!root.path().join("detached").exists());
+        let receipt = created.remove_empty();
+        assert_eq!(
+            receipt.state,
+            if stat.st_nlink == 0 {
+                CleanupState::Complete
+            } else {
+                CleanupState::Unknown
+            }
+        );
+        assert_eq!(receipt.residual_name, None);
+    }
     fn parent() -> tempfile::TempDir {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fs-tests");
         std::fs::create_dir_all(&base).unwrap();
@@ -475,7 +500,7 @@ mod tests {
         std::fs::create_dir(root.path().join("stage")).unwrap();
         let replacement = bound.open_child(OsStr::new("stage")).unwrap().identity();
         let receipt = child.remove_empty();
-        assert_eq!(receipt.state, CleanupState::Residual);
+        assert_eq!(receipt.state, CleanupState::Unknown);
         assert_eq!(receipt.residual_name, None);
         assert!(root.path().join("moved").exists());
         assert_eq!(
@@ -489,7 +514,7 @@ mod tests {
         let bound = BoundDirectory::open(root.path()).unwrap();
         let child = bound.create_private_child(OsStr::new("stage")).unwrap();
         std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
-        assert_eq!(child.remove_empty().state, CleanupState::Residual);
+        assert_eq!(child.remove_empty().state, CleanupState::Unknown);
         std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
         let child = bound.create_private_child(OsStr::new("occupied")).unwrap();
         std::fs::write(root.path().join("occupied/keep"), b"synthetic").unwrap();
@@ -527,6 +552,86 @@ mod tests {
         std::os::unix::fs::symlink("ordinary", root.path().join("link")).unwrap();
         assert!(bound.open_child(OsStr::new("link")).is_err());
         assert_eq!(child.remove_empty().state, CleanupState::Complete);
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn dangerous_effective_and_inherit_only_acl_grants_refuse_before_staging() {
+        for permissions in [
+            "delete",
+            "delete_child",
+            "writeattr",
+            "writeextattr",
+            "writesecurity",
+            "chown",
+            "add_file",
+            "add_subdirectory",
+            "delete,directory_inherit,only_inherit",
+        ] {
+            let root = parent();
+            assert!(
+                std::process::Command::new("/bin/chmod")
+                    .args(["+a", &format!("everyone allow {permissions}")])
+                    .arg(root.path())
+                    .status()
+                    .unwrap()
+                    .success(),
+                "{permissions}"
+            );
+            let bound = BoundDirectory::open(root.path()).unwrap();
+            let failure = bound
+                .stage_bytes(b"synthetic message bytes", || Ok(()))
+                .err()
+                .unwrap();
+            assert_eq!(
+                failure.operation,
+                crate::StageOperation::Create,
+                "{permissions}"
+            );
+            assert_eq!(
+                failure.error.kind(),
+                io::ErrorKind::Unsupported,
+                "{permissions}"
+            );
+            assert_eq!(failure.cleanup.state, CleanupState::NotNeeded);
+            assert_eq!(
+                std::fs::read_dir(root.path()).unwrap().count(),
+                0,
+                "{permissions}"
+            );
+        }
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn known_deny_only_acl_allows_held_native_publication_and_cleanup() {
+        let root = parent();
+        assert!(
+            std::process::Command::new("/bin/chmod")
+                .args(["+a", "everyone deny writeextattr"])
+                .arg(root.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+        let bound = BoundDirectory::open(root.path()).unwrap();
+        let candidate = bound
+            .stage_bytes(b"synthetic complete bytes", || Ok(()))
+            .unwrap();
+        let attempt = candidate.publish(OsStr::new("copy"));
+        assert_eq!(attempt.state, crate::PublicationState::Published);
+        assert!(attempt.error.is_none());
+        assert!(
+            attempt
+                .candidate
+                .check_final_identity(OsStr::new("copy"))
+                .unwrap()
+        );
+        assert_eq!(bound.sync_namespace().state, crate::SyncState::Succeeded);
+        assert!(bound.check_requested_address().unwrap());
+        assert_eq!(attempt.candidate.cleanup().state, CleanupState::Complete);
+        assert_eq!(
+            std::fs::read(root.path().join("copy")).unwrap(),
+            b"synthetic complete bytes"
+        );
     }
     #[cfg(target_os = "macos")]
     #[test]

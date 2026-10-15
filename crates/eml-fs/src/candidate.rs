@@ -159,7 +159,7 @@ fn cleanup(owned: CreatedDirectory, expected: Option<Identity>) -> CleanupReceip
             // A macOS successful rename already removed this owned stage entry.
             if error.raw_os_error() != Some(libc::ENOENT) {
                 return CleanupReceipt {
-                    state: CleanupState::Residual,
+                    state: CleanupState::Unknown,
                     residual_name: None,
                     native_code: error.raw_os_error().map(i64::from),
                 };
@@ -342,21 +342,22 @@ impl ReadyCandidate {
         })();
         if let Err(error) = &result
             && attempted_edge
-            && !matches!(
-                error.raw_os_error(),
-                Some(
-                    libc::EEXIST
-                        | libc::EACCES
-                        | libc::EPERM
-                        | libc::EROFS
-                        | libc::ENOENT
-                        | libc::ENOTDIR
-                        | libc::EINVAL
-                        | libc::ENAMETOOLONG
-                        | libc::EXDEV
-                        | libc::ENOTSUP
-                )
-            )
+            && error.raw_os_error().is_none_or(|code| {
+                ![
+                    libc::EEXIST,
+                    libc::EACCES,
+                    libc::EPERM,
+                    libc::EROFS,
+                    libc::ENOENT,
+                    libc::ENOTDIR,
+                    libc::EINVAL,
+                    libc::ENAMETOOLONG,
+                    libc::EXDEV,
+                    libc::ENOTSUP,
+                    libc::EOPNOTSUPP,
+                ]
+                .contains(&code)
+            })
         {
             self.state = PublicationState::Unknown;
             if let Ok(entry) = fs::statat(&self.destination, name, AtFlags::SYMLINK_NOFOLLOW)
@@ -550,7 +551,7 @@ mod tests {
             b"held verified bytes"
         );
         assert!(!root.path().join("destination/copy").exists());
-        assert_eq!(attempt.candidate.cleanup().state, CleanupState::Residual);
+        assert_eq!(attempt.candidate.cleanup().state, CleanupState::Unknown);
         assert_eq!(
             std::fs::read(root.path().join("moved").join(stage_name).join("candidate")).unwrap(),
             b"fake bytes"
@@ -574,14 +575,14 @@ mod tests {
         assert_eq!(attempt.state, PublicationState::NotPublished);
         assert!(attempt.error.is_some());
         assert!(!root.path().join("copy").exists());
-        assert_eq!(attempt.candidate.cleanup().state, CleanupState::Residual);
+        assert_eq!(attempt.candidate.cleanup().state, CleanupState::Unknown);
     }
     #[test]
     fn cancellation_before_bytes_and_during_write_cleans_only_owned_stage() {
         let root = root();
         let parent = BoundDirectory::open(root.path()).unwrap();
         let bytes = vec![b'x'; 200_000];
-        for stop_at in [1, 2, 3, 5, 10] {
+        for stop_at in [1, 2, 3, 5, 6, 9, 10] {
             let mut calls = 0;
             let failure = parent
                 .stage_bytes(&bytes, || {
