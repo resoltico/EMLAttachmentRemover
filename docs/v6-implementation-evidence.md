@@ -62,3 +62,63 @@ selection and detection demonstrations, exFAT observation, both native GUI
 integrations/screenshots/preferences evidence, eight archive inventory/runtime
 notices/provenance/extracted execution, final clean-clone checks, exact-H
 native6 and current-base exact-M integration. None is inferred from this log.
+
+## Native Windows design challenge results
+
+The first two native runs failed the selected relative-root rename route:
+[initial](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38757316025),
+[operation-specific diagnostics](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38757524849).
+The restricted-token, complete ancestor-pinning run also failed:
+[4604070](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38758032693).
+
+[Native comparative run at cd8e09c4bd6df604435fd8b2e2a0493ccf3efced](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38758392136)
+executed three real-boundary experiments on each Windows CPU:
+
+| Experiment | Native x64 | Native ARM64 | Qualification |
+|---|---|---|---|
+| Required relative name + held RootDirectory, no write/delete sharing | error 87 | error 87 | Failed |
+| Absolute name + NULL RootDirectory, same protected ancestor chain | error 32 | error 32 | Failed alternative |
+| Absolute name with destination write sharing enabled | exit 0 | exit 0 | Unsafe diagnostic only; concurrent directory write open succeeds |
+
+The last experiment demonstrates why allowing write sharing cannot simply turn
+this into a supported product. The workflow remains failed; it does not waive
+the required route or junction protection. No NT API fallback was implemented.
+The peer QA chat has been asked to review the source, native evidence and
+possible safe corrections and reply directly to the implementation chat.
+
+Both jobs observed NTFS through GetVolumeInformationByHandleW, verified actual
+native machine through IsWow64Process2, and executed with a restricted effective
+token: Administrators deny-only, privileges disabled, membership check false.
+This records actual access restrictions; it is not evidence from a separate
+ordinary-user interactive login or the full adversarial product test matrix.
+Both actual file flush and prepublication directory flush succeeded. The failed
+rename must not be misreported as a namespace flush failure.
+
+- x64: windows-2022, Windows Server 2022 Datacenter 10.0.20348,
+  runner image 20261004.326.1, native machine 0x8664.
+- ARM64: windows-11-arm label, Windows 11 Enterprise 10.0.26200,
+  actual image windows-11-vs2026-arm64 20261013.183.4, native machine 0xaa64.
+- Both: Rust 1.99.0 b940084d7, native GNU LLVM host, selected sysroot rust-lld,
+  explicit target, self-contained linking and +crt-static.
+- Generated FILE_RENAME_INFO layout: FileName offset 20, size 24 on both CPUs.
+  Initial padded/NUL and later exact-length buffers both failed relative rename.
+- Three experiments per CPU, six total in the comparative run. These are probe
+  executions, not a count of product unit/integration tests. No native six-target
+  artifact or archive was built.
+
+## Other observations
+
+- Repeated the supplied macOS primitive probe under umask 000: passed.
+- Both empty and nonempty Base64 String argument-domain preference overrides
+  passed the Foundation-only probe without saved preference writes.
+- An owned exFAT image creation attempt under target/exfat-feasibility failed:
+  hdiutil: create failed - Operation not permitted. No attachment/mount/device
+  was created. Product exFAT qualification is unrun; no supported-volume claim.
+- Early probe rustfmt, Clippy with warnings denied (including the Windows source
+  compile check), actionlint and git diff whitespace check passed locally.
+  These checks do not qualify runtime behavior or a v6 product.
+
+WP0's native-route challenge remains unresolved pending peer QA. All WP1–WP8
+product acceptance gates remain incomplete; the published v5 product/tooling,
+artwork, AGENTS.md and release history are preserved while that prerequisite is
+resolved. This branch is not a dual-engine product or a delivered v6 purge.

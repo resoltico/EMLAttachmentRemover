@@ -288,6 +288,10 @@ pub(super) fn run() -> Result<()> {
     let root = tempfile::tempdir()?;
     let destination = root.path().join("destination");
     std::fs::create_dir(&destination)?;
+    let renamed = root.path().join("rename-control");
+    std::fs::rename(&destination, &renamed)?;
+    std::fs::rename(&renamed, &destination)?;
+    println!("PASS: unpinned directory rename succeeds under the same restricted token");
     let destination = std::fs::canonicalize(destination)?;
     let mut pins = Vec::new();
     // Hold the resolved expression top down, never allowing write/delete sharing.
@@ -328,14 +332,12 @@ pub(super) fn run() -> Result<()> {
     let bytes = b"verified synthetic mail";
     let stage = candidate(&destination.join("stage.tmp"), bytes)?;
     let held_id = identity(stage.as_raw_handle())?;
-    assert!(
-        std::fs::File::open(destination.join("stage.tmp")).is_err(),
-        "exclusive staging allowed a reader"
-    );
-    assert!(
-        std::fs::rename(&destination, root.path().join("moved")).is_err(),
-        "pinned parent renamed"
-    );
+    let reader = std::fs::File::open(destination.join("stage.tmp"))
+        .expect_err("exclusive staging allowed a reader");
+    assert_eq!(reader.raw_os_error(), Some(32));
+    let parent_rename = std::fs::rename(&destination, root.path().join("moved"))
+        .expect_err("pinned parent renamed");
+    assert_eq!(parent_rename.raw_os_error(), Some(32));
     println!("PASS: exclusive stage, readback, file flush, identity and parent-rename denial");
     let final_path = destination.join("copy.eml");
     let (rename_root, rename_name): (HANDLE, PathBuf) = if absolute {
