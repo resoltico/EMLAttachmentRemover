@@ -55,6 +55,52 @@ def test_streaming_reads_lines_and_preserves_unicode_json_string_content(
     ] == records
 
 
+@pytest.mark.parametrize(
+    "suffix", ["\u0085", "X"], ids=("non-json-space", "trailing-junk")
+)
+def test_invalid_record_suffix_is_not_trimmed_before_json_validation(
+    tmp_path: Path, suffix: str
+) -> None:
+    observed = tmp_path / ".hypothesis" / "observed"
+    observed.mkdir(parents=True)
+    path = observed / "records.jsonl"
+    original = "{}\n{}" + suffix + "\n"
+    path.write_text(original, encoding="utf-8", newline="")
+    with pytest.raises(artifacts.HypothesisArtifactError) as raised:
+        artifacts.finalize(tmp_path, observations=True)
+    assert str(raised.value) == (
+        f"invalid Hypothesis observation at {path}:2: "
+        "Extra data: line 1 column 3 (char 2)"
+    )
+    assert isinstance(raised.value.__cause__, json.JSONDecodeError)
+    assert path.read_text(encoding="utf-8") == original
+    assert sorted(child.name for child in observed.iterdir()) == [path.name]
+
+
+def test_incomplete_record_diagnostic_excludes_the_jsonl_separator(
+    tmp_path: Path,
+) -> None:
+    observed = tmp_path / ".hypothesis" / "observed"
+    observed.mkdir(parents=True)
+    path = observed / "records.jsonl"
+    original = "{}\n{\n"
+    path.write_text(original, encoding="utf-8", newline="")
+    publication = tmp_path / "publication"
+    destination = publication / ".hypothesis" / "observed"
+    destination.mkdir(parents=True)
+    (destination / "previous.jsonl").write_text("{}\n", encoding="utf-8")
+    with pytest.raises(artifacts.HypothesisArtifactError) as raised:
+        hypothesis_publication.publish_observations(tmp_path, publication)
+    assert str(raised.value).startswith(f"invalid Hypothesis observation at {path}:2:")
+    cause = raised.value.__cause__
+    assert isinstance(cause, json.JSONDecodeError)
+    assert (cause.doc, cause.lineno, cause.colno) == ("{", 1, 2)
+    assert path.read_text(encoding="utf-8") == original
+    assert sorted(child.name for child in observed.iterdir()) == [path.name]
+    assert (destination / "previous.jsonl").read_text(encoding="utf-8") == "{}\n"
+    assert sorted(child.name for child in destination.parent.iterdir()) == ["observed"]
+
+
 def test_same_filesystem_publication_consumes_without_copying(tmp_path: Path) -> None:
     source = tmp_path / "source"
     observed = source / ".hypothesis" / "observed"

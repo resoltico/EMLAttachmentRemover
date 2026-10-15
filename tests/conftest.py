@@ -19,8 +19,9 @@ from mutmut.state import state as mutation_state
 from tools import finalize_hypothesis_artifacts, mutation_integrity, tasks
 
 import eml_attachment_remover
+from eml_attachment_remover import report_delivery
 from tests import hypothesis_config as _hypothesis_config
-from tests.deadline_support import finite_operation
+from tests.deadline_support import finite_main_call
 from tests.mutation_statistics_support import capture_workspace
 
 if TYPE_CHECKING:
@@ -109,7 +110,17 @@ def _bound_finite_output_mutations() -> Iterator[None]:
     if selector.startswith(
         "eml_attachment_remover.report_delivery.x__write_all__mutmut_"
     ):
-        with finite_operation(10):
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(
+                report_delivery,
+                "_bounded",
+                finite_main_call(report_delivery._bounded),  # ruff: ignore[private-member-access] - finite output mutation boundary.
+            )
+            patch.setattr(
+                report_delivery,
+                "_write_all",
+                finite_main_call(report_delivery._write_all),  # ruff: ignore[private-member-access] - finite output mutation boundary.
+            )
             yield
     else:
         yield

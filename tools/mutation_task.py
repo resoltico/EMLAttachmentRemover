@@ -158,7 +158,7 @@ def command_runner(
     observability: Sequence[str],
     project_root: Path,
 ) -> CommandRunner:
-    """Bind the isolated storage and coverage settings every mutation command needs.
+    """Bind commands once inside a freshly created private campaign root.
 
     Returns:
         A runner that adds the mutation environment to each task command.
@@ -166,8 +166,9 @@ def command_runner(
     """
     # Standard-library tempfile users (including subprocess call journals) must
     # share campaign ownership too: a killed worker cannot run their finalizers.
+    # The validated private parent supplies the access boundary.
     temporary = storage.parent / "tmp"
-    temporary.mkdir(mode=0o700, exist_ok=True)
+    temporary.mkdir()
     coverage_variables = tuple(
         variable for variable in os.environ if variable.startswith("COVERAGE_")
     )

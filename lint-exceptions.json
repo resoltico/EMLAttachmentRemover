@@ -8976,6 +8976,22 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "Assert descriptor zero is retired by partial stage acquisition cleanup, whether owned as the file or directory handle."
+    },
+    {
+      "path": "tests/conftest.py",
+      "scope": "_bound_finite_output_mutations",
+      "anchor": "finite_main_call(report_delivery._bounded),",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "finite output mutation boundary."
+    },
+    {
+      "path": "tests/conftest.py",
+      "scope": "_bound_finite_output_mutations",
+      "anchor": "finite_main_call(report_delivery._write_all),",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "finite output mutation boundary."
     }
   ],
   "swift_exceptions": []
