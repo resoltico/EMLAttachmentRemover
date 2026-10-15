@@ -200,3 +200,22 @@ Limits tested at/above their specified boundary include 256 MiB raw input,
 fields, per-field/total parameter pieces, continuation indices, comment depth,
 media tokens and related start identifiers. These passing tests do not replace
 the still-required bounded fuzz, scoped mutation and deliberate defect runs.
+
+## Rust campaign tooling checkpoint
+
+Rust xtask now exposes the bounded fuzz and scoped mutation commands with one
+version authority at xtask/tools.toml. The separate fuzz workspace/lockfile and
+synthetic fixture/structural seeds are committed inputs. No actual campaign is
+claimed merely from driver tests or mutation discovery. Discovery at 7d0c65c
+found 15 mutants: 10 in check_edit_ranges and 5 in authorize_deletions.
+The pinned mutation profile compiled successfully with Rust 1.99.0.
+
+The cargo-fuzz build limitation and pre-execution amendment are documented in
+[verification.md](verification.md). Driver negative controls reject input/graph
+drift before a real harmless marker process can launch; valid inputs do launch
+it. Other controls reject missing/zero fuzz summaries and incomplete, duplicate,
+failed-baseline, missed, timed-out or inconsistent mutation outcomes. A real
+owned-process deadline test exercises termination/reaping. These tests prove
+controller properties, not actual fuzz execution or native product integration.
+The remaining check/qualify/archive/notices/release entry points are not yet
+implemented or claimed as passing at this checkpoint.

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/eml-core"]
+members = ["crates/eml-core", "xtask"]
 exclude = ["tests/native-filesystem", "fuzz"]
 resolver = "3"
 

@@ -1,0 +1,23 @@
+[package]
+name = "eml-preparation-fuzz"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+eml-core = { path = "../crates/eml-core" }
+
+[[bin]]
+name = "preparation"
+path = "fuzz_targets/preparation.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]
