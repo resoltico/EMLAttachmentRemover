@@ -1,6 +1,6 @@
 //! Regular-file handles. Reading does not apply destination namespace policy.
 use crate::{
-    BoundDirectory, FileSignature,
+    BoundDirectory, BoundFileError, FileSignature,
     unix::{component, identity},
 };
 use rustix::fs::{self, AtFlags, FileType, Mode, OFlags};
@@ -10,18 +10,16 @@ use std::{
     os::fd::OwnedFd,
 };
 
-pub(crate) fn signature(stat: &fs::Stat) -> io::Result<FileSignature> {
+pub(crate) fn signature(stat: &fs::Stat) -> Result<FileSignature, BoundFileError> {
     if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "The opened object is not an ordinary regular file",
-        ));
+        return Err(BoundFileError::NotRegular);
     }
     if stat.st_ino == 0 || stat.st_size < 0 {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "The volume supplied no usable regular-file identity or length",
-        ));
+        )
+        .into());
     }
     Ok(FileSignature {
         identity: identity(stat)?,
@@ -51,7 +49,7 @@ pub struct BoundFile {
 impl BoundDirectory {
     /// Open one regular file without blocking on a substituted FIFO. Only explicit
     /// selected links may set follow_final; walked/existing files must pass false.
-    pub fn open_file(&self, name: &OsStr, follow_final: bool) -> io::Result<BoundFile> {
+    pub fn open_file(&self, name: &OsStr, follow_final: bool) -> Result<BoundFile, BoundFileError> {
         component(name)?;
         let mut flags = OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC;
         if !follow_final {
@@ -82,8 +80,8 @@ impl BoundFile {
         self.initial
     }
     /// Observe current held-file metadata; changes are never silently rebaselined.
-    pub fn current_signature(&self) -> io::Result<FileSignature> {
-        signature(&fs::fstat(&self.fd)?)
+    pub fn current_signature(&self) -> Result<FileSignature, BoundFileError> {
+        signature(&fs::fstat(&self.fd)?).map_err(BoundFileError::against_regular_baseline)
     }
     /// Bounded positional read through the same held file. Interrupted syscalls
     /// return to the workflow so it can check its cancellation token.
@@ -92,18 +90,16 @@ impl BoundFile {
     }
     /// Check both observable metadata and the entry currently reached through the
     /// held parent. This detects observations, not an atomic POSIX content snapshot.
-    pub fn check_binding(&self) -> io::Result<()> {
+    pub fn check_binding(&self) -> Result<(), BoundFileError> {
         let flags = if self.follow_final {
             AtFlags::empty()
         } else {
             AtFlags::SYMLINK_NOFOLLOW
         };
-        let entry = signature(&fs::statat(&self.parent, &self.name, flags)?)?;
+        let entry = signature(&fs::statat(&self.parent, &self.name, flags)?)
+            .map_err(BoundFileError::against_regular_baseline)?;
         if entry != self.initial || self.current_signature()? != self.initial {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "File identity or observable metadata changed",
-            ));
+            return Err(BoundFileError::Changed);
         }
         Ok(())
     }
@@ -163,7 +159,9 @@ mod tests {
         );
         std::fs::remove_file(root.path().join("alias")).unwrap();
         std::os::unix::fs::symlink("missing", root.path().join("alias")).unwrap();
-        assert!(alias.check_binding().is_err());
+        let failed = alias.check_binding().unwrap_err();
+        assert!(matches!(&failed, BoundFileError::ObservationFailed(_)));
+        assert_eq!(failed.native_code(), Some(i64::from(libc::ENOENT)));
     }
     #[test]
     fn fifo_and_directory_are_rejected_before_any_read() {
@@ -177,10 +175,16 @@ mod tests {
                 .success()
         );
         let started = Instant::now();
-        assert!(parent.open_file(OsStr::new("fifo"), false).is_err());
+        assert!(matches!(
+            parent.open_file(OsStr::new("fifo"), false),
+            Err(BoundFileError::NotRegular)
+        ));
         assert!(started.elapsed().as_secs() < 2);
         std::fs::create_dir(root.path().join("dir")).unwrap();
-        assert!(parent.open_file(OsStr::new("dir"), false).is_err());
+        assert!(matches!(
+            parent.open_file(OsStr::new("dir"), false),
+            Err(BoundFileError::NotRegular)
+        ));
     }
     #[test]
     fn replacement_growth_truncation_and_unsafe_destination_mode_do_not_hide_source_reads() {
@@ -198,7 +202,10 @@ mod tests {
                 "grow" => std::fs::write(&path, b"synthetic extension").unwrap(),
                 _ => std::fs::write(&path, b"").unwrap(),
             }
-            assert!(file.check_binding().is_err(), "{change}");
+            assert!(
+                matches!(file.check_binding(), Err(BoundFileError::Changed)),
+                "{change}"
+            );
             std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
             assert!(parent.admit_namespace().is_err());
             assert!(parent.open_file(OsStr::new("source"), false).is_ok());

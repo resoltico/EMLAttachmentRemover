@@ -7,7 +7,7 @@ mod namespace;
 #[cfg(unix)]
 pub use file::BoundFile;
 mod observation;
-pub use observation::{EntryKind, EntryObservation, FileSignature};
+pub use observation::{BoundFileError, EntryKind, EntryObservation, FileSignature};
 mod receipts;
 pub use receipts::{
     PublicationState, StageFailure, StageOperation, SyncMethod, SyncReceipt, SyncState,

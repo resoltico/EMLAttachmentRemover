@@ -423,3 +423,38 @@ still initialize the same controller/signals; the metadata task bypasses them.
 Neither the unresolved default-parallel failure nor Windows publication is fixed
 by this planner. Required check/qualify/archive/notices/release tooling, full native
 products, GUI and artifact qualification remain incomplete.
+
+At exact commit `08651c492e1738aa01a43e58b798ad6d0f695bba`, both dynamic
+matrix jobs and all six native planner invocations succeeded. Parsing their
+actual JSON stdout found version6.0.0, six target rows and eight expected archive
+identities in every invocation. The
+[Unix run38818132386](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38818132386)
+passed all seven jobs, including 15 tool unit tests and 18 serial process tests on
+each process host. The
+[Windows run38818132412](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38818132412)
+passed the metadata job and each native planner/tool-unit step (12 unit tests per
+CPU, zero failures/ignores/filters; three Unix-only tests have their actual Unix
+counterparts). Independent request9/diagnostic3/decoder16, naming3 and non-gate
+filesystem9 checks passed as before. Each actual creation gate still failed
+zero passed/one failed/nine filtered. The Windows workflow therefore remains
+failed, and the default-parallel process limitation is still unresolved. This
+is planner portability/source evidence, not product, archive or app qualification.
+
+## Bound-file observation typing checkpoint
+
+Both native bound-file implementations now return neutral typed observations:
+initial `NotRegular`, proved `Changed`, or `ObservationFailed` with the original
+I/O/validation cause. Existing-destination use is supported by the same type;
+core still owns workflow codes/phases. Failed observations are not inferred to
+be changes from prose or I/O kind. Native causes survive the Unix inventory I/O
+adapter. Source access/sharing/reparse flags, positional reads, publication, ACLs,
+cleanup and process behavior are unchanged.
+
+Local macOS ARM filesystem tests passed27, zero failures/ignores/filters; doctests0.
+Local and Windows MSVC all-target Clippy passed, with MSVC remaining compile-only
+preflight. Independent review reran27/Clippy and inspected actual caller migration,
+positive type/change cases and failed-observation distinctions. Windows parent
+handles remain transient, not continuously pinned by this read API. Its UNKNOWN
+file-type classifier has logical branch tests and a separate real directory
+metadata test; actual native Windows outcomes are pending the next exact-head run.
+No core reader/dependency or product publication implementation is claimed here.

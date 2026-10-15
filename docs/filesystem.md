@@ -4,6 +4,28 @@ The native filesystem business workflow is still being implemented. These
 reviewed corrections preserve the safety requirements; they are not product
 qualification evidence. The original design archive and checksum remain intact.
 
+## Typed ordinary-file observations
+
+`BoundFileError` applies to sources and existing destinations. Initial observed
+nonregular type is `NotRegular`; a proved identity/signature/parent mismatch is
+`Changed`. Once an ordinary file is bound, a newly observed nonregular type is
+also a change from that baseline. Failed queries and unusable metadata retain
+their exact native/validation cause as `ObservationFailed`; neither English
+wording, `InvalidData` nor a missing-entry error is treated as proof of change.
+The Unix inventory adapter passes through the original I/O error unchanged.
+
+Windows preserves its existing access, sharing and final-reparse flags. A denied
+directory open can remain an inspection failure; no backup flag or privilege is
+added to force type classification. The parent helper returns a transient handle
+and its observed identity; the caller retains only that identity before opening
+the current entry. This preserves the previous lifetime and does not establish
+atomic parent/entry continuity. `GetFileType`'s UNKNOWN result is distinguished
+from API failure through its immediate thread-local error as
+[Microsoft documents](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfiletype).
+The pure classifier cases are logical tests; native target execution remains
+separate evidence. No publication or candidate-ACL guarantee follows from this
+read/metadata typing change.
+
 ## POSIX namespace admission before creating an entry
 
 A pathname identity check followed by rmdir/unlinkat is not atomic compare-and-

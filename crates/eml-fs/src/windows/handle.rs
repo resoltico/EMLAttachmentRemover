@@ -1,5 +1,5 @@
 //! Generated typed native metadata buffers and uniquely owned ordinary handles.
-use crate::{FileSignature, Identity};
+use crate::{BoundFileError, FileSignature, Identity};
 use std::{
     fs::File,
     io,
@@ -7,7 +7,10 @@ use std::{
     os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle},
     path::Path,
 };
-use windows_sys::Win32::{Foundation::INVALID_HANDLE_VALUE, Storage::FileSystem::*};
+use windows_sys::Win32::{
+    Foundation::{GetLastError, INVALID_HANDLE_VALUE},
+    Storage::FileSystem::*,
+};
 
 pub(crate) fn open(path: &Path, access: u32, share: u32, flags: u32) -> io::Result<File> {
     let path = super::path::openable(path)?;
@@ -75,7 +78,7 @@ pub(crate) fn identity(handle: &impl AsHandle) -> io::Result<Identity> {
     }
     usable_id(info)
 }
-pub(crate) fn directory_observation(path: &Path) -> io::Result<File> {
+pub(crate) fn directory_observation(path: &Path) -> io::Result<Option<(File, Identity)>> {
     // Wider sharing here is observation only, never creation protection. It can
     // coexist with an already-live strict writable destination pin.
     let file = open(
@@ -84,37 +87,43 @@ pub(crate) fn directory_observation(path: &Path) -> io::Result<File> {
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         FILE_FLAG_BACKUP_SEMANTICS,
     )?;
-    require_disk(&file)?;
+    if !is_disk(&file)? {
+        return Ok(None);
+    }
     let attributes = attributes(&file)?;
     if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0
         || attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
     {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Requested parent did not resolve to an ordinary directory",
-        ));
+        return Ok(None);
     }
-    identity(&file)?;
-    Ok(file)
+    let identity = identity(&file)?;
+    Ok(Some((file, identity)))
 }
-fn require_disk(handle: &impl AsHandle) -> io::Result<()> {
+fn file_type_is_disk(kind: u32, native_error: u32) -> io::Result<bool> {
+    if kind == FILE_TYPE_UNKNOWN && native_error != 0 {
+        return Err(io::Error::from_raw_os_error(native_error as i32));
+    }
+    Ok(kind == FILE_TYPE_DISK)
+}
+fn is_disk(handle: &impl AsHandle) -> io::Result<bool> {
     // SAFETY: borrowed live handle; this query owns no returned resource.
-    if unsafe { GetFileType(handle.as_handle().as_raw_handle()) } != FILE_TYPE_DISK {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "The opened object is not an ordinary disk file",
-        ));
-    }
-    Ok(())
+    let kind = unsafe { GetFileType(handle.as_handle().as_raw_handle()) };
+    let native_error = if kind == FILE_TYPE_UNKNOWN {
+        // SAFETY: capture the thread-local result immediately, before another
+        // native call. UNKNOWN with NO_ERROR is a valid type observation.
+        unsafe { GetLastError() }
+    } else {
+        0
+    };
+    file_type_is_disk(kind, native_error)
 }
-pub(crate) fn signature(handle: &impl AsHandle) -> io::Result<FileSignature> {
-    require_disk(handle)?;
+pub(crate) fn signature(handle: &impl AsHandle) -> Result<FileSignature, BoundFileError> {
+    if !is_disk(handle)? {
+        return Err(BoundFileError::NotRegular);
+    }
     let attributes = attributes(handle)?;
     if attributes.FileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "The opened object is a directory or reparse entry",
-        ));
+        return Err(BoundFileError::NotRegular);
     }
     let mut standard = FILE_STANDARD_INFO::default();
     let mut basic = FILE_BASIC_INFO::default();
@@ -129,7 +138,7 @@ pub(crate) fn signature(handle: &impl AsHandle) -> io::Result<FileSignature> {
         )
     } == 0
     {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::last_os_error().into());
     }
     // SAFETY: same owned handle; matching FileBasicInfo generated buffer.
     if unsafe {
@@ -141,17 +150,17 @@ pub(crate) fn signature(handle: &impl AsHandle) -> io::Result<FileSignature> {
         )
     } == 0
     {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::last_os_error().into());
     }
-    if standard.Directory
-        || standard.EndOfFile < 0
-        || standard.DeletePending
-        || standard.NumberOfLinks == 0
-    {
+    if standard.Directory {
+        return Err(BoundFileError::NotRegular);
+    }
+    if standard.EndOfFile < 0 || standard.DeletePending || standard.NumberOfLinks == 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Ordinary file type, length or deletion binding is invalid",
-        ));
+        )
+        .into());
     }
     Ok(FileSignature {
         identity: identity(handle)?,
@@ -164,6 +173,33 @@ pub(crate) fn signature(handle: &impl AsHandle) -> io::Result<FileSignature> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unknown_file_type_keeps_api_failure_distinct_from_valid_non_disk_type() {
+        assert!(!file_type_is_disk(FILE_TYPE_UNKNOWN, 0).unwrap());
+        assert_eq!(
+            file_type_is_disk(FILE_TYPE_UNKNOWN, 6)
+                .unwrap_err()
+                .raw_os_error(),
+            Some(6)
+        );
+        assert!(file_type_is_disk(FILE_TYPE_DISK, 6).unwrap());
+        assert!(!file_type_is_disk(FILE_TYPE_PIPE, 0).unwrap());
+    }
+    #[test]
+    fn actual_directory_metadata_is_a_nonregular_initial_file_observation() {
+        let root = tempfile::tempdir().unwrap();
+        let path = crate::PathContext::capture()
+            .unwrap()
+            .resolve(root.path())
+            .unwrap();
+        let (directory, _) = directory_observation(&path).unwrap().unwrap();
+        assert!(matches!(
+            signature(&directory),
+            Err(BoundFileError::NotRegular)
+        ));
+        drop(directory);
+        root.close().unwrap();
+    }
     #[test]
     fn zero_full_identity_is_not_a_binding() {
         assert!(usable_id(FILE_ID_INFO::default()).is_err());

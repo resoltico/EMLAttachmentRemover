@@ -1,6 +1,6 @@
 //! Ordinary read-only files keep source exclusion without conflicting parent pins.
 use super::{handle, path::validate_component};
-use crate::{FileSignature, Identity};
+use crate::{BoundFileError, FileSignature, Identity};
 use std::{
     fs::File,
     io,
@@ -25,7 +25,7 @@ pub struct BoundFile {
 impl BoundFile {
     /// Open an admitted absolute extended DOS/UNC path with read sharing only.
     /// Only explicit selected file links may request following the final link.
-    pub fn open(path: &Path, follow_final: bool) -> io::Result<Self> {
+    pub fn open(path: &Path, follow_final: bool) -> Result<Self, BoundFileError> {
         let parent = path.parent().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "File has no admitted parent")
         })?;
@@ -35,7 +35,12 @@ impl BoundFile {
             })?,
             32_768,
         )?;
-        let parent_id = handle::identity(&handle::directory_observation(parent)?)?;
+        let (_, parent_id) = handle::directory_observation(parent)?.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Requested parent is not an ordinary directory",
+            )
+        })?;
         let file = handle::open(
             path,
             GENERIC_READ,
@@ -68,8 +73,8 @@ impl BoundFile {
         self.parent_id
     }
     /// Current metadata on the still-held source, not a rebaselined signature.
-    pub fn current_signature(&self) -> io::Result<FileSignature> {
-        handle::signature(&self.file)
+    pub fn current_signature(&self) -> Result<FileSignature, BoundFileError> {
+        handle::signature(&self.file).map_err(BoundFileError::against_regular_baseline)
     }
     /// Read a bounded caller buffer from the same held file.
     pub fn read_at(&self, buffer: &mut [u8], offset: u64) -> io::Result<usize> {
@@ -77,8 +82,12 @@ impl BoundFile {
     }
     /// Reobserve the current requested parent AND file. A retargeted parent with
     /// another hardlink to the same file is a changed binding, not a snapshot.
-    pub fn check_binding(&self) -> io::Result<()> {
-        let parent_id = handle::identity(&handle::directory_observation(&self.parent)?)?;
+    pub fn check_binding(&self) -> Result<(), BoundFileError> {
+        let (_, parent_id) =
+            handle::directory_observation(&self.parent)?.ok_or(BoundFileError::Changed)?;
+        if parent_id != self.parent_id {
+            return Err(BoundFileError::Changed);
+        }
         let current = handle::open(
             &self.path,
             GENERIC_READ,
@@ -89,14 +98,11 @@ impl BoundFile {
                 FILE_FLAG_OPEN_REPARSE_POINT
             },
         )?;
-        if parent_id != self.parent_id
-            || handle::signature(&current)? != self.initial
+        if handle::signature(&current).map_err(BoundFileError::against_regular_baseline)?
+            != self.initial
             || self.current_signature()? != self.initial
         {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Requested parent, file identity or observable signature changed",
-            ));
+            return Err(BoundFileError::Changed);
         }
         Ok(())
     }
@@ -147,7 +153,14 @@ mod tests {
         let directory = root.path().join("directory");
         std::fs::create_dir(&directory).unwrap();
         let operation = PathContext::capture().unwrap().resolve(&directory).unwrap();
-        assert!(BoundFile::open(&operation, false).is_err());
+        let failed = match BoundFile::open(&operation, false) {
+            Err(error) => error,
+            Ok(_) => panic!("Directory was admitted as an ordinary file"),
+        };
+        // The unchanged source-open flags do not request directory access.
+        // An access-denied open is an observation failure, not an observed type.
+        assert!(matches!(&failed, BoundFileError::ObservationFailed(_)));
+        assert!(failed.native_code().is_some());
         root.close().unwrap();
     }
     #[test]
@@ -182,12 +195,14 @@ mod tests {
             handle::signature(&current).unwrap(),
             source.initial_signature()
         );
-        let parent = handle::directory_observation(&context.resolve(&alias).unwrap()).unwrap();
-        assert_ne!(handle::identity(&parent).unwrap(), original_parent);
-        assert_eq!(
-            source.check_binding().unwrap_err().kind(),
-            io::ErrorKind::InvalidData
-        );
+        let (parent, parent_id) = handle::directory_observation(&context.resolve(&alias).unwrap())
+            .unwrap()
+            .unwrap();
+        assert_ne!(parent_id, original_parent);
+        assert!(matches!(
+            source.check_binding(),
+            Err(BoundFileError::Changed)
+        ));
         drop(current);
         drop(parent);
         drop(source);

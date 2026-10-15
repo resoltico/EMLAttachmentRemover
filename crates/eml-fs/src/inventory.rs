@@ -52,7 +52,7 @@ impl BoundDirectory {
             identity: identity(&stat)?,
             kind,
             file: if kind == EntryKind::File {
-                Some(signature(&stat)?)
+                Some(signature(&stat).map_err(crate::BoundFileError::into_io_error)?)
             } else {
                 None
             },
