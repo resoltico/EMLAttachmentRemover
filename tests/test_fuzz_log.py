@@ -155,6 +155,30 @@ def test_partial_raw_writes_are_completed_and_flushed_or_fail(
             assert sink.contents == content
 
 
+@pytest.mark.parametrize("overflow", [False, True], ids=("exact-limit", "overflow"))
+def test_cli_preserves_binary_stdin_and_enforces_the_log_limit(
+    tmp_path: Path, *, overflow: bool
+) -> None:
+    destination = tmp_path / "stage.log"
+    expected = b"diagnostic\r\n\x00\xff"
+    result = subprocess.run(
+        [sys.executable, "-B", fuzz_log.__file__, str(destination), str(len(expected))],
+        input=expected + (b"excess" if overflow else b""),
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    assert result.returncode == (1 if overflow else 0)
+    assert destination.read_bytes() == expected
+    assert result.stdout == b""
+    if overflow:
+        assert (
+            f"fuzz diagnostics exceed {len(expected)} bytes".encode() in result.stderr
+        )
+    else:
+        assert result.stderr == b""
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="requires POSIX shell pipeline")
 def test_pipeline_propagates_logging_and_command_failures(tmp_path: Path) -> None:
     logger = Path(fuzz_log.__file__).resolve()
