@@ -25,8 +25,7 @@ def _start_task(tmp_path: Path, cancellation: str) -> subprocess.Popen[bytes]:
 
     """
     uv = shutil.which("uv")
-    if uv is None:
-        pytest.skip("uv launcher is unavailable")
+    assert uv is not None, "Install uv to verify the CI launcher cancellation boundary"
     child = tmp_path / "child.py"
     child.write_text(
         "import json, os, signal, sys, time\n"

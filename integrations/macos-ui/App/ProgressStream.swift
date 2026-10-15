@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct NativeProgress: Decodable, Sendable {
@@ -16,12 +17,19 @@ enum ProcessingUpdate: Sendable {
 struct ProgressStream {
   static func read(_ handle: FileHandle, received: @Sendable (NativeProgress) -> Void) -> Data {
     var stream = ProgressStream()
-    do {
-      while let chunk = try handle.read(upToCount: 4096), !chunk.isEmpty {
-        for progress in stream.append(chunk) { received(progress) }
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while true {
+      let count = buffer.withUnsafeMutableBytes {
+        Darwin.read(handle.fileDescriptor, $0.baseAddress, $0.count)
       }
-    } catch {
-      stream.retain(Data("The progress/diagnostic channel could not be read.".utf8))
+      if count > 0 {
+        for progress in stream.append(Data(buffer.prefix(count))) { received(progress) }
+      } else if count == 0 {
+        break
+      } else if errno != EINTR {
+        stream.retain(Data("The progress/diagnostic channel could not be read.".utf8))
+        break
+      }
     }
     return stream.finish()
   }

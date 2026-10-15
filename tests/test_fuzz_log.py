@@ -16,7 +16,11 @@ if TYPE_CHECKING:
     from collections.abc import Buffer
 
 
-@pytest.mark.parametrize("content", [b"", b"diagnostic", b"x" * 65536])
+@pytest.mark.parametrize(
+    "content",
+    [b"", b"diagnostic", b"x" * 65536],
+    ids=["empty", "diagnostic", "exact-chunk"],
+)
 def test_log_preserves_content_through_exact_limit(
     tmp_path: Path, content: bytes
 ) -> None:

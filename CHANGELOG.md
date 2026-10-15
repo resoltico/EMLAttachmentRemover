@@ -13,6 +13,7 @@ Notable changes to this project are documented in this file. The format is based
 
 ### Fixed
 
+- The native app displays advisory processing progress as messages arrive, including small batches, instead of buffering updates until the processing pipe closes. Final reports remain authoritative.
 - The native app rejects malformed JSON receipts and ignores malformed JSON progress updates before passing them to Foundation's JSON decoder, avoiding decoder traps on malformed input.
 - Bundled-runtime builds and archive verification compile Python bytecode with an interpreter from the SHA-256-pinned upstream runtime archives instead of the invoking Python. Cross-CPU builds authenticate a separate host-native compiler; bytecode mismatch diagnostics identify the differing header or payload and both digests.
 

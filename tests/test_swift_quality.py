@@ -84,6 +84,14 @@ def test_formatter_strictly_rejects_style_and_parse_failures(
             "struct First { struct Second { struct Third { struct Fourth {} } } }\n",
         ),
     ],
+    ids=[
+        "force-try",
+        "function-body-length",
+        "type-body-length",
+        "file-length",
+        "cyclomatic-complexity",
+        "nesting",
+    ],
 )
 def test_swiftlint_rejects_unsafe_and_oversized_code(
     tmp_path: Path, rule: str, source: str

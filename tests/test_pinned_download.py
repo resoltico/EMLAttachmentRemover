@@ -53,7 +53,9 @@ def test_oversized_transfer_stops_before_writing_excess_bytes(tmp_path: Path) ->
     assert source.tell() == 2 * pinned_download.CHUNK
 
 
-@pytest.mark.parametrize("contents", [b"", b"a" * (pinned_download.CHUNK + 17)])
+@pytest.mark.parametrize(
+    "contents", [b"", b"a" * (pinned_download.CHUNK + 17)], ids=("empty", "multichunk")
+)
 def test_empty_and_multichunk_archives_preserve_exact_bytes(
     tmp_path: Path, contents: bytes
 ) -> None:
