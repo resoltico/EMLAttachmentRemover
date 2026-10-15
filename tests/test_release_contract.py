@@ -69,7 +69,14 @@ def test_current_changelog_is_the_release_prose_source() -> None:
         require_date=False,
     )
     assert not body.startswith(f"## [{version}] - ")
-    assert body.splitlines()[0] == "### Added"
+    assert body.splitlines()[0] in {
+        "### Added",
+        "### Changed",
+        "### Removed",
+        "### Fixed",
+        "### Security",
+        "### Internal",
+    }
     assert body.endswith("\n")
 
 

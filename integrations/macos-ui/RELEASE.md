@@ -1,6 +1,6 @@
 # Release pipeline and distribution contract
 
-The v4 release contains separate Apple Silicon and Intel macOS applications and the portable Python CLI artifacts. GitHub's macOS producer builds each single-architecture Swift executable and applies an ad-hoc signature with `codesign --sign -`; no Developer ID certificate, signing secret, provisioning profile, or notarization service is used. Customers do not need build tools to use a prebuilt app. The primary apps include a private, integrity-pinned CPython runtime; smaller external-Python editions require a separately managed CPython 3.14.
+The release contains separate Apple Silicon and Intel macOS applications and the portable Python CLI artifacts. GitHub's macOS producer builds each single-architecture Swift executable and applies an ad-hoc signature with `codesign --sign -`; no Developer ID certificate, signing secret, provisioning profile, or notarization service is used. Customers do not need build tools to use a prebuilt app. The primary apps include a private, integrity-pinned CPython runtime; smaller external-Python editions require a separately managed CPython 3.14.
 
 ## Source and qualification
 
@@ -13,7 +13,7 @@ flowchart LR
     Tag[Tagged source] --> Gates[Platform, property, mutation and native fuzz gates]
     Gates --> Build[macOS producer: two builds per CPU and runtime edition]
     Build --> Assets[Eight-file checksummed delivery]
-    Assets --> Verify[macOS 14, Intel and macOS 27 consumers]
+    Assets --> Verify[macOS 15, Intel and macOS 27 consumers]
     Verify --> Attest[GitHub provenance attestations]
     Attest --> Publish[Immutable release and asset read-back]
 ```
@@ -45,7 +45,7 @@ The bundled runtime source is declared by architecture in `runtime-source.toml`,
 
 ## Downloaded-artifact verification and publication
 
-Before publication, GitHub transfers the build job's exact eight-file set to macOS 14 Apple Silicon, macOS 15 Intel and macOS 27 Apple Silicon consumers. Each consumer reverifies the full set, runs the downloaded app on its OS and CPU, and runs the host-native test gate; macOS 14 also exercises the Intel ZIP through Rosetta. Failure on any required consumer blocks publication. The publisher then reverifies the same transferred set and every checksum, compares source and wheel contents with the tagged checkout, validates each ZIP member allowlist, metadata, size limits and safe paths, extracts into private temporary storage, checks the app version and minimum OS declaration, verifies each archive contains only its named CPU and an intact ad-hoc signature, and compares the bundled processor with the standalone zipapp. Bundled runtime trees must match the pinned upstream tree, including file modes and link targets; ordinary files are byte-compared and native code is compared by canonical re-signing and full code-directory hashes, with CPU and minimum-OS checks. It checks the compiled icon resources and that archive documentation and installer support match the tagged source. GitHub artifact transfer carries ZIPs, never loose app directories whose permissions might be lost.
+Before publication, GitHub transfers the build job's exact eight-file set to macOS 15 Apple Silicon, macOS 15 Intel and macOS 27 Apple Silicon consumers. Each consumer reverifies the full set, runs the downloaded app on its OS and CPU, and runs the host-native test gate; macOS 15 Apple Silicon also exercises the Intel ZIP through Rosetta. Failure on any required consumer blocks publication. The publisher then reverifies the same transferred set and every checksum, compares source and wheel contents with the tagged checkout, validates each ZIP member allowlist, metadata, size limits and safe paths, extracts into private temporary storage, checks the app version and minimum OS declaration, verifies each archive contains only its named CPU and an intact ad-hoc signature, and compares the bundled processor with the standalone zipapp. Bundled runtime trees must match the pinned upstream tree, including file modes and link targets; ordinary files are byte-compared and native code is compared by canonical re-signing and full code-directory hashes, with CPU and minimum-OS checks. It checks the compiled icon resources and that archive documentation and installer support match the tagged source. GitHub artifact transfer carries ZIPs, never loose app directories whose permissions might be lost.
 
 Only this verified set is attested and passed to the existing changelog-bound immutable publisher. GitHub provenance attestations establish build provenance; they are not Developer ID identity, notarization, a malware scan, or Gatekeeper approval.
 

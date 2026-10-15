@@ -4,10 +4,31 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-10-15
+
 ### Changed
 
-- POSIX publication now uses a private, descriptor-held staging directory; macOS inherited extended ACL entries are cleared before writing the candidate, failing closed on unexpected ACL errors. Linux hard-link and macOS exclusive-rename operations use its protected inner candidate rather than a replaceable outer staging name; orphaned POSIX stages are directories rather than files. MIME verifier stale-header checks now derive affected ancestors independently of the executor. Published v4.0.0 artifacts remain unchanged.
-- **Native application minimum macOS version (future builds):** Raised the deployment target, bundle metadata, compiled icon target and archive verifier from macOS 14.0 to macOS 15.0 for Apple Silicon and Intel apps. Public PR and tagged-release compatibility now qualify macOS 15 Apple Silicon, macOS 15 Intel and Xcode 27 on free standard GitHub-hosted runners; Rosetta still qualifies the Intel app on Apple Silicon. The external Sonoma runner-migration mechanism is retired because macOS 14 support is no longer promised for new builds. Already published v4.0.0 artifacts and their documented macOS 14 requirement are unchanged. [Issue #29](https://github.com/resoltico/EMLAttachmentRemover/issues/29).
+- **Breaking for native app users on macOS 14:** Apple Silicon and Intel app builds now require macOS 15.0 or later. Upgrade macOS before installing these builds; published v4.0.0 apps retain their macOS 14 requirement and remain unchanged. Pull-request and tagged-release compatibility checks cover macOS 15 Apple Silicon, macOS 15 Intel and Xcode 27, with additional Intel checks through Rosetta on Apple Silicon. See the [native release requirements](integrations/macos-ui/RELEASE.md#minimum-native-macos-release-150-sequoia) and [Issue #29](https://github.com/resoltico/EMLAttachmentRemover/issues/29).
+- **Native fuzz runner callers:** `-runs` must be between 1 and the configured 100,000-execution ceiling; unlimited `-runs=-1` and larger requests are refused. For extended exploration, omit `-runs` and use `-max_total_time=1800`; the execution ceiling still applies.
+
+### Fixed
+
+- The native app displays advisory processing progress as messages arrive, including small batches, instead of buffering updates until the processing pipe closes. Final reports remain authoritative.
+- The native app rejects malformed JSON receipts and ignores malformed JSON progress updates before passing them to Foundation's JSON decoder, avoiding decoder traps on malformed input.
+- Bundled-runtime builds and archive verification compile Python bytecode with an interpreter from the SHA-256-pinned upstream runtime archives instead of the invoking Python. Cross-CPU builds authenticate a separate host-native compiler; bytecode mismatch diagnostics identify the differing header or payload and both digests.
+
+### Security
+
+- POSIX publication uses an owner-private, descriptor-held staging directory to prevent replacement of the outer staging name from redirecting the candidate used by the atomic hard-link or exclusive-rename operation. On macOS, inherited extended ACL entries are cleared before retained message bytes are written; unexpected ACL failures refuse staging. A forced stop or cleanup failure can leave a directory containing `candidate`, rather than the previous staging file. After all processing using the destination has stopped, inspect and manually remove only recognized leftovers; later runs do not remove old stages. Actors allowed to modify the destination directory can still alter final entries after publication. See the [staging cleanup guidance](README.md#input-and-filesystem-limits).
+- MIME verification derives affected ancestor headers independently of candidate construction, so a shared traversal defect cannot silently retain stale headers.
+
+### Internal
+
+- Release and compatibility consumers select the exact producer's artifact ID, including partial workflow reruns, instead of selecting delivery artifacts by name.
+- Corrected source-bound mutation-equivalence evidence and added pull-request validation of its full source digest. Relevant main-branch changes trigger mutation campaigns; bounded diagnostics prioritize unreviewed survivors. Expanded failure controls cover runtime authentication and publication, POSIX staging and ACLs, generated-root provenance, CLI reporting and mutation diagnostics.
+- Superseded push and pull-request assurance campaigns cancel while manual and scheduled runs retain separate concurrency groups. All workflow evidence and delivery-transport artifacts explicitly expire after 30 days; public release assets remain available separately.
+- Hosted UV commands replace their shell wrapper so cancellation reaches the task; POSIX task termination sweeps its owned command group before exit. Mutation workers keep standard temporary files inside campaign-owned cleanup storage. Native fuzzing removes compiler scratch, disables core dumps, caps each stage's diagnostics at 8 MiB and avoids redundant corpus reloads. Hypothesis observation sanitization streams records and uses a same-filesystem move to avoid a second sanitized-tree copy; cross-filesystem publication can still copy. Failed sanitization closes input and output streams before cleanup so open handles do not strand temporary files on Windows. These controls do not impose an aggregate filesystem quota; see the [resource limits](QA.md#native-receipt-fuzzing).
+- Native tool downloads enforce pinned archive sizes while verifying SHA-256, and swift-format fetches only its pinned source revision with disposable build caches. CI reuses the small installed quality-tool binaries through exact platform/source cache keys and still checks their versions; the compiler installation is excluded. The local Linux mutation cache prunes dangling UV entries while retaining reusable wheels.
 
 ## [4.0.0] - 2026-10-06
 
@@ -178,7 +199,8 @@ This tagged candidate's release workflow stopped before asset publication; its c
 
 - First public release.
 
-[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.6...v4.0.0
 [3.0.6]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.5...v3.0.6
 [3.0.5]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.4...v3.0.5

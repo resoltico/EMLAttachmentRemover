@@ -7212,7 +7212,7 @@
     {
       "path": "tests/test_mutation_diagnostics.py",
       "scope": "test_the_mutation_task_registers_the_diagnostics_step.run_action",
-      "anchor": "action(Path(\"/private/storage\"))",
+      "anchor": "action(tmp_path / \"storage\")",
       "tool": "mypy",
       "rules": "operator",
       "reason": "Explicit typing boundary for script-mode imports, dynamic stream interfaces or negative-test fixtures; strict mypy continues checking the enclosing code."
@@ -8976,6 +8976,22 @@
       "tool": "ruff",
       "rules": "private-member-access",
       "reason": "Assert descriptor zero is retired by partial stage acquisition cleanup, whether owned as the file or directory handle."
+    },
+    {
+      "path": "tests/conftest.py",
+      "scope": "_bound_finite_output_mutations",
+      "anchor": "finite_main_call(report_delivery._bounded),",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "finite output mutation boundary."
+    },
+    {
+      "path": "tests/conftest.py",
+      "scope": "_bound_finite_output_mutations",
+      "anchor": "finite_main_call(report_delivery._write_all),",
+      "tool": "ruff",
+      "rules": "private-member-access",
+      "reason": "finite output mutation boundary."
     }
   ],
   "swift_exceptions": []

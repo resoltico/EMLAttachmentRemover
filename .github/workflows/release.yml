@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+defaults:
+  run:
+    shell: bash
+
 permissions:
   contents: read
 
@@ -63,24 +67,27 @@ jobs:
         uses: ./.github/actions/runtime-source
       - name: Validate the release tag and main ancestry
         shell: bash
-        run: uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
+        run: exec uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python ${{ matrix.python }}
+        run: exec uv sync --locked --group dev --python ${{ matrix.python }}
         env:
           PYTHONWARNINGS: default
       - name: Require the POSIX integration environment
         if: runner.os != 'Windows'
         shell: bash
         run: test -x /bin/sh
+      - name: Restore pinned Swift quality tool cache
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/swift-quality-cache
       - name: Install pinned Swift quality tools
         if: runner.os == 'macOS'
-        run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
+        run: exec uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
       - name: Run the complete quality gate
         if: matrix.static
-        run: uv run python tools/tasks.py quality
+        run: exec uv run python tools/tasks.py quality
       - name: Run the platform-native quality gate
         if: ${{ !matrix.static }}
-        run: uv run python tools/tasks.py quality --native
+        run: exec uv run python tools/tasks.py quality --native
       - name: Preserve machine-readable quality reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -139,27 +146,30 @@ jobs:
         uses: ./.github/actions/runtime-source
       - name: Validate the release tag and main ancestry
         shell: bash
-        run: uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
+        run: exec uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python ${{ matrix.python }}
+        run: exec uv sync --locked --group dev --python ${{ matrix.python }}
         env:
           PYTHONWARNINGS: default
       - name: Require the POSIX integration environment
         if: runner.os != 'Windows'
         shell: bash
         run: test -x /bin/sh
+      - name: Restore pinned Swift quality tool cache
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/swift-quality-cache
       - name: Install pinned Swift quality tools
         if: runner.os == 'macOS'
-        run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
+        run: exec uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
       - name: Run randomized property exploration
         run: >-
-          uv run python tools/tasks.py thorough
+          exec uv run python tools/tasks.py thorough
           --observable --timeout-seconds 3300
       - name: Finalize public Hypothesis evidence
         id: finalize_hypothesis
         if: always()
         run: >-
-          uv run python tools/finalize_hypothesis_artifacts.py
+          exec uv run python tools/finalize_hypothesis_artifacts.py
           --observations
       - name: Preserve native fuzz regression evidence
         if: always() && runner.os == 'macOS'
@@ -211,13 +221,13 @@ jobs:
         uses: ./.github/actions/runtime-source
       - name: Validate the release tag and main ancestry
         shell: bash
-        run: uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
+        run: exec uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python 3.14.8
+        run: exec uv sync --locked --group dev --python 3.14.8
         env:
           PYTHONWARNINGS: default
       - name: Run a fresh 100% actionable mutation campaign
-        run: uv run python tools/tasks.py mutation --workers "$MUTATION_WORKERS"
+        run: exec uv run python tools/tasks.py mutation --workers "$MUTATION_WORKERS"
       - name: Preserve tagged mutation evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -274,21 +284,21 @@ jobs:
         uses: ./.github/actions/runtime-source
       - name: Validate the release tag and main ancestry
         shell: bash
-        run: uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
+        run: exec uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python 3.14.8
+        run: exec uv sync --locked --group dev --python 3.14.8
         env:
           PYTHONWARNINGS: default
       - name: Select and verify the pinned delivery SDK
-        run: uv run /bin/sh integrations/macos-ui/ci-sdk.sh >> "$GITHUB_ENV"
+        run: exec uv run /bin/sh integrations/macos-ui/ci-sdk.sh >> "$GITHUB_ENV"
       - name: Install the pinned Swift toolchain
-        run: uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh
+        run: exec uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh
       - name: Build and qualify the exact release artifact set
         # `release-dist` is ephemeral CI artifact staging, not a maintained checkout
         # distribution directory. Local `tasks.py release` continues to use an
         # external temporary directory.
         run: >-
-          uv run python -B -m tools.release_delivery
+          exec uv run python -B -m tools.release_delivery
           --output-directory release-dist
         env:
           TZ: UTC
@@ -307,6 +317,7 @@ jobs:
             release-dist/*-macos-x86_64-external-python.zip
             release-dist/SHA256SUMS
           if-no-files-found: error
+          retention-days: 30
 
   compatibility:
     name: Exercise release ZIPs on ${{ matrix.os }}
@@ -344,7 +355,7 @@ jobs:
         if: runner.os == 'macOS'
         uses: ./.github/actions/runtime-source
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python 3.14.8
+        run: exec uv sync --locked --group dev --python 3.14.8
         env:
           PYTHONWARNINGS: default
       - name: Download this tag's release assets
@@ -353,11 +364,13 @@ jobs:
           artifact-ids: ${{ needs.build.outputs.delivery_artifact_id || '0' }}
           path: release-dist
       - name: Reverify downloaded assets on the consumer
-        run: uv run --no-project --python 3.14.8 python -B -m tools.release_delivery --verify-directory release-dist
+        run: exec uv run --no-project --python 3.14.8 python -B -m tools.release_delivery --verify-directory release-dist
+      - name: Restore pinned Swift quality tool cache
+        uses: ./.github/actions/swift-quality-cache
       - name: Install pinned Swift quality tools
-        run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
+        run: exec uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
       - name: Test the tagged source and downloaded app on this OS
-        run: uv run python tools/tasks.py quality --native
+        run: exec uv run python tools/tasks.py quality --native
         env:
           EML_DELIVERY_DIRECTORY: release-dist
       - name: Preserve release compatibility evidence
@@ -407,9 +420,9 @@ jobs:
         uses: ./.github/actions/runtime-source
       - name: Validate the release tag and main ancestry
         shell: bash
-        run: uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
+        run: exec uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
       - name: Select and verify the pinned delivery SDK
-        run: uv run /bin/sh integrations/macos-ui/ci-sdk.sh >> "$GITHUB_ENV"
+        run: exec uv run /bin/sh integrations/macos-ui/ci-sdk.sh >> "$GITHUB_ENV"
       - name: Download release assets
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -417,7 +430,7 @@ jobs:
           path: release-dist
       - name: Reverify the downloaded exact artifact set
         run: >-
-          uv run --no-project --python 3.14.8 python
+          exec uv run --no-project --python 3.14.8 python
           -B -m tools.release_delivery --verify-directory release-dist
       - name: Identify the verified checksum manifest
         id: checksum-manifest
@@ -440,7 +453,7 @@ jobs:
           subject-digest: ${{ steps.checksum-manifest.outputs.digest }}
       - name: Publish and verify the changelog-bound release
         run: >-
-          uv run --no-project --python 3.14.8 python -B
+          exec uv run --no-project --python 3.14.8 python -B
           -m tools.publish_release --assets-directory release-dist
         env:
           GH_TOKEN: ${{ github.token }}

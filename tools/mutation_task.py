@@ -7,6 +7,7 @@ import importlib
 import os
 import shutil
 import subprocess
+import tempfile
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
@@ -158,12 +159,16 @@ def command_runner(
     observability: Sequence[str],
     project_root: Path,
 ) -> CommandRunner:
-    """Bind the isolated storage and coverage settings every mutation command needs.
+    """Bind commands once inside a freshly created private campaign root.
 
     Returns:
         A runner that adds the mutation environment to each task command.
 
     """
+    # Standard-library tempfile users (including subprocess call journals) must
+    # share campaign ownership too: a killed worker cannot run their finalizers.
+    # Keep an independent owner-only mode; a parent search ACL need not inherit.
+    temporary = tempfile.mkdtemp(dir=storage.parent)
     coverage_variables = tuple(
         variable for variable in os.environ if variable.startswith("COVERAGE_")
     )
@@ -180,11 +185,14 @@ def command_runner(
         updates["COVERAGE_FILE"] = str(storage.parent / ".mutmut-coverage")
         updates[storage_variable] = str(storage)
         updates["EML_MUTATION_PYTEST_TEMPORARY_ROOT"] = str(storage)
+        updates.update(dict.fromkeys(("TMPDIR", "TEMP", "TMP"), temporary))
         checkpoint = storage.parent / "mutation-workspace.json"
         if profile == MUTATION_PROFILE:
             updates[mutation_integrity.CHECKPOINT_VARIABLE] = str(checkpoint)
         context = (
-            mutation_integrity.guard(project_root / "mutants", checkpoint, storage)
+            mutation_integrity.guard(
+                project_root / "mutants", checkpoint, storage.parent
+            )
             if profile == MUTATION_PROFILE
             else nullcontext()
         )

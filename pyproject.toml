@@ -5,7 +5,7 @@ backend-path = ["tools"]
 
 [project]
 name = "eml-attachment-remover"
-version = "4.0.0"
+version = "5.0.0"
 description = "Create structurally verified MIME-pruned EML working copies"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
@@ -63,7 +63,7 @@ remove-eml-attachments = "eml_attachment_remover.runtime:main"
 implementation = "CPython"
 
 [tool.eml-attachment-remover.macos]
-build-number = 33
+build-number = 34
 
 [tool.eml-attachment-remover.licenses]
 software = "MPL-2.0"

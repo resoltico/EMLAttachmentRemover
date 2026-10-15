@@ -64,18 +64,18 @@ def test_verifier_requires_native_asset_and_checks_its_processor(
     portable.assert_called_once_with(
         tmp_path,
         additional_artifacts=(
-            "eml_attachment_remover-4.0.0-macos-arm64.zip",
-            "eml_attachment_remover-4.0.0-macos-arm64-external-python.zip",
-            "eml_attachment_remover-4.0.0-macos-x86_64.zip",
-            "eml_attachment_remover-4.0.0-macos-x86_64-external-python.zip",
+            "eml_attachment_remover-5.0.0-macos-arm64.zip",
+            "eml_attachment_remover-5.0.0-macos-arm64-external-python.zip",
+            "eml_attachment_remover-5.0.0-macos-x86_64.zip",
+            "eml_attachment_remover-5.0.0-macos-x86_64-external-python.zip",
         ),
     )
     assert native.call_count == 4
     assert [call.args for call in native.call_args_list] == [
         (
-            tmp_path / macos_archive.archive_name("4.0.0", cpu, mode),
+            tmp_path / macos_archive.archive_name("5.0.0", cpu, mode),
             tmp_path / "remove-eml-attachments.pyz",
-            "4.0.0",
+            "5.0.0",
             cpu,
             mode,
         )
@@ -155,10 +155,10 @@ def test_delivery_publishes_one_complete_set_or_preserves_empty_destination(
                 "public.tar.gz",
                 "remove-eml-attachments.pyz",
                 "SHA256SUMS",
-                "eml_attachment_remover-4.0.0-macos-arm64.zip",
-                "eml_attachment_remover-4.0.0-macos-x86_64.zip",
-                "eml_attachment_remover-4.0.0-macos-arm64-external-python.zip",
-                "eml_attachment_remover-4.0.0-macos-x86_64-external-python.zip",
+                "eml_attachment_remover-5.0.0-macos-arm64.zip",
+                "eml_attachment_remover-5.0.0-macos-x86_64.zip",
+                "eml_attachment_remover-5.0.0-macos-arm64-external-python.zip",
+                "eml_attachment_remover-5.0.0-macos-x86_64-external-python.zip",
             }
             assert all(path.is_file() for path in paths)
             assert "macos-arm64.zip" in (output / "SHA256SUMS").read_text()

@@ -372,12 +372,12 @@ def test_the_task_hands_the_evidence_paths_and_environment_to_the_patch_runner()
     assert seen[0][1:] == (sys.executable, {"E": "1"}, "mutant")
 
 
-def test_the_mutation_task_registers_the_diagnostics_step() -> None:
+def test_the_mutation_task_registers_the_diagnostics_step(tmp_path: Path) -> None:
     """The campaign's own action bundle carries the task's diagnostics capture."""
     registered: list[object] = []
 
     def run_action(action: object, *_args: object, **_kwargs: object) -> None:
-        action(Path("/private/storage"))  # type: ignore[operator]
+        action(tmp_path / "storage")  # type: ignore[operator]
 
     def run_mutation(
         _paths: object, actions: object, *_args: object, **_kw: object

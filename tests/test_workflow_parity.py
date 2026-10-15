@@ -74,7 +74,7 @@ def _run_steps(text: str) -> Iterator[str]:
         value = match[2]
         if value in {">-", "|"}:
             value = _block(lines[index + 1 :], len(match[1]))
-        yield " ".join(value.split())
+        yield " ".join(value.split()).removeprefix("exec ")
 
 
 def _workflow_steps() -> set[str]:
@@ -114,7 +114,7 @@ class WorkflowParityTests(unittest.TestCase):
         manual = {
             (
                 'uv run /bin/sh integrations/macos-ui/fuzz.sh "$FUZZ_OUTPUT" '
-                "-runs=-1 -max_total_time=1800"
+                "-max_total_time=1800"
             )
         }
         guide = (PROJECT_ROOT / "QA.md").read_text(encoding="utf-8")
@@ -165,6 +165,7 @@ class WorkflowParityTests(unittest.TestCase):
                             "./.github/workflows/swift-fuzz.yml",
                             "./.github/actions/runtime-source",
                             "./.github/actions/sequoia-compatibility",
+                            "./.github/actions/swift-quality-cache",
                         },
                     )
                     target = PROJECT_ROOT / action
@@ -194,10 +195,16 @@ class WorkflowParityTests(unittest.TestCase):
             "        run: |\n"
             "          literal   line\n"
             "      - run: inline  text\n"
+            "      - run: exec uv run python tools/tasks.py test\n"
         )
         self.assertEqual(
             list(_run_steps(text)),
-            ["first second", "literal line", "inline text"],
+            [
+                "first second",
+                "literal line",
+                "inline text",
+                "uv run python tools/tasks.py test",
+            ],
         )
 
 

@@ -15,6 +15,8 @@ from typing import Final
 
 import pytest
 
+from tests import swift_fuzz_support
+
 ROOT: Final = Path(__file__).resolve().parents[1]
 UI: Final = ROOT / "integrations/macos-ui"
 MACOS: Final = pytest.mark.skipif(
@@ -34,14 +36,11 @@ def _environment() -> dict[str, str]:
     }
 
 
-def _run(ui: Path, output: Path, *options: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["/bin/sh", str(ui / "fuzz.sh"), str(output), *options],
-        env=_environment(),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=45,
+def _run(
+    ui: Path, output: Path, *options: str, timeout_seconds: float | None = None
+) -> subprocess.CompletedProcess[str]:
+    return swift_fuzz_support.run_campaign(
+        ui, output, options, environment=_environment(), timeout_seconds=timeout_seconds
     )
 
 
@@ -58,14 +57,21 @@ def copied_ui(tmp_path: Path) -> Path:
     shutil.copytree(UI, ui)
     tools = project / "tools"
     tools.mkdir()
-    for name in ("__init__.py", "task_process.py"):
+    for name in ("__init__.py", "task_process.py", "fuzz_log.py"):
         shutil.copyfile(ROOT / "tools" / name, tools / name)
     return ui
 
 
 @pytest.mark.parametrize(
     "options",
-    [("-artifact_prefix=/tmp/",), ("-runs=0",), ("-max_total_time=0",), ("-jobs=2",)],
+    [
+        ("-artifact_prefix=/tmp/",),
+        ("-runs=0",),
+        ("-runs=-1",),
+        ("-runs=100001",),
+        ("-max_total_time=0",),
+        ("-jobs=2",),
+    ],
 )
 @MACOS
 def test_campaign_rejects_options_that_disable_bounds_or_redirect_evidence(
@@ -118,6 +124,8 @@ def test_compile_failure_preserves_inputs_command_and_log(
     ).read_bytes()
     assert metadata["inputs"]
     assert len(metadata["stages"]) == 1
+    assert metadata["scratch_cleanup"] == "passed"
+    assert not (output / "scratch").exists()
 
 
 @MACOS
@@ -157,6 +165,7 @@ def test_sigterm_cleans_the_active_compile_group(
     metadata = json.loads((output / "invocation.json").read_text())
     assert metadata["outcome"] == "failed"
     assert "KeyboardInterrupt" in metadata["error"]
+    assert not (output / "scratch").exists()
 
 
 @pytest.fixture(scope="module")
@@ -191,6 +200,8 @@ def test_optimized_asan_campaign_replays_seeds_and_records_all_stages(
     assert "Done 100 runs" in log or "Done 101 runs" in log
     assert "Executed" in (campaign / "replay.log").read_text()
     assert (campaign.stat().st_mode & 0o077) == 0
+    assert metadata["scratch_cleanup"] == "passed"
+    assert not (campaign / "scratch").exists()
 
 
 @pytest.mark.parametrize(

@@ -61,7 +61,7 @@ options:
     assert version_exit.value.code == 0
     version_output = capsys.readouterr()
     assert (version_output.out, version_output.err) == (
-        "remove-eml-attachments 4.0.0\n",
+        "remove-eml-attachments 5.0.0\n",
         "",
     )
 

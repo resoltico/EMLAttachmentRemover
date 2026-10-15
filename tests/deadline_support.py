@@ -3,11 +3,33 @@
 from __future__ import annotations
 
 import signal
+import threading
 from contextlib import contextmanager
+from functools import wraps
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator
+
+
+def finite_main_call[**P, R](
+    operation: Callable[P, R], timeout: float = 10
+) -> Callable[P, R]:
+    """Bound a main-thread operation; its worker stays under the caller's guard.
+
+    Returns:
+        A metadata-preserving wrapper that executes on the original caller thread.
+
+    """
+
+    @wraps(operation)
+    def bounded(*args: P.args, **kwargs: P.kwargs) -> R:
+        if threading.current_thread() is not threading.main_thread():
+            return operation(*args, **kwargs)
+        with finite_operation(timeout):
+            return operation(*args, **kwargs)
+
+    return bounded
 
 
 @contextmanager

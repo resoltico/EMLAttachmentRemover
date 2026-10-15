@@ -37,7 +37,7 @@ PYTHON_USE: Final = re.compile(
 BYTECODE_SETTING: Final = '      PYTHONDONTWRITEBYTECODE: "1"'
 LOCKED_SYNC: Final = re.compile(
     r"      - name: Install locked development dependencies\n"
-    r"        run: uv sync --locked --group dev --python [^\n]+\n"
+    r"        run: exec uv sync --locked --group dev --python [^\n]+\n"
     r"        env:\n"
     r"          PYTHONWARNINGS: default(?:\n|$)",
 )

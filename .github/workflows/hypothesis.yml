@@ -9,14 +9,17 @@ on:
     - cron: "23 2 * * 1"
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 permissions:
   contents: read
 
 concurrency:
-  group: hypothesis-${{ github.workflow }}-${{ github.ref }}
-  # A newer PR revision supersedes exploration of the old one; scheduled, push,
-  # and manual campaigns are deliberate and still queue.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: hypothesis-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # Superseded push/PR commits stop; manual and scheduled runs retain their own groups.
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 
 jobs:
   explore:
@@ -60,19 +63,22 @@ jobs:
         if: runner.os == 'macOS'
         uses: ./.github/actions/runtime-source
       - name: Install locked development dependencies
-        run: uv sync --locked --group dev --python ${{ matrix.python }}
+        run: exec uv sync --locked --group dev --python ${{ matrix.python }}
         env:
           PYTHONWARNINGS: default
       - name: Require the POSIX integration environment
         if: runner.os != 'Windows'
         shell: bash
         run: test -x /bin/sh
+      - name: Restore pinned Swift quality tool cache
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/swift-quality-cache
       - name: Install pinned Swift quality tools
         if: runner.os == 'macOS'
-        run: uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
+        run: exec uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
       - name: Run randomized property exploration
         run: >-
-          uv run python tools/tasks.py thorough
+          exec uv run python tools/tasks.py thorough
           --observable --timeout-seconds 3300
       - name: Preserve native fuzz regression evidence
         if: always() && runner.os == 'macOS'
@@ -86,7 +92,7 @@ jobs:
         id: finalize_hypothesis
         if: always()
         run: >-
-          uv run python tools/finalize_hypothesis_artifacts.py
+          exec uv run python tools/finalize_hypothesis_artifacts.py
           --observations
       - name: Publish sanitized Hypothesis observations
         if: always() && steps.finalize_hypothesis.outcome == 'success'

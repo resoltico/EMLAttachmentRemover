@@ -207,7 +207,7 @@ def test_direct_zipapp_build_preserves_directory_contract_and_file_datetime(
         assert directories == {
             "eml_attachment_remover/",
             "schema/",
-            "eml_attachment_remover-4.0.0.dist-info/",
+            "eml_attachment_remover-5.0.0.dist-info/",
         }
         for name in directories:
             info = archive.getinfo(name)

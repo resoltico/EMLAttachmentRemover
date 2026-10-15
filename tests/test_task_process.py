@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -172,6 +173,89 @@ class PosixProcessGroupTests(unittest.TestCase):
 
 class FakeProcessGroupTests(unittest.TestCase):
     """Exercise every control path deterministically on every platform."""
+
+    def test_default_termination_policy_is_scoped_and_restored(self) -> None:
+        with (
+            patch.object(signal, "getsignal", return_value=signal.SIG_DFL),
+            patch.object(signal, "signal", return_value=signal.SIG_DFL) as install,
+        ):
+            with task_process._termination_cleanup() as check:
+                handler = install.call_args.args[1]
+                self.assertTrue(callable(handler))
+                handler(signal.SIGTERM, None)
+                with self.assertRaises(task_process._TerminationRequested) as raised:
+                    check()
+                self.assertEqual(raised.exception.code, 143)
+            self.assertEqual(
+                install.call_args_list,
+                [
+                    call(signal.SIGTERM, handler),
+                    call(signal.SIGTERM, signal.SIG_DFL),
+                ],
+            )
+
+    def test_caller_termination_policies_and_other_threads_are_preserved(self) -> None:
+        for previous in (signal.SIG_IGN, lambda _number, _frame: None):
+            with (
+                patch.object(signal, "getsignal", return_value=previous),
+                patch.object(signal, "signal") as install,
+                task_process._termination_cleanup(),
+            ):
+                self.assertEqual(install.call_count, 0)
+        with (
+            patch.object(threading, "current_thread", return_value=object()),
+            patch.object(signal, "getsignal") as inspect,
+            patch.object(signal, "signal") as install,
+            task_process._termination_cleanup(),
+        ):
+            inspect.assert_not_called()
+            install.assert_not_called()
+
+    def test_termination_unwinds_with_signal_status_without_interrupt_grace(
+        self,
+    ) -> None:
+        with (
+            patch.object(task_process, "_interrupt") as interrupt,
+            self.assertRaises(task_process._TerminationRequested),
+        ):
+            _fake_run([task_process._TerminationRequested(143)])
+        interrupt.assert_not_called()
+
+    def test_termination_is_deferred_during_acquisition_sweep_and_reap(self) -> None:
+        for phase in ("spawn", "sweep", "reap"):
+            process = MagicMock(pid=4242)
+            process.wait.return_value = 0
+            with (
+                self.subTest(phase=phase),
+                patch.object(os, "name", "posix"),
+                patch.object(signal, "getsignal", return_value=signal.SIG_DFL),
+                patch.object(signal, "signal", return_value=signal.SIG_DFL) as install,
+                patch.object(subprocess, "Popen", return_value=process) as spawn,
+                patch.object(task_process, "_leader_exited", return_value=True),
+                patch.object(task_process, "_signal_group") as sweep,
+                patch.object(task_process, "_interrupt") as interrupt,
+            ):
+
+                def request(
+                    *_args: object, owned: MagicMock = process, **_kwargs: object
+                ) -> MagicMock:
+                    handler = install.call_args.args[1]
+                    handler(signal.SIGTERM, None)
+                    handler(signal.SIGTERM, None)
+                    return owned
+
+                if phase == "spawn":
+                    spawn.side_effect = request
+                elif phase == "sweep":
+                    sweep.side_effect = request
+                else:
+                    process.wait.side_effect = lambda: (request(), 0)[1]
+                with self.assertRaises(task_process._TerminationRequested) as raised:
+                    task_process.run(("command",), cwd=PROJECT, env={}, timeout=30)
+                self.assertEqual(raised.exception.code, 143)
+                sweep.assert_called_once_with(4242, task_process._KILL_SIGNAL)
+                process.wait.assert_called_once_with()
+                interrupt.assert_not_called()
 
     def test_normal_exit_waits_without_reaping_then_sweeps(self) -> None:
         popen, process, signal_group, sleep = _fake_run([False, False, True])

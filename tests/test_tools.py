@@ -87,6 +87,8 @@ class TaskRunnerTests(unittest.TestCase):
 
     def test_test_coverage_mutation_and_build_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
+            storage = Path(directory) / "private-hypothesis"
+            storage.mkdir()
             mutation_root = Path(directory) / "mutants"
             statistics = mutation_root / "mutmut-cicd-stats.json"
             results = Path(directory) / "mutmut-results.txt"
@@ -106,9 +108,7 @@ class TaskRunnerTests(unittest.TestCase):
                 patch.object(
                     tasks.hypothesis_runner,
                     "run_isolated",
-                    side_effect=lambda action, *_args, **_kwargs: action(
-                        Path("/public/private-hypothesis")
-                    ),
+                    side_effect=lambda action, *_args, **_kwargs: action(storage),
                 ),
                 patch.object(tasks, "_run") as run,
                 patch.object(mutation_integrity, "verify"),
@@ -123,7 +123,7 @@ class TaskRunnerTests(unittest.TestCase):
         commands = [entry.args[0] for entry in run.call_args_list]
         self.assertTrue(any("pytest" in command for command in commands))
         self.assertTrue(any("coverage" in command for command in commands))
-        coverage_file = str(Path("/public/.coverage"))
+        coverage_file = str(storage.parent / ".coverage")
         coverage_calls = [
             entry for entry in run.call_args_list if "coverage" in entry.args[0]
         ]

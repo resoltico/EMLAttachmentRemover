@@ -106,7 +106,10 @@ def _discard_staging(root: Path, action_error: BaseException | None) -> None:
 
 
 def _stage_observations(source: Path, hypothesis_root: Path) -> tuple[Path, Path]:
-    """Copy observations into an owned same-parent staging root.
+    """Consume sanitized observations into an owned same-parent staging root.
+
+    A same-filesystem move avoids duplicating the sanitized tree. Across devices,
+    shutil.move copies before removing the source; a failed copy leaves it intact.
 
     Returns:
         The staging root and staged observation directory.
@@ -122,7 +125,7 @@ def _stage_observations(source: Path, hypothesis_root: Path) -> tuple[Path, Path
         raise HypothesisPublicationError(message) from error
     staged = root / STAGING_OBSERVATIONS_NAME
     try:
-        shutil.copytree(source, staged, copy_function=shutil.copyfile)
+        shutil.move(source, staged, copy_function=shutil.copyfile)
     except (OSError, UnicodeError) as error:
         failure = HypothesisPublicationError(
             f"cannot stage public Hypothesis observations: {error}"
@@ -184,7 +187,7 @@ def _promote_observations(
 
 
 def publish_observations(source_root: Path, publication_root: Path) -> tuple[int, int]:
-    """Sanitize isolated observations and replace the public observation set.
+    """Sanitize and consume isolated observations into the public observation set.
 
     Returns:
         The number of observation files and records published.

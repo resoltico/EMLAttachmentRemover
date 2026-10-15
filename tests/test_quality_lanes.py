@@ -96,11 +96,12 @@ def test_the_workflow_runs_the_static_checks_on_exactly_one_lane() -> None:
     assert len(re.findall(r"^\s+static: true$", text, flags=re.MULTILINE)) == 1
     assert len(re.findall(r"^\s+- os: ", text, flags=re.MULTILINE)) == 6
     assert re.search(
-        r"if: matrix\.static\n\s+run: uv run python tools/tasks\.py quality\n", text
+        r"if: matrix\.static\n\s+run: exec uv run python tools/tasks\.py quality\n",
+        text,
     )
     assert re.search(
         r"if: \$\{\{ !matrix\.static \}\}\n"
-        r"\s+run: uv run python tools/tasks\.py quality --native\n",
+        r"\s+run: exec uv run python tools/tasks\.py quality --native\n",
         text,
     )
     assert re.search(

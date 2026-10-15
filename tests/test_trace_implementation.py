@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import wraps
 from types import FunctionType
 from typing import TYPE_CHECKING, cast
 
@@ -10,6 +9,7 @@ import pytest
 from mutmut.mutation.trampoline import wrap_in_trampoline
 
 from tests import trace_implementation_support
+from tests.deadline_support import finite_main_call
 from tests.trace_implementation_support import traced_implementation
 
 if TYPE_CHECKING:
@@ -45,9 +45,7 @@ def test_trace_follows_actual_original_or_selected_mutant(
         "Callable[[], int]", factory(implementations, is_classmethod=False)(original)
     )
 
-    @wraps(wrapped)
-    def decorated() -> int:
-        return wrapped()
+    decorated = finite_main_call(wrapped)
 
     monkeypatch.setattr(
         trace_implementation_support, "get_mutant_under_test", lambda: active

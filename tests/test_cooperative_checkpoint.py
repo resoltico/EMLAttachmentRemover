@@ -47,8 +47,9 @@ def test_unresponsive_work_uses_the_same_bounded_escape(
         finished.set()
 
     monkeypatch.setattr(cancellation, "hard_exit", exit_test)
-    monkeypatch.setattr(cancellation, "GRACE_SECONDS", 0.05)
     with cancellation.install_cancellation_handlers():
+        # Shorten simulated expiry after the owner captures its shutdown allowance.
+        monkeypatch.setattr(cancellation, "GRACE_SECONDS", 0.05)
         state = CURRENT.get()
         assert state is not None
         state.record(signal.SIGINT, None)

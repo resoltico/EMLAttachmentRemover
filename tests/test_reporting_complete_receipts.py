@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import tomllib
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from eml_attachment_remover import report_document
@@ -134,6 +136,8 @@ def _complete_ledger() -> BatchLedger:
 def test_report_serializes_every_complete_receipt_and_schema_field() -> None:
     """The JSON document keeps every receipt rather than reporting a summary only."""
     document = report_document.report(_complete_ledger(), "apply", 9)
+    with (Path(__file__).resolve().parents[1] / "pyproject.toml").open("rb") as source:
+        version = tomllib.load(source)["project"]["version"]
 
     def path(text: str, display: str, native: str) -> dict[str, str | None]:
         return {
@@ -147,7 +151,7 @@ def test_report_serializes_every_complete_receipt_and_schema_field() -> None:
         "schema_version": 3,
         "scope": "mime-pruned",
         "program": "remove-eml-attachments",
-        "version": "4.0.0",
+        "version": version,
         "mode": "apply",
         "ok": False,
         "exit_code": 9,

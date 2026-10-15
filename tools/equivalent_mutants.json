@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_sha256": "41092e9e:28a022b7:1e3859ea:90d89f8c:898980fc:56713cf8:074c159c:8f9a01ec",
+  "source_sha256": "2ca8337c:6f3a4587:db9e0ca7:2c698247:eabb10bd:04e4a200:aa39e7e7:6614860c",
   "equivalents": [
     {
       "mutant": "eml_attachment_remover.batch.x__run_item__mutmut_1",
@@ -787,11 +787,11 @@
       "rationale": "The checkpoint writer emits canonical ASCII JSON, including escaped non-ASCII paths. The qualifying Linux runtime's default UTF-8 decoding therefore produces the same checkpoint as explicit UTF-8."
     },
     {
-      "mutant": "tools.mutation_task.x_command_runner__mutmut_25",
+      "mutant": "tools.mutation_task.x_command_runner__mutmut_38",
       "rationale": "Only an unexposed private checkpoint basename changes. Capture and the parent integrity guard receive the same changed path, preserving source-change detection and storage cleanup."
     },
     {
-      "mutant": "tools.mutation_task.x_command_runner__mutmut_26",
+      "mutant": "tools.mutation_task.x_command_runner__mutmut_39",
       "rationale": "Only an unexposed private checkpoint basename changes. Capture and the parent integrity guard receive the same changed path, preserving source-change detection and storage cleanup."
     },
     {
