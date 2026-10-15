@@ -1,4 +1,4 @@
-//! Early native experiment. Neither mode is a shipped processor or platform qualification.
+//! Early native feasibility gate; not product or archive qualification.
 use std::{
     error::Error,
     ffi::{OsStr, c_void},
@@ -9,7 +9,7 @@ use std::{
         fs::OpenOptionsExt,
         io::{AsRawHandle, FromRawHandle, OwnedHandle},
     },
-    path::{Path, PathBuf},
+    path::Path,
     ptr,
 };
 use windows_sys::Win32::{
@@ -20,8 +20,8 @@ use windows_sys::Win32::{
 };
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-struct OrdinaryToken(OwnedHandle);
-impl OrdinaryToken {
+struct RestrictedToken(OwnedHandle);
+impl RestrictedToken {
     fn enter() -> Result<Self> {
         let mut raw = ptr::null_mut();
         // SAFETY: process pseudo-handle is valid; output is a live HANDLE slot.
@@ -53,7 +53,8 @@ impl OrdinaryToken {
         };
         let mut restricted = ptr::null_mut();
         // SAFETY: input token and SID remain live, all optional empty arrays are null,
-        // output points at an owned-handle slot. Admin SID becomes deny-only; privileges disabled.
+        // output points at an owned-handle slot. Admin SID becomes deny-only;
+        // DISABLE_MAX_PRIVILEGE retains SeChangeNotifyPrivilege for directory traversal.
         if unsafe {
             CreateRestrictedToken(
                 original.as_raw_handle(),
@@ -86,11 +87,13 @@ impl OrdinaryToken {
             admin_member, 0,
             "effective token still enables Administrators"
         );
-        println!("PASS: executing with Administrators SID deny-only and privileges disabled");
+        println!(
+            "PASS: restricted runner-account thread token; Administrators deny-only, traverse privilege retained"
+        );
         Ok(token)
     }
 }
-impl Drop for OrdinaryToken {
+impl Drop for RestrictedToken {
     fn drop(&mut self) {
         // SAFETY: restores this thread's previous process identity before releasing token.
         if unsafe { RevertToSelf() } == 0 {
@@ -103,7 +106,7 @@ impl Drop for OrdinaryToken {
 fn wide(path: &OsStr) -> Vec<u16> {
     path.encode_wide().chain(Some(0)).collect()
 }
-fn directory(path: &Path, writable: bool, share_write: bool) -> Result<OwnedHandle> {
+fn directory(path: &Path, writable: bool) -> Result<OwnedHandle> {
     let path = wide(path.as_os_str());
     let access = if writable {
         GENERIC_READ | GENERIC_WRITE
@@ -116,7 +119,7 @@ fn directory(path: &Path, writable: bool, share_write: bool) -> Result<OwnedHand
         CreateFileW(
             path.as_ptr(),
             access,
-            FILE_SHARE_READ | if share_write { FILE_SHARE_WRITE } else { 0 },
+            FILE_SHARE_READ,
             ptr::null(),
             OPEN_EXISTING,
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
@@ -162,48 +165,6 @@ fn identity(handle: HANDLE) -> Result<(u64, [u8; 16])> {
     }
     Ok((id.VolumeSerialNumber, id.FileId.Identifier))
 }
-fn rename(file: &std::fs::File, root: HANDLE, name: &OsStr) -> std::io::Result<()> {
-    let name: Vec<u16> = name.encode_wide().collect();
-    let name_bytes = name
-        .len()
-        .checked_mul(2)
-        .ok_or_else(|| std::io::Error::other("name overflow"))?;
-    let bytes = offset_of!(FILE_RENAME_INFO, FileName)
-        .checked_add(name_bytes)
-        .ok_or_else(|| std::io::Error::other("buffer overflow"))?
-        .max(size_of::<FILE_RENAME_INFO>());
-    let mut storage = vec![0usize; bytes.div_ceil(size_of::<usize>())];
-    let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFO>();
-    // SAFETY: native usize alignment covers FILE_RENAME_INFO on both CPUs, storage covers
-    // header plus exactly the checked name bytes; Windows does not require a trailing NUL.
-    // file and optional root stay live; flags zero means ReplaceIfExists=false.
-    unsafe {
-        ptr::addr_of_mut!((*info).Anonymous.Flags).write(0);
-        ptr::addr_of_mut!((*info).RootDirectory).write(root);
-        ptr::addr_of_mut!((*info).FileNameLength).write(
-            u32::try_from(name_bytes).map_err(|_| std::io::Error::other("name exceeds DWORD"))?,
-        );
-        ptr::copy_nonoverlapping(
-            name.as_ptr(),
-            storage
-                .as_mut_ptr()
-                .cast::<u8>()
-                .add(offset_of!(FILE_RENAME_INFO, FileName))
-                .cast::<u16>(),
-            name.len(),
-        );
-        if SetFileInformationByHandle(
-            file.as_raw_handle(),
-            FileRenameInfo,
-            info.cast::<c_void>(),
-            u32::try_from(bytes).map_err(|_| std::io::Error::other("buffer exceeds DWORD"))?,
-        ) == 0
-        {
-            return Err(std::io::Error::last_os_error());
-        }
-    }
-    Ok(())
-}
 fn candidate(path: &Path, bytes: &[u8]) -> Result<std::fs::File> {
     let mut file = std::fs::OpenOptions::new()
         .read(true)
@@ -224,7 +185,11 @@ fn candidate(path: &Path, bytes: &[u8]) -> Result<std::fs::File> {
 // Reviewed narrow amendment proposed by the independent design/QA chat:
 // native simple-basename rename in the held candidate's current directory.
 // This avoids a Win32 absolute-path target reopen and requires no NtCreateFile.
-fn rename_same_directory(file: &std::fs::File, name: &OsStr) -> std::io::Result<()> {
+fn rename_same_directory(
+    file: &std::fs::File,
+    name: &OsStr,
+    max_units: usize,
+) -> std::io::Result<()> {
     use windows_sys::{
         Wdk::Storage::FileSystem::{
             FILE_RENAME_INFORMATION, FileRenameInformation, NtSetInformationFile,
@@ -238,16 +203,22 @@ fn rename_same_directory(file: &std::fs::File, name: &OsStr) -> std::io::Result<
         },
     };
     let name: Vec<u16> = name.encode_wide().collect();
-    if name.is_empty() || name.iter().any(|unit| matches!(*unit, 0 | 47 | 58 | 92)) {
-        return Err(std::io::Error::other(
-            "rename requires a single native basename",
+    if name.is_empty()
+        || name.len() > max_units
+        || name == [46]
+        || name == [46, 46]
+        || name.iter().any(|unit| matches!(*unit, 0 | 47 | 58 | 92))
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "rename requires a bounded native basename",
         ));
     }
     let name_bytes = name
         .len()
         .checked_mul(2)
         .ok_or_else(|| std::io::Error::other("name overflow"))?;
-    let bytes = offset_of!(FILE_RENAME_INFORMATION, FileName)
+    let bytes = size_of::<FILE_RENAME_INFORMATION>()
         .checked_add(name_bytes)
         .and_then(|length| length.checked_add(2))
         .ok_or_else(|| std::io::Error::other("buffer overflow"))?
@@ -302,13 +273,16 @@ fn rename_same_directory(file: &std::fs::File, name: &OsStr) -> std::io::Result<
     }
     // SAFETY: no native operation remains pending; inspect the generated status member.
     let completion = unsafe { io.Anonymous.Status };
-    println!("NtSetInformationFile returned={returned:#010x} observed_status={completion:#010x}");
     if status < 0 {
+        println!(
+            "NtSetInformationFile returned={returned:#010x}; IO status slot not authoritative on immediate failure"
+        );
         // SAFETY: pure status translation; never use stale Win32 GetLastError for NT calls.
         return Err(std::io::Error::from_raw_os_error(
             unsafe { RtlNtStatusToDosError(status) } as i32,
         ));
     }
+    println!("NtSetInformationFile returned={returned:#010x} completed_status={completion:#010x}");
     if completion < 0 {
         // SAFETY: completed native failure is translated with its raw status retained above.
         return Err(std::io::Error::from_raw_os_error(
@@ -383,12 +357,7 @@ pub(super) fn run() -> Result<()> {
         }
     );
     println!("Native Windows machine: {native_machine:#x}; no emulation");
-    let _ordinary_token = OrdinaryToken::enter()?;
-    let share_write = std::env::args_os().any(|arg| arg == "--diagnose-absolute-write-sharing");
-    let native_same_directory =
-        std::env::args_os().any(|arg| arg == "--diagnose-native-same-directory");
-    let absolute =
-        share_write || std::env::args_os().any(|arg| arg == "--diagnose-absolute-pinned-name");
+    let _restricted_token = RestrictedToken::enter()?;
     let root = tempfile::tempdir()?;
     let destination = root.path().join("destination");
     std::fs::create_dir(&destination)?;
@@ -401,10 +370,11 @@ pub(super) fn run() -> Result<()> {
     // Hold the resolved expression top down, never allowing write/delete sharing.
     let ancestors: Vec<_> = destination.ancestors().skip(1).collect();
     for ancestor in ancestors.into_iter().rev() {
-        pins.push(directory(ancestor, false, false)?);
+        pins.push(directory(ancestor, false)?);
     }
-    let parent = directory(&destination, true, share_write)?;
+    let parent = directory(&destination, true)?;
     let mut fs_name = [0u16; 32];
+    let mut max_component = 0;
     // SAFETY: live directory handle; optional outputs null; writable fs-name array
     // has the stated UTF-16 capacity. This observes the actual test volume.
     if unsafe {
@@ -413,7 +383,7 @@ pub(super) fn run() -> Result<()> {
             ptr::null_mut(),
             0,
             ptr::null_mut(),
-            ptr::null_mut(),
+            &mut max_component,
             ptr::null_mut(),
             fs_name.as_mut_ptr(),
             fs_name.len() as u32,
@@ -430,8 +400,8 @@ pub(super) fn run() -> Result<()> {
     assert_eq!(fs_name, "NTFS", "test requires an actual NTFS volume");
     println!("Observed filesystem: {fs_name}");
     let parent_id = identity(parent.as_raw_handle())?;
-    println!("Resolved ordinary ancestor chain pinned; destination write sharing={share_write}");
-    assert_eq!(write_excluded(&destination)?, !share_write);
+    println!("Resolved ordinary ancestor chain pinned without write/delete sharing");
+    assert!(write_excluded(&destination)?);
     flush(&parent, "directory FlushFileBuffers before publication")?;
     let bytes = b"verified synthetic mail";
     let stage = candidate(&destination.join("stage.tmp"), bytes)?;
@@ -444,28 +414,19 @@ pub(super) fn run() -> Result<()> {
     assert_eq!(parent_rename.raw_os_error(), Some(32));
     println!("PASS: exclusive stage, readback, file flush, identity and parent-rename denial");
     let final_path = destination.join("copy.eml");
-    let (rename_root, rename_name): (HANDLE, PathBuf) = if absolute {
-        println!(
-            "EXPERIMENT: absolute FileRenameInfo name under pinned ancestry; contract revision required"
+    for invalid in ["", ".", "..", "a/b", "a\\b", "a:b"] {
+        assert!(
+            rename_same_directory(&stage, OsStr::new(invalid), max_component as usize).is_err()
         );
-        (ptr::null_mut(), final_path.clone())
-    } else {
-        (parent.as_raw_handle(), PathBuf::from("copy.eml"))
-    };
+    }
+    let over_limit = "x".repeat(max_component as usize + 1);
+    assert!(
+        rename_same_directory(&stage, OsStr::new(&over_limit), max_component as usize).is_err()
+    );
     let publish = |file: &std::fs::File| {
-        if native_same_directory {
-            rename_same_directory(file, OsStr::new("copy.eml"))
-        } else {
-            rename(file, rename_root, rename_name.as_os_str())
-        }
+        rename_same_directory(file, OsStr::new("copy.eml"), max_component as usize)
     };
-    publish(&stage).map_err(|error| {
-        format!(
-            "FileRenameInfo absolute={absolute}, offset={}, size={}: {error}",
-            offset_of!(FILE_RENAME_INFO, FileName),
-            size_of::<FILE_RENAME_INFO>()
-        )
-    })?;
+    publish(&stage)?;
     println!("PASS: held-candidate replace-false publication");
     let other = candidate(&destination.join("second.tmp"), b"must not replace winner")?;
     let conflict = publish(&other).expect_err("replaced an existing copy");

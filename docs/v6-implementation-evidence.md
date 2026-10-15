@@ -122,3 +122,22 @@ WP0's native-route challenge remains unresolved pending peer QA. All WP1–WP8
 product acceptance gates remain incomplete; the published v5 product/tooling,
 artwork, AGENTS.md and release history are preserved while that prerequisite is
 resolved. This branch is not a dual-engine product or a delivered v6 purge.
+
+## Resolved Windows mechanism
+
+The independent QA chat reviewed the proposed same-directory NT rename and
+both native executions in run38759803940 at e79277b. Both CPUs passed with
+protected sharing retained, NT success/completion 0, no-overwrite conflict
+STATUS_OBJECT_NAME_COLLISION 0xC0000035, final identity/bytes and directory
+flush. The overall comparative workflow stayed failed because it also ran the
+superseded Win32 operations. Those historical failures remain evidence.
+
+The accepted narrow technical correction is recorded in
+[windows-publication.md](windows-publication.md). No NtCreateFile or safety
+relaxation is added. The active early workflow now requires that corrected
+protected operation and its negative controls. Superseded experiment branches
+were removed from the active probe after recording their outcomes. The pending
+hardening rejects dot/dot-dot/over-limit names, uses conservative native buffer
+allocation, and labels immediate-failure IO status slots non-authoritative.
+The earlier blanket “privileges disabled” probe wording is corrected: the
+restricted runner-account thread token retains SeChangeNotifyPrivilege.
