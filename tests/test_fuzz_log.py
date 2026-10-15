@@ -140,16 +140,19 @@ def test_partial_raw_writes_are_completed_and_flushed_or_fail(
         assert mode == "xb"
         return sink if buffering == 0 else io.BufferedWriter(sink)
 
-    monkeypatch.setattr(Path, "open", open_sink)
-    if write_error:
-        with pytest.raises(OSError, match=r"^diagnostic destination failed$"):
+    with monkeypatch.context() as fault:
+        fault.setattr(Path, "open", open_sink)
+        if write_error:
+            with pytest.raises(OSError, match=r"^diagnostic destination failed$"):
+                fuzz_log.write_log(
+                    VisibleSource(content), tmp_path / "stage.log", len(content)
+                )
+            assert 0 < len(sink.contents) < len(content)
+        else:
             fuzz_log.write_log(
                 VisibleSource(content), tmp_path / "stage.log", len(content)
             )
-        assert 0 < len(sink.contents) < len(content)
-    else:
-        fuzz_log.write_log(VisibleSource(content), tmp_path / "stage.log", len(content))
-        assert sink.contents == content
+            assert sink.contents == content
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="requires POSIX shell pipeline")
