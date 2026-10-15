@@ -11,8 +11,14 @@ rustix = { version = "1.1.5", features = ["fs", "process"] }
 libc = "0.2.190"
 getrandom = "0.4.3"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Globalization", "Win32_System_Threading", "Win32_System_IO", "Wdk_Storage_FileSystem"] }
+
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_Ioctl", "Win32_System_SystemServices"] }
 
 [lints.rust]
 unsafe_code = "deny"

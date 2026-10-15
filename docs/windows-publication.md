@@ -114,6 +114,22 @@ Both native CPUs must compare direct ordinary CreateFileW with captured paths on
 owned junction/.. fixtures, and test captured relative/root-relative/drive-relative
 bases, UNC, non-Unicode and ordinary/verbatim long paths. No registry changes.
 
+Capture uses one bounded GetFullPathNameW call per expression, never a relative
+sizing/retry query. Rooted resolution and the current drive derive from the same
+captured working expression; other per-drive states are captured once during an
+admission phase in which the caller must not mutate cwd/drive state. There is no
+OS atomic multi-drive snapshot. The operational extended content ceiling is
+32766 UTF-16 units excluding NUL, including its prefix, below the documented
+approximate32767-character API maximum. The core's broader32768-unit request
+resource bound does not promise that every resulting native expression fits.
+
+UNC share names PIPE, MAILSLOT and IPC$ are refused before I/O, case-insensitively,
+in ordinary and verbatim forms. For this conservative namespace comparison only,
+trailing ASCII spaces/periods are ignored; original native units are preserved.
+This is not a universal SMB alias claim or a ban on disk shares ending in dollar.
+Server/share namespace components receive structural validation; DOS filename
+device rules apply to file/directory components rather than DNS server names.
+
 ## Newly observed mirrored directories
 
 CreateDirectoryW success followed by open does not prove that the opened object
@@ -144,3 +160,7 @@ Path references: [normalization](https://learn.microsoft.com/dotnet/standard/io/
 [GetFullPathNameW](https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-getfullpathnamew),
 [native naming](https://learn.microsoft.com/windows/win32/fileio/naming-a-file),
 [long paths](https://learn.microsoft.com/windows/win32/fileio/maximum-file-path-limitation).
+
+IPC references: [pipe names](https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-names),
+[mailslot names](https://learn.microsoft.com/en-us/windows/win32/ipc/mailslot-names),
+[IPC$ scope](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wpo/4de75e21-36fd-440a-859b-75accc74487c).

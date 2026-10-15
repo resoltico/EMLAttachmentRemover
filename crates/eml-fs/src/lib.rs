@@ -27,6 +27,11 @@ pub use unix::{BoundDirectory, CreatedDirectory};
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)] // Only the documented Darwin opaque ACL ABI, ownership and descriptor calls.
 mod darwin_acl;
+#[cfg(windows)]
+#[allow(unsafe_code)] // Generated Windows ABI only; native buffers/handles remain owned.
+mod windows;
+#[cfg(windows)]
+pub use windows::path::{PathContext, validate_component};
 
 /// Native object identity; never a pathname hash or lossy display value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

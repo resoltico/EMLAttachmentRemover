@@ -254,6 +254,7 @@ dependencies = [
  "libc",
  "rustix",
  "tempfile",
+ "windows-sys",
 ]
 
 [[package]]
