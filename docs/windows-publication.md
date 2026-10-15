@@ -22,12 +22,14 @@ both actual NTFS hosts passed its protected primitive, conflict, identity,
 readback, file/namespace flush and owned cleanup checks. This proves that
 focused boundary; it does not qualify the full product or all adversarial cases.
 
-## Selected boundary
+## Reviewed rename boundary; creation remains unresolved
 
-- Keep Win32 creation under the resolved, held ordinary ancestor chain. No
-  write or delete sharing on pinned directories; no candidate sharing.
-- Create the candidate directly in its bound destination, hold its exclusive
-  synchronous DELETE/SYNCHRONIZE-capable handle, write/reread/synchronize it.
+- The proposed Win32 pathname-creation route is not qualified. Native evidence
+  below disproves the claim that its directory sharing restrictions alone keep
+  the requested creation address bound. Product creation is on hold.
+- The reviewed rename operation requires a complete verified candidate held by
+  its exclusive synchronous DELETE/SYNCHRONIZE-capable handle. This requirement
+  does not establish a safe candidate-creation mechanism.
 - Publish through generated windows-sys NtSetInformationFile and native
   FILE_RENAME_INFORMATION with FileRenameInformation (10), replacement false,
   RootDirectory null, and only a single final basename. Native same-directory
@@ -41,9 +43,10 @@ focused boundary; it does not qualify the full product or all adversarial cases.
   raw status evidence; map through RtlNtStatusToDosError, never stale LastError.
 - Preserve final identity/address, namespace synchronization, close/reopen,
   no-overwrite and identity-safe cleanup requirements and all typed outcomes.
-- NtCreateFile, handwritten native layouts, absolute-name rename, MoveFileEx,
-  replacement and relaxed sharing remain excluded. Only this rename operation
-  is added to the narrow reviewed native boundary.
+- Only this rename operation has been added to the reviewed native boundary.
+  No alternative creation mechanism is implemented or qualified. Handwritten
+  native layouts, absolute-name rename, MoveFileEx, replacement and relaxed
+  sharing remain excluded.
 
 The restricted-token probe uses the runner account's thread token with the
 Administrators SID deny-only and DISABLE_MAX_PRIVILEGE. Windows retains
@@ -55,13 +58,13 @@ Full WP3 still requires actual junction/reparse mutation and pre-existing writer
 controls, source/destination/candidate substitutions, entry conflicts, post-edge
 failures and cleanup cases on both native CPUs. The early gate is not a waiver.
 
-## Attribute-only mutation challenge remains open
+## Native creation-protection gate failed
 
 The generic-write sharing refusal does not establish attribute-only exclusion.
 The documented filesystem control accepts FILE_WRITE_ATTRIBUTES as an alternative
 to FILE_WRITE_DATA, and CreateFile sharing rules do not classify attribute/EA
-access as data-write sharing. Product pathname-based creation is on hold pending
-the decisive native test, rather than relying on repeated identity checks.
+access as data-write sharing. Product pathname-based creation is on hold; repeated
+identity checks do not repair this missing guarantee.
 
 The test uses the same restricted runner-account actor on two empty owned
 directories. It first proves an attribute-only handle with fully compatible
@@ -70,8 +73,19 @@ owned target sentinel. It reuses that already prepared native buffer against the
 strict destination pin, observes tag/held/current-entry identities and cleans
 owned fixtures before adjudicating. Only actual native access/sharing denial can
 count as exclusion; setup, unsupported, resource or other errors fail qualification.
-If conversion succeeds, the sharing-only creation boundary is disproved and needs
-a separately challenged confined creation mechanism before frontend work.
+At exact commit `81332eb24ef9b593f71a838daa7784c7b90f5ccf`,
+[both native Windows CPUs failed this gate](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38804671370).
+Each job executed one test: zero passed, one failed, zero ignored and nine filtered.
+The observed address changed while held/current entry identities remained equal;
+owned fixture cleanup completed before the safety assertion failed. The result
+disproves the proposed sharing-only protection. Later naming and library test
+steps did not execute and are not qualified by this run.
+
+A replacement must preserve bound-destination creation and complete verified
+regular-file publication. No replacement design or native implementation is
+qualified here. Candidate metadata guarantees also remain unresolved. Keep this
+gate failed while independently implementable business and transport work
+continues; earlier rename-only success cannot substitute for creation evidence.
 
 The verification token retains the runner UserSID, observes Administrators as
 deny-only and only SeChangeNotify enabled, using the actual effective thread

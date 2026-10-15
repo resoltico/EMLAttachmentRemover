@@ -33,6 +33,18 @@ jobs:
           $linker = Join-Path $sysroot 'lib/rustlib/${{ matrix.target }}/bin/rust-lld.exe'
           if (!(Test-Path $linker)) { throw 'Missing selected sysroot rust-lld' }
           'CARGO_TARGET_${{ matrix.target }}_LINKER'.ToUpper().Replace('-', '_') + '=' + $linker >> $env:GITHUB_ENV
+      - name: Native core request resource admission
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
+        run: |
+          rustc +1.99.0-${{ matrix.target }} -vV
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $requestOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --test request --target ${{ matrix.target }} -- --color never 2>&1
+          $requestExit = $LASTEXITCODE
+          $requestOutput | ForEach-Object { Write-Output $_ }
+          if ($requestExit -ne 0) { exit $requestExit }
+          if (@($requestOutput | Where-Object { $_.ToString() -match '^running [1-9][0-9]* tests?$' }).Count -ne 1) { throw 'Expected nonempty native request tests' }
+          if (@($requestOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 1) { throw 'Request tests require nonzero passes and zero failures, ignores or filters' }
       - name: Record native host and run actual filesystem operations
         env:
           EXPECTED_TARGET: ${{ matrix.target }}

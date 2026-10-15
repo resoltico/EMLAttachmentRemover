@@ -43,6 +43,10 @@ jobs:
         run: |
           cargo clippy --locked --package eml-fs --all-targets -- -D warnings
           cargo test --locked --package eml-fs -- --nocapture
+      - name: Native core request resource admission
+        run: |
+          cargo clippy --locked --package eml-core --all-targets -- -D warnings
+          cargo test --locked --package eml-core --test request
       - name: Real different-UID namespace controls on owned fixtures
         run: |
           cargo build --locked --package eml-fs --example namespace-credentials

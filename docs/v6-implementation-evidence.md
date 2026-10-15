@@ -273,3 +273,31 @@ Local updated checks: 8 driver unit tests and 18 actual process probes passed,
 no failures/ignores/filters. Clippy with warnings denied and formatting passed.
 The bounded named fuzz/mutation campaigns remain unrun pending independent
 controller closure and exact-revision native probe results.
+
+## Native request resource admission checkpoint
+
+`eml-core` now exposes native `RunRequest`, `OutputLocation` and `RunMode` values
+and a pure `validate_path_limits` operation. Argument count is checked before
+deduplication. The 4 MiB aggregate covers input paths only, counting Windows
+UTF-16 units as two bytes each. Output and captured absolute working directory
+receive separate per-path checks. Raw dot/dot-dot components count without
+normalizing or resolving them; root and Windows prefix do not count. Validation
+performs no filesystem access, events or process-directory changes. It is not
+complete run admission: destination existence and source binding still need
+implementation.
+
+Local macOS ARM checks: `cargo test --locked --package eml-core` passed 71 tests
+(8 unit, 8 display, 12 limits, 1 model, 20 preparation, 9 request, 13 structure),
+zero failures/ignores/filters. Rustdoc discovered zero doctests; this is not
+additional test coverage. `cargo clippy --locked --package eml-core --all-targets
+-- -D warnings`, formatting, workflow actionlint and diff whitespace checks passed.
+Windows MSVC `cargo check --locked --package eml-core --all-targets --target
+x86_64-pc-windows-msvc` passed as compile-only preflight, not native qualification.
+The six actual native request-test executions remain pending at this checkpoint.
+
+The independent coordination chat reviewed the resource-admission design and
+confirmed input-only aggregate scope and before-deduplication argument counting.
+The unrelated Windows creation-protection requirement remains failed on both
+native CPUs; [its record](windows-publication.md#native-creation-protection-gate-failed)
+identifies the exact run and tests that did not execute. The real failing check
+is retained in CI; passing request tests cannot qualify publication.

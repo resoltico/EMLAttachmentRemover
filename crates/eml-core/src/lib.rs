@@ -6,9 +6,16 @@ mod message;
 #[cfg(any(unix, windows))]
 mod naming;
 mod plan;
+#[cfg(any(unix, windows))]
+mod request;
 mod verify;
 #[cfg(any(unix, windows))]
 pub use naming::{COPY_SUFFIX, NamingError, copy_basename};
+#[cfg(any(unix, windows))]
+pub use request::{
+    InvalidRequest, MAX_INPUT_PATH_BYTES, MAX_INPUT_PATHS, MAX_PATH_COMPONENTS, MAX_PATH_UNITS,
+    OutputLocation, PathViolation, RequestPath, RunMode, RunRequest,
+};
 
 use std::sync::{
     Arc,
