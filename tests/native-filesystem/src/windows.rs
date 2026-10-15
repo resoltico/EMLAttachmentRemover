@@ -414,15 +414,17 @@ pub(super) fn run() -> Result<()> {
     assert_eq!(parent_rename.raw_os_error(), Some(32));
     println!("PASS: exclusive stage, readback, file flush, identity and parent-rename denial");
     let final_path = destination.join("copy.eml");
-    for invalid in ["", ".", "..", "a/b", "a\\b", "a:b"] {
-        assert!(
-            rename_same_directory(&stage, OsStr::new(invalid), max_component as usize).is_err()
-        );
+    for invalid in ["", ".", "..", "a/b", "a\\b", "a:b", "a\0b"] {
+        let rejected =
+            rename_same_directory(&stage, OsStr::new(invalid), max_component as usize).unwrap_err();
+        assert_eq!(rejected.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(rejected.raw_os_error(), None);
     }
     let over_limit = "x".repeat(max_component as usize + 1);
-    assert!(
-        rename_same_directory(&stage, OsStr::new(&over_limit), max_component as usize).is_err()
-    );
+    let rejected =
+        rename_same_directory(&stage, OsStr::new(&over_limit), max_component as usize).unwrap_err();
+    assert_eq!(rejected.kind(), std::io::ErrorKind::InvalidInput);
+    assert_eq!(rejected.raw_os_error(), None);
     let publish = |file: &std::fs::File| {
         rename_same_directory(file, OsStr::new("copy.eml"), max_component as usize)
     };

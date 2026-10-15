@@ -1,0 +1,15 @@
+[package]
+name = "eml-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+memchr.workspace = true
+encoding_rs.workspace = true
+base64.workspace = true
+
+[lints]
+workspace = true

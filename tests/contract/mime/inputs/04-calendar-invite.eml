@@ -1,0 +1,40 @@
+From: Alice <alice@example.test>
+To: Bob <bob@example.test>
+Subject: Fixture
+Date: Wed, 14 Oct 2026 10:00:00 +0000
+Message-ID: <fixture@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="m1"
+
+--m1
+Content-Type: multipart/alternative; boundary="a1"
+
+--a1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hello Bob,
+see attached.
+
+--a1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<p>Hello Bob,</p>
+
+--a1
+Content-Type: text/calendar; charset=utf-8; method=REQUEST
+Content-Transfer-Encoding: 7bit
+
+BEGIN:VCALENDAR
+METHOD:REQUEST
+END:VCALENDAR
+--a1--
+
+--m1
+Content-Type: application/ics; name="invite.ics"
+Content-Disposition: attachment; filename="invite.ics"
+Content-Transfer-Encoding: base64
+
+QkVHSU46VkNBTEVOREFSDQpFTkQ6VkNBTEVOREFSDQo=
+--m1--

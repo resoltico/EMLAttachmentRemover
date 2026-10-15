@@ -81,14 +81,14 @@ executed three real-boundary experiments on each Windows CPU:
 | Absolute name with destination write sharing enabled | exit 0 | exit 0 | Unsafe diagnostic only; concurrent directory write open succeeds |
 
 The last experiment demonstrates why allowing write sharing cannot simply turn
-this into a supported product. The workflow remains failed; it does not waive
-the required route or junction protection. No NT API fallback was implemented.
+this into a supported product. That comparative workflow failed; it did not waive
+the required route or junction protection. At cd8e09c no NT operation had been implemented.
 The peer QA chat has been asked to review the source, native evidence and
 possible safe corrections and reply directly to the implementation chat.
 
 Both jobs observed NTFS through GetVolumeInformationByHandleW, verified actual
 native machine through IsWow64Process2, and executed with a restricted effective
-token: Administrators deny-only, privileges disabled, membership check false.
+token: Administrators deny-only, DISABLE_MAX_PRIVILEGE, membership check false.\nSeChangeNotifyPrivilege remains available for traversal.
 This records actual access restrictions; it is not evidence from a separate
 ordinary-user interactive login or the full adversarial product test matrix.
 Both actual file flush and prepublication directory flush succeeded. The failed
@@ -118,7 +118,7 @@ rename must not be misreported as a namespace flush failure.
   compile check), actionlint and git diff whitespace check passed locally.
   These checks do not qualify runtime behavior or a v6 product.
 
-WP0's native-route challenge remains unresolved pending peer QA. All WP1–WP8
+At cd8e09c the native-route challenge was unresolved pending peer QA. All WP1–WP8
 product acceptance gates remain incomplete; the published v5 product/tooling,
 artwork, AGENTS.md and release history are preserved while that prerequisite is
 resolved. This branch is not a dual-engine product or a delivered v6 purge.
@@ -141,3 +141,29 @@ hardening rejects dot/dot-dot/over-limit names, uses conservative native buffer
 allocation, and labels immediate-failure IO status slots non-authoritative.
 The earlier blanket “privileges disabled” probe wording is corrected: the
 restricted runner-account thread token retains SeChangeNotifyPrivilege.
+
+Independent closure QA at cf72dec9404786c31ea9741d0418422203ec7214 confirmed
+both protected native jobs succeeded in [run38760820393](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38760820393).
+This closes focused early primitive feasibility. Full WP3 remains unqualified.
+
+## Pure MIME implementation checkpoint
+
+The workspace now contains eml-core's immutable physical parser, bounded control
+syntax, planner, separate source authorizer/byte reconstruction, candidate
+reparse/structure verification and per-run cancellation. No filesystem workflow,
+CLI, SwiftUI application or packaging qualification is claimed at this checkpoint.
+
+Independent goldens were authored from explicitly selected source delimiter spans
+before using the new processor. Inputs remain byte-identical to the design pack.
+Manual diff review of 03/04/05/11 confirms only the authorized removals/collapse.
+EML files are binary in Git attributes. All twelve specified outcomes pass.
+
+`cargo +1.99.0 test --workspace --locked`: 3 unit + 20 integration tests passed,
+0 ignored, 0 filtered. No doctests are defined at this checkpoint. This is an
+initial subset, not completion of the full required MIME edge/model matrix.
+An initial LF/CR metadata expectation incorrectly counted five rather than four
+entity header terminators; independent source inspection corrected the oracle
+from 502 to 503 entity bytes. Exact output bytes already matched the golden.
+`cargo +1.99.0 clippy --workspace --all-targets --locked -- -D warnings` and
+`cargo +1.99.0 fmt --all -- --check`: passed after resolving the reported lints.
+No bounded fuzz/mutation campaign has run yet.
