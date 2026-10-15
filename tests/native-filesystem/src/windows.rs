@@ -220,6 +220,108 @@ fn candidate(path: &Path, bytes: &[u8]) -> Result<std::fs::File> {
     assert_eq!(observed, bytes);
     Ok(file)
 }
+
+// Reviewed narrow amendment proposed by the independent design/QA chat:
+// native simple-basename rename in the held candidate's current directory.
+// This avoids a Win32 absolute-path target reopen and requires no NtCreateFile.
+fn rename_same_directory(file: &std::fs::File, name: &OsStr) -> std::io::Result<()> {
+    use windows_sys::{
+        Wdk::Storage::FileSystem::{
+            FILE_RENAME_INFORMATION, FileRenameInformation, NtSetInformationFile,
+        },
+        Win32::{
+            Foundation::{RtlNtStatusToDosError, STATUS_PENDING, WAIT_OBJECT_0},
+            System::{
+                IO::IO_STATUS_BLOCK,
+                Threading::{INFINITE, WaitForSingleObject},
+            },
+        },
+    };
+    let name: Vec<u16> = name.encode_wide().collect();
+    if name.is_empty() || name.iter().any(|unit| matches!(*unit, 0 | 47 | 58 | 92)) {
+        return Err(std::io::Error::other(
+            "rename requires a single native basename",
+        ));
+    }
+    let name_bytes = name
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| std::io::Error::other("name overflow"))?;
+    let bytes = offset_of!(FILE_RENAME_INFORMATION, FileName)
+        .checked_add(name_bytes)
+        .and_then(|length| length.checked_add(2))
+        .ok_or_else(|| std::io::Error::other("buffer overflow"))?
+        .max(size_of::<FILE_RENAME_INFORMATION>());
+    let name_bytes =
+        u32::try_from(name_bytes).map_err(|_| std::io::Error::other("name exceeds DWORD"))?;
+    let info_bytes =
+        u32::try_from(bytes).map_err(|_| std::io::Error::other("buffer exceeds DWORD"))?;
+    let mut storage = vec![0usize; bytes.div_ceil(size_of::<usize>())];
+    let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFORMATION>();
+    let mut io = IO_STATUS_BLOCK::default();
+    io.Anonymous.Status = STATUS_PENDING;
+    // SAFETY: generated native structure; usize storage meets alignment on both supported
+    // CPUs and covers checked tail including zero padding. Source is a live synchronous,
+    // DELETE/SYNCHRONIZE-capable, exclusive handle. Name is one component with checked size.
+    // NULL root selects that source file's current directory. All pins stay live. Both
+    // buffers are retained through any pending completion before they can be released.
+    let mut status = unsafe {
+        ptr::addr_of_mut!((*info).Anonymous.Flags).write(0);
+        ptr::addr_of_mut!((*info).RootDirectory).write(ptr::null_mut());
+        ptr::addr_of_mut!((*info).FileNameLength).write(name_bytes);
+        ptr::copy_nonoverlapping(
+            name.as_ptr(),
+            storage
+                .as_mut_ptr()
+                .cast::<u8>()
+                .add(offset_of!(FILE_RENAME_INFORMATION, FileName))
+                .cast::<u16>(),
+            name.len(),
+        );
+        NtSetInformationFile(
+            file.as_raw_handle(),
+            &mut io,
+            info.cast::<c_void>(),
+            info_bytes,
+            FileRenameInformation,
+        )
+    };
+    let returned = status;
+    if status == STATUS_PENDING {
+        // SAFETY: the owned synchronous handle is waitable and remains live; IO buffers
+        // are retained. OS wait has no artificial deadline; force-stop belongs to owner.
+        if unsafe { WaitForSingleObject(file.as_raw_handle(), INFINITE) } != WAIT_OBJECT_0 {
+            // Cannot free an in-flight buffer when completion cannot be established.
+            std::process::abort();
+        }
+        // SAFETY: successful wait establishes completion before inspecting the union.
+        status = unsafe { io.Anonymous.Status };
+        if status == STATUS_PENDING {
+            std::process::abort();
+        }
+    }
+    // SAFETY: no native operation remains pending; inspect the generated status member.
+    let completion = unsafe { io.Anonymous.Status };
+    println!("NtSetInformationFile returned={returned:#010x} observed_status={completion:#010x}");
+    if status < 0 {
+        // SAFETY: pure status translation; never use stale Win32 GetLastError for NT calls.
+        return Err(std::io::Error::from_raw_os_error(
+            unsafe { RtlNtStatusToDosError(status) } as i32,
+        ));
+    }
+    if completion < 0 {
+        // SAFETY: completed native failure is translated with its raw status retained above.
+        return Err(std::io::Error::from_raw_os_error(
+            unsafe { RtlNtStatusToDosError(completion) } as i32,
+        ));
+    }
+    if completion == STATUS_PENDING {
+        return Err(std::io::Error::other(
+            "native success lacked completed IO status",
+        ));
+    }
+    Ok(())
+}
 fn flush(handle: &OwnedHandle, label: &str) -> Result<()> {
     // SAFETY: live write-capable directory handle, retained for the whole call.
     if unsafe { FlushFileBuffers(handle.as_raw_handle()) } == 0 {
@@ -283,6 +385,8 @@ pub(super) fn run() -> Result<()> {
     println!("Native Windows machine: {native_machine:#x}; no emulation");
     let _ordinary_token = OrdinaryToken::enter()?;
     let share_write = std::env::args_os().any(|arg| arg == "--diagnose-absolute-write-sharing");
+    let native_same_directory =
+        std::env::args_os().any(|arg| arg == "--diagnose-native-same-directory");
     let absolute =
         share_write || std::env::args_os().any(|arg| arg == "--diagnose-absolute-pinned-name");
     let root = tempfile::tempdir()?;
@@ -348,7 +452,14 @@ pub(super) fn run() -> Result<()> {
     } else {
         (parent.as_raw_handle(), PathBuf::from("copy.eml"))
     };
-    rename(&stage, rename_root, rename_name.as_os_str()).map_err(|error| {
+    let publish = |file: &std::fs::File| {
+        if native_same_directory {
+            rename_same_directory(file, OsStr::new("copy.eml"))
+        } else {
+            rename(file, rename_root, rename_name.as_os_str())
+        }
+    };
+    publish(&stage).map_err(|error| {
         format!(
             "FileRenameInfo absolute={absolute}, offset={}, size={}: {error}",
             offset_of!(FILE_RENAME_INFO, FileName),
@@ -357,8 +468,7 @@ pub(super) fn run() -> Result<()> {
     })?;
     println!("PASS: held-candidate replace-false publication");
     let other = candidate(&destination.join("second.tmp"), b"must not replace winner")?;
-    let conflict = rename(&other, rename_root, rename_name.as_os_str())
-        .expect_err("replaced an existing copy");
+    let conflict = publish(&other).expect_err("replaced an existing copy");
     assert!(
         matches!(conflict.raw_os_error(), Some(80) | Some(183)),
         "unexpected conflict: {conflict}"
