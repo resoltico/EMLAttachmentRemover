@@ -22,7 +22,7 @@ The owner's checkout was clean and remains untouched.
 - `shasum -a 256 -c eml-attachment-remover-v6-design-2026-10-15.tar.gz.sha256`
   from the archive directory: passed. The first invocation from the repository
   failed to locate the relative archive name; it did not establish a mismatch.
-- `tar -tzvf`: 35 regular files, one relative top-level prefix; no links,
+- `tar -tzvf`: 34 regular files, one relative top-level prefix; no links,
   devices, absolute paths or parent-traversal members. Extracted with tar into
   a new empty directory outside the repository.
 - Created a separate managed worktree on `codex/v6-rust-swiftui` from origin/main.
