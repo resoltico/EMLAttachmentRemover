@@ -121,3 +121,17 @@ fn encoded_word_exact_75_byte_boundary_and_empty_b_word() {
         Some("=?UTF-8?B??=".into())
     );
 }
+#[test]
+fn invalid_charset_tokens_stay_literal_and_preserve_neighboring_lws() {
+    for (value, expected) in [
+        ("=? UTF-8?Q?x?=", "=? UTF-8?Q?x?="),
+        ("=?UTF-8\t?Q?x?=", "=?UTF-8?Q?x?="),
+        ("=??Q?x?=", "=??Q?x?="),
+        ("=?UTF-8?Q?a?= =? UTF-8?Q?x?=", "a =? UTF-8?Q?x?="),
+    ] {
+        assert_eq!(
+            metadata(&format!("filename=\"{value}\"")).as_deref(),
+            Some(expected)
+        );
+    }
+}

@@ -422,6 +422,9 @@ fn encoded_word(tail: &[u8]) -> Option<(usize, String)> {
         return None;
     }
     let charset_end = tail[2..].iter().position(|byte| *byte == b'?')? + 2;
+    if charset_end == 2 || !tail[2..charset_end].iter().all(|byte| token(*byte)) {
+        return None;
+    }
     let encoding = *tail.get(charset_end + 1)?;
     if tail.get(charset_end + 2) != Some(&b'?') {
         return None;

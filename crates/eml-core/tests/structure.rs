@@ -204,13 +204,26 @@ fn nested_control_failures_retain_known_source_section() {
     );
 }
 #[test]
-fn cr_child_separator_and_lf_frame_form_one_crlf_transport_terminator() {
+fn cr_child_ending_and_crlf_frame_keep_separate_transport_ownership() {
     let child = b"Content-Type: text/plain\rContent-Disposition: attachment\r";
     let mut source = b"Content-Type: multipart/mixed; boundary=B\n\n--B\n\nbody\n--B\n".to_vec();
     source.extend(child);
     source.extend_from_slice(b"\r\n--B--\n");
     let result = prepare_message(&source, &RunControl::default()).unwrap();
     assert_eq!(result.removed()[0].bytes, child.len() as u64);
+    assert_eq!(
+        result.as_bytes(),
+        b"Content-Type: multipart/mixed; boundary=B\n\n--B\n\nbody\n--B--\n"
+    );
+}
+#[test]
+fn cr_child_ending_and_lf_frame_merge_into_one_crlf_terminator() {
+    let child = b"Content-Type: text/plain\rContent-Disposition: attachment\r";
+    let mut source = b"Content-Type: multipart/mixed; boundary=B\n\n--B\n\nbody\n--B\n".to_vec();
+    source.extend(child);
+    source.extend_from_slice(b"\n--B--\n");
+    let result = prepare_message(&source, &RunControl::default()).unwrap();
+    assert_eq!(result.removed()[0].bytes, (child.len() - 1) as u64);
     assert_eq!(
         result.as_bytes(),
         b"Content-Type: multipart/mixed; boundary=B\n\n--B\n\nbody\n--B--\n"
