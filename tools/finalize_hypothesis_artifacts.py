@@ -9,13 +9,13 @@ import shutil
 import stat
 import sys
 import tempfile
-from contextlib import suppress
+from contextlib import closing, suppress
 from json import JSONDecodeError
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator
+    from collections.abc import Callable, Generator, Iterable
 
     from tools import hypothesis_observation_safety as observation_safety
 else:
@@ -126,24 +126,25 @@ def _replace_with_temporary(path: Path, content: Iterable[str]) -> int:
         The number of records written.
 
     """
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding=UTF8,
-        newline="\n",
-        prefix=ATOMIC_PREFIX,
-        dir=path.parent,
-        delete=False,
-    ) as output:
-        temporary = Path(output.name)
-        try:
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding=UTF8,
+            newline="\n",
+            prefix=ATOMIC_PREFIX,
+            dir=path.parent,
+            delete=False,
+        ) as output:
+            temporary = Path(output.name)
             records = 0
             for line in content:
                 output.write(line)
                 records += 1
-            output.close()
-            temporary.replace(path)
-            return records
-        finally:
+        temporary.replace(path)
+        return records
+    finally:
+        if temporary is not None:
             with suppress(OSError):
                 temporary.unlink()
 
@@ -166,13 +167,14 @@ def _sanitize_observation_file(
     if not stat.S_ISREG(mode) or path.suffix != ".jsonl":
         message = f"unexpected Hypothesis observation artifact: {path}"
         raise HypothesisArtifactError(message)
-    return _atomic_write(path, _public_observation_lines(path, replacements))
+    with closing(_public_observation_lines(path, replacements)) as content:
+        return _atomic_write(path, content)
 
 
 def _public_observation_lines(
     path: Path,
     replacements: tuple[tuple[str, str], ...],
-) -> Iterator[str]:
+) -> Generator[str]:
     """Yield checked public records without retaining a complete observation file.
 
     Yields:
