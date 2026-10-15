@@ -21,3 +21,4 @@ mutants/
 release-dist/
 *.egg-info/
 dist/
+target/

@@ -1,0 +1,47 @@
+name: Native Windows filesystem feasibility
+on:
+  push:
+    branches: [codex/v6-rust-swiftui]
+permissions:
+  contents: read
+jobs:
+  windows:
+    name: NTFS / ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-gnullvm
+            runner: windows-2022
+          - target: aarch64-pc-windows-gnullvm
+            runner: windows-11-arm
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install native GNU LLVM host
+        run: |
+          rustup toolchain install 1.99.0-${{ matrix.target }} --profile minimal --component rust-mingw
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sysroot = rustc +1.99.0-${{ matrix.target }} --print sysroot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $linker = Join-Path $sysroot 'lib/rustlib/${{ matrix.target }}/bin/rust-lld.exe'
+          if (!(Test-Path $linker)) { throw 'Missing selected sysroot rust-lld' }
+          'CARGO_TARGET_${{ matrix.target }}_LINKER'.ToUpper().Replace('-', '_') + '=' + $linker >> $env:GITHUB_ENV
+      - name: Record native host and run actual filesystem operations
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
+        run: |
+          rustc +1.99.0-${{ matrix.target }} -vV
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:TEMP = Join-Path $env:GITHUB_WORKSPACE 'target/native-feasibility/scratch'
+          New-Item -ItemType Directory -Force $env:TEMP | Out-Null
+          $env:TMP = $env:TEMP
+          cargo +1.99.0-${{ matrix.target }} run --locked --manifest-path tests/native-filesystem/Cargo.toml --target ${{ matrix.target }}
+          exit $LASTEXITCODE
