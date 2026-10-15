@@ -3,8 +3,12 @@
 
 mod grammar;
 mod message;
+#[cfg(any(unix, windows))]
+mod naming;
 mod plan;
 mod verify;
+#[cfg(any(unix, windows))]
+pub use naming::{COPY_SUFFIX, NamingError, copy_basename};
 
 use std::sync::{
     Arc,

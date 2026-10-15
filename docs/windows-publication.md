@@ -92,8 +92,55 @@ different identity, source aliases and same-run output aliases), denied-write
 resync and successful identical-copy resync. This lifecycle clarification is
 reviewed design, not execution evidence for the still-incomplete product backend.
 
+## Captured native path normalization
+
+For Windows ordinary DOS/UNC inputs, capture the OS's Win32 normalization once
+against the captured working-directory/drive state. Preserve the original native
+input separately. Use GetFullPathNameW on the anchored absolute ordinary expression,
+validate its native UTF-16 again, then form internal extended DOS/UNC syntax.
+Do not blindly prefix a raw ordinary input or build a POSIX-style component walker.
+This is an explicit Windows-only correction; POSIX symlink/.. traversal stays
+unchanged. The supported user-verbatim subset is absolute DOS/UNC with canonical
+backslashes and no raw dot/dot-dot components, rejected before I/O if outside that
+subset. This is a conservative supported subset, not a claim about every path
+Windows can interpret.
+
+Before and after normalization reject NUL, ADS, device namespaces and reserved DOS
+stems, including COM/LPT superscript digits and conservative console aliases.
+Preserve unpaired UTF-16 surrogates. Apply the same authoritative component
+validator to generated names after truncation: CONX truncated to CON is still
+unsafe to open as CON.no-attachments.eml. Refuse rather than silently renaming.
+Both native CPUs must compare direct ordinary CreateFileW with captured paths on
+owned junction/.. fixtures, and test captured relative/root-relative/drive-relative
+bases, UNC, non-Unicode and ordinary/verbatim long paths. No registry changes.
+
+## Newly observed mirrored directories
+
+CreateDirectoryW success followed by open does not prove that the opened object
+is the object created. Accepting another ordinary creator applies only to an
+absent/unbound mirror edge; never rebaseline an already bound expected identity.
+Before any descendant/candidate write, reject reparse/special children, validate
+usable full IDs and retain each strict ordinary-directory pin through sync/address
+checks. Preexisting incompatible writers/deleters fail binding.
+
+Record creation-call success and the subsequently observed object separately.
+Do not chmod, rewrite ACLs or delete a directory without proved creation ownership.
+Unproven observed empty mirrored directories are retained as an explicit cleanup
+limitation, separate from candidate-file residue. Conservatively flush child and
+parent for every acknowledged or possibly-new edge. Retention is not namespace
+rollback. Candidate CREATE_NEW still supplies its atomic owned handle and the
+reviewed FileDisposition cleanup. Native tests must inject ordinary/reparse
+replacement before pinning, preexisting writers/deleters and cancellation/errors,
+proving all unowned directories and ACLs remain untouched. No broader NT creation
+API is added.
+
 Native API references: [FILE_RENAME_INFORMATION](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information),
 [NtSetInformationFile](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntsetinformationfile),
 [CreateRestrictedToken](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken),
 [CreateFile sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
 [FlushFileBuffers access](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+
+Path references: [normalization](https://learn.microsoft.com/dotnet/standard/io/file-path-formats#path-normalization),
+[GetFullPathNameW](https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-getfullpathnamew),
+[native naming](https://learn.microsoft.com/windows/win32/fileio/naming-a-file),
+[long paths](https://learn.microsoft.com/windows/win32/fileio/maximum-file-path-limitation).

@@ -169,6 +169,17 @@ zero behavior. Unknown cleanup still prevents a Created result; it is never
 rewritten as successful removal. Logs preserve both the actual native operations
 and the failed assertion. The corrected complete native Mac gate remains pending.
 
+The corrected POSIX checkpoint at `45b296b62924f41945c5715ea095bda4f775872e`
+passed [run38797832546](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38797832546):
+native filesystem Clippy and25 tests on each Mac CPU,21 on each Linux CPU, zero
+failed/ignored/filtered; actual ext-family0xef53 and Mac flags0x4909000 recorded.
+All four credential probes passed matching private/self-sticky/trusted-root-sticky
+empty-removal denials, working actor controls, successful shared empty-removal/
+replacement, foreign-owner refusals and owned cleanup. The retained original link
+counts were2→0 on Linux and2→2 on both Macs. Both Linux ACL-mask probes passed.
+This closes that checkpoint's POSIX admission/staging subset, not full WP3,
+Windows product integration, extracted archives or GUI qualification.
+
 Authorization reference: [Darwin24 rename/rmdir](https://github.com/apple-oss-distributions/xnu/blob/xnu-11417.140.69/bsd/vfs/vfs_subr.c#L8648).
 
 Credential references: [Rust1.99 process setup](https://github.com/rust-lang/rust/blob/1.99.0/library/std/src/sys/process/unix/unix.rs#L302-L330),
