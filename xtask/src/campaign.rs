@@ -13,6 +13,7 @@ pub(crate) struct Campaign {
     pub directory: PathBuf,
     pub source: PathBuf,
     pub sha: String,
+    tooling_root: PathBuf,
 }
 impl Campaign {
     pub fn create(root: &Path, role: &str) -> Result<Self> {
@@ -46,9 +47,10 @@ impl Campaign {
             directory,
             source,
             sha,
+            tooling_root: root.to_owned(),
         })
     }
-    pub fn command(&self, program: &str) -> Result<Command> {
+    pub fn command(&self, program: impl AsRef<std::ffi::OsStr>) -> Result<Command> {
         require_stock_topology(&self.source)?;
         let mut command = Command::new(program);
         command
@@ -58,6 +60,17 @@ impl Campaign {
             .env("TEMP", self.directory.join("tmp"));
         command.env("CARGO_TARGET_DIR", self.directory.join("build"));
         Ok(command)
+    }
+    pub fn tool_command(&self, name: &str) -> Result<Command> {
+        let mut command = self.command(self.tool_path(name)?)?;
+        command.arg(name).env("CARGO_HOME", cargo_home()?).env(
+            "RUSTUP_TOOLCHAIN",
+            crate::tool_sources::compiler(&self.tooling_root)?,
+        );
+        Ok(command)
+    }
+    pub fn tool_path(&self, name: &str) -> Result<PathBuf> {
+        crate::tools::path(&self.tooling_root, name)
     }
     pub fn report(&self, value: &impl Serialize) -> Result<()> {
         let bytes = serde_json::to_vec_pretty(value)?;
@@ -85,13 +98,11 @@ pub(crate) fn pin(root: &Path, name: &str) -> Result<String> {
 pub(crate) fn tool_version(root: &Path, tool: &str, pin_name: &str) -> Result<String> {
     let expected = pin(root, pin_name)?;
     let actual = String::from_utf8(capture(
-        Command::new("cargo")
-            .current_dir(root)
-            .args([tool, "--version"]),
+        crate::tools::command(root, tool)?.arg("--version"),
     )?)?;
     if actual.trim() != format!("cargo-{tool} {expected}") {
         return Err(format!(
-            "Expected cargo-{tool} {expected}; install that version with cargo install --locked"
+            "Expected cargo-{tool} {expected}; rebuild the private pinned tools with cargo xtask tools"
         )
         .into());
     }
@@ -113,17 +124,30 @@ pub(crate) fn require_unix_campaign() -> Result<()> {
     }
 }
 
-pub(crate) fn effective_configs(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn cargo_home() -> Result<PathBuf> {
+    let path = if let Some(home) = std::env::var_os("CARGO_HOME") {
+        let path = PathBuf::from(home);
+        if path.as_os_str().is_empty() || !path.is_absolute() {
+            return Err("CARGO_HOME must be unset or a nonempty absolute directory for reviewed verification".into());
+        }
+        path
+    } else {
+        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+            .ok_or("Missing native home; set an absolute CARGO_HOME")?;
+        let path = PathBuf::from(home);
+        if !path.is_absolute() {
+            return Err("Native home must be absolute for reviewed Cargo configuration".into());
+        }
+        path.join(".cargo")
+    };
+    Ok(path.canonicalize()?)
+}
+pub(crate) fn effective_configs(root: &Path) -> Result<Vec<PathBuf>> {
     let mut folders = root
         .ancestors()
         .map(|path| path.join(".cargo"))
         .collect::<Vec<_>>();
-    let cargo_home = std::env::var_os("CARGO_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|path| PathBuf::from(path).join(".cargo")));
-    if let Some(folder) = cargo_home {
-        folders.push(folder);
-    }
+    folders.push(cargo_home()?);
     let mut files = Vec::new();
     for folder in folders {
         let legacy = folder.join("config");
@@ -133,7 +157,7 @@ pub(crate) fn effective_configs(root: &Path) -> Vec<PathBuf> {
             files.push(file);
         }
     }
-    files
+    Ok(files)
 }
 fn hook_name(name: &str) -> bool {
     [
@@ -282,7 +306,7 @@ pub(crate) fn require_stock_topology(root: &Path) -> Result<()> {
             return Err("Compiler/runner/wrapper overrides require explicit topology review before bounded verification".into());
         }
     }
-    for file in effective_configs(root) {
+    for file in effective_configs(root)? {
         let text = fs::read_to_string(file)?;
         let parsed: toml::Value = toml::from_str(&text)
             .map_err(|_| "Cannot parse effective Cargo configuration; review it locally")?;
@@ -341,6 +365,7 @@ mod inherited_configuration_tests {
             directory,
             source: source.clone(),
             sha: "synthetic-configuration-test".into(),
+            tooling_root: root.to_owned(),
         };
         assert!(campaign.command("cargo").is_err());
         assert!(!source.join("invoked").exists());

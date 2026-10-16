@@ -16,6 +16,114 @@ fn mixed(parts: &[&[u8]]) -> Vec<u8> {
     wire
 }
 #[test]
+fn physical_header_names_use_ftext_and_the_first_colon() {
+    for byte in (0x21_u8..=0x7e).filter(|byte| *byte != b':') {
+        let mut valid = vec![byte];
+        valid.extend_from_slice(b": value:with:colons\r\n\r\nbody");
+        assert_eq!(
+            prepare_message(&valid, &RunControl::default())
+                .unwrap()
+                .as_bytes(),
+            valid
+        );
+        let mut wire = vec![byte];
+        wire.extend_from_slice(b": value:with:colons\r\nnot a field\r\n");
+        refusal(&wire, Refusal::Malformed);
+    }
+    for byte in [0, b' ', b'\t', 0x7f, 0x80, 0xff] {
+        let mut wire = vec![b'X', byte, b'Y'];
+        wire.extend_from_slice(b": value\r\nnot a field\r\n");
+        let prepared = prepare_message(&wire, &RunControl::default()).unwrap();
+        assert_eq!(prepared.as_bytes(), wire);
+    }
+    refusal(b"X:Y: still a value\r\nnot a field\r\n", Refusal::Malformed);
+    let wire = b":not a field\r\nContent-Type: multipart/signed\r\n";
+    assert_eq!(
+        prepare_message(wire, &RunControl::default())
+            .unwrap()
+            .as_bytes(),
+        wire
+    );
+}
+#[test]
+fn unix_from_is_only_an_outer_envelope_with_a_following_field() {
+    refusal(
+        b"From owner\r\nSubject: valid field\r\nnot a field\r\n",
+        Refusal::Malformed,
+    );
+    for wire in [
+        b"From owner\r\nnot a field\r\nContent-Type: multipart/signed\r\n".as_slice(),
+        b"From owner\r\n Subject: not a field\r\n",
+    ] {
+        assert_eq!(
+            prepare_message(wire, &RunControl::default())
+                .unwrap()
+                .as_bytes(),
+            wire
+        );
+    }
+    let body = b"From owner\r\nContent-Type: multipart/signed\r\n\r\nordinary text";
+    let part = mixed(&[body]);
+    assert_eq!(
+        prepare_message(&part, &RunControl::default())
+            .unwrap()
+            .as_bytes(),
+        part
+    );
+    let mut forward = b"Content-Type: message/rfc822\r\n\r\n".to_vec();
+    forward.extend_from_slice(body);
+    let wire = mixed(&[&forward]);
+    assert_eq!(
+        prepare_message(&wire, &RunControl::default())
+            .unwrap()
+            .as_bytes(),
+        wire
+    );
+}
+#[test]
+fn nested_boundary_prefixes_are_distinct_but_reuse_and_premature_outer_edges_refuse() {
+    for (outer, inner) in [("B", "BX"), ("BX", "B")] {
+        let wire = format!(
+            "Content-Type: multipart/mixed; boundary={outer}\r\n\r\n--{outer}\r\nContent-Type: multipart/mixed; boundary={inner}\r\n\r\n--{inner}\r\n\r\nbody\r\n--{inner}--\r\n--{outer}--\r\n"
+        );
+        assert_eq!(
+            prepare_message(wire.as_bytes(), &RunControl::default())
+                .unwrap()
+                .as_bytes(),
+            wire.as_bytes()
+        );
+    }
+    refusal(b"Content-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\n\r\nbody\r\n--B--\r\n--B--\r\n", Refusal::Malformed);
+    refusal(b"Content-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\nContent-Type: multipart/mixed; boundary=I\r\n\r\n--I\r\n\r\nbody\r\n--B\r\n\r\nouter sibling\r\n--I--\r\n--B--\r\n", Refusal::Malformed);
+}
+#[test]
+fn duplicate_transfer_encoding_is_structural_only_when_descent_requires_it() {
+    let encodings = "Content-Transfer-Encoding: 7bit\r\nContent-Transfer-Encoding: 7bit\r\n";
+    for wire in [
+        format!(
+            "Content-Type: multipart/mixed; boundary=B\r\n{encodings}\r\n--B\r\n\r\nbody\r\n--B--\r\n"
+        ),
+        format!("Content-Type: message/rfc822\r\n{encodings}\r\nSubject: forward\r\n\r\nbody"),
+    ] {
+        refusal(wire.as_bytes(), Refusal::Malformed);
+    }
+    let text = format!("Content-Type: text/plain\r\n{encodings}\r\nbody");
+    assert_eq!(
+        prepare_message(text.as_bytes(), &RunControl::default())
+            .unwrap()
+            .as_bytes(),
+        text.as_bytes()
+    );
+    let attachment = format!(
+        "Content-Disposition: attachment\r\nContent-Type: multipart/mixed\r\n{encodings}\r\nunparsed interior"
+    );
+    let wire = mixed(&[b"\r\nbody", attachment.as_bytes()]);
+    let prepared = prepare_message(&wire, &RunControl::default()).unwrap();
+    assert_eq!(prepared.as_bytes(), mixed(&[b"\r\nbody"]));
+    assert_eq!(prepared.removed().len(), 1);
+    assert_eq!(prepared.removed()[0].reason, RemovalReason::Attachment);
+}
+#[test]
 fn forwarded_protected_roots_never_bypass_parent_policy() {
     for media in [
         "multipart/signed",

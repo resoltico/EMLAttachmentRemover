@@ -9,6 +9,7 @@ use std::{
 };
 
 pub(crate) struct FrozenCli {
+    #[cfg(target_os = "macos")]
     path: PathBuf,
     bytes: Vec<u8>,
     identity: xtask::archive::ByteIdentity,
@@ -32,6 +33,7 @@ impl FrozenCli {
     pub fn host(&self) -> &Value {
         &self.host
     }
+    #[cfg(target_os = "macos")]
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -179,6 +181,7 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
         )?,
     )?;
     Ok(FrozenCli {
+        #[cfg(target_os = "macos")]
         path: destination,
         bytes,
         identity,

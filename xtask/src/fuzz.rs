@@ -155,7 +155,7 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
                 .ok_or("Package manifest path missing")?,
         ))?;
     }
-    for configuration in crate::campaign::effective_configs(&campaign.source) {
+    for configuration in crate::campaign::effective_configs(&campaign.source)? {
         inputs.add(configuration)?;
     }
     let mut seeds = StableInputs::default();
@@ -163,16 +163,11 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
         seeds.add(file.clone())?;
     }
     let mut command = campaign.command("rustup")?;
+    let fuzz_tool = campaign.tool_path("fuzz")?;
     command
-        .args([
-            "run",
-            &compiler,
-            "cargo",
-            "fuzz",
-            "build",
-            "preparation",
-            "--fuzz-dir",
-        ])
+        .args(["run", &compiler])
+        .arg(fuzz_tool)
+        .args(["fuzz", "build", "preparation", "--fuzz-dir"])
         .arg(campaign.source.join("fuzz"))
         .args(["--target", &target, "--target-dir"])
         .arg(&build)

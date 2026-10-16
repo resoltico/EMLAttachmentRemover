@@ -567,7 +567,7 @@ fn target_materials(
         "json",
         "--fail",
     ];
-    let bytes = capture(Command::new("cargo").current_dir(root).args(arguments))?;
+    let bytes = capture(crate::tools::command(root, "about")?.args(&arguments[1..]))?;
     let report: About = serde_json::from_slice(&bytes)?;
     let (mut files, inventory) = render(root, target, &report, review, lock)?;
     let features_arguments = [

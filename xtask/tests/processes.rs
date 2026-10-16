@@ -83,7 +83,8 @@ fn ordinary_exit_does_not_leave_background_marker_writer() {
 fn deadline_kills_nested_group_that_ignores_term() {
     let _scenario = scenario();
     let root = scratch();
-    let result = controller(root.path())
+    let controller = controller(root.path());
+    let result = controller
         .run(
             worker(root.path(), "nested-wait"),
             &root.path().join("worker.log"),
@@ -95,6 +96,23 @@ fn deadline_kills_nested_group_that_ignores_term() {
     assert!(result.cleanup_complete);
     worker_dead(root.path());
     std::thread::sleep(Duration::from_secs(1));
+    assert!(!root.path().join("invoked").exists());
+    assert!(!controller.admits_work());
+    assert!(
+        controller
+            .run(
+                worker(root.path(), "marker"),
+                &root.path().join("later.log"),
+                Duration::from_secs(5)
+            )
+            .is_err()
+    );
+    assert!(
+        controller
+            .capture(&mut worker(root.path(), "marker"))
+            .is_err()
+    );
+    assert!(!root.path().join("later.log").exists());
     assert!(!root.path().join("invoked").exists());
 }
 #[test]
@@ -206,6 +224,18 @@ fn startup_failure_never_starts_the_requested_worker() {
     );
     assert!(!root.path().join("worker-group").exists());
     assert!(!root.path().join("invoked").exists());
+    assert!(!controller.admits_work());
+    assert!(
+        controller
+            .run(
+                worker(root.path(), "marker"),
+                &root.path().join("later.log"),
+                Duration::from_secs(5)
+            )
+            .is_err()
+    );
+    assert!(!root.path().join("later.log").exists());
+    assert!(!root.path().join("invoked").exists());
 }
 #[test]
 fn setup_capture_does_not_mix_worker_stderr_into_json() {
@@ -244,6 +274,25 @@ fn separate_output_retains_nonzero_status_and_exact_streams() {
     assert_eq!(
         fs::read(root.path().join("streams.stderr")).unwrap(),
         b"owned stderr\n"
+    );
+    assert!(controller.admits_work());
+    let failure = result
+        .require_success(&root.path().join("streams.log"))
+        .unwrap_err();
+    let failure = failure
+        .downcast::<xtask::process::CommandFailure>()
+        .unwrap();
+    assert_eq!(failure.process["exit_code"], 23);
+    assert_eq!(failure.process["cleanup_complete"], true);
+    assert!(
+        controller
+            .run(
+                Command::new("/usr/bin/true"),
+                &root.path().join("later.log"),
+                Duration::from_secs(5)
+            )
+            .unwrap()
+            .success()
     );
 }
 #[test]

@@ -257,7 +257,7 @@ runs actual Linux/macOS counterparts; their results remain pending until executi
 ## Process controller closure deltas
 
 At 57c8e3c, actual process-probes run38787383185 succeeded on Ubuntu22 x64 and
-macOS15 ARM64: 17 tests on each, Rust1.99.0, no skips. At 26b88b8 the same
+macOS15 ARM64: 17 tests on each, Rust 1.99.0, no skips. At 26b88b8 the same
 native counterparts succeeded in run38787995601. This is process-boundary
 qualification only, not native product/archive qualification.
 
@@ -1417,7 +1417,7 @@ actual owned unchanged/missing/different-ID/same-ID changed entries. Their raw
 error/type alternatives are labeled scripted classification, not OS fault or
 file-to-directory conversion evidence.
 
-Final stable cargo test --locked --workspace exited0:235 passes across18 positive
+Final stable cargo test --locked --workspace exited 0:235 passes across18 positive
 suites/six expected empty suites, zero failures/ignores/filters
 (target/dry-run-workspace-final.log). After the final classification fix, focused
 core32/dry_run18 passed0failed/ignored/filtered
@@ -1490,7 +1490,7 @@ post-bind alias mutation. The earlier suspected parent-alias defect was retracte
 on reading the actual follow-final observation flags; no canonical I/O rebase was
 implemented and this test does not claim such a defect was fixed.
 
-Stable cargo test --locked --workspace exited0 with236 passes across18 positive
+Stable cargo test --locked --workspace exited 0 with236 passes across18 positive
 suites/six expected empty suites, zero failures/ignores/filters
 (target/existing-sync-workspace-final.log). Host workspace and MSVC three-package
 all-target Clippy, excluded native-probe all-target check, actionlint, formatting
@@ -1546,7 +1546,7 @@ fresh owned fixture ACL. No new security/interference workflow or live SMB setup
 is introduced, and binding itself creates no names.
 
 Independent source/API/test review is clear after those corrections. Stable local
-cargo test --locked --workspace exited0 with236 passes across18 positive/six empty
+cargo test --locked --workspace exited 0 with236 passes across18 positive/six empty
 suites and zero failures/ignores/filters (target/root-ancestry-workspace-final.log).
 Host workspace and MSVC three-package all-target Clippy, excluded native-probe
 all-target check, actionlint, formatting and diff checks passed. Native ancestry
@@ -1635,7 +1635,7 @@ control models an ambiguous return after real native publication/moved address,
 proving the held publication witness remains separate from failed address checks.
 These modeled alternatives are not native OS-fault or general interference proof.
 
-Stable full cargo test --locked --workspace exited0:257 passes across19 positive
+Stable full cargo test --locked --workspace exited 0:257 passes across19 positive
 suites and six expected empty suites, zero failures/ignores/filters
 (target/native-execution-workspace-final.log). Host workspace and MSVC three-
 package all-target Clippy, excluded native-probe all-target check, actionlint,
@@ -1703,7 +1703,7 @@ shape and UTF16 units; relative path semantics are not normalized away. The
 additional tempfile dev dependency reused the reviewed lockfile; only the local
 package dependency list changed, no crate version/input upgraded.
 
-Stable cargo test --locked --workspace exited0:268 passes across21positive/five
+Stable cargo test --locked --workspace exited 0:268 passes across21positive/five
 expected empty suites, zero failures/ignores/filters
 (target/protocol-workspace-final.log). CLI units7/events4 passed locally. Host
 workspace and MSVC Core/CLI all-target Clippy, native probe/actionlint, formatting
@@ -1759,7 +1759,7 @@ as callback/output readiness evidence. Padding a stdin write is not claimed as
 pipe-drain or handler-readiness proof, and no general native pipe-capacity claim
 is made.
 
-Local full workspace run exited0 with283passes across23positive/five expected
+Local full workspace run exited 0 with283passes across23positive/five expected
 empty suites, no failures/ignores/filters (target/cli-workspace-local.log); the
 subsequent added closed-stdout control ran in a12-test clean CLI process suite
 (target/cli-process-final.log). Host workspace Clippy, MSVC CLI all-target Clippy
@@ -1836,7 +1836,7 @@ unfinished; full WP acceptance is not claimed.
 
 At exact `6a59cbb3e9c243f2b55185ca234c60848e883180`,
 [Unix run38919158021](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38919158021)
-passed all seven jobs. Both native Macs checked selected Xcode26.3/build17C529,
+passed all seven jobs. Both native Macs checked selected Xcode 26.3/build17C529,
 actual Swift6.2.4, strict formatting and warnings-as-errors; all19 named Swift
 tests and22 shared parameter cases passed once per CPU without skipped/issues.
 The empty XCTest wrapper was not counted as execution evidence. Four filesystem
@@ -1878,7 +1878,7 @@ and RunModel and contains the actual same-CPU CLI. Its driver uses real MainActo
 acknowledgements, independent MIME golden bytes and the existing developer-only
 Controller for deadlines/descendant cleanup. No product URL override, shell/PATH
 fallback, owner defaults, AppKit/GUI launch or alternative processing engine is
-used. Local installed Xcode27/Swift6.4/native ARM/macOS27.0(build26A428) results:
+used. Local installed Xcode27/Swift6.4/native ARM/macOS 27.0(build26A428) results:
 
 - First ordinary run FAILED before copy work; improved diagnostics reproduced
   native launch9/EBADF with no events/copy. Both Controller teardowns confirmed
@@ -1916,7 +1916,7 @@ lock delta adds only object plus its existing memchr edge, no upgrades/C inputs.
 The command also typechecks every current app component source and retains logs
 on failure. Native CI invokes it on both Macs and always uploads its evidence.
 
-Required local command attempt FAILED its prerequisite: Xcode26.3 absent at the
+Required local command attempt FAILED its prerequisite: Xcode 26.3 absent at the
 specified path. No fallback was used (target/macos-process-local-prerequisite.log,
 target/macos-process-tests/native-Bdd16A/failure.log). Pinned native execution is
 pending dispatch. Local Swift20tests/22cases passed, including invalidation
@@ -1944,7 +1944,7 @@ full implementation acceptance incomplete. Old Windows creation gate is FAILED.
 At exact `afa5e978cf5eff9a830b55b46b58c73f9b375381`,
 [Unix run38938665514](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38938665514)
 passed all seven jobs. Independent review inspected both uploaded Mac process
-artifacts: Xcode26.3/17C529, Swift6.2.4, Rust1.99.0/b940084, selected default SDK26.2
+artifacts: Xcode 26.3/17C529, Swift6.2.4, Rust 1.99.0/b940084, selected default SDK26.2
 inside that bundle; actual macOS15.7.9/24G830/untranslated ARM64 and Intel. Both
 helper/driver were thin matching CPU/minimum15.0. Helper Mach SDK field was26.2;
 driver Mach SDK field was15.0 on both CPUs, separately recorded without inventing
@@ -2033,7 +2033,7 @@ signed-app qualification was reached. Own copied artifact is under
 target/native-evidence/90b9dcb/eml-90b9dcba-macos-aarch64/.
 
 The pinned actool argv matches the retained reviewed icon arguments; current
-macOS15.7.9 meets Apple's documented Xcode26.3 host minimum. A concrete environment
+macOS15.7.9 meets Apple's documented Xcode 26.3 host minimum. A concrete environment
 difference is SDKROOT supplied by the shared compiler context to actool, whereas
 the old icon invocation did not supply it. The next controlled experiment omits
 only SDKROOT for actool's host runtime agent, retaining the same absolute pinned
@@ -2237,3 +2237,104 @@ and rejection tests; aggregate discovery does not prove per-suite case mapping.
 The full Python/AppKit purge, Windows final-link/private extraction/console
 boundaries, native archive executions, app ZIP readback, complete GUI and exFAT
 checks, required source checks and complete qualification workflow remain open.
+
+## Native Linux archive execution and source purge
+
+At `bd750daf45e588f9ceaedfe31fe22c5f43ed4064`,
+[run 38976357309](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38976357309)
+passed the bounded CLI build/archive job on both native Ubuntu 22.04.5 CPUs.
+Both actual ELF64 architectures matched, extracted bytes matched the frozen
+release build, full materials matched, and all five extracted CLI cases plus both
+actual counterfeit rejections passed. Both executables required GLIBC versions
+no newer than 2.34 (policy maximum 2.35), used the exact declared system interpreter
+and depended only on inspected system libraries. Retained records are under
+`target/native-evidence/bd750da/linux-{aarch64,x86_64}`. These are native CLI
+archive results, not full WP6/source/platform acceptance or eight-asset delivery.
+The workflow also regenerated all six notice trees on both Unix probe hosts.
+
+Both Mac jobs at that SHA executed 36 Swift tests successfully in one runner,
+then failed an overly specific two-summary workflow predicate. Local newer Swift
+had used two runners (25+11). No app/GUI execution followed. The predicate was
+corrected at `5ae06391d55bd09efe7d53b8ffd835ac63faaef9` to permit both layouts while
+requiring a positive summary, the actual model suite and attribution case, and
+rejecting failed/skipped cases. That later native run remains separate evidence.
+The failed early runs had no process/app logs; model logs are now retained too.
+
+The active Python source/tests/tooling, old AppKit UI, schema 3, QA/lint registry,
+interpreter configuration and old actions/workflows have been removed. There are
+no tracked Python files or Python/wheel/zipapp artifacts outside ignored owned
+build storage. New contract fixtures, native Rust probes and the Windows token
+helper remain because current Rust checks consume them. Owner artwork, editable
+SVG/Icon Composer files and clearly marked non-executable historical construction
+records retain their terms. Published changelog content from 5.0.0 onward remains
+byte-identical to the baseline. README/setup/architecture now describe the current
+Rust/Swift source and explicitly incomplete qualification.
+
+The initial actual repository-check run retained seven failed sections; the next
+retained six. Rust format/check/Clippy/docs, root/dev dependency checks, notice
+freshness, actionlint and shellcheck passed. Required local Xcode 26.3 blocked the
+pinned Rust-test context and Swift section. Fuzz licensing initially lacked its
+project license and the libfuzzer-sys NCSA approval; these were corrected, after
+which that graph passed. Copying pinned tool sources under this workspace needed
+a standalone workspace boundary; an initial indexing panic was fixed, and the
+next execution reached actual tool dependency checks. cargo-mutants has an
+explicit package resolver that must not be duplicated in its copied workspace;
+that correction is saved but not yet re-executed. Upstream locked tool graphs
+have unresolved advisory findings and additional license terms requiring review;
+no advisory exception or tool pin change has been made. Full check is failed.
+
+## Private repository tools and actual consumer checks
+
+Four unchanged published tool sources now have independently reviewed compatible
+build locks under `xtask/tool-locks`. The original published locks retain their
+failed advisory verdicts. The replacements update rustls/webpki, anyhow and
+crossbeam-epoch, plus nutmeg/insta parents that remove the unmaintained atty and
+yaml-rust branches. No advisory is ignored and dev/platform edges remain present.
+Repository-tool license checks separately admit actual upstream ISC/Zlib/LLVM
+exception/CDLA terms and narrowly scoped NCSA/CC0 requirements. These developer
+tools are not shipped product dependencies or release assets.
+
+The actual local private build exited 0 and selected all four tools after locked
+builds, owned-copy byte readback, actual version execution and audits using the
+newly built cargo-deny. Source/lock/compiler/command/CWD/features and actual
+artifact profiles are retained in
+`target/repository-tools/build-wFCyBZ/result.json`, its build JSONL and audit logs.
+All four artifacts used explicit native aarch64-apple-darwin with Rust 1.99.0,
+release opt3/overflow-on/test-false; cargo-about enabled cli. The native observation
+was macOS 27.0/26A428, arm64 kernel and nontranslated bound inspector. This is local
+developer-tool evidence, not product or original-minimum-OS qualification.
+Build durations were 81.790/91.202/59.370/14.246 seconds; all four build and version
+observations and all four audits settled cleanly. Metadata/unused-policy warnings
+are retained; no warning-free claim is made.
+
+Selected tools have private immutable build paths and no global installation or
+PATH fallback. Pending selection is bounded/read back through the consumer and
+validated before replacing its pointer; input authorities and effective Cargo
+configuration paths/bytes must remain unchanged. Current lock/compiler changes
+invalidate admission. Source acquisition authenticates canonical cached crates.io
+archives and complete GNU regular/LongName framing, with bounded full gzip EOF
+and invalid-tail/extension/depth controls. The corrected cold-cache cargo-info
+route uses pinned Cargo, --locked and explicit crates-io; actual cold-cache
+execution remains unrun locally.
+
+The post-publication real consumer check retained
+`target/repository-checks/run-nVCydZ/result.json`: 15 sections passed and exactly
+one failed, the required unavailable Xcode 26.3 Swift prerequisite. Rust discovery
+and execution passed 341 named cases plus four expected empty doctest summaries;
+root/dev/fuzz/tool dependency checks and all six notice freshness checks passed
+using the actual selected tools. Overall `cargo xtask check` therefore exited
+nonzero. The earlier Rust-test prerequisite blockage was removed for normal debug
+checks; native release qualification still requires the exact pinned Mac context.
+The earlier failed and unrun records are preserved separately.
+
+At `5ae06391d55bd09efe7d53b8ffd835ac63faaef9`, both Mac CLI archives passed their
+bounded native extraction/signature/runtime/five-case/two-counterfeit checks in
+[run 38976867653](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38976867653).
+ARM then failed again in actool; Intel assembled/signed the app but its owned
+NSWorkspace instance terminated before file-open. The bounded attribution scan
+found no complete uniquely attributed report; helper settlement remains unproven.
+Neither Mac has a GUI pass. Downloaded evidence binds in-job identities but does
+not include archive/executable payloads for an independent downloaded-byte rehash.
+A separate fresh-host direct signed-app child observation is implemented to
+capture actual stdout/stderr/exit under its own finite Controller; it is not
+Finder equivalence, a cause verdict or GUI acceptance and has not run yet.

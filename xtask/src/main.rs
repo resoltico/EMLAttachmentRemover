@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 mod archive_verify;
 mod campaign;
+mod check;
 mod cli_build;
 mod distribution;
 mod fuzz;
@@ -15,11 +16,15 @@ mod macos_gui;
 mod macos_icon;
 #[cfg(target_os = "macos")]
 mod macos_process;
+#[cfg(target_os = "macos")]
+mod macos_startup;
 mod mutants;
 mod native_host;
 mod notices;
 mod qualify;
 mod smoke;
+mod tool_sources;
+mod tools;
 use clap::{Parser, Subcommand};
 use std::{
     error::Error,
@@ -42,6 +47,15 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Observe a direct owned signed app child on a fresh hosted runner.
+    MacosStartupDiagnostic {
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Build and audit private pinned tools using reviewed build locks.
+    Tools,
+    /// Run independent repository checks, retaining every failed section.
+    Check,
     /// Build and verify one native CLI archive; remaining qualification is separate.
     BuildCliArchive {
         #[arg(long)]
@@ -145,6 +159,26 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::MacosStartupDiagnostic { out } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos_startup::run(&root, &out)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = out;
+                    Err("Native macOS is required for signed app startup observation".into())
+                }
+            }
+            Task::Tools => {
+                initialize_controller(&root)?;
+                tools::run(&root)
+            }
+            Task::Check => {
+                initialize_controller(&root)?;
+                check::run(&root)
+            }
             Task::BuildCliArchive { target, out } => {
                 initialize_controller(&root)?;
                 std::fs::create_dir(&out)?;

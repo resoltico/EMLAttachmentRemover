@@ -17,15 +17,8 @@ use std::{
 const GUARDS: &[&str] = &["authorize_deletions", "check_edit_ranges"];
 const SELECTION: &str = "(authorize_deletions|check_edit_ranges)";
 fn command(campaign: &Campaign, selection: &str) -> Result<Command> {
-    let mut command = campaign.command("cargo")?;
-    command.args([
-        "mutants",
-        "--no-config",
-        "--package",
-        "eml-core",
-        "--re",
-        selection,
-    ]);
+    let mut command = campaign.tool_command("mutants")?;
+    command.args(["--no-config", "--package", "eml-core", "--re", selection]);
     Ok(command)
 }
 fn discovery(campaign: &Campaign, selection: &str) -> Result<Vec<Value>> {
@@ -348,10 +341,9 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
         campaign.sha,
         campaign.directory.display()
     )?;
-    let mut child = campaign.command("cargo")?;
+    let mut child = campaign.tool_command("mutants")?;
     child
         .args([
-            "mutants",
             "--no-config",
             "--package",
             "eml-core",

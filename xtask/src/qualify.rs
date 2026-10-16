@@ -51,50 +51,52 @@ fn test_names(text: &str, listing: bool) -> std::collections::BTreeMap<String, u
     }
     names
 }
-fn release_tests(root: &Path, target: &str, out: &Path) -> Result<Value> {
+pub(crate) fn checked_tests(
+    root: &Path,
+    target: Option<&str>,
+    release: bool,
+    out: &Path,
+) -> Result<Value> {
     #[cfg(target_os = "macos")]
-    let mac = crate::macos::load(root)?;
+    let mac = if release {
+        Some(crate::macos::load(root)?)
+    } else {
+        None
+    };
     let command = |listing: bool| {
         let mut command = Command::new("cargo");
         command
             .current_dir(root)
-            .args([
-                "test",
-                "--color",
-                "never",
-                "--locked",
-                "--workspace",
-                "--release",
-                "--target",
-                target,
-                "--",
-                "--color",
-                "never",
-            ])
-            .env("CARGO_TARGET_DIR", out.join("release-tests"));
+            .args(["test", "--color", "never", "--locked", "--workspace"])
+            .env("CARGO_TARGET_DIR", out.join("native-test-build"));
+        if release {
+            command.arg("--release");
+        }
+        if let Some(target) = target {
+            command.args(["--target", target]);
+        }
+        command.args(["--", "--color", "never"]);
         if listing {
             command.arg("--list");
         }
         #[cfg(target_os = "macos")]
-        command
-            .env("DEVELOPER_DIR", &mac.developer)
-            .env("SDKROOT", &mac.sdk)
-            .env("MACOSX_DEPLOYMENT_TARGET", &mac.minimum_text);
+        if let Some(mac) = &mac {
+            command
+                .env("DEVELOPER_DIR", &mac.developer)
+                .env("SDKROOT", &mac.sdk)
+                .env("MACOSX_DEPLOYMENT_TARGET", &mac.minimum_text);
+        }
         command
     };
     let mut transcripts = Vec::new();
-    for (listing, label) in [(true, "release-discovery"), (false, "release-tests")] {
+    for (listing, label) in [(true, "native-test-discovery"), (false, "native-tests")] {
         let log = out.join(format!("{label}.log"));
         let result = controller()?.run_separate_output(
             command(listing),
             &log,
             Duration::from_secs(20 * 60),
         )?;
-        if !result.success() {
-            return Err(
-                format!("Native {label} failed; retained stdout/stderr/control evidence").into(),
-            );
-        }
+        result.require_success(&log)?;
         for path in [&log, &log.with_extension("stderr")] {
             if fs::metadata(path)?.len() > 16 * 1024 * 1024 {
                 return Err("Native test output exceeds its document bound".into());
@@ -107,7 +109,7 @@ fn release_tests(root: &Path, target: &str, out: &Path) -> Result<Value> {
     }
     let counts = validate_test_transcripts(&transcripts)?;
     Ok(
-        json!({"discovery":counts,"profile":"release","target":target,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"}),
+        json!({"discovery":counts,"profile":if release {"release"} else {"test"},"target":target,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"}),
     )
 }
 
@@ -117,11 +119,11 @@ fn validate_test_transcripts(transcripts: &[(String, String)]) -> Result<Value> 
     }
     let suites = test_suites(&transcripts[0].1)?;
     if test_suites(&transcripts[1].1)? != suites {
-        return Err("Native release execution omitted/changed discovered suites".into());
+        return Err("Native test execution omitted/changed discovered suites".into());
     }
     let names = test_names(&transcripts[0].0, true);
     if names.is_empty() || test_names(&transcripts[1].0, false) != names {
-        return Err("Native release execution omitted/duplicated discovered test cases".into());
+        return Err("Native test execution omitted/duplicated discovered test cases".into());
     }
     let mut passes = 0_u64;
     let mut positive = 0;
@@ -140,7 +142,7 @@ fn validate_test_transcripts(transcripts: &[(String, String)]) -> Result<Value> 
         }
     }
     if positive + empty != suites.len() || passes != names.values().sum::<usize>() as u64 {
-        return Err("Native release summary/discovery counts disagree".into());
+        return Err("Native test summary/discovery counts disagree".into());
     }
     Ok(
         json!({"passes":passes,"positive_summaries":positive,"empty_summaries":empty,"discovered_suites":suites,"discovered_case_count":names.values().sum::<usize>()}),
@@ -295,7 +297,7 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let result: Result<()> = (|| {
-        let tests = release_tests(root, target, &out)?;
+        let tests = checked_tests(root, Some(target), true, &out)?;
         let cli = cli_build::build(root, target, &out.join("cli-build"))?;
         let materials = notices::checked_target(root, cli.platform())?;
         let archive = staged_cli(root, &cli, &materials, &out)?;
@@ -332,7 +334,7 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
 fn summary_passes(line: &str) -> Result<u64> {
     let body = line
         .strip_prefix("test result: ok. ")
-        .ok_or("Native release test summary did not pass")?;
+        .ok_or("Native test summary did not pass")?;
     let fields: Vec<_> = body.split("; ").collect();
     if fields.len() < 5
         || fields[1] != "0 failed"
@@ -340,9 +342,7 @@ fn summary_passes(line: &str) -> Result<u64> {
         || fields[3] != "0 measured"
         || fields[4] != "0 filtered out"
     {
-        return Err(
-            "Native release tests have failures/ignores/filters or an unknown summary".into(),
-        );
+        return Err("Native tests have failures/ignores/filters or an unknown summary".into());
     }
     Ok(fields[0]
         .strip_suffix(" passed")

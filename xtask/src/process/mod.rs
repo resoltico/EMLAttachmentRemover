@@ -18,6 +18,31 @@ use std::{
 pub(crate) mod unix;
 /// Tool-controller errors; no source mail is included.
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+/// A failed command retaining actual process facts through caller propagation.
+#[derive(Debug)]
+pub struct CommandFailure {
+    /// Exit/lifetime observations; these do not substitute for cleanup authority.
+    pub process: serde_json::Value,
+    /// Retained command output location.
+    pub log: PathBuf,
+    /// A separate bounded diagnostic read/forwarding failure, when observed.
+    pub diagnostic_error: Option<String>,
+}
+impl std::fmt::Display for CommandFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Command did not qualify; retained {}: {}",
+            self.log.display(),
+            self.process
+        )?;
+        if let Some(error) = &self.diagnostic_error {
+            write!(formatter, "; diagnostic forwarding also failed: {error}")?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for CommandFailure {}
 /// Actual worker exit plus independent deadline/lifetime observations.
 pub struct ProcessResult {
     /// Worker status, never the supervisor's substitute status.
@@ -36,6 +61,29 @@ pub struct ProcessResult {
     pub cleanup_elapsed: Duration,
 }
 impl ProcessResult {
+    /// Require successful exit and clean lifetime while preserving failure facts.
+    pub fn require_success(&self, log: &Path) -> Result<()> {
+        if self.success() {
+            Ok(())
+        } else {
+            Err(Box::new(CommandFailure {
+                process: self.evidence(),
+                log: log.to_owned(),
+                diagnostic_error: None,
+            }))
+        }
+    }
+    /// Actual exit and lifetime facts, independent of a caller's expected exit.
+    pub fn evidence(&self) -> serde_json::Value {
+        #[cfg(unix)]
+        let signal = {
+            use std::os::unix::process::ExitStatusExt;
+            self.status.signal()
+        };
+        #[cfg(not(unix))]
+        let signal: Option<i32> = None;
+        serde_json::json!({"exit_code":self.status.code(),"signal":signal,"timed_out":self.timed_out,"cancelled":self.cancelled,"unexpected_survivors":self.unexpected_survivors,"cleanup_complete":self.cleanup_complete,"elapsed_seconds":self.elapsed.as_secs_f64(),"cleanup_seconds":self.cleanup_elapsed.as_secs_f64()})
+    }
     /// Whether exit, timing and lifetime evidence all qualify this command.
     pub fn success(&self) -> bool {
         self.status.success()
@@ -51,6 +99,7 @@ pub struct Controller {
     pub(crate) helper: PathBuf,
     pub(crate) root: PathBuf,
     pub(crate) stopped: Arc<AtomicBool>,
+    admission_open: AtomicBool,
     #[cfg(unix)]
     pub(crate) inspector: PathBuf,
 }
@@ -81,6 +130,7 @@ impl Controller {
             helper,
             root: root.to_owned(),
             stopped: Arc::new(AtomicBool::new(false)),
+            admission_open: AtomicBool::new(true),
             #[cfg(unix)]
             inspector: PathBuf::from("/bin/ps"),
         })
@@ -95,16 +145,40 @@ impl Controller {
     pub fn request_stop(&self) {
         self.stopped.store(true, Ordering::Relaxed);
     }
+    /// Whether new work remains admissible after cancellation/control failures.
+    pub fn admits_work(&self) -> bool {
+        self.admission_open.load(Ordering::Relaxed) && !self.stopped.load(Ordering::Relaxed)
+    }
+    fn observe(&self, result: Result<ProcessResult>) -> Result<ProcessResult> {
+        let close = match &result {
+            Err(_) => true,
+            Ok(result) => {
+                result.timed_out
+                    || result.cancelled
+                    || result.unexpected_survivors != 0
+                    || !result.cleanup_complete
+            }
+        };
+        if close {
+            self.admission_open.store(false, Ordering::Relaxed);
+        }
+        result
+    }
     /// Run a worker; both worker and cleanup evidence must be checked.
     pub fn run(&self, command: Command, log: &Path, deadline: Duration) -> Result<ProcessResult> {
+        if !self.admits_work() {
+            return Err("Process admission closed after cancellation or control failure".into());
+        }
         #[cfg(unix)]
         {
-            unix::run(self, command, log, deadline, false)
+            self.observe(unix::run(self, command, log, deadline, false))
         }
         #[cfg(not(unix))]
         {
             let _ = (command, log, deadline);
-            Err("Owned Unix-session verification control is unavailable on this host".into())
+            self.observe(Err(
+                "Owned Unix-session verification control is unavailable on this host".into(),
+            ))
         }
     }
     /// Preserve stdout at `log` and stderr at `log.with_extension("stderr")`,
@@ -118,18 +192,26 @@ impl Controller {
         log: &Path,
         deadline: Duration,
     ) -> Result<ProcessResult> {
+        if !self.admits_work() {
+            return Err("Process admission closed after cancellation or control failure".into());
+        }
         #[cfg(unix)]
         {
-            unix::run(self, command, log, deadline, true)
+            self.observe(unix::run(self, command, log, deadline, true))
         }
         #[cfg(not(unix))]
         {
             let _ = (command, log, deadline);
-            Err("Owned Unix-session verification control is unavailable on this host".into())
+            self.observe(Err(
+                "Owned Unix-session verification control is unavailable on this host".into(),
+            ))
         }
     }
     /// Capture a bounded stdout document through the same lifetime controller.
     pub fn capture(&self, command: &mut Command) -> Result<Vec<u8>> {
+        if !self.admits_work() {
+            return Err("Process admission closed before capture".into());
+        }
         let parent = self.root.join("target/process-control");
         let directory = tempfile::Builder::new()
             .prefix("capture-")
@@ -153,17 +235,30 @@ impl Controller {
             Duration::from_secs(10 * 60),
         )?;
         let errors = directory.join("output.stderr");
-        if errors.is_file() {
-            std::io::stderr().write_all(&fs::read(errors)?)?;
-        }
+        let diagnostic: Result<()> = (|| {
+            if errors.is_file() {
+                use std::io::Read;
+                let mut bytes = Vec::new();
+                fs::File::open(errors)?
+                    .take(16 * 1024 * 1024 + 1)
+                    .read_to_end(&mut bytes)?;
+                if bytes.len() > 16 * 1024 * 1024 {
+                    return Err(
+                        "Captured stderr exceeds its document bound; see retained log".into(),
+                    );
+                }
+                std::io::stderr().write_all(&bytes)?;
+            }
+            Ok(())
+        })();
         if !result.success() {
-            return Err(format!(
-                "Setup command failed: {}; evidence {}",
-                result.status,
-                directory.display()
-            )
-            .into());
+            return Err(Box::new(CommandFailure {
+                process: result.evidence(),
+                log: directory.join("output.log"),
+                diagnostic_error: diagnostic.err().map(|error| error.to_string()),
+            }));
         }
+        diagnostic?;
         let path = directory.join("output.log");
         let length = fs::metadata(&path)?.len();
         if length > 16 * 1024 * 1024 {
