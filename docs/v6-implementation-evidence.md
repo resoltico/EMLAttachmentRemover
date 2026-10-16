@@ -802,3 +802,26 @@ fuzz metadata resolves27 packages; all three locks retain identical versions and
 contents. No new fuzz campaign is claimed. Actual both-CPU execution of the three
 new directory cases remains pending, as do changed-parent confinement, candidate
 data/publication and all still-open product/archive/GUI requirements.
+
+At exact head `bdf4d6b9e5514a018e9e14dcc599204d43dde9d6`,
+[Windows run38849482570](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38849482570)
+FAILED25passed/3failed/0ignored/1filtered on each native CPU. All three new
+writable cases fail at writer acquisition (writable.rs474/516/562), plain Win32
+access-denied5. No new NtCreateFile directory call, child/parent flush,145 or
+cleanup oracle was reached. All prior25 read/status cases passed. Each old
+creation gate also actually failed0passed/1failed/28filtered. The
+[Unix run38849482579](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38849482579)
+completed successfully. Source/compile QA was not native qualification; failed
+raw Windows output remains in owned scratch.
+
+The next reviewed diagnostic preserves production access/share/flags exactly.
+Test-only messages distinguish native ReOpenFile failure from post-reopen
+metadata/identity inspection. Each existing case also performs a same-context,
+same-rights OPEN_EXISTING CreateFileW permission control on the same owned
+fixture, compares its full ID with the earlier observation, then closes that
+control handle before the original tested factory. It creates nothing, supplies
+no production fallback and cannot substitute its success for factory success.
+All original assertions/test counts and old gate remain. Root and independent
+source QA plus Windows MSVC all-target Clippy passed for the diagnostic; actual
+both-CPU diagnostic results are pending. No ACL/share/API cause is inferred from
+numeric5 alone.
