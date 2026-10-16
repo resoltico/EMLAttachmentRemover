@@ -18,6 +18,20 @@ registry packages that omit this file. Its Apple SDK discussion is retained.
 The selected MIT license text must also accompany it; a standard MIT template
 must not be represented as an upstream copyright attribution.
 
-Windows runtime materials and actual selected native-input review are still
-pending. Neither these files nor a Cargo-only notice generator qualifies that
-boundary.
+`windows-runtime/` retains the six complete upstream runtime legal materials and
+source-comment notices. Its source record gives the four official distribution
+manifest component identities; those component archives have not yet been
+downloaded/verified for EML's final link. Actual selected native-input and final
+link review remain pending. These legal inputs and a Cargo-only generator do not
+qualify that boundary.
+
+`crate-materials.json` retains the independent review's per-package legal-file
+and selected-text observations. It distinguishes generator text from actual
+copyright-bearing package material, including the lowercase Microsoft license
+files missed by cargo-about. Its input hashes and observed head describe that
+review's basis; the record explicitly supplies no generation execution
+attestation. The generator must separately bind its actual target, configuration
+and feature graph, and compare current locked identities and exact known legal
+bytes with these observations. A changed package, binding or legal file requires
+renewed review; grouping equal text cannot supply another package's provenance.
+The generator must not manufacture a new review record from its own output.

@@ -113,6 +113,16 @@ jobs:
           $toolOutput | ForEach-Object { Write-Output $_ }
           if ($toolExit -ne 0) { exit $toolExit }
           if (@($toolOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 1) { throw 'Repository tool tests require positive passes and zero failures, ignores or filters' }
+      - name: Native repository archive library tests
+        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
+        run: |
+          $archiveOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package xtask --lib --target ${{ matrix.target }} -- --color never 2>&1
+          $archiveExit = $LASTEXITCODE
+          $archiveOutput | ForEach-Object { Write-Output $_ }
+          if ($archiveExit -ne 0) { exit $archiveExit }
+          if (@($archiveOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 1) { throw 'Archive library tests require positive passes and zero failures, ignores or filters' }
       - name: Native filesystem primitive
         if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
         env:

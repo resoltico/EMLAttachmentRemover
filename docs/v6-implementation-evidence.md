@@ -2041,3 +2041,135 @@ tool, DEVELOPER_DIR, icon, arguments and minimum. Rust/Swift SDK selection stays
 unchanged. Relevant inherited loader-selector presence is recorded without values
 or a full environment dump. This is an experiment, not an established cause,
 pin/renderer fallback, fixed failure or lowered gate. Intel outcome is pending.
+
+## Pinned signed-app checkpoint and archive inspection
+
+At `e2808962377f333a3b1d2a23103d634f223f3be9`,
+[Unix run 38947679081](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38947679081)
+passed all seven jobs. Independent artifact review confirmed actual signed app
+assembly on both native Mac CPUs using Xcode 26.3/17C529, Swift 6.2.4 and Rust
+1.99.0. Each build retained 34 clean Controller receipts, matching thin app and
+helper CPUs, deployment minimum 15.0 and SDK field 26.2. Standalone CLI, app and
+embedded helper signature checks passed; signed helper bytes matched the
+standalone CLI. App and helper direct dependency lists contained only absolute
+system paths. Both Mac jobs passed 197 named Rust tests (17 summaries, including
+one expected empty filesystem doctest), Swift 25 functions and 22 shared cases.
+Copied artifacts are under `target/native-evidence/e280896/`.
+
+The watched asset-runtime symbol diagnostics still occurred on both CPUs; ARM
+also emitted an Objective-C weak-variable diagnostic. These successful builds
+qualify this environment, without diagnosing the earlier ARM crash or claiming
+warning-free asset compilation. The preceding Intel build at `90b9dcba` also
+succeeded despite its symbol diagnostics. Its earlier pending status is now
+resolved. The original ARM failure remains recorded above.
+
+[Windows run 38947679116](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38947679116)
+failed on both native CPUs at the existing bound-destination creation gate.
+That is not waived by the Mac build result. Full Windows acceptance remains
+incomplete.
+
+Retained Rust legal inputs were downloaded from the official dated distribution
+manifest. The complete ARM rustc component matched its manifest digest, and the
+five legal members match the unchanged retained files in `xtask/licenses/rust`.
+An independent read-only review repeated the manifest/component/member checks.
+The four exact objc2-family source revisions have identical retained upstream
+licensing explanations. Material identity does not establish full notice or
+native runtime completeness; the complete notice generator and Windows native
+input review remain pending.
+
+The repository-only ZIP32 inspection library now bounds original central records
+before `zip` constructs its filename map, rejects duplicate records and portable
+path aliases, checks ordinary file types, compares local/central headers and
+accounts for disjoint local regions. Twelve targeted tests passed, with zero
+ignored or filtered tests, including a real duplicate-record case accepted as
+one entry by the dependency but rejected by this guard. Depth and cumulative
+claim-text rejection and directory reuse accounting have independent controls.
+The next slice reads one bounded immutable snapshot and performs actual owned
+ZIP extraction, CRC/size checks and exact material comparisons. It retains a
+private Unix enclosure created through the existing filesystem library, holds
+its ownership binding, and applies package directory/file modes. Tests compare
+actual 0700 enclosure and 0755 package modes, independently change the original
+archive after snapshot creation, and reject missing legal material, payload CRC
+failure and changed material bytes. Logs are
+`target/archive-ancestor-tests.log`. These use synthetic legal and
+executable bytes; the executable fixture is never invoked. The complete held
+ancestor chain is admitted and each parent-relative name is re-observed after
+both endpoints qualify, before extraction resource creation. This stricter
+tooling precondition excludes interference by the trusted UID/root and remains
+held through pathname smoke settlement. An owned writable non-sticky upper
+ancestor is rejected before extraction. Clippy passed across xtask targets after
+this refinement (`target/archive-ancestor-clippy.log`).
+Windows private extraction explicitly refuses until its protected ACL boundary
+is implemented. No Windows extraction, tar, app ZIP or extracted product
+behavioral gate is claimed by this slice.
+
+At `f931b74cf25bc70ca039d495afee991011ac0541` and
+`4f55d303706b6eca9723e355cd71ead20c93b19b`, actual Intel app assembly/signatures
+passed, then the GUI launcher failed with Accessibility cannotComplete (-25204).
+AX trust and the fresh before-domain observations passed. Processing/start phase
+and helper/LaunchServices settlement were unverified; no after-domain or GUI
+success record exists. Controller cleanup does not override that uncertainty.
+ARM failed earlier at the recurrent icon runtime exception, so GUI did not run.
+Both Macs passed preceding 197 Rust tests/17 summaries and Swift 25/22 scopes.
+Artifacts are retained under `target/native-evidence/f931b74/`; independent QA
+also retains both 4f55 artifacts. These are failed/unrun GUI gates.
+
+The separate two-attempt icon diagnostic at `4f55d303` observed two ARM failures
+and two Intel successes. All four emitted the watched symbol diagnostics; no
+Controller timeout/cancellation/survivor failure occurred. This does not support
+a first-call-only explanation. The NamedElement CoreData message occurs in the
+f931 ARM failure but not the other retained failures, so it is not a common
+failure marker. The later `f02481cb872eddab2ad4edb7cda767aa5fc90120` experiment
+retries only pre-readiness cannotComplete reads under the existing deadline and
+removes only the actool child's entire inherited fallback-library variable.
+It makes no causal/reliability claim and preserves all earlier failures.
+
+## Target legal material generation
+
+`cargo xtask notices --write` generated all six complete material trees;
+`cargo xtask notices --check` independently regenerated them and exited 0.
+The source-material audit checked 281 target-specific bindings against the
+independent 52-package/56-binding review. Each package's actual legal file is
+checked separately from a license group's representative path. Cached registry
+archive identity is checked separately from unpacked legal/VCS files; no archive
+member-binding or review-quality claim follows from the digest alone.
+
+Both Windows trees contain the complete Microsoft copyright-bearing MIT text
+missed by the generator. Source-specific BSD/NOTICE material, full local LICENSE,
+objc2 upstream explanation/identified standard MIT template, the five Rust
+standard-library files and six Windows runtime legal materials are retained.
+Windows component URLs/digests are official manifest identities; full component
+archive verification and EML's final selected link-input review remain pending.
+The actual target/configuration/tool and structured activated-feature tree are
+recorded without host paths/timestamps. Other-host regeneration is still unrun.
+
+Twelve notice controls passed (0 failed/ignored; 20 intentionally filtered), then
+all 32 xtask binary tests passed (no filters): missing per-package material with
+a valid group representative, target/text drift, actual Microsoft MIT retention,
+extra/ambiguous/symlink/deep/over-budget trees, ownership-record admission, appeared
+destinations, post-swap readback failure, restoration and blocked recovery. The
+actual displaced tree is checked before deletion authority, and failures retain
+recoverable old/new data and both errors. Unix updates use no-replace renames;
+Windows notice-directory updates explicitly remain unavailable. Logs include
+`target/notices-final-guard-tests.log`, `target/notices-complete-bin-tests.log`,
+`target/notices-freshness-check.log` and the later inventory regeneration logs.
+The earlier Clippy argument-count failure is retained; its source correction
+passed without a lint suppression. Final checkpoint checks are recorded
+separately. Archive smoke, Windows boundaries, actual GUI conditions, complete
+purge and full work-package acceptance remain open.
+
+After the inventory-source details, ownership controls and validated tool-pin
+output were frozen, the checkpoint passed all 33 xtask binary tests and 12
+archive library tests with no failures, ignored cases or filters; all-target
+Clippy and Rust formatting passed. Logs are
+`target/notices-checkpoint-bin-tests.log`,
+`target/archive-checkpoint-lib-tests.log` and
+`target/notices-checkpoint-clippy.log`. Inventory regeneration/freshness also
+exited 0 (`target/notices-source-inventory-write.log` and
+`target/notices-inventory-freshness-check.log`). CI adds the library tests and
+six-target notice regeneration on both Unix probe hosts; those other-host
+results remain pending. Legal data is explicitly exempt from Git text
+normalization. All 222 retained/generated legal files and the Microsoft oracle
+matched their raw staged Git blobs before the checkpoint. Source whitespace
+checking excludes unchanged upstream legal data; Rust formatting and the
+source-only staged check passed separately.

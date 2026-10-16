@@ -38,7 +38,14 @@ jobs:
       - name: Real owned process lifetime and signal probes
         run: |
           cargo test --locked --package xtask --bin xtask
+          cargo test --locked --package xtask --lib
           cargo test --locked --package xtask --test processes
+      - name: Regenerate and check six target notice material trees
+        run: |
+          plan=$(cargo xtask distribution)
+          about=$(jq -er '.tools.cargo_about' <<< "$plan")
+          cargo install cargo-about --version "$about" --locked
+          cargo xtask notices --check
   filesystem:
     name: Filesystem / ${{ matrix.platform }}
     needs: distribution

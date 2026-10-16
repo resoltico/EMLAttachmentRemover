@@ -15,9 +15,14 @@ serde_json.workspace = true
 toml = "1.1.8"
 tempfile.workspace = true
 object = { version = "0.39.1", default-features = false, features = ["read", "std"] }
+sha2 = "0.11.0"
+tar = { version = "0.4.46", default-features = false }
+flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
+zip = { version = "9.0.3", default-features = false, features = ["deflate-flate2"] }
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1.5", features = ["process", "fs"] }
+eml-fs = { path = "../crates/eml-fs" }
 
 [lints]
 workspace = true

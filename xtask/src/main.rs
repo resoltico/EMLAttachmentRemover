@@ -14,6 +14,7 @@ mod macos_icon;
 #[cfg(target_os = "macos")]
 mod macos_process;
 mod mutants;
+mod notices;
 use clap::{Parser, Subcommand};
 use std::{
     error::Error,
@@ -36,6 +37,13 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Generate or check complete target legal materials against reviewed inputs.
+    Notices {
+        #[arg(long, conflicts_with = "check", required_unless_present = "check")]
+        write: bool,
+        #[arg(long, conflicts_with = "write")]
+        check: bool,
+    },
     /// Observe exactly two pinned icon compilations; never qualifies an app.
     MacosIconDiagnostic {
         #[arg(long)]
@@ -104,6 +112,10 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::Notices { write, check: _ } => {
+                initialize_controller(&root)?;
+                notices::run(&root, write)
+            }
             Task::MacosIconDiagnostic { out } => {
                 #[cfg(target_os = "macos")]
                 {

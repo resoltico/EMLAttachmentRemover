@@ -1,0 +1,624 @@
+{
+  "entries": [
+    {
+      "depth": 0,
+      "features": [],
+      "name": "remove-eml-attachments",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "6.0.0"
+    },
+    {
+      "depth": 1,
+      "features": [
+        "alloc",
+        "default",
+        "std"
+      ],
+      "name": "base64",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.22.1"
+    },
+    {
+      "depth": 1,
+      "features": [
+        "color",
+        "default",
+        "derive",
+        "error-context",
+        "help",
+        "std",
+        "suggestions",
+        "usage"
+      ],
+      "name": "clap",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "4.6.7"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "color",
+        "error-context",
+        "help",
+        "std",
+        "suggestions",
+        "usage"
+      ],
+      "name": "clap_builder",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "4.6.7"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "auto",
+        "default",
+        "wincon"
+      ],
+      "name": "anstream",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.0"
+    },
+    {
+      "depth": 4,
+      "features": [
+        "default",
+        "std"
+      ],
+      "name": "anstyle",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.14"
+    },
+    {
+      "depth": 4,
+      "features": [
+        "default",
+        "utf8"
+      ],
+      "name": "anstyle-parse",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.0"
+    },
+    {
+      "depth": 5,
+      "features": [
+        "default"
+      ],
+      "name": "utf8parse",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.2.2"
+    },
+    {
+      "depth": 4,
+      "features": [],
+      "name": "anstyle-query",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.1.5"
+    },
+    {
+      "depth": 4,
+      "features": [],
+      "name": "colorchoice",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.5"
+    },
+    {
+      "depth": 4,
+      "features": [
+        "default"
+      ],
+      "name": "is_terminal_polyfill",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.70.2"
+    },
+    {
+      "depth": 4,
+      "features": [
+        "default"
+      ],
+      "name": "utf8parse",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.2.2"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "default",
+        "std"
+      ],
+      "name": "anstyle",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.14"
+    },
+    {
+      "depth": 3,
+      "features": [],
+      "name": "clap_lex",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.1.1"
+    },
+    {
+      "depth": 3,
+      "features": [],
+      "name": "strsim",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.11.1"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "default"
+      ],
+      "name": "clap_derive",
+      "proc_macro": true,
+      "repeated": false,
+      "version": "4.6.7"
+    },
+    {
+      "depth": 3,
+      "features": [],
+      "name": "heck",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.5.0"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "default",
+        "proc-macro"
+      ],
+      "name": "proc-macro2",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.107"
+    },
+    {
+      "depth": 4,
+      "features": [],
+      "name": "unicode-ident",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.27"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "default",
+        "proc-macro"
+      ],
+      "name": "quote",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.47"
+    },
+    {
+      "depth": 4,
+      "features": [
+        "default",
+        "proc-macro"
+      ],
+      "name": "proc-macro2",
+      "proc_macro": false,
+      "repeated": true,
+      "version": "1.0.107"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "clone-impls",
+        "default",
+        "derive",
+        "full",
+        "parsing",
+        "printing",
+        "proc-macro"
+      ],
+      "name": "syn",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "3.0.9"
+    },
+    {
+      "depth": 4,
+      "features": [
+        "default",
+        "proc-macro"
+      ],
+      "name": "proc-macro2",
+      "proc_macro": false,
+      "repeated": true,
+      "version": "1.0.107"
+    },
+    {
+      "depth": 4,
+      "features": [
+        "default",
+        "proc-macro"
+      ],
+      "name": "quote",
+      "proc_macro": false,
+      "repeated": true,
+      "version": "1.0.47"
+    },
+    {
+      "depth": 4,
+      "features": [],
+      "name": "unicode-ident",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.27"
+    },
+    {
+      "depth": 1,
+      "features": [
+        "termination"
+      ],
+      "name": "ctrlc",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "3.5.2"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "process",
+        "signal"
+      ],
+      "name": "nix",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.31.3"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "std"
+      ],
+      "name": "bitflags",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "2.13.2"
+    },
+    {
+      "depth": 3,
+      "features": [],
+      "name": "cfg-if",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.5"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "default",
+        "extra_traits",
+        "std"
+      ],
+      "name": "libc",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.2.190"
+    },
+    {
+      "depth": 3,
+      "features": [],
+      "name": "cfg_aliases",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.2.2"
+    },
+    {
+      "depth": 1,
+      "features": [],
+      "name": "eml-core",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "6.0.0"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "alloc",
+        "default",
+        "std"
+      ],
+      "name": "base64",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.22.1"
+    },
+    {
+      "depth": 2,
+      "features": [],
+      "name": "eml-fs",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "6.0.0"
+    },
+    {
+      "depth": 3,
+      "features": [],
+      "name": "getrandom",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.4.3"
+    },
+    {
+      "depth": 4,
+      "features": [],
+      "name": "cfg-if",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.5"
+    },
+    {
+      "depth": 4,
+      "features": [
+        "default",
+        "extra_traits",
+        "std"
+      ],
+      "name": "libc",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.2.190"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "default",
+        "extra_traits",
+        "std"
+      ],
+      "name": "libc",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.2.190"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "alloc",
+        "default",
+        "fs",
+        "process",
+        "std"
+      ],
+      "name": "rustix",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.1.5"
+    },
+    {
+      "depth": 4,
+      "features": [
+        "std"
+      ],
+      "name": "bitflags",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "2.13.2"
+    },
+    {
+      "depth": 4,
+      "features": [
+        "auxvec",
+        "elf",
+        "errno",
+        "general",
+        "ioctl",
+        "no_std",
+        "prctl"
+      ],
+      "name": "linux-raw-sys",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.12.1"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "alloc",
+        "default"
+      ],
+      "name": "encoding_rs",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.8.42"
+    },
+    {
+      "depth": 3,
+      "features": [],
+      "name": "cfg-if",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.5"
+    },
+    {
+      "depth": 3,
+      "features": [],
+      "name": "multiversion_no_op",
+      "proc_macro": true,
+      "repeated": false,
+      "version": "1.0.0"
+    },
+    {
+      "depth": 3,
+      "features": [],
+      "name": "scopeguard",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.2.0"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "aarch64_neon",
+        "public_imp"
+      ],
+      "name": "simdutf8",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.1.5"
+    },
+    {
+      "depth": 3,
+      "features": [],
+      "name": "rustversion",
+      "proc_macro": true,
+      "repeated": false,
+      "version": "1.0.23"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "alloc",
+        "default",
+        "std"
+      ],
+      "name": "memchr",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "2.8.3"
+    },
+    {
+      "depth": 1,
+      "features": [
+        "default",
+        "derive",
+        "serde_derive",
+        "std"
+      ],
+      "name": "serde",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.229"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "result",
+        "std"
+      ],
+      "name": "serde_core",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.229"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "default"
+      ],
+      "name": "serde_derive",
+      "proc_macro": true,
+      "repeated": false,
+      "version": "1.0.229"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "default",
+        "proc-macro"
+      ],
+      "name": "proc-macro2",
+      "proc_macro": false,
+      "repeated": true,
+      "version": "1.0.107"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "default",
+        "proc-macro"
+      ],
+      "name": "quote",
+      "proc_macro": false,
+      "repeated": true,
+      "version": "1.0.47"
+    },
+    {
+      "depth": 3,
+      "features": [
+        "clone-impls",
+        "default",
+        "derive",
+        "full",
+        "parsing",
+        "printing",
+        "proc-macro"
+      ],
+      "name": "syn",
+      "proc_macro": false,
+      "repeated": true,
+      "version": "3.0.9"
+    },
+    {
+      "depth": 1,
+      "features": [
+        "default",
+        "std"
+      ],
+      "name": "serde_json",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.154"
+    },
+    {
+      "depth": 2,
+      "features": [],
+      "name": "itoa",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.18"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "alloc",
+        "default",
+        "std"
+      ],
+      "name": "memchr",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "2.8.3"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "result",
+        "std"
+      ],
+      "name": "serde_core",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.229"
+    },
+    {
+      "depth": 2,
+      "features": [],
+      "name": "zmij",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "1.0.23"
+    }
+  ],
+  "scope": "actual CLI normal/build feature tree; host paths omitted without merging distinct occurrences"
+}

@@ -1,0 +1,1391 @@
+{
+  "files": [
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "linux-aarch64/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 20164,
+      "kind": "file",
+      "path": "linux-aarch64/LICENSE",
+      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+    },
+    {
+      "bytes": 5789,
+      "kind": "file",
+      "path": "linux-aarch64/THIRD-PARTY-NOTICES.txt",
+      "sha256": "dd2cf5ddfa18d7b198a848f47655f28a1199444b02606a51507d42ad760b7a54"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "linux-aarch64/licenses/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11633,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/activated-features.json",
+      "sha256": "a8a57f49bf2cbfc94cc6ea87db683663af0bc2a8479ea7c6cee56f5be039db18"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "linux-aarch64/licenses/crates/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7.txt",
+      "sha256": "0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7"
+    },
+    {
+      "bytes": 1081,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f.txt",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+    },
+    {
+      "bytes": 1066,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e.txt",
+      "sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+    },
+    {
+      "bytes": 1035,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f.txt",
+      "sha256": "1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f"
+    },
+    {
+      "bytes": 1472,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee.txt",
+      "sha256": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"
+    },
+    {
+      "bytes": 1166,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd.txt",
+      "sha256": "1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd"
+    },
+    {
+      "bytes": 1023,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812.txt",
+      "sha256": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812"
+    },
+    {
+      "bytes": 1057,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    },
+    {
+      "bytes": 2333,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32.txt",
+      "sha256": "3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32"
+    },
+    {
+      "bytes": 1053,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c.txt",
+      "sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c"
+    },
+    {
+      "bytes": 1130,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b.txt",
+      "sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
+    },
+    {
+      "bytes": 1071,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb.txt",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    },
+    {
+      "bytes": 16727,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt",
+      "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172"
+    },
+    {
+      "bytes": 1097,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70.txt",
+      "sha256": "66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70"
+    },
+    {
+      "bytes": 1062,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt",
+      "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+    },
+    {
+      "bytes": 1071,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0.txt",
+      "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
+    },
+    {
+      "bytes": 1501,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50.txt",
+      "sha256": "838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50"
+    },
+    {
+      "bytes": 1052,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150.txt",
+      "sha256": "e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1.txt",
+      "sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
+    },
+    {
+      "bytes": 1097,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/crates/fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7.txt",
+      "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
+    },
+    {
+      "bytes": 44747,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/materials.json",
+      "sha256": "af2416bff64bded288207112b94f9916cbbcc02232664c1ff16be9b6a7d9c1a1"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "linux-aarch64/licenses/rust/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 10280,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/rust/Apache-2.0.txt",
+      "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+    },
+    {
+      "bytes": 1267,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/rust/BSD-2-Clause.txt",
+      "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df"
+    },
+    {
+      "bytes": 1499465,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/rust/COPYRIGHT-library.html",
+      "sha256": "5647be074c8edf7339fd863055923a8fc80bc5610a8d4661ec3b767b9d392c27"
+    },
+    {
+      "bytes": 1078,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/rust/MIT.txt",
+      "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/rust/Unicode-3.0.txt",
+      "sha256": "f5062c9a188d81dfe66b56db4182dcf9e4b17c0d9b0d311a8e20b3a1b075c443"
+    },
+    {
+      "bytes": 1383,
+      "kind": "file",
+      "path": "linux-aarch64/licenses/rust/source.json",
+      "sha256": "8c2f629e87ddddf67a24763f6b8f691ce0efc1d0620f309634555b530c455683"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "linux-x86_64/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 20164,
+      "kind": "file",
+      "path": "linux-x86_64/LICENSE",
+      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+    },
+    {
+      "bytes": 5901,
+      "kind": "file",
+      "path": "linux-x86_64/THIRD-PARTY-NOTICES.txt",
+      "sha256": "0bed8fa2d89a372d36d2cab95304a3664688ac5f3af41481bbe3be49c5305d86"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "linux-x86_64/licenses/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11817,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/activated-features.json",
+      "sha256": "fce34361b72c9eb70199e9c465ed444ccf378ac11f11aa150db8172132431025"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "linux-x86_64/licenses/crates/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7.txt",
+      "sha256": "0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7"
+    },
+    {
+      "bytes": 1081,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f.txt",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+    },
+    {
+      "bytes": 1066,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e.txt",
+      "sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+    },
+    {
+      "bytes": 1035,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f.txt",
+      "sha256": "1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f"
+    },
+    {
+      "bytes": 1472,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee.txt",
+      "sha256": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"
+    },
+    {
+      "bytes": 1166,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd.txt",
+      "sha256": "1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd"
+    },
+    {
+      "bytes": 1023,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812.txt",
+      "sha256": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812"
+    },
+    {
+      "bytes": 1057,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    },
+    {
+      "bytes": 2333,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32.txt",
+      "sha256": "3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32"
+    },
+    {
+      "bytes": 1053,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c.txt",
+      "sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c"
+    },
+    {
+      "bytes": 1130,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b.txt",
+      "sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
+    },
+    {
+      "bytes": 1071,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb.txt",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    },
+    {
+      "bytes": 16727,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt",
+      "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172"
+    },
+    {
+      "bytes": 1097,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70.txt",
+      "sha256": "66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70"
+    },
+    {
+      "bytes": 1062,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt",
+      "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+    },
+    {
+      "bytes": 1071,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0.txt",
+      "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
+    },
+    {
+      "bytes": 1501,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50.txt",
+      "sha256": "838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/8569ebf6bf52937b961d9c9c934d8400a2bb6b09651a9afacbb3fc18fe5c09b1.txt",
+      "sha256": "8569ebf6bf52937b961d9c9c934d8400a2bb6b09651a9afacbb3fc18fe5c09b1"
+    },
+    {
+      "bytes": 1052,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150.txt",
+      "sha256": "e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1.txt",
+      "sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
+    },
+    {
+      "bytes": 1097,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/crates/fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7.txt",
+      "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
+    },
+    {
+      "bytes": 45660,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/materials.json",
+      "sha256": "a429095b6d6ff7acb1ee867714851e9e9c8b05dfe763d443b0b48e193fe6d97c"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "linux-x86_64/licenses/rust/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 10280,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/rust/Apache-2.0.txt",
+      "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+    },
+    {
+      "bytes": 1267,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/rust/BSD-2-Clause.txt",
+      "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df"
+    },
+    {
+      "bytes": 1499465,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/rust/COPYRIGHT-library.html",
+      "sha256": "5647be074c8edf7339fd863055923a8fc80bc5610a8d4661ec3b767b9d392c27"
+    },
+    {
+      "bytes": 1078,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/rust/MIT.txt",
+      "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/rust/Unicode-3.0.txt",
+      "sha256": "f5062c9a188d81dfe66b56db4182dcf9e4b17c0d9b0d311a8e20b3a1b075c443"
+    },
+    {
+      "bytes": 1383,
+      "kind": "file",
+      "path": "linux-x86_64/licenses/rust/source.json",
+      "sha256": "8c2f629e87ddddf67a24763f6b8f691ce0efc1d0620f309634555b530c455683"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "macos-aarch64/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 20164,
+      "kind": "file",
+      "path": "macos-aarch64/LICENSE",
+      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+    },
+    {
+      "bytes": 6507,
+      "kind": "file",
+      "path": "macos-aarch64/THIRD-PARTY-NOTICES.txt",
+      "sha256": "41ada1362121031c9371ce16ce4b4592800dd09fff80bfc6fac972d4c2a41386"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "macos-aarch64/licenses/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 13372,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/activated-features.json",
+      "sha256": "fc9986b963e41eb545dd659c6067b4cdc13b6dbd7e515bd3980b7f98bbf14f37"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "macos-aarch64/licenses/crates/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7.txt",
+      "sha256": "0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7"
+    },
+    {
+      "bytes": 1081,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f.txt",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+    },
+    {
+      "bytes": 1066,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e.txt",
+      "sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+    },
+    {
+      "bytes": 1035,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f.txt",
+      "sha256": "1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f"
+    },
+    {
+      "bytes": 1472,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee.txt",
+      "sha256": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"
+    },
+    {
+      "bytes": 1166,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd.txt",
+      "sha256": "1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd"
+    },
+    {
+      "bytes": 1023,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812.txt",
+      "sha256": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812"
+    },
+    {
+      "bytes": 1057,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    },
+    {
+      "bytes": 2333,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32.txt",
+      "sha256": "3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32"
+    },
+    {
+      "bytes": 1053,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c.txt",
+      "sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c"
+    },
+    {
+      "bytes": 1130,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b.txt",
+      "sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
+    },
+    {
+      "bytes": 1071,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb.txt",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    },
+    {
+      "bytes": 16727,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt",
+      "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172"
+    },
+    {
+      "bytes": 1097,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70.txt",
+      "sha256": "66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70"
+    },
+    {
+      "bytes": 1062,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt",
+      "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+    },
+    {
+      "bytes": 1071,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0.txt",
+      "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
+    },
+    {
+      "bytes": 1501,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50.txt",
+      "sha256": "838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50"
+    },
+    {
+      "bytes": 1054,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/8764a597675778ddfd4e25f81b08a05dbcf089ac05662df7613fe67f150e3aa2.txt",
+      "sha256": "8764a597675778ddfd4e25f81b08a05dbcf089ac05662df7613fe67f150e3aa2"
+    },
+    {
+      "bytes": 1078,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5.txt",
+      "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "bytes": 1052,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150.txt",
+      "sha256": "e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1.txt",
+      "sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
+    },
+    {
+      "bytes": 1097,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/crates/fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7.txt",
+      "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
+    },
+    {
+      "bytes": 49584,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/materials.json",
+      "sha256": "4f591671dd706c892a8d28a272c32c5d571de3bca5829e9b91b1a08edf0cec39"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "macos-aarch64/licenses/objc2/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1339,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/objc2/LICENSE.md",
+      "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+    },
+    {
+      "bytes": 683,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/objc2/source.json",
+      "sha256": "2b65c098b4183d47454a1a37a0d2b375e82a909719842b5187dde67a4c4d9972"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "macos-aarch64/licenses/rust/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 10280,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/rust/Apache-2.0.txt",
+      "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+    },
+    {
+      "bytes": 1267,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/rust/BSD-2-Clause.txt",
+      "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df"
+    },
+    {
+      "bytes": 1499465,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/rust/COPYRIGHT-library.html",
+      "sha256": "5647be074c8edf7339fd863055923a8fc80bc5610a8d4661ec3b767b9d392c27"
+    },
+    {
+      "bytes": 1078,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/rust/MIT.txt",
+      "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/rust/Unicode-3.0.txt",
+      "sha256": "f5062c9a188d81dfe66b56db4182dcf9e4b17c0d9b0d311a8e20b3a1b075c443"
+    },
+    {
+      "bytes": 1383,
+      "kind": "file",
+      "path": "macos-aarch64/licenses/rust/source.json",
+      "sha256": "8c2f629e87ddddf67a24763f6b8f691ce0efc1d0620f309634555b530c455683"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "macos-x86_64/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 20164,
+      "kind": "file",
+      "path": "macos-x86_64/LICENSE",
+      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+    },
+    {
+      "bytes": 6619,
+      "kind": "file",
+      "path": "macos-x86_64/THIRD-PARTY-NOTICES.txt",
+      "sha256": "97709596fdc78917c7172fa2844ce55eab2c4d5f7898ce408c1c5b7dacbd0d87"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "macos-x86_64/licenses/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 13556,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/activated-features.json",
+      "sha256": "133d280df5b33ce8d81aa15236209d61da47c64b0177cb2ff7ccbd9aaadf4132"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "macos-x86_64/licenses/crates/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7.txt",
+      "sha256": "0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7"
+    },
+    {
+      "bytes": 1081,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f.txt",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+    },
+    {
+      "bytes": 1066,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e.txt",
+      "sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+    },
+    {
+      "bytes": 1035,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f.txt",
+      "sha256": "1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f"
+    },
+    {
+      "bytes": 1472,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee.txt",
+      "sha256": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"
+    },
+    {
+      "bytes": 1166,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd.txt",
+      "sha256": "1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd"
+    },
+    {
+      "bytes": 1023,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812.txt",
+      "sha256": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812"
+    },
+    {
+      "bytes": 1057,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    },
+    {
+      "bytes": 2333,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32.txt",
+      "sha256": "3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32"
+    },
+    {
+      "bytes": 1053,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c.txt",
+      "sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c"
+    },
+    {
+      "bytes": 1130,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b.txt",
+      "sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
+    },
+    {
+      "bytes": 1071,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb.txt",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+    },
+    {
+      "bytes": 16727,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt",
+      "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172"
+    },
+    {
+      "bytes": 1097,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70.txt",
+      "sha256": "66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70"
+    },
+    {
+      "bytes": 1062,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt",
+      "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+    },
+    {
+      "bytes": 1071,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0.txt",
+      "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
+    },
+    {
+      "bytes": 1501,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50.txt",
+      "sha256": "838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/8569ebf6bf52937b961d9c9c934d8400a2bb6b09651a9afacbb3fc18fe5c09b1.txt",
+      "sha256": "8569ebf6bf52937b961d9c9c934d8400a2bb6b09651a9afacbb3fc18fe5c09b1"
+    },
+    {
+      "bytes": 1054,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/8764a597675778ddfd4e25f81b08a05dbcf089ac05662df7613fe67f150e3aa2.txt",
+      "sha256": "8764a597675778ddfd4e25f81b08a05dbcf089ac05662df7613fe67f150e3aa2"
+    },
+    {
+      "bytes": 1078,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5.txt",
+      "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+    },
+    {
+      "bytes": 1052,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150.txt",
+      "sha256": "e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1.txt",
+      "sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
+    },
+    {
+      "bytes": 1097,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/crates/fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7.txt",
+      "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
+    },
+    {
+      "bytes": 50497,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/materials.json",
+      "sha256": "a6ce30a5a73845ae3afb85957cd551fc1397547c448e6d01867e1456737855cd"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "macos-x86_64/licenses/objc2/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1339,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/objc2/LICENSE.md",
+      "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+    },
+    {
+      "bytes": 683,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/objc2/source.json",
+      "sha256": "2b65c098b4183d47454a1a37a0d2b375e82a909719842b5187dde67a4c4d9972"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "macos-x86_64/licenses/rust/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 10280,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/rust/Apache-2.0.txt",
+      "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+    },
+    {
+      "bytes": 1267,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/rust/BSD-2-Clause.txt",
+      "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df"
+    },
+    {
+      "bytes": 1499465,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/rust/COPYRIGHT-library.html",
+      "sha256": "5647be074c8edf7339fd863055923a8fc80bc5610a8d4661ec3b767b9d392c27"
+    },
+    {
+      "bytes": 1078,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/rust/MIT.txt",
+      "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/rust/Unicode-3.0.txt",
+      "sha256": "f5062c9a188d81dfe66b56db4182dcf9e4b17c0d9b0d311a8e20b3a1b075c443"
+    },
+    {
+      "bytes": 1383,
+      "kind": "file",
+      "path": "macos-x86_64/licenses/rust/source.json",
+      "sha256": "8c2f629e87ddddf67a24763f6b8f691ce0efc1d0620f309634555b530c455683"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "windows-aarch64/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 20164,
+      "kind": "file",
+      "path": "windows-aarch64/LICENSE",
+      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+    },
+    {
+      "bytes": 5687,
+      "kind": "file",
+      "path": "windows-aarch64/THIRD-PARTY-NOTICES.txt",
+      "sha256": "e8afbd7f9814e26a3e206d82b1610b83727e875eccece47df6159182702cea63"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "windows-aarch64/licenses/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12714,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/activated-features.json",
+      "sha256": "e89d6edb0bd8fd140fd8c3783320f7b6c0435e4133c1f3d38cbc8bc6fc191e2d"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "windows-aarch64/licenses/crates/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7.txt",
+      "sha256": "0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7"
+    },
+    {
+      "bytes": 1081,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f.txt",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+    },
+    {
+      "bytes": 1035,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f.txt",
+      "sha256": "1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f"
+    },
+    {
+      "bytes": 1166,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd.txt",
+      "sha256": "1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd"
+    },
+    {
+      "bytes": 1023,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "bytes": 1057,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    },
+    {
+      "bytes": 2333,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32.txt",
+      "sha256": "3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32"
+    },
+    {
+      "bytes": 1053,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c.txt",
+      "sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c"
+    },
+    {
+      "bytes": 1130,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b.txt",
+      "sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
+    },
+    {
+      "bytes": 16727,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt",
+      "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172"
+    },
+    {
+      "bytes": 1062,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt",
+      "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+    },
+    {
+      "bytes": 1071,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0.txt",
+      "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
+    },
+    {
+      "bytes": 1501,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50.txt",
+      "sha256": "838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50"
+    },
+    {
+      "bytes": 1141,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt",
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    },
+    {
+      "bytes": 1052,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150.txt",
+      "sha256": "e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1.txt",
+      "sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
+    },
+    {
+      "bytes": 1097,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/crates/fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7.txt",
+      "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
+    },
+    {
+      "bytes": 46490,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/materials.json",
+      "sha256": "39010ade81171c576edaf17e27db6a596c26f8d79b8384db867f4f4d0e2d9d52"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "windows-aarch64/licenses/rust/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 10280,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/rust/Apache-2.0.txt",
+      "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+    },
+    {
+      "bytes": 1267,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/rust/BSD-2-Clause.txt",
+      "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df"
+    },
+    {
+      "bytes": 1499465,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/rust/COPYRIGHT-library.html",
+      "sha256": "5647be074c8edf7339fd863055923a8fc80bc5610a8d4661ec3b767b9d392c27"
+    },
+    {
+      "bytes": 1078,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/rust/MIT.txt",
+      "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/rust/Unicode-3.0.txt",
+      "sha256": "f5062c9a188d81dfe66b56db4182dcf9e4b17c0d9b0d311a8e20b3a1b075c443"
+    },
+    {
+      "bytes": 1383,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/rust/source.json",
+      "sha256": "8c2f629e87ddddf67a24763f6b8f691ce0efc1d0620f309634555b530c455683"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "windows-aarch64/licenses/windows-runtime/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 16706,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/windows-runtime/llvm-libunwind-LICENSE.TXT",
+      "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d"
+    },
+    {
+      "bytes": 2326,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/windows-runtime/mingw-COPYING",
+      "sha256": "99a69660981156c21336fdb5661f89341b013c94e4bf9e1c7467b4745718397f"
+    },
+    {
+      "bytes": 12155,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/windows-runtime/mingw-COPYING-runtime.txt",
+      "sha256": "1db8da07b436c68833c0673ffee3d9fcb2526047f3820b81661865dfedc79a1f"
+    },
+    {
+      "bytes": 454,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/windows-runtime/mingw-DISCLAIMER.PD",
+      "sha256": "87f33608570312a0f2a9745edcb2527275df813b13982e8c3b3f893d88a4141a"
+    },
+    {
+      "bytes": 2245,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/windows-runtime/mingw-complex-internal-notice.txt",
+      "sha256": "039ed6b4f31bb7fb97e733170b58cc435335352e4745734fcfd113877fdaf340"
+    },
+    {
+      "bytes": 576,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/windows-runtime/mingw-pseudo-reloc-notice.txt",
+      "sha256": "dbbfb94ffaf8485105d420393f75108d3c14e6dd68a2dcf2ed7d9ea657e66737"
+    },
+    {
+      "bytes": 3770,
+      "kind": "file",
+      "path": "windows-aarch64/licenses/windows-runtime/source.json",
+      "sha256": "519a65a3b489dc2f9ddafbfd89cd3c733ace32231460a927e9d012cd407b911f"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "windows-x86_64/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 20164,
+      "kind": "file",
+      "path": "windows-x86_64/LICENSE",
+      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+    },
+    {
+      "bytes": 5799,
+      "kind": "file",
+      "path": "windows-x86_64/THIRD-PARTY-NOTICES.txt",
+      "sha256": "d1d841e33603679078e50636246f610348cf26f6963174ede6d22ec849a990d3"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "windows-x86_64/licenses/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12898,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/activated-features.json",
+      "sha256": "4d22342ed4e905184714093e0ecce7265d5a516c1e1d9899994f9dc7fb898af6"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "windows-x86_64/licenses/crates/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7.txt",
+      "sha256": "0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7"
+    },
+    {
+      "bytes": 1081,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f.txt",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+    },
+    {
+      "bytes": 1035,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f.txt",
+      "sha256": "1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f"
+    },
+    {
+      "bytes": 1166,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd.txt",
+      "sha256": "1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd"
+    },
+    {
+      "bytes": 1023,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "bytes": 1057,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397.txt",
+      "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+    },
+    {
+      "bytes": 2333,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32.txt",
+      "sha256": "3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32"
+    },
+    {
+      "bytes": 1053,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c.txt",
+      "sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c"
+    },
+    {
+      "bytes": 1130,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b.txt",
+      "sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
+    },
+    {
+      "bytes": 16727,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt",
+      "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172"
+    },
+    {
+      "bytes": 1062,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt",
+      "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+    },
+    {
+      "bytes": 1071,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0.txt",
+      "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
+    },
+    {
+      "bytes": 1501,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50.txt",
+      "sha256": "838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50"
+    },
+    {
+      "bytes": 1076,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/8569ebf6bf52937b961d9c9c934d8400a2bb6b09651a9afacbb3fc18fe5c09b1.txt",
+      "sha256": "8569ebf6bf52937b961d9c9c934d8400a2bb6b09651a9afacbb3fc18fe5c09b1"
+    },
+    {
+      "bytes": 1141,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt",
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    },
+    {
+      "bytes": 1052,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150.txt",
+      "sha256": "e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1.txt",
+      "sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
+    },
+    {
+      "bytes": 1097,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/crates/fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7.txt",
+      "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
+    },
+    {
+      "bytes": 47403,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/materials.json",
+      "sha256": "698eb649c3121dfc52adbf62ca58cc2209a88cd44ae7e194a273c2c77acc538d"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "windows-x86_64/licenses/rust/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 10280,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/rust/Apache-2.0.txt",
+      "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+    },
+    {
+      "bytes": 1267,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/rust/BSD-2-Clause.txt",
+      "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df"
+    },
+    {
+      "bytes": 1499465,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/rust/COPYRIGHT-library.html",
+      "sha256": "5647be074c8edf7339fd863055923a8fc80bc5610a8d4661ec3b767b9d392c27"
+    },
+    {
+      "bytes": 1078,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/rust/MIT.txt",
+      "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0"
+    },
+    {
+      "bytes": 1995,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/rust/Unicode-3.0.txt",
+      "sha256": "f5062c9a188d81dfe66b56db4182dcf9e4b17c0d9b0d311a8e20b3a1b075c443"
+    },
+    {
+      "bytes": 1383,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/rust/source.json",
+      "sha256": "8c2f629e87ddddf67a24763f6b8f691ce0efc1d0620f309634555b530c455683"
+    },
+    {
+      "bytes": 0,
+      "kind": "directory",
+      "path": "windows-x86_64/licenses/windows-runtime/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 16706,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/windows-runtime/llvm-libunwind-LICENSE.TXT",
+      "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d"
+    },
+    {
+      "bytes": 2326,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/windows-runtime/mingw-COPYING",
+      "sha256": "99a69660981156c21336fdb5661f89341b013c94e4bf9e1c7467b4745718397f"
+    },
+    {
+      "bytes": 12155,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/windows-runtime/mingw-COPYING-runtime.txt",
+      "sha256": "1db8da07b436c68833c0673ffee3d9fcb2526047f3820b81661865dfedc79a1f"
+    },
+    {
+      "bytes": 454,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/windows-runtime/mingw-DISCLAIMER.PD",
+      "sha256": "87f33608570312a0f2a9745edcb2527275df813b13982e8c3b3f893d88a4141a"
+    },
+    {
+      "bytes": 2245,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/windows-runtime/mingw-complex-internal-notice.txt",
+      "sha256": "039ed6b4f31bb7fb97e733170b58cc435335352e4745734fcfd113877fdaf340"
+    },
+    {
+      "bytes": 576,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/windows-runtime/mingw-pseudo-reloc-notice.txt",
+      "sha256": "dbbfb94ffaf8485105d420393f75108d3c14e6dd68a2dcf2ed7d9ea657e66737"
+    },
+    {
+      "bytes": 3770,
+      "kind": "file",
+      "path": "windows-x86_64/licenses/windows-runtime/source.json",
+      "sha256": "519a65a3b489dc2f9ddafbfd89cd3c733ace32231460a927e9d012cd407b911f"
+    }
+  ],
+  "scope": "generated notice output identity only; source-material review is separate"
+}

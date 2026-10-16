@@ -2,7 +2,7 @@
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     io::Write,
     path::{Path, PathBuf},
     process::Command,
@@ -117,6 +117,33 @@ struct BuildPlan {
     #[serde(flatten)]
     distribution: Plan,
     xcode: Xcode,
+    tools: BTreeMap<String, String>,
+}
+
+fn tool_versions(input: &str) -> Result<BTreeMap<String, String>> {
+    let document: toml::Value = toml::from_str(input)?;
+    let tools: BTreeMap<String, String> = document
+        .get("versions")
+        .ok_or("Missing developer tool versions")?
+        .clone()
+        .try_into()?;
+    if tools.is_empty()
+        || tools.iter().any(|(name, version)| {
+            name.is_empty()
+                || name.len() > 64
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+                || version.is_empty()
+                || version.len() > 64
+                || !version
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+        })
+    {
+        return Err("Invalid developer tool identity".into());
+    }
+    Ok(tools)
 }
 
 impl Target {
@@ -352,9 +379,11 @@ pub(crate) fn run(root: &Path) -> Result<()> {
     }
     let version = workspace_version(root, &metadata.stdout)?;
     let plan = table.plan(version)?;
+    let tool_input = std::fs::read_to_string(root.join("xtask/tools.toml"))?;
     let plan = BuildPlan {
         distribution: plan,
-        xcode: Xcode::parse(&std::fs::read_to_string(root.join("xtask/tools.toml"))?)?,
+        xcode: Xcode::parse(&tool_input)?,
+        tools: tool_versions(&tool_input)?,
     };
     let mut bytes = serde_json::to_vec(&plan)?;
     bytes.push(b'\n');
@@ -371,6 +400,23 @@ pub(crate) fn run(root: &Path) -> Result<()> {
 mod tests {
     use super::*;
     const TABLE: &str = include_str!("../distribution.toml");
+
+    #[test]
+    fn developer_tool_output_uses_the_same_validated_pin_authority() {
+        let tools = tool_versions(include_str!("../tools.toml")).unwrap();
+        assert_eq!(tools["cargo_about"], "0.9.2");
+        assert_eq!(tools["fuzz_compiler"], "nightly-2026-09-30");
+        for invalid in [
+            "",
+            "[versions]",
+            "[versions]\ncargo_about=1",
+            "[versions]\n'bad key'='1'",
+            "[versions]\ncargo_about='../1'",
+            "[versions]\ncargo_about='1 2'",
+        ] {
+            assert!(tool_versions(invalid).is_err());
+        }
+    }
 
     #[test]
     fn xcode_input_rejects_missing_unknown_and_unsafe_path_components() {

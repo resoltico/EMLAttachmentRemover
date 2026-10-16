@@ -1,0 +1,160 @@
+EML Attachment Remover 6.0.0
+Target: aarch64-apple-darwin (macos-aarch64)
+
+These materials cover the target-selected locked CLI normal/build dependency graph. Build and proc-macro materials are included conservatively; this list does not assert that every listed crate is linked application code.
+
+Full Rust standard-library copyright, nested exceptions and source pointers: licenses/rust/COPYRIGHT-library.html and licenses/rust/source.json. Associated complete license texts are in that directory.
+
+Complete selected crate texts and source-specific notices:
+
+utf8parse@0.2.2 — MIT
+  licenses/crates/e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150.txt
+
+objc2@0.6.5 — MIT
+  licenses/crates/b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5.txt
+
+clap_lex@1.1.1 — MIT
+  licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt
+
+colorchoice@1.0.5 — MIT
+  licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt
+
+dispatch2@0.3.1 — MIT
+  licenses/crates/b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5.txt
+
+quote@1.0.47 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+heck@0.5.0 — MIT
+  licenses/crates/7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0.txt
+
+zmij@1.0.23 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+getrandom@0.4.3 — MIT
+  licenses/crates/523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b.txt
+
+errno@0.3.14 — MIT
+  licenses/crates/8764a597675778ddfd4e25f81b08a05dbcf089ac05662df7613fe67f150e3aa2.txt
+
+bitflags@2.13.2 — MIT
+  licenses/crates/6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb.txt
+
+anstyle-query@1.1.5 — MIT
+  licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt
+
+serde@1.0.229 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+cfg-if@1.0.5 — MIT
+  licenses/crates/378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397.txt
+
+anstyle-parse@1.0.0 — MIT
+  licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt
+
+serde_core@1.0.229 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+base64@0.22.1 — MIT
+  licenses/crates/0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7.txt
+
+multiversion_no_op@1.0.0 — MIT
+  licenses/crates/3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c.txt
+
+strsim@0.11.1 — MIT
+  licenses/crates/1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd.txt
+
+anstream@1.0.0 — MIT
+  licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt
+
+rustix@1.1.5 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+encoding_rs@0.8.42 — BSD-3-Clause
+  licenses/crates/3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32.txt
+
+encoding_rs@0.8.42 — MIT
+  licenses/crates/3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c.txt
+
+encoding_rs@0.8.42 — BSD-3-Clause
+  licenses/crates/838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50.txt
+
+itoa@1.0.18 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+anstyle@1.0.14 — MIT
+  licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt
+
+scopeguard@1.2.0 — MIT
+  licenses/crates/fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7.txt
+
+proc-macro2@1.0.107 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+unicode-ident@1.0.27 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+unicode-ident@1.0.27 — Unicode-3.0
+  licenses/crates/f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1.txt
+
+is_terminal_polyfill@1.70.2 — MIT
+  licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt
+
+clap@4.6.7 — MIT
+  licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt
+
+block2@0.6.2 — MIT
+  licenses/crates/b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5.txt
+
+libc@0.2.190 — MIT
+  licenses/crates/123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e.txt
+
+nix@0.31.3 — MIT
+  licenses/crates/66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70.txt
+
+rustversion@1.0.23 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+memchr@2.8.3 — MIT
+  licenses/crates/0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f.txt
+
+syn@3.0.9 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+ctrlc@3.5.2 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+simdutf8@0.1.5 — MIT
+  licenses/crates/1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f.txt
+
+serde_derive@1.0.229 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+serde_json@1.0.154 — MIT
+  licenses/crates/23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3.txt
+
+clap_builder@4.6.7 — MIT
+  licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt
+
+objc2-encode@4.1.0 — MIT
+  licenses/crates/b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5.txt
+
+cfg_aliases@0.2.2 — MIT
+  licenses/crates/1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee.txt
+
+cfg_aliases@0.2.2 — MIT
+  licenses/crates/31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812.txt
+
+clap_derive@4.6.7 — MIT
+  licenses/crates/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt
+
+eml-core@6.0.0 — MPL-2.0
+  licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt
+
+eml-fs@6.0.0 — MPL-2.0
+  licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt
+
+remove-eml-attachments@6.0.0 — MPL-2.0
+  licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt
+
+objc2-family upstream licensing explanation and exact revisions: licenses/objc2/LICENSE.md and source.json. The identified standard MIT template is included separately; its copyright placeholders are not an upstream attribution. The upstream Apple SDK discussion is retained unchanged.
