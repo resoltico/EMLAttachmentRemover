@@ -7,7 +7,7 @@ pub enum ErrorPhase {
     Admission,
     /// Ordered source discovery.
     Collection,
-    /// Stable bounded source reading.
+    /// Stable bounded reading or binding of a required file.
     Read,
     /// Pure MIME preparation and independent verification.
     Prepare,
@@ -98,7 +98,7 @@ macro_rules! error_codes {
     };
 }
 error_codes! {
-    ReadFailed => "READ_FAILED", [Admission, Collection, Read], "Source reading failed.";
+    ReadFailed => "READ_FAILED", [Admission, Collection, Read], "A required file could not be read.";
     SourceNotRegular => "SOURCE_NOT_REGULAR", [Admission, Collection, Read], "The selected object is not a regular disk file.";
     SourceChanged => "SOURCE_CHANGED", [Admission, Collection, Read, Publish], "An observable source identity, binding or signature changed.";
     Malformed => "MALFORMED", [Prepare], "MIME syntax or structure is ambiguous or damaged.";

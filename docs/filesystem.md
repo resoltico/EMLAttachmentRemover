@@ -476,9 +476,10 @@ hash injection exercises true collisions and deterministic RunControl/owned-empt
 directory-removal boundaries while the filesystem remains real. It does not
 qualify another-user interference, mount setup or a signal adapter. Windows
 literal-parent/source-native and static junction cases passed on both native CPUs.
-Source and bounded six-platform native review closed at dfc3c76; naming/
-destinations/reservations, MIME execution, event emission and writable run are
-still required.
+Source and bounded six-platform native review closed at dfc3c76. Structural
+planning and read-only comparison qualified in subsequent checkpoints below;
+serial dry-run execution is now being verified. Writable execution remains
+unfinished.
 
 Complete Windows literal operands use the existing extended validation branch
 after append; ordinary normalization is not repeated on literal names. The one
@@ -516,3 +517,29 @@ observation and existing stability separately from the source/binding/data error
 The final workflow must enforce no-follow destination opening and reject every
 selected-source and prior-created identity; this narrow operation sees only the
 currently prepared source. It performs no flush or write.
+
+The explicit core dry_run capability now performs serial preparation and existing
+comparison through typed start/item/summary events. It requires RunMode::DryRun
+before I/O or events; Create is not silently converted. It rebinds destination
+parents in the captured context, compares every frozen observed prefix identity,
+and refuses an invalidated naming assumption without calling that proof of an
+address change. POSIX relative operations remain anchored to the captured
+working-directory descriptor if its address moves. A source parent's cooperative
+stop is distinct from native failure and maps to the execution phase without
+parsing text or replacing genuine I/O errors with cancellation.
+
+The workflow admits complete removal metadata against20,000 entries before
+reporting it. Metadata on a reported failure remains charged; an over-budget item
+fails without retaining its removal list. Typed item metadata borrows only the
+current prepared source, and RunOutcome keeps counts and run/delivery facts rather
+than a message list. Each terminal result is counted before checked delivery.
+Failed delivery stops later work/emission and does not request user cancellation.
+A successful terminal summary fixes the outcome; a later Stop cannot rewrite its
+exit class. A failed summary can retain delivery failure and observed user-stop
+precedence because no complete successful stream is claimed.
+
+This operation never creates missing parents, stages, publishes or synchronizes.
+Create/UpToDate success wrappers have no constructors until their actual native
+qualification consumers exist. Full writable execution, Windows ancestor/address
+qualification and existing-copy synchronization remain unfinished. Dry-run native
+qualification is pending.

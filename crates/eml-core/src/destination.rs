@@ -208,20 +208,7 @@ pub fn plan_destinations<'a>(
         result.state = DestinationPlanState::CollectionBlocked;
         return result;
     }
-    let mut ids: HashSet<Identity> = result
-        .sources
-        .items()
-        .iter()
-        .filter_map(|item| match item.observation() {
-            CollectedObservation::File { signature, .. } => Some(signature.identity),
-            _ => None,
-        })
-        .collect();
-    for root in &result.sources.roots {
-        if let RootKind::File(signature, _) = root.kind {
-            ids.insert(signature.identity);
-        }
-    }
+    let ids = source_identities(&result.sources);
     let mut reservations: HashMap<DestinationKey, Vec<usize>> = HashMap::new();
     for index in 0..result.records.len() {
         if control.is_stopped() {
@@ -340,11 +327,45 @@ fn checkpoint(control: &RunControl) -> Result<(), OperationFailure> {
         Ok(())
     }
 }
-fn source_parent(
+pub(super) enum ParentBindingError {
+    Interrupted,
+    Failure(OperationFailure),
+}
+impl From<OperationFailure> for ParentBindingError {
+    fn from(error: OperationFailure) -> Self {
+        Self::Failure(error)
+    }
+}
+impl ParentBindingError {
+    pub(super) fn during_execution(self, phase: ErrorPhase) -> OperationFailure {
+        match self {
+            Self::Interrupted => OperationFailure::new(
+                ErrorCode::Interrupted,
+                phase,
+                "Source parent binding interrupted before publication",
+            ),
+            Self::Failure(error) => error,
+        }
+    }
+    fn during_planning(self) -> OperationFailure {
+        match self {
+            Self::Interrupted => OperationFailure::new(
+                ErrorCode::BindFailed,
+                ErrorPhase::Admission,
+                "Structural planning stopped",
+            ),
+            Self::Failure(error) => error,
+        }
+    }
+}
+pub(super) fn source_parent(
     sources: &CollectedSources<'_>,
     index: usize,
     control: &RunControl,
-) -> Result<BoundDirectory, OperationFailure> {
+) -> Result<BoundDirectory, ParentBindingError> {
+    if control.is_stopped() {
+        return Err(ParentBindingError::Interrupted);
+    }
     let item = &sources.items()[index];
     let CollectedObservation::File { parent, .. } = item.observation() else {
         unreachable!("caller skips collection failures")
@@ -369,17 +390,20 @@ fn source_parent(
             unreachable!("walked file has directory root")
         };
         if selected.identity() != expected {
-            return Err(changed("Selected source directory changed before planning"));
+            return Err(changed("Selected source directory differs from inventory").into());
         }
         let mut current = selected;
         if let Some(parent_suffix) = item.relative_path().parent() {
             for part in parent_suffix.components() {
-                checkpoint(control)?;
+                if control.is_stopped() {
+                    return Err(ParentBindingError::Interrupted);
+                }
                 let Component::Normal(name) = part else {
                     return Err(native_failure(
                         "Invalid discovered source-parent suffix",
                         io::Error::from(io::ErrorKind::InvalidInput),
-                    ));
+                    )
+                    .into());
                 };
                 let observed = current.observe_child(name).map_err(|error| {
                     native_failure("Discovered source parent could not be inspected", error)
@@ -387,13 +411,14 @@ fn source_parent(
                 if observed.kind != EntryKind::Directory {
                     return Err(changed(
                         "Discovered source parent is no longer an ordinary directory",
-                    ));
+                    )
+                    .into());
                 }
                 let opened = current.open_child(name).map_err(|error| {
                     native_failure("Discovered source parent could not be opened", error)
                 })?;
                 if opened.identity() != observed.identity {
-                    return Err(changed("Discovered parent changed while reopening"));
+                    return Err(changed("Discovered parent changed while reopening").into());
                 }
                 current = opened;
             }
@@ -401,7 +426,7 @@ fn source_parent(
         current
     };
     if directory.identity() != *parent {
-        return Err(changed("Source parent differs from inventory"));
+        return Err(changed("Source parent differs from inventory").into());
     }
     Ok(directory)
 }
@@ -492,7 +517,8 @@ fn plan_one(
     let beside;
     let base = match &sources.request.output {
         OutputLocation::BesideSource => {
-            beside = source_parent(sources, index, control)?;
+            beside = source_parent(sources, index, control)
+                .map_err(ParentBindingError::during_planning)?;
             &beside
         }
         OutputLocation::Directory(_) => {
@@ -667,4 +693,181 @@ fn is_source_alias(
         }
     }
     false
+}
+
+pub(super) fn source_identities(sources: &CollectedSources<'_>) -> HashSet<Identity> {
+    let mut ids: HashSet<_> = sources
+        .items()
+        .iter()
+        .filter_map(|item| match item.observation() {
+            CollectedObservation::File { signature, .. } => Some(signature.identity),
+            _ => None,
+        })
+        .collect();
+    for root in &sources.roots {
+        if let RootKind::File(signature, _) = root.kind {
+            ids.insert(signature.identity);
+        }
+    }
+    ids
+}
+
+impl DestinationPlan<'_> {
+    /// Rebind only ordinary existing parents against frozen prefix identities.
+    /// None means a positively missing tail; never creates or probes a directory.
+    pub(super) fn bind_parent(
+        &self,
+        index: usize,
+        control: &RunControl,
+    ) -> Result<Option<BoundDirectory>, OperationFailure> {
+        let info = self.records[index]
+            .destination()
+            .expect("caller requires a known destination");
+        let context = self
+            .sources
+            .context
+            .as_ref()
+            .expect("complete collection context");
+        let mut current = match &self.sources.request.output {
+            OutputLocation::BesideSource => source_parent(&self.sources, index, control)
+                .map_err(|error| error.during_execution(ErrorPhase::Existing))?,
+            OutputLocation::Directory(root) => context
+                .directory(root)
+                .map_err(destination_binding_failure)?,
+        };
+        if current.identity() != info.existing_prefix[0] {
+            return Err(address_changed(
+                "Destination root differs from its planned binding",
+            ));
+        }
+        if matches!(self.sources.request.output, OutputLocation::Directory(_)) {
+            let route = mirrored_route(&self.sources, index, &self.labels);
+            for (offset, part) in route.components().enumerate() {
+                if control.is_stopped() {
+                    return Err(execution_interrupted());
+                }
+                let Component::Normal(name) = part else {
+                    unreachable!("private frozen mirror route");
+                };
+                let observed = current.observe_child_if_present(name).map_err(|error| {
+                    execution_native_failure("Destination parent cannot be inspected", error)
+                })?;
+                let Some(observed) = observed else {
+                    if offset + 1 < info.existing_prefix.len() {
+                        return Err(address_changed(
+                            "Previously observed destination parent is missing",
+                        ));
+                    }
+                    check_parent_assumption(&current, info.limit)?;
+                    return Ok(None);
+                };
+                if observed.kind != EntryKind::Directory {
+                    return Err(OperationFailure::new(
+                        ErrorCode::DestinationExists,
+                        ErrorPhase::Existing,
+                        "Destination parent is not an ordinary directory",
+                    ));
+                }
+                let opened = current.open_child(name).map_err(|error| {
+                    execution_native_failure("Destination parent cannot be opened", error)
+                })?;
+                if opened.identity() != observed.identity
+                    || info
+                        .existing_prefix
+                        .get(offset + 1)
+                        .is_some_and(|expected| *expected != opened.identity())
+                {
+                    return Err(address_changed(
+                        "Destination parent differs from its planned binding",
+                    ));
+                }
+                current = opened;
+            }
+        }
+        check_parent_assumption(&current, info.limit)?;
+        Ok(Some(current))
+    }
+}
+fn address_changed(detail: &'static str) -> OperationFailure {
+    OperationFailure::new(ErrorCode::AddressChanged, ErrorPhase::Address, detail)
+}
+fn execution_interrupted() -> OperationFailure {
+    OperationFailure::new(
+        ErrorCode::Interrupted,
+        ErrorPhase::Existing,
+        "Destination binding interrupted before publication",
+    )
+}
+fn check_parent_assumption(current: &BoundDirectory, limit: usize) -> Result<(), OperationFailure> {
+    if current.name_limit().map_err(|error| {
+        execution_native_failure("Destination name limit cannot be revalidated", error)
+    })? != limit
+    {
+        return Err(OperationFailure::new(
+            ErrorCode::BindFailed,
+            ErrorPhase::Read,
+            "Destination name limit invalidates the frozen naming assumption",
+        ));
+    }
+    Ok(())
+}
+fn execution_native_failure(detail: &'static str, error: io::Error) -> OperationFailure {
+    OperationFailure::io(ErrorCode::BindFailed, ErrorPhase::Read, detail, error)
+}
+fn destination_binding_failure(error: SelectionError) -> OperationFailure {
+    match error {
+        SelectionError::Io(error) => {
+            execution_native_failure("Destination root cannot be bound", error)
+        }
+        #[cfg(windows)]
+        SelectionError::Changed => OperationFailure::new(
+            ErrorCode::AddressUnverified,
+            ErrorPhase::Address,
+            "Destination root cannot be consistently resolved",
+        ),
+    }
+}
+
+#[cfg(test)]
+mod execution_tests {
+    use super::*;
+    #[test]
+    fn parent_stop_and_failed_observation_have_distinct_execution_results() {
+        for phase in [ErrorPhase::Read, ErrorPhase::Existing] {
+            let stopped = ParentBindingError::Interrupted.during_execution(phase);
+            assert_eq!(
+                (stopped.code(), stopped.phase()),
+                (ErrorCode::Interrupted, phase)
+            );
+            let native = ParentBindingError::Failure(execution_native_failure(
+                "Required parent observation failed",
+                io::Error::from_raw_os_error(5),
+            ))
+            .during_execution(phase);
+            assert_eq!(
+                (native.code(), native.phase()),
+                (ErrorCode::BindFailed, ErrorPhase::Read)
+            );
+            assert_eq!(native.native_error().unwrap().raw_os_error(), Some(5));
+        }
+    }
+    #[test]
+    fn invalidated_name_limit_is_a_binding_refusal_without_address_change() {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/destination-tests");
+        std::fs::create_dir_all(&base).unwrap();
+        let root = tempfile::tempdir_in(base).unwrap();
+        let context = crate::selection::WorkingContext::capture(root.path()).unwrap();
+        let directory = context
+            .directory(Path::new("."))
+            .unwrap_or_else(|_| panic!("Owned ordinary directory must bind"));
+        let observed = directory.name_limit().unwrap();
+        let error = check_parent_assumption(&directory, observed + 1).unwrap_err();
+        assert_eq!(
+            (error.code(), error.phase()),
+            (ErrorCode::BindFailed, ErrorPhase::Read)
+        );
+        drop(directory);
+        drop(context);
+        root.close().unwrap();
+    }
 }

@@ -8,9 +8,22 @@ mod destination;
 #[cfg(any(unix, windows))]
 mod existing;
 #[cfg(any(unix, windows))]
+mod outcome;
+#[cfg(any(unix, windows))]
+mod run;
+#[cfg(any(unix, windows))]
 pub use existing::{
     ComparedExisting, ExistingComparisonError, ExistingComparisonFailure, compare_existing,
 };
+#[cfg(any(unix, windows))]
+pub use outcome::{
+    AddressState, Counts, CreatedCopy, DeliveryFailure, DeliveryPhase, Event, EventSink,
+    ExistingCopy, ExistingObservation, ExitClass, FailureEffect, ItemEvent, ItemFailure,
+    ItemResult, MessageMetadata, NamespaceObservation, PlanAction, PlannedCopy, PublishedCopy,
+    ReportPath, RunOutcome, RunStart, UnknownPublication,
+};
+#[cfg(any(unix, windows))]
+pub use run::{MAX_REMOVAL_ENTRIES, dry_run};
 #[cfg(any(unix, windows))]
 mod failure;
 #[cfg(any(unix, windows))]

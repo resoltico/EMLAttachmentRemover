@@ -137,3 +137,23 @@ later enforce that condition and preserve all observed publication effects.
 | INTERRUPTED | read/prepare/existing/stage/write/sync/address/publish |
 | OUTPUT_FAILED | delivery |
 <!-- error-vocabulary:end -->
+
+## Typed core execution observations
+
+Core dry_run now emits borrowed typed start/item/summary values through EventSink;
+JSON framing/rendering and the executable remain unfinished. The read-only
+operation explicitly requires a DryRun request before I/O/events and never
+substitutes for general Create execution. Core counts completed terminal results
+once before delivery, including an item whose delivery fails. Transport failure
+is independent of RunControl, preserves completed results and prevents later
+emission. A successfully delivered summary fixes its exit class; subsequent stop
+requests do not retroactively change that completed stream. Summary delivery
+failure remains explicit in the returned outcome.
+
+Existing bytes_equal is unknown (null on the eventual wire) when no complete
+comparison occurred; it must not be manufactured as false or true from an I/O
+failure. Actual comparison/stability, requested-address state, publication effect,
+file sync, namespace sync and cleanup are independent facts. None synchronization
+is explicitly unattempted, not a successful native receipt. Namespace aggregation
+must qualify its represented method/outcome across the counted ordered edge set;
+a final edge's stronger method cannot erase a prior limited/failed request.

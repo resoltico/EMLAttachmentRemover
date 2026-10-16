@@ -1356,3 +1356,81 @@ Formatting, diff and workflow actionlint checks also passed. Independent design,
 source/test/workflow QA closed this read-only scope. Native comparison runtime
 remains pending.
 No file synchronization, output creation, CLI or frontend capability is claimed.
+
+At exact `55f51707d17b6890e651bc7a227ec333a7737524`,
+[Unix run38885524455](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38885524455)
+passed all seven jobs. Each four-host filesystem run executed all five new
+comparison unit controls and five actual Unix integrations exactly once; actual
+core29/collection11/destination11/existing5/source6/request9/diagnostic3/path6/
+decoder16 all passed0failed/ignored/filtered. FS31Mac/27Linux, real cross-UID/ACL
+controls and default process18 on both probe hosts remained successful.
+[Windows run38885524041](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38885524041)
+executed all five new comparison controls and four actual integrations exactly
+once on both native CPUs, including retained read-only handle writer exclusion.
+Core28/collection12/destination11/existing4/source5/request9/diagnostic3/path6/
+decoder16 passed with zero failures/ignores/filters. FS41nongate/1filter passed;
+each actual old strict gate remained0passed/1failed/0ignored/41filtered, the only
+failed step per CPU. Windows overall remains FAILED. Independent exact-head/raw/
+discovery QA closed bounded read-only comparison. Full retained logs are
+ target/55f5170-unix-ci.log and target/55f5170-windows-ci.log. This head does not
+contain the subsequent dry_run driver or qualify resynchronization/publication.
+
+## Serial read-only execution and typed outcomes
+
+The real public dry_run library operation now consumes collection/planning,
+reopens one stable source, uses the one MIME preparation engine, admits metadata,
+and inspects/compares existing copies serially. DryRunModeRequired rejects a
+Create request before I/O/events. No general Create run, CLI executable or GUI is
+claimed. The final shared typed model separates intended paths, terminal results,
+publication effects, existing knowledge, receipts and delivery. CreatedCopy and
+ExistingCopy qualification values have no constructors until their real native
+consumers exist; failed published evidence does not qualify a Created result.
+Events borrow only current metadata; final RunOutcome retains counts, discovery,
+interruption and run/delivery failure rather than message byte buffers/item lists.
+
+Independent challenge corrected stale absolute POSIX cwd reopens, cancellation
+coercion, destination-role error mapping, invalidated-limit/address confusion,
+failed metadata inspection/presence confusion and same-ID signature/address
+classification. Source parent binding now carries a distinct stop result; genuine
+native failures remain native failures. Contextual parent rebinding compares
+frozen prefixes and name assumptions without global cwd changes or live-absolute
+rebasing. The final existing lookup distinguishes exact absence, different IDs,
+same-ID signature/type changes and unverified lookup; reached byte observations
+remain separate. Successful summary delivery fixes the returned semantic exit;
+a late Stop cannot contradict its completed stream. Failed delivery never calls
+RunControl, stops later work/emission and preserves predelivery terminal counts.
+
+Eighteen actual Unix integrations/seventeen Windows cases cover MIME preparation,
+mirrored Create plans, readonly VerifyExisting plans without sync, different-copy
+conflict, gapped explicit-root failure, no inputs/overlap, real4097 collection
+refusal without processing a subset, stop and delivery boundaries, all-contender
+collision, strong current all-source identity reservation, mode/output admission,
+owned source/output address transitions and exact20,000/+1 metadata admission.
+Already reported failure metadata remains charged. Native name tests use actual
+Linux non-UTF8 bytes, Windows unpaired UTF16 and macOS combining Unicode; they do
+not claim Mac invalid-UTF8 creation. Unix additionally proves captured-relative
+I/O after the cwd moves and its old pathname is replaced. These are controlled
+owned event-boundary transitions, not concurrent interference/signal evidence.
+Three focused unit controls cover typed stop/native-error classification, a
+queried actual-volume name limit with a deliberately invalidated assumption, and
+actual owned unchanged/missing/different-ID/same-ID changed entries. Their raw
+error/type alternatives are labeled scripted classification, not OS fault or
+file-to-directory conversion evidence.
+
+Final stable cargo test --locked --workspace exited0:235 passes across18 positive
+suites/six expected empty suites, zero failures/ignores/filters
+(target/dry-run-workspace-final.log). After the final classification fix, focused
+core32/dry_run18 passed0failed/ignored/filtered
+(target/dry-run-final-classification.log). Host workspace and MSVC three-package
+all-target Clippy, native-probe all-target check, workflow actionlint, formatting
+and diff checks passed. Initial source/lint findings were fixed without waivers.
+Independent source/API/test/workflow review closed with the corrections above;
+Windows workflows require six positive unfiltered core suites. Expected native
+execution is core32/dry_run18 on Unix and31/17 on Windows. Native runtime for this
+slice remains pending; no cross-compilation result qualifies that gate.
+
+No output directories, staging, publication or synchronization occur here. Real
+new-copy/UpToDate qualification, Windows existing-file sync and ancestor/address
+binding, CLI/GUI, packaging and required final archive/native/GUI gates remain
+unfinished. The unchanged Windows creation gate remains FAILED; no overall
+product/WP acceptance follows from this bounded read-only operation.

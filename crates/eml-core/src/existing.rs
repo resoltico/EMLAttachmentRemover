@@ -48,6 +48,9 @@ pub struct ExistingComparisonFailure {
     error: ExistingComparisonError,
 }
 impl ExistingComparisonFailure {
+    pub(super) fn into_error(self) -> ExistingComparisonError {
+        self.error
+    }
     /// Identity from the actual opened ordinary file, even if later observations failed.
     pub fn identity(&self) -> Identity {
         self.identity

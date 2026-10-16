@@ -27,6 +27,8 @@ pub const MAX_WALK_DEPTH: usize = 64;
 /// A request cannot enter collection; no event or write has started.
 #[derive(Debug)]
 pub enum InvalidRequest {
+    /// The explicit read-only operation requires a read-only request.
+    DryRunModeRequired,
     /// Pure native representation/resource validation failed.
     Paths(RequestPathError),
     /// The supplied absolute working directory could not bind.
@@ -37,6 +39,7 @@ pub enum InvalidRequest {
 impl std::fmt::Display for InvalidRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::DryRunModeRequired => f.write_str("dry_run requires RunMode::DryRun"),
             Self::Paths(error) => error.fmt(f),
             Self::WorkingDirectory(error) => {
                 write!(f, "Cannot bind the supplied working directory: {error}")
@@ -50,6 +53,7 @@ impl std::fmt::Display for InvalidRequest {
 impl std::error::Error for InvalidRequest {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         Some(match self {
+            Self::DryRunModeRequired => return None,
             Self::Paths(error) => error,
             Self::WorkingDirectory(error) | Self::OutputDirectory(error) => error,
         })
