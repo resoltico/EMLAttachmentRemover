@@ -320,21 +320,31 @@ This reviewed design is implemented pending source/native qualification. It crea
 empty directories only, with no message/candidate bytes or publication. It cannot
 close the separate under-mutation creation-confinement gate.
 
-Acquire a distinct write-capable parent from the held inventory directory through
-[ReOpenFile](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-reopenfile),
-then verify ordinary disk/directory/tag and the same usable full identity. Fixed
+`bind_resolved(path, earlier_id)` performs one deliberate OPEN_EXISTING CreateFileW
+write binding of the caller's already-resolved ordinary root expression. Fixed
 access is GENERIC_WRITE, list, read-attributes, traverse and synchronize; sharing
-is FILE_SHARE_READ; flags are BACKUP_SEMANTICS and OPEN_REPARSE_POINT. No privilege
-is enabled. No pathname is reconstructed and no requested-address receipt is
-fabricated. ReOpenFile's original-handle provenance/interoperability must be
-kept root-scoped: the selected-root factory opens through CreateFileW and calls
-the reopen helper privately. No general conversion of arbitrary inventory/NT
-child handles is exposed. Newly created children already carry their needed
-write rights and are not reopened. All previous live handles must satisfy sharing
-symmetry. A benign move test moves the owned
-fixture while only its read inventory handle is held, before obtaining this
-strict writable capability; it does not claim rename exclusion and movement
-simultaneously.
+is FILE_SHARE_READ; flags are BACKUP_SEMANTICS and OPEN_REPARSE_POINT. Positively
+verify ordinary disk/directory/tag and the EARLIER admitted usable full identity
+before any creation. Missing/different old operands refuse, with no search,
+rebaseline, handle upgrade or alternate acquisition fallback. No privilege is
+enabled. Newly created children carry their write capability directly.
+
+This factory does not resolve links, certify a consistent ancestor chain or
+fabricate a requested-address receipt. It refuses an unresolved final reparse
+entry. Full backend admission still needs the original selected-link resolution
+through GetFinalPathNameByHandleW, resolved ordinary ancestor binding and separate
+original-spelling/final-address checks. Never use this path factory for walked
+or existing mirrored children; their operations stay parent-relative/no-reparse.
+The benign static-link fixture obtains the earlier target ID through read
+selection, verifies unresolved writer refusal, then supplies its independently
+known fixture target expression; it does not substitute for full admission.
+
+A benign move fixture verifies old-address refusal, then explicitly supplies the
+current moved expression as a separate request with the same earlier full ID.
+It does not discover/rebase a moved target in product code or promise acquiring
+a writable capability from an obsolete read-handle address. All previous live
+handles must satisfy sharing symmetry; no movement is promised while the strict
+writer remains held.
 
 The sole create call is generated NtCreateFile with one validated relative native
 component, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_SYNCHRONOUS_IO_NONALERT and

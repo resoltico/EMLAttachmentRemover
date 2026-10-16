@@ -170,55 +170,21 @@ fn remove(
     }
 }
 impl WritableDirectory {
-    /// Bind an admitted selected-root expression for modification. The caller
-    /// supplies its earlier full identity; a different target is refused before creation.
-    pub fn open_selected(path: &Path, expected: Identity) -> io::Result<Self> {
-        // This private reopen call site is known to hold a CreateFileW-selected
-        // root. It is not exposed as conversion of arbitrary NT child handles.
-        let root = BoundDirectory::open(path)?;
-        Self::reopen_selected_root(&root, expected)
-    }
-    fn reopen_selected_root(root: &BoundDirectory, expected: Identity) -> io::Result<Self> {
-        if root.identity() != expected {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Selected directory identity changed",
-            ));
-        }
-        // SAFETY: live CreateFileW-selected ordinary directory. Fixed explicit
-        // access/share/flags; no path, inheritance, template or privilege change.
-        let raw = unsafe {
-            ReOpenFile(
-                root.file.as_raw_handle(),
-                ROOT_WRITE_ACCESS,
-                ROOT_WRITE_SHARING,
-                ROOT_WRITE_FLAGS,
-            )
-        };
-        if raw == INVALID_HANDLE_VALUE {
-            let error = io::Error::last_os_error();
-            #[cfg(test)]
-            eprintln!("Writable-parent native ReOpenFile failed before metadata: {error:?}");
-            return Err(error);
-        }
-        if raw.is_null() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Writable reopen supplied no handle",
-            ));
-        }
-        // SAFETY: successful ReOpenFile transferred one uniquely owned handle.
-        let file = File::from(unsafe { OwnedHandle::from_raw_handle(raw) });
-        #[cfg(test)]
-        eprintln!("Writable-parent native ReOpenFile returned an owned handle");
-        let observed = handle::directory_identity(&file);
-        #[cfg(test)]
-        eprintln!("Writable-parent post-ReOpenFile directory metadata: {observed:?}");
-        let identity = observed?;
+    /// Bind the caller's already-resolved ordinary root expression for modification.
+    /// This does not resolve links, certify ancestry or qualify the requested address.
+    /// The earlier admitted full identity must match before any child creation.
+    pub fn bind_resolved(path: &Path, expected: Identity) -> io::Result<Self> {
+        let file = handle::open(
+            path,
+            ROOT_WRITE_ACCESS,
+            ROOT_WRITE_SHARING,
+            ROOT_WRITE_FLAGS,
+        )?;
+        let identity = handle::directory_identity(&file)?;
         if identity != expected {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Writable directory identity changed",
+                "Writable directory differs from the admitted root",
             ));
         }
         Ok(Self(BoundDirectory { file, identity }))
@@ -465,30 +431,8 @@ mod tests {
             .resolve(path)
             .unwrap()
     }
-    fn permission_control(path: &Path, expected: Identity) -> io::Result<Identity> {
-        // Independent native API with the EXACT same access/share/flags. This
-        // OPEN_EXISTING diagnostic creates nothing and is never a fallback.
-        let opened = handle::open(
-            &operation(path),
-            ROOT_WRITE_ACCESS,
-            ROOT_WRITE_SHARING,
-            ROOT_WRITE_FLAGS,
-        );
-        eprintln!(
-            "Direct CreateFileW writable permission control open: {:?}",
-            opened.as_ref().map(|_| ())
-        );
-        let file = opened?;
-        let observed = handle::directory_identity(&file);
-        eprintln!("Direct CreateFileW writable permission control metadata: {observed:?}");
-        let identity = observed?;
-        assert_eq!(identity, expected);
-        // The diagnostic handle closes before the tested acquisition, so it
-        // cannot manufacture a self-sharing failure in ReOpenFile.
-        Ok(identity)
-    }
     #[test]
-    fn native_empty_directory_creation_flush_and_checked_cleanup_use_the_held_moved_root() {
+    fn native_empty_directory_create_flush_cleanup_requires_current_root_and_earlier_identity() {
         let fixture = fixture();
         let selected = fixture.path().join("selected");
         let moved = fixture.path().join("moved");
@@ -499,12 +443,10 @@ mod tests {
         drop(actor);
         std::fs::rename(&selected, &moved).unwrap();
         let actor = RestrictedToken::enter().unwrap();
-        // This private helper's input was explicitly selected by CreateFileW.
-        // Movement precedes the strict writable pin, not while claiming exclusion.
-        let permission = permission_control(&moved, expected_parent);
-        eprintln!("Held-moved-root permission control result: {permission:?}");
-        let writer = WritableDirectory::reopen_selected_root(&read, expected_parent).unwrap();
-        assert_eq!(permission.unwrap(), expected_parent);
+        // A vanished old expression is refused. The current operand is an
+        // explicit separate fixture request, never a product discovery/fallback.
+        assert!(WritableDirectory::bind_resolved(&operation(&selected), expected_parent).is_err());
+        let writer = WritableDirectory::bind_resolved(&operation(&moved), expected_parent).unwrap();
         assert_eq!(writer.identity(), expected_parent);
         let created = writer.create_child(OsStr::new("created")).unwrap();
         let identity = created.directory().identity();
@@ -534,6 +476,11 @@ mod tests {
         let fixture = fixture();
         std::fs::create_dir(fixture.path().join("collision")).unwrap();
         std::fs::create_dir(fixture.path().join("other")).unwrap();
+        let alias = fixture.path().join("selected-link");
+        std::fs::create_dir(&alias).unwrap();
+        let link = super::super::test_reparse::writer(&alias).unwrap();
+        super::super::test_reparse::set_mount_point(&link, &fixture.path().join("other")).unwrap();
+        drop(link);
         std::fs::write(
             fixture.path().join("collision/marker"),
             b"synthetic unchanged",
@@ -543,13 +490,28 @@ mod tests {
         let read = BoundDirectory::open(&operation(fixture.path())).unwrap();
         let other = read.observe_child(OsStr::new("other")).unwrap();
         assert!(
-            WritableDirectory::open_selected(&operation(fixture.path()), other.identity).is_err()
+            WritableDirectory::bind_resolved(&operation(fixture.path()), other.identity).is_err()
         );
-        let permission = permission_control(fixture.path(), read.identity());
-        eprintln!("Collision fixture permission control result: {permission:?}");
+        let selected_link = BoundDirectory::open(&operation(&alias)).unwrap();
+        assert_eq!(selected_link.identity(), other.identity);
+        assert!(
+            WritableDirectory::bind_resolved(&operation(&alias), selected_link.identity()).is_err()
+        );
+        // The target operand is independently known from fixture setup. This
+        // does not simulate GetFinalPathName or full selected-root admission.
+        let resolved = WritableDirectory::bind_resolved(
+            &operation(&fixture.path().join("other")),
+            selected_link.identity(),
+        )
+        .unwrap();
+        let linked = resolved
+            .create_child(OsStr::new("from-resolved-target"))
+            .unwrap();
+        assert_eq!(linked.remove_empty().state, CleanupState::Complete);
+        drop(resolved);
+        drop(selected_link);
         let writer =
-            WritableDirectory::open_selected(&operation(fixture.path()), read.identity()).unwrap();
-        assert_eq!(permission.unwrap(), read.identity());
+            WritableDirectory::bind_resolved(&operation(fixture.path()), read.identity()).unwrap();
         let existing = read.observe_child(OsStr::new("collision")).unwrap();
         let conflict = writer
             .create_child(OsStr::new("collision"))
@@ -581,12 +543,14 @@ mod tests {
             actual,
             std::collections::BTreeSet::from([
                 OsString::from("collision"),
-                OsString::from("other")
+                OsString::from("other"),
+                OsString::from("selected-link"),
             ])
         );
         drop(writer);
         drop(read);
         drop(actor);
+        std::fs::remove_dir(alias).unwrap();
         fixture.close().unwrap();
     }
     #[test]
@@ -594,11 +558,8 @@ mod tests {
         let fixture = fixture();
         let actor = RestrictedToken::enter().unwrap();
         let read = BoundDirectory::open(&operation(fixture.path())).unwrap();
-        let permission = permission_control(fixture.path(), read.identity());
-        eprintln!("Cleanup fixture permission control result: {permission:?}");
         let writer =
-            WritableDirectory::open_selected(&operation(fixture.path()), read.identity()).unwrap();
-        assert_eq!(permission.unwrap(), read.identity());
+            WritableDirectory::bind_resolved(&operation(fixture.path()), read.identity()).unwrap();
         let parent = writer.create_child(OsStr::new("parent")).unwrap();
         let expected = parent.directory().identity();
         let leaf = parent.directory().create_child(OsStr::new("leaf")).unwrap();

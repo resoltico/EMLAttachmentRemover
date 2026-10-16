@@ -825,3 +825,34 @@ All original assertions/test counts and old gate remain. Root and independent
 source QA plus Windows MSVC all-target Clippy passed for the diagnostic; actual
 both-CPU diagnostic results are pending. No ACL/share/API cause is inferred from
 numeric5 alone.
+
+At exact head `3df0568526941ec19de46991437d5687aef0ae5a`,
+[Windows run38850947528](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38850947528)
+recorded three successful direct writable opens and full-ID metadata controls
+per CPU, and three native ReOpenFile failures per CPU before any post-reopen
+metadata check. The controls used the same verified actor, fixture, access,
+sharing and flags, and closed before the original factory. All six ReOpenFile
+calls returned native5; this identifies the failing call without claiming a
+universal API limitation or a particular internal cause. Nongate25passed/3failed/
+0ignored/1filtered and oldgate0passed/1failed/28filtered remained on each CPU.
+No new child create/flush/cleanup was reached. The
+[Unix run38850947477](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38850947477)
+passed all seven jobs. Raw outputs remain in owned scratch.
+
+The reviewed replacement removes ReOpenFile and its temporary controls/diagnostics
+entirely. `bind_resolved(path, earlier_id)` deliberately binds the caller's
+already-resolved ordinary root once with OPEN_EXISTING and the exact successful
+control rights/share/flags. Type/tag/full identity must match before any creation.
+A vanished old operand refuses; an explicitly supplied current moved operand is
+a separate request, never discovery/rebaseline/fallback. Static selected-link
+coverage captures its earlier target ID through read selection, requires writer
+refusal of the unresolved link, then binds the independently known fixture target.
+This does not prove GetFinalPathName, consistent ancestry or final-address admission;
+all remain full-backend work. Mirrored children cannot use this path factory.
+Relative child creation, sync, cleanup and the old failed gate are unchanged.
+
+Root and independent production/test source QA closed without findings. Windows
+MSVC all-target Clippy and diff verification passed. The previous writable API
+has no compatibility alias, and no unused alternative remains. Actual both-CPU
+execution of the replacement and its creation/flush/cleanup/145 oracles remains
+pending; successful permission controls are not product qualification.
