@@ -1,8 +1,6 @@
 //! Strict bounded protocol-1 input; JSON never enters the business library.
-use base64::{Engine, engine::general_purpose::STANDARD};
-use eml_core::{
-    InvalidRequest, MAX_PATH_UNITS, OutputLocation, PathViolation, RequestPath, RunMode, RunRequest,
-};
+use crate::path::NativePath;
+use eml_core::{InvalidRequest, OutputLocation, RequestPath, RunMode, RunRequest};
 use serde::{Deserialize, Deserializer};
 use std::path::PathBuf;
 
@@ -100,74 +98,6 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
             }
         }
         value.deserialize_map(MapVisitor(std::marker::PhantomData))
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NativePath {
-    encoding: NativeEncoding,
-    base64: String,
-}
-#[derive(PartialEq, Eq)]
-enum NativeEncoding {
-    UnixBytes,
-    WindowsUtf16Le,
-}
-impl<'de> Deserialize<'de> for NativeEncoding {
-    fn deserialize<D: Deserializer<'de>>(value: D) -> Result<Self, D::Error> {
-        // An externally tagged enum would also accept {"unix-bytes":null}.
-        // The wire representation is strictly a string, never a tagged object.
-        match String::deserialize(value)?.as_str() {
-            "unix-bytes" => Ok(Self::UnixBytes),
-            "windows-utf16le" => Ok(Self::WindowsUtf16Le),
-            _ => Err(serde::de::Error::custom("Unsupported native encoding")),
-        }
-    }
-}
-
-impl NativePath {
-    fn decode(self, location: RequestPath) -> Result<PathBuf, RequestDecodeError> {
-        #[cfg(unix)]
-        let (host, bytes_per_unit) = (NativeEncoding::UnixBytes, 1);
-        #[cfg(windows)]
-        let (host, bytes_per_unit) = (NativeEncoding::WindowsUtf16Le, 2);
-        if self.encoding != host {
-            return Err(RequestDecodeError::WrongEncoding { path: location });
-        }
-        // Bound the allocation before Base64 decoding. Core remains authoritative
-        // for the exact native unit count, NUL, component and aggregate bounds.
-        let max_encoded = (MAX_PATH_UNITS * bytes_per_unit).div_ceil(3) * 4;
-        if self.base64.len() > max_encoded {
-            return Err(RequestDecodeError::InvalidRequest(
-                InvalidRequest::InvalidPath {
-                    path: location,
-                    violation: PathViolation::TooManyUnits,
-                },
-            ));
-        }
-        let bytes = STANDARD
-            .decode(self.base64)
-            .map_err(|_| RequestDecodeError::InvalidBase64 { path: location })?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::ffi::OsStringExt;
-            Ok(std::ffi::OsString::from_vec(bytes).into())
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::ffi::OsStringExt;
-            if bytes.len() % 2 != 0 {
-                return Err(RequestDecodeError::OddUtf16Bytes { path: location });
-            }
-            let units: Vec<_> = bytes
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|pair| u16::from_le_bytes(*pair))
-                .collect();
-            Ok(std::ffi::OsString::from_wide(&units).into())
-        }
     }
 }
 

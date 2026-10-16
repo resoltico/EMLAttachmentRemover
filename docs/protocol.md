@@ -36,6 +36,16 @@ those still-required capabilities. Core and filesystem crates have no JSON
 dependency. Request shape and native-byte tests live in the frontend package;
 business path limits remain in core.
 
+`PathValue` now serializes an already admitted native path into the exact output
+object, with lossy display text and a separate lossless native value. Encoding
+names have one shared string authority with strict request decoding. Unix bytes
+and Windows UTF-16LE units are encoded directly, including non-Unicode units.
+No display string is used to reconstruct the native value. Spelling, including
+symlink/dot-dot expressions, is retained. JSON escaping keeps embedded LF inside
+the string; raw U+0085/U+2028/U+2029 remain valid string content. This primitive
+does not implement human terminal escaping, LF event framing, whole-event/run
+size admission or the CLI executable. Its tests perform no filesystem I/O.
+
 ## Core diagnostic vocabulary
 
 The core enum owns these stable codes and permitted phases. A source test checks

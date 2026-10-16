@@ -571,3 +571,37 @@ the actual non-Unicode creation/observation. Native four-platform execution of
 the new cases is pending the next exact-head run. No cwd mutation or writable
 resource is used by the product primitives. Filesystem discovery/core run and
 the Windows captured-base integration remain unimplemented by this slice.
+
+At exact head `b9bcf3e886f1e74804633c226fd67bb31014c8b6`,
+[Unix run38835761382](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38835761382)
+passed all seven jobs: native filesystem30 on each Mac and26 on each Linux CPU,
+zero failures/ignores/filters. Both Macs explicitly logged their invalid-UTF8
+EILSEQ boundary; both Linux targets executed the native-byte fixture without that
+fallback. Other-UID namespace checks, serial process18, core request9/diagnostic3/
+unit15/source6 and request decoder16 remained successful. The
+[Windows run38835761343](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38835761343)
+again failed only its actual creation gate on each CPU: non-gate library21 passed
+with one separately executed gate filtered; gate0passed/1failed/21filtered.
+No Windows source changed in this POSIX slice. Raw logs remain in owned target
+scratch. This closes native POSIX selection primitives only, not full collection.
+
+## Native output-path transport checkpoint
+
+The frontend library now provides a borrowed Serialize-only `PathValue`, with
+lossy display and separately encoded native units. The shared native codec lives
+in path.rs; request.rs retains complete-document shape and resource admission.
+Encoding strings and unit widths have one authority for both directions. There
+is no filesystem operation, path resolution or business-policy copy in this
+transport. The decoder's map-only/string-only restrictions remain intact.
+
+Three independent tests assert hand-authored ASCII and raw-unit wire values,
+preserved requested spelling, escaped embedded LF/ESC and raw Unicode line
+separators. Windows ASCII Base64 was checked independently from explicit UTF-16LE
+bytes using the platform Base64 tool. All19 local path/request tests passed with
+zero failures/ignores/filters after the codec move. Local and Windows MSVC
+all-target Clippy passed; the latter is compile-only. Both native workflow
+families now explicitly select path3 and request16; the Windows guard requires
+two positive unfiltered suite summaries. Pinned actionlint1.7.12 with
+ShellCheck0.11.0 passed both changed workflows. Native six-platform execution
+remains pending. Human terminal escaping, event/run maximums, LF event framing,
+execution and the CLI binary are not implemented by this capability.
