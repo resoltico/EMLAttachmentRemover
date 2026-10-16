@@ -162,6 +162,45 @@ fn remove(
     }
 }
 impl WritableDirectory {
+    /// Open one existing ordinary writable child relative to this held parent.
+    /// Refuse a different earlier observed full identity; never creates or follows
+    /// a reparse point, changes metadata, or supplies ancestry/address qualification.
+    pub fn open_existing_child(&self, name: &OsStr, expected: Identity) -> io::Result<Self> {
+        Self::open_under(&self.0, name, expected)
+    }
+    pub(super) fn open_under(
+        parent: &BoundDirectory,
+        name: &OsStr,
+        expected: Identity,
+    ) -> io::Result<Self> {
+        if handle::directory_identity(&parent.file)? != parent.identity {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Held parent identity changed before child binding",
+            ));
+        }
+        let file = child::writable_directory(&parent.file, name)?;
+        let identity = handle::directory_identity(&file)?;
+        if identity != expected {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Writable child differs from its observed identity",
+            ));
+        }
+        Ok(Self(BoundDirectory { file, identity }))
+    }
+    /// Reobserve this exact held ordinary directory's full identity. This is not
+    /// an original requested-address receipt or a metadata-immutability promise.
+    pub fn check_held(&self) -> io::Result<()> {
+        if handle::directory_identity(&self.0.file)? == self.0.identity {
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Held writable directory identity changed",
+            ))
+        }
+    }
     /// Bind the caller's already-resolved ordinary root expression for modification.
     /// This does not resolve links, certify ancestry or qualify the requested address.
     /// The earlier admitted full identity must match before any child creation.

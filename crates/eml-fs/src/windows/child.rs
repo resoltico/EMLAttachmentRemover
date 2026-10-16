@@ -20,8 +20,8 @@ use windows_sys::{
     Win32::{
         Foundation::{INVALID_HANDLE_VALUE, OBJ_DONT_REPARSE, UNICODE_STRING},
         Storage::FileSystem::{
-            FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, FILE_TRAVERSE, SYNCHRONIZE,
+            FILE_GENERIC_WRITE, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE,
+            FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, SYNCHRONIZE,
         },
         System::IO::IO_STATUS_BLOCK,
     },
@@ -30,12 +30,21 @@ use windows_sys::{
 enum Kind {
     Observation,
     Directory,
+    AncestorPin,
+    WritableDirectory,
 }
+pub(super) const ANCESTOR_PIN_ACCESS: u32 = FILE_READ_ATTRIBUTES | FILE_TRAVERSE | SYNCHRONIZE;
 pub(super) fn observe(parent: &File, name: &OsStr) -> io::Result<File> {
     open(parent, name, Kind::Observation)
 }
 pub(super) fn directory(parent: &File, name: &OsStr) -> io::Result<File> {
     open(parent, name, Kind::Directory)
+}
+pub(super) fn ancestor_pin(parent: &File, name: &OsStr) -> io::Result<File> {
+    open(parent, name, Kind::AncestorPin)
+}
+pub(super) fn writable_directory(parent: &File, name: &OsStr) -> io::Result<File> {
+    open(parent, name, Kind::WritableDirectory)
 }
 fn open(parent: &File, name: &OsStr, kind: Kind) -> io::Result<File> {
     // UNICODE_STRING counts bytes in u16 fields; no terminator is part of its name.
@@ -49,16 +58,34 @@ fn open(parent: &File, name: &OsStr, kind: Kind) -> io::Result<File> {
         MaximumLength: length,
         Buffer: units.as_mut_ptr(),
     };
-    let (access, options, attributes) = match kind {
+    let (access, options, attributes, sharing) = match kind {
         Kind::Observation => (
             FILE_READ_ATTRIBUTES | SYNCHRONIZE,
             FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT,
             0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         ),
         Kind::Directory => (
             FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE | SYNCHRONIZE,
             FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE,
             OBJ_DONT_REPARSE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        ),
+        Kind::AncestorPin => (
+            ANCESTOR_PIN_ACCESS,
+            FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE,
+            OBJ_DONT_REPARSE,
+            FILE_SHARE_READ,
+        ),
+        Kind::WritableDirectory => (
+            FILE_GENERIC_WRITE
+                | FILE_LIST_DIRECTORY
+                | FILE_READ_ATTRIBUTES
+                | FILE_TRAVERSE
+                | SYNCHRONIZE,
+            FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE,
+            OBJ_DONT_REPARSE,
+            FILE_SHARE_READ,
         ),
     };
     let attributes = OBJECT_ATTRIBUTES {
@@ -76,16 +103,7 @@ fn open(parent: &File, name: &OsStr, kind: Kind) -> io::Result<File> {
     // I/O manager, including lower-driver pending (Microsoft Breaking Oplocks).
     // Fixed NONALERT+SYNCHRONIZE options admit no async/oplock-bypass mode. See
     // docs/windows-publication.md for the independently reviewed completion basis.
-    let status = unsafe {
-        NtOpenFile(
-            &mut raw,
-            access,
-            &attributes,
-            &mut iosb,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            options,
-        )
-    };
+    let status = unsafe { NtOpenFile(&mut raw, access, &attributes, &mut iosb, sharing, options) };
     // Final returned status, not zero-initialized IOSB, determines success.
     // NT_SUCCESS includes informational statuses; warnings/errors are negative.
     if status < 0 {

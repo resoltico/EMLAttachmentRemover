@@ -632,3 +632,40 @@ fixture and restricted same-UserSID token, with administrator groups deny-only.
 They test actual read/flush/self-validation, source retention, readonly denial,
 sharing exclusion and checked closure. Native execution of this amendment is
 pending; it does not qualify Core UpToDate or full destination confinement.
+
+## Resolved root ancestry ownership
+
+PinnedRoot binds a validated resolved extended DOS/UNC expression top-down. Each
+existing ancestor uses one metadata/traverse/SYNCHRONIZE profile, ordinary disk
+and full-ID checks, no-follow options and shareREAD. The final endpoint is excluded
+from those readonly pins and opens directly with its fixed writable role and the
+earlier admitted full identity. Otherwise its own strict readonly pin would block
+write acquisition. The native existing-directory profile uses FILE_GENERIC_WRITE
+mapped bits, matching the directory-specific DesiredAccess contract; the Win32
+root factory retains its documented GENERIC_WRITE profile.
+
+The owner exposes only a borrowed physical WritableDirectory and stop-aware held
+observations. Core must retain the entire PinnedRoot and all existing/new mirror
+owners through current-item file/namespace synchronization, candidate close/final
+reopen and original requested-address qualification. Immediate-parent child and
+candidate owners do not retain the whole ancestry. There is no detached endpoint
+API advertised as carrying that protection. Core separately retains and checks
+the original selected expression/captured context; a resolved endpoint ID is not
+an original-address receipt. Untouched upper pins are not flushed merely because
+they are held. Naming, mirror creation/admission and whole-batch policy stay in
+Core; one fixed held-parent-relative writable open handles an already existing
+ordinary mirror with an earlier observed full ID.
+
+The validated native representation bounds the chain, including resolved paths
+with more components than the raw request allowance. Stop is checked between
+native constructor/held-observation steps; post-edge finishing passes a never-
+stopped predicate. Interrupted and genuine native failure are distinct values.
+Partial constructions release handles by ownership without calling unchecked
+Drop a successful checked-close receipt. A complete extended UNC share root is
+accepted with or without its trailing separator, without a fictitious server
+ancestor. These syntax controls do not qualify a live SMB share.
+
+This amendment preserves the ancestry policy and supplies no continuous metadata
+immutability or replacement for the still-failed old creation gate. Both-CPU
+native execution of the new profiles/owner remains pending. The actual private
+Core publication/resync consumer is still required.

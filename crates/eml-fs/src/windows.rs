@@ -6,12 +6,14 @@ mod handle;
 mod inventory;
 pub(crate) mod path;
 mod publication;
+mod root;
 mod status;
 mod writable;
 pub use candidate::ReadyCandidate;
 pub use file::BoundFile;
 pub use inventory::{BoundDirectory, DirectoryEntries, observe_selected};
 pub use publication::{PublicationCandidate, PublishAttempt};
+pub use root::{PinnedRoot, RootBindingError};
 pub use status::NtStatusError;
 pub use writable::{CreatedDirectory, WritableDirectory};
 #[cfg(test)]

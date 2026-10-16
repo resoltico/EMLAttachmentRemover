@@ -1499,3 +1499,57 @@ Native runtime for this slice remains pending; MSVC compilation is not native
 integration evidence. The actual old Windows creation gate stays FAILED. Full
 Core resynchronization/publication, CLI/GUI and archive qualification remain
 unfinished.
+
+At exact `11956fac0c1a609da5f0111b9b472c8f84f4e881`,
+[Windows run38890727633](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38890727633)
+executed all three new file-resynchronization controls exactly once on both native
+CPUs, including the restricted-principal source-held/actual-flush/self-validation/
+checked-close flow, readonly access5 and live-read-holder sharing32. The static
+selected-directory-alias serial case passed once each. FS44nongate/1filter passed;
+each unchanged actual old strict gate remained0passed/1failed/0ignored/44filtered,
+the only failed step per CPU. Core31/collection12/destination11/dry_run18/existing4/
+source5 and prior request9/diagnostic3/path6/decoder16 passed unfiltered without
+failures or ignores. Windows overall remains FAILED.
+[Unix run38890727587](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38890727587)
+passed all seven jobs/full-head checkouts. The new alias case passed exactly once
+on all four filesystem hosts; core32/collection11/destination11/dry_run19/existing5/
+source6/request9/diagnostic3/path6/decoder16 had zero failures/ignores/filters.
+FS31Mac/27Linux, real cross-UID/ACL controls and process18 on both hosts remained
+successful. Independent exact-head/raw/discovery review closed only the bounded
+flush-access/observer/closure and alias regression scope. Retained raw logs are
+target/11956fa-windows-ci.log and target/11956fa-unix-ci.log. No Core UpToDate,
+resolved ancestry, writable confinement, CLI/GUI or archive qualification follows.
+
+## Windows resolved-root ancestry and existing writable children
+
+The bounded native PinnedRoot owner now retains ordinary metadata/traverse-only
+strict ancestor pins and one writable endpoint, with expected full-ID checks.
+Only a borrowed endpoint is exposed. The endpoint is not double-pinned readonly;
+Core must retain the owner plus all existing/new mirror owners through terminal
+qualification and recheck the original selected expression/captured context.
+No whole-batch pins, directory graph, frontend policy or untouched-upper-ancestor
+flush is introduced. A second fixed existing-only NtOpenFile directory profile
+opens writable ordinary children relative to the held parent and rejects a
+mismatched earlier ID. The two prior readonly child profiles are unchanged.
+
+Independent challenge corrected an implicit UNC-root shape missed by the draft,
+the directory-native mapped access mask and the compound-name test oracle.
+Stop-aware constructor and held checks distinguish interruption from native
+failure, with bounded native-representation storage rather than an incorrect raw
+256-component cutoff. Five controls cover DOS/UNC root shape and exact/one-over
+32766-unit representation (no filesystem capacity claim); actual owned ancestor
+sharing denial with positive before/after access, endpoint stage/flush/cleanup;
+existing child full-ID/type/missing/single-component refusal; partial identity-
+failure release; and cancellation after a pin is actually observed. The ordinary
+file/principal fixtures reuse the existing restricted same-UserSID actor and
+fresh owned fixture ACL. No new security/interference workflow or live SMB setup
+is introduced, and binding itself creates no names.
+
+Independent source/API/test review is clear after those corrections. Stable local
+cargo test --locked --workspace exited0 with236 passes across18 positive/six empty
+suites and zero failures/ignores/filters (target/root-ancestry-workspace-final.log).
+Host workspace and MSVC three-package all-target Clippy, excluded native-probe
+all-target check, actionlint, formatting and diff checks passed. Native ancestry
+runtime remains pending; these compilation checks do not qualify it. The old Windows
+creation gate remains FAILED. This supplies no Core Created/UpToDate, full writable
+confinement, CLI/GUI or archive evidence.
