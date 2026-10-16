@@ -107,93 +107,14 @@ fn assemble(root: &Path, out: &Path, build: &macos::MacBuild) -> Result<()> {
     let executable = binary_dir.join("EMLAttachmentRemover");
     fixture_identity(&fs::read(&executable)?, &build.architecture, build.minimum)?;
 
-    let icons = out.join("icon-assets");
-    fs::create_dir(&icons)?;
-    let actool = String::from_utf8(capture(build.command(root, "/usr/bin/xcrun").args([
-        "--sdk",
-        "macosx",
-        "--toolchain",
-        "XcodeDefault",
-        "--find",
-        "actool",
-    ]))?)?;
-    let actool = PathBuf::from(actool.trim_end()).canonicalize()?;
-    if !actool.starts_with(build.developer.canonicalize()?) {
-        return Err("actool is outside selected Xcode".into());
-    }
-    let mut icon = build.command(root, &actool);
-    // actool launches a host AssetRuntime agent; do not give that runtime the
-    // build SDK root. Compiler SDK selection remains explicit and unchanged.
-    icon.env_remove("SDKROOT");
-    let loader_presence: serde_json::Map<String, Value> = [
-        "SDKROOT",
-        "DYLD_ROOT_PATH",
-        "DYLD_LIBRARY_PATH",
-        "DYLD_FRAMEWORK_PATH",
-        "DYLD_FALLBACK_LIBRARY_PATH",
-        "DYLD_FALLBACK_FRAMEWORK_PATH",
-    ]
-    .into_iter()
-    .map(|name| {
-        (
-            name.to_owned(),
-            Value::Bool(std::env::var_os(name).is_some()),
-        )
-    })
-    .collect();
-    fs::write(
-        out.join("icon-environment.json"),
-        serde_json::to_vec_pretty(
-            &json!({"inherited_presence_only":loader_presence,"actool_sdkroot_removed":true,"developer":build.developer,"actool":actool}),
-        )?,
-    )?;
-    icon.arg(root.join("macos-app/Artwork/EML.icon"))
-        .arg("--compile")
-        .arg(&icons)
-        .args([
-            "--output-format",
-            "human-readable-text",
-            "--notices",
-            "--warnings",
-            "--errors",
-            "--output-partial-info-plist",
-        ])
-        .arg(icons.join("icon-partial.plist"))
-        .args([
-            "--app-icon",
-            "EML",
-            "--include-all-app-icons",
-            "--enable-on-demand-resources",
-            "NO",
-            "--development-region",
-            "en",
-            "--target-device",
-            "mac",
-            "--minimum-deployment-target",
-            &build.minimum_text,
-            "--platform",
-            "macosx",
-        ]);
+    let (icon, icons) = icon_command(root, out, build)?;
     checked_run(icon, &out.join("icon-build.log"), 180)?;
-    for file in ["Assets.car", "EML.icns", "icon-partial.plist"] {
-        if fs::metadata(icons.join(file))?.len() == 0 {
-            return Err("actool omitted a required icon output".into());
-        }
-    }
-    let partial: Value = serde_json::from_slice(&capture(
-        build
-            .command(root, "/usr/bin/plutil")
-            .args(["-convert", "json", "-o", "-"])
-            .arg(icons.join("icon-partial.plist")),
-    )?)?;
+    let partial = icon_outputs(root, &icons, build)?;
     let mut metadata = app_metadata(&build.version, &build.minimum_text);
     for (key, value) in partial
         .as_object()
         .ok_or("Icon metadata must be a dictionary")?
     {
-        if !["CFBundleIconName", "CFBundleIconFile", "CFBundleIcons"].contains(&key.as_str()) {
-            return Err(format!("Unexpected icon metadata key: {key}").into());
-        }
         metadata
             .as_object_mut()
             .ok_or("App metadata must be a dictionary")?
@@ -288,6 +209,104 @@ fn assemble(root: &Path, out: &Path, build: &macos::MacBuild) -> Result<()> {
     )?;
     eprintln!("Built native app for integration: {}", app.display());
     Ok(())
+}
+
+pub(crate) fn icon_command(
+    root: &Path,
+    out: &Path,
+    build: &macos::MacBuild,
+) -> Result<(std::process::Command, PathBuf)> {
+    let icons = out.join("icon-assets");
+    fs::create_dir(&icons)?;
+    let actool = String::from_utf8(capture(build.command(root, "/usr/bin/xcrun").args([
+        "--sdk",
+        "macosx",
+        "--toolchain",
+        "XcodeDefault",
+        "--find",
+        "actool",
+    ]))?)?;
+    let actool = PathBuf::from(actool.trim_end()).canonicalize()?;
+    if !actool.starts_with(build.developer.canonicalize()?) {
+        return Err("actool is outside selected Xcode".into());
+    }
+    let mut icon = build.command(root, &actool);
+    // actool launches a host AssetRuntime agent; do not give that runtime the
+    // build SDK root. Compiler SDK selection remains explicit and unchanged.
+    icon.env_remove("SDKROOT");
+    let loader_presence: serde_json::Map<String, Value> = [
+        "SDKROOT",
+        "DYLD_ROOT_PATH",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+        "DYLD_FALLBACK_FRAMEWORK_PATH",
+    ]
+    .into_iter()
+    .map(|name| {
+        (
+            name.to_owned(),
+            Value::Bool(std::env::var_os(name).is_some()),
+        )
+    })
+    .collect();
+    fs::write(
+        out.join("icon-environment.json"),
+        serde_json::to_vec_pretty(
+            &json!({"inherited_presence_only":loader_presence,"actool_sdkroot_removed":true,"developer":build.developer,"actool":actool}),
+        )?,
+    )?;
+    icon.arg(root.join("macos-app/Artwork/EML.icon"))
+        .arg("--compile")
+        .arg(&icons)
+        .args([
+            "--output-format",
+            "human-readable-text",
+            "--notices",
+            "--warnings",
+            "--errors",
+            "--output-partial-info-plist",
+        ])
+        .arg(icons.join("icon-partial.plist"))
+        .args([
+            "--app-icon",
+            "EML",
+            "--include-all-app-icons",
+            "--enable-on-demand-resources",
+            "NO",
+            "--development-region",
+            "en",
+            "--target-device",
+            "mac",
+            "--minimum-deployment-target",
+            &build.minimum_text,
+            "--platform",
+            "macosx",
+        ]);
+    Ok((icon, icons))
+}
+
+pub(crate) fn icon_outputs(root: &Path, icons: &Path, build: &macos::MacBuild) -> Result<Value> {
+    for file in ["Assets.car", "EML.icns", "icon-partial.plist"] {
+        if fs::metadata(icons.join(file))?.len() == 0 {
+            return Err("actool omitted a required icon output".into());
+        }
+    }
+    let partial: Value = serde_json::from_slice(&capture(
+        build
+            .command(root, "/usr/bin/plutil")
+            .args(["-convert", "json", "-o", "-"])
+            .arg(icons.join("icon-partial.plist")),
+    )?)?;
+    let object = partial
+        .as_object()
+        .ok_or("Icon metadata must be a dictionary")?;
+    if object.keys().any(|key| {
+        !["CFBundleIconName", "CFBundleIconFile", "CFBundleIcons"].contains(&key.as_str())
+    }) {
+        return Err("Unexpected icon metadata key".into());
+    }
+    Ok(partial)
 }
 
 fn app_metadata(version: &str, minimum: &str) -> Value {

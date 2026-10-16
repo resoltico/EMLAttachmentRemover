@@ -10,6 +10,8 @@ mod macos_app;
 #[cfg(target_os = "macos")]
 mod macos_gui;
 #[cfg(target_os = "macos")]
+mod macos_icon;
+#[cfg(target_os = "macos")]
 mod macos_process;
 mod mutants;
 use clap::{Parser, Subcommand};
@@ -34,6 +36,11 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Observe exactly two pinned icon compilations; never qualifies an app.
+    MacosIconDiagnostic {
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Run owned actual GUI checks on a fresh hosted macOS runner only.
     MacosGuiTests {
         #[arg(long)]
@@ -97,6 +104,18 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::MacosIconDiagnostic { out } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos_icon::run(&root, &out)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = out;
+                    Err("Native macOS is required for icon observations".into())
+                }
+            }
             Task::MacosGuiTests { app, out } => {
                 #[cfg(target_os = "macos")]
                 {
