@@ -46,6 +46,14 @@ the string; raw U+0085/U+2028/U+2029 remain valid string content. This primitive
 does not implement human terminal escaping, LF event framing, whole-event/run
 size admission or the CLI executable. Its tests perform no filesystem I/O.
 
+`TerminalPath` separately formats a borrowed path for human terminal text. It
+escapes C0/C1 controls, Unicode line/paragraph separators and Unicode bidi-control
+marks using visible Rust-style escapes. Printable Unicode, ordinary backslashes
+and joiners remain readable. It is lossy display, not shell quoting, an
+operational expression or a guarantee against every Unicode visual ambiguity.
+Formatting errors propagate to the caller. Complete human event/error rendering
+and actual stdout delivery still need implementation and integration tests.
+
 ## Core diagnostic vocabulary
 
 The core enum owns these stable codes and permitted phases. A source test checks

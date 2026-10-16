@@ -6,5 +6,5 @@
 
 mod path;
 mod request;
-pub use path::PathValue;
+pub use path::{PathValue, TerminalPath};
 pub use request::{MAX_REQUEST_BYTES, RequestDecodeError, decode_request};

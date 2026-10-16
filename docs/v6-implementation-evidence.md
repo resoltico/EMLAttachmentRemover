@@ -53,7 +53,10 @@ readback and directory flush sequence. Failure is retained, not waived.
 The initial probe does not yet establish the full ancestor-chain/junction,
 ordinary-user token, ACL, long-path or adversarial product requirements.
 
-## Required gates
+## WP0 gate checkpoint
+
+This initial pending record is historical; later checkpoints record the bounded
+subsets actually executed. No complete v6 product/archive qualification exists.
 
 Pending: WP1–WP8, all product checks, native Windows ordinary-user feasibility,
 full six-platform filesystem tests, independent MIME goldens/edge/model tests,
@@ -605,3 +608,25 @@ two positive unfiltered suite summaries. Pinned actionlint1.7.12 with
 ShellCheck0.11.0 passed both changed workflows. Native six-platform execution
 remains pending. Human terminal escaping, event/run maximums, LF event framing,
 execution and the CLI binary are not implemented by this capability.
+
+At exact head `2ec0456d674ee6e7cbe092e6e84d367d67a4dddb`,
+[Unix run38836627963](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38836627963)
+passed all seven jobs. Each of four Unix targets executed path3 and request16
+with zero failures/ignores/filters, including all three new test names. The
+[Windows run38836628309](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38836628309)
+passed the same two suites on both native CPUs, exercising their UTF-16LE and
+unpaired-surrogate oracles. Both positive-suite guards succeeded. Windows
+non-gate filesystem21 passed with one filter; each separately run creation gate
+still failed0passed/1failed/21filtered and remained the only failed step. The
+Unix filesystem30Mac/26Linux and earlier independent suites stayed successful.
+Raw logs are retained under owned target scratch. This closes native path
+transport execution only; full protocol events/run size, CLI, archive and GUI
+qualification remain open.
+
+The separate human-path formatter now escapes terminal controls, Unicode line
+separators and bidi-control marks without changing any native value. Two new
+tests use a hand-authored escaped-line oracle, printable Unicode/backslash/joiner
+oracle and all C0/C1/line/bidi control rejection cases. Local path5 and request16
+passed without failures/ignores/filters; native-Mac and compile-only Windows MSVC
+all-target Clippy passed. There is no shell-quoting, full human-event or stdout
+delivery claim. Native six-platform execution of this formatter remains pending.

@@ -3,7 +3,10 @@ use crate::request::RequestDecodeError;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use eml_core::{InvalidRequest, MAX_PATH_UNITS, PathViolation, RequestPath};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
-use std::path::{Path, PathBuf};
+use std::{
+    fmt::{self, Write},
+    path::{Path, PathBuf},
+};
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -137,5 +140,32 @@ impl Serialize for PathValue<'_> {
         value.serialize_field("display", &self.0.to_string_lossy())?;
         value.serialize_field("native", &NativePath::encode(self.0))?;
         value.end()
+    }
+}
+
+/// Human terminal display of a native path, escaping control/line/bidi characters.
+/// This lossy display is neither shell quoting nor an operational path value.
+pub struct TerminalPath<'a>(&'a Path);
+impl<'a> TerminalPath<'a> {
+    /// Borrow the native path without resolving or changing its spelling.
+    pub fn new(path: &'a Path) -> Self {
+        Self(path)
+    }
+}
+impl fmt::Display for TerminalPath<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for character in self.0.to_string_lossy().chars() {
+            if character.is_control()
+                || matches!(character,
+                '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+            {
+                for escaped in character.escape_default() {
+                    formatter.write_char(escaped)?;
+                }
+            } else {
+                formatter.write_char(character)?;
+            }
+        }
+        Ok(())
     }
 }
