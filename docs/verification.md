@@ -151,3 +151,14 @@ hooks and captures configuration inputs. OS hangs or SIGKILL of the supervisor
 can leave undiscovered groups unconfirmed; pin EOF covers only already pinned
 groups. Missing supervisor completion remains failure. Helpers are developer
 verification resources and are not introduced into the product CLI/app runtime.
+
+The process integration harness isolates its outer scenarios with one test-local
+mutex because they share a global process census and finite observation budget.
+Each scenario retains its own real process concurrency and all negative controls.
+The guard covers setup through final observations and resource cleanup, including
+panic unwinding. Poison recovery permits later independent tests to run; it does
+not catch a failed test or turn Drop into external-cleanup evidence. Normal Cargo
+test invocation and native CI now use that same isolation without a separate
+test-thread flag. This establishes isolated-scenario execution, not simultaneous
+independent-controller or ambient-churn resilience. Production session inspection,
+unknown/refusal handling and cleanup budgets are unchanged.

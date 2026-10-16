@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn native_file_identity_hardlinks_and_excluded_writer_are_observed() {
         let root = tempfile::tempdir().unwrap();
-        let context = PathContext::capture().unwrap();
+        let context = PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         let first = root.path().join("first.eml");
         let alias = root.path().join("alias.eml");
         let other = root.path().join("other.eml");
@@ -152,7 +152,10 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let directory = root.path().join("directory");
         std::fs::create_dir(&directory).unwrap();
-        let operation = PathContext::capture().unwrap().resolve(&directory).unwrap();
+        let operation = PathContext::capture(&std::env::current_dir().unwrap())
+            .unwrap()
+            .resolve(&directory)
+            .unwrap();
         let failed = match BoundFile::open(&operation, false) {
             Err(error) => error,
             Ok(_) => panic!("Directory was admitted as an ordinary file"),
@@ -166,7 +169,7 @@ mod tests {
     #[test]
     fn retargeted_parent_with_same_file_hardlink_is_a_changed_binding() {
         let root = tempfile::tempdir().unwrap();
-        let context = PathContext::capture().unwrap();
+        let context = PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         let a = root.path().join("a");
         let b = root.path().join("b");
         let alias = root.path().join("alias");

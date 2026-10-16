@@ -955,3 +955,80 @@ Stable-input local checks passed: MSVC FS all-target Clippy with warnings denied
 (compile evidence only), excluded native probe all-target check, Mac FS30 tests,
 Mac FS all-target Clippy, formatting and diff checks. Doctests0. Source QA and
 native two-CPU edge execution are pending; the old failed gate is unchanged.
+
+Independent production/API/ownership/security source review closed without
+material findings. Test review identified a missing positive boundary control;
+the amended native case now requires exact actual component-limit publication,
+retained full ID and independent literal-byte readback after release, beside a
+fresh one-over stage that must refuse and clean. Independent held-file readback
+also loops through EOF rather than assuming a full single read. The narrow test
+review and independent MSVC Clippy/Mac FS30 checks closed against committed
+`d58d503b417e73f1058f7d24d81d981017cd9364`. Native raw-log review remains pending.
+
+The separate proposed process-scan change (ignore every global vanished PID at
+getsid/ESRCH) was rejected in challenge: an unobserved same-session successor can
+be born after the census while its listed parent exits, repeating across two
+scans. Prior/pinned-group knowledge cannot classify never-observed descendants.
+This is a source-level design counterexample, not an executed fixture or proof
+of the earlier parallel failure's cause. No process code or test changed.
+
+At exact head `d58d503b417e73f1058f7d24d81d981017cd9364`,
+[Windows run38856809628](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38856809628)
+passed each of the three new edge cases once per native CPU; nongate34passed/
+0failed/0ignored/1filtered on each. Actual assertions cover complete same-held
+bytes/full ID at the final basename, retained final data after checked release,
+exact native collision and unchanged winner/owned loser cleanup, invalid-name
+refusals, actual exact-limit acceptance and one-over refusal, plus labelled
+scripted Unknown mapping. No native ambiguous return/close-failure or Created
+claim follows. Independent Windows full-head/raw-log review closed this bounded
+edge evidence. Each unchanged old gate actually failed0passed/1failed/0ignored/
+34filtered, the only failed step in each Windows job; overall run remains failed.
+[Unix run38856809639](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38856809639)
+passed all seven jobs at the same head, including Mac FS30/Linux FS26, real
+different-UID namespace controls and serial process18. Raw logs are retained at
+target/d58d503-windows-ci.log and target/d58d503-unix-ci.log. Full Windows
+admission/confinement, namespace/final-address qualification and product gates
+remain open.
+
+## Explicit Windows working base and isolated process scenarios
+
+PathContext::capture now consumes the caller-supplied absolute working expression,
+with every existing FS/core test caller migrated and no compatibility constructor.
+Ordinary bases retain Win32 normalization. The reviewed previously unspecified
+mixed rule preserves literal name dots/spaces under a verbatim DOS/UNC base while
+standard Rust supplies root-clamped dot navigation. Other drives retain captured
+state; requested terminal separators and original native units survive. This is
+not ordinary Win32 or full .NET path equivalence, and adds no1703 API/floor change.
+
+Source challenge caught three concrete gaps, all repaired before native push:
+bare C: must retain its base without an added separator (including the32,766-unit
+operational boundary); ordinary explicit bases must actually override ambient
+cwd (distinct owned first/second bytes and raw operand oracle); malformed UNC
+introducers must refuse instead of rebasing to local root-relative operands.
+Two added tests cover independently authored DOS/UNC/native-unit/separator cases
+and real owned literal-base bytes/full identities. UNC string cases do not prove
+a network round trip; operational-length cases do not prove filesystem support
+for that component. Source/API/caller/test/docs QA closed; native execution is
+pending. Full root/ancestor/address admission remains separate unfinished work.
+
+The process integration harness now holds a test-local mutex from the first
+statement of each of18 outer scenarios through resource Drop. All assertions and
+concurrency within scenarios remain; no production inspector, signal, refusal,
+unknown-state or cleanup budget changed. Independent design/source review closed
+this as shared global-census/resource isolation, not a simultaneous-controller
+or ambient-churn guarantee. Native CI removes its redundant test-thread flag to
+exercise the same harness isolation. Prior9pass/9fail default-parallel evidence
+and the subsequent separate serial observations remain historical observations;
+these changes do not retrospectively prove cleanup of an earlier unknown result.
+
+Local stable-input default process invocation passed18/0failed/0ignored/0filtered
+in13.65s. Full `cargo test --locked --workspace` then passed171 tests across14
+positive suites, with0failed/ignored/filtered; six expected empty suites include
+doctests and platform-empty harnesses. Its process suite passed18 in14.18s.
+Raw logs: target/process-scenario-isolation.log and
+target/workspace-scenario-isolation.log. MSVC FS/Core all-target Clippy, excluded
+native probe all-target check, local Mac FS30/Clippy, xtask all-target Clippy,
+changed-workflow actionlint, formatting and diff checks passed. Compile-only
+Windows evidence is not native execution. Native matrices, the old failed
+confinement gate, full product/archive/GUI and final clean-clone qualification
+remain open.

@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn actual_directory_metadata_is_a_nonregular_initial_file_observation() {
         let root = tempfile::tempdir().unwrap();
-        let path = crate::PathContext::capture()
+        let path = crate::PathContext::capture(&std::env::current_dir().unwrap())
             .unwrap()
             .resolve(root.path())
             .unwrap();

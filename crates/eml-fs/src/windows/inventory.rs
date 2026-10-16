@@ -226,7 +226,7 @@ mod tests {
         std::fs::write(selected.join("mail/source.eml"), b"synthetic").unwrap();
         let native = OsString::from_wide(&[0x61, 0xd800, 0x62]);
         std::fs::write(selected.join(&native), b"native synthetic").unwrap();
-        let context = crate::PathContext::capture().unwrap();
+        let context = crate::PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         let actor = super::super::test_actor::RestrictedToken::enter().unwrap();
         let mut root = BoundDirectory::open(&context.resolve(&selected).unwrap()).unwrap();
         let observed = root.observe_child(OsStr::new("mail")).unwrap();
@@ -285,7 +285,7 @@ mod tests {
         let link = super::super::test_reparse::writer(&selected).unwrap();
         super::super::test_reparse::set_mount_point(&link, &target).unwrap();
         drop(link);
-        let context = crate::PathContext::capture().unwrap();
+        let context = crate::PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         let actor = super::super::test_actor::RestrictedToken::enter().unwrap();
         let root = BoundDirectory::open(&context.resolve(fixture.path()).unwrap()).unwrap();
         let target = root.observe_child(OsStr::new("target")).unwrap();
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn native_child_validation_precedes_open_and_missing_entry_retains_both_error_domains() {
         let fixture = tempfile::tempdir().unwrap();
-        let context = crate::PathContext::capture().unwrap();
+        let context = crate::PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         let actor = super::super::test_actor::RestrictedToken::enter().unwrap();
         let mut root = BoundDirectory::open(&context.resolve(fixture.path()).unwrap()).unwrap();
         let before = names(&mut root);
@@ -438,7 +438,7 @@ mod tests {
         expected.insert(native);
         std::fs::write(root.path().join(".hidden"), b"synthetic").unwrap();
         expected.insert(OsString::from(".hidden"));
-        let path = crate::PathContext::capture()
+        let path = crate::PathContext::capture(&std::env::current_dir().unwrap())
             .unwrap()
             .resolve(root.path())
             .unwrap();
@@ -482,7 +482,7 @@ mod tests {
     #[test]
     fn native_selected_root_is_read_only_and_open_failures_are_visible() {
         let root = tempfile::tempdir().unwrap();
-        let context = crate::PathContext::capture().unwrap();
+        let context = crate::PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         let path = context.resolve(root.path()).unwrap();
         let mut directory = BoundDirectory::open(&path).unwrap();
         let mut entries = directory.read_entries().unwrap();
@@ -507,7 +507,7 @@ mod tests {
     #[test]
     fn parser_failure_is_reported_once_and_a_fresh_stream_restarts() {
         let root = tempfile::tempdir().unwrap();
-        let path = crate::PathContext::capture()
+        let path = crate::PathContext::capture(&std::env::current_dir().unwrap())
             .unwrap()
             .resolve(root.path())
             .unwrap();
@@ -530,7 +530,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let ordinary = root.path().join("ordinary.eml");
         std::fs::write(&ordinary, b"synthetic").unwrap();
-        let path = crate::PathContext::capture()
+        let path = crate::PathContext::capture(&std::env::current_dir().unwrap())
             .unwrap()
             .resolve(root.path())
             .unwrap();
@@ -539,7 +539,7 @@ mod tests {
         // This private construction deliberately violates public admission;
         // it tests native query failure without invalid or borrowed raw handles.
         let file = handle::open(
-            &crate::PathContext::capture()
+            &crate::PathContext::capture(&std::env::current_dir().unwrap())
                 .unwrap()
                 .resolve(&ordinary)
                 .unwrap(),
@@ -582,7 +582,7 @@ mod tests {
         let link = super::super::test_reparse::writer(&selected).unwrap();
         super::super::test_reparse::set_mount_point(&link, &target).unwrap();
         drop(link);
-        let context = crate::PathContext::capture().unwrap();
+        let context = crate::PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         let actor = super::super::test_actor::RestrictedToken::enter().unwrap();
         let mut directory = BoundDirectory::open(&context.resolve(&selected).unwrap()).unwrap();
         let direct = BoundDirectory::open(&context.resolve(&target).unwrap()).unwrap();

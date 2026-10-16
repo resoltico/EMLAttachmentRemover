@@ -199,12 +199,22 @@ pub struct PathContext {
     drives: BTreeMap<u8, PathBuf>,
 }
 impl PathContext {
-    /// Capture Win32 directory/drive resolution state once, before admitting work.
+    /// Capture resolution from the caller's absolute working-directory expression
+    /// and Win32 other-drive state once, before admitting work.
     /// No process working directory, registry or saved preference is changed.
     /// The caller must not mutate process cwd/drive state during admission; there
     /// is no OS atomic snapshot spanning every per-drive current directory.
-    pub fn capture() -> io::Result<Self> {
-        let working = full_path(Path::new("."))?;
+    pub fn capture(working_directory: &Path) -> io::Result<Self> {
+        let verbatim = has_verbatim_prefix(working_directory);
+        inspect(working_directory, verbatim)?;
+        if !working_directory.is_absolute() {
+            return Err(invalid());
+        }
+        let working = if verbatim {
+            working_directory.to_owned()
+        } else {
+            full_path(working_directory)?
+        };
         let rooted = working
             .ancestors()
             .last()
@@ -214,7 +224,9 @@ impl PathContext {
         let mut drives = BTreeMap::new();
         let working_drive = match working.components().next() {
             Some(Component::Prefix(prefix)) => match prefix.kind() {
-                Prefix::Disk(drive) => Some(drive.to_ascii_uppercase()),
+                Prefix::Disk(drive) | Prefix::VerbatimDisk(drive) => {
+                    Some(drive.to_ascii_uppercase())
+                }
                 _ => None,
             },
             _ => None,
@@ -227,20 +239,22 @@ impl PathContext {
             let expression = OsString::from_wide(&[u16::from(drive), 58, 46]);
             drives.insert(drive, full_path(Path::new(&expression))?);
         }
-        inspect(&working, false)?;
-        inspect(&rooted, false)?;
+        inspect(&working, verbatim)?;
+        inspect(&rooted, verbatim)?;
         Ok(Self {
             working,
             rooted,
             drives,
         })
     }
-    /// Captured ordinary absolute working-directory spelling, not an identity proof.
+    /// Captured absolute ordinary/verbatim working spelling, not an identity proof.
     pub fn working_directory(&self) -> &Path {
         &self.working
     }
     /// Resolve one native request using captured state and ordinary Win32
-    /// normalization, or the conservative dot-free user-verbatim subset.
+    /// normalization for ordinary bases. A verbatim base retains literal tail
+    /// dots/spaces while resolving dot navigation. Standalone user-verbatim paths
+    /// retain the conservative dot-free subset.
     pub fn resolve(&self, value: &Path) -> io::Result<PathBuf> {
         let raw: Vec<_> = value.as_os_str().encode_wide().collect();
         let verbatim = raw.starts_with(&[92, 92, 63, 92]);
@@ -254,6 +268,13 @@ impl PathContext {
                 .collect::<Vec<_>>(),
         );
         let value = Path::new(&normalized_slashes);
+        // An incomplete UNC introducer must not become a local root-relative
+        // operand merely because Rust could not parse its missing server/share.
+        if value.as_os_str().as_encoded_bytes().starts_with(b"\\\\")
+            && !matches!(value.components().next(), Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::UNC(..)))
+        {
+            return Err(invalid());
+        }
         inspect(value, false)?;
         let anchored = match value.components().next() {
             Some(Component::Prefix(prefix)) => match prefix.kind() {
@@ -263,21 +284,206 @@ impl PathContext {
                         .get(&drive.to_ascii_uppercase())
                         .ok_or_else(invalid)?;
                     let units: Vec<_> = value.as_os_str().encode_wide().collect();
-                    base.join(OsString::from_wide(&units[2..]))
+                    join_captured(base, Path::new(&OsString::from_wide(&units[2..])))
                 }
                 Prefix::Disk(_) | Prefix::UNC(..) => value.to_owned(),
                 _ => return Err(invalid()),
             },
-            _ if value.has_root() => self.rooted.join(value),
-            _ => self.working.join(value),
+            _ if value.has_root() => join_captured(&self.rooted, value),
+            _ => join_captured(&self.working, value),
         };
-        extended(&full_path(&anchored)?)
+        if has_verbatim_prefix(&anchored) {
+            inspect(&anchored, true)?;
+            Ok(anchored)
+        } else {
+            extended(&full_path(&anchored)?)
+        }
     }
+}
+fn has_verbatim_prefix(path: &Path) -> bool {
+    matches!(path.components().next(), Some(Component::Prefix(prefix)) if prefix.kind().is_verbatim())
+}
+fn join_captured(base: &Path, tail: &Path) -> PathBuf {
+    // Bare drive-relative C: denotes the captured drive directory itself. It is
+    // distinct from a literally empty request, which resolve refuses before here.
+    if tail.as_os_str().is_empty() {
+        return base.to_owned();
+    }
+    let mut joined = base.join(tail);
+    // Rust's verbatim push resolves dot navigation but reconstructs components,
+    // dropping a terminal separator. Preserve its file-versus-directory meaning.
+    if has_verbatim_prefix(base)
+        && tail.as_os_str().encode_wide().last() == Some(92)
+        && joined.as_os_str().encode_wide().last() != Some(92)
+    {
+        joined.as_mut_os_string().push(r"\");
+    }
+    joined
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_base_preserves_literal_verbatim_names_navigation_roots_and_terminal_separators() {
+        for (base, expected) in [
+            (r"C:\owned\base", r"\\?\C:\owned\base"),
+            (
+                r"\\?\C:\owned\literal. \kept ",
+                r"\\?\C:\owned\literal. \kept ",
+            ),
+        ] {
+            let context = PathContext::capture(Path::new(base)).unwrap();
+            assert_eq!(
+                context.resolve(Path::new("c:")).unwrap().as_os_str(),
+                OsStr::new(expected)
+            );
+            assert!(context.resolve(Path::new("")).is_err());
+        }
+        // Pure operational ceiling, not an existing filesystem component claim.
+        let longest_base = format!(r"\\?\C:\{}", "x".repeat(32_759));
+        assert_eq!(longest_base.encode_utf16().count(), 32_766);
+        let context = PathContext::capture(Path::new(&longest_base)).unwrap();
+        assert_eq!(
+            context.resolve(Path::new("C:")).unwrap().as_os_str(),
+            OsStr::new(&longest_base)
+        );
+        for (base, cases) in [
+            (
+                r"\\?\C:\owned\literal. \kept ",
+                &[
+                    ("mail.eml. ", r"\\?\C:\owned\literal. \kept \mail.eml. "),
+                    (". ", r"\\?\C:\owned\literal. \kept \. "),
+                    (".. ", r"\\?\C:\owned\literal. \kept \.. "),
+                    (r".\mail.eml", r"\\?\C:\owned\literal. \kept \mail.eml"),
+                    (r"..\peer", r"\\?\C:\owned\literal. \peer"),
+                    (r"..\..\..\..\peer", r"\\?\C:\peer"),
+                    (r"\other", r"\\?\C:\other"),
+                    (r"\server", r"\\?\C:\server"),
+                    (r"\other\", r"\\?\C:\other\"),
+                    (
+                        "folder/file.eml/",
+                        r"\\?\C:\owned\literal. \kept \folder\file.eml\",
+                    ),
+                    (r"c:mail.eml. ", r"\\?\C:\owned\literal. \kept \mail.eml. "),
+                    (r"C:\other\..\mail.eml", r"\\?\C:\mail.eml"),
+                ][..],
+            ),
+            (
+                r"\\?\UNC\server\share\literal. \kept ",
+                &[
+                    (
+                        "mail.eml. ",
+                        r"\\?\UNC\server\share\literal. \kept \mail.eml. ",
+                    ),
+                    (r"..\peer", r"\\?\UNC\server\share\literal. \peer"),
+                    (r"..\..\..\peer", r"\\?\UNC\server\share\peer"),
+                    (r"\other", r"\\?\UNC\server\share\other"),
+                    (r"\other\", r"\\?\UNC\server\share\other\"),
+                    (
+                        "folder/file.eml/",
+                        r"\\?\UNC\server\share\literal. \kept \folder\file.eml\",
+                    ),
+                ][..],
+            ),
+        ] {
+            let context = PathContext::capture(Path::new(base)).unwrap();
+            assert_eq!(context.working_directory().as_os_str(), OsStr::new(base));
+            for &(tail, expected) in cases {
+                let actual = context.resolve(Path::new(tail)).unwrap();
+                // Path equality normalizes terminal separators; compare actual
+                // native strings against independent authored expected operands.
+                assert_eq!(
+                    actual.as_os_str(),
+                    OsStr::new(expected),
+                    "base={base:?}, tail={tail:?}"
+                );
+            }
+            assert!(context.resolve(Path::new("")).is_err());
+            for malformed in [
+                r"\\",
+                r"\\server",
+                r"\\server\",
+                r"\\\share",
+                "//",
+                "//server",
+                "//server/",
+            ] {
+                assert!(
+                    context.resolve(Path::new(malformed)).is_err(),
+                    "{malformed:?}"
+                );
+            }
+            let unpaired = OsString::from_wide(&[120, 0xd800, 92]);
+            let actual = context.resolve(Path::new(&unpaired)).unwrap();
+            let mut expected: Vec<_> = base.encode_utf16().collect();
+            expected.extend([92, 120, 0xd800, 92]);
+            assert_eq!(
+                actual.as_os_str().encode_wide().collect::<Vec<_>>(),
+                expected
+            );
+        }
+        for invalid in [
+            "",
+            "relative",
+            r"C:relative",
+            r"\rooted",
+            r"\\?\C:\a\..\b",
+            r"\\.\pipe\owned",
+        ] {
+            assert!(
+                PathContext::capture(Path::new(invalid)).is_err(),
+                "{invalid:?}"
+            );
+        }
+    }
+    #[test]
+    fn explicit_literal_base_reads_owned_native_file_and_preserves_directory_only_operand() {
+        let root = tempfile::tempdir().unwrap();
+        let ordinary = ordinary_owned_dos_root(root.path());
+        let setup = PathContext::capture(&ordinary).unwrap();
+        // Enter extended syntax before adding literal directory components;
+        // ordinary Win32 normalization would trim their final dots/spaces.
+        let base = setup
+            .resolve(&ordinary)
+            .unwrap()
+            .join("literal. ")
+            .join("kept ");
+        std::fs::create_dir_all(&base).unwrap();
+        let literal_file = base.join("mail.eml. ");
+        let trimmed_file = base.join("mail.eml");
+        std::fs::write(&literal_file, b"literal native name").unwrap();
+        std::fs::write(&trimmed_file, b"different trimmed name").unwrap();
+        let context = PathContext::capture(&base).unwrap();
+        let actual = context.resolve(Path::new("mail.eml. ")).unwrap();
+        assert_eq!(actual.as_os_str(), literal_file.as_os_str());
+        assert_eq!(std::fs::read(&actual).unwrap(), b"literal native name");
+        let literal = crate::BoundFile::open(&actual, false).unwrap();
+        let independent = crate::BoundFile::open(&literal_file, false).unwrap();
+        let other = crate::BoundFile::open(&trimmed_file, false).unwrap();
+        assert_eq!(
+            literal.initial_signature().identity,
+            independent.initial_signature().identity
+        );
+        assert_ne!(
+            literal.initial_signature().identity,
+            other.initial_signature().identity
+        );
+        drop(literal);
+        drop(independent);
+        drop(other);
+        let directory_only = context.resolve(Path::new("mail.eml. /")).unwrap();
+        assert_eq!(directory_only.as_os_str().encode_wide().last(), Some(92));
+        assert!(
+            std::fs::read(&directory_only).is_err(),
+            "terminal separator must not open a regular file"
+        );
+        std::fs::remove_file(literal_file).unwrap();
+        std::fs::remove_file(trimmed_file).unwrap();
+        std::fs::remove_dir(&base).unwrap();
+        std::fs::remove_dir(base.parent().unwrap()).unwrap();
+        root.close().unwrap();
+    }
     #[test]
     fn native_component_validation_rejects_devices_streams_and_generated_reserved_stems() {
         for name in [
@@ -320,7 +526,7 @@ mod tests {
     }
     #[test]
     fn native_capture_preserves_units_and_rejects_verbatim_dots_before_io() {
-        let context = PathContext::capture().unwrap();
+        let context = PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         for path in [
             r"\\?\C:",
             r"\\?\C:relative",
@@ -372,9 +578,21 @@ mod tests {
         const CHILD_ROOT: &str = "EML_OWNED_PATH_CAPTURE_TEST_ROOT";
         if let Some(root) = std::env::var_os(CHILD_ROOT) {
             let root = PathBuf::from(root);
-            let context = PathContext::capture().unwrap();
+            let context = PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
             let before = context.resolve(Path::new("sentinel")).unwrap();
             assert_eq!(std::fs::read(&before).unwrap(), b"captured first directory");
+            // The supplied ordinary base must win even BEFORE this child's cwd
+            // changes. Recapturing ambient cwd would read the different first file.
+            let second = ordinary_owned_dos_root(&root).join("second");
+            let supplied = PathContext::capture(&second).unwrap();
+            let selected = supplied.resolve(Path::new("sentinel")).unwrap();
+            let mut expected = OsString::from(r"\\?\");
+            expected.push(second.join("sentinel"));
+            assert_eq!(selected.as_os_str(), expected);
+            assert_eq!(
+                std::fs::read(&selected).unwrap(),
+                b"changed second directory"
+            );
             // This is the ONLY cwd mutation: an isolated, exact-one-test child
             // process using only its parent's fresh owned fixture directories.
             std::env::set_current_dir(root.join("second")).unwrap();
@@ -506,7 +724,7 @@ mod tests {
         let expression = link.join("..").join("sentinel");
         let direct = read_direct_ordinary(&expression).unwrap();
         assert_eq!(direct, b"lexical a sentinel");
-        let captured = PathContext::capture()
+        let captured = PathContext::capture(&std::env::current_dir().unwrap())
             .unwrap()
             .resolve(&expression)
             .unwrap();
@@ -540,7 +758,7 @@ mod tests {
     #[test]
     fn long_ordinary_capture_and_user_verbatim_read_owned_native_file() {
         let root = tempfile::tempdir().unwrap();
-        let context = PathContext::capture().unwrap();
+        let context = PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         let ordinary = ordinary_owned_dos_root(root.path());
         let mut directory = ordinary.clone();
         for letter in ['a', 'b', 'c'] {

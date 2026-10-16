@@ -303,8 +303,9 @@ Windows `stage_bytes` now supplies the separate owned-file storage capability:
 bounded same-handle write/readback/EOF checks, actual file synchronization and
 explicit cleanup, with native inherited ACLs unchanged. Source review is closed;
 the bounded both-CPU native storage cases passed at543f8a7. ReadyCandidate now
-consumes into a separate physical rename attempt; that increment's source/native
-checks are pending. Neither storage nor the rename-effect receipt qualifies MIME
+consumes into a separate physical rename attempt; that increment's source and
+bounded both-CPU native checks closed at d58d503. Neither storage nor the
+rename-effect receipt qualifies MIME
 authorization, source admission, namespace/address synchronization, changed-parent
 confinement or final-copy publication.
 The names-only structure's64-bit file ID is never padded into a full identity.

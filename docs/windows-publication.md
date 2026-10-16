@@ -470,14 +470,40 @@ Both native CPUs must compare direct ordinary CreateFileW with captured paths on
 owned junction/.. fixtures, and test captured relative/root-relative/drive-relative
 bases, UNC, non-Unicode and ordinary/verbatim long paths. No registry changes.
 
-Capture uses one bounded GetFullPathNameW call per expression, never a relative
-sizing/retry query. Rooted resolution and the current drive derive from the same
-captured working expression; other per-drive states are captured once during an
-admission phase in which the caller must not mutate cwd/drive state. There is no
-OS atomic multi-drive snapshot. The operational extended content ceiling is
+PathContext::capture takes the caller's explicit absolute working expression;
+it does not select its own ambient working directory. Ordinary bases and anchored
+ordinary expressions use one bounded GetFullPathNameW call, never a relative
+sizing/retry query. Root-relative resolution and the supplied DOS drive derive
+from that base, including its verbatim form; other per-drive states are captured
+once during an admission phase in which the caller must not mutate cwd/drive
+state. There is no OS atomic multi-drive snapshot. The operational extended content ceiling is
 32766 UTF-16 units excluding NUL, including its prefix, below the documented
 approximate32767-character API maximum. The core's broader32768-unit request
 resource bound does not promise that every resulting native expression fits.
+
+The previously unspecified mixed case has this reviewed rule: a supplied
+verbatim DOS/UNC base retains literal name dots/spaces in a relative tail, while
+dot/dot-dot navigation resolves within that drive or UNC server/share root.
+Normalize ordinary tail slashes before joining; dispatch and strip a same-drive
+prefix before joining. Root-relative tails replace the directory portion only.
+Preserve a requested terminal separator in the actual native operand, since its
+loss could turn directory-only lookup into a regular-file lookup. Empty input
+retains its refusal. Standalone user-verbatim paths retain the dot-free supported
+subset; absolute ordinary inputs retain ordinary Win32 normalization regardless
+of the base. The core separately retains the original request spelling.
+
+Pinned Rust PathBuf::push supplies prefix-aware dot navigation without a separate
+component walker; a raw trailing backslash restores the separator it drops while
+reconstructing verbatim components. This literal mixed-tail rule uses .NET's
+two-argument GetFullPath as precedent, not an ordinary Win32 equivalence or full
+.NET compatibility promise: other-drive paths still use our captured drive state.
+No PathCch1703 dependency or minimum-OS change is introduced. Independent expected
+native-string cases and real owned literal-base file/identity checks are added;
+source/API/caller/test review is closed and native execution remains pending. Neither normalization nor these tests
+supplies the still-required physical root/ancestor/address binding.
+
+References: [pinned Rust path implementation](https://github.com/rust-lang/rust/blob/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/path.rs),
+[.NET path implementation](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/Path.Windows.cs).
 
 UNC share names PIPE, MAILSLOT and IPC$ are refused before I/O, case-insensitively,
 in ordinary and verbatim forms. For this conservative namespace comparison only,
@@ -558,10 +584,11 @@ final close/reopen NOFOLLOW ordinary-object/ID/content/address qualification and
 Created classification remain subsequent work. This increment does not clear
 the changed-parent confinement gate or qualify a complete Windows publisher.
 
-Source QA and native two-CPU checks for this increment are pending. Benign native
+Source and bounded native two-CPU QA closed at d58d503. Benign native
 cases exercise same-held-object complete bytes at the final basename, retained
 final data after release, unchanged conflict winner plus owned loser cleanup,
-invalid-component refusal and the real held-volume component boundary. The
+invalid-component refusal and exact-limit acceptance/one-over refusal using the
+real held-volume component boundary. The
 Unknown-status mapping uses real owned storage with a scripted private state;
 it does not claim an actual ambiguous native rename, native close failure, core
 cancellation integration or final-copy qualification.

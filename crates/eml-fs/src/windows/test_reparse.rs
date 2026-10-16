@@ -147,7 +147,7 @@ mod tests {
     fn attribute_only_writer_must_not_convert_strictly_pinned_directory() {
         let _actor = RestrictedToken::enter().unwrap();
         let root = tempfile::tempdir().unwrap();
-        let context = PathContext::capture().unwrap();
+        let context = PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         let target = root.path().join("target");
         let baseline = root.path().join("baseline");
         let pinned = root.path().join("pinned");

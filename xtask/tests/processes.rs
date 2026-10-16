@@ -2,6 +2,17 @@
 #![cfg(unix)]
 use std::{fs, path::Path, process::Command, time::Duration};
 use xtask::process::Controller;
+// Scenarios share the global process census and finite observation budget even
+// with separate directories/sessions. Isolate outer scenarios, preserving all
+// concurrency inside each real process-lifetime/negative-control scenario.
+static PROCESS_SCENARIOS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn scenario() -> std::sync::MutexGuard<'static, ()> {
+    // A failed test remains failed; poisoning must not hide independent later
+    // scenario evidence. Locals/resources drop before this first-declared guard.
+    PROCESS_SCENARIOS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 struct ProbeRoot(Option<tempfile::TempDir>);
 impl ProbeRoot {
     fn path(&self) -> &Path {
@@ -37,6 +48,7 @@ fn worker(root: &Path, mode: &str) -> Command {
 }
 #[test]
 fn normal_singleton_completes_with_real_status_and_cleanup() {
+    let _scenario = scenario();
     let root = scratch();
     let mut command = Command::new("/usr/bin/true");
     command.current_dir(root.path());
@@ -52,6 +64,7 @@ fn normal_singleton_completes_with_real_status_and_cleanup() {
 }
 #[test]
 fn ordinary_exit_does_not_leave_background_marker_writer() {
+    let _scenario = scenario();
     let root = scratch();
     let result = controller(root.path())
         .run(
@@ -68,6 +81,7 @@ fn ordinary_exit_does_not_leave_background_marker_writer() {
 }
 #[test]
 fn deadline_kills_nested_group_that_ignores_term() {
+    let _scenario = scenario();
     let root = scratch();
     let result = controller(root.path())
         .run(
@@ -85,6 +99,7 @@ fn deadline_kills_nested_group_that_ignores_term() {
 }
 #[test]
 fn overdue_observed_success_cannot_qualify() {
+    let _scenario = scenario();
     let root = scratch();
     let result = controller(root.path())
         .run(
@@ -135,6 +150,7 @@ fn wait_file(path: &Path) {
 }
 #[test]
 fn parent_sigterm_uses_control_eof_and_leaves_no_marker_writer() {
+    let _scenario = scenario();
     let root = scratch();
     let mut parent = Command::new(env!("CARGO_BIN_EXE_process-probe"))
         .arg("supervise")
@@ -155,6 +171,7 @@ fn parent_sigterm_uses_control_eof_and_leaves_no_marker_writer() {
 }
 #[test]
 fn parent_sigkill_closes_its_only_control_writer() {
+    let _scenario = scenario();
     let root = scratch();
     let mut parent = Command::new(env!("CARGO_BIN_EXE_process-probe"))
         .arg("supervise")
@@ -175,6 +192,7 @@ fn parent_sigkill_closes_its_only_control_writer() {
 }
 #[test]
 fn startup_failure_never_starts_the_requested_worker() {
+    let _scenario = scenario();
     let root = scratch();
     let controller = Controller::new(root.path(), Path::new("/usr/bin/false")).unwrap();
     assert!(
@@ -191,6 +209,7 @@ fn startup_failure_never_starts_the_requested_worker() {
 }
 #[test]
 fn setup_capture_does_not_mix_worker_stderr_into_json() {
+    let _scenario = scenario();
     let root = scratch();
     let controller = controller(root.path());
     let mut command = Command::new("/bin/sh");
@@ -203,6 +222,7 @@ fn setup_capture_does_not_mix_worker_stderr_into_json() {
 }
 #[test]
 fn parent_sigint_cancels_and_reaps_its_nested_worker() {
+    let _scenario = scenario();
     let root = scratch();
     let mut parent = Command::new(env!("CARGO_BIN_EXE_process-probe"))
         .arg("supervise")
@@ -264,6 +284,7 @@ fn raw_session(
 }
 #[test]
 fn failed_enumeration_cannot_launch_a_worker_or_qualify_cleanup() {
+    let _scenario = scenario();
     let root = scratch();
     let script = root.path().join("inspect");
     fs::write(&script, b"#!/bin/sh\nexit 1\n").unwrap();
@@ -276,6 +297,7 @@ fn failed_enumeration_cannot_launch_a_worker_or_qualify_cleanup() {
 }
 #[test]
 fn a_group_in_another_owned_session_is_not_signal_authority() {
+    let _scenario = scenario();
     let root = scratch();
     let (mut helper, writer, mut reader) =
         raw_session(root.path(), "marker", Path::new("/bin/ps"), 5000);
@@ -310,6 +332,7 @@ fn a_group_in_another_owned_session_is_not_signal_authority() {
 }
 #[test]
 fn unreaped_dead_pin_still_anchors_group_through_last_signal() {
+    let _scenario = scenario();
     let session = rustix::process::getsid(None).unwrap();
     let helper = Path::new(env!("CARGO_BIN_EXE_xtask"));
     let mut first = controller_source::unix::pin(
@@ -338,6 +361,7 @@ fn unreaped_dead_pin_still_anchors_group_through_last_signal() {
 }
 #[test]
 fn pin_survives_term_then_eof_cleans_its_own_group() {
+    let _scenario = scenario();
     let session = rustix::process::getsid(None).unwrap();
     let mut held = controller_source::unix::pin(
         Path::new(env!("CARGO_BIN_EXE_xtask")),
@@ -363,6 +387,7 @@ fn pin_survives_term_then_eof_cleans_its_own_group() {
 }
 #[test]
 fn supervisor_death_during_frozen_nested_groups_uses_eof_hup_cont_cascade() {
+    let _scenario = scenario();
     let root = scratch();
     let script = root.path().join("inspect");
     fs::write(&script,b"#!/bin/sh\nn=0\nif [ -f \"$0.count\" ]; then read -r n < \"$0.count\"; fi\nn=$((n+1))\nprintf '%s\\n' \"$n\" > \"$0.count\"\nif [ \"$n\" -ge 3 ]; then : > \"$0.frozen\"; sleep 0.3; fi\nexec /bin/ps \"$@\"\n").unwrap();
@@ -383,6 +408,7 @@ fn supervisor_death_during_frozen_nested_groups_uses_eof_hup_cont_cascade() {
 }
 #[test]
 fn group_survives_original_leader_reaping_only_until_owned_cleanup() {
+    let _scenario = scenario();
     let root = scratch();
     let result = controller(root.path())
         .run(
@@ -399,6 +425,7 @@ fn group_survives_original_leader_reaping_only_until_owned_cleanup() {
 }
 #[test]
 fn group_created_after_root_freeze_is_discovered_and_terminated() {
+    let _scenario = scenario();
     let root = scratch();
     let script = root.path().join("inspect");
     fs::write(&script,b"#!/bin/sh\nn=0\nif [ -f \"$0.count\" ]; then read -r n < \"$0.count\"; fi\nn=$((n+1))\nprintf '%s\\n' \"$n\" > \"$0.count\"\nif [ \"$n\" -eq 2 ]; then : > \"$0.fork-now\"; sleep 0.1; fi\nexec /bin/ps \"$@\"\n").unwrap();
@@ -417,6 +444,7 @@ fn group_created_after_root_freeze_is_discovered_and_terminated() {
 }
 #[test]
 fn inherited_child_signal_policy_requires_waitable_result_or_refusal() {
+    let _scenario = scenario();
     let root = scratch();
     let mut child = Command::new("/bin/sh")
         .args([
@@ -461,6 +489,7 @@ fn inherited_child_signal_policy_requires_waitable_result_or_refusal() {
 }
 #[test]
 fn pin_startup_uses_remaining_absolute_budget_not_a_fresh_timeout() {
+    let _scenario = scenario();
     let session = rustix::process::getsid(None).unwrap();
     let result = controller_source::unix::pin(
         Path::new(env!("CARGO_BIN_EXE_process-probe")),

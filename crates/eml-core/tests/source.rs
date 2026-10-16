@@ -30,7 +30,7 @@ fn bind(path: &Path) -> BoundFile {
     #[cfg(windows)]
     {
         BoundFile::open(
-            &eml_fs::PathContext::capture()
+            &eml_fs::PathContext::capture(&std::env::current_dir().unwrap())
                 .unwrap()
                 .resolve(path)
                 .unwrap(),

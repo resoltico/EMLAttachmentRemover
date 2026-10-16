@@ -91,7 +91,7 @@ pub(super) fn directory() -> tempfile::TempDir {
     root
 }
 pub(super) fn operation(path: &Path) -> std::path::PathBuf {
-    crate::PathContext::capture()
+    crate::PathContext::capture(&std::env::current_dir().unwrap())
         .unwrap()
         .resolve(path)
         .unwrap()
