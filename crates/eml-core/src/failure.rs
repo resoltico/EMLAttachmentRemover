@@ -2,6 +2,21 @@
 use crate::{ErrorCode, ErrorPhase};
 use std::{io, sync::Arc};
 
+/// Numeric native context for bounded frontend diagnostics; never a semantic code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeDiagnostic {
+    /// Raw host OS error number.
+    OsCode(i32),
+    /// Exact primary NTSTATUS and secondary Win32 translation.
+    #[cfg(windows)]
+    NtStatus {
+        /// Signed completed native status.
+        status: i32,
+        /// Secondary translation, never the primary status.
+        win32: u32,
+    },
+}
+
 /// Typed operation failure, independent of output, publication or cleanup facts.
 /// Construction stays private to business operations; frontends only observe it.
 #[derive(Clone, Debug)]
@@ -12,6 +27,21 @@ pub struct OperationFailure {
     cause: Option<Arc<io::Error>>,
 }
 impl OperationFailure {
+    /// Exact numeric cause without unbounded/localized io::Error text or payload.
+    pub fn native_diagnostic(&self) -> Option<NativeDiagnostic> {
+        let error = self.native_error()?;
+        #[cfg(windows)]
+        if let Some(native) = error
+            .get_ref()
+            .and_then(|cause| cause.downcast_ref::<eml_fs::NtStatusError>())
+        {
+            return Some(NativeDiagnostic::NtStatus {
+                status: native.nt_status(),
+                win32: native.win32_code(),
+            });
+        }
+        error.raw_os_error().map(NativeDiagnostic::OsCode)
+    }
     pub(super) fn with_context(
         mut self,
         code: ErrorCode,

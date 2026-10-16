@@ -159,8 +159,36 @@ must qualify its represented method/outcome across the counted ordered edge set;
 a final edge's stronger method cannot erase a prior limited/failed request.
 
 The same typed event/outcome hierarchy now serves Core run for Create and DryRun;
-normal execution does not silently become a plan. The common source/native
-integration is still being verified. Native receipts, source/output reservations,
+normal execution does not silently become a plan. Bounded common native
+integration passed at6e7bb6a. Native receipts, source/output reservations,
 metadata budgeting and counts remain business-library decisions. The CLI package
-still has no executable/event renderer; these typed source capabilities are not
-JSON/CLI or application qualification.
+now has the checked event renderer below, with native adapter validation pending;
+it still has no executable. These capabilities do not qualify process/application
+delivery.
+
+## Implemented event adapters and framing bound
+
+JsonSink projects borrowed typed Core events into every required protocol1 field,
+including explicit null/unattempted states and native identity/error domains.
+Native numeric context uses a bounded typed accessor rather than localized/raw
+io::Error Display. HumanSink uses terminal-safe paths and typed publication
+knowledge. Both serialize/format a whole event before checked write/flush and
+permanently reject further delivery after a failure; neither owns filesystem
+policy, status decisions or counters.
+
+The shared line limit counts encoded UTF-8 JSON bytes plus its one LF delimiter:
+at most64MiB including LF. The producer reserves that byte before serialization.
+Run accounting also includes every LF and remains strictly below256MiB. A valid
+Core item is bounded below32MiB, so this delimiter clarification excludes no valid
+Core result. U+0085/U+2028 may remain raw inside JSON strings; only byte0x0A frames
+records. The independent maximal constructors use contract path/metadata budgets,
+full existing/publication receipt forms and2048bytes per-item fixed margin; their
+combined dimension maxima are conservative supersets, not ordinary message output
+recorded as an oracle or exact peak-memory promises.
+
+Current tests include hand-authored native planned-create golden lines, actual
+Created/UpToDate projection, raw Unicode separators, human escaping, exact/+1
+line storage, run storage and actual partial-write/flush progress with permanent
+failure. The complete required shared scenario set, executable stdin/signals,
+shipping smoke and Swift consumer remain unfinished. Native adapter runtime is
+pending; this library slice alone does not qualify the process protocol.

@@ -1652,3 +1652,66 @@ Six-platform common-run runtime remains pending.
 The old Windows creation gate remains FAILED. No replacement confinement gate,
 CLI executable/JSON framing, SwiftUI, archive or GUI qualification is claimed; full
 product/WP acceptance remains unfinished.
+
+At exact `6e7bb6a417f824222a0b42089e8fa54aca6386ff`,
+[Unix run38907413991](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38907413991)
+passed all seven jobs/full-head checkouts on native Rust1.99 hosts. Each of four
+filesystem jobs executed Core43/collection11/destination11/dry_run19/execution10/
+existing5/source6/request9/diagnostic3/path6/decoder16 cleanly, with all11 added
+Core unit names and all10 execution names once per applicable host. FS31Mac/
+27Linux, real credential controls and process18/xtask15 on both probe hosts passed.
+Whole raw log had56 clean summaries including four expected empty FS doctests,
+zero failures/ignores/filters.
+[Windows run38907413762](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38907413762)
+verified full SHA/native Rust1.99 x64 and ARM64/NTFS/no emulation. Both CPUs passed
+Core39/collection12/destination11/dry_run18/execution10/existing4/source5 and prior
+request9/diagnostic3/path6/decoder16 unfiltered without failures or ignores. All
+eight added applicable Core units and10 execution names ran once per CPU. FS49
+nongate/1filter passed; the unchanged old strict gate was the only failed step:
+0passed/1failed/0ignored/49filtered each. Windows overall remains FAILED.
+Independent exact-head/raw/discovery review closed bounded common-run integration
+only. Raw logs retained: target/6e7bb6a-unix-ci.log and
+target/6e7bb6a-windows-ci.log. This does not replace that gate, qualify complete
+writable confinement, release artifact/floor integration, executable signals/JSON,
+GUI or archives.
+
+## Checked protocol event rendering
+
+The transport library now has borrowed fixed-schema event projection and checked
+JSON/human sinks. Core reexports only receipt/identity observations, canonical
+removal reason names and typed numeric native diagnostics; no filesystem operation
+or outcome/count rule moves into the CLI. Error details remain<=1000scalars with
+numeric suffixes retained and no raw io::Error Display/payload. Native identity
+strings stay bounded opaque ASCII. Required nulls, cleanup native components,
+existing unknown equality and unattempted sync remain explicit.
+
+Whole-event buffering reserves LF inside64MiB, run accounting includes every
+framing byte below256MiB, and serialize/write/flush failure permanently stops the
+sink. Seven unit controls include independent maximal item/run constructors:
+contract-native paths,20000retained removals across4096items, sanitized255-scalar
+supplementary filenames, full receipts/long identities and2048fixed bytes per item.
+They prove a conservative envelope below32MiB/256MiB, not that incompatible
+maxima occur in one MIME message or an exact peak-memory limit. Boundary controls
+exercise exact/+1 line bytes, run refusal before writer access, exact7-byte partial
+prefix with no flush, complete event before flush failure, and no second output.
+
+Four actual owned Core-to-wire integrations cover hand-authored Unix/Windows
+native planned-create golden forms, qualified Created/UpToDate receipts, human
+unsafe-character escaping/failure effect and raw U+0085/U+2028 with exactly3LF
+frames. Windows temporary-root normalization preserves the absolute extended
+shape and UTF16 units; relative path semantics are not normalized away. The
+additional tempfile dev dependency reused the reviewed lockfile; only the local
+package dependency list changed, no crate version/input upgraded.
+
+Stable cargo test --locked --workspace exited0:268 passes across21positive/five
+expected empty suites, zero failures/ignores/filters
+(target/protocol-workspace-final.log). CLI units7/events4 passed locally. Host
+workspace and MSVC Core/CLI all-target Clippy, native probe/actionlint, formatting
+and diff checks passed after fixing test lints without suppressions. Independent
+source/proof/workflow review closed the projection scope; both native workflows
+select CLI lib/events/path/request and Windows requires four positive unfiltered
+transport suites. Native adapter runtime remains pending.
+
+The CLI executable, interruptible request reading/signals, complete shared scenario
+set, Swift consumer and native shipping smoke remain unfinished. The old Windows
+creation gate remains FAILED and no full product/archive/GUI qualification follows.

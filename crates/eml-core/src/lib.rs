@@ -34,7 +34,9 @@ pub use destination::{
     DestinationRecord, plan_destinations,
 };
 #[cfg(any(unix, windows))]
-pub use failure::OperationFailure;
+pub use eml_fs::{CleanupReceipt, CleanupState, Identity, SyncMethod, SyncReceipt, SyncState};
+#[cfg(any(unix, windows))]
+pub use failure::{NativeDiagnostic, OperationFailure};
 mod diagnostic;
 #[cfg(any(unix, windows))]
 mod selection;
@@ -178,6 +180,16 @@ pub enum RemovalReason {
     RelatedResource,
     /// A leaf that is neither plain nor HTML body content.
     NonBodyPart,
+}
+impl RemovalReason {
+    /// Canonical protocol-1 name; rendering does not duplicate MIME decisions.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Attachment => "attachment",
+            Self::RelatedResource => "related_resource",
+            Self::NonBodyPart => "non_body_part",
+        }
+    }
 }
 /// Bounded display metadata describing one source decision, not a destination path.
 #[derive(Clone, Debug, PartialEq, Eq)]

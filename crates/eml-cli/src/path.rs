@@ -61,7 +61,7 @@ impl<'de> Deserialize<'de> for NativeEncoding {
 }
 
 impl NativePath {
-    fn encode(value: &Path) -> Self {
+    pub(super) fn encode(value: &Path) -> Self {
         #[cfg(unix)]
         let base64 = {
             use std::os::unix::ffi::OsStrExt;
