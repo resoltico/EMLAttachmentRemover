@@ -141,10 +141,9 @@ destination confinement, complete verified regular candidate, atomic
 no-replace publication of that held candidate, final destination-inherited
 Windows ACL, file/namespace synchronization, requested-address and identity
 checks, and truthful published/unknown/cleanup outcomes. Relative creation
-alone does not prove the candidate's metadata remains ordinary while its
-temporary access follows an inheritable destination ACL. That property needs
-a separate challenged protection mechanism or native proof; do not infer it
-from exclusive data sharing.
+alone does not qualify all those properties. Assess candidate risk against the
+specified held-object/content and qualification checks below, rather than adding
+an unsupported requirement that all metadata remain immutable through the edge.
 
 Qualification first needs bounded synthetic tests on both native Windows CPUs
 showing that each relative mirror-directory and candidate-file creation under
@@ -157,16 +156,38 @@ failure as explicit evidence and a negative control; only an implemented
 replacement with an equivalent-or-stronger passing native gate can change the
 product qualification status. A compile-only result cannot do so.
 
-## Candidate ACL decision for review (no policy change)
+## Candidate content, metadata and inherited ACL
 
-The current requirement remains: filesystem contract §1 requires a complete,
-verified regular candidate, publication of that same held object, and Windows
-copies with the destination directory's inherited ACL. Section 6 creates the
-candidate directly in that directory with its inherited ACL; §7 requires
-truthful post-edge outcomes, §8 allows forced termination after publication,
-and §10 requires shared-directory, inherited-ACL and forced-stop evidence.
-Protocol 1 has fixed publication receipts and error codes, with no ACL-state
-receipt. This section proposes no exception to those requirements.
+The original filesystem contract §1 requires complete verified content,
+publication of the same held object that was written and synchronized, bound
+destination confinement and no replacement. Windows copies retain the destination
+directory's inherited ACL, including after a forced stop. Section6 defines
+candidate checks and final no-follow qualification, §7 requires truthful outcomes,
+and §8 permits incomplete reporting after an atomic edge. These guarantees remain
+unchanged. The trust boundary protects against other users; same-user authority,
+administrators and a compromised/nonconforming OS are excluded. A restricted
+same-SID test is not evidence of a separate-user login.
+
+The required observation points are:
+
+- Initially and before the edge, check ordinary disk/type/tag/full identity and
+  the required source/destination bindings. Write, reread/compare and synchronize
+  through the same owned candidate handle. An observed pre-edge disqualification
+  refuses publication and preserves actual owned cleanup outcomes.
+- Publish that held object with one no-replace edge. Do not substitute an object
+  reopened by its mutable staging name. Complete verified content and the same
+  written/synchronized object are unconditional, including published final copies
+  left after a forced stop. An incomplete staging file may remain as specified.
+- After the edge, finish required synchronization and close/reopen the final entry
+  without following reparse points; qualify its ordinary type, full identity,
+  bytes and requested address. A detected failure is Failed(Published), never
+  Created and never a claim that no publication occurred. An ambiguous native
+  result remains Unknown when reconciliation cannot prove its actual effect.
+
+The earlier addendum overstated these clauses as a separate guarantee of
+continuous metadata immutability. Independent contract/security review corrected
+that interpretation. All stated checks remain required; this is not a policy
+waiver or permission to report an unsafe final object as Created.
 
 The candidate question is whether another authority granted
 `FILE_WRITE_ATTRIBUTES` by an inherited ACL could make the staged file a
@@ -177,49 +198,24 @@ permits reparse-setting access through `FILE_WRITE_ATTRIBUTES` or
 nonempty-stream refusal for the symlink tag. A reparse file can change later
 open behavior. The failed native **directory** test establishes that sharing
 is not a universal barrier to attribute-only opens; it does not prove this
-candidate-file race on the supported NTFS hosts. Nor does attribute-only access
-by itself establish changed message bytes. Candidate integrity remains an
-open technical question requiring a separate proof or refutation.
+candidate-file transition on the supported NTFS hosts. Nor does attribute-only
+access by itself establish changed message bytes or a substituted held object.
+The concrete remaining question is whether a supported transition can redirect
+held writes/rename, substitute content/object, defeat mandatory final no-follow
+qualification, or violate final-copy completeness if stopped before reporting.
+A metadata-only change with unchanged bytes/object does not alone prove any of
+those failures. No general impossibility or temporal ACL-lock requirement follows
+from this hypothesis. Native creation confinement remains independently unqualified.
 
-Two policy paths need different evidence:
-
-1. **Keep the strict inherited-ACL requirement.** Qualify the existing
-   inherited-ACL candidate policy, or find a mechanism that protects its
-   ordinary-file metadata through the no-replace edge while retaining the
-   final inherited ACL at that edge and after a forced stop. The currently
-   reviewed APIs do not yet prove either. A last-moment metadata check alone
-   does not close a possible gap, and the old directory result cannot stand in
-   for candidate evidence. Keep the Windows gate failed until both address
-   confinement and candidate integrity are qualified on each native CPU.
-2. **Possible owner-level contract change, not accepted:** create the candidate
-   with a temporary restrictive security descriptor, publish the held complete
-   object, then apply and verify an ACL derived from the actual bound parent
-   through the held file handle. [NtCreateFile allows a creation security
-   descriptor](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile),
-   [CreatePrivateObjectSecurityEx derives inherited ACEs](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createprivateobjectsecurityex),
-   and [SetSecurityInfo changes security through a handle](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-setsecurityinfo).
-   [Rename does not assign a new default ACL](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights).
-   A successful `Created` could require final ACL verification. If the process
-   stops or ACL application fails after the edge, however, a complete final
-   copy may remain with the temporary restrictive ACL. That is a changed
-   permission guarantee, not merely ordinary failure reporting. A reported
-   failure would use the existing `Failed(Published(...))` effect, but that
-   representation does not itself describe the copy's ACL; a forced stop can
-   leave no item event. Protocol 1 has no structured ACL observation. Concrete
-   protocol review must decide whether existing code/detail is sufficient or
-   an added field is necessary; synchronization and cleanup receipts must not
-   be repurposed as ACL evidence. Reruns cannot silently rewrite an existing
-   copy's ACL. If this path later proves necessary, the owner-level decision is
-   the changed permission/crash guarantee and recovery behavior, not a choice
-   of wire fields. Its contract must state the ACL invariant before, at and
-   after the edge, the forced-stop residual, `Created` conditions, observable
-   failed-published state and recovery action before implementation.
-
-No reviewed API establishes an atomic ACL transition with the existing
-no-replace rename, but this is not a claim that no Windows solution exists.
-First resolve the exact candidate risk under the existing policy and challenge
-the strict path. Do not use the possible policy change to bypass that work or
-turn the current failed Windows gate green.
+Retain native inheritance. A temporary private ACL followed by a post-edge ACL
+swap remains unaccepted: interruption could leave a complete final copy with a
+different permission guarantee, and a failure receipt cannot waive that change.
+[Rename does not assign a new default ACL](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights).
+Likewise, a static ACL snapshot or precomputed descriptor is not a temporal lock:
+[creation merges an unprotected supplied DACL with live parent inheritance](https://learn.microsoft.com/en-us/windows/win32/secauthz/dacl-for-a-new-object).
+Do not build a descriptor framework for an unproved causal defect, add protection
+bits that change inheritance, or weaken the failed native creation gate. Resolve
+the concrete held-object/content question and qualify the actual replacement.
 
 References: [reparse control access](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4aeefef8-92c3-4abc-af7a-a610caf8a165),
 [CreateFile sharing categories](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
@@ -310,13 +306,92 @@ Validate NUL, separators, dot components, streams/devices and the checked
 `UNICODE_STRING`16-bit byte extent before the call. Native lookup remains
 authoritative for filesystem-specific existing-name limits; destination naming's
 actual component-limit query is still separate work. Native full128-bit identity
-is never inferred from enumeration's64-bit record ID. `NtOpenError` retains exact
+is never inferred from enumeration's64-bit record ID. `NtStatusError` retains exact
 NTSTATUS and its secondary Win32 translation inside the I/O error payload; the
 translation is not fabricated as that I/O error's primary raw code.
 
 As with the Unix held-child primitive, the collector must compare the returned
 directory identity with its earlier collected entry identity before descent.
 The primitive does not claim a complete collector or atomic directory snapshot.
+
+## Empty-directory creation design for native qualification
+
+This reviewed design is implemented pending source/native qualification. It creates owned
+empty directories only, with no message/candidate bytes or publication. It cannot
+close the separate under-mutation creation-confinement gate.
+
+Acquire a distinct write-capable parent from the held inventory directory through
+[ReOpenFile](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-reopenfile),
+then verify ordinary disk/directory/tag and the same usable full identity. Fixed
+access is GENERIC_WRITE, list, read-attributes, traverse and synchronize; sharing
+is FILE_SHARE_READ; flags are BACKUP_SEMANTICS and OPEN_REPARSE_POINT. No privilege
+is enabled. No pathname is reconstructed and no requested-address receipt is
+fabricated. ReOpenFile's original-handle provenance/interoperability must be
+kept root-scoped: the selected-root factory opens through CreateFileW and calls
+the reopen helper privately. No general conversion of arbitrary inventory/NT
+child handles is exposed. Newly created children already carry their needed
+write rights and are not reopened. All previous live handles must satisfy sharing
+symmetry. A benign move test moves the owned
+fixture while only its read inventory handle is held, before obtaining this
+strict writable capability; it does not claim rename exclusion and movement
+simultaneously.
+
+The sole create call is generated NtCreateFile with one validated relative native
+component, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_SYNCHRONOUS_IO_NONALERT and
+OBJ_DONT_REPARSE. Security descriptor is null for ordinary native inheritance;
+there is no ACL adjustment. The returned child requests the specific
+FILE_GENERIC_WRITE access set plus list/read-attributes/traverse/synchronize and
+DELETE, permitting actual flush, further child creation and owned-handle cleanup.
+Sharing is FILE_SHARE_READ. There is no caller-controlled flag mask or ordinary
+pathname fallback. The reviewed synchronous IRP_MJ_CREATE lifetime applies.
+
+NT_SUCCESS plus a valid successful returned handle establishes handle ownership;
+positive FILE_CREATED information is additionally required to establish NEW
+directory ownership. Then validate ordinary type/tag/full ID. A successful handle
+is owned/closed once even if later validation fails, but a failed/undefined output
+handle is never guessed to be owned. A disposition that fails to prove creation
+does not authorize deletion. Negative native status retains its separate NTSTATUS
+and Win32 translation. Uncertain creation retains Unknown cleanup without a
+guessed residual path or an invented cleanup error code.
+
+Creation returns the existing CreatedDirectory/CreationFailure ownership idiom.
+Child and parent namespace flushes are separate non-consuming SyncReceipt
+operations; required GENERIC_WRITE access is actually granted, not inferred from
+the read-only inventory handle. Failed flush retains both the created owner and
+its explicit receipt; CreationFailure is not overloaded with hidden sync state.
+A retained parent handle for cleanup/flush has no enumeration API or independent
+cursor claim.
+
+Cleanup consumes only the positively owned empty-directory handle, requests
+FileDispositionInfo deletion and explicitly checks close. The native deletion
+must enforce emptiness; empty-at-birth does not imply perpetual emptiness. No
+recursive removal or fresh pathname deletion is allowed. A deletion mark or Drop
+alone is not Complete. After requesting disposition, perform no further child
+metadata operations; explicitly close, then observe through the retained parent.
+Completion needs successful disposition/checked close and definitive absence
+through a still-valid held parent, rather than a generic query error;
+delete-pending, failed/unverified observation or a substituted entry remains
+Unknown/Residual as supported by actual facts. A residual component is reported
+only when positively bound to the owned full identity. Namespace synchronization
+remains separate from this removal observation.
+Failed/ambiguous mark or close cannot produce Complete. A positively matching
+owned entry can support Residual after a refused removal, such as nonempty
+directory refusal; without that positive binding, uncertainty stays Unknown.
+
+Required benign native checks on both Windows CPUs cover actual owner-context
+access, exclusive create/collision, ordinary/full-ID ownership, parent/child flush,
+held-parent use after a prior fixture move and empty/nonempty owned cleanup.
+These are primitive evidence, not candidate ACL, hostile-parent mutation or
+complete product qualification.
+
+Native tests prepare only their fresh owned temporary root with an explicit
+inheritable full-access ACE for the real runner UserSID before entering the
+verified restricted actor. This avoids treating the hosted checkout's default
+ACL as proof of ordinary-user write access. It is test setup, not product ACL
+admission or a change to an existing destination. Product creation always passes
+a null security descriptor and never sets ACLs. All filesystem product calls
+execute under the verified restricted actor; only the controlled move/setup uses
+the original fixture context.
 
 ## Captured native path normalization
 

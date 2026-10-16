@@ -1,5 +1,5 @@
 //! Generated typed native metadata buffers and uniquely owned ordinary handles.
-use crate::{BoundFileError, FileSignature, Identity};
+use crate::{BoundFileError, EntryKind, EntryObservation, FileSignature, Identity};
 use std::{
     fs::File,
     io,
@@ -77,6 +77,53 @@ pub(crate) fn identity(handle: &impl AsHandle) -> io::Result<Identity> {
         return Err(io::Error::last_os_error());
     }
     usable_id(info)
+}
+pub(super) fn directory_identity(file: &File) -> io::Result<Identity> {
+    if !is_disk(file)? {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Opened directory is not a disk object",
+        ));
+    }
+    let attributes = attributes(file)?;
+    if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0
+        || attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Opened object is not an ordinary disk directory",
+        ));
+    }
+    identity(file)
+}
+pub(super) fn entry_observation(file: &File) -> io::Result<EntryObservation> {
+    if !is_disk(file)? {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Child observation is not a disk object",
+        ));
+    }
+    let attributes = attributes(file)?;
+    let kind = if attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        EntryKind::Reparse
+    } else if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
+        EntryKind::Directory
+    } else {
+        EntryKind::File
+    };
+    let observed = if kind == EntryKind::File {
+        Some(signature(file).map_err(BoundFileError::into_io_error)?)
+    } else {
+        None
+    };
+    Ok(EntryObservation {
+        identity: match observed {
+            Some(value) => value.identity,
+            None => identity(file)?,
+        },
+        kind,
+        file: observed,
+    })
 }
 pub(crate) fn directory_observation(path: &Path) -> io::Result<Option<(File, Identity)>> {
     // Wider sharing here is observation only, never creation protection. It can

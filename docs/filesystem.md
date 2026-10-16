@@ -289,6 +289,13 @@ reported before ordinary signature lookup; a traversal open refuses reparse
 processing. The collector must compare its earlier observed full ID before
 descending through the returned directory. Physical ancestry/overlap admission
 and the core collector remain unimplemented.
+
+The separate Windows `WritableDirectory`/`CreatedDirectory` primitive now performs
+exclusive empty-directory creation from a root-scoped write capability, with
+independent child/parent flush receipts and explicit handle-only empty cleanup.
+Its [reviewed contract](windows-publication.md#empty-directory-creation-design-for-native-qualification)
+still awaits native validation. It writes no message data, changes no existing
+destination ACL and does not qualify creation under parent mutation or publication.
 The names-only structure's64-bit file ID is never padded into a full identity.
 
 Native contracts: [GetFileInformationByHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getfileinformationbyhandleex),

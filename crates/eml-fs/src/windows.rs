@@ -4,9 +4,12 @@ mod file;
 mod handle;
 mod inventory;
 pub(crate) mod path;
-pub use child::NtOpenError;
+mod status;
+mod writable;
 pub use file::BoundFile;
 pub use inventory::{BoundDirectory, DirectoryEntries};
+pub use status::NtStatusError;
+pub use writable::{CreatedDirectory, WritableDirectory};
 #[cfg(test)]
 pub(crate) mod test_reparse;
 #[cfg(test)]

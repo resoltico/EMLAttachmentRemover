@@ -11,11 +11,14 @@ use windows_sys::Win32::{
     Security::*,
     System::Threading::{GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken},
 };
-struct Information {
-    words: Vec<usize>,
-    bytes: usize,
+pub(crate) struct Information {
+    pub(crate) words: Vec<usize>,
+    pub(crate) bytes: usize,
 }
-fn information(token: &OwnedHandle, class: TOKEN_INFORMATION_CLASS) -> io::Result<Information> {
+pub(crate) fn information(
+    token: &OwnedHandle,
+    class: TOKEN_INFORMATION_CLASS,
+) -> io::Result<Information> {
     let mut words = vec![0usize; 8192];
     let mut bytes = 0;
     let capacity = size_of_val(words.as_slice());
@@ -174,23 +177,27 @@ pub(crate) struct RestrictedToken {
     entered: bool,
     _thread_affinity: std::marker::PhantomData<std::rc::Rc<()>>,
 }
+pub(crate) fn require_unimpersonated_thread() -> io::Result<()> {
+    let mut previous: HANDLE = ptr::null_mut();
+    // SAFETY: current-thread pseudo-handle, live output; query only.
+    if unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut previous) } != 0 {
+        // SAFETY: successful query transferred exactly one owned token handle.
+        drop(unsafe { OwnedHandle::from_raw_handle(previous) });
+        return Err(io::Error::other(
+            "Actor refuses to replace preexisting thread impersonation",
+        ));
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() != Some(ERROR_NO_TOKEN as i32) {
+        return Err(error);
+    }
+    Ok(())
+}
 impl RestrictedToken {
     /// Enter only a previously unimpersonated thread and verify actual SID/group/
     /// privilege state. Drop restores that known prior state, including on panic.
     pub(crate) fn enter() -> io::Result<Self> {
-        let mut previous: HANDLE = ptr::null_mut();
-        // SAFETY: current-thread pseudo-handle, live output; query only.
-        if unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut previous) } != 0 {
-            // SAFETY: successful query transferred exactly one owned token handle.
-            drop(unsafe { OwnedHandle::from_raw_handle(previous) });
-            return Err(io::Error::other(
-                "Actor refuses to replace preexisting thread impersonation",
-            ));
-        }
-        let error = io::Error::last_os_error();
-        if error.raw_os_error() != Some(ERROR_NO_TOKEN as i32) {
-            return Err(error);
-        }
+        require_unimpersonated_thread()?;
         let mut raw = ptr::null_mut();
         // SAFETY: valid process pseudo-handle and writable native handle slot.
         if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE | TOKEN_QUERY, &mut raw) }

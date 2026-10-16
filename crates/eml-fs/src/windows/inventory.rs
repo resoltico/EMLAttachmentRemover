@@ -1,6 +1,6 @@
 //! Read-only selected directories and names from their exclusively borrowed cursor.
 use super::{child, handle};
-use crate::{BoundFileError, EntryKind, EntryObservation, Identity};
+use crate::{EntryObservation, Identity};
 use std::{
     ffi::{OsStr, OsString},
     fs::File,
@@ -17,8 +17,8 @@ const NAME_OFFSET: usize = offset_of!(FILE_ID_BOTH_DIR_INFO, FileName);
 /// A read-only selected directory, held by native handle and full object identity.
 /// This handle provides observation, not protection of a creation address.
 pub struct BoundDirectory {
-    file: File,
-    identity: Identity,
+    pub(super) file: File,
+    pub(super) identity: Identity,
 }
 impl BoundDirectory {
     /// Open an admitted absolute extended DOS/UNC selected root. Normal final
@@ -33,23 +33,8 @@ impl BoundDirectory {
         Self::from_file(file)
     }
     fn from_file(file: File) -> io::Result<Self> {
-        if !handle::is_disk(&file)? {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Opened directory is not a disk object",
-            ));
-        }
-        let attributes = handle::attributes(&file)?;
-        if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0
-            || attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Opened object is not an ordinary disk directory",
-            ));
-        }
         Ok(Self {
-            identity: handle::identity(&file)?,
+            identity: handle::directory_identity(&file)?,
             file,
         })
     }
@@ -57,33 +42,7 @@ impl BoundDirectory {
     /// Reparse kind is established before requesting ordinary-file signatures.
     pub fn observe_child(&self, name: &OsStr) -> io::Result<EntryObservation> {
         let file = child::observe(&self.file, name)?;
-        if !handle::is_disk(&file)? {
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "Child observation is not a disk object",
-            ));
-        }
-        let attributes = handle::attributes(&file)?;
-        let kind = if attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            EntryKind::Reparse
-        } else if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
-            EntryKind::Directory
-        } else {
-            EntryKind::File
-        };
-        let signature = if kind == EntryKind::File {
-            Some(handle::signature(&file).map_err(BoundFileError::into_io_error)?)
-        } else {
-            None
-        };
-        Ok(EntryObservation {
-            identity: match signature {
-                Some(value) => value.identity,
-                None => handle::identity(&file)?,
-            },
-            kind,
-            file: signature,
-        })
+        handle::entry_observation(&file)
     }
     /// Open one ordinary existing directory relative to this held parent,
     /// refusing reparse processing. Before descent the collector must compare
@@ -255,6 +214,7 @@ fn record(bytes: &[u8], offset: usize) -> io::Result<(OsString, Option<usize>)> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::EntryKind;
     use std::{collections::BTreeSet, ffi::OsStr, os::windows::ffi::OsStrExt};
 
     #[test]
@@ -359,7 +319,7 @@ mod tests {
                 assert!(
                     error
                         .get_ref()
-                        .and_then(|cause| cause.downcast_ref::<crate::NtOpenError>())
+                        .and_then(|cause| cause.downcast_ref::<crate::NtStatusError>())
                         .is_none()
                 );
             }
@@ -373,7 +333,7 @@ mod tests {
         let native = failure
             .get_ref()
             .unwrap()
-            .downcast_ref::<crate::NtOpenError>()
+            .downcast_ref::<crate::NtStatusError>()
             .unwrap();
         assert!(native.nt_status() < 0);
         assert_ne!(native.win32_code(), 0);

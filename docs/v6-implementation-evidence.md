@@ -749,3 +749,56 @@ remain independent. Source QA closed; local filesystem30 and all-target Clippy
 passed without failures/ignores/filters. No tests were added solely for the removed
 flag. Native four-platform execution of the changed callers is pending the next
 exact-head run; the collector itself remains unimplemented.
+
+At exact head `c9d8a1f4fa3ff689dc8bc8b1c730a39e6de9d627`,
+[Unix run38841852880](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38841852880)
+passed all seven jobs: Linux26/Mac30 filesystem suites on both CPUs without
+failures/ignores/filters, plus the actual other-UID example callers and earlier
+independent suites. The
+[Windows run38841852922](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38841852922)
+again passed non-gate25/0failed/0ignored/1filtered on both CPUs; only the actual
+creation gate failed0passed/1failed/25filtered each. Raw logs retain the pinned
+head and counts. This closes the no-follow caller migration, not publication.
+
+## Owned empty Windows directory primitive
+
+The reviewed root-scoped writer acquisition and exclusive empty-directory create
+are now implemented in eml-fs. Native inheritance remains null-descriptor/default;
+there is no candidate file, message write or publication. Root/child write and
+flush capabilities are explicit, exact FILE_CREATED establishes new-object
+ownership, and sync receipts remain separate from creation and owned cleanup.
+Cleanup checks native disposition, explicit close, held-parent validity and exact
+missing-entry evidence; a positive matching residual is distinguished from an
+unverified/replaced/delete-pending result. No recursive or fresh-path deletion
+is performed. The earlier overstatement of continuous metadata immutability in
+the addendum was corrected against the original contract, with all required
+pre-edge/final checks and inherited-ACL/forced-stop guarantees preserved.
+
+Three new native cases are prepared: held-root use after a prior fixture move,
+exclusive create/collision/invalid components/wrong parent ID and unchanged
+marker, and nonempty cleanup retaining positive owned IDs without recursion.
+Child/parent directory flushes must actually succeed;145 is an expected native
+nonempty-refusal oracle, not an execution result yet. Tests set only each fresh
+owned temporary root's ACL to a current-UserSID full inheritable ACE, before
+verified restricted actors perform every product operation. This proves neither
+separate-user login nor a product ACL-admission policy. The old gate is unchanged.
+
+The shared native diagnostic is now NtStatusError because both actual NT open
+and create operations use it; exports/callers and the independent literal adapter
+oracle are migrated without a compatibility alias. Shared metadata and actor
+precondition checks are reused; the original four read/status cases remain.
+
+Independent source/API/security/cleanup QA closed after one dependent-build
+finding was fixed. The standalone filesystem probe's Windows all-target check
+initially failed E0432 because a shared cfg(test) helper imported an undeclared
+Authorization feature; the earlier non-test check did not cover that target.
+The ACL fixture helper was localized to its only consumer rather than adding
+an unused dependency to the probe. An intermediate missing-local-import E0425
+failure was corrected. The exact standalone all-target check then passed, followed
+by eml-fs Windows MSVC all-target Clippy. Those are compile-only preflights.
+Local Mac filesystem30/Clippy passed without failures/ignores/filters; doctests0.
+The included helper was explicitly formatted and checked. Complete locked/offline
+fuzz metadata resolves27 packages; all three locks retain identical versions and
+contents. No new fuzz campaign is claimed. Actual both-CPU execution of the three
+new directory cases remains pending, as do changed-parent confinement, candidate
+data/publication and all still-open product/archive/GUI requirements.
