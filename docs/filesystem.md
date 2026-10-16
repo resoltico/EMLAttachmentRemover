@@ -259,6 +259,8 @@ requested address moves; the retained absolute spelling still describes the
 request and does not falsely verify that address. Walked child operations retain
 their separate one-component/no-follow requirements. These primitives perform
 no filesystem writes, process cwd changes or whole-run admission decisions.
+Child observation has no final-follow flag on either native backend. Explicit
+selected-link following stays in selection admission, separate from walking.
 
 Windows selected-directory observation currently supports capture and names-only
 enumeration. `BoundDirectory` retains an ordinary disk directory handle and usable

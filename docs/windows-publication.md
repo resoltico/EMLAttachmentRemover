@@ -265,8 +265,9 @@ reviewed design, not execution evidence for the still-incomplete product backend
 
 This narrow reviewed addendum permits generated `NtOpenFile` for existing child
 observations and directory traversal. It supersedes the pack's Win32-only API
-scope only for these read-only operations. The source-reviewed implementation
-awaits native validation. It does not admit `NtCreateFile`, creation dispositions,
+scope only for these read-only operations. Source review and the existing-object
+cases have passed on both native Windows CPUs; see the implementation evidence
+for the fixture corrections and exact runs. It does not admit `NtCreateFile`, creation dispositions,
 write/delete/ACL rights or publication, and does not close the failed creation
 gate or the separate unqualified creation proposal above.
 

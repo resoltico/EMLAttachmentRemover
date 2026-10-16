@@ -103,7 +103,7 @@ mod probe {
                         "Refusal was unrelated to namespace admission",
                     )?;
                     require(
-                        matches!(held.observe_child(OsStr::new("stage"), false), Err(ref e) if e.kind() == io::ErrorKind::NotFound),
+                        matches!(held.observe_child(OsStr::new("stage")), Err(ref e) if e.kind() == io::ErrorKind::NotFound),
                         "Refused operation created an entry",
                     )?;
                 }
@@ -227,7 +227,7 @@ mod probe {
     ) -> Result<()> {
         parent.admit_namespace()?;
         require(
-            parent.observe_child(OsStr::new(name), false)?.identity == expected,
+            parent.observe_child(OsStr::new(name))?.identity == expected,
             "Owned cleanup identity changed; resource retained",
         )?;
         fs::unlinkat(
@@ -286,7 +286,7 @@ mod probe {
         run_child(executable, victim, victim_gid, "admit", path, control)?;
         let stage = fixture
             .directory()
-            .observe_child(OsStr::new("stage"), false)?
+            .observe_child(OsStr::new("stage"))?
             .identity;
         run_child(executable, actor, actor, "deny-create", path, control)?;
         fs::fchown(fixture.directory(), Some(Uid::ROOT), Some(Gid::ROOT))?;
@@ -415,7 +415,7 @@ mod probe {
         fs::fchmod(&copy, Mode::from_raw_mode(0o755))?;
         let executable_id = outer
             .directory()
-            .observe_child(OsStr::new("probe"), false)?
+            .observe_child(OsStr::new("probe"))?
             .identity;
         drop(copy);
         let control = root_child(
@@ -462,7 +462,7 @@ mod probe {
             require(
                 fixture
                     .directory()
-                    .observe_child(OsStr::new("stage"), false)?
+                    .observe_child(OsStr::new("stage"))?
                     .identity
                     == stage
                     && fs::fstat(&stage_handle)?.st_nlink != 0,

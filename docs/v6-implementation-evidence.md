@@ -724,3 +724,28 @@ remain. `try_exists().unwrap()` now makes an unexpected metadata failure visible
 rather than treating it as absence. Production rights/options and the creation
 gate remain unchanged. Source QA and stable Windows MSVC all-target Clippy passed;
 actual both-CPU execution of this correction remains pending.
+
+At exact head `bec62ecf758e4b405b184eec0d4ed819209a98c9`,
+[Windows run38841250617](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38841250617)
+passed the full non-gate library25/0failed/0ignored/1filtered on both native CPUs.
+All four child/adapter test names passed individually, including held-root lookup
+after the owned move with verified restricted contexts on each side. This closes
+that tested read-only capability. It does not establish an ACL explanation for
+the earlier denial, uninterrupted token-object continuity, creation confinement
+or publication. Each actual creation gate still failed0passed/1failed/25filtered
+and remained the only failed step. The
+[Unix run38841250778](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38841250778)
+passed all seven jobs; filesystem30Mac/26Linux and earlier independent suites
+remained successful. Failed and successful raw logs remain in owned scratch.
+
+## Unconditional child observation
+
+POSIX `observe_child` now always observes one component with SYMLINK_NOFOLLOW,
+matching the Windows no-follow child API. The selectable follow branch is removed
+without a compatibility wrapper. Explicit-follow alias coverage calls the already
+implemented `observe_selected` capability. All actual tests and five namespace
+example call sites are migrated. Existing link-kind and selected-follow oracles
+remain independent. Source QA closed; local filesystem30 and all-target Clippy
+passed without failures/ignores/filters. No tests were added solely for the removed
+flag. Native four-platform execution of the changed callers is pending the next
+exact-head run; the collector itself remains unimplemented.

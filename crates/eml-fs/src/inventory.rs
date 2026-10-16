@@ -36,19 +36,11 @@ impl BoundDirectory {
     pub fn read_entries(&self) -> io::Result<DirectoryEntries> {
         Ok(DirectoryEntries(fs::Dir::read_from(self)?))
     }
-    /// Observe one component without a blocking file open. Only explicit selected
-    /// root links may request final-link following.
-    pub fn observe_child(&self, name: &OsStr, follow_final: bool) -> io::Result<EntryObservation> {
+    /// Observe one child component without following its final link or opening
+    /// object data. Explicit selected expressions use observe_selected instead.
+    pub fn observe_child(&self, name: &OsStr) -> io::Result<EntryObservation> {
         component(name)?;
-        let stat = fs::statat(
-            self,
-            name,
-            if follow_final {
-                AtFlags::empty()
-            } else {
-                AtFlags::SYMLINK_NOFOLLOW
-            },
-        )?;
+        let stat = fs::statat(self, name, AtFlags::SYMLINK_NOFOLLOW)?;
         observation(&stat)
     }
 }
@@ -115,9 +107,7 @@ mod tests {
         );
         assert!(!held_mail.check_requested_address().unwrap());
         assert_eq!(
-            held_mail
-                .observe_child(OsStr::new("source.eml"), false)
-                .unwrap(),
+            held_mail.observe_child(OsStr::new("source.eml")).unwrap(),
             expected
         );
         // Absolute selection is independent of the base descriptor.
@@ -164,13 +154,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             observed,
-            physical
-                .observe_child(OsStr::new("source.eml"), false)
-                .unwrap()
+            physical.observe_child(OsStr::new("source.eml")).unwrap()
         );
         assert_ne!(
             observed.identity,
-            cwd.observe_child(OsStr::new("source.eml"), false)
+            cwd.observe_child(OsStr::new("source.eml"))
                 .unwrap()
                 .identity
         );
@@ -262,9 +250,7 @@ mod tests {
         let names: BTreeSet<_> = parent.read_entries().unwrap().map(Result::unwrap).collect();
         assert!(names.contains(OsStr::new("message.eml")));
         assert!(!names.contains(OsStr::new("substitute")));
-        let file = parent
-            .observe_child(OsStr::new("message.eml"), false)
-            .unwrap();
+        let file = parent.observe_child(OsStr::new("message.eml")).unwrap();
         assert_eq!(file.kind, EntryKind::File);
         assert_eq!(
             file.file.unwrap(),
@@ -274,15 +260,12 @@ mod tests {
                 .initial_signature()
         );
         assert_eq!(
-            parent
-                .observe_child(OsStr::new("alias"), false)
-                .unwrap()
-                .kind,
+            parent.observe_child(OsStr::new("alias")).unwrap().kind,
             EntryKind::Symlink
         );
         assert_eq!(
             parent
-                .observe_child(OsStr::new("alias"), true)
+                .observe_selected(Path::new("alias"))
                 .unwrap()
                 .identity,
             file.identity
