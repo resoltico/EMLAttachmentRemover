@@ -2019,3 +2019,25 @@ launcher cleanup is still under separate challenge; LaunchServices app lifetime
 cannot be certified by the outer Unix Controller alone, and global path scans
 are not helper-absence proof. No GUI execution occurred. Full notices/native-link/
 archive tests, final purge, Windows acceptance and complete WP gates remain open.
+
+At `90b9dcba331af5443c50b8934f6090b97f6cff45`, current Windows native jobs again
+failed solely at the old creation gate; bounded Core/CLI/FS49 non-gate scopes
+passed. Both Linux jobs/probes passed their retained scopes. Mac ARM passed
+strict Swift25/22, all preceding Rust/process/credential scopes and release CLI
+compilation with actual opt_level3/overflow_checks true. Actual Swift release
+compilation succeeded in23.98s. The later icon build FAILED: CoreMedia/MediaToolbox
+override symbol diagnostics, then AssetCatalogAgent-AssetRuntime disconnected
+with IBPlatformToolFailureException. Controller recorded non-timeout raw_status
+65280, cleanuptrue/survivors0. No build.json, signing, final plist/dependency or
+signed-app qualification was reached. Own copied artifact is under
+target/native-evidence/90b9dcb/eml-90b9dcba-macos-aarch64/.
+
+The pinned actool argv matches the retained reviewed icon arguments; current
+macOS15.7.9 meets Apple's documented Xcode26.3 host minimum. A concrete environment
+difference is SDKROOT supplied by the shared compiler context to actool, whereas
+the old icon invocation did not supply it. The next controlled experiment omits
+only SDKROOT for actool's host runtime agent, retaining the same absolute pinned
+tool, DEVELOPER_DIR, icon, arguments and minimum. Rust/Swift SDK selection stays
+unchanged. Relevant inherited loader-selector presence is recorded without values
+or a full environment dump. This is an experiment, not an established cause,
+pin/renderer fallback, fixed failure or lowered gate. Intel outcome is pending.

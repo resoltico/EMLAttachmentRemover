@@ -122,6 +122,31 @@ fn assemble(root: &Path, out: &Path, build: &macos::MacBuild) -> Result<()> {
         return Err("actool is outside selected Xcode".into());
     }
     let mut icon = build.command(root, &actool);
+    // actool launches a host AssetRuntime agent; do not give that runtime the
+    // build SDK root. Compiler SDK selection remains explicit and unchanged.
+    icon.env_remove("SDKROOT");
+    let loader_presence: serde_json::Map<String, Value> = [
+        "SDKROOT",
+        "DYLD_ROOT_PATH",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+        "DYLD_FALLBACK_FRAMEWORK_PATH",
+    ]
+    .into_iter()
+    .map(|name| {
+        (
+            name.to_owned(),
+            Value::Bool(std::env::var_os(name).is_some()),
+        )
+    })
+    .collect();
+    fs::write(
+        out.join("icon-environment.json"),
+        serde_json::to_vec_pretty(
+            &json!({"inherited_presence_only":loader_presence,"actool_sdkroot_removed":true,"developer":build.developer,"actool":actool}),
+        )?,
+    )?;
     icon.arg(root.join("macos-app/Artwork/EML.icon"))
         .arg("--compile")
         .arg(&icons)
