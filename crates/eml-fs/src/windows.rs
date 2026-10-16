@@ -1,8 +1,10 @@
 //! Generated Windows system calls behind owned, checked native interfaces.
 mod file;
 mod handle;
+mod inventory;
 pub(crate) mod path;
 pub use file::BoundFile;
+pub use inventory::{BoundDirectory, DirectoryEntries};
 #[cfg(test)]
 pub(crate) mod test_reparse;
 #[cfg(test)]

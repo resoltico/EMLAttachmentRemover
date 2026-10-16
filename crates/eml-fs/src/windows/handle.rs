@@ -105,7 +105,7 @@ fn file_type_is_disk(kind: u32, native_error: u32) -> io::Result<bool> {
     }
     Ok(kind == FILE_TYPE_DISK)
 }
-fn is_disk(handle: &impl AsHandle) -> io::Result<bool> {
+pub(super) fn is_disk(handle: &impl AsHandle) -> io::Result<bool> {
     // SAFETY: borrowed live handle; this query owns no returned resource.
     let kind = unsafe { GetFileType(handle.as_handle().as_raw_handle()) };
     let native_error = if kind == FILE_TYPE_UNKNOWN {

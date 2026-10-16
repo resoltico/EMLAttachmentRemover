@@ -498,3 +498,37 @@ no previously locked version changed. Locked/offline complete fuzz metadata
 resolves. This is graph verification, not a new fuzz campaign. Native six-platform
 source-capability execution remains pending the next exact-head run. Full run,
 CLI executable, publication, packaging, GUI and required unrun gates remain open.
+
+At exact head `c2964838fec8636ce289789e32541c3a7a35acad`,
+[Unix run38826978536](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38826978536)
+passed all seven jobs. Each of four native Unix targets executed core unit15 and
+source6 with zero failures/ignores/filters. The
+[Windows run38826978540](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38826978540)
+executed unit15 and source5 on each native CPU with the same zero counts. Windows
+has a separate actual held-read-sharing assertion; the later-change test is Unix
+only. Both actual256MiB/one-byte-over source cases ran on all six. Other existing
+native suites remained successful. Each Windows creation-protection gate still
+failed one case with13 other library cases filtered; only those gate steps failed.
+This closes native execution of the held-source capability, not complete WP2/WP3.
+
+## Windows selected-directory names checkpoint
+
+The read-only capture/enumeration implementation has eight focused cases: three
+pure native-record parser controls, actual multi-buffer names/native units with
+partial/full restart, actual capture/open failures, a synthetic malformed-buffer
+terminal-error control, actual non-directory query/terminal-error/restart, and
+explicit selected-directory-link target identity. Multi-buffer payload alone
+exceeds64KiB. Selected-root link and large listing cases use the existing verified
+restricted runner token; no privileges are enabled. Native query failure uses a
+real owned regular-file handle, violating directory admission only inside the
+private test. It is separate from public capture and synthetic parser evidence.
+Skeptical review corrected an initial test premise: absence of list access is
+not a documented failure guarantee for this query class. The replacement checks
+a real non-EOF error without assuming a particular native error code.
+
+Local Windows MSVC all-target compile/Clippy preflight and unchanged macOS
+filesystem27 passed. Initial new-code Clippy findings (fixed-size chunks and an
+iterator loop) were corrected without suppression. No Windows execution of this
+new slice is claimed until the next exact-head native run. Existing creation
+protection remains failed and actually enabled. No writable Windows backend,
+recursive collector, archive or GUI gate is closed by names enumeration.

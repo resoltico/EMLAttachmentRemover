@@ -233,6 +233,32 @@ References: [unlink/unlinkat](https://man7.org/linux/man-pages/man2/unlink.2.htm
 
 ## Selection spelling, links and overlap
 
+Windows selected-directory observation currently supports capture and names-only
+enumeration. `BoundDirectory` retains an ordinary disk directory handle and usable
+full128-bit identity. Directory access uses `OPEN_EXISTING`, list/read-attributes,
+sharing read/write/delete and `FILE_FLAG_BACKUP_SEMANTICS`; code does not enable
+privileges. The backup flag can affect checks when the caller already has backup
+privileges, so restricted-token tests remain separate evidence. This handle is
+not creation protection. Explicit selected directory links follow their target.
+
+An exclusively borrowing iterator restarts the held file object's cursor, queries
+fixed aligned64KiB buffers with `FileIdBothDirectoryRestartInfo` then
+`FileIdBothDirectoryInfo`, and preserves native UTF-16 names. It ignores record
+IDs and other unused metadata. A record's zero next offset ends a buffer, not the
+directory; only native `ERROR_NO_MORE_FILES` is EOF. Other native failures and
+invalid record extents/names are reported once, then terminate that iterator.
+The API supplies no bytes-written count; bounds are checked against each record's
+next offset or the fixed allocation for its last record, not a fabricated returned
+byte count. Zero initialization is not evidence of a returned record. A fresh
+iterator restarts after partial consumption, completion or failure.
+
+This read-only capability does not yet implement Windows child observations,
+relative descent, physical ancestry/overlap admission or the core collector.
+The names-only structure's64-bit file ID is never padded into a full identity.
+
+Native contracts: [GetFileInformationByHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getfileinformationbyhandleex),
+[FILE_ID_BOTH_DIR_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_both_dir_info).
+
 An explicitly selected file link keeps the selected entry's basename and parent
 for default output. `/links/alias.eml -> /target/original.eml` creates
 `/links/alias.no-attachments.eml`; final-link following supplies read identity,

@@ -31,9 +31,9 @@ mod darwin_acl;
 #[allow(unsafe_code)] // Generated Windows ABI only; native buffers/handles remain owned.
 mod windows;
 #[cfg(windows)]
-pub use windows::BoundFile;
-#[cfg(windows)]
 pub use windows::path::{PathContext, validate_component};
+#[cfg(windows)]
+pub use windows::{BoundDirectory, BoundFile, DirectoryEntries};
 
 /// Native object identity; never a pathname hash or lossy display value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
