@@ -240,10 +240,12 @@ name = "eml-core"
 version = "6.0.0"
 dependencies = [
  "base64",
+ "eml-fs",
  "encoding_rs",
  "mail-parser",
  "memchr",
  "proptest",
+ "tempfile",
 ]
 
 [[package]]

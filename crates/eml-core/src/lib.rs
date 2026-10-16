@@ -9,6 +9,8 @@ mod naming;
 mod plan;
 #[cfg(any(unix, windows))]
 mod request;
+#[cfg(any(unix, windows))]
+mod source;
 mod verify;
 pub use diagnostic::{ErrorCode, ErrorPhase};
 #[cfg(any(unix, windows))]
@@ -18,6 +20,8 @@ pub use request::{
     InvalidRequest, MAX_INPUT_PATH_BYTES, MAX_INPUT_PATHS, MAX_PATH_COMPONENTS, MAX_PATH_UNITS,
     OutputLocation, PathViolation, RequestPath, RunMode, RunRequest,
 };
+#[cfg(any(unix, windows))]
+pub use source::{PreparedSource, SourcePreparationError, prepare_source};
 
 use std::sync::{
     Arc,

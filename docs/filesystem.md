@@ -26,6 +26,26 @@ The pure classifier cases are logical tests; native target execution remains
 separate evidence. No publication or candidate-ACL guarantee follows from this
 read/metadata typing change.
 
+## Native source preparation capability
+
+`eml-core::prepare_source` consumes an ordinary bound file, its inventory signature
+and a per-run control. It checks that admitted version, obtains bytes in bounded
+positional reads, qualifies EOF/actual length or the one-byte-over-limit prefix,
+and rechecks binding before calling the existing pure MIME preparer. Short reads
+are not EOF. Interrupted reads retry only after a cooperative checkpoint. A stable
+oversize refusal follows actual bounded reading and source checks, rather than a
+metadata-only assumption. Data-read errors and failed metadata observations retain
+separate causes.
+
+A successful `PreparedSource` retains the original read-only file and immutable
+`PreparedMessage`; raw input bytes are released after preparation. Its source
+length derives from the initial signature qualified against actual EOF/read count.
+The constructor checks source again after MIME preparation. Exposed revalidation
+returns native facts without assigning a later publication phase. The future run
+workflow must still perform every required source check before/after its edge.
+This capability creates no output, syncs no file, applies no run metadata budget,
+emits no events and supplies no snapshot or permanent-stability guarantee.
+
 ## POSIX namespace admission before creating an entry
 
 A pathname identity check followed by rmdir/unlinkat is not atomic compare-and-

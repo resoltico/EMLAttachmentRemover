@@ -458,3 +458,43 @@ handles remain transient, not continuously pinned by this read API. Its UNKNOWN
 file-type classifier has logical branch tests and a separate real directory
 metadata test; actual native Windows outcomes are pending the next exact-head run.
 No core reader/dependency or product publication implementation is claimed here.
+
+At exact head `15c40086c1a18464a407af4f5964667d58edf81e`,
+[Unix run38822402186](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38822402186)
+passed all seven jobs: Mac filesystem27 and Linux23 on each CPU, zero failures/
+ignores/filters. The
+[Windows run38822402187](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38822402187)
+passed both non-gate filesystem suites13, zero failures/ignores, one separately
+executed gate filtered. Native directory/error distinctions and strengthened
+existing cases executed on both GNU LLVM CPUs. The child path reexecution is
+not another distinct case. Each real creation gate still failed zero passed,
+one failed,13 filtered; only those two gate steps failed. Request9, diagnostic3,
+decoder16, planner/tool12 and naming3 remained successful. This closes native
+fact typing only; no Windows publication or default-parallel process fix follows.
+
+## Held-source preparation capability checkpoint
+
+Core now combines its private bounded reader with the existing pure MIME preparer
+through `prepare_source`. Private-construction `PreparedSource` owns the original
+bound file and immutable `PreparedMessage`, without duplicate inventory signature
+or raw-input retention. Source length derives from the validated initial signature;
+phase-free revalidation remains available for the later run workflow. Data-read
+I/O and metadata/binding errors retain distinct causes. No output or receipt/run
+model is implemented by this capability.
+
+Local full core suite:87 passed (15 unit,3 diagnostic,8 display,12 limits,1 model,
+20 preparation,9 request,6 native source,13 structure), zero failures/ignores/filters;
+doctests0. Targeted private reader selection passed7 with eight other unit cases
+intentionally filtered. Real file tests include independent golden bytes/source
+preservation, held lifetime, stale inventory, stop/refusal, later observed changes
+and actual256 MiB/one-byte-over reading. Focused loop cases cover short reads,
+one-byte EOF, cap/initial-size distinction, cancellation/EINTR and cause context.
+Core all-target Clippy passed locally and as Windows MSVC compile-only preflight;
+an initial unused-unit-expression lint was corrected without suppression.
+
+Root lock changes add only core's filesystem/tempfile edges. The separate fuzz
+lock adds the seven required existing-root-version filesystem graph packages;
+no previously locked version changed. Locked/offline complete fuzz metadata
+resolves. This is graph verification, not a new fuzz campaign. Native six-platform
+source-capability execution remains pending the next exact-head run. Full run,
+CLI executable, publication, packaging, GUI and required unrun gates remain open.
