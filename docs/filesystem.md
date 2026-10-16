@@ -301,8 +301,23 @@ not a fabricated ordinary target. This is a metadata observation, not held-cwd t
 physical admission. Later directory opens must compare the earlier observed ID;
 walked children keep the existing no-follow operations. Benign owned tests cover
 native names, file/directory metadata, exact missing errors and static selected
-directory-alias versus walked-reparse behavior. Source review is closed; native execution is pending;
+directory-alias versus walked-reparse behavior. Source and bounded both-CPU native
+checks closed at cbc9947;
 no new arbitrary flags, data access, privileges, namespace or API dependency.
+
+Windows `BoundDirectory::resolved_path` now queries the held ordinary directory's
+normalized DOS/UNC name with fixed GetFinalPathNameByHandleW flags. One UTF-16
+buffer derives from the existing32766-content authority plus NUL; zero retains
+the actual native cause and a capacity result is refused without sizing retries
+or another namespace. Existing extended-path validation and held ordinary/full-ID
+checks bracket success. The name preserves native units but is only an
+observation: later ancestor binding must compare its endpoint with the initial
+root ID and separately qualify the original requested address. Static selected-
+alias tests inspect the RETURNED operand without final-link following and require
+the known ordinary target ID; simply reopening an alias with following is not
+proof of resolution. A separate owned long/unpaired-name case exercises the
+same query. Source/API/test review is closed; native execution is pending. API reference:
+[GetFinalPathNameByHandleW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew).
 
 The separate Windows `WritableDirectory`/`CreatedDirectory` primitive now performs
 exclusive empty-directory creation from a root-scoped write capability, with

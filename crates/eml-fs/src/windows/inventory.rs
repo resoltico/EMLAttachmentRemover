@@ -1,5 +1,5 @@
 //! Read-only selected directories and names from their exclusively borrowed cursor.
-use super::{child, handle};
+use super::{child, handle, path};
 use crate::{EntryObservation, Identity};
 use std::{
     ffi::{OsStr, OsString},
@@ -7,7 +7,7 @@ use std::{
     io,
     mem::offset_of,
     os::windows::{ffi::OsStringExt, io::AsRawHandle},
-    path::Path,
+    path::{Path, PathBuf},
 };
 use windows_sys::Win32::{Foundation::ERROR_NO_MORE_FILES, Storage::FileSystem::*};
 
@@ -35,6 +35,46 @@ pub struct BoundDirectory {
     pub(super) identity: Identity,
 }
 impl BoundDirectory {
+    /// Query the held ordinary directory's normalized DOS/UNC name, preserving
+    /// native units. This observation is not a pinned ancestor or address receipt;
+    /// a later binding must compare its endpoint with this directory's identity.
+    pub fn resolved_path(&self) -> io::Result<PathBuf> {
+        self.check_identity()?;
+        let mut buffer = vec![0; path::MAX_EXTENDED_CONTENT + 1];
+        // SAFETY: live held ordinary directory, writable UTF-16 buffer covers
+        // its stated capacity including NUL, fixed normalized DOS flags. This
+        // Win32 query completes before the borrowed handle/buffer can be released.
+        let written = unsafe {
+            GetFinalPathNameByHandleW(
+                self.file.as_raw_handle(),
+                buffer.as_mut_ptr(),
+                buffer.len() as u32,
+                FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
+            )
+        } as usize;
+        if written == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if written >= buffer.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Resolved directory name exceeds the supported native path bound",
+            ));
+        }
+        let resolved = PathBuf::from(OsString::from_wide(&buffer[..written]));
+        path::validate_operation(&resolved)?;
+        self.check_identity()?;
+        Ok(resolved)
+    }
+    fn check_identity(&self) -> io::Result<()> {
+        if handle::directory_identity(&self.file)? != self.identity {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Held directory identity differs from its binding",
+            ));
+        }
+        Ok(())
+    }
     /// Open an admitted absolute extended DOS/UNC selected root. Normal final
     /// directory links are followed; the opened target must be an ordinary disk directory.
     pub fn open(path: &Path) -> io::Result<Self> {
@@ -276,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_directory_alias_follows_target_while_walked_entry_remains_reparse() {
+    fn selected_directory_alias_resolves_target_name_while_walked_entry_remains_reparse() {
         use super::super::{
             test_actor::RestrictedToken,
             test_fixture::{directory, operation},
@@ -297,14 +337,69 @@ mod tests {
         assert_eq!(selected.kind, EntryKind::Directory);
         assert_eq!(selected.identity, target.identity());
         assert!(selected.file.is_none());
+        let selected_root = BoundDirectory::open(&operation(&alias)).unwrap();
+        let resolved = selected_root.resolved_path().unwrap();
+        // Reopening with normal final-link following would also accept the
+        // unresolved alias. NOFOLLOW must observe an ordinary TARGET directory.
+        let returned_file = handle::open(
+            &resolved,
+            FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        .unwrap();
+        let returned = handle::entry_observation(&returned_file).unwrap();
+        assert_eq!(returned.kind, EntryKind::Directory);
+        assert_eq!(returned.identity, target.identity());
+        drop(returned_file);
         let walked = parent.observe_child(OsStr::new("selected-link")).unwrap();
         assert_eq!(walked.kind, EntryKind::Reparse);
         assert_ne!(walked.identity, selected.identity);
         assert!(parent.open_child(OsStr::new("selected-link")).is_err());
+        drop(selected_root);
         drop(target);
         drop(parent);
         drop(actor);
         std::fs::remove_dir(alias).unwrap();
+        fixture.close().unwrap();
+    }
+
+    #[test]
+    fn resolved_directory_name_preserves_long_native_units_and_reopens_same_object() {
+        use super::super::{
+            test_actor::RestrictedToken,
+            test_fixture::{directory, operation},
+        };
+        let fixture = directory();
+        let mut leaf = operation(fixture.path());
+        for letter in ['a', 'b', 'c'] {
+            leaf.push(letter.to_string().repeat(100));
+        }
+        let native = OsString::from_wide(&[0x61, 0xd800, 0x62]);
+        leaf.push(&native);
+        std::fs::create_dir_all(&leaf).unwrap();
+        let actor = RestrictedToken::enter().unwrap();
+        let selected = BoundDirectory::open(&leaf).unwrap();
+        let resolved = selected.resolved_path().unwrap();
+        let units: Vec<_> = resolved.as_os_str().encode_wide().collect();
+        assert!(units.len() > 260);
+        assert!(units.ends_with(&[92, 0x61, 0xd800, 0x62]));
+        let reopened = BoundDirectory::open(&resolved).unwrap();
+        assert_eq!(reopened.identity(), selected.identity());
+        let returned_file = handle::open(
+            &resolved,
+            FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        .unwrap();
+        let returned = handle::entry_observation(&returned_file).unwrap();
+        assert_eq!(returned.kind, EntryKind::Directory);
+        assert_eq!(returned.identity, selected.identity());
+        drop(returned_file);
+        drop(reopened);
+        drop(selected);
+        drop(actor);
         fixture.close().unwrap();
     }
 

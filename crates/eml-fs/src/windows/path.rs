@@ -14,7 +14,7 @@ const MAX_UNITS: usize = 32_768;
 // Conservative operational content ceiling, excluding NUL and including the
 // extended prefix. This is below the documented approximate32767-character API
 // maximum; it is not a promise every filesystem accepts every length.
-const MAX_EXTENDED_CONTENT: usize = 32_766;
+pub(super) const MAX_EXTENDED_CONTENT: usize = 32_766;
 fn invalid() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
@@ -145,8 +145,11 @@ fn inspect(path: &Path, verbatim: bool) -> io::Result<()> {
     Ok(())
 }
 pub(crate) fn openable(path: &Path) -> io::Result<Vec<u16>> {
-    inspect(path, true)?;
+    validate_operation(path)?;
     Ok(path.as_os_str().encode_wide().chain(Some(0)).collect())
+}
+pub(super) fn validate_operation(path: &Path) -> io::Result<()> {
+    inspect(path, true)
 }
 fn full_path(path: &Path) -> io::Result<PathBuf> {
     let input: Vec<_> = path.as_os_str().encode_wide().chain(Some(0)).collect();

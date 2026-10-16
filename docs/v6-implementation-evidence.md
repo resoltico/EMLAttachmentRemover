@@ -1070,3 +1070,42 @@ observation; no new mutation/reproduction fixture is added. Independent design/
 API/source/test/docs review closed with no findings. MSVC FS all-target Clippy,
 excluded native probe all-target check and local Mac FS30/Clippy passed;
 doctests0. Native two-CPU runtime checks remain pending and the old gate unchanged.
+
+At exact `cbc9947b0286f36d61b0e596d73843dbf478a48c`,
+[Windows run38858860874](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38858860874)
+passed both selected-root cases once per CPU; nongate38passed/0failed/0ignored/
+1filtered each. Independent full-head/raw review closed the bounded metadata/
+selection compatibility evidence, including unpaired name, size23/full signature/
+ID, missing native2, relative/NUL refusals and static selected target versus
+no-follow Reparse/distinct ID/refused descent. This is not independent metadata
+decoding or full root admission. Each actual old gate still failed0passed/1failed/
+0ignored/38filtered, sole failed step; Windows overall remains failed.
+[Unix run38858860876](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38858860876)
+passed all seven jobs at the same head; independent raw QA closed FS Mac30/Linux26,
+default process18 each (Mac12.12s/Linux9.97s), prior boundaries and real cross-UID/
+ACL controls. Raw logs: target/cbc9947-windows-ci.log and target/cbc9947-unix-ci.log.
+
+## Windows resolved directory name observation
+
+BoundDirectory::resolved_path adds the required narrow normalized DOS-name query
+using the held ordinary directory. It derives one32767-WCHAR buffer from the
+existing32766-content authority, retains actual zero-return native errors,
+refuses capacity results without retry/fallback, preserves UTF-16 units and
+reuses fixed extended-path validation. Held ordinary/full-ID checks bracket
+success. This supplies a name observation, not an ancestor/address/overlap
+qualification or permission to create through that name.
+
+The static selected-junction case now checks the RETURNED operand with final
+no-follow metadata and requires the known ordinary target ID. Original alias
+observation is Reparse/distinct ID, a rejecting control that would catch merely
+returning an unresolved alias. One new native case queries a greater-than260-unit
+owned directory with an unpaired UTF-16 final name and compares returned units,
+ordinary no-follow identity and a separate reopen. Temporary metadata files are
+explicitly dropped before owned fixture teardown. No mutation fixture was added.
+
+Independent design/API/source/test review closed without findings; independent
+MSVC FS all-target Clippy and excluded native probe all-target check passed.
+Local Mac FS30/Clippy, formatting and diff checks passed; doctests0. Native two-CPU
+execution remains pending. Full collector/report/physical-overlap decisions and
+Windows ancestor/final-copy qualification remain unfinished; the old gate is
+unchanged and failed.
