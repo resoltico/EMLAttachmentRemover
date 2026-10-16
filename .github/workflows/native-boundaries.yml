@@ -73,6 +73,20 @@ jobs:
         run: |
           cargo clippy --locked --package remove-eml-attachments --all-targets -- -D warnings
           cargo test --locked --package remove-eml-attachments --lib --bin remove-eml-attachments --test cli_process --test events --test request --test path
+      - name: Native Swift protocol and queue model
+        if: ${{ runner.os == 'macOS' }}
+        run: |
+          plan=$(cargo xtask distribution)
+          version=$(jq -er '.xcode.version' <<< "$plan")
+          build=$(jq -er '.xcode.build' <<< "$plan")
+          export DEVELOPER_DIR="/Applications/Xcode_${version}.app/Contents/Developer"
+          test "$(xcodebuild -version)" = "$(printf 'Xcode %s\nBuild version %s' "$version" "$build")"
+          xcrun swift --version
+          xcrun swift format lint --strict --recursive macos-app
+          set -o pipefail
+          xcrun swift test --package-path macos-app --scratch-path target/swift-model -Xswiftc -warnings-as-errors 2>&1 | tee target/swift-model-tests.log
+          test "$(grep -Ec 'Test run with [1-9][0-9]* tests.*passed' target/swift-model-tests.log)" -eq 1
+          if grep -Eq 'Test .+ (failed|skipped)( after| due|$)|recorded an issue' target/swift-model-tests.log; then exit 1; fi
       - name: Real different-UID namespace controls on owned fixtures
         run: |
           cargo build --locked --package eml-fs --example namespace-credentials

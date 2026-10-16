@@ -224,6 +224,7 @@ fn malformed_and_oversize_request_errors_are_pre_stream_and_do_not_echo_document
     let root = root();
     for bytes in [
         b"{\"secret-synthetic-field\":true}".to_vec(),
+        include_bytes!("../../../tests/contract/protocol/invalid-request.json").to_vec(),
         vec![b' '; 8 * 1024 * 1024 + 1],
     ] {
         let output = invoke(

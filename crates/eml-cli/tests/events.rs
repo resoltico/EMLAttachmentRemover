@@ -119,6 +119,57 @@ fn actual_created_and_up_to_date_wire_fields_come_from_qualified_core_results() 
         assert_eq!(receipt["namespace_sync"]["required_edges"], 1);
         assert_eq!(receipt["namespace_sync"]["completed_edges"], 1);
         assert_eq!(events[2]["exit_code"], 0);
+        #[cfg(unix)]
+        {
+            let mut normalized = events.clone();
+            let observation = if status == "created" {
+                &mut normalized[1]["publication"]
+            } else {
+                &mut normalized[1]["existing_observation"]
+            };
+            let identity_key = if status == "created" {
+                "candidate_identity"
+            } else {
+                "identity"
+            };
+            assert_eq!(observation[identity_key]["kind"], "posix");
+            assert!(
+                !observation[identity_key]["value"]
+                    .as_str()
+                    .unwrap()
+                    .is_empty()
+            );
+            observation[identity_key]["value"] = "1:2".into();
+            for key in ["file_sync", "namespace_sync"] {
+                assert_eq!(observation[key]["state"], "succeeded");
+                assert!(matches!(
+                    observation[key]["method"].as_str().unwrap(),
+                    "fsync" | "fsync_fullfsync" | "fsync_fullfsync_unsupported"
+                ));
+                if !observation[key]["native_code"].is_null() {
+                    assert_eq!(observation[key]["method"], "fsync_fullfsync_unsupported");
+                }
+                // Only native identity and actual OS receipt observations vary.
+                // Counts, fields, paths, metadata and status remain exact goldens.
+                observation[key]["method"] = "fsync".into();
+                observation[key]["native_code"] = serde_json::Value::Null;
+            }
+            if status == "created" {
+                assert!(matches!(
+                    observation["cleanup"]["state"].as_str().unwrap(),
+                    "complete" | "not_needed"
+                ));
+                assert!(observation["cleanup"]["native_code"].is_null());
+                observation["cleanup"]["state"] = "complete".into();
+            }
+            let expected = if status == "created" {
+                include_str!("../../../tests/contract/protocol/created-attachment.jsonl")
+            } else {
+                include_str!("../../../tests/contract/protocol/up-to-date-attachment.jsonl")
+            }
+            .replace("@VERSION@", env!("CARGO_PKG_VERSION"));
+            assert_eq!(normalized, values(expected.as_bytes()));
+        }
         assert_eq!(
             fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
             golden

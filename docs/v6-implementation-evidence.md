@@ -1768,3 +1768,68 @@ select executable units and actual process tests; Windows requires six positive
 unfiltered transport suites. Native executable runtime remains pending at this
 point. Windows console controls, complete shared scenarios, app/archives and the
 old failing filesystem gate keep full product acceptance incomplete.
+
+At exact `791fbb0d54c82244dbb61859ed95b4b82f31f9d7`,
+[Unix run38916096732](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38916096732)
+passed all seven jobs. Each native filesystem host ran CLI lib7/binary4/process12/
+events4/path6/request16, all49 expected names once. Actual Unix FIFO INT/TERM/HUP,
+argv0 and partial-report INT+TERM force controls passed. Earlier Core/filesystem/
+credential/process/tool suites remained clean;72 clean summaries include four
+expected empty filesystem doctests, with zero failures/ignores/filters.
+[Windows run38916096520](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38916096520)
+passed CLI7/4/9/4/6/16 and all46 applicable names once on each native CPU, plus the
+earlier Core suites. FS49non-gate/1filter passed; the old creation gate remained
+the sole failure,0passed/1failed/49filtered each. Windows overall remains FAILED.
+Independent exact-head/raw/discovery audit closed this bounded executable scope.
+Own raw logs downloaded successfully to target/791fbb0-{unix,windows}-ci.log.
+Windows console stop/Job, full writable confinement, app and shipping qualification
+remain unqualified.
+
+## Swift protocol model and bounded session admission
+
+The fresh macos-app SwiftPM package has a Foundation RunModel target and Swift
+Testing, Swift language6/macOS15. Exact CodingKeys and RequiredNullable preserve
+missing-versus-null semantics; unknown event fields/error codes remain additive,
+while enums/phases/order/counts/summary exit and usable-copy receipts are checked.
+Only LF bytes frame records; incomplete EOF tails are discarded, failures latch,
+and inclusive64MiB frames/strict256MiB streams are bounded. Models retain no raw
+stdout history or message bodies.
+
+Independent challenge found and corrected over-strict generic failure receipts
+(limited full-sync success with native code, partial/unattempted namespace edges,
+confirmed cleanup retaining an earlier native error). Complete success still
+requires full synchronization/address/identity and clean applicable cleanup.
+Further controls caught transformed-key aliases, false empty success, accidental
+rejection of valid incomplete per-item failure and charging output against the
+input-only4MiB budget. Display retention is independently bounded at24MiB to allow
+full lossy expansion alongside8MiB native paths, not reconstructed from display.
+
+Twenty-two hand-authored shared JSONL scenarios include fixture01's independent
+1028-to513 bytes and507-byte removal. Swift parses them at every byte boundary.
+Unix actual Created/UpToDate adapters compare the same attachment goldens after
+checking then normalizing native identity/sync/cleanup observations only. The
+shared malformed request also runs through the actual executable. This does not
+establish every required diagnostic/failure or complete producer-consumer case.
+
+Queue tests cover one active/eight waiting requests, frozen destinations, two full
+report reservations and explicit pause before a third. Two separately decoded
+maximal20000-removal reports retain all parts; one extra is rejected. Path controls
+accept4096items/8MiBnative/24MiBlossy-display and reject native-only+1/display-only
+overflow. Exact4MiB inputs still allow a separately selected destination.
+
+A synthetic native URL probe exposed Swift URL's current native initializer
+replacing FF with U+FFFD; NSURL's native initializer and bridge retain FF/LF/ESC.
+The adapter uses that Foundation route and native representations, never display
+reconstruction. A single String destination decoder performs no preference I/O.
+No owner defaults were read/written by these tests. Actual native GUI ingress and
+argument-domain preference preservation remain required.
+
+Local installed Xcode27/Swift6.4 warnings-as-errors execution passed19 Swift tests,
+including22 parameterized scenarios (target/swift-model-tests.log). Swift format,
+Rust workspace Clippy, event4/process12 and xtask16 targeted tests passed. The
+distribution JSON now derives selected Xcode version/build from tools.toml with
+typed configuration rejection controls, preserving native6/eight-artifact output.
+Native Mac CI will verify the configured actual Xcode before format/model tests;
+this is not yet pinned-Xcode/native2 evidence. SwiftUI screens, owned Foundation
+helper supervision, bridge, signed app, archives and GUI qualification remain
+unfinished; full WP acceptance is not claimed.
