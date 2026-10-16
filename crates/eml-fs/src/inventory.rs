@@ -25,6 +25,15 @@ impl Iterator for DirectoryEntries {
     }
 }
 impl BoundDirectory {
+    /// Observe one no-follow child, mapping only native ENOENT to point absence.
+    /// None is not a parent/address qualification or permission to create.
+    pub fn observe_child_if_present(&self, name: &OsStr) -> io::Result<Option<EntryObservation>> {
+        match self.observe_child(name) {
+            Ok(value) => Ok(Some(value)),
+            Err(error) if error.raw_os_error() == Some(libc::ENOENT) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
     /// Observe an explicit selected expression through this held directory,
     /// following its final link. No object data is opened or read. Absolute
     /// expressions and symlink/dot-dot traversal retain native OS semantics.
@@ -66,6 +75,45 @@ fn observation(stat: &fs::Stat) -> io::Result<EntryObservation> {
 mod tests {
     use super::*;
     use std::{collections::BTreeSet, os::unix::fs::PermissionsExt};
+    #[test]
+    fn optional_child_observation_keeps_dangling_links_and_invalid_inputs_visible() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("file.eml"), b"owned").unwrap();
+        std::os::unix::fs::symlink("missing-target", root.path().join("dangling")).unwrap();
+        let directory = BoundDirectory::open(root.path()).unwrap();
+        assert!(
+            directory
+                .observe_child_if_present(OsStr::new("missing"))
+                .unwrap()
+                .is_none()
+        );
+        let file = directory
+            .observe_child_if_present(OsStr::new("file.eml"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            file,
+            directory.observe_child(OsStr::new("file.eml")).unwrap()
+        );
+        assert_eq!(file.kind, EntryKind::File);
+        assert_eq!(
+            directory
+                .observe_child_if_present(OsStr::new("dangling"))
+                .unwrap()
+                .unwrap()
+                .kind,
+            EntryKind::Symlink
+        );
+        assert_eq!(
+            directory
+                .observe_child_if_present(OsStr::new("a/b"))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        drop(directory);
+        root.close().unwrap();
+    }
     #[test]
     fn selected_relative_expressions_use_the_held_working_directory_after_its_address_moves() {
         let root = tempfile::tempdir().unwrap();

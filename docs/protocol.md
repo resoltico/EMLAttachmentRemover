@@ -60,8 +60,9 @@ usable operand exists; this is intended input, not a valid I/O capability.
 Successful items must use their admitted native expression. The borrowed adapter
 now requires both facts explicitly; same-path callers pass the same path twice.
 Its hand-authored split-fact golden rejects using display for native encoding.
-The read-only collector now supplies these facts; source/native qualification
-and actual split-path filesystem integration remain pending.
+The read-only collector now supplies these facts; bounded native collector and
+Windows literal-versus-trimmed path integration passed at dfc3c76. Full run/event
+and maximal-size qualification remain pending.
 
 For each source/known destination let d be complete display-expression native
 bytes and n complete reported-native bytes; charge b=max(d,n) once to the8MiB

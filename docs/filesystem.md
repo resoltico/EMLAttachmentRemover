@@ -475,8 +475,8 @@ work and64/65-depth boundaries, and actual100000/100001 entry totals. Private
 hash injection exercises true collisions and deterministic RunControl/owned-empty-
 directory-removal boundaries while the filesystem remains real. It does not
 qualify another-user interference, mount setup or a signal adapter. Windows
-literal-parent/source-native and static junction cases are compiled but not yet
-executed. Source review and six-platform native execution remain pending; naming/
+literal-parent/source-native and static junction cases passed on both native CPUs.
+Source and bounded six-platform native review closed at dfc3c76; naming/
 destinations/reservations, MIME execution, event emission and writable run are
 still required.
 
@@ -487,3 +487,20 @@ finished discovery preserves that completion fact. A later stop governs
 interruption precedence while retaining already observed aggregate errors and
 completed discovery; mid-collection stop still has an incomplete known prefix.
 Scripted state tests prove this mapping, not native late signals or OS failures.
+
+Read-only destination planning consumes the inventory and retains one structural
+record per known source position. It freezes copy names and mirrored layout,
+checks observed parent identities, and reserves exact native tails under the
+closest positively observed parent. All contenders for a known destination fail
+with DESTINATION_COLLISION, including a contender with another leaf error.
+Source identities and selected source paths remain reserved. An incompatible or
+unverified existing mirror parent produces no destination name or reservation;
+only positively missing parent tails may use the closest existing parent's name
+limit, which execution must revalidate. Completed planning is not MIME validation,
+existing-byte comparison, write admission or a terminal PlannedCopy outcome.
+
+Optional child observation treats only native ENOENT (Unix) or
+STATUS_OBJECT_NAME_NOT_FOUND (Windows) as absence. Other failures retain their
+native cause, and dangling links remain present. Absence is an observation at a
+held parent, not a promise about a later publication address. These helpers add
+no write rights, flags, fallback lookup or directory creation.

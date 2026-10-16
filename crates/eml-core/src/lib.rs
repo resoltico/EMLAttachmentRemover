@@ -3,14 +3,25 @@
 
 #[cfg(any(unix, windows))]
 mod collection;
+#[cfg(any(unix, windows))]
+mod destination;
+#[cfg(any(unix, windows))]
+mod failure;
+#[cfg(any(unix, windows))]
+pub use destination::{
+    DestinationInfo, DestinationObservation, DestinationPlan, DestinationPlanState,
+    DestinationRecord, plan_destinations,
+};
+#[cfg(any(unix, windows))]
+pub use failure::OperationFailure;
 mod diagnostic;
 #[cfg(any(unix, windows))]
 mod selection;
 #[cfg(any(unix, windows))]
 pub use collection::{
-    CollectedObservation, CollectedSource, CollectedSources, CollectionFailure, CollectionState,
-    InvalidRequest, MAX_COLLECTED_ITEMS, MAX_COLLECTED_PATH_BYTES, MAX_DIRECTORY_ENTRIES,
-    MAX_WALK_DEPTH, SourceOrigin, collect_sources,
+    CollectedObservation, CollectedSource, CollectedSources, CollectionState, InvalidRequest,
+    MAX_COLLECTED_ITEMS, MAX_COLLECTED_PATH_BYTES, MAX_DIRECTORY_ENTRIES, MAX_WALK_DEPTH,
+    SourceOrigin, collect_sources,
 };
 mod grammar;
 mod message;

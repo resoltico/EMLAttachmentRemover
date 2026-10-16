@@ -35,6 +35,16 @@ pub struct BoundDirectory {
     pub(super) identity: Identity,
 }
 impl BoundDirectory {
+    /// Observe one no-follow child, mapping only structured native NAME_NOT_FOUND
+    /// from its existing-only lookup to point absence. All other errors survive.
+    /// None is not a parent/address qualification or permission to create.
+    pub fn observe_child_if_present(&self, name: &OsStr) -> io::Result<Option<EntryObservation>> {
+        match self.observe_child(name) {
+            Ok(value) => Ok(Some(value)),
+            Err(error) if child_missing(&error) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
     /// Observed maximum filename-component length in WCHARs for the held volume.
     /// Query failure/zero remains an error; this supplies no write-admission proof.
     pub fn name_limit(&self) -> io::Result<usize> {
@@ -124,6 +134,14 @@ impl BoundDirectory {
             ended: false,
         })
     }
+}
+fn child_missing(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .and_then(|cause| cause.downcast_ref::<super::status::NtStatusError>())
+        .is_some_and(|cause| {
+            cause.nt_status() == windows_sys::Win32::Foundation::STATUS_OBJECT_NAME_NOT_FOUND
+        })
 }
 
 /// Streaming native names. Drop before restarting or otherwise using the directory.
@@ -275,6 +293,72 @@ mod tests {
     use super::*;
     use crate::EntryKind;
     use std::{collections::BTreeSet, ffi::OsStr, os::windows::ffi::OsStrExt};
+    #[test]
+    fn optional_child_observation_preserves_present_dangling_and_invalid_entries() {
+        use super::super::{
+            test_actor::RestrictedToken,
+            test_fixture::{directory, operation},
+        };
+        let fixture = directory();
+        std::fs::write(fixture.path().join("file.eml"), b"owned").unwrap();
+        let target = fixture.path().join("target");
+        let alias = fixture.path().join("dangling");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::create_dir(&alias).unwrap();
+        let link = super::super::test_reparse::writer(&alias).unwrap();
+        super::super::test_reparse::set_mount_point(&link, &target).unwrap();
+        drop(link);
+        std::fs::remove_dir(target).unwrap();
+        let actor = RestrictedToken::enter().unwrap();
+        let root = BoundDirectory::open(&operation(fixture.path())).unwrap();
+        assert!(
+            root.observe_child_if_present(OsStr::new("missing"))
+                .unwrap()
+                .is_none()
+        );
+        let file = root
+            .observe_child_if_present(OsStr::new("file.eml"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(file, root.observe_child(OsStr::new("file.eml")).unwrap());
+        assert_eq!(file.kind, EntryKind::File);
+        assert_eq!(
+            root.observe_child_if_present(OsStr::new("dangling"))
+                .unwrap()
+                .unwrap()
+                .kind,
+            EntryKind::Reparse
+        );
+        assert_eq!(
+            root.observe_child_if_present(OsStr::new("a/b"))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        drop(root);
+        drop(actor);
+        std::fs::remove_dir(alias).unwrap();
+        fixture.close().unwrap();
+    }
+    #[test]
+    fn scripted_missing_mapping_requires_exact_native_status_and_provenance() {
+        use windows_sys::Win32::Foundation::{
+            STATUS_ACCESS_DENIED, STATUS_OBJECT_NAME_NOT_FOUND, STATUS_OBJECT_PATH_NOT_FOUND,
+        };
+        // Mapping only, not injected native filesystem failures.
+        assert!(child_missing(&super::super::status::error(
+            STATUS_OBJECT_NAME_NOT_FOUND
+        )));
+        for status in [STATUS_OBJECT_PATH_NOT_FOUND, STATUS_ACCESS_DENIED] {
+            assert!(!child_missing(&super::super::status::error(status)));
+        }
+        assert!(!child_missing(&io::Error::from_raw_os_error(2)));
+        assert!(!child_missing(&io::Error::from_raw_os_error(3)));
+        assert!(!child_missing(&io::Error::new(
+            io::ErrorKind::NotFound,
+            "cosmetic"
+        )));
+    }
 
     #[test]
     fn selected_root_metadata_observes_file_directory_and_native_missing_errors() {

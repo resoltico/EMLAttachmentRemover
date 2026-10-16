@@ -1248,3 +1248,62 @@ full source/destination/ancestor/address integration, serial MIME execution,
 typed terminal events/counts/delivery, actual CLI, SwiftUI, archives and final
 qualification remain unfinished. The old Windows confinement gate stays failed;
 no native mount fixture, saved preferences or unrelated work was changed.
+
+At exact `dfc3c76c22e3a5bd45cfa7dbb7332a76fd027b12`,
+[Unix run38877295410](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38877295410)
+passed all seven jobs/full-head checkouts. Each of four FS hosts executed all
+nine new collection unit names and all eleven integration names once as passing;
+actual core24/collection11/source6/request9/diagnostic3/path6/decoder16 had zero
+failures/ignores/filters. FS Mac30/Linux26, real cross-UID/ACL controls and both
+default process18 suites remained successful. [Windows run38877295339](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38877295339)
+executed every new expected case once on BOTH native CPUs, including combined-
+operand validation, literal folder/source-native integration and depth/overlap
+precedence; core23/collection12/source5/request9/diagnostic3/path6/decoder16 all
+passed with0failed/ignored/filtered. Collection runtime was10.26s x64/165.39s ARM;
+the real100000-entry case was executed, not skipped. FS nongate39 passed each;
+each actual old strict gate still failed0passed/1failed/0ignored/39filtered, the
+sole failed Windows step and all its panic/error annotations. Windows overall
+remains FAILED. Independent exact-head/raw/discovery QA closed bounded read-only
+collection only. Full retained logs: target/dfc3c76-windows-ci.log and
+target/dfc3c76-unix-ci.log. This supplies no write authority, full product/CLI/GUI
+or archive qualification.
+
+## Read-only destination layout and reservations
+
+The reusable plan_destinations operation consumes one collected inventory and
+retains structural records at every known source position. Naming, root labels,
+mirrored layout, parent observations, source reservations and all-contender
+collision detection live in core. OperationFailure now carries the shared typed
+code/phase/detail and exact native I/O cause. The planner stores one native path
+per known destination and derives display paths from the borrowed request and
+frozen root labels; it does not retain duplicate complete path buffers.
+
+Independent design/source/test review corrected normalized nameless-root labels,
+unverified-parent naming assumptions, duplicate path storage, and premature quota
+charging on a stopped candidate. Known destination paths remain available through
+leaf errors; unknown parent routes never acquire a speculative key. Native-only
+optional-absence helpers preserve all failures except the exact native missing-
+name result. The Windows classification unit test is a scripted mapping control,
+not execution of injected OS failures. Existing final-leaf I/O-error handling is
+source-reviewed; the blocked-file fixture proves incompatible mirror refusal.
+
+Eleven real owned-filesystem tests cover layout, all-contender collisions,
+missing-tail reservations, source aliases/hard links, truncation collisions,
+collection/stop preservation, dot and nameless root labels, incompatible mirror
+parents, and the combined8MiB report budget. The budget fixture independently
+expects4,177,920 source bytes,4068 Unix/2034 Windows admitted destinations and
+8,388,300 final bytes, retaining the full source list and unplanned suffix. Its
+Windows prerequisite explicitly requires a normalized scratch prefix<=499 UTF16
+units before the large fixture setup; this is fixture scope, not a product path
+restriction. No output entries are created. Workflows discover all eleven tests
+and Windows now requires four positive unfiltered core suites.
+
+Stable local cargo test --locked --workspace passed204 tests across16 positive
+suites, six expected empty suites, zero failures/ignores/filters, command exit0
+(target/destination-workspace-final.log). Host workspace and MSVC three-package
+all-target Clippy, both workflow actionlint checks, excluded native-probe all-target
+check, formatting and diff checks passed. Native runtime for this slice remains
+pending; MSVC compilation is not Windows integration evidence.
+This supplies no MIME processing, existing-byte/sync comparison, writable ancestor
+binding, final publication qualification, CLI/GUI or archive evidence. The prior
+Windows confinement gate remains failed and unchanged.

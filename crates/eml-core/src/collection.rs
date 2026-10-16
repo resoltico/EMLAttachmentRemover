@@ -1,7 +1,7 @@
 //! Ordered bounded read-only inventory and explicit-output separation.
 use crate::{
-    COPY_SUFFIX, ErrorCode, ErrorPhase, MAX_PATH_UNITS, OutputLocation, RequestPathError,
-    RunControl, RunRequest,
+    COPY_SUFFIX, ErrorCode, ErrorPhase, MAX_PATH_UNITS, OperationFailure, OutputLocation,
+    RequestPathError, RunControl, RunRequest,
     request::{native_bytes, path_limits},
     selection::{SelectionError, WorkingContext, append},
 };
@@ -13,7 +13,6 @@ use std::{
     hash::BuildHasher,
     io,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 /// Maximum complete reported source/destination path charge across a run.
@@ -82,77 +81,6 @@ pub enum SourceOrigin {
     /// Work or discovery failure below a successfully bound selected directory.
     Walked,
 }
-/// Typed failure with original native cause and bounded authored context.
-#[derive(Clone, Debug)]
-pub struct CollectionFailure {
-    code: ErrorCode,
-    phase: ErrorPhase,
-    detail: &'static str,
-    cause: Option<Arc<io::Error>>,
-}
-impl CollectionFailure {
-    /// Stable semantic code; never inferred from English/native error text.
-    pub fn code(&self) -> ErrorCode {
-        self.code
-    }
-    /// Operation that actually failed.
-    pub fn phase(&self) -> ErrorPhase {
-        self.phase
-    }
-    /// Authored context without a source payload or lossy path authority.
-    pub fn detail(&self) -> &'static str {
-        self.detail
-    }
-    /// Exact native/validation failure, including any structured NTSTATUS cause.
-    pub fn native_error(&self) -> Option<&io::Error> {
-        self.cause.as_deref()
-    }
-    fn new(code: ErrorCode, phase: ErrorPhase, detail: &'static str) -> Self {
-        Self {
-            code,
-            phase,
-            detail,
-            cause: None,
-        }
-    }
-    fn io(phase: ErrorPhase, detail: &'static str, error: io::Error) -> Self {
-        Self {
-            code: ErrorCode::ReadFailed,
-            phase,
-            detail,
-            cause: Some(Arc::new(error)),
-        }
-    }
-    fn selection(phase: ErrorPhase, error: SelectionError) -> Self {
-        match error {
-            SelectionError::Io(error) => Self::io(
-                phase,
-                "Selected path could not be inspected or opened",
-                error,
-            ),
-            #[cfg(windows)]
-            SelectionError::Changed => Self::new(
-                ErrorCode::SourceChanged,
-                phase,
-                "Selected directory identity changed",
-            ),
-        }
-    }
-}
-impl std::fmt::Display for CollectionFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.detail)?;
-        if let Some(error) = &self.cause {
-            write!(f, ": {error}")?;
-        }
-        Ok(())
-    }
-}
-impl std::error::Error for CollectionFailure {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.cause.as_deref().map(|error| error as _)
-    }
-}
 /// Ordinary-file metadata or an actual failure retained in discovered order.
 #[derive(Clone, Debug)]
 pub enum CollectedObservation {
@@ -164,11 +92,11 @@ pub enum CollectedObservation {
         parent: Identity,
     },
     /// Failure provenance is separately retained in SourceOrigin.
-    Failed(CollectionFailure),
+    Failed(OperationFailure),
 }
 /// One immutable bounded work/failure position. Its index is not an emission ordinal.
 pub struct CollectedSource<'a> {
-    root: usize,
+    pub(super) root: usize,
     suffix: PathBuf,
     native: Cow<'a, Path>,
     origin: SourceOrigin,
@@ -192,28 +120,28 @@ impl CollectedSource<'_> {
         &self.suffix
     }
 }
-enum RootKind {
+pub(super) enum RootKind {
     File(FileSignature, Identity),
     Directory(Identity),
-    Failed(CollectionFailure),
+    Failed(OperationFailure),
 }
-struct Root {
-    request_index: usize,
-    kind: RootKind,
+pub(super) struct Root {
+    pub(super) request_index: usize,
+    pub(super) kind: RootKind,
 }
 /// Read-only collection observations borrowing the immutable request. Captured
 /// filesystem handles remain private and cannot become a frontend write capability.
 pub struct CollectedSources<'a> {
-    request: &'a RunRequest,
-    context: Option<WorkingContext>,
-    output: Option<BoundDirectory>,
-    roots: Vec<Root>,
+    pub(super) request: &'a RunRequest,
+    pub(super) context: Option<WorkingContext>,
+    pub(super) output: Option<BoundDirectory>,
+    pub(super) roots: Vec<Root>,
     items: Vec<CollectedSource<'a>>,
     state: CollectionState,
     complete: bool,
     examined: usize,
     path_bytes: usize,
-    error: Option<CollectionFailure>,
+    error: Option<OperationFailure>,
 }
 impl<'a> CollectedSources<'a> {
     fn empty(request: &'a RunRequest) -> Self {
@@ -267,7 +195,7 @@ impl<'a> CollectedSources<'a> {
         self.path_bytes
     }
     /// Aggregate failure, separate from per-position observations and stop.
-    pub fn run_error(&self) -> Option<&CollectionFailure> {
+    pub fn run_error(&self) -> Option<&OperationFailure> {
         self.error.as_ref()
     }
 }
@@ -364,16 +292,15 @@ fn collect_with_hash<'a>(
                     }
                     Ok(_) => collector.fail_root(
                         root,
-                        CollectionFailure::new(
+                        OperationFailure::new(
                             ErrorCode::SourceChanged,
                             ErrorPhase::Collection,
                             "Selected directory changed before walking",
                         ),
                     ),
-                    Err(error) => collector.fail_root(
-                        root,
-                        CollectionFailure::selection(ErrorPhase::Collection, error),
-                    ),
+                    Err(error) => {
+                        collector.fail_root(root, selection_failure(ErrorPhase::Collection, error))
+                    }
                 }
             }
             RootKind::Directory(_) => {}
@@ -385,7 +312,7 @@ fn collect_with_hash<'a>(
     if collector.active() && collector.root_failed() {
         collector.block(
             CollectionState::InputAdmissionFailed,
-            CollectionFailure::new(
+            OperationFailure::new(
                 ErrorCode::InputAdmissionFailed,
                 ErrorPhase::Admission,
                 "At least one explicit source root could not bind",
@@ -397,7 +324,7 @@ fn collect_with_hash<'a>(
             Ok(true) => {}
             Ok(false) => collector.block(
                 CollectionState::Unverified,
-                CollectionFailure::new(
+                OperationFailure::new(
                     ErrorCode::BindFailed,
                     ErrorPhase::Admission,
                     "Captured working-directory address changed",
@@ -418,6 +345,22 @@ fn selection_io(error: SelectionError) -> io::Error {
         #[cfg(windows)]
         SelectionError::Changed => io::Error::new(
             io::ErrorKind::InvalidData,
+            "Selected directory identity changed",
+        ),
+    }
+}
+fn selection_failure(phase: ErrorPhase, error: SelectionError) -> OperationFailure {
+    match error {
+        SelectionError::Io(error) => OperationFailure::io(
+            ErrorCode::ReadFailed,
+            phase,
+            "Selected path could not be inspected or opened",
+            error,
+        ),
+        #[cfg(windows)]
+        SelectionError::Changed => OperationFailure::new(
+            ErrorCode::SourceChanged,
+            phase,
             "Selected directory identity changed",
         ),
     }
@@ -449,7 +392,7 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
         }
         self.active()
     }
-    fn block(&mut self, state: CollectionState, error: CollectionFailure) {
+    fn block(&mut self, state: CollectionState, error: OperationFailure) {
         self.result.state = state;
         self.result.error = Some(error);
         if matches!(
@@ -463,7 +406,7 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
         self.result.complete = false;
         self.block(
             CollectionState::InputLimitExceeded,
-            CollectionFailure::new(
+            OperationFailure::new(
                 ErrorCode::InputLimitExceeded,
                 ErrorPhase::Collection,
                 detail,
@@ -471,8 +414,8 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
         );
     }
     fn unverified(&mut self, detail: &'static str, error: io::Error) {
-        let mut failure = CollectionFailure::io(ErrorPhase::Admission, detail, error);
-        failure.code = ErrorCode::BindFailed;
+        let failure =
+            OperationFailure::io(ErrorCode::BindFailed, ErrorPhase::Admission, detail, error);
         self.block(CollectionState::Unverified, failure);
     }
     fn block_observed_overlap(&mut self, identity: Identity) -> bool {
@@ -484,7 +427,7 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
         {
             self.block(
                 CollectionState::OutputOverlap,
-                CollectionFailure::new(
+                OperationFailure::new(
                     ErrorCode::OutputOverlap,
                     ErrorPhase::Admission,
                     "Output directory is reachable below a selected directory",
@@ -536,9 +479,10 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
                     }
                 }
             }
-            let kind = (|| -> Result<RootKind, CollectionFailure> {
+            let kind = (|| -> Result<RootKind, OperationFailure> {
                 operand.map_err(|error| {
-                    CollectionFailure::io(
+                    OperationFailure::io(
+                        ErrorCode::ReadFailed,
                         ErrorPhase::Admission,
                         "Selected expression could not be admitted",
                         error,
@@ -547,26 +491,25 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
                 let observed = self
                     .context()
                     .observe(expression)
-                    .map_err(|error| CollectionFailure::selection(ErrorPhase::Admission, error))?;
+                    .map_err(|error| selection_failure(ErrorPhase::Admission, error))?;
                 match observed.kind {
                     EntryKind::File => {
-                        let parent =
-                            self.context()
-                                .parent_identity(expression)
-                                .map_err(|error| {
-                                    CollectionFailure::selection(ErrorPhase::Admission, error)
-                                })?;
+                        let parent = self
+                            .context()
+                            .parent_identity(expression)
+                            .map_err(|error| selection_failure(ErrorPhase::Admission, error))?;
                         Ok(RootKind::File(
                             observed.file.expect("ordinary observation has signature"),
                             parent,
                         ))
                     }
                     EntryKind::Directory => {
-                        let directory = self.context().directory(expression).map_err(|error| {
-                            CollectionFailure::selection(ErrorPhase::Admission, error)
-                        })?;
+                        let directory = self
+                            .context()
+                            .directory(expression)
+                            .map_err(|error| selection_failure(ErrorPhase::Admission, error))?;
                         if directory.identity() != observed.identity {
-                            return Err(CollectionFailure::new(
+                            return Err(OperationFailure::new(
                                 ErrorCode::SourceChanged,
                                 ErrorPhase::Admission,
                                 "Selected root identity changed",
@@ -574,7 +517,7 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
                         }
                         Ok(RootKind::Directory(observed.identity))
                     }
-                    _ => Err(CollectionFailure::new(
+                    _ => Err(OperationFailure::new(
                         ErrorCode::SourceNotRegular,
                         ErrorPhase::Admission,
                         "Explicit selection is not an ordinary file or directory",
@@ -595,7 +538,7 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
         }
         true
     }
-    fn fail_root(&mut self, root: usize, error: CollectionFailure) {
+    fn fail_root(&mut self, root: usize, error: OperationFailure) {
         self.result.roots[root].kind = RootKind::Failed(error.clone());
         self.push(
             root,
@@ -793,13 +736,13 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
                             self.walk(root, child, child_suffix, child_eligible, depth + 1)
                         }
                         Ok(_) => {
-                            let failure = CollectionFailure::new(
+                            let failure = OperationFailure::new(
                                 ErrorCode::SourceChanged,
                                 ErrorPhase::Collection,
                                 "Discovered directory identity changed before descent",
                             );
                             if self.result.output.is_some() {
-                                self.block(CollectionState::Unverified, CollectionFailure::new(
+                                self.block(CollectionState::Unverified, OperationFailure::new(
                                     ErrorCode::BindFailed, ErrorPhase::Admission,
                                     "Output separation could not be qualified after a directory identity changed",
                                 ));
@@ -835,7 +778,7 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
                     root,
                     child_suffix,
                     SourceOrigin::Walked,
-                    CollectedObservation::Failed(CollectionFailure::new(
+                    CollectedObservation::Failed(OperationFailure::new(
                         ErrorCode::SourceNotRegular,
                         ErrorPhase::Collection,
                         "Discovered input is not an ordinary file",
@@ -863,7 +806,8 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
                 root,
                 suffix,
                 SourceOrigin::Walked,
-                CollectedObservation::Failed(CollectionFailure::io(
+                CollectedObservation::Failed(OperationFailure::io(
+                    ErrorCode::ReadFailed,
                     ErrorPhase::Collection,
                     detail,
                     error,
@@ -875,7 +819,7 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
 fn skipped(name: &OsStr) -> bool {
     name.as_encoded_bytes().starts_with(b".") || ascii_suffix(name, COPY_SUFFIX.as_bytes())
 }
-fn path_total(current: usize, display: usize, native: usize) -> Option<usize> {
+pub(super) fn path_total(current: usize, display: usize, native: usize) -> Option<usize> {
     current
         .checked_add(display.max(native))
         .filter(|total| *total <= MAX_COLLECTED_PATH_BYTES)
