@@ -1109,3 +1109,46 @@ Local Mac FS30/Clippy, formatting and diff checks passed; doctests0. Native two-
 execution remains pending. Full collector/report/physical-overlap decisions and
 Windows ancestor/final-copy qualification remain unfinished; the old gate is
 unchanged and failed.
+
+At `31dd42aa9c3311f7a9c7fa7bd09f51d95c37f4a6`,
+[Windows run38861257739](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38861257739)
+passed the strengthened static-alias and new long/unpaired resolved-name cases
+once per CPU; nongate39passed/0failed/0ignored/1filtered. Independent full-head/raw
+QA closed only name-observation/native-unit/ordinary no-follow returned-target
+evidence. Native maximum-buffer/error/SMB failure and complete ancestor/address/
+overlap behavior are not established. Each actual old gate failed0passed/1failed/
+0ignored/39filtered, sole failed step; overall Windows still failed.
+[Unix run38861257723](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38861257723)
+passed all seven exact-head jobs; independent raw QA closed Mac FS30/Linux26,
+default process18 each, prior boundaries and real cross-UID/ACL controls. Owned
+full logs are target/31dd42a-windows-ci.log and target/31dd42a-unix-ci.log.
+
+## Separate reported native and display expressions
+
+Independent contract/challenge review resolved the walked literal-name case:
+Windows reported NativeValue uses the admitted extended SELECTED expression plus
+literal suffix, preserving aliases; original request-derived expression remains
+the display fact. A canonical target name is a separate binding observation.
+Unadmitted failed roots may retain intended failed input when no usable operand
+exists, never as a successful path capability. Charge each source/known destination
+by max(complete display-expression native bytes, complete reported-native bytes),
+including failures, repeated logical prefixes and expanded reported cwd. The
+existing display/native envelope proof holds; this does not bound two independently
+allocated buffers to8MiB. Collector/maximal/exact-one-over/native integration
+enforcement remains to build.
+
+Reviewed sequencing now requires physical overlap admission before writes, rather
+than the added before-walking restriction. OUTPUT_OVERLAP has no item events and
+actual discovery completeness; INPUT_ADMISSION_FAILED separately remains false.
+Metadata-only root observations do not establish work precedence or backfill
+collection stop/limit prefixes. Native mount-alias negative proof remains open;
+no filtered traversal or upward inode no-match is called disjointness.
+
+PathValue now requires both borrowed core-supplied paths, renders display from its
+display expression and losslessly encodes the native value. Every previous caller
+passes same/same; the additional hand-authored A/request-alias golden requires
+Unix QQ== or UTF16LE QQA= without deriving native bytes from display. Request codec
+and terminal escaping are unchanged. Independent source/API/test/docs QA and local
+CLI six path/sixteen request tests, native-host and MSVC all-target Clippy, formatting
+and diff checks passed. Native six-platform codec execution remains pending; no
+collector, event/run sizing or split-path filesystem integration claim follows.

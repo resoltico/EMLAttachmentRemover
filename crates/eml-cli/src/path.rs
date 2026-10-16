@@ -124,21 +124,25 @@ impl NativePath {
     }
 }
 
-/// Borrowed protocol-1 path value from an already admitted native core path.
-/// Serialization preserves its spelling; it does not resolve, open or validate it.
-pub struct PathValue<'a>(&'a Path);
+/// Borrowed protocol-1 native and display-expression facts supplied by core.
+/// Serialization preserves each spelling; it does not resolve, open or validate it.
+pub struct PathValue<'a> {
+    native: &'a Path,
+    display: &'a Path,
+}
 impl<'a> PathValue<'a> {
-    /// Borrow a path for output. Human terminal escaping and whole-event framing
-    /// are separate operations; this type writes the JSON path object only.
-    pub fn new(path: &'a Path) -> Self {
-        Self(path)
+    /// Borrow the operational/intended native value and human display expression.
+    /// Core owns their admission, provenance and combined report-budget charge.
+    /// Terminal escaping and whole-event framing are separate operations.
+    pub fn new(native: &'a Path, display: &'a Path) -> Self {
+        Self { native, display }
     }
 }
 impl Serialize for PathValue<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut value = serializer.serialize_struct("PathValue", 2)?;
-        value.serialize_field("display", &self.0.to_string_lossy())?;
-        value.serialize_field("native", &NativePath::encode(self.0))?;
+        value.serialize_field("display", &self.display.to_string_lossy())?;
+        value.serialize_field("native", &NativePath::encode(self.native))?;
         value.end()
     }
 }

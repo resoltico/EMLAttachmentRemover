@@ -36,8 +36,8 @@ those still-required capabilities. Core and filesystem crates have no JSON
 dependency. Request shape and native-byte tests live in the frontend package;
 business path limits remain in core.
 
-`PathValue` now serializes an already admitted native path into the exact output
-object, with lossy display text and a separate lossless native value. Encoding
+`PathValue` now serializes core-supplied native and display-expression facts into
+the exact output object, with lossy display text and a lossless native value. Encoding
 names have one shared string authority with strict request decoding. Unix bytes
 and Windows UTF-16LE units are encoded directly, including non-Unicode units.
 No display string is used to reconstruct the native value. Spelling, including
@@ -45,6 +45,30 @@ symlink/dot-dot expressions, is retained. JSON escaping keeps embedded LF inside
 the string; raw U+0085/U+2028/U+2029 remain valid string content. This primitive
 does not implement human terminal escaping, LF event framing, whole-event/run
 size admission or the CLI executable. Its tests perform no filesystem I/O.
+
+### Core-supplied display and native path facts
+
+The reviewed Windows rule uses an admitted extended SELECTED expression plus a
+literal walked suffix for reported native values. Preserve aliases; a canonical
+target query is a separate binding fact. Human display retains the original
+request-derived expression. The path serializer must accept those two core facts
+without reconstructing one from the other or adding frontend normalization.
+An unadmitted failed root may report its failed requested native input when no
+usable operand exists; this is intended input, not a valid I/O capability.
+Successful items must use their admitted native expression. The borrowed adapter
+now requires both facts explicitly; same-path callers pass the same path twice.
+Its hand-authored split-fact golden rejects using display for native encoding.
+Actual collector/literal-versus-trimmed native integration remains pending.
+
+For each source/known destination let d be complete display-expression native
+bytes and n complete reported-native bytes; charge b=max(d,n) once to the8MiB
+budget, including failure items and repeated logical prefixes. Windows counts
+two bytes per UTF-16 unit. Since6d+4n/3 <= (6+4/3)b, the existing protocol envelope
+still bounds both representations; the fixed margin covers Base64 rounding.
+Expanded reported cwd counts, while transient unreported operands are not charged
+a second time. This is a report-retention bound, not an8MiB peak-allocation
+promise for two independent buffers. Maximal event/run and exact/one-over tests
+must use independent display/native facts when those capabilities are built.
 
 `TerminalPath` separately formats a borrowed path for human terminal text. It
 escapes C0/C1 controls, Unicode line/paragraph separators and Unicode bidi-control

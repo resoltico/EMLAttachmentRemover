@@ -235,20 +235,32 @@ References: [unlink/unlinkat](https://man7.org/linux/man-pages/man2/unlink.2.htm
 
 The raw request input, output and captured-cwd expressions each have the core's
 separate path-unit/component admission limits. Prefixing a valid short relative
-POSIX selection with cwd for a derived absolute display does not create a second
+POSIX selection with cwd for a derived absolute operand does not create a second
 InvalidRequest. Descriptor-relative operations preserve that selection; native
 backend operational ceilings still produce truthful operation failures. Walked
 path limits apply to the selected spelling plus its discovered suffix, without
 charging the captured cwd prefix to a relative expression's component allowance.
 
-The future collector's8MiB path budget charges each retained item source native
-value and known planned destination native value once, including failure items;
-Windows counts two bytes per UTF-16 unit. The4MiB raw-input budget remains
-separate and precedes deduplication. Prefer admitted spelling plus shared root
-context and derive operands. Do not double-charge a second representation of
-the same protocol path or hide independently retained copies. Exact/one-over
+The future collector's8MiB path budget charges each source and known planned
+destination once by the maximum of its complete display-expression native bytes
+and complete reported-native bytes, including failure items. Windows counts two
+bytes per UTF-16 unit. The4MiB raw-input budget remains separate and precedes
+deduplication. Logical repeated prefixes count even when their allocation is
+shared. Derive transient operands and do not hide independently retained copies.
+Expanded cwd prefixes count when actually reported, rather than remaining
+transient operational material. Exact/one-over
 accounting tests remain required with the collector; this clarification does not
 claim that collector implemented.
+
+On Windows, every successfully admitted source reports its admitted extended
+SELECTED expression plus literal walked suffix as the native value. Preserve
+aliases/provenance; do not rebase reporting onto the canonical target. Retain the
+original request-derived expression separately for human display. Re-resolving
+an ordinary root plus a discovered literal dotted/spaced suffix can select a
+different entry, so both actual I/O and reported native values derive from the
+admitted extended root. When admission cannot produce a usable operand, a failed
+root reports its failed request as unqualified intended input. Successful items
+cannot use that exception. The frontend only encodes/renders core-supplied facts.
 
 POSIX selected expressions can be observed or opened relative to an already held
 working directory through `observe_selected` and `open_selected`. These use
@@ -316,7 +328,7 @@ root ID and separately qualify the original requested address. Static selected-
 alias tests inspect the RETURNED operand without final-link following and require
 the known ordinary target ID; simply reopening an alias with following is not
 proof of resolution. A separate owned long/unpaired-name case exercises the
-same query. Source/API/test review is closed; native execution is pending. API reference:
+same query. Source/API/test and bounded both-CPU native checks closed at31dd42a. API reference:
 [GetFinalPathNameByHandleW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew).
 
 The separate Windows `WritableDirectory`/`CreatedDirectory` primitive now performs
@@ -356,9 +368,24 @@ symlink/.., use selected-folder. Never join literal dot/dot-dot or lexically
 collapse symlink/.. just for naming. Normal collision handling still applies.
 
 Validate request/output-root syntax and existence before binding explicit roots.
-Missing/unbindable roots use INPUT_ADMISSION_FAILED without writes. Check physical
-output overlap before walking. OUTPUT_OVERLAP is a streamed run failure: start+
-summary only, incomplete collection, known items not_processed, exit1. Unexpanded
+Missing/unbindable roots use INPUT_ADMISSION_FAILED without writes. Complete
+physical output-overlap admission before writes; read-only inventory may precede
+it. OUTPUT_OVERLAP is a streamed run failure: start+summary only, no item events,
+known items not_processed, exit1. Collection completeness reflects actual
+discovery (false before walking, true if inventory completed). Unexpanded
 directories are not fabricated items, so directory-only overlap can have total0.
 It is distinct from NO_INPUTS and from invalid missing/non-directory output-root
 requests, which remain pre-stream exit2. These rules also apply to dry run.
+
+Admission-only root metadata does not establish logical collection precedence.
+Normal retention follows request order and DFS, so [directory D, explicit D/a]
+keeps the walked first encounter and its layout. If root admission fails before
+walking, materialize known explicit file/failure roots in request order without
+folder expansion. Stop/limit during logical collection retains its committed
+bounded prefix without backfilling later admission metadata and emits no items.
+Cancellation during metadata-only root observations does not convert those
+observations into known work items.
+Root-admission failure separately retains collection_complete=false and emits
+only explicit-root failures, leaving other known work not_processed. Physical
+negative-overlap proof across mount aliases remains unresolved; neither a
+filtered walk nor a plain upward inode no-match establishes disjointness.

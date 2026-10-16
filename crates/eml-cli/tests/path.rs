@@ -8,7 +8,8 @@ use std::{
 
 #[test]
 fn ascii_path_matches_the_hand_authored_wire_value() {
-    let actual = serde_json::to_string(&PathValue::new(Path::new("mail/a.eml"))).unwrap();
+    let path = Path::new("mail/a.eml");
+    let actual = serde_json::to_string(&PathValue::new(path, path)).unwrap();
     #[cfg(unix)]
     let expected = r#"{"display":"mail/a.eml","native":{"encoding":"unix-bytes","base64":"bWFpbC9hLmVtbA=="}}"#;
     #[cfg(windows)]
@@ -35,7 +36,7 @@ fn nonunicode_native_units_remain_distinct_from_lossy_display() {
         )
     };
     assert_eq!(
-        serde_json::to_string(&PathValue::new(&path)).unwrap(),
+        serde_json::to_string(&PathValue::new(&path, &path)).unwrap(),
         expected
     );
 }
@@ -46,7 +47,8 @@ fn output_preserves_spelling_and_json_strings_do_not_introduce_physical_lf() {
         "alias/.././mail.eml",
         "mail/\n\u{85}\u{2028}\u{2029}\u{1b}\\\".eml",
     ] {
-        let encoded = serde_json::to_string(&PathValue::new(Path::new(spelling))).unwrap();
+        let path = Path::new(spelling);
+        let encoded = serde_json::to_string(&PathValue::new(path, path)).unwrap();
         assert!(!encoded.as_bytes().contains(&b'\n'));
         let object: serde_json::Value = serde_json::from_str(&encoded).unwrap();
         assert_eq!(object["display"], spelling);
@@ -58,6 +60,19 @@ fn output_preserves_spelling_and_json_strings_do_not_introduce_physical_lf() {
             assert!(encoded.contains(r"\u001b"));
         }
     }
+}
+
+#[test]
+fn distinct_core_display_and_native_facts_match_hand_authored_wire_bytes() {
+    let actual =
+        serde_json::to_string(&PathValue::new(Path::new("A"), Path::new("request alias"))).unwrap();
+    #[cfg(unix)]
+    let expected =
+        r#"{"display":"request alias","native":{"encoding":"unix-bytes","base64":"QQ=="}}"#;
+    #[cfg(windows)]
+    let expected =
+        r#"{"display":"request alias","native":{"encoding":"windows-utf16le","base64":"QQA="}}"#;
+    assert_eq!(actual, expected);
 }
 
 #[test]
