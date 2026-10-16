@@ -379,6 +379,36 @@ pub(super) struct Creation {
     name: OsString,
 }
 impl Creation {
+    pub(super) fn component_limit(&self) -> io::Result<usize> {
+        let mut maximum = 0;
+        // SAFETY: live retained parent; only the writable DWORD output is requested.
+        if unsafe {
+            GetVolumeInformationByHandleW(
+                self.parent.file.as_raw_handle(),
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                &mut maximum,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if maximum == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Filesystem supplied no usable component limit",
+            ));
+        }
+        Ok(maximum as usize)
+    }
+    /// Release without disposition. This never removes a possibly published file.
+    pub(super) fn release(self) -> io::Result<()> {
+        close(self.file)
+    }
     pub(super) fn validate_file(&self, identity: Identity, length: u64) -> io::Result<()> {
         if handle::directory_identity(&self.parent.file)? != self.parent.identity {
             return Err(io::Error::new(

@@ -1,4 +1,4 @@
-//! Owned file storage only. No final-name publication or address qualification.
+//! Complete owned file storage, consumed separately by the physical rename edge.
 use super::writable::{Creation, WritableDirectory, flush};
 use crate::{
     CleanupReceipt, CleanupState, Identity, NtStatusError, StageFailure, StageOperation,
@@ -6,13 +6,13 @@ use crate::{
     staging::{NAME_ATTEMPTS, random_name},
 };
 use std::{
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     io::{self, Read, Seek, SeekFrom, Write},
 };
 use windows_sys::Win32::Foundation::STATUS_OBJECT_NAME_COLLISION;
 
 /// Complete reread and synchronized storage of supplied verified bytes.
-/// Construction/handles stay private; this capability has no publish operation.
+/// Construction/handles stay private; publishing consumes the staging capability.
 pub struct ReadyCandidate {
     owned: Creation,
     identity: Identity,
@@ -20,6 +20,17 @@ pub struct ReadyCandidate {
     sync: SyncReceipt,
 }
 impl ReadyCandidate {
+    /// Attempt one physical no-replace rename. Core owns all business checks and
+    /// cancellation before/after this edge; success is not final qualification.
+    pub fn publish(self, name: &OsStr) -> super::publication::PublishAttempt {
+        super::publication::PublicationCandidate::attempt(
+            self.owned,
+            self.identity,
+            self.length,
+            self.sync,
+            name,
+        )
+    }
     /// Exact full identity of the owned object written and synchronized.
     pub fn identity(&self) -> Identity {
         self.identity

@@ -36,8 +36,8 @@ mod windows;
 pub use windows::path::{PathContext, validate_component};
 #[cfg(windows)]
 pub use windows::{
-    BoundDirectory, BoundFile, CreatedDirectory, DirectoryEntries, NtStatusError, ReadyCandidate,
-    WritableDirectory,
+    BoundDirectory, BoundFile, CreatedDirectory, DirectoryEntries, NtStatusError,
+    PublicationCandidate, PublishAttempt, ReadyCandidate, WritableDirectory,
 };
 
 /// Native object identity; never a pathname hash or lossy display value.
@@ -72,7 +72,7 @@ pub struct CleanupReceipt {
 /// Cleanup evidence states; unknown is not success.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CleanupState {
-    /// No owned resource was created.
+    /// No owned staging resource requires removal.
     NotNeeded,
     /// The owned resource was actually removed.
     Complete,

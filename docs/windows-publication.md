@@ -316,7 +316,8 @@ The primitive does not claim a complete collector or atomic directory snapshot.
 
 ## Empty-directory creation design for native qualification
 
-This reviewed design is implemented pending source/native qualification. It creates owned
+This reviewed design passed its bounded source/native qualification on both CPUs.
+It creates owned
 empty directories only, with no message/candidate bytes or publication. It cannot
 close the separate under-mutation creation-confinement gate.
 
@@ -405,7 +406,7 @@ the original fixture context.
 
 ## Owned file storage design for native qualification
 
-The next reviewed storage-only slice is implemented awaiting source/native QA.
+The reviewed storage-only slice passed source and both-CPU native checks at543f8a7.
 It never renames to a final name, qualifies an address, changes ACLs or closes
 the failed confinement/publication gate. Core remains responsible for MIME
 authorization and message/run admission; zero-byte storage is not refused.
@@ -430,8 +431,9 @@ I/O/short-progress/interrupted retries, before actual FlushFileBuffers and befor
 returning Ready. Store the sync receipt immediately. Final held/named type/tag/ID/
 length validation and post-flush cancellation use storage/Write failure with
 Some(Succeeded) when flush succeeded; they do not fabricate a failed flush.
-ReadyCandidate has private construction/fields and exposes only identity, length,
-sync receipt and consuming cleanup in this slice.
+ReadyCandidate has private construction/fields and exposes identity, length,
+sync receipt, consuming cleanup and the subsequent separate consuming physical
+rename attempt described below.
 
 Every post-create failure retains the primary StageFailure operation/error,
 independent actual file-sync receipt and owned cleanup observation. The same
@@ -518,3 +520,51 @@ Path references: [normalization](https://learn.microsoft.com/dotnet/standard/io/
 IPC references: [pipe names](https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-names),
 [mailslot names](https://learn.microsoft.com/en-us/windows/win32/ipc/mailslot-names),
 [IPC$ scope](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wpo/4de75e21-36fd-440a-859b-75accc74487c).
+
+## Consuming physical rename edge
+
+The reviewed next increment consumes ReadyCandidate into a distinct
+PublicationCandidate with one private authoritative effect. Its private creation
+owner and basename never become another staging/publish capability. Pre-call
+validation failure and exact STATUS_OBJECT_NAME_COLLISION are NotPublished;
+NT_SUCCESS is Published; other negative returns conservatively remain Unknown.
+The original native error remains independent of later handle-release errors.
+No retry, replacement or alternate path operation occurs.
+
+Before allocating/calling, query GetVolumeInformationByHandleW on the retained
+parent for its actual WCHAR component limit; zero/failure is a truthful pre-edge
+refusal, with no guessed filesystem limit. Validate the one component and all
+UTF-16 byte/total arithmetic. Generated FILE_RENAME_INFORMATION uses aligned
+storage with full structure/tail/padding, zero replace flags and NULL root.
+The synchronous candidate, parent, storage and IOSB remain live through
+NtSetInformationFile. Its returned status is authoritative; initialized IOSB
+contents are not success evidence. The API-specific synchronous guarantee in
+[IoIsOperationSynchronous](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ioisoperationsynchronous)
+applies to SetInformationFile even for an asynchronous-open file; the actual
+candidate is also opened NONALERT with SYNCHRONIZE. Product code has no pending
+wait/abort/leak escape from the earlier standalone feasibility probe.
+
+Only NotPublished may invoke owned staging disposition. Published/Unknown
+release uses checked CloseHandle without deletion. Published plus successful
+close reports NotNeeded (no staging removal required); close failure reports
+Unknown cleanup and its actual cause while preserving Published effect. Unknown
+stays Unknown after either close result, with no residual-name guess. The
+consuming cleanup API returns effect alongside the independent cleanup receipt.
+
+Core must check source/MIME/business bindings and stop before the edge, then
+classify actual effect before handling a subsequent stop. There is no cancellation
+callback inside the edge and no syscall deadline promise. Namespace sync, checked
+final close/reopen NOFOLLOW ordinary-object/ID/content/address qualification and
+Created classification remain subsequent work. This increment does not clear
+the changed-parent confinement gate or qualify a complete Windows publisher.
+
+Source QA and native two-CPU checks for this increment are pending. Benign native
+cases exercise same-held-object complete bytes at the final basename, retained
+final data after release, unchanged conflict winner plus owned loser cleanup,
+invalid-component refusal and the real held-volume component boundary. The
+Unknown-status mapping uses real owned storage with a scripted private state;
+it does not claim an actual ambiguous native rename, native close failure, core
+cancellation integration or final-copy qualification.
+
+Component-limit reference:
+[GetVolumeInformationByHandleW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getvolumeinformationbyhandlew).

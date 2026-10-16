@@ -209,7 +209,7 @@ rmdir receipt, retained original handle identity and the independently observed
 distinct actor-owned replacement, recording link counts without assuming APFS
 zero behavior. Unknown cleanup still prevents a Created result; it is never
 rewritten as successful removal. Logs preserve both the actual native operations
-and the failed assertion. The corrected complete native Mac gate remains pending.
+and the failed assertion. That checkpoint preceded the corrected native run below.
 
 The corrected POSIX checkpoint at `45b296b62924f41945c5715ea095bda4f775872e`
 passed [run38797832546](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38797832546):
@@ -284,7 +284,8 @@ iterator restarts after partial consumption, completion or failure.
 
 Windows child observation/open now uses the narrowly reviewed existing-only
 native contract in [the API record](windows-publication.md#existing-only-native-child-open-contract).
-The read-only implementation still awaits native validation. A reparse leaf is
+Source review and both-CPU native read-only cases passed; exact pinned evidence
+is recorded in the implementation log. A reparse leaf is
 reported before ordinary signature lookup; a traversal open refuses reparse
 processing. The collector must compare its earlier observed full ID before
 descending through the returned directory. Physical ancestry/overlap admission
@@ -294,15 +295,18 @@ The separate Windows `WritableDirectory`/`CreatedDirectory` primitive now perfor
 exclusive empty-directory creation from a root-scoped write capability, with
 independent child/parent flush receipts and explicit handle-only empty cleanup.
 Its [reviewed contract](windows-publication.md#empty-directory-creation-design-for-native-qualification)
-still awaits native validation. It writes no message data, changes no existing
-destination ACL and does not qualify creation under parent mutation or publication.
+passed its bounded source and both-CPU native checks. It writes no message data,
+changes no existing destination ACL and does not qualify creation under parent
+mutation or publication.
 
 Windows `stage_bytes` now supplies the separate owned-file storage capability:
 bounded same-handle write/readback/EOF checks, actual file synchronization and
 explicit cleanup, with native inherited ACLs unchanged. Source review is closed;
-new native execution is pending. Its private ReadyCandidate has no publication
-method. This does not qualify MIME authorization, source admission, namespace/
-address synchronization, changed-parent confinement or final-copy publication.
+the bounded both-CPU native storage cases passed at543f8a7. ReadyCandidate now
+consumes into a separate physical rename attempt; that increment's source/native
+checks are pending. Neither storage nor the rename-effect receipt qualifies MIME
+authorization, source admission, namespace/address synchronization, changed-parent
+confinement or final-copy publication.
 The names-only structure's64-bit file ID is never padded into a full identity.
 
 Native contracts: [GetFileInformationByHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getfileinformationbyhandleex),

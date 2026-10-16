@@ -913,3 +913,45 @@ post-flush cancellation is not a native flush-failure test. These limits remain
 explicit rather than introducing broad mock scaffolding or claiming exhaustive
 failure coverage. Both-CPU native execution and the unchanged failed confinement/
 publication/product/archive/GUI requirements remain open.
+
+At exact head `543f8a73cbdaa94c7f6fcb95df7b3834befd8c6c`,
+[Windows run38854647778](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38854647778)
+passed all three named storage cases once on each native CPU: nongate31passed/
+0failed/0ignored/1filtered. Executed assertions establish real nonempty and zero
+storage with independent positioned readback, file FlushFileBuffers, normal
+read/write-open exclusion32, Complete cleanup, before-create/observed-partial-write
+cancellation, post-flush mapping with a genuinely flushed owner/receipt,16 native
+collisions and unchanged marker, scripted generator refusal and validation-based
+no-retry. None of these substitutes for native short-write/WriteZero/EINTR or
+flush/RNG-failure evidence. Each old creation gate still actually failed
+0passed/1failed/31filtered, the sole failed Windows step. The
+[Unix run38854647761](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38854647761)
+passed all seven jobs, including shared POSIX generator changes and earlier
+read/directory regressions. Independent raw-log QA closed bounded storage only.
+Active directory/storage documentation now points to these verified capabilities;
+full admission, changed-parent confinement, publication, archives and GUI remain
+unqualified. Raw logs stay in owned scratch.
+
+## Consuming Windows physical rename edge
+
+The separate design/challenge pass closed through command central and independent
+security/API/receipt review. Ready storage consumes into a single physical rename
+attempt using generated FILE_RENAME_INFORMATION, NULL root, one basename and zero
+replace flags. Actual parent-handle volume component limits, checked arithmetic,
+aligned storage and the API-specific synchronous completion guarantee replace
+guesses and the earlier standalone probe's pending/abort/IOSB handling. The
+private post-attempt owner alone determines effect; Published/Unknown can only
+checked-close, never set disposition or regain a staging/publish capability.
+Original native rename errors and release/cleanup observations remain separate.
+
+Three benign native cases are added for complete held bytes/full identity at the
+final basename and retention after release, unchanged conflict winner/owned loser
+cleanup, invalid/actual-limit pre-edge refusal, and explicitly scripted Unknown
+mapping on real storage. That mapping is not an actual ambiguous OS return or
+native close-failure test. Core stop integration, namespace/final-copy/address
+qualification, changed-parent confinement and Created remain unimplemented.
+
+Stable-input local checks passed: MSVC FS all-target Clippy with warnings denied
+(compile evidence only), excluded native probe all-target check, Mac FS30 tests,
+Mac FS all-target Clippy, formatting and diff checks. Doctests0. Source QA and
+native two-CPU edge execution are pending; the old failed gate is unchanged.
