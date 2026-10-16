@@ -290,6 +290,9 @@ mod tests {
         assert_eq!(native_observed.kind, EntryKind::File);
         assert_eq!(native_observed.file.unwrap().size, 16);
         let parent_id = root.identity();
+        // This case tests the continuously held root, not whether the OS permits
+        // moving an ancestor while a finished descendant directory remains open.
+        drop(child);
         std::fs::rename(&selected, &moved).unwrap();
         assert!(!selected.exists());
         assert_eq!(handle::identity(&root.file).unwrap(), parent_id);
@@ -302,7 +305,6 @@ mod tests {
         assert_eq!(reopened.identity(), observed.identity);
         assert!(names(&mut root).contains(&native));
         drop(reopened);
-        drop(child);
         drop(root);
         drop(actor);
         fixture.close().unwrap();

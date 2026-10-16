@@ -678,3 +678,27 @@ filesystem30 passed without failures/ignores/filters; doctests0, local Clippy pa
 Adding the generated Wdk_Foundation feature introduced no package/version or lock
 change. Complete locked/offline fuzz metadata resolves27 packages with eml-fs;
 this is graph admission only, not another fuzz campaign.
+
+At exact head `1fc670dbf9ddb4dcb46eb367889bc53d42e7b339`,
+[Unix run38839554274](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38839554274)
+passed all seven jobs. The
+[Windows run38839554261](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38839554261)
+linked and executed the generated NtOpenFile/Rtl adapter on both native GNU LLVM
+CPUs, but the non-gate library suite FAILED24passed/1failed/0ignored/1filtered
+on each. The failing held-parent test reached inventory.rs293, the fixture's
+`std::fs::rename(selected,moved)`, and received Win32 access-denied5. All initial
+child/full-ID/signature/native-unit/descent assertions before that line completed;
+post-move assertions were unrun. The other three new cases passed, including
+positive reparse observation/refused descent and the fixed adapter oracle.
+The original creation gate also actually failed0passed/1failed/25filtered on
+both. No passing complete child-integration claim follows from these results.
+
+Independent challenge identified an unnecessary fixture precondition: retaining
+the finished descendant directory while attempting to move its ancestor. The
+narrow repair moves that child's drop before rename, leaving the original root
+continuously held and preserving all successful-rename/old-address-gone/post-move
+lookup/reopen-versus-earlier-ID assertions. Restricted actor and all production
+rights/options remain unchanged. Whether lifetime alone explains native5 is a
+hypothesis until rerun; no ACL or sharing cause is inferred from its numeric code.
+MSVC all-target Clippy passes for the repaired fixture; actual both-CPU rerun is
+pending. Failed raw logs remain in owned target scratch.
