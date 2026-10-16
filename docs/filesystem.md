@@ -504,3 +504,15 @@ STATUS_OBJECT_NAME_NOT_FOUND (Windows) as absence. Other failures retain their
 native cause, and dangling links remain present. Absence is an observation at a
 held parent, not a promise about a later publication address. These helpers add
 no write rights, flags, fallback lookup or directory creation.
+
+Existing-copy comparison now accepts a privately prepared source and an already
+opened no-follow ordinary destination. It checks both bindings, refuses the held
+source's identity, compares length first and reads at most the verified candidate
+length plus one byte in64KiB buffers. Both bindings are revalidated after a byte
+match or mismatch. A successful value retains the same existing handle; equality
+and current stability do not establish UpToDate, synchronization or a verified
+requested address. Failure retains the actual opened identity, any completed byte
+observation and existing stability separately from the source/binding/data error.
+The final workflow must enforce no-follow destination opening and reject every
+selected-source and prior-created identity; this narrow operation sees only the
+currently prepared source. It performs no flush or write.

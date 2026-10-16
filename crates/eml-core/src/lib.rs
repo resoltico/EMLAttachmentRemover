@@ -6,6 +6,12 @@ mod collection;
 #[cfg(any(unix, windows))]
 mod destination;
 #[cfg(any(unix, windows))]
+mod existing;
+#[cfg(any(unix, windows))]
+pub use existing::{
+    ComparedExisting, ExistingComparisonError, ExistingComparisonFailure, compare_existing,
+};
+#[cfg(any(unix, windows))]
 mod failure;
 #[cfg(any(unix, windows))]
 pub use destination::{

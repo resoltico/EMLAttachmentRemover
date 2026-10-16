@@ -81,6 +81,9 @@ pub struct PreparedSource {
     message: PreparedMessage,
 }
 impl PreparedSource {
+    pub(super) fn identity(&self) -> eml_fs::Identity {
+        self.source.initial_signature().identity
+    }
     /// Immutable output bytes and metadata from the existing pure preparer.
     pub fn message(&self) -> &PreparedMessage {
         &self.message

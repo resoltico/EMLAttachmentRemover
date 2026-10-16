@@ -1307,3 +1307,52 @@ pending; MSVC compilation is not Windows integration evidence.
 This supplies no MIME processing, existing-byte/sync comparison, writable ancestor
 binding, final publication qualification, CLI/GUI or archive evidence. The prior
 Windows confinement gate remains failed and unchanged.
+
+At exact `246743aeb4a6ce86c8626c4001a10dad3bce40d6`,
+[Unix run38884463382](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38884463382)
+passed all seven jobs. Each native filesystem host executed all eleven destination
+cases exactly once, core24/collection11/destination11/source6 and prior request9/
+diagnostic3/path6/decoder16 passed0failed/ignored/filtered. FS Mac31/Linux27 passed,
+including native optional absence; real cross-UID/ACL and default process18 each
+remained successful. [Windows run38884463363](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38884463363)
+executed all eleven destination cases exactly once per native CPU, including the
+real combined-path quota and nameless-root controls. Core23/collection12/
+destination11/source5/request9/diagnostic3/path6/decoder16 all passed with zero
+failures/ignores/filters. FS nongate41 passed each, including actual optional
+absence and exact native-status mapping controls. The unchanged old strict gate
+still failed0passed/1failed/0ignored/41filtered per CPU, the only failed step and
+source of panic/error annotations. Windows overall remains FAILED. Full raw logs
+are target/246743a-unix-ci.log and target/246743a-windows-ci.log. Native planning
+supplies no writer, terminal run, existing-copy synchronization, CLI, GUI or
+archive qualification. Independent exact-head/raw/discovery review closed this bounded checkpoint.
+
+## Read-only existing-copy comparison
+
+Core compare_existing now takes the privately verified PreparedSource and an
+already no-follow-opened BoundFile. It checks source/existing bindings, rejects
+the current source identity, compares length then bounded64KiB reads through EOF
+with a candidate-length-plus-one cap, and checks both bindings afterward. The
+successful value owns the same existing file. Typed failures retain original
+identity, optional completed equality observation and existing stability apart
+from source/binding/data error. No native Display text supplies a wire diagnostic.
+This is not UpToDate or synchronization/address qualification; final driver must
+open no-follow and reject all selected/earlier-created identities independently.
+
+Five owned-file tests on Unix/four on Windows exercise exact independent golden,
+equal-length differences/short/empty/long files, actual hard-linked source alias,
+initial stop, retained handle and unchanged content. Unix additionally changes
+ordinary owned source/existing files before comparison and asserts distinct causes.
+Five private reader controls establish short-read/chunk/EOF/+1 bounds, length-only
+refusal, empty EOF, premature EOF/extra/different bytes, EINTR/stop precedence and
+native data-error retention. These scripted controls are not native OS fault or
+concurrent-writer evidence. Windows's actual excluded-writer check remains in the
+owned matching-file case. Native workflows explicitly select existing integration
+and require five positive unfiltered core suites on Windows.
+
+Local targeted core29/existing5 passed0failed/ignored/filtered with command exit0
+(target/existing-local.log). Host and MSVC core all-target Clippy passed. Stable full workspace passed214 tests across17 positive/six empty suites with
+zero failures/ignores/filters, command exit0 (target/existing-workspace-final.log).
+Formatting, diff and workflow actionlint checks also passed. Independent design,
+source/test/workflow QA closed this read-only scope. Native comparison runtime
+remains pending.
+No file synchronization, output creation, CLI or frontend capability is claimed.

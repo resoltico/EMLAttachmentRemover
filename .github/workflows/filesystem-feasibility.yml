@@ -91,11 +91,11 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
         run: |
-          $sourceOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --lib --test collection --test destination --test source --target ${{ matrix.target }} -- --color never 2>&1
+          $sourceOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --lib --test collection --test destination --test existing --test source --target ${{ matrix.target }} -- --color never 2>&1
           $sourceExit = $LASTEXITCODE
           $sourceOutput | ForEach-Object { Write-Output $_ }
           if ($sourceExit -ne 0) { exit $sourceExit }
-          if (@($sourceOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 4) { throw 'Expected positive unfiltered core unit, collection, destination and source integration suites' }
+          if (@($sourceOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 5) { throw 'Expected positive unfiltered core unit, collection, destination, existing comparison and source integration suites' }
       - name: Native distribution planner
         if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
         env:
