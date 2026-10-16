@@ -11,6 +11,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let root = PathBuf::from(args.next().ok_or("root")?);
+    if mode == "streams-exit" {
+        use std::io::Write;
+        std::io::stdout().write_all(b"owned stdout\n")?;
+        std::io::stdout().flush()?;
+        std::io::stderr().write_all(b"owned stderr\n")?;
+        std::io::stderr().flush()?;
+        std::process::exit(23);
+    }
     if mode == "marker" {
         #[cfg(unix)]
         std::fs::write(

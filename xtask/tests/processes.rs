@@ -220,6 +220,32 @@ fn setup_capture_does_not_mix_worker_stderr_into_json() {
         true
     );
 }
+
+#[test]
+fn separate_output_retains_nonzero_status_and_exact_streams() {
+    let _scenario = scenario();
+    let root = scratch();
+    let controller = controller(root.path());
+    let log = root.path().join("streams.log");
+    let result = controller
+        .run_separate_output(
+            worker(root.path(), "streams-exit"),
+            &log,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    assert_eq!(result.status.code(), Some(23));
+    assert!(!result.success());
+    assert!(!result.timed_out);
+    assert!(!result.cancelled);
+    assert_eq!(result.unexpected_survivors, 0);
+    assert!(result.cleanup_complete);
+    assert_eq!(fs::read(log).unwrap(), b"owned stdout\n");
+    assert_eq!(
+        fs::read(root.path().join("streams.stderr")).unwrap(),
+        b"owned stderr\n"
+    );
+}
 #[test]
 fn parent_sigint_cancels_and_reaps_its_nested_worker() {
     let _scenario = scenario();

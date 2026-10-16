@@ -94,6 +94,25 @@ pub(crate) fn macho_identity(bytes: &[u8]) -> Result<MachIdentity> {
     })
 }
 
+pub(crate) fn main_image_uuid(bytes: &[u8]) -> Result<[u8; 16]> {
+    let file = object::File::parse(bytes)?;
+    macho_architecture(&file)?;
+    let object::File::MachO64(mach) = file else {
+        return Err("Expected a thin main image".into());
+    };
+    let mut commands = mach.macho_load_commands()?;
+    let mut uuid = None;
+    while let Some(command) = commands.next()? {
+        if command.cmd() == object::macho::LC_UUID {
+            if uuid.is_some() || command.cmdsize() != 24 {
+                return Err("Expected exactly one 24-byte LC_UUID".into());
+            }
+            uuid = Some(command.raw_data()[8..24].try_into()?);
+        }
+    }
+    uuid.ok_or_else(|| "Owned app main image has no UUID".into())
+}
+
 pub(crate) fn packed_version(value: &str) -> Result<u32> {
     let parts: Vec<u32> = value
         .split('.')
@@ -121,49 +140,57 @@ pub(crate) fn fixture_identity(
     Ok(identity)
 }
 
-pub(crate) fn cli_artifact(root: &Path, output: &[u8]) -> Result<PathBuf> {
-    let manifest = root.join("crates/eml-cli/Cargo.toml").canonicalize()?;
-    let source = root.join("crates/eml-cli/src/main.rs").canonicalize()?;
-    let mut candidates = Vec::new();
-    let mut finished = 0;
-    for document in serde_json::Deserializer::from_slice(output).into_iter::<serde_json::Value>() {
-        let value = document?;
-        if value["reason"] == "build-finished" {
-            if value["success"] != true {
-                return Err("Cargo reported an unsuccessful build".into());
-            }
-            finished += 1;
-        }
-        if value["reason"] != "compiler-artifact"
-            || value["target"]["name"] != "remove-eml-attachments"
-            || value["target"]["kind"] != serde_json::json!(["bin"])
-        {
-            continue;
-        }
-        let path = value["manifest_path"]
-            .as_str()
-            .ok_or("Artifact manifest missing")?;
-        let main = value["target"]["src_path"]
-            .as_str()
-            .ok_or("Artifact source missing")?;
-        if Path::new(path).canonicalize()? != manifest
-            || Path::new(main).canonicalize()? != source
-            || value["profile"]["test"] != false
-        {
-            continue;
-        }
-        candidates.push(PathBuf::from(
-            value["executable"]
-                .as_str()
-                .ok_or("CLI executable artifact missing")?,
-        ));
+pub(crate) use crate::cli_build::artifact as cli_artifact;
+
+pub(crate) fn parse_system_dependencies(output: &str) -> Result<Vec<String>> {
+    let mut lines = output.lines();
+    if !lines.next().is_some_and(|line| line.ends_with(':')) {
+        return Err("Missing native Mach-O dependency header".into());
     }
-    if finished != 1 || candidates.len() != 1 {
-        return Err(
-            "Expected one successful Cargo build and one actual workspace CLI executable".into(),
-        );
+    let mut dependencies = Vec::new();
+    for line in lines.filter(|line| !line.trim().is_empty()) {
+        let (path, versions) = line
+            .trim()
+            .split_once(" (compatibility version ")
+            .ok_or("Malformed Mach-O dependency record")?;
+        if path.split('/').skip(1).any(|component| {
+            component.is_empty() || matches!(component, "." | "..") || component.contains('\\')
+        }) {
+            return Err("Non-normal Mach-O install-name component".into());
+        }
+        if !versions.ends_with(')')
+            || (!path.starts_with("/usr/lib/") && !path.starts_with("/System/Library/"))
+        {
+            return Err("Unreviewed non-system or malformed Mach-O dependency".into());
+        }
+        dependencies.push(path.to_owned());
     }
-    Ok(candidates.remove(0))
+    if dependencies.is_empty() {
+        return Err("Mach-O dependency discovery unexpectedly empty".into());
+    }
+    Ok(dependencies)
+}
+
+pub(crate) fn inspect_system_dependencies(
+    mut command: Command,
+    executable: &Path,
+    log: &Path,
+) -> Result<Vec<String>> {
+    command.args(["-L"]).arg(executable).env("LC_ALL", "C");
+    let result = controller()?.run_separate_output(command, log, Duration::from_secs(30))?;
+    if !result.success() {
+        return Err(format!(
+            "Native dependency inspection failed; evidence {}",
+            log.display()
+        )
+        .into());
+    }
+    if fs::metadata(log)?.len() > 4 * 1024 * 1024
+        || fs::metadata(log.with_extension("stderr"))?.len() != 0
+    {
+        return Err("Native dependency output is oversized or has diagnostics".into());
+    }
+    parse_system_dependencies(&fs::read_to_string(log)?)
 }
 
 pub(crate) fn checked_run(command: Command, log: &Path, seconds: u64) -> Result<()> {
@@ -313,47 +340,52 @@ pub(crate) fn load(root: &Path) -> Result<MacBuild> {
 mod tests {
     use super::*;
     #[test]
-    fn cargo_selection_requires_one_real_workspace_bin_and_successful_completion() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .canonicalize()
-            .unwrap();
-        let artifact = serde_json::json!({"reason":"compiler-artifact","manifest_path":root.join("crates/eml-cli/Cargo.toml"),"target":{"name":"remove-eml-attachments","kind":["bin"],"src_path":root.join("crates/eml-cli/src/main.rs")},"profile":{"test":false},"executable":root.join("target/owned-test-executable")});
-        let finished = serde_json::json!({"reason":"build-finished","success":true});
-        let encode = |values: &[serde_json::Value]| {
-            values
-                .iter()
-                .map(|value| serde_json::to_string(value).unwrap())
-                .collect::<Vec<_>>()
-                .join("\n")
+    fn main_uuid_requires_one_exact_complete_command() {
+        let image = |sizes: &[u32]| {
+            let mut bytes: Vec<u8> = [
+                0xfeedfacf_u32,
+                0x0100000c,
+                0,
+                2,
+                sizes.len() as u32,
+                sizes.iter().sum(),
+                0,
+                0,
+            ]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect();
+            for size in sizes {
+                bytes.extend(object::macho::LC_UUID.to_le_bytes());
+                bytes.extend(size.to_le_bytes());
+                bytes.extend(std::iter::repeat_n(0x42, size.saturating_sub(8) as usize));
+            }
+            bytes
         };
-        assert_eq!(
-            cli_artifact(
-                &root,
-                encode(&[artifact.clone(), finished.clone()]).as_bytes()
-            )
-            .unwrap(),
-            root.join("target/owned-test-executable")
-        );
-        for values in [
-            vec![],
-            vec![artifact.clone()],
-            vec![finished.clone()],
-            vec![artifact.clone(), artifact.clone(), finished.clone()],
-            vec![
-                artifact.clone(),
-                serde_json::json!({"reason":"build-finished","success":false}),
-            ],
-        ] {
-            assert!(cli_artifact(&root, encode(&values).as_bytes()).is_err());
+        assert_eq!(main_image_uuid(&image(&[24])).unwrap(), [0x42; 16]);
+        for invalid in [image(&[]), image(&[16]), image(&[32]), image(&[24, 24])] {
+            assert!(main_image_uuid(&invalid).is_err());
         }
-        let mut harness = artifact.clone();
-        harness["profile"]["test"] = true.into();
-        assert!(cli_artifact(&root, encode(&[harness, finished.clone()]).as_bytes()).is_err());
-        let mut foreign = artifact;
-        foreign["manifest_path"] = root.join("xtask/Cargo.toml").to_str().unwrap().into();
-        assert!(cli_artifact(&root, encode(&[foreign, finished]).as_bytes()).is_err());
+        let mut truncated = image(&[24]);
+        truncated.pop();
+        assert!(main_image_uuid(&truncated).is_err());
+    }
+    #[test]
+    fn native_dependency_parser_rejects_empty_malformed_and_non_system_records() {
+        let valid = "owned:\n /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)\n";
+        assert_eq!(
+            parse_system_dependencies(valid).unwrap(),
+            ["/usr/lib/libSystem.B.dylib"]
+        );
+        for bad in [
+            "",
+            "owned:\n",
+            "owned:\n /usr/lib/no-version\n",
+            "owned:\n @rpath/libCustom.dylib (compatibility version 1.0.0)\n",
+            "owned:\n /usr/lib/../../opt/custom.dylib (compatibility version 1.0.0)\n",
+        ] {
+            assert!(parse_system_dependencies(bad).is_err());
+        }
     }
     fn macho(cpu: u32, minimum: u32, platform: u32, duplicate: bool) -> Vec<u8> {
         // Independent SDK layout: mach_header_64, then LC_BUILD_VERSION.

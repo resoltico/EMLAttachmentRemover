@@ -2141,7 +2141,7 @@ standard-library files and six Windows runtime legal materials are retained.
 Windows component URLs/digests are official manifest identities; full component
 archive verification and EML's final selected link-input review remain pending.
 The actual target/configuration/tool and structured activated-feature tree are
-recorded without host paths/timestamps. Other-host regeneration is still unrun.
+recorded without host paths/timestamps. Subsequent other-host regeneration is recorded below.
 
 Twelve notice controls passed (0 failed/ignored; 20 intentionally filtered), then
 all 32 xtask binary tests passed (no filters): missing per-package material with
@@ -2173,3 +2173,67 @@ normalization. All 222 retained/generated legal files and the Microsoft oracle
 matched their raw staged Git blobs before the checkpoint. Source whitespace
 checking excludes unchanged upstream legal data; Rust formatting and the
 source-only staged check passed separately.
+
+## Native notice and startup observations
+
+At `2e0c9934d58cd57f6e3095e5303dd86af7a78044`,
+[Unix run 38964520773](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38964520773)
+regenerated and checked all six notice trees on native macOS ARM and Linux x64.
+Both passed using the actual pinned cargo-about CLI; its installation requires
+`--features cli`. The earlier install without that feature produced no binary
+and failed before generation. It supplies no evidence of notice nondeterminism.
+
+ARM app assembly still failed in the icon runtime before GUI execution. Intel
+assembled and verified the signed app, but the owned launch terminated before
+an empty window became ready and before file-open submission. Five startup AX
+reads returned cannotComplete (-25204), followed by an observed terminated
+NSRunningApplication. The launcher retained that failure and exited normally;
+cleanup knew its single returned receipt and observed the app terminated, but
+helper settlement remained unproven. No after-preference or GUI success record
+exists. The observed termination localizes the failure; it does not identify
+its cause. Both Windows jobs in
+[run 38964520829](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38964520829)
+continue to fail the existing bound-destination creation gate.
+
+## Archive and diagnostic implementation checkpoint
+
+The Rust tooling now has explicit narrow ZIP32 and single-member gzip/USTAR
+producers and readback, retained immutable archive identities, admitted private
+Unix artifact directories, frozen CLI build bytes, exact target legal materials
+and owned publication after readback. USTAR rejection includes extensions,
+base-256 sizes, hidden suffixes, aliases, bad checksums/padding/end blocks,
+truncation, gzip CRC/ISIZE, extra compressed members and trailing data. Twenty-one
+archive library tests passed. Windows private extraction remains unavailable.
+The complete native qualification command deliberately fails while its required
+platform/app gates remain incomplete; bounded CLI build/archive commands make
+no full-qualification claim.
+
+The local native macOS ARM CLI smoke exercised actual create, up-to-date rerun,
+dry run, unchanged conflicting output and protected-message refusal. All five
+passed with independent source/copy bytes and actual exit statuses. Two actual
+owned synthetic counterfeit executables each passed version and exited 0;
+the unchanged-copy processor failed at GoldenCopy and the summary-only processor
+failed at Framing. This was a supplied workspace executable, not an extracted
+shipping archive or pinned-Xcode qualification. Evidence is under
+`target/actual-cli-smoke-20261017/` and its adjacent log.
+
+The local workspace checkpoint passed 335 named Rust tests in 24 positive and
+four expected empty doctest summaries, with no failures/ignores/filters
+(`target/archive-checkpoint-workspace-tests.log`). Swift executed 25 model tests
+(including 22 parameterized shared cases) and 11 crash-attribution tests
+(`target/swift-archive-checkpoint-tests.log`) using the newer local Xcode. Those
+local results do not qualify the required Xcode 26.3 release toolchain.
+
+Crash-report attribution is test-tool-only and requires exact returned launch
+identity, bounded dates, executable/main-image UUID and CPU corroboration. The
+collector uses cooperative deadline admissions and bounded ordinary snapshots;
+its outer process controller remains the backstop. Copied reports start at0600
+and remain partial evidence if later attribution-record writing fails. The
+collector has not scanned reports or executed a GUI locally. A report would
+establish attribution only, not a crash cause or helper settlement. Strict
+Mach-O UUID command parsing and aggregate Cargo discovery controls have source
+and rejection tests; aggregate discovery does not prove per-suite case mapping.
+
+The full Python/AppKit purge, Windows final-link/private extraction/console
+boundaries, native archive executions, app ZIP readback, complete GUI and exFAT
+checks, required source checks and complete qualification workflow remain open.

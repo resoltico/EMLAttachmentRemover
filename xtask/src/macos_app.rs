@@ -1,5 +1,5 @@
 //! Native app assembly. Building alone is not archive/GUI/legal qualification.
-use crate::macos::{self, checked_run, cli_artifact, fixture_identity};
+use crate::macos::{self, checked_run, fixture_identity};
 use crate::{Result, capture};
 use serde_json::{Value, json};
 use std::{
@@ -8,10 +8,21 @@ use std::{
 };
 
 pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
-    let build = macos::load(root)?;
     fs::create_dir(out)?; // Refuse an existing output or unrelated bundle.
     let out = out.canonicalize()?;
-    let result = assemble(root, &out, &build);
+    let result = (|| {
+        let target = format!("{}-apple-darwin", std::env::consts::ARCH);
+        let cli = crate::cli_build::build(root, &target, &out.join("cli-build"))?;
+        let materials = crate::notices::checked_target(root, cli.platform())?;
+        let archive = crate::qualify::staged_cli(root, &cli, &materials, &out)?;
+        fs::write(
+            out.join("cli-archive.json"),
+            serde_json::to_vec_pretty(
+                &json!({"archive":archive,"frozen_cli":cli.identity(),"scope":"independently verified native CLI archive; app and full qualification gates remain separate"}),
+            )?,
+        )?;
+        assemble(root, &out, &cli, &materials)
+    })();
     if let Err(error) = &result
         && let Err(record) = fs::write(out.join("failure.log"), format!("{error}\n"))
     {
@@ -20,40 +31,23 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
     result
 }
 
-fn assemble(root: &Path, out: &Path, build: &macos::MacBuild) -> Result<()> {
-    let cargo = capture(
-        build
-            .command(root, "cargo")
-            .args([
-                "build",
-                "--locked",
-                "--release",
-                "--package",
-                "remove-eml-attachments",
-                "--target",
-                &build.host,
-                "--message-format=json",
-            ])
-            .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text)
-            .env("CARGO_TARGET_DIR", out.join("cargo")),
-    )?;
-    fs::write(out.join("cargo.jsonl"), &cargo)?;
-    let helper = cli_artifact(root, &cargo)?;
-    let mut overflow = Vec::new();
-    for value in serde_json::Deserializer::from_slice(&cargo).into_iter::<Value>() {
-        let value = value?;
-        if value["reason"] == "compiler-artifact"
-            && value["executable"]
-                .as_str()
-                .is_some_and(|path| Path::new(path) == helper)
-        {
-            overflow.push(value["profile"]["overflow_checks"] == true);
-        }
+pub(crate) fn assemble(
+    root: &Path,
+    out: &Path,
+    cli: &crate::cli_build::FrozenCli,
+    materials: &crate::notices::CheckedTargetMaterials,
+) -> Result<()> {
+    if materials.target() != cli.target()
+        || materials.platform() != cli.platform()
+        || materials.version() != cli.version()
+    {
+        return Err("App legal materials do not match frozen CLI target/version".into());
     }
-    if overflow != [true] {
-        return Err("Actual release CLI must retain overflow checks".into());
+    let build = cli.mac();
+    let signed_cli = cli.path();
+    if fs::read(signed_cli)? != cli.bytes() {
+        return Err("Owned signed CLI path no longer matches frozen bytes".into());
     }
-    fixture_identity(&fs::read(&helper)?, &build.architecture, build.minimum)?;
     let swift = build
         .developer
         .join("Toolchains/XcodeDefault.xctoolchain/usr/bin/swift");
@@ -125,21 +119,35 @@ fn assemble(root: &Path, out: &Path, build: &macos::MacBuild) -> Result<()> {
     let resources = app.join("Contents/Resources");
     fs::create_dir_all(&macos)?;
     fs::create_dir(&resources)?;
-    let standalone = out.join("signed-cli");
-    fs::create_dir(&standalone)?;
-    let signed_cli = standalone.join("remove-eml-attachments");
-    fs::copy(&helper, &signed_cli)?;
-    let mut sign_helper = build.command(root, "/usr/bin/codesign");
-    sign_helper
-        .args(["--force", "--sign", "-", "--timestamp=none"])
-        .arg(&signed_cli);
-    checked_run(sign_helper, &out.join("helper-sign.log"), 60)?;
-    fs::copy(&signed_cli, macos.join("remove-eml-attachments"))?;
+    let helper_path = macos.join("remove-eml-attachments");
+    let mut helper_file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&helper_path)?;
+    std::io::Write::write_all(&mut helper_file, cli.bytes())?;
+    use std::os::unix::fs::PermissionsExt;
+    helper_file.set_permissions(fs::Permissions::from_mode(0o755))?;
+    drop(helper_file);
     fs::copy(&executable, macos.join("EMLAttachmentRemover"))?;
+    let mut resource_bytes = materials.files().clone();
     for name in ["Assets.car", "EML.icns"] {
-        fs::copy(icons.join(name), resources.join(name))?;
+        resource_bytes.insert(name.to_owned(), fs::read(icons.join(name))?);
     }
-    fs::copy(root.join("LICENSE"), resources.join("LICENSE"))?;
+    for (name, bytes) in &resource_bytes {
+        xtask::archive::validate_member_name(name)?;
+        let destination = resources.join(name);
+        fs::create_dir_all(destination.parent().ok_or("Missing resource parent")?)?;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(destination)?;
+        std::io::Write::write_all(&mut file, bytes)?;
+        file.set_permissions(fs::Permissions::from_mode(0o644))?;
+    }
+    for directory in resource_directories(&resource_bytes) {
+        fs::set_permissions(resources.join(directory), fs::Permissions::from_mode(0o755))?;
+    }
+    verify_resources(&resources, &resource_bytes)?;
     let input = out.join("Info.json");
     fs::write(&input, serde_json::to_vec_pretty(&metadata)?)?;
     let mut convert = build.command(root, "/usr/bin/plutil");
@@ -163,7 +171,7 @@ fn assemble(root: &Path, out: &Path, build: &macos::MacBuild) -> Result<()> {
         .arg(&app);
     checked_run(sign_app, &out.join("app-sign.log"), 60)?;
     for (role, path) in [
-        ("standalone", signed_cli.as_path()),
+        ("standalone", signed_cli),
         ("app", app.as_path()),
         ("helper", macos.join("remove-eml-attachments").as_path()),
     ] {
@@ -173,11 +181,10 @@ fn assemble(root: &Path, out: &Path, build: &macos::MacBuild) -> Result<()> {
             .arg(path);
         checked_run(verify, &out.join(format!("{role}-verify.log")), 60)?;
     }
-    if fs::read(&signed_cli)? != fs::read(macos.join("remove-eml-attachments"))? {
+    if cli.bytes() != fs::read(macos.join("remove-eml-attachments"))? {
         return Err("Outer signing changed the copied helper bytes".into());
     }
-    let helper_identity =
-        fixture_identity(&fs::read(&signed_cli)?, &build.architecture, build.minimum)?;
+    let helper_identity = fixture_identity(cli.bytes(), &build.architecture, build.minimum)?;
     let app_identity = fixture_identity(
         &fs::read(macos.join("EMLAttachmentRemover"))?,
         &build.architecture,
@@ -185,29 +192,90 @@ fn assemble(root: &Path, out: &Path, build: &macos::MacBuild) -> Result<()> {
     )?;
     for (role, binary) in [
         ("app", macos.join("EMLAttachmentRemover")),
-        ("helper", signed_cli.clone()),
+        ("helper", macos.join("remove-eml-attachments")),
     ] {
-        let dependencies = String::from_utf8(capture(
-            build.command(root, "/usr/bin/otool").arg("-L").arg(&binary),
-        )?)?;
-        fs::write(out.join(format!("{role}-dependencies.log")), &dependencies)?;
-        if dependencies.lines().skip(1).any(|line| {
-            !line.trim_start().starts_with("/usr/lib/")
-                && !line.trim_start().starts_with("/System/Library/")
-        }) {
-            return Err(format!(
-                "{role} has a non-system dependency requiring reviewed native runtime bundling"
-            )
-            .into());
-        }
+        macos::inspect_system_dependencies(
+            build.command(root, "/usr/bin/otool"),
+            &binary,
+            &out.join(format!("{role}-dependencies.log")),
+        )?;
     }
     fs::write(
         out.join("build.json"),
         serde_json::to_vec_pretty(
-            &json!({"build":build,"app":app,"signed_cli":signed_cli,"app_identity":app_identity,"helper_identity":helper_identity,"helper_signed_bytes_equal":true,"scope":"native build/signature only; complete notices, extracted archives and GUI qualification pending"}),
+            &json!({"build":build,"app":app,"signed_cli":signed_cli,"frozen_cli_identity":cli.identity(),"app_identity":app_identity,"helper_identity":helper_identity,"helper_signed_bytes_equal":true,"scope":"native build/signature and reviewed legal materials; extracted archives, actual GUI and full platform qualification pending"}),
         )?,
     )?;
     eprintln!("Built native app for integration: {}", app.display());
+    Ok(())
+}
+
+fn resource_directories(
+    expected: &std::collections::BTreeMap<String, Vec<u8>>,
+) -> std::collections::BTreeSet<String> {
+    let mut directories = std::collections::BTreeSet::from([String::new()]);
+    for name in expected.keys() {
+        let mut path = name.as_str();
+        while let Some((parent, _)) = path.rsplit_once('/') {
+            directories.insert(parent.to_owned());
+            path = parent;
+        }
+    }
+    directories
+}
+
+fn verify_resources(
+    resources: &Path,
+    expected: &std::collections::BTreeMap<String, Vec<u8>>,
+) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let directories = resource_directories(expected);
+    if fs::metadata(resources)?.permissions().mode() & 0o7777 != 0o755 {
+        return Err("App resource root mode differs".into());
+    }
+    let mut pending = vec![resources.to_owned()];
+    let mut observed = std::collections::BTreeSet::new();
+    let mut count = 0;
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            count += 1;
+            if count > 4096 {
+                return Err("App resource count exceeds its bound".into());
+            }
+            let kind = entry.file_type()?;
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(resources)?
+                .to_str()
+                .ok_or("Non-UTF-8 app resource")?;
+            xtask::archive::validate_member_name(relative)?;
+            if kind.is_dir() && !kind.is_symlink() {
+                if !directories.contains(relative)
+                    || entry.metadata()?.permissions().mode() & 0o7777 != 0o755
+                {
+                    return Err("Unexpected app resource directory/type/mode".into());
+                }
+                pending.push(path);
+            } else if kind.is_file() && !kind.is_symlink() {
+                let bytes = expected
+                    .get(relative)
+                    .ok_or("Unexpected app resource file")?;
+                if entry.metadata()?.len() != bytes.len() as u64
+                    || entry.metadata()?.permissions().mode() & 0o7777 != 0o644
+                    || fs::read(&path)? != *bytes
+                    || !observed.insert(relative.to_owned())
+                {
+                    return Err("App resource bytes/type/mode differ from frozen inputs".into());
+                }
+            } else {
+                return Err("App resource must be an ordinary file/directory".into());
+            }
+        }
+    }
+    if observed.len() != expected.len() {
+        return Err("App resource inventory is incomplete".into());
+    }
     Ok(())
 }
 

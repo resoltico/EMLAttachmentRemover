@@ -92,7 +92,7 @@ jobs:
           xcrun swift format lint --strict --recursive macos-app
           set -o pipefail
           xcrun swift test --package-path macos-app --scratch-path target/swift-model -Xswiftc -warnings-as-errors 2>&1 | tee target/swift-model-tests.log
-          test "$(grep -Ec 'Test run with [1-9][0-9]* tests.*passed' target/swift-model-tests.log)" -eq 1
+          test "$(grep -Ec 'Test run with [1-9][0-9]* tests.*passed' target/swift-model-tests.log)" -eq 2
           if grep -Eq 'Test .+ (failed|skipped)( after| due|$)|recorded an issue' target/swift-model-tests.log; then exit 1; fi
       - name: Real different-UID namespace controls on owned fixtures
         run: |
@@ -103,6 +103,14 @@ jobs:
       - name: Actual native helper process, pipe and ownership integration
         if: ${{ runner.os == 'macOS' }}
         run: cargo xtask macos-process-tests
+      - name: Install pinned legal-material generator
+        run: |
+          plan=$(cargo xtask distribution)
+          about=$(jq -er '.tools.cargo_about' <<< "$plan")
+          cargo install cargo-about --version "$about" --locked --features cli
+      - name: Build and verify actual native Linux CLI archive
+        if: ${{ runner.os == 'Linux' }}
+        run: cargo xtask build-cli-archive --target '${{ matrix.target }}' --out target/native-cli-build
       - name: Assemble and inspect actual signed native SwiftUI app
         if: ${{ runner.os == 'macOS' }}
         run: cargo xtask build-macos-app --out target/native-app-build
@@ -110,7 +118,7 @@ jobs:
         if: ${{ runner.os == 'macOS' }}
         run: cargo xtask macos-gui-tests --app 'target/native-app-build/EML Attachment Remover.app' --out target/native-gui-tests
       - name: Retain native process fixture evidence
-        if: ${{ always() && runner.os == 'macOS' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: process-boundary-${{ github.sha }}-${{ matrix.platform }}
@@ -122,8 +130,25 @@ jobs:
             target/native-app-build/*.log
             target/native-app-build/*.json
             target/native-app-build/*.jsonl
+            target/native-app-build/*.stderr
             target/native-app-build/icon-assets/icon-partial.plist
+            target/native-app-build/cli-build/*.log
+            target/native-app-build/cli-build/*.json
+            target/native-app-build/cli-build/*.jsonl
+            target/native-app-build/cli-build/*.stderr
+            target/native-cli-build/*.json
+            target/native-cli-build/cli-build/*.log
+            target/native-cli-build/cli-build/*.json
+            target/native-cli-build/cli-build/*.jsonl
+            target/native-cli-build/cli-build/*.stderr
+            target/native-host/inspector-*/*.log
+            target/native-host/inspector-*/*.json
+            target/native-host/inspector-*/*.stderr
+            target/archive-verification/**/*.log
+            target/archive-verification/**/*.json
+            target/archive-verification/**/*.stderr
             target/native-gui-tests/*.log
             target/native-gui-tests/*.json
             target/native-gui-tests/*.plist
+            target/native-gui-tests/*.ips
           if-no-files-found: error

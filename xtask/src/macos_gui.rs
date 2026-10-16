@@ -74,6 +74,47 @@ fn run_owned(root: &Path, app: &Path, out: &Path, owned: &Path) -> Result<()> {
     }
     let launcher = out.join("GUIIntegration");
     let reader = out.join("PreferenceSnapshot");
+    let executable = app.join("Contents/MacOS/EMLAttachmentRemover");
+    let image_bytes = fs::read(&executable)?;
+    let uuid = macos::main_image_uuid(&image_bytes)?;
+    let mut uuid_text = String::new();
+    for (index, byte) in uuid.iter().enumerate() {
+        if [4, 6, 8, 10].contains(&index) {
+            uuid_text.push('-');
+        }
+        uuid_text.push_str(&format!("{byte:02X}"));
+    }
+    fs::write(
+        out.join("expected-main-image.json"),
+        serde_json::to_vec_pretty(
+            &json!({"uuid":uuid_text,"architecture":build.swift_arch,"executable":executable}),
+        )?,
+    )?;
+    let mut module = build.command(root, &build.swiftc);
+    module
+        .args([
+            "-emit-library",
+            "-static",
+            "-emit-module",
+            "-module-name",
+            "CrashEvidence",
+            "-swift-version",
+            "6",
+            "-warnings-as-errors",
+            "-target",
+            &build.swift_target(),
+            "-sdk",
+        ])
+        .arg(&build.sdk)
+        .arg("-module-cache-path")
+        .arg(out.join("module-cache"))
+        .arg(root.join("macos-app/Tests/CrashEvidence/CrashEvidence.swift"))
+        .arg(root.join("macos-app/Tests/CrashEvidence/Collection.swift"))
+        .arg("-o")
+        .arg(out.join("libCrashEvidence.a"))
+        .arg("-emit-module-path")
+        .arg(out.join("CrashEvidence.swiftmodule"));
+    macos::checked_run(module, &out.join("crash-evidence-build.log"), 120)?;
     for (binary, sources, log) in [
         (
             &launcher,
@@ -103,6 +144,14 @@ fn run_owned(root: &Path, app: &Path, out: &Path, owned: &Path) -> Result<()> {
         for source in sources {
             compile.arg(root.join("macos-app/Tests").join(source));
         }
+        if binary == &launcher {
+            compile
+                .arg("-I")
+                .arg(out)
+                .arg("-L")
+                .arg(out)
+                .arg("-lCrashEvidence");
+        }
         compile.arg("-o").arg(binary);
         macos::checked_run(compile, &out.join(log), 120)?;
     }
@@ -131,6 +180,7 @@ fn run_owned(root: &Path, app: &Path, out: &Path, owned: &Path) -> Result<()> {
         .arg(root)
         .arg(owned)
         .arg(seconds.to_string());
+    launch.arg(out);
     // Failure/timeout is Unknown and retained. This controller's process group
     // cannot prove cleanup of an application launched by LaunchServices.
     macos::checked_run(launch, &out.join("ordinary-gui.log"), seconds + 5)?;

@@ -1,8 +1,9 @@
-//! Bounded ZIP directory inspection before the archive library allocates or
-//! collapses duplicate records. This is structural evidence, not qualification.
+//! Bounded CLI archive inspection/readback on one immutable snapshot.
+//! Structural/material evidence is separate from executable qualification.
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{self, Cursor, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
@@ -22,7 +23,31 @@ pub struct ArchiveSnapshot {
     bytes: Vec<u8>,
 }
 
-struct ExtractionRoot {
+/// Byte identity of the immutable inspected input, not review/behavior quality.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct ByteIdentity {
+    /// Exact snapshot byte length.
+    pub byte_length: usize,
+    /// SHA-256 of these same immutable bytes.
+    pub sha256: String,
+}
+impl ByteIdentity {
+    /// Identify bytes without implying source provenance or review quality.
+    pub fn of(bytes: &[u8]) -> Self {
+        Self {
+            byte_length: bytes.len(),
+            sha256: Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        }
+    }
+}
+
+/// Owned private directory with its admitted ancestor chain. Drop closes handles
+/// without removing files; retain through bounded observation, then abort/preserve
+/// resources if settlement is unknown. Trusted UID/root interference is excluded.
+pub struct ArtifactDirectory {
     path: PathBuf,
     #[cfg(unix)]
     _held: eml_fs::CreatedDirectory,
@@ -30,13 +55,22 @@ struct ExtractionRoot {
     _ancestors: Vec<eml_fs::BoundDirectory>,
 }
 
+impl ArtifactDirectory {
+    /// Current requested address under the admitted other-UID protection model.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 /// Extracted CLI bytes inside a retained private enclosure. Dropping this value
 /// closes held descriptors but does not remove useful files or failure evidence.
-/// Retain this value until all pathname-based smoke operations settle. Its
-/// admitted full-chain policy excludes interference by the trusted UID/root.
+/// Retain it through bounded pathname-operation observation. If settlement is
+/// unknown, abort later work and preserve files; handles can then close without
+/// sweeping/removing unverified resources. The full-chain policy excludes
+/// interference by the trusted UID/root.
 pub struct ExtractedCli {
     root: PathBuf,
-    _enclosure: ExtractionRoot,
+    _enclosure: ArtifactDirectory,
 }
 impl ExtractedCli {
     /// Package directory beneath the private enclosure.
@@ -45,8 +79,9 @@ impl ExtractedCli {
     }
 }
 
+/// Create an exclusive private artifact directory after admitting every ancestor.
 #[cfg(unix)]
-fn extraction_root(parent: &Path) -> io::Result<ExtractionRoot> {
+pub fn create_artifact_directory(parent: &Path) -> io::Result<ArtifactDirectory> {
     let parent = parent.canonicalize()?;
     let mut ancestors = vec![eml_fs::BoundDirectory::open(Path::new("/"))?];
     ancestors[0].admit_namespace()?;
@@ -76,7 +111,7 @@ fn extraction_root(parent: &Path) -> io::Result<ExtractionRoot> {
         let mut random = [0_u8; 16];
         getrandom::fill(&mut random).map_err(io::Error::other)?;
         let suffix: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
-        let name = format!("cli-extracted-{suffix}");
+        let name = format!("artifact-{suffix}");
         match held.create_private_child(std::ffi::OsStr::new(&name)) {
             Ok(created) => {
                 created.directory().admit_namespace()?;
@@ -88,7 +123,7 @@ fn extraction_root(parent: &Path) -> io::Result<ExtractionRoot> {
                         "Private extraction enclosure address is unverified",
                     ));
                 }
-                return Ok(ExtractionRoot {
+                return Ok(ArtifactDirectory {
                     path: parent.join(name),
                     _held: created,
                     _ancestors: ancestors,
@@ -103,8 +138,9 @@ fn extraction_root(parent: &Path) -> io::Result<ExtractionRoot> {
     ))
 }
 
+/// Refuse hosts without the required protected-root implementation.
 #[cfg(not(unix))]
-fn extraction_root(_parent: &Path) -> io::Result<ExtractionRoot> {
+pub fn create_artifact_directory(_parent: &Path) -> io::Result<ArtifactDirectory> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "Private Windows archive extraction requires an observed protected parent/root ACL; native qualification is unavailable",
@@ -112,9 +148,27 @@ fn extraction_root(_parent: &Path) -> io::Result<ExtractionRoot> {
 }
 
 impl ArchiveSnapshot {
+    /// Identify the same snapshot used by all parsing and extraction passes.
+    pub fn identity(&self) -> ByteIdentity {
+        ByteIdentity::of(&self.bytes)
+    }
     /// Read a snapshot without trusting an advertised file length for allocation.
     pub fn read(path: &Path) -> io::Result<Self> {
-        let file = File::open(path)?;
+        if !fs::symlink_metadata(path)?.is_file() {
+            return Err(invalid(
+                "Archive input must be an ordinary non-symlink file",
+            ));
+        }
+        let mut open = OpenOptions::new();
+        open.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            open.custom_flags(
+                (rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::NOFOLLOW).bits() as i32,
+            );
+        }
+        let file = open.open(path)?;
         if !file.metadata()?.is_file() {
             return Err(invalid("Archive input must be an ordinary file"));
         }
@@ -139,50 +193,9 @@ impl ArchiveSnapshot {
         materials: &BTreeMap<String, Vec<u8>>,
         parent: &Path,
     ) -> io::Result<ExtractedCli> {
-        for name in [root_name, executable] {
-            validate_member_name(name)?;
-            if name.contains('/') {
-                return Err(invalid("CLI root/executable must be one component"));
-            }
-        }
-        for name in [
-            "README.txt",
-            "LICENSE",
-            "THIRD-PARTY-NOTICES.txt",
-            "licenses/rust/COPYRIGHT-library.html",
-            "licenses/rust/MIT.txt",
-            "licenses/rust/Apache-2.0.txt",
-            "licenses/rust/BSD-2-Clause.txt",
-            "licenses/rust/Unicode-3.0.txt",
-            "licenses/rust/source.json",
-        ] {
-            if !materials.get(name).is_some_and(|bytes| !bytes.is_empty()) {
-                return Err(invalid("Expected CLI material inventory is incomplete"));
-            }
-        }
-        let mut files = BTreeSet::from([format!("{root_name}/{executable}")]);
-        for (name, bytes) in materials {
-            validate_member_name(name)?;
-            if name.ends_with('/')
-                || name == executable
-                || bytes.is_empty()
-                || (!matches!(
-                    name.as_str(),
-                    "README.txt" | "LICENSE" | "THIRD-PARTY-NOTICES.txt"
-                ) && !name.starts_with("licenses/"))
-            {
-                return Err(invalid("Invalid expected CLI material path or bytes"));
-            }
-            files.insert(format!("{root_name}/{name}"));
-        }
-        let mut directories = BTreeSet::new();
-        for name in &files {
-            let mut ancestor = name.as_str();
-            while let Some((parent, _)) = ancestor.rsplit_once('/') {
-                directories.insert(format!("{parent}/"));
-                ancestor = parent;
-            }
-        }
+        let layout = cli_layout(root_name, executable, materials)?;
+        let files = &layout.files;
+        let directories = &layout.directories;
         let members = inspect_zip_directory(&mut Cursor::new(&self.bytes))?;
         let mut observed = BTreeSet::new();
         let mut expanded = 0_u64;
@@ -202,14 +215,14 @@ impl ArchiveSnapshot {
                 return Err(invalid("CLI archive expanded size exceeds its bound"));
             }
         }
-        if observed != files {
+        if &observed != files {
             return Err(invalid("CLI archive is missing expected files"));
         }
         let mut archive = zip::ZipArchive::new(Cursor::new(&self.bytes))?;
         if archive.len() != members.len() || archive.has_overlapping_entries()? {
             return Err(invalid("ZIP library readback differs or overlaps"));
         }
-        let enclosure = extraction_root(parent)?;
+        let enclosure = create_artifact_directory(parent)?;
         let extracted = &enclosure.path;
         eprintln!("Retained owned CLI extraction: {}", extracted.display());
         for (index, member) in members.iter().enumerate() {
@@ -285,6 +298,503 @@ impl ArchiveSnapshot {
             _enclosure: enclosure,
         })
     }
+
+    /// Inspect and extract the generated single-member gzip/USTAR CLI profile.
+    /// All framing and gzip integrity are checked before creating the enclosure;
+    /// the second pass reads the same immutable bytes. No executable runs here.
+    pub fn extract_cli_tar_gz(
+        &self,
+        root_name: &str,
+        executable: &str,
+        materials: &BTreeMap<String, Vec<u8>>,
+        parent: &Path,
+    ) -> io::Result<ExtractedCli> {
+        let layout = cli_layout(root_name, executable, materials)?;
+        let members = self.walk_tar(|member, body| {
+            if io::copy(body, &mut io::sink())? != member.size {
+                return Err(invalid("Truncated USTAR member body"));
+            }
+            Ok(())
+        })?;
+        let mut observed = BTreeSet::new();
+        for member in &members {
+            if member.directory {
+                if !layout.directories.contains(&member.name) {
+                    return Err(invalid("Unexpected CLI tar directory"));
+                }
+            } else if !layout.files.contains(&member.name) || !observed.insert(member.name.clone())
+            {
+                return Err(invalid("Unexpected CLI tar file"));
+            }
+            let mode = if member.directory || member.name == format!("{root_name}/{executable}") {
+                0o755
+            } else {
+                0o644
+            };
+            if member.mode != mode {
+                return Err(invalid("CLI tar member mode differs from package policy"));
+            }
+        }
+        if observed != layout.files {
+            return Err(invalid("CLI tar archive is missing expected files"));
+        }
+        let enclosure = create_artifact_directory(parent)?;
+        eprintln!(
+            "Retained owned CLI extraction: {}",
+            enclosure.path.display()
+        );
+        let mut index = 0;
+        self.walk_tar(|member, body| {
+            if members.get(index) != Some(member) {
+                return Err(invalid("USTAR second-pass metadata differs"));
+            }
+            index += 1;
+            let path = enclosure.path.join(member.name.trim_end_matches('/'));
+            if member.directory {
+                fs::create_dir_all(path)?;
+                return Ok(());
+            }
+            fs::create_dir_all(
+                path.parent()
+                    .ok_or_else(|| invalid("Missing tar extraction parent"))?,
+            )?;
+            let mut output = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)?;
+            if io::copy(body, &mut output)? != member.size {
+                return Err(invalid("USTAR actual member size differs"));
+            }
+            output.flush()?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                output.set_permissions(fs::Permissions::from_mode(member.mode))?;
+            }
+            drop(output);
+            let relative = member
+                .name
+                .strip_prefix(&format!("{root_name}/"))
+                .ok_or_else(|| invalid("Invalid tar package root"))?;
+            if let Some(expected) = materials.get(relative)
+                && fs::read(path)? != *expected
+            {
+                return Err(invalid(
+                    "Extracted tar legal material differs from reviewed inputs",
+                ));
+            }
+            Ok(())
+        })?;
+        if index != members.len() {
+            return Err(invalid("USTAR second pass omitted a member"));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for directory in layout.directories {
+                fs::set_permissions(
+                    enclosure.path.join(directory.trim_end_matches('/')),
+                    fs::Permissions::from_mode(0o755),
+                )?;
+            }
+        }
+        Ok(ExtractedCli {
+            root: enclosure.path.join(root_name),
+            _enclosure: enclosure,
+        })
+    }
+
+    fn walk_tar(
+        &self,
+        mut visit: impl FnMut(&TarMember, &mut dyn Read) -> io::Result<()>,
+    ) -> io::Result<Vec<TarMember>> {
+        // The explicit producer emits no optional gzip metadata. This is a
+        // narrow format boundary, not a claim that the decoder is unbounded.
+        if self.bytes.len() < 18 || self.bytes[..4] != [0x1f, 0x8b, 8, 0] {
+            return Err(invalid("Expected the generated single-member gzip header"));
+        }
+        let decoder = flate2::bufread::GzDecoder::new(self.bytes.as_slice());
+        let mut stream = ExpandedReader {
+            inner: decoder,
+            total: 0,
+            limit: MAX_EXPANDED_BYTES,
+            exceeded: false,
+        };
+        let mut members = Vec::new();
+        let mut names = BTreeSet::new();
+        let mut claims = PathClaims::default();
+        loop {
+            let mut block = [0_u8; 512];
+            stream.read_exact(&mut block)?;
+            if block.iter().all(|byte| *byte == 0) {
+                stream.read_exact(&mut block)?;
+                if block.iter().any(|byte| *byte != 0) {
+                    return Err(invalid("USTAR requires two complete zero end blocks"));
+                }
+                loop {
+                    let count = stream.read(&mut block)?;
+                    if count == 0 {
+                        break;
+                    }
+                    if block[..count].iter().any(|byte| *byte != 0) {
+                        return Err(invalid("Nonzero data follows the USTAR end marker"));
+                    }
+                }
+                if stream.total % 512 != 0 {
+                    return Err(invalid("USTAR zero tail is not block aligned"));
+                }
+                if !stream.inner.into_inner().is_empty() {
+                    return Err(invalid(
+                        "Unexpected trailing compressed bytes or second gzip member",
+                    ));
+                }
+                return Ok(members);
+            }
+            if members.len() >= usize::from(MAX_ENTRIES) {
+                return Err(invalid("USTAR member count exceeds its bound"));
+            }
+            let member = tar_member(&block)?;
+            if !names.insert(member.name.trim_end_matches('/').to_ascii_lowercase()) {
+                return Err(invalid("Duplicate original USTAR member name"));
+            }
+            claim_path(&mut claims, &member.name, member.directory)?;
+            {
+                let mut body = (&mut stream).take(member.size);
+                visit(&member, &mut body)?;
+                if body.limit() != 0 {
+                    return Err(invalid("USTAR body was not fully consumed"));
+                }
+            }
+            let padding = ((512 - member.size % 512) % 512) as usize;
+            stream.read_exact(&mut block[..padding])?;
+            if block[..padding].iter().any(|byte| *byte != 0) {
+                return Err(invalid("USTAR member alignment bytes are nonzero"));
+            }
+            members.push(member);
+        }
+    }
+}
+
+struct ExpandedReader<R> {
+    inner: R,
+    total: u64,
+    limit: u64,
+    exceeded: bool,
+}
+impl<R: Read> Read for ExpandedReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        if self.exceeded {
+            return Err(invalid("Expanded tar container exceeds its bound"));
+        }
+        let remaining = self.limit.saturating_sub(self.total);
+        let capacity = (buffer.len() as u64).min(remaining.saturating_add(1)) as usize;
+        let count = self.inner.read(&mut buffer[..capacity])?;
+        self.total += count as u64;
+        if self.total > self.limit {
+            self.exceeded = true;
+            return Err(invalid("Expanded tar container exceeds its bound"));
+        }
+        Ok(count)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TarMember {
+    name: String,
+    size: u64,
+    directory: bool,
+    mode: u32,
+}
+
+fn terminated_field(field: &[u8]) -> io::Result<&[u8]> {
+    let end = field
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(field.len());
+    if field[end..].iter().any(|byte| *byte != 0) {
+        return Err(invalid("Nonzero suffix follows a USTAR field NUL"));
+    }
+    Ok(&field[..end])
+}
+fn octal_field(field: &[u8], empty: bool) -> io::Result<()> {
+    let end = field
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(field.len());
+    if field[end..].iter().any(|byte| !matches!(byte, 0 | b' ')) {
+        return Err(invalid("Nonzero numeric suffix after USTAR NUL"));
+    }
+    let mut digits = &field[..end];
+    while digits.first() == Some(&b' ') {
+        digits = &digits[1..];
+    }
+    while digits.last() == Some(&b' ') {
+        digits = &digits[..digits.len() - 1];
+    }
+    if (!empty && digits.is_empty()) || digits.iter().any(|byte| !matches!(byte, b'0'..=b'7')) {
+        return Err(invalid("USTAR numeric field must be bounded octal"));
+    }
+    Ok(())
+}
+fn tar_member(block: &[u8; 512]) -> io::Result<TarMember> {
+    let mut header = tar::Header::new_ustar();
+    header.as_mut_bytes().copy_from_slice(block);
+    let raw = header
+        .as_ustar()
+        .ok_or_else(|| invalid("Expected generated USTAR header"))?;
+    if raw.magic != *b"ustar\0" || raw.version != *b"00" {
+        return Err(invalid("Unsupported USTAR magic/version"));
+    }
+    for field in [
+        &raw.mode[..],
+        &raw.uid,
+        &raw.gid,
+        &raw.size,
+        &raw.mtime,
+        &raw.cksum,
+    ] {
+        octal_field(field, false)?;
+    }
+    octal_field(&raw.dev_major, true)?;
+    octal_field(&raw.dev_minor, true)?;
+    let checksum: u32 = block
+        .iter()
+        .enumerate()
+        .map(|(index, byte)| {
+            if (148..156).contains(&index) {
+                32
+            } else {
+                u32::from(*byte)
+            }
+        })
+        .sum();
+    if header.cksum()? != checksum {
+        return Err(invalid("USTAR header checksum differs"));
+    }
+    let directory = match raw.typeflag[0] {
+        b'0' => false,
+        b'5' => true,
+        _ => {
+            return Err(invalid(
+                "USTAR extensions, sparse files, links and special types are unsupported",
+            ));
+        }
+    };
+    if raw.linkname.iter().any(|byte| *byte != 0) {
+        return Err(invalid("USTAR CLI members cannot name a link target"));
+    }
+    let prefix = terminated_field(&raw.prefix)?;
+    let name = terminated_field(&raw.name)?;
+    let mut original = prefix.to_vec();
+    if !original.is_empty() {
+        original.push(b'/');
+    }
+    original.extend_from_slice(name);
+    let name = std::str::from_utf8(&original)
+        .map_err(|_| invalid("USTAR name is not UTF-8"))?
+        .to_owned();
+    validate_member_name(&name)?;
+    let size = header.size()?;
+    let mode = header.mode()?;
+    if directory != name.ends_with('/')
+        || size > MAX_MEMBER_BYTES
+        || (directory && size != 0)
+        || mode & !0o777 != 0
+    {
+        return Err(invalid(
+            "USTAR type, size or mode is outside the CLI profile",
+        ));
+    }
+    Ok(TarMember {
+        name,
+        size,
+        directory,
+        mode,
+    })
+}
+
+struct CliLayout {
+    files: BTreeSet<String>,
+    directories: BTreeSet<String>,
+}
+
+fn producer_layout(
+    root_name: &str,
+    executable: &str,
+    binary: &[u8],
+    materials: &BTreeMap<String, Vec<u8>>,
+) -> io::Result<CliLayout> {
+    let layout = cli_layout(root_name, executable, materials)?;
+    if binary.is_empty()
+        || binary.len() as u64 > MAX_MEMBER_BYTES
+        || layout.files.len() + layout.directories.len() > usize::from(MAX_ENTRIES)
+    {
+        return Err(invalid(
+            "CLI archive producer input exceeds its member/count bounds",
+        ));
+    }
+    let mut total = binary.len() as u64;
+    for bytes in materials.values() {
+        if bytes.len() as u64 > MAX_MEMBER_BYTES {
+            return Err(invalid("CLI material exceeds archive member bound"));
+        }
+        total = total
+            .checked_add(bytes.len() as u64)
+            .ok_or_else(|| invalid("CLI archive size overflow"))?;
+    }
+    if total > MAX_EXPANDED_BYTES {
+        return Err(invalid("CLI archive payload exceeds its bound"));
+    }
+    Ok(layout)
+}
+
+/// Encode the explicit seekable ZIP32 CLI profile to an already owned staging
+/// writer. Callers publish only after readback and actual behavior verification.
+pub fn encode_cli_zip<W: Write + Seek>(
+    writer: W,
+    root_name: &str,
+    executable: &str,
+    binary: &[u8],
+    materials: &BTreeMap<String, Vec<u8>>,
+) -> io::Result<W> {
+    let layout = producer_layout(root_name, executable, binary, materials)?;
+    let mut archive = zip::ZipWriter::new(writer);
+    let options = |mode| {
+        zip::write::SimpleFileOptions::default()
+            .system(zip::System::Unix)
+            .compression_method(zip::CompressionMethod::Deflated)
+            .unix_permissions(mode)
+    };
+    for directory in &layout.directories {
+        archive.add_directory(directory, options(0o755))?;
+    }
+    for name in layout.files {
+        let relative = name
+            .strip_prefix(&format!("{root_name}/"))
+            .ok_or_else(|| invalid("Invalid producer root"))?;
+        let (bytes, mode) = if relative == executable {
+            (binary, 0o755)
+        } else {
+            (
+                materials
+                    .get(relative)
+                    .ok_or_else(|| invalid("Missing producer material"))?
+                    .as_slice(),
+                0o644,
+            )
+        };
+        archive.start_file(name, options(mode))?;
+        archive.write_all(bytes)?;
+    }
+    Ok(archive.finish()?)
+}
+
+/// Encode one gzip member containing only explicit classic USTAR records.
+/// Names are validated before set_path; no GNU/PAX convenience fallback is used.
+pub fn encode_cli_tar_gz<W: Write>(
+    writer: W,
+    root_name: &str,
+    executable: &str,
+    binary: &[u8],
+    materials: &BTreeMap<String, Vec<u8>>,
+) -> io::Result<W> {
+    let layout = producer_layout(root_name, executable, binary, materials)?;
+    let gzip = flate2::write::GzEncoder::new(writer, flate2::Compression::default());
+    let mut archive = tar::Builder::new(gzip);
+    let mut append = |name: &str, bytes: &[u8], directory: bool, mode: u32| -> io::Result<()> {
+        let mut header = tar::Header::new_ustar();
+        header.set_path(name)?;
+        header.set_entry_type(if directory {
+            tar::EntryType::Directory
+        } else {
+            tar::EntryType::Regular
+        });
+        header.set_mode(mode);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_mtime(0);
+        header.set_size(bytes.len() as u64);
+        header.set_cksum();
+        // Slice EOF is independently fixed to the advertised length.
+        archive.append(&header, bytes)
+    };
+    for directory in &layout.directories {
+        append(directory, &[], true, 0o755)?;
+    }
+    for name in layout.files {
+        let relative = name
+            .strip_prefix(&format!("{root_name}/"))
+            .ok_or_else(|| invalid("Invalid producer root"))?;
+        let (bytes, mode) = if relative == executable {
+            (binary, 0o755)
+        } else {
+            (
+                materials
+                    .get(relative)
+                    .ok_or_else(|| invalid("Missing producer material"))?
+                    .as_slice(),
+                0o644,
+            )
+        };
+        append(&name, bytes, false, mode)?;
+    }
+    archive.finish()?;
+    archive.into_inner()?.finish()
+}
+
+fn cli_layout(
+    root_name: &str,
+    executable: &str,
+    materials: &BTreeMap<String, Vec<u8>>,
+) -> io::Result<CliLayout> {
+    for name in [root_name, executable] {
+        validate_member_name(name)?;
+        if name.contains('/') {
+            return Err(invalid("CLI root/executable must be one component"));
+        }
+    }
+    for name in [
+        "README.txt",
+        "LICENSE",
+        "THIRD-PARTY-NOTICES.txt",
+        "licenses/rust/COPYRIGHT-library.html",
+        "licenses/rust/MIT.txt",
+        "licenses/rust/Apache-2.0.txt",
+        "licenses/rust/BSD-2-Clause.txt",
+        "licenses/rust/Unicode-3.0.txt",
+        "licenses/rust/source.json",
+    ] {
+        if !materials.get(name).is_some_and(|bytes| !bytes.is_empty()) {
+            return Err(invalid("Expected CLI material inventory is incomplete"));
+        }
+    }
+    let mut files = BTreeSet::from([format!("{root_name}/{executable}")]);
+    for (name, bytes) in materials {
+        validate_member_name(name)?;
+        if name.ends_with('/')
+            || name == executable
+            || bytes.is_empty()
+            || (!matches!(
+                name.as_str(),
+                "README.txt" | "LICENSE" | "THIRD-PARTY-NOTICES.txt"
+            ) && !name.starts_with("licenses/"))
+        {
+            return Err(invalid("Invalid expected CLI material path or bytes"));
+        }
+        files.insert(format!("{root_name}/{name}"));
+    }
+    let mut directories = BTreeSet::new();
+    for name in &files {
+        let mut ancestor = name.as_str();
+        while let Some((parent, _)) = ancestor.rsplit_once('/') {
+            directories.insert(format!("{parent}/"));
+            ancestor = parent;
+        }
+    }
+    Ok(CliLayout { files, directories })
 }
 
 #[derive(Default)]
@@ -568,7 +1078,66 @@ mod tests {
         .collect()
     }
 
-    fn synthetic_cli(materials: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
+    #[test]
+    fn snapshot_identity_is_of_retained_bytes_and_nonfiles_are_refused() {
+        let owned = tempfile::tempdir().unwrap();
+        assert!(ArchiveSnapshot::read(owned.path()).is_err());
+        let path = owned.path().join("archive.zip");
+        fs::write(&path, b"abc").unwrap();
+        let snapshot = ArchiveSnapshot::read(&path).unwrap();
+        assert_eq!(
+            snapshot.identity().sha256,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        fs::write(&path, b"changed owned path").unwrap();
+        assert_eq!(snapshot.identity().byte_length, 3);
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&path, owned.path().join("alias.zip")).unwrap();
+            assert!(ArchiveSnapshot::read(&owned.path().join("alias.zip")).is_err());
+            assert!(
+                std::process::Command::new("/usr/bin/mkfifo")
+                    .args(["-m", "600"])
+                    .arg(owned.path().join("pipe.zip"))
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            assert!(ArchiveSnapshot::read(&owned.path().join("pipe.zip")).is_err());
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn explicit_cli_producers_roundtrip_their_narrow_profiles_and_materials() {
+        let owned = tempfile::tempdir().unwrap();
+        let materials = synthetic_materials();
+        let binary = b"owned fixture executable, not invoked";
+        let zip = encode_cli_zip(
+            Cursor::new(Vec::new()),
+            "package",
+            "tool",
+            binary,
+            &materials,
+        )
+        .unwrap()
+        .into_inner();
+        let tar = encode_cli_tar_gz(Vec::new(), "package", "tool", binary, &materials).unwrap();
+        let zip = ArchiveSnapshot { bytes: zip }
+            .extract_cli_zip("package", "tool", &materials, owned.path())
+            .unwrap();
+        let tar = ArchiveSnapshot { bytes: tar }
+            .extract_cli_tar_gz("package", "tool", &materials, owned.path())
+            .unwrap();
+        for extracted in [&zip, &tar] {
+            assert_eq!(fs::read(extracted.root().join("tool")).unwrap(), binary);
+            for (name, bytes) in &materials {
+                assert_eq!(fs::read(extracted.root().join(name)).unwrap(), *bytes);
+            }
+        }
+    }
+
+    fn synthetic_cli_zip(materials: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for (name, bytes) in
             std::iter::once(("tool", &b"synthetic executable fixture; never invoked"[..])).chain(
@@ -589,13 +1158,321 @@ mod tests {
         writer.finish().unwrap().into_inner()
     }
 
+    fn ustar(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut writer = tar::Builder::new(Vec::new());
+        for (name, bytes) in entries {
+            let mut header = tar::Header::new_ustar();
+            header.set_path(name).unwrap();
+            header.set_entry_type(tar::EntryType::Regular);
+            header.set_mode(if *name == "package/tool" {
+                0o755
+            } else {
+                0o644
+            });
+            header.set_uid(0);
+            header.set_gid(0);
+            header.set_mtime(0);
+            header.set_size(bytes.len() as u64);
+            header.set_cksum();
+            writer.append(&header, *bytes).unwrap();
+        }
+        writer.finish().unwrap();
+        writer.into_inner().unwrap()
+    }
+
+    fn gzip(bytes: &[u8]) -> Vec<u8> {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder.write_all(bytes).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    fn inspect_tar(bytes: Vec<u8>) -> io::Result<Vec<TarMember>> {
+        ArchiveSnapshot { bytes }.walk_tar(|_, body| io::copy(body, &mut io::sink()).map(|_| ()))
+    }
+
+    fn fix_tar_checksum(bytes: &mut [u8]) {
+        let mut header = tar::Header::new_ustar();
+        header.as_mut_bytes().copy_from_slice(&bytes[..512]);
+        header.set_cksum();
+        bytes[..512].copy_from_slice(header.as_bytes());
+    }
+
+    #[test]
+    fn ustar_prefix_split_and_zero_tail_preserve_original_names() {
+        let name = format!("{}/{}", "a".repeat(95), "b".repeat(20));
+        let raw = ustar(&[(&name, b"owned")]);
+        assert_ne!(raw[345], 0); // Original USTAR prefix is actually populated.
+        let members = inspect_tar(gzip(&raw)).unwrap();
+        assert_eq!(members[0].name, name);
+        assert_eq!(members[0].size, 5);
+        let mut padded = raw;
+        padded.extend_from_slice(&[0; 512]);
+        assert_eq!(inspect_tar(gzip(&padded)).unwrap(), members);
+    }
+
+    #[test]
+    fn ustar_framing_rejects_bad_padding_end_blocks_and_truncated_body() {
+        let raw = ustar(&[("package/file", b"abc")]);
+        assert!(inspect_tar(gzip(&raw)).is_ok());
+        let mut padding = raw.clone();
+        padding[515] = 1;
+        assert!(inspect_tar(gzip(&padding)).is_err());
+        for truncated in [
+            &raw[..513],
+            &raw[..1024],
+            &raw[..raw.len() - 512],
+            &raw[..raw.len() - 1],
+        ] {
+            assert!(inspect_tar(gzip(truncated)).is_err()); // Valid gzip, incomplete TAR.
+        }
+        for tail in [0, 1] {
+            let mut changed = raw.clone();
+            changed.push(tail);
+            assert!(inspect_tar(gzip(&changed)).is_err());
+        }
+        let mut second_end = raw;
+        second_end[1536] = 1;
+        assert!(inspect_tar(gzip(&second_end)).is_err());
+    }
+
+    #[test]
+    fn gzip_crc_isize_trailer_and_single_member_boundaries_are_checked() {
+        let compressed = gzip(&ustar(&[("package/file", b"abc")]));
+        for offset in [8, 4] {
+            let mut changed = compressed.clone();
+            let index = changed.len() - offset;
+            changed[index] ^= 1;
+            assert!(inspect_tar(changed).is_err());
+        }
+        assert!(inspect_tar(compressed[..compressed.len() - 1].to_vec()).is_err());
+        for tail in [&compressed[..], &[0][..], b"unexpected".as_slice()] {
+            let mut changed = compressed.clone();
+            changed.extend_from_slice(tail);
+            assert!(inspect_tar(changed).is_err());
+        }
+    }
+
+    #[test]
+    fn ustar_headers_reject_extensions_links_hidden_suffixes_and_path_aliases() {
+        let raw = ustar(&[("package/file", b"abc")]);
+        let mut checksum = raw.clone();
+        checksum[0] = b'q';
+        assert!(inspect_tar(gzip(&checksum)).is_err());
+        for flag in *b"xgLKS12346" {
+            let mut changed = raw.clone();
+            changed[156] = flag;
+            fix_tar_checksum(&mut changed);
+            let mut visited = false;
+            let result = ArchiveSnapshot {
+                bytes: gzip(&changed),
+            }
+            .walk_tar(|_, _| {
+                visited = true;
+                Ok(())
+            });
+            assert!(result.is_err());
+            assert!(!visited);
+        }
+        let mut hidden_suffix = raw.clone();
+        hidden_suffix[13] = b'x';
+        fix_tar_checksum(&mut hidden_suffix);
+        assert!(inspect_tar(gzip(&hidden_suffix)).is_err());
+        for field in [
+            [0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
+            [b'3', 0, b'7', 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [b'\t', b'3', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ] {
+            let mut changed = raw.clone();
+            changed[124..136].copy_from_slice(&field);
+            fix_tar_checksum(&mut changed);
+            let mut header = tar::Header::new_ustar();
+            header.as_mut_bytes().copy_from_slice(&changed[..512]);
+            assert_eq!(header.size().unwrap(), 3); // Accessor alone accepts it.
+            assert!(inspect_tar(gzip(&changed)).is_err());
+        }
+        for path in ["package\\file", "package/../file", "package/file/"] {
+            let mut changed = raw.clone();
+            changed[..100].fill(0);
+            changed[..path.len()].copy_from_slice(path.as_bytes());
+            fix_tar_checksum(&mut changed);
+            assert!(inspect_tar(gzip(&changed)).is_err());
+        }
+        for entries in [
+            [
+                ("package/file", b"a".as_slice()),
+                ("package/file", b"b".as_slice()),
+            ],
+            [
+                ("package/file", b"a".as_slice()),
+                ("package/file/child", b"b".as_slice()),
+            ],
+        ] {
+            assert!(inspect_tar(gzip(&ustar(&entries))).is_err());
+        }
+    }
+
+    #[test]
+    fn expanded_reader_proves_real_eof_at_limit_and_rejects_one_more_byte() {
+        let mut exact = ExpandedReader {
+            inner: b"12345678".as_slice(),
+            total: 0,
+            limit: 8,
+            exceeded: false,
+        };
+        let mut bytes = Vec::new();
+        exact.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"12345678");
+        let mut over = ExpandedReader {
+            inner: b"123456789".as_slice(),
+            total: 0,
+            limit: 8,
+            exceeded: false,
+        };
+        assert!(over.read_to_end(&mut Vec::new()).is_err());
+        assert!(over.read(&mut [0; 1]).is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cli_ustar_extracts_exact_materials_inside_the_retained_private_enclosure() {
+        let owned = tempfile::tempdir().unwrap();
+        let materials = synthetic_materials();
+        let names: Vec<_> = std::iter::once("package/tool".to_owned())
+            .chain(materials.keys().map(|name| format!("package/{name}")))
+            .collect();
+        let payloads: Vec<_> = std::iter::once(b"owned executable fixture, not invoked".to_vec())
+            .chain(materials.values().cloned())
+            .collect();
+        let entries: Vec<_> = names
+            .iter()
+            .zip(&payloads)
+            .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+            .collect();
+        let snapshot = ArchiveSnapshot {
+            bytes: gzip(&ustar(&entries)),
+        };
+        let extracted = snapshot
+            .extract_cli_tar_gz("package", "tool", &materials, owned.path())
+            .unwrap();
+        for (name, bytes) in materials {
+            assert_eq!(fs::read(extracted.root().join(name)).unwrap(), bytes);
+        }
+        assert_eq!(
+            fs::read(extracted.root().join("tool")).unwrap(),
+            payloads[0]
+        );
+        use std::os::unix::fs::PermissionsExt;
+        for (path, mode) in [
+            (extracted.root().to_owned(), 0o755),
+            (extracted.root().parent().unwrap().to_owned(), 0o700),
+            (extracted.root().join("tool"), 0o755),
+            (extracted.root().join("LICENSE"), 0o644),
+            (extracted.root().join("licenses/rust"), 0o755),
+        ] {
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                mode
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn cli_tar_rejects_missing_extra_and_changed_materials() {
+        let owned = tempfile::tempdir().unwrap();
+        let materials = synthetic_materials();
+        for extra in [false, true] {
+            let mut packaged = materials.clone();
+            if extra {
+                packaged.insert("unexpected".into(), b"owned extra".to_vec());
+            } else {
+                packaged.remove("licenses/rust/COPYRIGHT-library.html");
+            }
+            let mut entries: Vec<_> = packaged
+                .iter()
+                .map(|(name, bytes)| (format!("package/{name}"), bytes.clone()))
+                .collect();
+            entries.push((
+                "package/tool".into(),
+                b"owned executable fixture, not invoked".to_vec(),
+            ));
+            let borrowed: Vec<_> = entries
+                .iter()
+                .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+                .collect();
+            let snapshot = ArchiveSnapshot {
+                bytes: gzip(&ustar(&borrowed)),
+            };
+            assert!(
+                snapshot
+                    .extract_cli_tar_gz("package", "tool", &materials, owned.path())
+                    .is_err()
+            );
+            assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 0);
+        }
+        let mut changed = materials.clone();
+        changed.insert("LICENSE".into(), b"changed owned legal fixture".to_vec());
+        let mut entries: Vec<_> = changed
+            .iter()
+            .map(|(name, bytes)| (format!("package/{name}"), bytes.clone()))
+            .collect();
+        entries.push((
+            "package/tool".into(),
+            b"owned executable fixture, not invoked".to_vec(),
+        ));
+        let borrowed: Vec<_> = entries
+            .iter()
+            .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+            .collect();
+        let snapshot = ArchiveSnapshot {
+            bytes: gzip(&ustar(&borrowed)),
+        };
+        assert!(
+            snapshot
+                .extract_cli_tar_gz("package", "tool", &materials, owned.path())
+                .is_err()
+        );
+        assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_tar_extraction_requires_protected_acl_evidence() {
+        let owned = tempfile::tempdir().unwrap();
+        let materials = synthetic_materials();
+        let mut entries: Vec<_> = materials
+            .iter()
+            .map(|(name, bytes)| (format!("package/{name}"), bytes.clone()))
+            .collect();
+        entries.push((
+            "package/tool".into(),
+            b"owned executable fixture, not invoked".to_vec(),
+        ));
+        let borrowed: Vec<_> = entries
+            .iter()
+            .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+            .collect();
+        let snapshot = ArchiveSnapshot {
+            bytes: gzip(&ustar(&borrowed)),
+        };
+        assert_eq!(
+            snapshot
+                .extract_cli_tar_gz("package", "tool", &materials, owned.path())
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::Unsupported
+        );
+        assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 0);
+    }
+
     #[test]
     #[cfg(unix)]
     fn immutable_cli_snapshot_extracts_exact_owned_materials_and_modes() {
         let owned = tempfile::tempdir().unwrap();
         let materials = synthetic_materials();
         let path = owned.path().join("source.zip");
-        fs::write(&path, synthetic_cli(&materials)).unwrap();
+        fs::write(&path, synthetic_cli_zip(&materials)).unwrap();
         let snapshot = ArchiveSnapshot::read(&path).unwrap();
         fs::write(&path, b"changed owned archive after snapshot").unwrap();
         let extracted = snapshot
@@ -649,7 +1526,7 @@ mod tests {
         let mut missing = materials.clone();
         missing.remove("licenses/rust/COPYRIGHT-library.html");
         let snapshot = ArchiveSnapshot {
-            bytes: synthetic_cli(&missing),
+            bytes: synthetic_cli_zip(&missing),
         };
         assert!(
             snapshot
@@ -679,7 +1556,7 @@ mod tests {
         fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
         let materials = synthetic_materials();
         let snapshot = ArchiveSnapshot {
-            bytes: synthetic_cli(&materials),
+            bytes: synthetic_cli_zip(&materials),
         };
         let result = snapshot.extract_cli_zip("package", "tool", &materials, &parent);
         fs::set_permissions(&upper, fs::Permissions::from_mode(0o700)).unwrap();
@@ -691,7 +1568,7 @@ mod tests {
     #[cfg(unix)]
     fn crc_and_material_byte_changes_fail_real_readback() {
         let materials = synthetic_materials();
-        let mut bytes = synthetic_cli(&materials);
+        let mut bytes = synthetic_cli_zip(&materials);
         let name_length = usize::from(short(&bytes, 26));
         bytes[30 + name_length] ^= 1; // Change stored payload without updating its CRC.
         let owned = tempfile::tempdir().unwrap();
@@ -708,7 +1585,7 @@ mod tests {
             b"different owned synthetic material".to_vec(),
         );
         let snapshot = ArchiveSnapshot {
-            bytes: synthetic_cli(&different),
+            bytes: synthetic_cli_zip(&different),
         };
         assert!(
             snapshot
@@ -724,7 +1601,7 @@ mod tests {
         let owned = tempfile::tempdir().unwrap();
         let materials = synthetic_materials();
         let snapshot = ArchiveSnapshot {
-            bytes: synthetic_cli(&materials),
+            bytes: synthetic_cli_zip(&materials),
         };
         let result = snapshot.extract_cli_zip("package", "tool", &materials, owned.path());
         assert_eq!(result.err().unwrap().kind(), io::ErrorKind::Unsupported);

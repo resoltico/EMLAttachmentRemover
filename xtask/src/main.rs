@@ -1,6 +1,8 @@
 //! Rust-only repository verification and distribution commands.
 #![forbid(unsafe_code)]
+mod archive_verify;
 mod campaign;
+mod cli_build;
 mod distribution;
 mod fuzz;
 #[cfg(target_os = "macos")]
@@ -14,7 +16,10 @@ mod macos_icon;
 #[cfg(target_os = "macos")]
 mod macos_process;
 mod mutants;
+mod native_host;
 mod notices;
+mod qualify;
+mod smoke;
 use clap::{Parser, Subcommand};
 use std::{
     error::Error,
@@ -37,6 +42,34 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Build and verify one native CLI archive; remaining qualification is separate.
+    BuildCliArchive {
+        #[arg(long)]
+        target: String,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Exercise an owned native CLI and real negative controls; no archive verdict.
+    CliSmokeTests {
+        #[arg(long)]
+        executable: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Run native release/build/archive checks; unfinished required gates fail.
+    Qualify {
+        #[arg(long)]
+        target: String,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Inspect and exercise extracted native archive bytes; missing gates fail.
+    VerifyArchive {
+        #[arg(long)]
+        archive: PathBuf,
+        #[arg(long)]
+        target: String,
+    },
     /// Generate or check complete target legal materials against reviewed inputs.
     Notices {
         #[arg(long, conflicts_with = "check", required_unless_present = "check")]
@@ -112,6 +145,45 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::BuildCliArchive { target, out } => {
+                initialize_controller(&root)?;
+                std::fs::create_dir(&out)?;
+                let out = out.canonicalize()?;
+                let cli = cli_build::build(&root, &target, &out.join("cli-build"))?;
+                let materials = notices::checked_target(&root, cli.platform())?;
+                let archive = qualify::staged_cli(&root, &cli, &materials, &out)?;
+                std::fs::write(
+                    out.join("cli-result.json"),
+                    serde_json::to_vec_pretty(
+                        &serde_json::json!({"archive":archive,"scope":"native CLI build and archive readback only; full qualification remains separate"}),
+                    )?,
+                )?;
+                Ok(())
+            }
+            Task::CliSmokeTests { executable, out } => {
+                initialize_controller(&root)?;
+                std::fs::create_dir(&out)?;
+                let out = out.canonicalize()?;
+                let owned = xtask::archive::create_artifact_directory(&out)?;
+                let result = smoke::run(
+                    &root,
+                    &executable.canonicalize()?,
+                    "remove-eml-attachments",
+                    env!("CARGO_PKG_VERSION"),
+                    owned.path(),
+                    &out.join("behavior"),
+                )?;
+                std::fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+                Ok(())
+            }
+            Task::Qualify { target, out } => {
+                initialize_controller(&root)?;
+                qualify::run(&root, &target, &out)
+            }
+            Task::VerifyArchive { archive, target } => {
+                initialize_controller(&root)?;
+                archive_verify::run(&root, &archive, &target)
+            }
             Task::Notices { write, check: _ } => {
                 initialize_controller(&root)?;
                 notices::run(&root, write)

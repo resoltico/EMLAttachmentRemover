@@ -1,6 +1,7 @@
 // Native GUI tooling only. This is not a product automation mode.
 import AppKit
 import ApplicationServices
+import CrashEvidence
 import Darwin
 import Foundation
 
@@ -123,6 +124,11 @@ private enum GUIFailure: Error {
 }
 
 @main private struct GUIIntegration {
+  private struct MainImage: Decodable {
+    let uuid: UUID
+    let architecture: String
+    let executable: String
+  }
   @MainActor static func main() async {
     let evidence = Evidence()
     do {
@@ -139,7 +145,7 @@ private enum GUIFailure: Error {
 
   @MainActor private static func run(evidence: Evidence) async throws {
     let began = ContinuousClock.now
-    guard CommandLine.arguments.count == 5,
+    guard CommandLine.arguments.count == 6,
       let seconds = UInt64(CommandLine.arguments[4]), (30...120).contains(seconds)
     else {
       throw GUIFailure.unavailable(
@@ -160,6 +166,12 @@ private enum GUIFailure: Error {
     let appURL = URL(filePath: CommandLine.arguments[1], directoryHint: .isDirectory)
     let repository = URL(filePath: CommandLine.arguments[2], directoryHint: .isDirectory)
     let owned = URL(filePath: CommandLine.arguments[3], directoryHint: .isDirectory)
+    let evidenceDirectory = URL(filePath: CommandLine.arguments[5], directoryHint: .isDirectory)
+    let expectationURL = evidenceDirectory.appending(path: "expected-main-image.json")
+    guard (try expectationURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 16_384
+    else { throw GUIFailure.unavailable("Expected main-image identity is not bounded") }
+    let expectedImage = try JSONDecoder().decode(
+      MainImage.self, from: Data(contentsOf: expectationURL))
     let temporaryRoot = URL(filePath: temporary, directoryHint: .isDirectory)
       .resolvingSymlinksInPath().standardizedFileURL
     let actualOwned = owned.resolvingSymlinksInPath().standardizedFileURL
@@ -180,12 +192,14 @@ private enum GUIFailure: Error {
     var application: NSRunningApplication?
     var helperSettlementProven = false
     var fileOpenSubmitted = false
+    var launchIdentity: OwnedLaunch?
     var failure: Error?
     do {
       let configuration = NSWorkspace.OpenConfiguration()
       configuration.createsNewApplicationInstance = true
       configuration.arguments = ["-copyDestinationBytes", ""]
       try action.check()
+      let submittedAt = Date()
       NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) {
         result, error in
         Task { @MainActor in
@@ -207,6 +221,20 @@ private enum GUIFailure: Error {
         throw GUIFailure.unexpectedApplication("initial_receipt_identity")
       }
       application = launched
+      let receivedAt = Date()
+      if !launched.isTerminated, let executable = launched.executableURL,
+        executable.standardizedFileURL.path == expectedImage.executable,
+        let launchDate = launched.launchDate,
+        launchDate >= submittedAt, launchDate <= receivedAt
+      {
+        launchIdentity = OwnedLaunch(
+          pid: Int(launched.processIdentifier), executablePath: expectedImage.executable,
+          imageUUID: expectedImage.uuid, architecture: expectedImage.architecture,
+          bundleIdentifier: "io.github.resoltico.emlattachmentremover", launchDate: launchDate,
+          submittedAt: submittedAt, receivedAt: receivedAt)
+      }
+      evidence.record(
+        "GUI launch-instance crash-attribution snapshot available=\(launchIdentity != nil)")
       evidence.record("GUI phase: initial receipt identity matched")
       let ax = try Accessibility(launched, evidence: evidence)
       while true {
@@ -321,6 +349,8 @@ private enum GUIFailure: Error {
       evidence.record("GUI guard: before_cleanup terminated=true")
       failure = GUIFailure.unexpectedApplication("terminated_before_cleanup")
     }
+    let unexpectedStartupEnd =
+      !fileOpenSubmitted && application?.isTerminated == true ? Date() : nil
     let normalCleanupEnd = min(cleanup.end, ContinuousClock.now.advanced(by: .seconds(15)))
     evidence.record(
       "GUI phase: cleanup start receiptClosureKnown=\(receiptClosureKnown) ownedCount=\(ownedApplications.count) helperSettlementProven=\(helperSettlementProven)"
@@ -356,6 +386,18 @@ private enum GUIFailure: Error {
     evidence.record(
       "GUI phase: cleanup observation receiptClosureKnown=\(receiptClosureKnown) ownedCount=\(ownedApplications.count) allTerminated=\(allTerminated) helperSettlementProven=\(helperSettlementProven)"
     )
+    if let launchIdentity, let observedEnd = unexpectedStartupEnd {
+      do {
+        let observation = try await collectStartupReport(
+          launch: launchIdentity, observedEnd: observedEnd,
+          evidenceDirectory: evidenceDirectory,
+          deadline: min(cleanup.end, ContinuousClock.now.advanced(by: .seconds(2))))
+        evidence.record("GUI owned startup report: " + observation)
+      } catch {
+        evidence.record(
+          "GUI owned startup report unobserved: collection failed; original failure retained")
+      }
+    }
     guard receiptClosureKnown, !ownedApplications.isEmpty,
       allTerminated, helperSettlementProven
     else {

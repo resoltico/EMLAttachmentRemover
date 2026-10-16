@@ -12,6 +12,9 @@ let package = Package(
     .target(name: "RunModel"),
     .executableTarget(name: "EMLAttachmentRemover", dependencies: ["RunModel"]),
     .testTarget(name: "RunModelTests", dependencies: ["RunModel", "EMLAttachmentRemover"]),
+    .target(name: "CrashEvidence", path: "Tests/CrashEvidence"),
+    .testTarget(
+      name: "CrashEvidenceTests", dependencies: ["CrashEvidence"], path: "Tests/CrashEvidenceTests"),
   ],
   swiftLanguageModes: [.v6]
 )

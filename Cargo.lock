@@ -923,6 +923,7 @@ dependencies = [
 name = "xtask"
 version = "6.0.0"
 dependencies = [
+ "base64",
  "clap",
  "ctrlc",
  "eml-fs",

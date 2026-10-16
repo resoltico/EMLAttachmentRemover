@@ -107,6 +107,27 @@ impl Controller {
             Err("Owned Unix-session verification control is unavailable on this host".into())
         }
     }
+    /// Preserve stdout at `log` and stderr at `log.with_extension("stderr")`,
+    /// returning the actual status even when nonzero. Callers must check timing,
+    /// cancellation, survivors and cleanup independently of an expected exit.
+    /// Use fresh disjoint log paths. This API does not cap streaming byte counts;
+    /// callers must bound document lengths before reading/parsing the files.
+    pub fn run_separate_output(
+        &self,
+        command: Command,
+        log: &Path,
+        deadline: Duration,
+    ) -> Result<ProcessResult> {
+        #[cfg(unix)]
+        {
+            unix::run(self, command, log, deadline, true)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (command, log, deadline);
+            Err("Owned Unix-session verification control is unavailable on this host".into())
+        }
+    }
     /// Capture a bounded stdout document through the same lifetime controller.
     pub fn capture(&self, command: &mut Command) -> Result<Vec<u8>> {
         let parent = self.root.join("target/process-control");
@@ -126,16 +147,7 @@ impl Controller {
                 owned.env_remove(key);
             }
         }
-        #[cfg(unix)]
-        let result = unix::run(
-            self,
-            owned,
-            &directory.join("output.log"),
-            Duration::from_secs(10 * 60),
-            true,
-        )?;
-        #[cfg(not(unix))]
-        let result = self.run(
+        let result = self.run_separate_output(
             owned,
             &directory.join("output.log"),
             Duration::from_secs(10 * 60),

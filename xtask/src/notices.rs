@@ -886,7 +886,7 @@ fn replace_tree(
     Ok(())
 }
 
-pub(crate) fn run(root: &Path, write: bool) -> Result<()> {
+fn generated_materials(root: &Path) -> Result<(PathBuf, Files)> {
     campaign::require_stock_topology(root)?;
     let tool = campaign::tool_version(root, "about", "cargo_about")?;
     let root = root.canonicalize()?;
@@ -966,6 +966,11 @@ pub(crate) fn run(root: &Path, write: bool) -> Result<()> {
     add_directories(&mut all);
     let manifest = output_manifest(&all)?;
     all.insert(marker.into(), manifest);
+    Ok((root, all))
+}
+
+pub(crate) fn run(root: &Path, write: bool) -> Result<()> {
+    let (root, all) = generated_materials(root)?;
     let output = root.join("notices");
     if !write {
         if !output.try_exists()? {
@@ -979,6 +984,71 @@ pub(crate) fn run(root: &Path, write: bool) -> Result<()> {
     let admitted = admitted_output(&output)?;
     replace_tree(&output, &all, admitted.as_ref(), |path| {
         matches_tree(path, &all)
+    })
+}
+
+/// Regenerate and verify the complete tracked tree before returning one target's
+/// fresh legal bytes. The caller never trusts an archive-supplied inventory.
+pub(crate) struct CheckedTargetMaterials {
+    files: Files,
+    target: String,
+    platform: String,
+    version: String,
+}
+impl CheckedTargetMaterials {
+    pub fn files(&self) -> &Files {
+        &self.files
+    }
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+    pub fn platform(&self) -> &str {
+        &self.platform
+    }
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+}
+
+pub(crate) fn checked_target(root: &Path, platform: &str) -> Result<CheckedTargetMaterials> {
+    if relative(platform)?.components().count() != 1 {
+        return Err("Invalid notice platform component".into());
+    }
+    let (root, all) = generated_materials(root)?;
+    matches_tree(&root.join("notices"), &all)?;
+    let prefix = format!("{platform}/");
+    let selected: Files = all
+        .into_iter()
+        .filter_map(|(path, bytes)| {
+            if path.ends_with('/') {
+                return None;
+            }
+            path.strip_prefix(&prefix)
+                .map(|relative| (relative.to_owned(), bytes))
+        })
+        .collect();
+    if selected.is_empty() {
+        return Err("No generated materials for the requested native platform".into());
+    }
+    let identity: Value = serde_json::from_slice(
+        selected
+            .get("licenses/materials.json")
+            .ok_or("Missing checked target material identity")?,
+    )?;
+    if identity["platform"] != platform {
+        return Err("Checked material platform mismatch".into());
+    }
+    Ok(CheckedTargetMaterials {
+        target: identity["target"]
+            .as_str()
+            .ok_or("Missing checked material target")?
+            .to_owned(),
+        version: identity["version"]
+            .as_str()
+            .ok_or("Missing checked material version")?
+            .to_owned(),
+        platform: platform.to_owned(),
+        files: selected,
     })
 }
 
