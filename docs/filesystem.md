@@ -233,6 +233,16 @@ References: [unlink/unlinkat](https://man7.org/linux/man-pages/man2/unlink.2.htm
 
 ## Selection spelling, links and overlap
 
+POSIX selected expressions can be observed or opened relative to an already held
+working directory through `observe_selected` and `open_selected`. These use
+`fstatat`/`openat`, follow explicit selected links and leave symlink/dot-dot
+resolution to the kernel. An absolute expression keeps its ordinary native
+meaning. Relative operations remain anchored to the descriptor if the cwd's
+requested address moves; the retained absolute spelling still describes the
+request and does not falsely verify that address. Walked child operations retain
+their separate one-component/no-follow requirements. These primitives perform
+no filesystem writes, process cwd changes or whole-run admission decisions.
+
 Windows selected-directory observation currently supports capture and names-only
 enumeration. `BoundDirectory` retains an ordinary disk directory handle and usable
 full128-bit identity. Directory access uses `OPEN_EXISTING`, list/read-attributes,

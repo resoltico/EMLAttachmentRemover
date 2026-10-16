@@ -532,3 +532,42 @@ iterator loop) were corrected without suppression. No Windows execution of this
 new slice is claimed until the next exact-head native run. Existing creation
 protection remains failed and actually enabled. No writable Windows backend,
 recursive collector, archive or GUI gate is closed by names enumeration.
+
+At exact head `a14f0e50641e745462e8dd9ca46575a0fede28d0`,
+[Windows run38833711801](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38833711801)
+passed all eight inventory cases individually on both native GNU LLVM CPUs.
+The non-gate library suite passed21, failed/ignored0, filtered1; its child-path
+reexecution is a repeat, not another distinct test. The deliberately invalid
+regular-file directory query returned native5 on each CPU, observed rather than
+assumed by the test. The actual creation gate still failed0passed/1failed/
+0ignored/21filtered on both; only those two gate steps failed. Request9,
+diagnostic3, decoder16, unit15/source5, tools12, planner and naming remained
+successful. [Unix run38833711835](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38833711835)
+passed all seven jobs, including filesystem27 on both Macs/23 on both Linux CPUs,
+real other-UID namespace checks and the two serial process suites18. All four
+Unix unit15/source6 sets passed without filters/ignores. Logs are retained in
+owned target scratch. This proves the tested names-only slice, not Windows
+root-chain/child-descent admission or publication. Default-parallel process-test
+failure recorded earlier remains unresolved by the successful serial suites.
+
+## POSIX selected expressions anchored to a held cwd
+
+The next read-only admission prerequisite adds explicit selected-expression
+observation/open relative to an existing cwd descriptor. Common metadata
+classification and directory construction are reused. The separate skeptical
+pass checked moved cwd addresses, absolute expressions, symlink/dot-dot resolving
+to a different physical parent, preserved requested spelling, initial regular/
+special metadata, failed empty/missing/NUL expressions and unchanged walked-child
+no-follow policy. Three real owned-fixture tests cover those cases, including
+native names and an unwritten FIFO. Local macOS filesystem30 and all-target
+Clippy passed, zero failures/ignores/filters; doctests0. Two initial fixture
+compile attempts used Rustix FIFO functions unavailable on macOS and were
+corrected to the project's existing owned `mkfifo` convention. The first full
+run then passed29/failed1 when APFS refused invalid-UTF8 fixture creation with
+EILSEQ92 before product observation. The fixture now explicitly records that
+macOS boundary and uses a representable name for its other checks, without
+claiming non-Unicode round-trip evidence on that volume. Linux still requires
+the actual non-Unicode creation/observation. Native four-platform execution of
+the new cases is pending the next exact-head run. No cwd mutation or writable
+resource is used by the product primitives. Filesystem discovery/core run and
+the Windows captured-base integration remain unimplemented by this slice.

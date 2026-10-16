@@ -179,17 +179,27 @@ impl BoundDirectory {
             OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NONBLOCK | OFlags::CLOEXEC,
             Mode::empty(),
         )?;
+        Self::from_selected_fd(fd, path.to_owned())
+    }
+    /// Bind an explicit selected directory relative to this held directory.
+    /// Absolute expressions retain kernel semantics; relative expressions use
+    /// this descriptor even if its requested address has since moved. Unlike a
+    /// walked child, an explicit selection may follow links and contain dot/dot-dot.
+    pub fn open_selected(&self, expression: &Path) -> io::Result<Self> {
+        let fd = fs::openat(
+            self,
+            expression,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+        )?;
+        Self::from_selected_fd(fd, self.path.join(expression))
+    }
+    fn from_selected_fd(fd: OwnedFd, path: PathBuf) -> io::Result<Self> {
         let stat = fs::fstat(&fd)?;
-        if stat.st_ino == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "The filesystem did not provide a usable directory identity",
-            ));
-        }
         let identity = identity(&stat)?;
         Ok(Self {
             fd: Arc::new(fd),
-            path: path.to_owned(),
+            path,
             identity,
             uid: rustix::process::geteuid().as_raw(),
         })
