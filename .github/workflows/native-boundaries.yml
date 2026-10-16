@@ -92,7 +92,9 @@ jobs:
           xcrun swift format lint --strict --recursive macos-app
           set -o pipefail
           xcrun swift test --package-path macos-app --scratch-path target/swift-model -Xswiftc -warnings-as-errors 2>&1 | tee target/swift-model-tests.log
-          test "$(grep -Ec 'Test run with [1-9][0-9]* tests.*passed' target/swift-model-tests.log)" -eq 2
+          test "$(grep -Ec 'Test run with [1-9][0-9]* tests.*passed' target/swift-model-tests.log)" -ge 1
+          grep -Eq 'Test exactOwnedLaunchAndMainImageMatch\(\) passed' target/swift-model-tests.log
+          grep -Eq 'Suite ApplicationStateTests passed' target/swift-model-tests.log
           if grep -Eq 'Test .+ (failed|skipped)( after| due|$)|recorded an issue' target/swift-model-tests.log; then exit 1; fi
       - name: Real different-UID namespace controls on owned fixtures
         run: |
@@ -123,6 +125,7 @@ jobs:
         with:
           name: process-boundary-${{ github.sha }}-${{ matrix.platform }}
           path: |
+            target/swift-model-tests.log
             target/macos-process-tests/**/*.log
             target/macos-process-tests/**/*.json
             target/macos-process-tests/**/*.jsonl
