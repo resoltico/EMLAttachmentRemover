@@ -93,3 +93,17 @@ jobs:
           victim_uid=$(id -u)
           victim_gid=$(id -g)
           sudo -n "$PWD/target/debug/examples/namespace-credentials" "$victim_uid" "$victim_gid"
+      - name: Actual native helper process, pipe and ownership integration
+        if: ${{ runner.os == 'macOS' }}
+        run: cargo xtask macos-process-tests
+      - name: Retain native process fixture evidence
+        if: ${{ always() && runner.os == 'macOS' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: process-boundary-${{ github.sha }}-${{ matrix.platform }}
+          path: |
+            target/macos-process-tests/**/*.log
+            target/macos-process-tests/**/*.json
+            target/macos-process-tests/**/*.jsonl
+            target/process-control/**/output.*
+          if-no-files-found: error

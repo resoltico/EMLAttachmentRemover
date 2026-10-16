@@ -269,15 +269,17 @@ fn config_hooks(value: &toml::Value) -> bool {
         .get("env")
         .and_then(toml::Value::as_table)
         .is_some_and(|table| {
-            table
-                .iter()
-                .any(|(key, value)| hook_name(key) && value.as_str() != Some(""))
+            table.iter().any(|(key, value)| {
+                (hook_name(key)
+                    || matches!(key.as_str(), "SDKROOT" | "TOOLCHAINS" | "DEVELOPER_DIR"))
+                    && value.as_str() != Some("")
+            })
         })
 }
-fn require_stock_topology(root: &Path) -> Result<()> {
+pub(crate) fn require_stock_topology(root: &Path) -> Result<()> {
     for (key, value) in std::env::vars_os() {
         if key.to_str().is_some_and(hook_name) && !value.is_empty() {
-            return Err("Compiler/runner/wrapper overrides require explicit topology review before a bounded campaign".into());
+            return Err("Compiler/runner/wrapper overrides require explicit topology review before bounded verification".into());
         }
     }
     for file in effective_configs(root) {
@@ -304,6 +306,9 @@ mod topology_tests {
             "[target.host]\nrustflags=['-C','linker=/wrapper']",
             "[build]\nrustflags=['-C','linker=/wrapper']",
             "[env]\nRUSTC_WRAPPER='cache'",
+            "[env]\nSDKROOT={value='/owned-sdk',force=true}",
+            "[env]\nTOOLCHAINS='owned-toolchain'",
+            "[env]\nDEVELOPER_DIR='/owned-xcode'",
         ] {
             assert!(config_hooks(&toml::from_str(config).unwrap()));
         }

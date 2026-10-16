@@ -15,6 +15,11 @@ public struct RunReport: Sendable {
 
   public init(expectedVersion: String) { self.expectedVersion = expectedVersion }
 
+  /// A framing/decoding failure is terminal too; earlier accepted items survive.
+  public mutating func invalidate(_ reason: ProtocolFailure) {
+    if failure == nil { failure = reason }
+  }
+
   public mutating func accept(_ event: ProtocolEvent) throws {
     guard failure == nil else { throw failure! }
     do {

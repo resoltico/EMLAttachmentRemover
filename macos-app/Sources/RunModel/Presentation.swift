@@ -60,17 +60,19 @@ extension RunReport {
   /// Explicit export only. Contains structured observations and authored protocol
   /// diagnostics, never source/copy message bytes or retained raw stdout frames.
   public func technicalReport() throws -> Data {
-    struct Record: Encodable {
-      let start: StartEvent?
-      let items: [ItemEvent]
-      let summary: SummaryEvent?
-      let protocolFailure: String?
-    }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    return try encoder.encode(
-      Record(
-        start: start, items: items, summary: summary,
-        protocolFailure: failure.map(String.init(describing:))))
+    return try encoder.encode(self)
+  }
+}
+
+extension RunReport: Encodable {
+  private enum CodingKeys: String, CodingKey { case start, items, summary, protocolFailure }
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(start, forKey: .start)
+    try container.encode(items, forKey: .items)
+    try container.encode(summary, forKey: .summary)
+    try container.encode(failure.map(String.init(describing:)), forKey: .protocolFailure)
   }
 }

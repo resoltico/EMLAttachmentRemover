@@ -669,6 +669,14 @@ ancestor. These syntax controls do not qualify a live SMB share.
 
 This amendment preserves the ancestry policy and supplies no continuous metadata
 immutability or replacement for the still-failed old creation gate. Both-CPU native
-execution of these narrow profiles/owner passed at 0fe6b9f. The private Core
-publication/resync consumer is now implemented in source; its native qualification
-and complete confinement evidence remain pending.
+execution of these narrow profiles/owner passed at 0fe6b9f. The Core common
+publication/resync consumer passed bounded ordinary native execution on both
+Windows CPUs at 6e7bb6a and retained that scope at 6a59cbb
+([run38919158141](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38919158141)):
+Core39/execution10 and the other collection/destination/existing/source suites,
+then the ordinary CLI transport/executable cases. Ordinary final type/content/
+address and synchronization positives are real evidence. Changed-boundary
+post-edge negatives, forced-stop completeness, final inherited-DACL observation,
+concurrent publication and revised creation confinement remain separate missing
+acceptance evidence. In particular, the old metadata-immutability gate remains
+FAILED; these passing consumers do not replace that required property proof.

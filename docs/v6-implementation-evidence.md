@@ -1833,3 +1833,110 @@ Native Mac CI will verify the configured actual Xcode before format/model tests;
 this is not yet pinned-Xcode/native2 evidence. SwiftUI screens, owned Foundation
 helper supervision, bridge, signed app, archives and GUI qualification remain
 unfinished; full WP acceptance is not claimed.
+
+At exact `6a59cbb3e9c243f2b55185ca234c60848e883180`,
+[Unix run38919158021](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38919158021)
+passed all seven jobs. Both native Macs checked selected Xcode26.3/build17C529,
+actual Swift6.2.4, strict formatting and warnings-as-errors; all19 named Swift
+tests and22 shared parameter cases passed once per CPU without skipped/issues.
+The empty XCTest wrapper was not counted as execution evidence. Four filesystem
+hosts retained all49 CLI names and prior Core/filesystem/credential tests; both
+probes passed xtask16/process18. All72 Rust summaries were clean, including four
+expected empty filesystem doctests.
+[Windows run38919158141](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38919158141)
+passed applicable CLI7/4/9/4/6/16 and earlier Core suites on both native CPUs;
+Windows xtask13 includes the new Xcode-input guard (Unix-only tests explain the
+platform count). FS49non-gate/1filter passed, old gate0passed/1failed/49filtered
+remained the sole failure; overall Windows FAILED. Independent exact-head/raw
+audit closed model native2 and this bounded Rust scope. Own logs retained at
+target/6a59cbb-{unix,windows}-ci.log. No supervisor/app/archive qualification follows.
+
+## Native helper ownership and ordinary process integration
+
+The owner answered the hard-quit mechanism question with “qa and proceed per your
+best judgment.” QA selected a narrow native spawn/signal/reap owner as the minimum
+exception to the design pack's Foundation Process mechanism, preserving real
+SIGKILL ownership. A separate design/challenge pass rejected snapshot-based raw
+PID sends and unnecessary waitid/WNOWAIT machinery. HelperChild instead retains
+one shared Mutex PID slot from posix_spawn, with actor-local WNOHANG terminal
+reap/revocation and no competing/background reaper. Spawn checks current default
+SIGCHLD; stable disposition/exclusive reaping remain app-wide requirements.
+See macos-process-ownership.md for scope and remaining app integration.
+
+Dedicated pipe threads and bounded acknowledged snapshots keep blocking work off
+MainActor/supervisor. Transport faults are phase-scoped and acknowledged before
+advance, preserve the first fault, notify Stop before presentation backpressure
+and drain without further decoding. One cooperative attempt prevents accidental
+automatic force from multiple faults. A request-scoped monotonic Mutex token
+prevents admission/spawn scheduling from losing Stop/Force intent; beginFeeding
+records that input may have been sent. Nil-target attempts do not consume replay.
+Exact spawn-inflight execution is source-reviewed, not claimed as a deterministic
+native test; no readiness hooks or copied state machine were added.
+
+The private fixture bundle compiles actual production owner/control/supervisor
+and RunModel and contains the actual same-CPU CLI. Its driver uses real MainActor
+acknowledgements, independent MIME golden bytes and the existing developer-only
+Controller for deadlines/descendant cleanup. No product URL override, shell/PATH
+fallback, owner defaults, AppKit/GUI launch or alternative processing engine is
+used. Local installed Xcode27/Swift6.4/native ARM/macOS27.0(build26A428) results:
+
+- First ordinary run FAILED before copy work; improved diagnostics reproduced
+  native launch9/EBADF with no events/copy. Both Controller teardowns confirmed
+  cleanup/survivors0. Actual FileHandle.nullDevice.fileDescriptor was-1; replaced
+  that synthetic handle with an owned checked-EOF pipe. Failure logs retained in
+  target/process-integration.NiAmJW/{ordinary,diagnostic}.log.
+- Subsequent pipe/extended/final ordinary fixtures PASSED. Actual Created and
+  UpToDate matched1028input/513golden/507removed entity bytes and515savings, with
+  qualified receipts, complete EOF/exit and three acknowledged snapshots each.
+  Pre-stream output refusal retained source/copy and no new copy/Core events.
+- Extended/current cases passed real owned SIGKILL9/non-normal status, shared
+  authority revocation and empty EOF before feeding; pre-admission Stop/Force
+  preserved no-work intent; NEL/U2028/LF/ESC names crossed native request/output
+  and actual copies matched goldens. Expected native bytes use an independent
+  root filesystem representation plus slash/literal UTF8, not the adapter twice.
+  Failure-path fixture cleanup retains the first fault and settles its child.
+- Create-reader controls use real owned pipes: matching Create is accepted, a
+  valid generic planned stream is rejected before accepted Start and drained,
+  with fail notification before MainActor acknowledgement. Generic model dry-run
+  fixtures remain valid. These are wire controls, not native Core failure claims.
+- Exact version-mismatch and missing-helper variants passed specific failure,
+  no stream/copy and source preservation. Their Controller receipts were exit0,
+  no timeout/cancellation, cleanuptrue/survivors0 (1.692s/1.665s). Final ordinary
+  receipt was0.618s with the same clean lifetime observations. Raw logs/control
+  records remain in that owned fixture directory.
+
+These additional local results do not qualify pinned-Xcode/native2 runtime,
+actual post-feed Stop/Force, quit, GUI, arbitrary invalid-UTF8 filesystem names or
+shipping artifacts. The Rust macos-process-tests command now derives all facts
+from distribution/tools authorities, rejects unreviewed effective Cargo hooks,
+selects/checks pinned Xcode/default Swift/macOS SDK, builds locked native CLI from
+exact Cargo artifacts, checks actual thin Mach CPU/deployment and executes these
+bounded cases. object0.39.1/read/std is the pack-selected tooling dependency; the
+lock delta adds only object plus its existing memchr edge, no upgrades/C inputs.
+The command also typechecks every current app component source and retains logs
+on failure. Native CI invokes it on both Macs and always uploads its evidence.
+
+Required local command attempt FAILED its prerequisite: Xcode26.3 absent at the
+specified path. No fallback was used (target/macos-process-local-prerequisite.log,
+target/macos-process-tests/native-Bdd16A/failure.log). Pinned native execution is
+pending dispatch. Local Swift20tests/22cases passed, including invalidation
+retaining earlier Created and explicit unknown-summary export. App component
+typecheck/Swift format, workspace Clippy, xtask19 and actionlint passed.
+
+A broad local workspace run FAILED17/18 process cases at cleanup_complete=false
+in the cross-session rejection control; EPERM rejection/marker succeeded. The
+original response was not retained by that fixture, so cause remains unknown;
+no churn attribution or controller fix is claimed. Original log/directory:
+target/native-process-workspace.log and target/process-tests/.tmpBD4nQO. The
+fixture now records the raw response and settles helper/control before assertions
+or diagnostic-write adjudication. Exact case rerun passed1/17filtered; full
+process rerun passed18/0unfiltered(23.71s). A stable full workspace recheck passed
+288tests across23positive/five expected empty suites, no failures/ignores/filters,
+including process18(25.74s), target/native-process-workspace-recheck.log. Preserve
+the earlier unexplained reliability failure alongside that new passing run.
+
+New SwiftUI components, corrupt-choice admission blocking, immutable session-only
+argument override policy and frozen report/transport export are source-reviewed;
+actual saved-domain/GUI evidence remains pending. Complete quit, system bridge,
+app entry, full purge, Windows console/confinement and all shipping/GUI gates keep
+full implementation acceptance incomplete. Old Windows creation gate is FAILED.

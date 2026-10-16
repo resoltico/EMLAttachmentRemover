@@ -3,6 +3,27 @@ import Testing
 
 @testable import RunModel
 
+@Test func terminalDecodeFailureRetainsEarlierItemsAndExportsExplicitUnknownSummary() throws {
+  let events = try frames(fixture("created-attachment"))
+  var report = RunReport(expectedVersion: "test-version")
+  for frame in events.prefix(2) {
+    try report.accept(ProtocolEvent.decode(JSONSerialization.data(withJSONObject: frame)))
+  }
+  report.invalidate(.malformedEvent)
+  #expect(throws: ProtocolFailure.malformedEvent) {
+    try report.accept(ProtocolEvent.decode(JSONSerialization.data(withJSONObject: events[2])))
+  }
+  #expect(throws: ProtocolFailure.malformedEvent) { try report.finish(exitCode: 0) }
+  #expect(report.items.count == 1)
+  #expect(report.items[0].status == .created)
+  #expect(report.items[0].savedBytes == 515)
+  #expect(report.summary == nil)
+  let exported = try #require(
+    JSONSerialization.jsonObject(with: report.technicalReport()) as? [String: Any])
+  #expect(exported["summary"] is NSNull)
+  #expect(exported["protocolFailure"] as? String == "malformedEvent")
+}
+
 @Test func presentationUsesSizeDifferenceAndIndependentPublicationEvidence() throws {
   let created = try decode(fixture("created-attachment"), exit: 0)
   #expect(created.items[0].savedBytes == 515)

@@ -3,6 +3,8 @@
 mod campaign;
 mod distribution;
 mod fuzz;
+#[cfg(target_os = "macos")]
+mod macos_process;
 mod mutants;
 use clap::{Parser, Subcommand};
 use std::{
@@ -26,6 +28,8 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Run real native macOS helper/pipe/ownership fixtures with the pinned Xcode.
+    MacosProcessTests,
     /// Print native target policy and expected archive identities; build nothing.
     Distribution,
     /// Run one bounded pure-preparation fuzz campaign with owned corpus storage.
@@ -75,6 +79,17 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::MacosProcessTests => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos_process::run(&root)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    Err("Native macOS is required for these process fixtures".into())
+                }
+            }
             Task::Distribution => distribution::run(&root),
             Task::Fuzz { seconds } => {
                 initialize_controller(&root)?;

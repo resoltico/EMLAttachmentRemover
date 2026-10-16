@@ -322,12 +322,22 @@ fn a_group_in_another_owned_session_is_not_signal_authority() {
     );
     let mut result = String::new();
     reader.read_line(&mut result).unwrap();
+    let recorded = fs::write(root.path().join("raw.control.json"), &result);
+    drop(writer);
+    let helper_status = helper.wait();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&result).unwrap()["cleanup_complete"],
-        true
+        true,
+        "{result}; recording={recorded:?}; helper={helper_status:?}"
     );
-    drop(writer);
-    assert!(helper.wait().unwrap().success());
+    assert!(
+        helper_status.is_ok_and(|status| status.success()),
+        "{result}"
+    );
+    assert!(
+        recorded.is_ok(),
+        "Could not retain received response: {result}; {recorded:?}"
+    );
     assert!(root.path().join("invoked").exists());
 }
 #[test]

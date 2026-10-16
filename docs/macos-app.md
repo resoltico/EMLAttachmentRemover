@@ -1,10 +1,12 @@
 # macOS application implementation
 
-The fresh SwiftPM package currently implements the Foundation RunModel target
-and Swift Testing. The executable SwiftUI screens, process supervisor and narrow
-system bridge remain to be implemented. No old AppKit screen is part of this
-model; existing UI sources remain only until their required knowledge/artwork is
-ported and the full purge is complete.
+The fresh SwiftPM package implements the Foundation RunModel target and Swift
+Testing. SwiftUI selection/run/detail/artwork components and the native helper
+supervisor now exist; app entry, complete quit integration and the narrow system
+bridge remain unfinished. No old AppKit screen is part of these components;
+existing UI sources remain only until their required knowledge/artwork is ported
+and the full purge is complete. See macos-process-ownership.md for the reviewed
+native process mechanism exception and its actual qualification scope.
 
 RunModel decodes exact protocol1 wire keys, including required nullable fields,
 and ignores additive fields. Error codes remain open failure guidance; phases,
@@ -33,10 +35,14 @@ Finder/drop/import ingress still requires native qualification. Relative CLI
 protocol paths remain valid data but cannot become app navigation addresses.
 Display strings never supply operational paths.
 
-The fresh destination preference decoder accepts the String form from either
-argument or saved defaults and performs no defaults I/O. The app must write
-`copyDestinationBytes` only after an actual picker choice. There is no old-key
-reader or migration. Model tests perform no owner-default reads/writes.
+The fresh destination decoder accepts the same String form from argument or
+saved defaults. Presence of copyDestinationBytes in the volatile argument domain
+makes choices session-only, including an explicit empty beside-originals value;
+the UI identifies that policy. Normal launches save only real destination
+choices. Invalid initial values require an explicit folder/Beside originals
+choice before admission and never cause an initialization write or silent output
+redirection. There is no old-key reader or migration. Actual picker/argument and
+saved-domain integration still requires owned native GUI qualification.
 
 Local model checks use the installed Xcode explicitly, without changing
 xcode-select:
@@ -50,3 +56,10 @@ Native Mac CI selects the exact Xcode version/build from xtask/tools.toml throug
 `cargo xtask distribution`, then checks its actual version before model tests on
 each CPU. Model execution is separate from signed-app/bundled-helper, Services,
 Finder, preferences, lifecycle, screenshots and accessibility qualification.
+
+`cargo xtask macos-process-tests` builds and runs owned native process fixtures
+using the pinned Xcode and native Cargo host. It checks actual helper/driver
+Mach-O CPU and deployment minimum, runtime translation, golden bytes, transport
+and owned teardown. It is not signed GUI or shipping-archive qualification. The
+required local command currently fails its prerequisite when Xcode26.3 is absent;
+newer installed Xcode fixture runs are additional evidence only.
