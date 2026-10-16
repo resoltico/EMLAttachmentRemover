@@ -380,30 +380,7 @@ pub(super) struct Creation {
 }
 impl Creation {
     pub(super) fn component_limit(&self) -> io::Result<usize> {
-        let mut maximum = 0;
-        // SAFETY: live retained parent; only the writable DWORD output is requested.
-        if unsafe {
-            GetVolumeInformationByHandleW(
-                self.parent.file.as_raw_handle(),
-                std::ptr::null_mut(),
-                0,
-                std::ptr::null_mut(),
-                &mut maximum,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                0,
-            )
-        } == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
-        if maximum == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Filesystem supplied no usable component limit",
-            ));
-        }
-        Ok(maximum as usize)
+        handle::component_limit(&self.parent.file)
     }
     /// Release without disposition. This never removes a possibly published file.
     pub(super) fn release(self) -> io::Result<()> {

@@ -261,7 +261,30 @@ mod tests {
         let fixture = directory();
         std::fs::write(fixture.path().join("winner.eml"), b"synthetic winner").unwrap();
         let actor = RestrictedToken::enter().unwrap();
-        let (read, write) = writer(fixture.path());
+        let read = BoundDirectory::open(&operation(fixture.path())).unwrap();
+        // Obtain the public planning property before any write capability, and
+        // compare it with an independently issued direct native DWORD query.
+        let maximum = read.name_limit().unwrap();
+        let mut native_maximum = 0;
+        // SAFETY: live read-only directory and one writable DWORD output;
+        // the direct SDK call is independent of the production helper.
+        let queried = unsafe {
+            windows_sys::Win32::Storage::FileSystem::GetVolumeInformationByHandleW(
+                read.file.as_raw_handle(),
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                &mut native_maximum,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        assert_ne!(queried, 0, "{}", io::Error::last_os_error());
+        assert!(native_maximum > 0);
+        assert_eq!(maximum, native_maximum as usize);
+        let write =
+            WritableDirectory::bind_resolved(&operation(fixture.path()), read.identity()).unwrap();
         let winner = read.observe_child(OsStr::new("winner.eml")).unwrap();
         let attempt = write
             .stage_bytes(b"synthetic loser", || Ok(()))
@@ -305,23 +328,10 @@ mod tests {
             );
         }
         let ready = write.stage_bytes(b"bounded synthetic", || Ok(())).unwrap();
-        // Observe the real held volume's WCHAR limit; do not hardcode NTFS255.
-        let (owned, identity, length, sync) = {
-            // This public invalid-name attempt transfers the real staging owner
-            // without making a rename call, for a separate limit-boundary case.
-            let (candidate, _) = ready.publish(OsStr::new("")).into_parts();
-            (
-                candidate.owned,
-                candidate.identity,
-                candidate.length,
-                candidate.sync,
-            )
-        };
-        let maximum = owned.component_limit().unwrap();
+        let identity = ready.identity();
         assert!((1..1_048_576).contains(&maximum));
         let exact = "x".repeat(maximum);
-        let attempt =
-            PublicationCandidate::attempt(owned, identity, length, sync, OsStr::new(&exact));
+        let attempt = ready.publish(OsStr::new(&exact));
         assert_eq!(attempt.state(), PublicationState::Published);
         assert!(attempt.error().is_none());
         let (effect, release) = attempt.into_parts().0.cleanup();

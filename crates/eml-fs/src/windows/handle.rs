@@ -12,6 +12,33 @@ use windows_sys::Win32::{
     Storage::FileSystem::*,
 };
 
+pub(super) fn component_limit(handle: &impl AsHandle) -> io::Result<usize> {
+    let mut maximum = 0;
+    // SAFETY: live borrowed handle; only the writable DWORD output is requested.
+    if unsafe {
+        GetVolumeInformationByHandleW(
+            handle.as_handle().as_raw_handle(),
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            &mut maximum,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            0,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    if maximum == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Filesystem supplied no usable component limit",
+        ));
+    }
+    Ok(maximum as usize)
+}
+
 pub(crate) fn open(path: &Path, access: u32, share: u32, flags: u32) -> io::Result<File> {
     let path = super::path::openable(path)?;
     // SAFETY: validated absolute extended DOS/UNC expression, terminated/live;

@@ -1152,3 +1152,32 @@ and terminal escaping are unchanged. Independent source/API/test/docs QA and loc
 CLI six path/sixteen request tests, native-host and MSVC all-target Clippy, formatting
 and diff checks passed. Native six-platform codec execution remains pending; no
 collector, event/run sizing or split-path filesystem integration claim follows.
+
+At exact `b814ee72f5b748da5ec13c933e7db05a34ad05e6`,
+[Windows run38862917526](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38862917526)
+and [Unix run38862917415](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38862917415)
+executed the split-fact golden once on all six native hosts. Path6/request16 each
+passed0failed/ignored/filtered; independent exact-head/raw QA closed this codec
+checkpoint. Unix all seven jobs succeeded, including prior FS/core/cross-UID/ACL
+boundaries and default process18. Windows FS nongate39 passed each; actual old
+gate0passed/1failed/0ignored/39filtered remained the only failed step per CPU, so
+Windows overall remains failed. Full retained logs: target/b814ee7-windows-ci.log
+and target/b814ee7-unix-ci.log. No collector/native split-path I/O/maximal-event
+qualification follows from a serializer golden.
+
+## Read-only Windows volume name limit
+
+The unchanged positive-DWORD/zero/native-error/WCHAR query now has one private
+handle helper, shared by public BoundDirectory::name_limit and Creation's retained
+parent. Publication keeps its own fresh query. No cache, rights escalation,
+fallback or new FFI is introduced. The existing native boundary test calls the
+read-only getter before constructing a write capability, compares an independently
+issued direct native DWORD, then uses public Ready.publish for exact/max+1,
+retained identity/content and owned cleanup controls. The superseded private-owner
+extraction through an invalid-name attempt is removed.
+
+Independent design/API/source/test review and FS MSVC all-target Clippy/excluded
+native probe all-target checks closed without findings. Local Mac FS30/Clippy,
+formatting and diff checks passed; doctests0. Native runtime for this read-only
+property/public-flow amendment is pending. Metadata availability is not full
+write admission, overlap or confinement qualification; the old failed gate stays.

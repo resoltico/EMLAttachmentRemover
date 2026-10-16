@@ -35,6 +35,11 @@ pub struct BoundDirectory {
     pub(super) identity: Identity,
 }
 impl BoundDirectory {
+    /// Observed maximum filename-component length in WCHARs for the held volume.
+    /// Query failure/zero remains an error; this supplies no write-admission proof.
+    pub fn name_limit(&self) -> io::Result<usize> {
+        handle::component_limit(&self.file)
+    }
     /// Query the held ordinary directory's normalized DOS/UNC name, preserving
     /// native units. This observation is not a pinned ancestor or address receipt;
     /// a later binding must compare its endpoint with this directory's identity.

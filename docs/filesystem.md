@@ -331,6 +331,17 @@ proof of resolution. A separate owned long/unpaired-name case exercises the
 same query. Source/API/test and bounded both-CPU native checks closed at31dd42a. API reference:
 [GetFinalPathNameByHandleW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew).
 
+Windows `BoundDirectory::name_limit` exposes the observed volume component limit
+through its read-only handle before staging. One private handle helper owns the
+unchanged GetVolumeInformationByHandleW query for both this getter and the owned
+creation parent; the edge still queries freshly before allocating/calling.
+Positive DWORDs count WCHARs; native failure/zero remains an error, with no
+Windows cache or guessed255 fallback. The existing boundary test now queries the
+read-only getter before write capability, compares a direct independent SDK
+DWORD, and uses the public staging/rename path for exact/max+1 controls. Source
+review/compile checks are closed; native runtime evidence is pending. Metadata
+availability supplies no write-admission or confinement authority.
+
 The separate Windows `WritableDirectory`/`CreatedDirectory` primitive now performs
 exclusive empty-directory creation from a root-scoped write capability, with
 independent child/parent flush receipts and explicit handle-only empty cleanup.
@@ -387,5 +398,27 @@ Cancellation during metadata-only root observations does not convert those
 observations into known work items.
 Root-admission failure separately retains collection_complete=false and emits
 only explicit-root failures, leaving other known work not_processed. Physical
-negative-overlap proof across mount aliases remains unresolved; neither a
+negative-overlap implementation and qualification remain unfinished; neither a
 filtered walk nor a plain upward inode no-match establishes disjointness.
+
+The reviewed physical-overlap predicate is ordinary-directory reachability from
+each held selected directory in its admitted native traversal context. Selected
+root links follow once; encountered symlinks/reparse entries remain excluded.
+Ordinary mounted views participate, including when selecting a filesystem root.
+A covered underlying storage entry unreachable in that bound namespace is not
+an additional hidden-storage graph to reconstruct. Identical directory objects
+can have different mounted views, so no global inode visited set may skip one.
+These are native observations, not an atomic snapshot or permanent topology proof.
+
+For explicit-output qualification, the reviewed design traverses every ordinary
+branch, including hidden/generated names, while retaining file work only in
+eligible branches and reading no message bodies. Only a positive full-ID match
+is OUTPUT_OVERLAP. A negative result requires the complete unfiltered traversal;
+unknown/inaccessible branches prevent whole-run writes with their actual
+BIND_FAILED/admission or READ_FAILED cause. They are not fabricated overlap or
+explicit-root admission failures. Share the existing depth/path/100000-entry/
+stop bounds across all branches and count entries before filtering; limit/stop
+retains its no-item outcome. Beside-source keeps filtered/per-item behavior.
+Qualification status, logical discovery completeness and known-work prefix are
+separate facts. Recheck original requested addresses before writable integration.
+This design does not claim the collector or its native qualification exists yet.
