@@ -291,6 +291,19 @@ processing. The collector must compare its earlier observed full ID before
 descending through the returned directory. Physical ancestry/overlap admission
 and the core collector remain unimplemented.
 
+The Windows free `observe_selected` function now supplies selected-root metadata
+from an already admitted absolute extended DOS/UNC expression. Its fixed
+OPEN_EXISTING/READ_ATTRIBUTES/share-all/BACKUP_SEMANTICS call follows the selected
+final link and opens no object data. The temporary handle supplies observed
+kind/full ID/file signature through the existing entry helper. Non-disk and
+failed/unusable observations remain errors; a remaining reparse tag is Reparse,
+not a fabricated ordinary target. This is a metadata observation, not held-cwd traversal or
+physical admission. Later directory opens must compare the earlier observed ID;
+walked children keep the existing no-follow operations. Benign owned tests cover
+native names, file/directory metadata, exact missing errors and static selected
+directory-alias versus walked-reparse behavior. Source review is closed; native execution is pending;
+no new arbitrary flags, data access, privileges, namespace or API dependency.
+
 The separate Windows `WritableDirectory`/`CreatedDirectory` primitive now performs
 exclusive empty-directory creation from a root-scoped write capability, with
 independent child/parent flush receipts and explicit handle-only empty cleanup.

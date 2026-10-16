@@ -37,7 +37,7 @@ pub use windows::path::{PathContext, validate_component};
 #[cfg(windows)]
 pub use windows::{
     BoundDirectory, BoundFile, CreatedDirectory, DirectoryEntries, NtStatusError,
-    PublicationCandidate, PublishAttempt, ReadyCandidate, WritableDirectory,
+    PublicationCandidate, PublishAttempt, ReadyCandidate, WritableDirectory, observe_selected,
 };
 
 /// Native object identity; never a pathname hash or lossy display value.

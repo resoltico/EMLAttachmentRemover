@@ -499,7 +499,8 @@ two-argument GetFullPath as precedent, not an ordinary Win32 equivalence or full
 .NET compatibility promise: other-drive paths still use our captured drive state.
 No PathCch1703 dependency or minimum-OS change is introduced. Independent expected
 native-string cases and real owned literal-base file/identity checks are added;
-source/API/caller/test review is closed and native execution remains pending. Neither normalization nor these tests
+source/API/caller/test review and bounded both-CPU native checks closed at bc1d102.
+Neither normalization nor these tests
 supplies the still-required physical root/ancestor/address binding.
 
 References: [pinned Rust path implementation](https://github.com/rust-lang/rust/blob/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/path.rs),

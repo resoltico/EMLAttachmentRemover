@@ -100,7 +100,7 @@ pub(super) fn entry_observation(file: &File) -> io::Result<EntryObservation> {
     if !is_disk(file)? {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "Child observation is not a disk object",
+            "Entry observation is not a disk object",
         ));
     }
     let attributes = attributes(file)?;

@@ -1032,3 +1032,41 @@ changed-workflow actionlint, formatting and diff checks passed. Compile-only
 Windows evidence is not native execution. Native matrices, the old failed
 confinement gate, full product/archive/GUI and final clean-clone qualification
 remain open.
+
+At exact `bc1d102c023aa7fe4b9f230a7d77b4a281bf31c6`,
+[Windows run38858057646](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38858057646)
+passed both new path cases once per CPU and the strengthened isolated-child and
+parent suite (interleaved stdout is retained). Nongate36passed/0failed/0ignored/
+1filtered on each. Independent full-head/raw review closed the bounded explicit-
+base/literal-name/identity/separator/root/drive/native-unit/malformed-UNC checks;
+no live UNC-share round trip follows from string cases. The actual old gate still
+failed0passed/1failed/0ignored/36filtered on both, sole failed step; overall Windows
+remains failed. [Unix run38858057577](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38858057577)
+passed all seven jobs. Default process harnesses passed18 each without an external
+serial flag (Linux9.15s/Mac14.44s); FS Mac30/Linux26 and earlier boundaries passed.
+Raw logs: target/bc1d102-windows-ci.log and target/bc1d102-unix-ci.log. This
+establishes isolated scenario execution and bounded path behavior, not parallel-
+controller, ambient-churn or full product qualification.
+
+## Windows explicitly selected root metadata
+
+The reviewed free `observe_selected` operation accepts an already admitted
+absolute extended DOS/UNC expression and reuses fixed existing-only Win32 open
+with READ_ATTRIBUTES, share-all and BACKUP_SEMANTICS, following the selected final
+link. Its temporary handle supplies existing kind/full-ID/signature observations,
+with no data access, writes, privilege enablement or new native ABI. Exact failed
+queries/unusable identities remain errors; non-disk is Unsupported and remaining
+reparse attributes remain Reparse. Terminology now says metadata observation,
+since separate queries do not provide an atomic snapshot. Later root opening
+must compare the earlier ID; physical admission and the core collector remain
+unfinished.
+
+Two benign owned native cases cover unpaired-name file metadata versus BoundFile,
+directory ID versus BoundDirectory, exact missing error2/invalid-input controls,
+and static explicit-directory-alias target versus no-follow walked Reparse with
+distinct entry ID/refused descent. Shared helper comparisons establish selection/
+API compatibility, not independently decoded metadata. Static link setup precedes
+observation; no new mutation/reproduction fixture is added. Independent design/
+API/source/test/docs review closed with no findings. MSVC FS all-target Clippy,
+excluded native probe all-target check and local Mac FS30/Clippy passed;
+doctests0. Native two-CPU runtime checks remain pending and the old gate unchanged.

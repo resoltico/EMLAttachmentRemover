@@ -10,7 +10,7 @@ mod status;
 mod writable;
 pub use candidate::ReadyCandidate;
 pub use file::BoundFile;
-pub use inventory::{BoundDirectory, DirectoryEntries};
+pub use inventory::{BoundDirectory, DirectoryEntries, observe_selected};
 pub use publication::{PublicationCandidate, PublishAttempt};
 pub use status::NtStatusError;
 pub use writable::{CreatedDirectory, WritableDirectory};

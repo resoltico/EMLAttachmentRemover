@@ -14,6 +14,20 @@ use windows_sys::Win32::{Foundation::ERROR_NO_MORE_FILES, Storage::FileSystem::*
 const BUFFER_BYTES: usize = 64 * 1024;
 const NAME_OFFSET: usize = offset_of!(FILE_ID_BOTH_DIR_INFO, FileName);
 
+/// Observe an explicit selected absolute extended DOS/UNC expression, following
+/// its final link, with only a temporary metadata handle. No object data is opened.
+/// This metadata observation supplies no held working-directory or physical
+/// admission binding. Core must compare its identity when later opening a root.
+pub fn observe_selected(path: &Path) -> io::Result<EntryObservation> {
+    let file = handle::open(
+        path,
+        FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        FILE_FLAG_BACKUP_SEMANTICS,
+    )?;
+    handle::entry_observation(&file)
+}
+
 /// A read-only selected directory, held by native handle and full object identity.
 /// This handle provides observation, not protection of a creation address.
 pub struct BoundDirectory {
@@ -216,6 +230,83 @@ mod tests {
     use super::*;
     use crate::EntryKind;
     use std::{collections::BTreeSet, ffi::OsStr, os::windows::ffi::OsStrExt};
+
+    #[test]
+    fn selected_root_metadata_observes_file_directory_and_native_missing_errors() {
+        use super::super::{
+            test_actor::RestrictedToken,
+            test_fixture::{directory, operation},
+        };
+        let fixture = directory();
+        let name = OsString::from_wide(&[0x61, 0xd800, 0x62]);
+        let source = fixture.path().join(&name);
+        std::fs::write(&source, b"owned selected metadata").unwrap();
+        let actor = RestrictedToken::enter().unwrap();
+        let parent = BoundDirectory::open(&operation(fixture.path())).unwrap();
+        let root = observe_selected(&operation(fixture.path())).unwrap();
+        assert_eq!(root.kind, EntryKind::Directory);
+        assert_eq!(root.identity, parent.identity());
+        assert!(root.file.is_none());
+        let file = observe_selected(&operation(&source)).unwrap();
+        assert_eq!(file.kind, EntryKind::File);
+        let independently_opened = crate::BoundFile::open(&operation(&source), false).unwrap();
+        assert_eq!(file.file, Some(independently_opened.initial_signature()));
+        assert_eq!(
+            file.identity,
+            independently_opened.initial_signature().identity
+        );
+        assert_eq!(file.file.unwrap().size, 23);
+        assert_eq!(parent.observe_child(&name).unwrap(), file);
+        let missing = observe_selected(&operation(&fixture.path().join("missing"))).unwrap_err();
+        assert_eq!(missing.raw_os_error(), Some(2));
+        assert_eq!(
+            observe_selected(Path::new("relative")).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            observe_selected(Path::new("\\\\?\\C:\\a\0b"))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        drop(independently_opened);
+        drop(parent);
+        drop(actor);
+        fixture.close().unwrap();
+    }
+
+    #[test]
+    fn selected_directory_alias_follows_target_while_walked_entry_remains_reparse() {
+        use super::super::{
+            test_actor::RestrictedToken,
+            test_fixture::{directory, operation},
+        };
+        let fixture = directory();
+        let target = fixture.path().join("target");
+        let alias = fixture.path().join("selected-link");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::create_dir(&alias).unwrap();
+        // Static explicitly selected alias setup only, before observation.
+        let link = super::super::test_reparse::writer(&alias).unwrap();
+        super::super::test_reparse::set_mount_point(&link, &target).unwrap();
+        drop(link);
+        let actor = RestrictedToken::enter().unwrap();
+        let parent = BoundDirectory::open(&operation(fixture.path())).unwrap();
+        let target = BoundDirectory::open(&operation(&target)).unwrap();
+        let selected = observe_selected(&operation(&alias)).unwrap();
+        assert_eq!(selected.kind, EntryKind::Directory);
+        assert_eq!(selected.identity, target.identity());
+        assert!(selected.file.is_none());
+        let walked = parent.observe_child(OsStr::new("selected-link")).unwrap();
+        assert_eq!(walked.kind, EntryKind::Reparse);
+        assert_ne!(walked.identity, selected.identity);
+        assert!(parent.open_child(OsStr::new("selected-link")).is_err());
+        drop(target);
+        drop(parent);
+        drop(actor);
+        std::fs::remove_dir(alias).unwrap();
+        fixture.close().unwrap();
+    }
 
     #[test]
     fn native_child_observation_and_descent_use_the_held_parent_and_full_ids() {

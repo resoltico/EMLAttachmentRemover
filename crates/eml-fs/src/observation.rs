@@ -78,7 +78,7 @@ pub struct FileSignature {
     pub(crate) modified_native: [i64; 2],
     pub(crate) changed_native: [i64; 2],
 }
-/// Native entry type observed without opening a special file.
+/// Native entry type observed without opening object data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryKind {
     /// Ordinary regular file.
@@ -92,7 +92,7 @@ pub enum EntryKind {
     /// FIFO/socket/device or other unsupported kind.
     Special,
 }
-/// Snapshot metadata, revalidated through a later held handle before processing.
+/// Metadata observation, revalidated through a later held handle before processing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EntryObservation {
     /// Physical native object identity.
