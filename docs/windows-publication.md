@@ -403,6 +403,49 @@ a null security descriptor and never sets ACLs. All filesystem product calls
 execute under the verified restricted actor; only the controlled move/setup uses
 the original fixture context.
 
+## Owned file storage design for native qualification
+
+The next reviewed storage-only slice is implemented awaiting source/native QA.
+It never renames to a final name, qualifies an address, changes ACLs or closes
+the failed confinement/publication gate. Core remains responsible for MIME
+authorization and message/run admission; zero-byte storage is not refused.
+
+`WritableDirectory::stage_bytes(bytes, checkpoint)` uses the shared128-bit random
+component generator and at most16 exact exclusive-create attempts. Only native
+OBJECT_NAME_COLLISION with proven NotNeeded cleanup retries. Other failures and
+Unknown cleanup propagate, RNG failure propagates, and exhaustion retains the
+last actual collision. Each attempt checks cooperative cancellation first.
+
+The private native creator now has exactly two actual fixed profiles: directory
+and file. A file uses FILE_CREATE, FILE_NON_DIRECTORY_FILE,
+FILE_SYNCHRONOUS_IO_NONALERT/SYNCHRONIZE, OBJ_DONT_REPARSE, mapped data read/write
+plus metadata-query and DELETE access, null security descriptor and share zero.
+NT_SUCCESS/valid handle and exact FILE_CREATED remain separate handle/new-object
+ownership proofs. Before any body byte, require an ordinary disk file, usable
+full ID and zero length. There is no caller flags bag or arbitrary candidate path.
+
+Keep one private synchronous File through bounded writes, explicit checked rewind,
+full bounded reread/compare and a one-byte EOF probe. Check cancellation through
+I/O/short-progress/interrupted retries, before actual FlushFileBuffers and before
+returning Ready. Store the sync receipt immediately. Final held/named type/tag/ID/
+length validation and post-flush cancellation use storage/Write failure with
+Some(Succeeded) when flush succeeded; they do not fabricate a failed flush.
+ReadyCandidate has private construction/fields and exposes only identity, length,
+sync receipt and consuming cleanup in this slice.
+
+Every post-create failure retains the primary StageFailure operation/error,
+independent actual file-sync receipt and owned cleanup observation. The same
+reviewed mark/checked-close/valid-parent logic removes an owned nonempty FILE;
+DIRECTORY deletion still relies on the native emptiness refusal. Residual proof
+needs only the directly observed full identity, not a richer signature that could
+fail after mutation. Inventory's richer observer remains unchanged. No file
+metadata operations use the old handle after disposition is requested.
+
+Share zero temporarily excludes normal data opens, not every attribute/EA open
+or permanent other-user access. Native inherited ACL remains unchanged. Neither
+continuous metadata immutability nor hostile-parent/candidate/publication safety
+is inferred from benign storage tests. Those remaining qualifications stay open.
+
 ## Captured native path normalization
 
 For Windows ordinary DOS/UNC inputs, capture the OS's Win32 normalization once

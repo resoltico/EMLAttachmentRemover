@@ -38,9 +38,10 @@ pub struct SyncReceipt {
 /// Native operation in progress when staging failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StageOperation {
-    /// Create and validate private owned resources before bytes.
+    /// Create and validate owned staging resources before bytes. POSIX resources
+    /// are owner-private; Windows resources retain native destination inheritance.
     Create,
-    /// Write or reread candidate storage.
+    /// Write, reread or validate candidate storage, including checks after flush.
     Write,
     /// Request candidate file synchronization.
     Sync,

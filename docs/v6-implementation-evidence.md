@@ -856,3 +856,60 @@ MSVC all-target Clippy and diff verification passed. The previous writable API
 has no compatibility alias, and no unused alternative remains. Actual both-CPU
 execution of the replacement and its creation/flush/cleanup/145 oracles remains
 pending; successful permission controls are not product qualification.
+
+At exact head `1a26d957d295f76821aae4c5be610012864aab8b`,
+[Windows run38852160394](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38852160394)
+passed all three named writable cases once on each native CPU: nongate28passed/
+0failed/0ignored/1filtered. Their executed assertions establish actual exclusive
+FILE_CREATE ownership, ordinary/full-ID checks, child and parent FlushFileBuffers,
+Complete empty cleanup, and native145 nonempty refusal with matching-ID Residual
+without recursion. Earlier ID, stale-operand and unresolved-link refusal/explicit
+known-target checks also ran. Each old creation gate still actually failed
+0passed/1failed/28filtered, remaining the sole failed Windows step. The
+[Unix run38852160326](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38852160326)
+passed all seven jobs. Independent raw-log QA closed this bounded empty-directory
+capability only. It does not qualify changed-parent confinement, candidate data,
+publication, GetFinalPathName/ancestor/address admission or the full product.
+Prior failed runs remain recorded; no universal ReOpenFile cause was inferred.
+
+## Owned Windows file staging checkpoint
+
+The Windows storage-only capability now creates an owned regular file with native
+inheritance/share-zero, writes/rereads/compares through that same synchronous
+handle in bounded chunks, probes EOF, requests file flush and validates final
+type/tag/full ID/length. ReadyCandidate construction/handles remain private and
+it has no publication operation. StageFailure keeps primary operation/error,
+actual sync and cleanup independently. Post-flush cancellation/storage validation
+retains Some(Succeeded) with Write classification, rather than inventing a failed
+flush. Owned nonempty files use handle deletion; directories retain native
+empty-only deletion. Residual proof now compares direct full identity; inventory's
+richer observer remains intact.
+
+The128-bit generator and16-attempt constant moved to one shared source for the
+two actual native storage consumers. POSIX storage/privacy/publication mechanisms
+are unchanged. Windows retries only exact native collision with NotNeeded cleanup,
+retains its last actual collision on exhaustion and propagates generator/other/
+Unknown failures. The existing getrandom version became common; complete locked/
+offline fuzz metadata resolves27 packages and all three locks remain unchanged.
+This is graph verification, not a new fuzz campaign. StageOperation comments now
+distinguish POSIX private resources from Windows inherited ACLs.
+
+Three new Windows cases are prepared: real nonempty/zero storage with independent
+positioned readback, actual normal read/write-open exclusion and cleanup;
+before-create/observed-partial-write cancellation plus post-flush failure mapping
+with the SAME genuinely flushed owner/receipt; and16 real native collisions with
+unchanged marker, scripted generator failure and validation-based no-retry. The
+fixture helper is shared only by its two FS test consumers. No candidate metadata
+attack, final rename, ACL-policy framework or gate replacement is added.
+
+Independent source/API/I/O/test/security reviews closed without concrete findings.
+Windows MSVC FS all-target Clippy, standalone probe all-target check, local Mac
+filesystem30/Clippy and diff verification passed; doctests0. Initial unused-import
+findings were fixed without suppression; stable-input checks then passed. No
+Windows runtime case is yet claimed. Zero-length payload is covered by the new
+case, but short-write/WriteZero/EINTR return paths are source-reviewed, not
+deterministically exercised. Scripted generator refusal is not an OS RNG failure;
+post-flush cancellation is not a native flush-failure test. These limits remain
+explicit rather than introducing broad mock scaffolding or claiming exhaustive
+failure coverage. Both-CPU native execution and the unchanged failed confinement/
+publication/product/archive/GUI requirements remain open.

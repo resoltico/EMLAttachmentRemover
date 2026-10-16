@@ -9,6 +9,8 @@ pub use file::BoundFile;
 mod observation;
 pub use observation::{BoundFileError, EntryKind, EntryObservation, FileSignature};
 mod receipts;
+#[cfg(any(unix, windows))]
+mod staging;
 pub use receipts::{
     PublicationState, StageFailure, StageOperation, SyncMethod, SyncReceipt, SyncState,
 };
@@ -34,7 +36,8 @@ mod windows;
 pub use windows::path::{PathContext, validate_component};
 #[cfg(windows)]
 pub use windows::{
-    BoundDirectory, BoundFile, CreatedDirectory, DirectoryEntries, NtStatusError, WritableDirectory,
+    BoundDirectory, BoundFile, CreatedDirectory, DirectoryEntries, NtStatusError, ReadyCandidate,
+    WritableDirectory,
 };
 
 /// Native object identity; never a pathname hash or lossy display value.

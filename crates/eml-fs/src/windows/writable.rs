@@ -1,4 +1,4 @@
-//! Owned empty directories. No candidate bytes, ACL rewriting or publication.
+//! Fixed creation ownership and cleanup; directory and candidate storage stay distinct.
 use super::{child, handle, path::validate_component, status};
 use crate::{
     BoundDirectory, CleanupReceipt, CleanupState, CreationFailure, Identity, NtStatusError,
@@ -19,7 +19,8 @@ use windows_sys::{
     Wdk::{
         Foundation::OBJECT_ATTRIBUTES,
         Storage::FileSystem::{
-            FILE_CREATE, FILE_DIRECTORY_FILE, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+            FILE_CREATE, FILE_DIRECTORY_FILE, FILE_NON_DIRECTORY_FILE,
+            FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
         },
     },
     Win32::{
@@ -75,7 +76,7 @@ fn native_code(error: &io::Error) -> Option<i64> {
             .map(|cause| i64::from(cause.nt_status()))
     })
 }
-fn flush(file: &File) -> SyncReceipt {
+pub(super) fn flush(file: &File) -> SyncReceipt {
     // SAFETY: live held file opened with the mapped GENERIC_WRITE access set.
     if unsafe { FlushFileBuffers(file.as_raw_handle()) } != 0 {
         return SyncReceipt {
@@ -112,9 +113,10 @@ fn remove(
     expected: Option<Identity>,
 ) -> CleanupReceipt {
     let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
-    // SAFETY: positively created owned directory handle with DELETE access;
+    // SAFETY: positively created owned file/directory handle with DELETE access;
     // generated fixed buffer remains live through the synchronous call. Native
-    // directory deletion enforces emptiness; this never recursively removes data.
+    // directory deletion enforces emptiness; a file caller may remove its owned
+    // nonempty file. Neither operation recursively removes directory contents.
     let marked = if unsafe {
         SetFileInformationByHandle(
             file.as_raw_handle(),
@@ -143,8 +145,7 @@ fn remove(
             );
         }
     }
-    let observed =
-        child::observe(&parent.file, &name).and_then(|file| handle::entry_observation(&file));
+    let observed = child::observe(&parent.file, &name).and_then(|file| handle::identity(&file));
     match observed {
         Err(error)
             if marked.is_ok()
@@ -156,7 +157,7 @@ fn remove(
         {
             receipt(CleanupState::Complete, None, None)
         }
-        Ok(entry) if expected.is_some_and(|identity| identity == entry.identity) => receipt(
+        Ok(identity) if expected.is_some_and(|owned| owned == identity) => receipt(
             CleanupState::Residual,
             Some(name),
             first.and_then(native_code),
@@ -200,12 +201,64 @@ impl WritableDirectory {
     /// Exclusively create one empty inherited-ACL directory under this held parent.
     /// This primitive does not qualify hostile-parent confinement or publication.
     pub fn create_child(&self, name: &OsStr) -> Result<CreatedDirectory, CreationFailure> {
+        let owned = self.create_entry(name, CreateKind::Directory)?;
+        let identity = match handle::directory_identity(&owned.file) {
+            Ok(identity) => identity,
+            Err(error) => {
+                return Err(CreationFailure {
+                    error,
+                    cleanup: owned.cleanup(None),
+                });
+            }
+        };
+        Ok(CreatedDirectory {
+            directory: Self(BoundDirectory {
+                file: owned.file,
+                identity,
+            }),
+            parent: owned.parent,
+            name: owned.name,
+        })
+    }
+    pub(super) fn create_file(
+        &self,
+        name: &OsStr,
+    ) -> Result<(Creation, Identity), CreationFailure> {
+        let owned = self.create_entry(name, CreateKind::File)?;
+        let initial = handle::signature(&owned.file).map_err(crate::BoundFileError::into_io_error);
+        let identity = match initial {
+            Ok(signature) if signature.size == 0 => signature.identity,
+            Ok(signature) => {
+                return Err(CreationFailure {
+                    error: io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "New candidate is not initially empty",
+                    ),
+                    cleanup: owned.cleanup(Some(signature.identity)),
+                });
+            }
+            Err(error) => {
+                return Err(CreationFailure {
+                    error,
+                    cleanup: owned.cleanup(None),
+                });
+            }
+        };
+        if let Err(error) = owned.validate_file(identity, 0) {
+            return Err(CreationFailure {
+                error,
+                cleanup: owned.cleanup(Some(identity)),
+            });
+        }
+        Ok((owned, identity))
+    }
+    fn create_entry(&self, name: &OsStr, kind: CreateKind) -> Result<Creation, CreationFailure> {
         validate_component(name, u16::MAX as usize / 2).map_err(no_creation)?;
         let mut units: Vec<u16> = name.encode_wide().collect();
         let length = u16::try_from(units.len() * 2).map_err(|_| {
             no_creation(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Native directory name is too long",
+                "Native staging component is too long",
             ))
         })?;
         if handle::directory_identity(&self.0.file).map_err(no_creation)? != self.identity() {
@@ -236,24 +289,38 @@ impl WritableDirectory {
         let mut iosb = IO_STATUS_BLOCK::default();
         // SAFETY: one bounded validated relative component and live held parent;
         // generated aligned buffers/name remain live through synchronous
-        // IRP_MJ_CREATE completion. Fixed CREATE/DIRECTORY/NONALERT options,
+        // IRP_MJ_CREATE completion. Fixed CREATE/type/NONALERT options,
         // null descriptor for native inheritance, no caller-controlled flags.
-        let result = unsafe {
-            NtCreateFile(
-                &mut raw,
+        let (access, file_attributes, sharing, options) = match kind {
+            CreateKind::Directory => (
                 FILE_GENERIC_WRITE
                     | FILE_LIST_DIRECTORY
                     | FILE_READ_ATTRIBUTES
                     | FILE_TRAVERSE
                     | SYNCHRONIZE
                     | DELETE,
+                FILE_ATTRIBUTE_DIRECTORY,
+                FILE_SHARE_READ,
+                FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+            ),
+            CreateKind::File => (
+                FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE,
+                FILE_ATTRIBUTE_NORMAL,
+                0,
+                FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+            ),
+        };
+        let result = unsafe {
+            NtCreateFile(
+                &mut raw,
+                access,
                 &attributes,
                 &mut iosb,
                 std::ptr::null(),
-                FILE_ATTRIBUTE_DIRECTORY,
-                FILE_SHARE_READ,
+                file_attributes,
+                sharing,
                 FILE_CREATE,
-                FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                options,
                 std::ptr::null(),
                 0,
             )
@@ -276,7 +343,7 @@ impl WritableDirectory {
             return Err(CreationFailure {
                 error: io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "Successful directory create supplied no handle",
+                    "Successful create supplied no handle",
                 ),
                 cleanup: receipt(CleanupState::Unknown, None, None),
             });
@@ -289,27 +356,58 @@ impl WritableDirectory {
             return Err(CreationFailure {
                 error: io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "Native disposition did not prove new directory ownership",
+                    "Native disposition did not prove new object ownership",
                 ),
                 cleanup: receipt(CleanupState::Unknown, None, cleanup_code),
             });
         }
-        // Exact FILE_CREATED now proves ownership. Even a failed ID observation
-        // retains handle-only empty cleanup; never delete a fresh pathname.
-        let identity = match handle::directory_identity(&file) {
-            Ok(identity) => identity,
-            Err(error) => {
-                return Err(CreationFailure {
-                    error,
-                    cleanup: remove(file, parent, name.to_owned(), None),
-                });
-            }
-        };
-        Ok(CreatedDirectory {
-            directory: Self(BoundDirectory { file, identity }),
+        Ok(Creation {
+            file,
             parent,
             name: name.to_owned(),
         })
+    }
+}
+enum CreateKind {
+    Directory,
+    File,
+}
+/// Private creation owner, issued only after native FILE_CREATED proof.
+pub(super) struct Creation {
+    pub(super) file: File,
+    parent: ParentBinding,
+    name: OsString,
+}
+impl Creation {
+    pub(super) fn validate_file(&self, identity: Identity, length: u64) -> io::Result<()> {
+        if handle::directory_identity(&self.parent.file)? != self.parent.identity {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Candidate parent identity changed",
+            ));
+        }
+        let current =
+            handle::signature(&self.file).map_err(crate::BoundFileError::into_io_error)?;
+        let named = child::observe(&self.parent.file, &self.name)?;
+        let named = handle::signature(&named).map_err(crate::BoundFileError::into_io_error)?;
+        if current.identity != identity
+            || current.size != length
+            || named.identity != identity
+            || named.size != length
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Owned candidate identity, entry or length changed",
+            ));
+        }
+        Ok(())
+    }
+    #[cfg(test)]
+    pub(super) fn name(&self) -> &OsStr {
+        &self.name
+    }
+    pub(super) fn cleanup(self, identity: Option<Identity>) -> CleanupReceipt {
+        remove(self.file, self.parent, self.name, identity)
     }
 }
 impl CreatedDirectory {
@@ -339,98 +437,12 @@ impl CreatedDirectory {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_actor::{RestrictedToken, information, require_unimpersonated_thread};
+    use super::super::{
+        test_actor::RestrictedToken,
+        test_fixture::{directory as fixture, operation},
+    };
     use super::*;
 
-    /// Prepare only a freshly owned test directory so the verified runner UserSID
-    /// has real creation/flush/cleanup access without depending on checkout ACLs.
-    /// This is fixture setup, not product ACL policy or a mutation of an owner folder.
-    fn grant_current_user_directory(path: &std::path::Path) -> io::Result<()> {
-        use std::{os::windows::ffi::OsStrExt, ptr};
-        use windows_sys::Win32::{
-            Foundation::LocalFree,
-            Security::{
-                Authorization::*, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
-                SUB_CONTAINERS_AND_OBJECTS_INHERIT, TOKEN_QUERY, TOKEN_USER, TokenUser,
-            },
-            Storage::FileSystem::FILE_ALL_ACCESS,
-            System::Threading::{GetCurrentProcess, OpenProcessToken},
-        };
-        require_unimpersonated_thread()?;
-        let mut raw = ptr::null_mut();
-        // SAFETY: live process pseudo-handle and writable output slot; query only.
-        if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: successful call transferred one owned process-token handle.
-        let token = unsafe { OwnedHandle::from_raw_handle(raw) };
-        let info = information(&token, TokenUser)?;
-        if info.bytes < size_of::<TOKEN_USER>() {
-            return Err(io::Error::other("Short fixture token-user information"));
-        }
-        // SAFETY: generated native header is present/aligned; its SID points into
-        // the successful native token information kept alive through ACL construction.
-        let sid = unsafe { (*(info.words.as_ptr().cast::<TOKEN_USER>())).User.Sid };
-        if sid.is_null() {
-            return Err(io::Error::other("Missing fixture UserSID"));
-        }
-        let entry = EXPLICIT_ACCESS_W {
-            grfAccessPermissions: FILE_ALL_ACCESS,
-            grfAccessMode: SET_ACCESS,
-            grfInheritance: SUB_CONTAINERS_AND_OBJECTS_INHERIT,
-            Trustee: TRUSTEE_W {
-                TrusteeForm: TRUSTEE_IS_SID,
-                TrusteeType: TRUSTEE_IS_USER,
-                ptstrName: sid.cast(),
-                ..Default::default()
-            },
-        };
-        let mut acl = ptr::null_mut();
-        // SAFETY: one fully initialized generated entry with live SID; the system
-        // returns a separately allocated ACL, and no prior ACL pointer is borrowed.
-        let built = unsafe { SetEntriesInAclW(1, &entry, ptr::null(), &mut acl) };
-        if built != 0 {
-            return Err(io::Error::from_raw_os_error(built as i32));
-        }
-        if acl.is_null() {
-            return Err(io::Error::other("Fixture ACL builder supplied no ACL"));
-        }
-        let mut native: Vec<_> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        // SAFETY: terminated fresh owned fixture path; live constructed ACL. Only
-        // this synthetic directory's DACL changes, before any restricted actor enters.
-        let applied = unsafe {
-            SetNamedSecurityInfoW(
-                native.as_mut_ptr(),
-                SE_FILE_OBJECT,
-                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                acl,
-                ptr::null_mut(),
-            )
-        };
-        // SAFETY: the successful ACL builder allocated this exact pointer once.
-        let released = unsafe { LocalFree(acl.cast()) };
-        if applied != 0 {
-            return Err(io::Error::from_raw_os_error(applied as i32));
-        }
-        if !released.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
-    }
-
-    fn fixture() -> tempfile::TempDir {
-        let root = tempfile::tempdir().unwrap();
-        grant_current_user_directory(root.path()).unwrap();
-        root
-    }
-    fn operation(path: &Path) -> std::path::PathBuf {
-        crate::PathContext::capture()
-            .unwrap()
-            .resolve(path)
-            .unwrap()
-    }
     #[test]
     fn native_empty_directory_create_flush_cleanup_requires_current_root_and_earlier_identity() {
         let fixture = fixture();

@@ -296,6 +296,13 @@ independent child/parent flush receipts and explicit handle-only empty cleanup.
 Its [reviewed contract](windows-publication.md#empty-directory-creation-design-for-native-qualification)
 still awaits native validation. It writes no message data, changes no existing
 destination ACL and does not qualify creation under parent mutation or publication.
+
+Windows `stage_bytes` now supplies the separate owned-file storage capability:
+bounded same-handle write/readback/EOF checks, actual file synchronization and
+explicit cleanup, with native inherited ACLs unchanged. Source review is closed;
+new native execution is pending. Its private ReadyCandidate has no publication
+method. This does not qualify MIME authorization, source admission, namespace/
+address synchronization, changed-parent confinement or final-copy publication.
 The names-only structure's64-bit file ID is never padded into a full identity.
 
 Native contracts: [GetFileInformationByHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getfileinformationbyhandleex),

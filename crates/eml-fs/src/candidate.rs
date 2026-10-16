@@ -2,11 +2,12 @@
 use crate::{
     BoundDirectory, CleanupReceipt, CleanupState, CreatedDirectory, Identity, PublicationState,
     StageFailure, StageOperation, SyncMethod, SyncReceipt, SyncState,
+    staging::{NAME_ATTEMPTS, random_name},
     unix::{component, identity},
 };
 use rustix::fs::{self, AtFlags, FileType, Mode, OFlags};
 use std::{
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fs::File,
     io::{self, Read, Seek, SeekFrom, Write},
     os::fd::AsFd,
@@ -105,16 +106,6 @@ impl PublicationCandidate {
         self.0.cleanup()
     }
 }
-fn random_name() -> io::Result<OsString> {
-    let mut bytes = [0; 16];
-    getrandom::fill(&mut bytes).map_err(io::Error::other)?;
-    let mut name = String::from(".eml-attachment-remover-");
-    for byte in bytes {
-        use std::fmt::Write;
-        write!(&mut name, "{byte:02x}").expect("writing String cannot fail");
-    }
-    Ok(name.into())
-}
 fn validate_file(
     file: &File,
     directory: &BoundDirectory,
@@ -188,7 +179,7 @@ impl BoundDirectory {
         };
         checkpoint().map_err(plain_failure)?;
         let mut owned = None;
-        for _ in 0..16 {
+        for _ in 0..NAME_ATTEMPTS {
             let name = random_name().map_err(plain_failure)?;
             match self.create_private_child(&name) {
                 Ok(created) => {

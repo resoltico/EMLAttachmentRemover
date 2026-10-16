@@ -1,4 +1,5 @@
 //! Generated Windows system calls behind owned, checked native interfaces.
+mod candidate;
 mod child;
 mod file;
 mod handle;
@@ -6,10 +7,13 @@ mod inventory;
 pub(crate) mod path;
 mod status;
 mod writable;
+pub use candidate::ReadyCandidate;
 pub use file::BoundFile;
 pub use inventory::{BoundDirectory, DirectoryEntries};
 pub use status::NtStatusError;
 pub use writable::{CreatedDirectory, WritableDirectory};
+#[cfg(test)]
+mod test_fixture;
 #[cfg(test)]
 pub(crate) mod test_reparse;
 #[cfg(test)]
