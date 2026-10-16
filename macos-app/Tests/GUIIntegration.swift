@@ -1,14 +1,27 @@
 // Native GUI tooling only. This is not a product automation mode.
 import AppKit
 import ApplicationServices
+import Darwin
 import Foundation
 
 private enum GUIFailure: Error {
   case unavailable(String)
-  case budget, launchUnknown, unexpectedApplication
+  case budget, launchUnknown
+  case unexpectedApplication(String)
   case accessibility(Int)
   case missingControl(String)
   case bytesChanged, cleanupUnknown
+}
+
+@MainActor private final class Evidence {
+  private(set) var failed = false
+  // Reporting never interrupts owned cleanup. main refuses success if any
+  // checked direct stderr write failed.
+  func record(_ message: String) {
+    do { try FileHandle.standardError.write(contentsOf: Data((message + "\n").utf8)) } catch {
+      failed = true
+    }
+  }
 }
 
 @MainActor private final class LaunchReceipt {
@@ -29,9 +42,11 @@ private enum GUIFailure: Error {
 @MainActor private struct Accessibility {
   let application: NSRunningApplication
   let root: AXUIElement
+  let evidence: Evidence
 
-  init(_ application: NSRunningApplication) throws {
+  init(_ application: NSRunningApplication, evidence: Evidence) throws {
     self.application = application
+    self.evidence = evidence
     root = AXUIElementCreateApplication(application.processIdentifier)
     guard AXUIElementSetMessagingTimeout(root, 0.5) == .success else {
       throw GUIFailure.accessibility(-1)
@@ -39,7 +54,11 @@ private enum GUIFailure: Error {
   }
   func attribute(_ element: AXUIElement, _ key: String, budget: Budget) throws -> CFTypeRef? {
     try budget.check()
-    guard !application.isTerminated else { throw GUIFailure.unexpectedApplication }
+    let terminated = application.isTerminated
+    guard !terminated else {
+      evidence.record("GUI guard: ax_liveness terminated=\(terminated)")
+      throw GUIFailure.unexpectedApplication("ax_liveness")
+    }
     guard AXUIElementSetMessagingTimeout(element, 0.5) == .success else {
       throw GUIFailure.accessibility(-1)
     }
@@ -49,7 +68,7 @@ private enum GUIFailure: Error {
     case .success: return value
     case .noValue, .attributeUnsupported: return nil
     default:
-      print(
+      evidence.record(
         "AX read failed: operation=copyAttribute attribute=\(key) status=\(status.rawValue) remaining=\(ContinuousClock.now.duration(to: budget.end))"
       )
       throw GUIFailure.accessibility(Int(status.rawValue))
@@ -104,7 +123,21 @@ private enum GUIFailure: Error {
 }
 
 @main private struct GUIIntegration {
-  @MainActor static func main() async throws {
+  @MainActor static func main() async {
+    let evidence = Evidence()
+    do {
+      try await run(evidence: evidence)
+      if evidence.failed {
+        evidence.record("GUI evidence channel previously failed; case is unqualified")
+        exit(2)
+      }
+    } catch {
+      evidence.record("GUI fixture failed: \(error)")
+      exit(evidence.failed ? 2 : 1)
+    }
+  }
+
+  @MainActor private static func run(evidence: Evidence) async throws {
     let began = ContinuousClock.now
     guard CommandLine.arguments.count == 5,
       let seconds = UInt64(CommandLine.arguments[4]), (30...120).contains(seconds)
@@ -165,10 +198,17 @@ private enum GUIFailure: Error {
       guard receipt.error == nil, let launched = receipt.application else {
         throw GUIFailure.launchUnknown
       }
-      guard isOwned(launched, appURL: appURL) else { throw GUIFailure.unexpectedApplication }
+      let identifierMatch = launched.bundleIdentifier == "io.github.resoltico.emlattachmentremover"
+      let urlMatch = launched.bundleURL?.standardizedFileURL == appURL.standardizedFileURL
+      evidence.record(
+        "GUI guard: initial_receipt identifierMatch=\(identifierMatch) urlMatch=\(urlMatch) terminated=\(launched.isTerminated)"
+      )
+      guard identifierMatch, urlMatch else {
+        throw GUIFailure.unexpectedApplication("initial_receipt_identity")
+      }
       application = launched
-      print("GUI phase: exact launch receipt validated")
-      let ax = try Accessibility(launched)
+      evidence.record("GUI phase: initial receipt identity matched")
+      let ax = try Accessibility(launched, evidence: evidence)
       while true {
         do {
           if try ax.text(budget: action).contains(where: {
@@ -179,12 +219,16 @@ private enum GUIFailure: Error {
         } catch GUIFailure.accessibility(let code)
           where code == Int(AXError.cannotComplete.rawValue)
         {
-          guard !launched.isTerminated else { throw GUIFailure.unexpectedApplication }
+          let terminated = launched.isTerminated
+          guard !terminated else {
+            evidence.record("GUI guard: startup_liveness terminated=\(terminated)")
+            throw GUIFailure.unexpectedApplication("startup_liveness")
+          }
           // Only startup reads are retried; each traversal starts afresh.
         }
         try await action.pause()
       }
-      print("GUI phase: empty window ready")
+      evidence.record("GUI phase: empty window ready")
       let source = owned.appending(path: "a.eml")
       let copy = owned.appending(path: "a.no-attachments.eml")
       let input = try Data(
@@ -208,10 +252,17 @@ private enum GUIFailure: Error {
         }
       }
       fileOpenSubmitted = true
-      print("GUI phase: file-open submitted")
+      evidence.record("GUI phase: file-open submitted")
       while !opened.complete { try await action.pause() }
-      guard opened.error == nil, opened.application?.isEqual(launched) == true
-      else { throw GUIFailure.unexpectedApplication }
+      let errorPresent = opened.error != nil
+      let appPresent = opened.application != nil
+      let sameInstance = opened.application?.isEqual(launched) == true
+      evidence.record(
+        "GUI guard: file_open_receipt errorPresent=\(errorPresent) appPresent=\(appPresent) sameInstance=\(sameInstance)"
+      )
+      guard !errorPresent, sameInstance else {
+        throw GUIFailure.unexpectedApplication("file_open_receipt")
+      }
       while true {
         let details = try ax.identified("run-details", budget: action)
         if details.count == 1, try ax.text(in: details[0], budget: action).contains("Finished") {
@@ -236,19 +287,21 @@ private enum GUIFailure: Error {
         }
         try await action.pause()
       }
-      guard try ax.identified("run-list-entry", budget: action).count == 1 else {
-        throw GUIFailure.unexpectedApplication
+      let runCount = try ax.identified("run-list-entry", budget: action).count
+      guard runCount == 1 else {
+        evidence.record("GUI guard: admitted_run_count runCount=\(runCount)")
+        throw GUIFailure.unexpectedApplication("admitted_run_count")
       }
       helperSettlementProven = true  // Actual selected processing result, not version probe.
-      print("GUI phase: selected processing settlement proven")
+      evidence.record("GUI phase: selected processing settlement proven")
       guard try Data(contentsOf: source) == input, try Data(contentsOf: copy) == golden else {
         throw GUIFailure.bytesChanged
       }
-      print(
+      evidence.record(
         "actual GUI Open With: one selected Created1/upToDate0 run, processing exit0/summary0 and independent golden/source bytes"
       )
     } catch {
-      print("GUI phase: failure; file-open submitted=\(fileOpenSubmitted)")
+      evidence.record("GUI phase: failure; file-open submitted=\(fileOpenSubmitted)")
       failure = error
     }
 
@@ -265,9 +318,13 @@ private enum GUIFailure: Error {
       }
     }
     if application?.isTerminated == true, failure == nil {
-      failure = GUIFailure.unexpectedApplication
+      evidence.record("GUI guard: before_cleanup terminated=true")
+      failure = GUIFailure.unexpectedApplication("terminated_before_cleanup")
     }
     let normalCleanupEnd = min(cleanup.end, ContinuousClock.now.advanced(by: .seconds(15)))
+    evidence.record(
+      "GUI phase: cleanup start receiptClosureKnown=\(receiptClosureKnown) ownedCount=\(ownedApplications.count) helperSettlementProven=\(helperSettlementProven)"
+    )
     for target in ownedApplications where !target.isTerminated {
       if !target.terminate() { failure = failure ?? GUIFailure.cleanupUnknown }
     }
@@ -278,7 +335,8 @@ private enum GUIFailure: Error {
         // A failed active case may still have the real quit confirmation. Only
         // press its exact action; no global app/menu/name targeting is used.
         do {
-          try Accessibility(target).press("Stop and Quit", budget: Budget(end: normalCleanupEnd))
+          try Accessibility(target, evidence: evidence).press(
+            "Stop and Quit", budget: Budget(end: normalCleanupEnd))
         } catch {
           // Keep waiting within the same cleanup allowance.
         }
@@ -294,16 +352,18 @@ private enum GUIFailure: Error {
       do { try await cleanup.pause() } catch { break }
     }
     // No Controller/session/global process scan is an absence proof here.
+    let allTerminated = ownedApplications.allSatisfy(\.isTerminated)
+    evidence.record(
+      "GUI phase: cleanup observation receiptClosureKnown=\(receiptClosureKnown) ownedCount=\(ownedApplications.count) allTerminated=\(allTerminated) helperSettlementProven=\(helperSettlementProven)"
+    )
     guard receiptClosureKnown, !ownedApplications.isEmpty,
-      ownedApplications.allSatisfy(\.isTerminated), helperSettlementProven
+      allTerminated, helperSettlementProven
     else {
-      try FileHandle.standardError.write(
-        contentsOf: Data(
-          "GUI cleanup is unverified; retain this owned fixture and abort later cases\n".utf8))
+      evidence.record("GUI cleanup is unverified; retain this owned fixture and abort later cases")
       throw failure ?? GUIFailure.cleanupUnknown
     }
     if let failure { throw failure }
-    print(
+    evidence.record(
       "actual GUI fixture: exact application terminated after proven selected processing settlement"
     )
   }

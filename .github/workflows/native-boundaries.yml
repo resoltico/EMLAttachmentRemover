@@ -44,7 +44,7 @@ jobs:
         run: |
           plan=$(cargo xtask distribution)
           about=$(jq -er '.tools.cargo_about' <<< "$plan")
-          cargo install cargo-about --version "$about" --locked
+          cargo install cargo-about --version "$about" --locked --features cli
           cargo xtask notices --check
   filesystem:
     name: Filesystem / ${{ matrix.platform }}
