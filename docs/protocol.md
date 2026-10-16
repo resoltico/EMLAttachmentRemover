@@ -34,7 +34,9 @@ This does not implement interruptible stdin reading, signals, execution, event
 rendering, filesystem admission or output delivery. Decoder tests cannot qualify
 those still-required capabilities. Core and filesystem crates have no JSON
 dependency. Request shape and native-byte tests live in the frontend package;
-business path limits remain in core.
+business path limits remain in core. Their pure error type is RequestPathError;
+the read-only collector's outer InvalidRequest additionally retains genuine
+working/output prerequisite I/O causes. Decoder validation still performs no I/O.
 
 `PathValue` now serializes core-supplied native and display-expression facts into
 the exact output object, with lossy display text and a lossless native value. Encoding
@@ -58,7 +60,8 @@ usable operand exists; this is intended input, not a valid I/O capability.
 Successful items must use their admitted native expression. The borrowed adapter
 now requires both facts explicitly; same-path callers pass the same path twice.
 Its hand-authored split-fact golden rejects using display for native encoding.
-Actual collector/literal-versus-trimmed native integration remains pending.
+The read-only collector now supplies these facts; source/native qualification
+and actual split-path filesystem integration remain pending.
 
 For each source/known destination let d be complete display-expression native
 bytes and n complete reported-native bytes; charge b=max(d,n) once to the8MiB
@@ -80,8 +83,9 @@ and actual stdout delivery still need implementation and integration tests.
 
 ## Collection-admission event indices
 
-This is a reviewed contract clarification for the future runner/reducer, not an
-implemented event stream. Item indices identify positions in the known work list.
+The read-only collector now supplies bounded work positions/provenance. Event
+emission and the runner/reducer remain unimplemented. Item indices identify
+positions in the known work list.
 They are neither emission ordinals nor raw argument indices. Strictly increasing
 indices within `start.total` may have gaps when admission leaves known inputs
 unstarted. For known file0, missing explicit root1 and known file2, the valid

@@ -1,8 +1,8 @@
 //! Pure admission tests: no fixture creation, filesystem binding or event sink.
 #![cfg(any(unix, windows))]
 use eml_core::{
-    InvalidRequest, MAX_INPUT_PATH_BYTES, MAX_INPUT_PATHS, MAX_PATH_COMPONENTS, MAX_PATH_UNITS,
-    OutputLocation, PathViolation, RequestPath, RunMode, RunRequest,
+    MAX_INPUT_PATH_BYTES, MAX_INPUT_PATHS, MAX_PATH_COMPONENTS, MAX_PATH_UNITS, OutputLocation,
+    PathViolation, RequestPath, RequestPathError, RunMode, RunRequest,
 };
 use std::path::PathBuf;
 
@@ -26,8 +26,8 @@ fn request(paths: Vec<PathBuf>) -> RunRequest {
     }
 }
 
-fn rejected_path(path: RequestPath, violation: PathViolation) -> InvalidRequest {
-    InvalidRequest::InvalidPath { path, violation }
+fn rejected_path(path: RequestPath, violation: PathViolation) -> RequestPathError {
+    RequestPathError::InvalidPath { path, violation }
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn argument_limit_applies_before_deduplication() {
     input.paths.push(PathBuf::from("same.eml"));
     assert_eq!(
         input.validate_path_limits(),
-        Err(InvalidRequest::TooManyInputs)
+        Err(RequestPathError::TooManyInputs)
     );
 }
 
@@ -69,7 +69,7 @@ fn aggregate_limit_counts_only_input_native_bytes() {
     input.paths.push(PathBuf::from("z"));
     assert_eq!(
         input.validate_path_limits(),
-        Err(InvalidRequest::InputPathsTooLarge)
+        Err(RequestPathError::InputPathsTooLarge)
     );
 }
 
@@ -111,7 +111,7 @@ fn cwd_must_be_absolute_but_paths_are_not_resolved_or_rewritten() {
     input.working_directory = PathBuf::from("relative");
     assert_eq!(
         input.validate_path_limits(),
-        Err(InvalidRequest::WorkingDirectoryNotAbsolute)
+        Err(RequestPathError::WorkingDirectoryNotAbsolute)
     );
     assert_eq!(request(vec![]).validate_path_limits(), Ok(()));
 }

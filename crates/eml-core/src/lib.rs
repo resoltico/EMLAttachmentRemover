@@ -1,7 +1,17 @@
 //! Reusable immutable message preparation for EML Attachment Remover.
 #![forbid(unsafe_code)]
 
+#[cfg(any(unix, windows))]
+mod collection;
 mod diagnostic;
+#[cfg(any(unix, windows))]
+mod selection;
+#[cfg(any(unix, windows))]
+pub use collection::{
+    CollectedObservation, CollectedSource, CollectedSources, CollectionFailure, CollectionState,
+    InvalidRequest, MAX_COLLECTED_ITEMS, MAX_COLLECTED_PATH_BYTES, MAX_DIRECTORY_ENTRIES,
+    MAX_WALK_DEPTH, SourceOrigin, collect_sources,
+};
 mod grammar;
 mod message;
 #[cfg(any(unix, windows))]
@@ -17,8 +27,8 @@ pub use diagnostic::{ErrorCode, ErrorPhase};
 pub use naming::{COPY_SUFFIX, NamingError, copy_basename};
 #[cfg(any(unix, windows))]
 pub use request::{
-    InvalidRequest, MAX_INPUT_PATH_BYTES, MAX_INPUT_PATHS, MAX_PATH_COMPONENTS, MAX_PATH_UNITS,
-    OutputLocation, PathViolation, RequestPath, RunMode, RunRequest,
+    MAX_INPUT_PATH_BYTES, MAX_INPUT_PATHS, MAX_PATH_COMPONENTS, MAX_PATH_UNITS, OutputLocation,
+    PathViolation, RequestPath, RequestPathError, RunMode, RunRequest,
 };
 #[cfg(any(unix, windows))]
 pub use source::{PreparedSource, SourcePreparationError, prepare_source};

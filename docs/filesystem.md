@@ -241,7 +241,7 @@ backend operational ceilings still produce truthful operation failures. Walked
 path limits apply to the selected spelling plus its discovered suffix, without
 charging the captured cwd prefix to a relative expression's component allowance.
 
-The future collector's8MiB path budget charges each source and known planned
+The collector's8MiB path budget charges each source and known planned
 destination once by the maximum of its complete display-expression native bytes
 and complete reported-native bytes, including failure items. Windows counts two
 bytes per UTF-16 unit. The4MiB raw-input budget remains separate and precedes
@@ -249,8 +249,9 @@ deduplication. Logical repeated prefixes count even when their allocation is
 shared. Derive transient operands and do not hide independently retained copies.
 Expanded cwd prefixes count when actually reported, rather than remaining
 transient operational material. Exact/one-over
-accounting tests remain required with the collector; this clarification does not
-claim that collector implemented.
+source-accounting tests now exercise the read-only collector, including max of
+independent display/native lengths. Planned-destination and maximal event/run
+admission remain unfinished and are not established by those source tests.
 
 On Windows, every successfully admitted source reports its admitted extended
 SELECTED expression plus literal walked suffix as the native value. Preserve
@@ -301,7 +302,8 @@ is recorded in the implementation log. A reparse leaf is
 reported before ordinary signature lookup; a traversal open refuses reparse
 processing. The collector must compare its earlier observed full ID before
 descending through the returned directory. Physical ancestry/overlap admission
-and the core collector remain unimplemented.
+remain separate from full writable integration. The read-only core collector
+below now consumes the inventory primitives; native qualification is pending.
 
 The Windows free `observe_selected` function now supplies selected-root metadata
 from an already admitted absolute extended DOS/UNC expression. Its fixed
@@ -339,7 +341,7 @@ Positive DWORDs count WCHARs; native failure/zero remains an error, with no
 Windows cache or guessed255 fallback. The existing boundary test now queries the
 read-only getter before write capability, compares a direct independent SDK
 DWORD, and uses the public staging/rename path for exact/max+1 controls. Source
-review/compile checks are closed; native runtime evidence is pending. Metadata
+and bounded both-CPU native checks closed at e36855b. Metadata
 availability supplies no write-admission or confinement authority.
 
 The separate Windows `WritableDirectory`/`CreatedDirectory` primitive now performs
@@ -398,7 +400,7 @@ Cancellation during metadata-only root observations does not convert those
 observations into known work items.
 Root-admission failure separately retains collection_complete=false and emits
 only explicit-root failures, leaving other known work not_processed. Physical
-negative-overlap implementation and qualification remain unfinished; neither a
+negative-overlap native qualification and writable integration remain unfinished; neither a
 filtered walk nor a plain upward inode no-match establishes disjointness.
 
 The reviewed physical-overlap predicate is ordinary-directory reachability from
@@ -421,4 +423,67 @@ stop bounds across all branches and count entries before filtering; limit/stop
 retains its no-item outcome. Beside-source keeps filtered/per-item behavior.
 Qualification status, logical discovery completeness and known-work prefix are
 separate facts. Recheck original requested addresses before writable integration.
-This design does not claim the collector or its native qualification exists yet.
+The read-only collector below implements this design; its native qualification
+and all writable integration remain separate requirements.
+
+## Implemented read-only core inventory
+
+`collect_sources(&RunRequest, &RunControl)` borrows the immutable request and
+returns an outcome with private captured filesystem handles and authoritative
+state. `Ok` is not complete discovery or permission to publish. It validates raw
+paths, captures the supplied working context and binds an existing output root,
+then observes explicit roots before logical request-order/native-name DFS.
+Source-directory links follow at selection; children use no-follow observations
+and compare the earlier full identity before descent. Windows source-directory
+name resolution checks the reopened normalized endpoint against the held target;
+full pinned writable ancestry/address qualification remains unfinished.
+
+The pure error is now `RequestPathError`, used by `validate_path_limits` and the
+transport decoder. Outer `InvalidRequest` preserves genuine working/output-root
+I/O causes through Error::source. Source-root failures after raw validation stay
+returned INPUT_ADMISSION_FAILED, including native InvalidInput failures. No
+classification depends on native error prose or ErrorKind alone.
+
+Metadata-only failure materialization leaves folders unexpanded. Retained rows
+preserve explicit-root versus descendant provenance, native path, flat suffix,
+file signature and physical parent. Fingerprint buckets only select candidates;
+exact native absolute spelling comparisons constrain deduplication, with stop
+checkpoints during collisions. Held-relative and live-absolute routes are
+different anchors: bind/walk cross-anchor directory roots separately even when
+directory IDs agree, since mounted views can differ. Cross-anchor file work
+coalesces only after complete leaf signature and physical parent also agree;
+unknown/failure observations cannot prove equivalence. Distinct native spellings
+and hardlinks are not merged. Mandatory explicit-root failure diagnostics bypass
+work dedupe lookup/insertion, preserving earlier work and the later failed binding.
+Intended failed inputs without operational keys never gain keys by prefixing cwd.
+Optional equality unavailability uses independent traversal, not a fabricated
+root admission failure. Native reported paths are retained/charged; raw root/cwd context is
+shared, without an expanded cwd copy for every metadata-only directory root.
+
+Source charge is max of complete display-expression and reported-native bytes,
+including failures. The separate4096-work,100000-examined-entry,64-depth and raw
+path bounds stop without processing a truncated subset. Structural dot entries
+count but never recurse. Explicit output traverses hidden/generated ordinary
+branches for separation while file work remains filtered; unknown branches block
+the whole run with their actual admission cause. Beside-source keeps descendant
+per-item failures. No message bodies, output creation, flushes, global cwd changes,
+signals or frontend policy occur here.
+
+Local real-file tests cover ordering/first encounter, root gaps and exact causes,
+hidden/generated overlap, native-unit ordering, distinct aliases, real4096/4097
+work and64/65-depth boundaries, and actual100000/100001 entry totals. Private
+hash injection exercises true collisions and deterministic RunControl/owned-empty-
+directory-removal boundaries while the filesystem remains real. It does not
+qualify another-user interference, mount setup or a signal adapter. Windows
+literal-parent/source-native and static junction cases are compiled but not yet
+executed. Source review and six-platform native execution remain pending; naming/
+destinations/reservations, MIME execution, event emission and writable run are
+still required.
+
+Complete Windows literal operands use the existing extended validation branch
+after append; ordinary normalization is not repeated on literal names. The one
+backend ceiling/subset authority stays in eml-fs. A qualification failure after
+finished discovery preserves that completion fact. A later stop governs
+interruption precedence while retaining already observed aggregate errors and
+completed discovery; mid-collection stop still has an incomplete known prefix.
+Scripted state tests prove this mapping, not native late signals or OS failures.

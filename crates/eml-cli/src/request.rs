@@ -1,6 +1,6 @@
 //! Strict bounded protocol-1 input; JSON never enters the business library.
 use crate::path::NativePath;
-use eml_core::{InvalidRequest, OutputLocation, RequestPath, RunMode, RunRequest};
+use eml_core::{OutputLocation, RequestPath, RequestPathError, RunMode, RunRequest};
 use serde::{Deserialize, Deserializer};
 use std::path::PathBuf;
 
@@ -37,7 +37,7 @@ pub enum RequestDecodeError {
         path: RequestPath,
     },
     /// A core-native resource/representation rule rejected the decoded request.
-    InvalidRequest(InvalidRequest),
+    InvalidRequest(RequestPathError),
 }
 impl std::fmt::Display for RequestDecodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

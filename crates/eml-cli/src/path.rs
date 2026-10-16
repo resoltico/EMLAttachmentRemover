@@ -1,7 +1,7 @@
 //! Lossless native output transport; display text never becomes an operational path.
 use crate::request::RequestDecodeError;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use eml_core::{InvalidRequest, MAX_PATH_UNITS, PathViolation, RequestPath};
+use eml_core::{MAX_PATH_UNITS, PathViolation, RequestPath, RequestPathError};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 use std::{
     fmt::{self, Write},
@@ -93,7 +93,7 @@ impl NativePath {
         let max_encoded = (MAX_PATH_UNITS * bytes_per_unit).div_ceil(3) * 4;
         if self.base64.len() > max_encoded {
             return Err(RequestDecodeError::InvalidRequest(
-                InvalidRequest::InvalidPath {
+                RequestPathError::InvalidPath {
                     path: location,
                     violation: PathViolation::TooManyUnits,
                 },

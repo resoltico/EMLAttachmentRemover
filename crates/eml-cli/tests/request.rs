@@ -2,8 +2,8 @@
 #![cfg(any(unix, windows))]
 use base64::{Engine, engine::general_purpose::STANDARD};
 use eml_core::{
-    InvalidRequest, MAX_INPUT_PATH_BYTES, MAX_INPUT_PATHS, MAX_PATH_COMPONENTS, MAX_PATH_UNITS,
-    OutputLocation, PathViolation, RequestPath, RunMode,
+    MAX_INPUT_PATH_BYTES, MAX_INPUT_PATHS, MAX_PATH_COMPONENTS, MAX_PATH_UNITS, OutputLocation,
+    PathViolation, RequestPath, RequestPathError, RunMode,
 };
 use remove_eml_attachments::{MAX_REQUEST_BYTES, RequestDecodeError, decode_request};
 use std::path::PathBuf;
@@ -299,14 +299,14 @@ fn decoded_values_are_subject_to_core_limits_before_use() {
     assert_eq!(
         decode_request(input.as_bytes(), root()),
         Err(RequestDecodeError::InvalidRequest(
-            InvalidRequest::TooManyInputs
+            RequestPathError::TooManyInputs
         ))
     );
     let input = document(&native(&encode_ascii("a\0b")));
     assert_eq!(
         decode_request(input.as_bytes(), root()),
         Err(RequestDecodeError::InvalidRequest(
-            InvalidRequest::InvalidPath {
+            RequestPathError::InvalidPath {
                 path: RequestPath::Input(0),
                 violation: PathViolation::EmbeddedNul
             }
@@ -318,7 +318,7 @@ fn decoded_values_are_subject_to_core_limits_before_use() {
     assert_eq!(
         decode_request(input.as_bytes(), root()),
         Err(RequestDecodeError::InvalidRequest(
-            InvalidRequest::InvalidPath {
+            RequestPathError::InvalidPath {
                 path: RequestPath::Input(0),
                 violation: PathViolation::TooManyComponents
             }
@@ -327,7 +327,7 @@ fn decoded_values_are_subject_to_core_limits_before_use() {
     assert_eq!(
         decode_request(EMPTY.as_bytes(), PathBuf::from("relative")),
         Err(RequestDecodeError::InvalidRequest(
-            InvalidRequest::WorkingDirectoryNotAbsolute
+            RequestPathError::WorkingDirectoryNotAbsolute
         ))
     );
 }
@@ -341,7 +341,7 @@ fn native_unit_and_aggregate_bytes_bounds_survive_transport() {
         assert_eq!(
             decode_request(input.as_bytes(), root()),
             Err(RequestDecodeError::InvalidRequest(
-                InvalidRequest::InvalidPath {
+                RequestPathError::InvalidPath {
                     path: RequestPath::Input(0),
                     violation: PathViolation::TooManyUnits
                 }
@@ -358,7 +358,7 @@ fn native_unit_and_aggregate_bytes_bounds_survive_transport() {
     assert_eq!(
         decode_request(input.as_bytes(), root()),
         Err(RequestDecodeError::InvalidRequest(
-            InvalidRequest::InputPathsTooLarge
+            RequestPathError::InputPathsTooLarge
         ))
     );
 }

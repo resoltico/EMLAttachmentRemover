@@ -66,9 +66,9 @@ pub enum PathViolation {
     TooManyComponents,
 }
 
-/// A pre-stream request error; no work or output has started.
+/// Pure request-path representation/resource failure, without filesystem I/O.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InvalidRequest {
+pub enum RequestPathError {
     /// Argument count exceeds the request bound, even when arguments repeat.
     TooManyInputs,
     /// Combined native input bytes exceed the request bound.
@@ -83,7 +83,7 @@ pub enum InvalidRequest {
     /// Relative expressions must have a captured absolute base.
     WorkingDirectoryNotAbsolute,
 }
-impl std::fmt::Display for InvalidRequest {
+impl std::fmt::Display for RequestPathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::TooManyInputs => write!(f, "Request exceeds {MAX_INPUT_PATHS} input paths"),
@@ -97,7 +97,7 @@ impl std::fmt::Display for InvalidRequest {
         }
     }
 }
-impl std::error::Error for InvalidRequest {}
+impl std::error::Error for RequestPathError {}
 
 impl RunRequest {
     /// Check native representation and request resource limits without I/O.
@@ -107,13 +107,13 @@ impl RunRequest {
     /// existence and usable source bindings still need filesystem admission.
     /// Limits apply to raw spelling: dot/dot-dot components count and are not
     /// collapsed. Repeated separators do not create additional components.
-    pub fn validate_path_limits(&self) -> Result<(), InvalidRequest> {
+    pub fn validate_path_limits(&self) -> Result<(), RequestPathError> {
         if self.paths.len() > MAX_INPUT_PATHS {
-            return Err(InvalidRequest::TooManyInputs);
+            return Err(RequestPathError::TooManyInputs);
         }
         validate_path(&self.working_directory, RequestPath::WorkingDirectory)?;
         if !self.working_directory.is_absolute() {
-            return Err(InvalidRequest::WorkingDirectoryNotAbsolute);
+            return Err(RequestPathError::WorkingDirectoryNotAbsolute);
         }
         if let OutputLocation::Directory(path) = &self.output {
             validate_path(path, RequestPath::OutputDirectory)?;
@@ -124,17 +124,30 @@ impl RunRequest {
             total = total
                 .checked_add(bytes)
                 .filter(|bytes| *bytes <= MAX_INPUT_PATH_BYTES)
-                .ok_or(InvalidRequest::InputPathsTooLarge)?;
+                .ok_or(RequestPathError::InputPathsTooLarge)?;
         }
         Ok(())
     }
 }
 
-fn validate_path(path: &Path, location: RequestPath) -> Result<usize, InvalidRequest> {
-    let invalid = |violation| InvalidRequest::InvalidPath {
+fn validate_path(path: &Path, location: RequestPath) -> Result<usize, RequestPathError> {
+    path_limits(path).map_err(|violation| RequestPathError::InvalidPath {
         path: location,
         violation,
-    };
+    })
+}
+pub(crate) fn native_bytes(path: &Path) -> usize {
+    #[cfg(unix)]
+    {
+        path.as_os_str().as_encoded_bytes().len()
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        path.as_os_str().encode_wide().count() * 2
+    }
+}
+pub(crate) fn path_limits(path: &Path) -> Result<usize, PathViolation> {
     #[cfg(unix)]
     let (units, prefix_units, bytes_per_unit) = {
         use std::os::unix::ffi::OsStrExt;
@@ -159,10 +172,10 @@ fn validate_path(path: &Path, location: RequestPath) -> Result<usize, InvalidReq
     for unit in units {
         length += 1;
         if length > MAX_PATH_UNITS {
-            return Err(invalid(PathViolation::TooManyUnits));
+            return Err(PathViolation::TooManyUnits);
         }
         if unit == 0 {
-            return Err(invalid(PathViolation::EmbeddedNul));
+            return Err(PathViolation::EmbeddedNul);
         }
         if length <= prefix_units {
             continue;
@@ -173,7 +186,7 @@ fn validate_path(path: &Path, location: RequestPath) -> Result<usize, InvalidReq
         } else if !in_component {
             components += 1;
             if components > MAX_PATH_COMPONENTS {
-                return Err(invalid(PathViolation::TooManyComponents));
+                return Err(PathViolation::TooManyComponents);
             }
             in_component = true;
         }

@@ -1181,3 +1181,70 @@ native probe all-target checks closed without findings. Local Mac FS30/Clippy,
 formatting and diff checks passed; doctests0. Native runtime for this read-only
 property/public-flow amendment is pending. Metadata availability is not full
 write admission, overlap or confinement qualification; the old failed gate stays.
+
+At exact `e36855b620ac1be393226f51c5051e29c388ddd1`,
+[Windows run38866089872](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38866089872)
+passed the amended read-only getter/direct native DWORD/public exact/max+1 flow
+on both native CPUs. Nongate39passed/0failed/0ignored/1filtered; each actual old
+gate still failed0passed/1failed/0ignored/39filtered, sole failed step. Independent
+exact-head/raw QA closed bounded metadata availability, not full writer authority.
+[Unix run38866089881](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38866089881)
+passed all seven jobs, preserving FS30Mac/26Linux, codec6/request16, earlier core/
+source and real cross-UID/ACL controls, default process18 each. Full retained logs
+are target/e36855b-windows-ci.log and target/e36855b-unix-ci.log. This head has no
+collector implementation; it cannot qualify the following change.
+
+## Read-only core collection and output separation
+
+The reusable collect_sources operation now owns request validation, captured
+context/output prerequisites, ordered bounded inventory, exact-spelling/anchor
+dedupe, explicit/descendant provenance and unfiltered explicit-output separation.
+Requests are truly borrowed; filesystem handles and authoritative state remain
+private. Ok means an outcome exists, not complete discovery or write permission.
+RequestPathError is the pure path/count/NUL/absolute-base error, migrated through
+all real core/decoder callers. Outer InvalidRequest owns actual prerequisite I/O
+causes through Error::source. Source-root failures after raw validation remain
+returned INPUT_ADMISSION_FAILED; no classification parses error text or infers a
+change from ErrorKind alone.
+
+Independent source challenge found and corrected complete Windows-operand
+validation, unavailable-key dedupe, late mandatory root-diagnostic suppression,
+completion/late-stop evidence loss, and stale-cwd cross-anchor coalescence. Complete
+literal Windows operands reuse the existing verbatim validation branch after
+append. Failed root diagnostics bypass work lookup/indexing; intended fallback
+paths have no admitted key. Relative and absolute directory routes bind/walk
+separately; only matching full native spelling plus actual leaf signature/parent
+can coalesce cross-anchor file work. No directory-context interchangeability,
+inode-global visited set, statx/proc/F_GETPATH expansion or new OS floor is claimed.
+
+Controlled owned fixtures reject hidden/generated-branch false negatives, lost
+late root failure after an earlier walked file, cwd replacement with distinct
+leaves and with a hard-linked leaf/different parent, unsafe Path equality for
+./a, unordered truncation, and forgotten prior errors/completed discovery on a
+scripted late stop. Private hash injection controls collision/RunControl/ordinary
+empty-directory transitions with actual filesystem I/O; it is not other-user,
+mount, signal or native OS-fault evidence. Real native local tests execute exact/
+one-over4096 work,64 depth and100000 directory entries. A Windows literal folder
+case now uses non-dot folder. versus folder, retaining the production dot skip.
+The pure combined Windows32766 boundary uses32757 x units plus7-prefix/2-join-leaf;
+this is not a filesystem component-capacity claim. Positive observed output IDs
+select overlap before a later depth/open refusal; the opened-ID check remains.
+
+Final source/API/error/budget/test/workflow QA closed with those amendments.
+Stable local full workspace ran192 passes across15 positive suites, zero failures/
+ignores/filters, six expected empty suites (target/core-collection-workspace-final.log).
+After the last arithmetic/positive-overlap amendments, targeted core unit24,
+collection11, request9 and source6 passed with zero failures/ignores/filters
+(target/core-collection-prepush-local.log). Host/MSVC core+CLI all-target Clippy,
+excluded probe all-target check, formatting/diff and both changed-workflow
+actionlint checks passed. Earlier lint findings were fixed, not suppressed.
+Native workflows now explicitly discover collection alongside core units/source;
+Windows requires three positive unfiltered suites. Expected native discovery is
+24units/11collection on Unix and23units/12collection on Windows; runtime is pending.
+
+This phase reads no message bodies, creates/flushes no output, changes no process
+cwd and exposes no frontend write handles. Destination naming/layout/reservations,
+full source/destination/ancestor/address integration, serial MIME execution,
+typed terminal events/counts/delivery, actual CLI, SwiftUI, archives and final
+qualification remain unfinished. The old Windows confinement gate stays failed;
+no native mount fixture, saved preferences or unrelated work was changed.
