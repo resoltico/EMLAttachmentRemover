@@ -712,82 +712,121 @@ pub(super) fn source_identities(sources: &CollectedSources<'_>) -> HashSet<Ident
     ids
 }
 
+/// Current-item read-only facts, including mirrors first observed after planning.
+pub(super) struct ReadOnlyParent {
+    pub(super) directory: BoundDirectory,
+    pub(super) prefix: Vec<Identity>,
+    pub(super) complete: bool,
+}
+impl DestinationInfo {
+    pub(super) fn planned_prefix(&self) -> &[Identity] {
+        &self.existing_prefix
+    }
+}
 impl DestinationPlan<'_> {
-    /// Rebind only ordinary existing parents against frozen prefix identities.
-    /// None means a positively missing tail; never creates or probes a directory.
-    pub(super) fn bind_parent(
+    pub(super) fn mirror_route(&self, index: usize) -> PathBuf {
+        match self.sources.request.output {
+            OutputLocation::BesideSource => PathBuf::new(),
+            OutputLocation::Directory(_) => mirrored_route(&self.sources, index, &self.labels),
+        }
+    }
+    pub(super) fn rebind_root(
         &self,
         index: usize,
         control: &RunControl,
-    ) -> Result<Option<BoundDirectory>, OperationFailure> {
-        let info = self.records[index]
-            .destination()
-            .expect("caller requires a known destination");
-        let context = self
-            .sources
-            .context
-            .as_ref()
-            .expect("complete collection context");
-        let mut current = match &self.sources.request.output {
+    ) -> Result<BoundDirectory, OperationFailure> {
+        if control.is_stopped() {
+            return Err(execution_interrupted());
+        }
+        let directory = match &self.sources.request.output {
             OutputLocation::BesideSource => source_parent(&self.sources, index, control)
                 .map_err(|error| error.during_execution(ErrorPhase::Existing))?,
-            OutputLocation::Directory(root) => context
+            OutputLocation::Directory(root) => self
+                .sources
+                .context
+                .as_ref()
+                .expect("complete context")
                 .directory(root)
                 .map_err(destination_binding_failure)?,
         };
-        if current.identity() != info.existing_prefix[0] {
+        if directory.identity()
+            != self.records[index]
+                .destination()
+                .expect("known destination")
+                .existing_prefix[0]
+        {
             return Err(address_changed(
                 "Destination root differs from its planned binding",
             ));
         }
-        if matches!(self.sources.request.output, OutputLocation::Directory(_)) {
-            let route = mirrored_route(&self.sources, index, &self.labels);
-            for (offset, part) in route.components().enumerate() {
-                if control.is_stopped() {
-                    return Err(execution_interrupted());
-                }
-                let Component::Normal(name) = part else {
-                    unreachable!("private frozen mirror route");
-                };
-                let observed = current.observe_child_if_present(name).map_err(|error| {
-                    execution_native_failure("Destination parent cannot be inspected", error)
-                })?;
-                let Some(observed) = observed else {
-                    if offset + 1 < info.existing_prefix.len() {
-                        return Err(address_changed(
-                            "Previously observed destination parent is missing",
-                        ));
-                    }
-                    check_parent_assumption(&current, info.limit)?;
-                    return Ok(None);
-                };
-                if observed.kind != EntryKind::Directory {
-                    return Err(OperationFailure::new(
-                        ErrorCode::DestinationExists,
-                        ErrorPhase::Existing,
-                        "Destination parent is not an ordinary directory",
-                    ));
-                }
-                let opened = current.open_child(name).map_err(|error| {
-                    execution_native_failure("Destination parent cannot be opened", error)
-                })?;
-                if opened.identity() != observed.identity
-                    || info
-                        .existing_prefix
-                        .get(offset + 1)
-                        .is_some_and(|expected| *expected != opened.identity())
-                {
-                    return Err(address_changed(
-                        "Destination parent differs from its planned binding",
-                    ));
-                }
-                current = opened;
+        Ok(directory)
+    }
+    /// Retain every observed identity for later acquisition; create nothing.
+    pub(super) fn read_parent(
+        &self,
+        index: usize,
+        control: &RunControl,
+    ) -> Result<ReadOnlyParent, OperationFailure> {
+        let info = self.records[index]
+            .destination()
+            .expect("known destination");
+        let mut current = self.rebind_root(index, control)?;
+        let mut prefix = vec![current.identity()];
+        for (offset, part) in self.mirror_route(index).components().enumerate() {
+            if control.is_stopped() {
+                return Err(execution_interrupted());
             }
+            let Component::Normal(name) = part else {
+                unreachable!("frozen mirror route");
+            };
+            let observed = current.observe_child_if_present(name).map_err(|error| {
+                execution_native_failure("Destination parent cannot be inspected", error)
+            })?;
+            let Some(observed) = observed else {
+                if offset + 1 < info.existing_prefix.len() {
+                    return Err(address_changed(
+                        "Previously observed destination parent is missing",
+                    ));
+                }
+                check_parent_assumption(&current, info.limit)?;
+                return Ok(ReadOnlyParent {
+                    directory: current,
+                    prefix,
+                    complete: false,
+                });
+            };
+            if observed.kind != EntryKind::Directory {
+                return Err(OperationFailure::new(
+                    ErrorCode::DestinationExists,
+                    ErrorPhase::Existing,
+                    "Destination parent is not an ordinary directory",
+                ));
+            }
+            let opened = current.open_child(name).map_err(|error| {
+                execution_native_failure("Destination parent cannot be opened", error)
+            })?;
+            if opened.identity() != observed.identity
+                || info
+                    .existing_prefix
+                    .get(offset + 1)
+                    .is_some_and(|expected| *expected != opened.identity())
+            {
+                return Err(address_changed(
+                    "Destination parent differs from its planned binding",
+                ));
+            }
+            prefix.push(opened.identity());
+            current = opened;
         }
         check_parent_assumption(&current, info.limit)?;
-        Ok(Some(current))
+        Ok(ReadOnlyParent {
+            directory: current,
+            prefix,
+            complete: true,
+        })
     }
 }
+
 fn address_changed(detail: &'static str) -> OperationFailure {
     OperationFailure::new(ErrorCode::AddressChanged, ErrorPhase::Address, detail)
 }

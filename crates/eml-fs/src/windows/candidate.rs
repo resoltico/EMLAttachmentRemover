@@ -1,15 +1,13 @@
 //! Complete owned file storage, consumed separately by the physical rename edge.
 use super::writable::{Creation, WritableDirectory, flush};
 use crate::{
-    CleanupReceipt, CleanupState, Identity, NtStatusError, StageFailure, StageOperation,
-    SyncReceipt, SyncState,
+    CleanupReceipt, CleanupState, Identity, StageFailure, StageOperation, SyncReceipt, SyncState,
     staging::{NAME_ATTEMPTS, random_name},
 };
 use std::{
     ffi::{OsStr, OsString},
     io::{self, Read, Seek, SeekFrom, Write},
 };
-use windows_sys::Win32::Foundation::STATUS_OBJECT_NAME_COLLISION;
 
 /// Complete reread and synchronized storage of supplied verified bytes.
 /// Construction/handles stay private; publishing consumes the staging capability.
@@ -60,14 +58,7 @@ fn before_creation(error: io::Error) -> StageFailure {
         },
     }
 }
-fn exact_collision(error: &crate::CreationFailure) -> bool {
-    error.cleanup.state == CleanupState::NotNeeded
-        && error
-            .error
-            .get_ref()
-            .and_then(|cause| cause.downcast_ref::<NtStatusError>())
-            .is_some_and(|cause| cause.nt_status() == STATUS_OBJECT_NAME_COLLISION)
-}
+
 impl WritableDirectory {
     /// Stage bytes with bounded same-handle write/reread/EOF and file flush checks.
     /// Native inherited ACL remains unchanged; share-zero excludes normal data
@@ -95,7 +86,7 @@ impl WritableDirectory {
                     admitted = Some(value);
                     break;
                 }
-                Err(error) if exact_collision(&error) => last_collision = Some(error),
+                Err(error) if error.is_name_collision() => last_collision = Some(error),
                 Err(error) => return Err(error.into()),
             }
         }
@@ -237,8 +228,9 @@ mod tests {
         test_fixture::{directory, operation},
     };
     use super::*;
-    use crate::{BoundDirectory, SyncMethod};
+    use crate::{BoundDirectory, NtStatusError, SyncMethod};
     use std::{cell::Cell, os::windows::fs::FileExt};
+    use windows_sys::Win32::Foundation::STATUS_OBJECT_NAME_COLLISION;
 
     fn writer(root: &std::path::Path) -> (BoundDirectory, WritableDirectory) {
         let read = BoundDirectory::open(&operation(root)).unwrap();

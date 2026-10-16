@@ -12,6 +12,17 @@ pub struct OperationFailure {
     cause: Option<Arc<io::Error>>,
 }
 impl OperationFailure {
+    pub(super) fn with_context(
+        mut self,
+        code: ErrorCode,
+        phase: ErrorPhase,
+        detail: &'static str,
+    ) -> Self {
+        self.code = code;
+        self.phase = phase;
+        self.detail = detail;
+        self
+    }
     /// Stable semantic code, never inferred from native error prose.
     pub fn code(&self) -> ErrorCode {
         self.code

@@ -90,6 +90,63 @@ pub struct CreationFailure {
     /// Cleanup actually attempted, never silently assumed from Drop.
     pub cleanup: CleanupReceipt,
 }
+impl CreationFailure {
+    /// A definite native existing-name collision with no newly owned resource.
+    /// Other statuses, translated ErrorKind values and uncertain cleanup cannot
+    /// authorize a retry or acceptance of another creator's entry.
+    pub fn is_name_collision(&self) -> bool {
+        if self.cleanup.state != CleanupState::NotNeeded {
+            return false;
+        }
+        name_collision(&self.error)
+    }
+}
+pub(crate) fn name_collision(error: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        error.raw_os_error() == Some(rustix::io::Errno::EXIST.raw_os_error())
+    }
+    #[cfg(windows)]
+    {
+        error
+            .get_ref()
+            .and_then(|cause| cause.downcast_ref::<NtStatusError>())
+            .is_some_and(|cause| {
+                cause.nt_status() == windows_sys::Win32::Foundation::STATUS_OBJECT_NAME_COLLISION
+            })
+    }
+}
+pub(crate) fn unsupported_publication(error: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        [
+            rustix::io::Errno::NOTSUP,
+            rustix::io::Errno::OPNOTSUPP,
+            rustix::io::Errno::NOSYS,
+        ]
+        .iter()
+        .any(|code| error.raw_os_error() == Some(code.raw_os_error()))
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{
+            STATUS_INVALID_DEVICE_REQUEST, STATUS_INVALID_INFO_CLASS, STATUS_NOT_IMPLEMENTED,
+            STATUS_NOT_SUPPORTED,
+        };
+        error
+            .get_ref()
+            .and_then(|cause| cause.downcast_ref::<NtStatusError>())
+            .is_some_and(|cause| {
+                matches!(
+                    cause.nt_status(),
+                    STATUS_NOT_SUPPORTED
+                        | STATUS_NOT_IMPLEMENTED
+                        | STATUS_INVALID_INFO_CLASS
+                        | STATUS_INVALID_DEVICE_REQUEST
+                )
+            })
+    }
+}
 impl std::fmt::Display for CreationFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}; cleanup {:?}", self.error, self.cleanup.state)

@@ -66,6 +66,21 @@ pub struct PublishedCopy {
     cleanup: CleanupReceipt,
 }
 impl PublishedCopy {
+    pub(super) fn observed(
+        identity: Identity,
+        address: AddressState,
+        file_sync: Option<SyncReceipt>,
+        namespace_sync: NamespaceObservation,
+        cleanup: CleanupReceipt,
+    ) -> Self {
+        Self {
+            identity,
+            address,
+            file_sync,
+            namespace_sync,
+            cleanup,
+        }
+    }
     /// Identity retained through the actual publication edge.
     pub fn identity(&self) -> Identity {
         self.identity
@@ -92,6 +107,23 @@ impl PublishedCopy {
 #[derive(Debug)]
 pub struct CreatedCopy(PublishedCopy);
 impl CreatedCopy {
+    pub(super) fn qualify(publication: PublishedCopy) -> Result<Self, Box<PublishedCopy>> {
+        if publication.address == AddressState::Verified
+            && publication
+                .file_sync
+                .is_some_and(|receipt| receipt.state == eml_fs::SyncState::Succeeded)
+            && namespace_qualified(publication.namespace_sync)
+            && matches!(
+                publication.cleanup.state,
+                eml_fs::CleanupState::NotNeeded | eml_fs::CleanupState::Complete
+            )
+            && publication.cleanup.native_code.is_none()
+        {
+            Ok(Self(publication))
+        } else {
+            Err(Box::new(publication))
+        }
+    }
     /// Successfully qualified publication evidence.
     pub fn publication(&self) -> &PublishedCopy {
         &self.0
@@ -102,6 +134,21 @@ impl CreatedCopy {
 #[derive(Debug)]
 pub struct ExistingCopy(ExistingObservation);
 impl ExistingCopy {
+    pub(super) fn qualify(observation: ExistingObservation) -> Result<Self, ExistingObservation> {
+        if observation.identity.is_some()
+            && observation.bytes_equal == Some(true)
+            && observation.stable
+            && observation.address == AddressState::Verified
+            && observation
+                .file_sync
+                .is_some_and(|receipt| receipt.state == eml_fs::SyncState::Succeeded)
+            && namespace_qualified(observation.namespace_sync)
+        {
+            Ok(Self(observation))
+        } else {
+            Err(observation)
+        }
+    }
     /// Complete qualified existing observation.
     pub fn observation(&self) -> &ExistingObservation {
         &self.0
@@ -117,6 +164,21 @@ pub struct UnknownPublication {
     cleanup: CleanupReceipt,
 }
 impl UnknownPublication {
+    pub(super) fn observed(
+        candidate_identity: Option<Identity>,
+        address: AddressState,
+        file_sync: Option<SyncReceipt>,
+        namespace_sync: NamespaceObservation,
+        cleanup: CleanupReceipt,
+    ) -> Self {
+        Self {
+            candidate_identity,
+            address,
+            file_sync,
+            namespace_sync,
+            cleanup,
+        }
+    }
     /// Known candidate identity, without a claim about the final entry.
     pub fn candidate_identity(&self) -> Option<Identity> {
         self.candidate_identity
@@ -137,6 +199,15 @@ impl UnknownPublication {
     pub fn cleanup(&self) -> &CleanupReceipt {
         &self.cleanup
     }
+}
+fn namespace_qualified(namespace: NamespaceObservation) -> bool {
+    namespace.required_edges > 0
+        && namespace.required_edges <= 513
+        && namespace.completed_edges == namespace.required_edges
+        && namespace.failed_edge_index.is_none()
+        && namespace
+            .receipt
+            .is_some_and(|receipt| receipt.state == eml_fs::SyncState::Succeeded)
 }
 /// Publication effect for a failed item, independent of its intended destination.
 #[derive(Debug)]
@@ -416,4 +487,112 @@ pub enum Event<'a> {
 pub trait EventSink {
     /// Deliver the whole typed event or return the actual output failure.
     fn emit(&mut self, event: Event<'_>) -> io::Result<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn success() -> SyncReceipt {
+        SyncReceipt {
+            method: eml_fs::SyncMethod::Fsync,
+            state: eml_fs::SyncState::Succeeded,
+            native_code: None,
+        }
+    }
+    fn complete_namespace() -> NamespaceObservation {
+        NamespaceObservation {
+            receipt: Some(success()),
+            required_edges: 1,
+            completed_edges: 1,
+            failed_edge_index: None,
+        }
+    }
+    fn cleanup() -> CleanupReceipt {
+        CleanupReceipt {
+            state: eml_fs::CleanupState::Complete,
+            residual_name: None,
+            native_code: None,
+        }
+    }
+    fn published() -> PublishedCopy {
+        PublishedCopy::observed(
+            Identity::Posix {
+                device: 1,
+                inode: 2,
+            },
+            AddressState::Verified,
+            Some(success()),
+            complete_namespace(),
+            cleanup(),
+        )
+    }
+    #[test]
+    fn publication_evidence_cannot_qualify_created_with_missing_or_failed_requirements() {
+        assert!(CreatedCopy::qualify(published()).is_ok());
+        for missing in 0..6 {
+            let mut publication = published();
+            match missing {
+                0 => publication.address = AddressState::Unknown,
+                1 => publication.file_sync = None,
+                2 => publication.namespace_sync.completed_edges = 0,
+                3 => publication.namespace_sync.receipt = None,
+                4 => publication.cleanup.state = eml_fs::CleanupState::Residual,
+                _ => publication.cleanup.native_code = Some(5),
+            }
+            assert!(CreatedCopy::qualify(publication).is_err());
+        }
+        for state in [eml_fs::SyncState::Failed, eml_fs::SyncState::Unsupported] {
+            let mut publication = published();
+            publication.file_sync = Some(SyncReceipt { state, ..success() });
+            assert!(CreatedCopy::qualify(publication).is_err());
+            let mut publication = published();
+            publication.namespace_sync.receipt = Some(SyncReceipt { state, ..success() });
+            assert!(CreatedCopy::qualify(publication).is_err());
+        }
+        let mut publication = published();
+        publication.namespace_sync.required_edges = 514;
+        publication.namespace_sync.completed_edges = 514;
+        assert!(CreatedCopy::qualify(publication).is_err());
+    }
+    #[test]
+    fn byte_equality_does_not_qualify_existing_without_sync_and_address() {
+        let observed = ExistingObservation {
+            identity: Some(Identity::Posix {
+                device: 1,
+                inode: 2,
+            }),
+            bytes_equal: Some(true),
+            stable: true,
+            address: AddressState::Verified,
+            file_sync: Some(success()),
+            namespace_sync: complete_namespace(),
+        };
+        assert!(ExistingCopy::qualify(observed.clone()).is_ok());
+        for missing in 0..9 {
+            let mut copy = observed.clone();
+            match missing {
+                0 => copy.bytes_equal = None,
+                1 => copy.stable = false,
+                2 => copy.address = AddressState::NotChecked,
+                3 => copy.file_sync = None,
+                4 => copy.namespace_sync.failed_edge_index = Some(0),
+                5 => copy.namespace_sync.required_edges = 0,
+                6 => copy.identity = None,
+                7 => copy.bytes_equal = Some(false),
+                _ => {
+                    copy.namespace_sync.required_edges = 514;
+                    copy.namespace_sync.completed_edges = 514;
+                }
+            }
+            assert!(ExistingCopy::qualify(copy).is_err());
+        }
+        for state in [eml_fs::SyncState::Failed, eml_fs::SyncState::Unsupported] {
+            let mut copy = observed.clone();
+            copy.file_sync = Some(SyncReceipt { state, ..success() });
+            assert!(ExistingCopy::qualify(copy).is_err());
+            let mut copy = observed.clone();
+            copy.namespace_sync.receipt = Some(SyncReceipt { state, ..success() });
+            assert!(ExistingCopy::qualify(copy).is_err());
+        }
+    }
 }

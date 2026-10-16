@@ -68,7 +68,7 @@ jobs:
       - name: Native core diagnostic vocabulary
         run: cargo test --locked --package eml-core --test diagnostic
       - name: Native collection, destination planning and held-source preparation
-        run: cargo test --locked --package eml-core --lib --test collection --test destination --test dry_run --test existing --test source
+        run: cargo test --locked --package eml-core --lib --test collection --test destination --test dry_run --test execution --test existing --test source
       - name: Native protocol path transport
         run: |
           cargo clippy --locked --package remove-eml-attachments --all-targets -- -D warnings

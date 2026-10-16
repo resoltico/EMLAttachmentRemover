@@ -157,3 +157,10 @@ file sync, namespace sync and cleanup are independent facts. None synchronizatio
 is explicitly unattempted, not a successful native receipt. Namespace aggregation
 must qualify its represented method/outcome across the counted ordered edge set;
 a final edge's stronger method cannot erase a prior limited/failed request.
+
+The same typed event/outcome hierarchy now serves Core run for Create and DryRun;
+normal execution does not silently become a plan. The common source/native
+integration is still being verified. Native receipts, source/output reservations,
+metadata budgeting and counts remain business-library decisions. The CLI package
+still has no executable/event renderer; these typed source capabilities are not
+JSON/CLI or application qualification.

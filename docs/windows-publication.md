@@ -614,7 +614,8 @@ normal incompatible writers/deleters. A validation observer must not deny the
 write access already held by a sync owner and self-conflict. This is observation,
 not new creation protection or metadata immutability.
 
-The core resynchronization consumer is still to be implemented: first compare
+The Core resynchronization consumer now implements this source lifecycle (its
+native qualification is pending): first compare
 read-only, retain its observations, checked-close only that comparison owner,
 open the fixed sync profile, require the same full parent/file signature, repeat
 all alias guards and the same bounded comparison, then flush that newly compared
@@ -630,8 +631,9 @@ it does not bypass the first reader's sharing exclusion.
 The native ordinary-file tests use the existing fresh owned current-user ACL
 fixture and restricted same-UserSID token, with administrator groups deny-only.
 They test actual read/flush/self-validation, source retention, readonly denial,
-sharing exclusion and checked closure. Native execution of this amendment is
-pending; it does not qualify Core UpToDate or full destination confinement.
+sharing exclusion and checked closure. Both-CPU native execution of this bounded
+primitive passed at 11956fa (Windows38890727633, Unix38890727587). It does not
+qualify the later Core UpToDate/common consumer or full destination confinement.
 
 ## Resolved root ancestry ownership
 
@@ -666,6 +668,7 @@ accepted with or without its trailing separator, without a fictitious server
 ancestor. These syntax controls do not qualify a live SMB share.
 
 This amendment preserves the ancestry policy and supplies no continuous metadata
-immutability or replacement for the still-failed old creation gate. Both-CPU
-native execution of the new profiles/owner remains pending. The actual private
-Core publication/resync consumer is still required.
+immutability or replacement for the still-failed old creation gate. Both-CPU native
+execution of these narrow profiles/owner passed at 0fe6b9f. The private Core
+publication/resync consumer is now implemented in source; its native qualification
+and complete confinement evidence remain pending.

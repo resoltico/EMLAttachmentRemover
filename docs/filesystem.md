@@ -539,7 +539,44 @@ exit class. A failed summary can retain delivery failure and observed user-stop
 precedence because no complete successful stream is claimed.
 
 This operation never creates missing parents, stages, publishes or synchronizes.
-Create/UpToDate success wrappers have no constructors until their actual native
-qualification consumers exist. Full writable execution, Windows ancestor/address
-qualification and existing-copy synchronization remain unfinished. Dry-run native
-qualification is pending.
+Dry-run native qualification closed at ac8e193. The common writable consumers
+and private success constructors are now implemented in source below, with
+native qualification still pending; no overall product acceptance follows.
+
+The common run operation now implements both Create and DryRun in source. It
+shares the same admission, preparation, initial read-only destination inspection,
+metadata budget, serial accounting and checked events. Different existing bytes
+fail before directory or file synchronization access is requested. Matching
+inspection retains its actual parent prefix and held file; normal Windows
+execution checked-closes that comparison owner, opens the fixed sync profile,
+requires the same parent/full file binding, repeats reservations and the same
+bounded comparison, then performs actual file/namespace/address checks. Private
+success constructors reject incomplete receipts; publication evidence can still
+be retained in a failed result.
+
+One current-item DestinationBinding retains the root and all existing/new mirror
+owners. It never rebaselines a component bound at planning or first inspection.
+Still-unbound tails allow one exclusive creation attempt, or one exact native
+collision reobserve/open of an ordinary other-creator directory. Ownership and
+synchronization debt are separate. Windows conservatively flushes child and
+parent for possibly-new unowned edges; POSIX preserves its run-created-only rule.
+A per-run bounded pending set retains known parent/child pairs and unresolved
+parent/native-component attempts after failed creation/sync. Native lookup can
+resolve an attempted address without granting ownership; missing/error lookup
+cannot erase it. Only both successful edge operations or confirmed owned removal
+retire the matching debt. Upper pins not modified by this workflow are not flushed.
+
+Cleanup is candidate-first then reverse identity-safe owned-empty layout removal
+only before publication. A known stage residual component and first native
+cleanup error survive aggregation. Multiple verified layout residues may be
+Residual with no guessed name; genuinely unverified cleanup is Unknown. No
+ancestor basename is placed into the fixed candidate-residual slot. Published or
+Unknown retains intended layout and never rolls back a final copy. Actual held-
+parent candidate identity can reconcile an ambiguous edge independently of later
+source/content/address qualification. Cleanup/checked-close failure is retained
+before later address failures. Staging interruption is classified from the exact
+checkpoint that stopped, not a contemporaneous flag or native ErrorKind.
+
+These are implemented source contracts under native verification, not full
+product acceptance. The old Windows creation gate remains failed. Full boundary
+qualification, CLI/JSON, SwiftUI, archive and required GUI gates remain unfinished.

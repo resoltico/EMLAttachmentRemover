@@ -31,6 +31,16 @@ pub struct PublishAttempt {
     error: Option<io::Error>,
 }
 impl PublishAttempt {
+    /// Exact native existing-name collision, independent of publication effects.
+    pub fn is_name_collision(&self) -> bool {
+        self.error.as_ref().is_some_and(crate::name_collision)
+    }
+    /// Documented unsupported native primitive result; no fallback is authorized.
+    pub fn is_unsupported(&self) -> bool {
+        self.error
+            .as_ref()
+            .is_some_and(crate::unsupported_publication)
+    }
     /// Actual effect observed, independent of later release/cancellation errors.
     pub fn state(&self) -> PublicationState {
         self.candidate.state()

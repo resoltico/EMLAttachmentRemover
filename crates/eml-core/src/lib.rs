@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 
 #[cfg(any(unix, windows))]
+mod binding;
+#[cfg(any(unix, windows))]
 mod collection;
 #[cfg(any(unix, windows))]
 mod destination;
@@ -23,7 +25,7 @@ pub use outcome::{
     ReportPath, RunOutcome, RunStart, UnknownPublication,
 };
 #[cfg(any(unix, windows))]
-pub use run::{MAX_REMOVAL_ENTRIES, dry_run};
+pub use run::{MAX_REMOVAL_ENTRIES, dry_run, run};
 #[cfg(any(unix, windows))]
 mod failure;
 #[cfg(any(unix, windows))]

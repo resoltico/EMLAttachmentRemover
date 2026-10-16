@@ -162,6 +162,18 @@ fn remove(
     }
 }
 impl WritableDirectory {
+    /// Actual component limit for this held volume; no fallback on query failure.
+    pub fn name_limit(&self) -> io::Result<usize> {
+        self.0.name_limit()
+    }
+    /// No-follow child metadata through this held parent; only the native missing
+    /// name status becomes None. This is not an existence promise for later I/O.
+    pub fn observe_child_if_present(
+        &self,
+        name: &OsStr,
+    ) -> io::Result<Option<crate::EntryObservation>> {
+        self.0.observe_child_if_present(name)
+    }
     /// Open one existing ordinary writable child relative to this held parent.
     /// Refuse a different earlier observed full identity; never creates or follows
     /// a reparse point, changes metadata, or supplies ancestry/address qualification.

@@ -1553,3 +1553,102 @@ all-target check, actionlint, formatting and diff checks passed. Native ancestry
 runtime remains pending; these compilation checks do not qualify it. The old Windows
 creation gate remains FAILED. This supplies no Core Created/UpToDate, full writable
 confinement, CLI/GUI or archive evidence.
+
+At exact `0fe6b9f7bf91647646a7c4f8d8a5ad644698cb87`,
+[Windows run38896714374](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38896714374)
+executed all five new root controls exactly once on both native CPUs. FS49nongate/
+1filter passed, including actual restricted-principal ancestry/endpoint storage,
+flush, existing writable child, expected-ID refusal, access exclusion and partial
+stop release. The actual old strict gate remained0passed/1failed/0ignored/
+49filtered, the only failed step per CPU; Windows overall remains FAILED. Core31/
+collection12/destination11/dry_run18/existing4/source5 and earlier transport/request/
+diagnostic suites passed unfiltered without failures or ignores.
+[Unix run38896714486](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38896714486)
+passed all seven jobs/full-head checkouts; core32/collection11/destination11/
+dry_run19/existing5/source6/request9/diagnostic3/path6/decoder16 remained clean,
+with FS31Mac/27Linux, actual cross-UID controls17Linux/14Mac and process18 on both
+hosts. Independent exact-head/raw/discovery review closed bounded ancestry and
+existing-writable-child primitives only. Full retained logs are
+target/0fe6b9f-windows-ci.log and target/0fe6b9f-unix-ci.log. No later common runner,
+original-address integration, full confinement, CLI/GUI or archive qualification
+is supplied by this head.
+
+## Common native copy/resynchronization workflow
+
+The real public run operation now implements Create and DryRun through one
+serial admission/preparation/inspection/budget/count/event path. Different
+existing bytes are refused read-only before either directory or file sync access.
+A current-item ReadOnlyParent retains every observed prefix ID, including mirrors
+that appeared after planning, so both later read and writable acquisition refuse
+rebaselining. The old final-parent-only internal wrapper is removed.
+
+DestinationBinding retains the physical root plus all existing/new mirrored
+owners through current-item qualification. Native name limits, frozen naming,
+source/output identity reservations and original captured-context address checks
+remain separate. Creation is exclusive; only a definite native no-resource name
+collision allows one ordinary other-creator reobserve/open. Native collision and
+unsupported-primitive facts now come from filesystem helpers, not duplicated
+numeric statuses in Core. Windows possible-new edges and POSIX run-created edges
+use one ordered child/parent scheduler; untouched upper pins are not flushed.
+Known parent/child debt and unresolved parent/native-component attempts survive
+failed items without granting deletion rights. Native alias lookup can transfer
+an unresolved obligation into a known pair; missing/error does not erase it.
+Both successful edge operations or positively confirmed owned removal retire it.
+
+Normal Windows existing-copy resync retains the first equality/stability facts,
+checked-closes only the RO comparison holder, opens the fixed RW profile, requires
+the same parent/full file binding, repeats every reservation and the same bounded
+comparison, then flushes and qualifies namespace/address. Native access failure
+preserves earlier equality and unattempted file sync. Same-ID signature change is
+an existing conflict, different parent/full ID is an address change, and failed
+existing revalidation clears its stability without inventing source instability.
+Source files remain held read-only through terminal processing.
+
+New copies stage only prepared bytes, validate source/reservations/bindings before
+the one no-replace edge and finish post-edge work despite user stop. Candidate
+cleanup precedes reverse owned-empty layout removal only before publication;
+Published/Unknown retains layout without rollback. A candidate residual name and
+first native cleanup error survive aggregation; unnamed confirmed layout residue
+remains Residual, while genuinely unverified cleanup is Unknown. Checked-close
+failure becomes primary before later address failures. Actual held-parent final
+candidate ID proves publication independently of later source/content/original-
+address qualification; no native error is promoted into Created. Private success
+constructors require real successful file/namespace/address/cleanup evidence.
+
+Ten external owned-file integrations now exercise byte-exact independent golden
+creation and successful rerun resync, multilevel parent edges/no staging residue,
+readonly identical/different destinations, same-run output-identity collision,
+root-admission blocking, stop/report failure after creation, frozen missing-layout
+provenance across items, and selected-alias publication/resync. All source and
+existing bytes remain as independently expected. Private phase controls use actual
+RunControl before/after the native edge and successful ordinary owned source/
+output transitions; Windows handoff controls assert actual same-ID change versus
+same-bytes replacement after checked RO closure. These hooks exist only under
+cfg(test), with no public/product hook or sharing change.
+
+Pure controls reject missing/Failed/Unsupported receipts, unknown/false existing
+equality, missing identity, invalid514-edge bounds, weak-method erasure, cleanup
+name/error loss, debt overwrite and false cancellation from native Interrupted.
+The POSIX failed-create residue scenario models only the earlier failure receipt,
+then runs a real later copy and verifies required namespace work. Another POSIX
+control models an ambiguous return after real native publication/moved address,
+proving the held publication witness remains separate from failed address checks.
+These modeled alternatives are not native OS-fault or general interference proof.
+
+Stable full cargo test --locked --workspace exited0:257 passes across19 positive
+suites and six expected empty suites, zero failures/ignores/filters
+(target/native-execution-workspace-final.log). Host workspace and MSVC three-
+package all-target Clippy, excluded native-probe all-target check, actionlint,
+formatting and diff checks passed. After the final in-function qualification
+negative cases, targeted Core43/dry_run19/execution10 passed with command exit0
+and zero failures/ignores/filters (target/execution-final-focused.log). Production
+behavior did not change after the stable run. Native workflows explicitly select
+execution and Windows requires seven positive unfiltered Core suites. Expected
+native discovery: Core43/dry19/execution10 Unix, Core39/dry18/execution10 Windows;
+other suites/FS49Windows nongate/31Mac/27Linux remain unchanged.
+
+Independent final source/API/test/docs/workflow recheck closed this frozen scope.
+Six-platform common-run runtime remains pending.
+The old Windows creation gate remains FAILED. No replacement confinement gate,
+CLI executable/JSON framing, SwiftUI, archive or GUI qualification is claimed; full
+product/WP acceptance remains unfinished.

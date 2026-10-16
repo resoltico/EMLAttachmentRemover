@@ -85,6 +85,18 @@ pub struct PublishAttempt {
     /// Native error, even if later identity reconciliation established publication.
     pub error: Option<io::Error>,
 }
+impl PublishAttempt {
+    /// Exact native existing-name collision, independent of publication effects.
+    pub fn is_name_collision(&self) -> bool {
+        self.error.as_ref().is_some_and(crate::name_collision)
+    }
+    /// Documented unsupported native primitive result; no fallback is authorized.
+    pub fn is_unsupported(&self) -> bool {
+        self.error
+            .as_ref()
+            .is_some_and(crate::unsupported_publication)
+    }
+}
 /// Held candidate after its single publication attempt. It can be reconciled or
 /// cleaned but cannot be published again under another final name.
 pub struct PublicationCandidate(ReadyCandidate);

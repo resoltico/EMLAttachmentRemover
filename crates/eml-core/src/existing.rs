@@ -85,6 +85,13 @@ pub struct ComparedExisting {
     equal: bool,
 }
 impl ComparedExisting {
+    #[cfg(windows)]
+    pub(super) fn into_file(self) -> BoundFile {
+        self.file
+    }
+    pub(super) fn sync_file(&self) -> eml_fs::SyncReceipt {
+        self.file.sync_file()
+    }
     /// Original native signature qualified before and after the bounded comparison.
     pub fn signature(&self) -> FileSignature {
         self.file.initial_signature()
