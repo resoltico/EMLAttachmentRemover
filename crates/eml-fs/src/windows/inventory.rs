@@ -293,8 +293,12 @@ mod tests {
         // This case tests the continuously held root, not whether the OS permits
         // moving an ancestor while a finished descendant directory remains open.
         drop(child);
+        // Moving the owned fixture is setup by the original runner context;
+        // every product lookup remains under a verified restricted actor.
+        drop(actor);
         std::fs::rename(&selected, &moved).unwrap();
-        assert!(!selected.exists());
+        let actor = super::super::test_actor::RestrictedToken::enter().unwrap();
+        assert!(!selected.try_exists().unwrap());
         assert_eq!(handle::identity(&root.file).unwrap(), parent_id);
         assert_eq!(root.observe_child(OsStr::new("mail")).unwrap(), observed);
         let after_move = root.observe_child(&native).unwrap();

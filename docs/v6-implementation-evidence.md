@@ -702,3 +702,25 @@ rights/options remain unchanged. Whether lifetime alone explains native5 is a
 hypothesis until rerun; no ACL or sharing cause is inferred from its numeric code.
 MSVC all-target Clippy passes for the repaired fixture; actual both-CPU rerun is
 pending. Failed raw logs remain in owned target scratch.
+
+At exact head `6121fbce099c6618e298f7756dbdab33bd879f43`,
+[Windows run38840175703](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38840175703)
+passed the full non-gate library25/0failed/0ignored/1filtered on ARM64, including
+the repaired held-root case. x64 still failed24passed/1failed/0ignored/1filtered
+at the same fixture rename, now inventory.rs296, again native5. Thus releasing
+the descendant alone did not resolve that x64 fixture precondition. Neither an
+ACL cause nor universal rename behavior is proved. The other three new cases
+passed on both CPUs; creation gates still failed0passed/1failed/25filtered each.
+[Unix run38840175678](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38840175678)
+completed successfully. Both failed Windows raw logs are retained.
+
+The next independently reviewed fixture correction restores the known original
+runner context only for moving its owned fixture, then enters a freshly verified
+restricted token on the same thread before any post-move identity/observation/
+open/enumeration. The original root remains held throughout. Every actual product
+operation remains under a restricted actor; no restricted-actor rename authority
+or exact token-object continuity is claimed. All earlier-ID and post-move oracles
+remain. `try_exists().unwrap()` now makes an unexpected metadata failure visible
+rather than treating it as absence. Production rights/options and the creation
+gate remain unchanged. Source QA and stable Windows MSVC all-target Clippy passed;
+actual both-CPU execution of this correction remains pending.
