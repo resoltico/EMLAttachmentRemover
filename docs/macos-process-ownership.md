@@ -52,8 +52,14 @@ refused by this app's Create-only reader.
 The version probe drains/reaps before real processing and requires exact output
 and normal success; its monotonic deadline uses the same owned kill path. Normal
 run completion preserves Core's summary/actual-exit agreement; a late Stop does
-not rewrite completed outcomes. Confirmed-quit admission gating and its 10 s / 2 s
-escalation are still being connected to this owner and are not qualified yet.
+not rewrite completed outcomes. Confirmed-quit admission gating now uses this
+owner with monotonic 10 s / 2 s escalation and full submitted-task settlement.
+Cancel leaves queue/token/preferences unchanged; an existing different alert
+cancels the termination request rather than replacing live presentation data.
+Pre-helper readonly metadata may be abandoned only behind the permanent closing
+gate/token; its late continuation cannot submit a helper. Store tests cover that
+pre-helper path, not a blocked-OS handshake or actual native quit escalation.
+Full GUI/shutdown qualification remains pending.
 
 Local real-helper fixtures have exercised golden Create/UpToDate, pre-stream
 refusal, pre-admission stop/force, control-character native paths, owned KILL9,

@@ -24,7 +24,6 @@ struct SelectionView: View {
       VStack(spacing: 12) {
         Text("Drop EML files or folders here").font(.headline)
         Button("Create Copies…", action: chooseInputs)
-          .keyboardShortcut("o", modifiers: .command)
       }
       .frame(maxWidth: .infinity, minHeight: 120)
       .background(

@@ -12,6 +12,7 @@ struct RunWindow: View {
     NavigationSplitView(columnVisibility: $columns) {
       VStack(alignment: .leading, spacing: 0) {
         Button("Create Copies…") { store.showInputImporter = true }
+          .disabled(!store.acceptsRequests)
           .padding()
         List(selection: $store.selected) {
           ForEach(store.records) { record in
@@ -69,6 +70,7 @@ struct RunWindow: View {
           chooseDestination: { store.showDestinationImporter = true },
           besideOriginals: { store.setDestinationFromPicker(nil) }, admit: store.admit
         )
+        .disabled(!store.acceptsRequests)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
@@ -97,23 +99,27 @@ struct RunWindow: View {
       isPresented: $store.showExporter, document: store.exportDocument, contentType: .json,
       defaultFilename: "EML run report", onCompletion: store.finishExport
     )
-    .alert("Report space needed", isPresented: $store.needsReportSpace) {
-      Button("Keep Waiting", role: .cancel) {}
-      Button("Cancel Newest Queued Request", role: .destructive) { store.cancelNewestWaiting() }
-    } message: {
-      Text(
-        "Two full reports are retained. Export and dismiss a completed report to continue, or remove a queued request. No outcomes will be discarded automatically."
-      )
-    }
     .alert(
-      "EML Attachment Remover",
+      store.alert?.title ?? "EML Attachment Remover",
       isPresented: Binding(
-        get: { store.alertMessage != nil }, set: { if !$0 { store.alertMessage = nil } }),
-      presenting: store.alertMessage
-    ) { _ in
-      Button("OK", role: .cancel) { store.alertMessage = nil }
+        get: { store.alert != nil }, set: { if !$0 { store.dismissAlert() } }),
+      presenting: store.alert
+    ) { alert in
+      switch alert {
+      case .message:
+        Button("OK", role: .cancel) { store.dismissAlert() }
+      case .reportSpace:
+        Button("Keep Waiting", role: .cancel) { store.dismissAlert() }
+        Button("Cancel Newest Queued Request", role: .destructive) {
+          store.dismissAlert()
+          store.cancelNewestWaiting()
+        }
+      case .confirmQuit:
+        Button("Cancel", role: .cancel) { store.cancelQuit() }
+        Button("Stop and Quit", role: .destructive) { store.confirmQuit() }
+      }
     } message: {
-      Text($0)
+      Text($0.detail)
     }
     .sheet(isPresented: $store.showAbout) {
       VStack(spacing: 16) {
@@ -143,8 +149,9 @@ struct RunWindow: View {
     let error = error as NSError
     guard error.domain != NSCocoaErrorDomain || error.code != CocoaError.Code.userCancelled.rawValue
     else { return }
-    store.alertMessage =
+    store.showMessage(
       "The selected file URLs could not be imported. Choose local EML files or folders and try again."
+    )
   }
 }
 

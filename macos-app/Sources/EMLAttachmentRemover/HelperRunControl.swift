@@ -29,6 +29,22 @@ final class HelperRunControl: Sendable {
 
   func snapshot() -> HelperIntent { state.withLock { $0.snapshot } }
 
+  @discardableResult
+  func requestCooperativeStop() -> HelperIntent {
+    state.withLock { value in
+      value.stops = max(value.stops, 1)
+      return value.snapshot
+    }
+  }
+
+  @discardableResult
+  func requestForceStop() -> HelperIntent {
+    state.withLock { value in
+      value.stops = 2
+      return value.snapshot
+    }
+  }
+
   func beginFeeding() -> Bool {
     state.withLock { value in
       guard value.stops == 0, !value.feeding else { return false }

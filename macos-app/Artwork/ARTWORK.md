@@ -11,7 +11,7 @@ The supplied account states that the drawings were constructed from coordinates 
 
 ## Runtime interface artwork
 
-`Artwork.swift` is the single geometry source for interface artwork. The application draws that geometry directly in an `NSView`, so the UI stays vector-based at its actual layout size. `ArtworkPreview.swift` uses the same geometry to create explicit sRGB PNG review artifacts. Those bitmaps are QA output, not the application's runtime artwork. The macOS test suite compiles and runs the exporter and checks its image dimensions and sRGB metadata.
+`../Sources/EMLAttachmentRemover/StatusArtwork.swift` renders the retained geometry in SwiftUI Canvas/Path. The UI remains vector-based at its actual layout size, using SwiftUI appearance/Increase Contrast values. Rendered review bitmaps are verification output, not runtime artwork. Native GUI/appearance qualification is tracked separately from source geometry and palette measurements.
 
 `artwork-svg/` holds supplied SVG reference exports of the drawing geometry, for design review and documentation:
 - **Folders:** `regular/` covers 24 pt and up, `compact/` covers below 24 pt, and each has `light`, `dark`, `hc-light` and `hc-dark`.
@@ -20,7 +20,7 @@ The supplied account states that the drawings were constructed from coordinates 
 
 ### Geometry
 
-All coordinates are in a 100 × 100 unit square with AppKit's bottom-left origin.
+All retained coordinates use a 100 × 100 unit square with a bottom-left origin. The SwiftUI Canvas applies the matching coordinate transform.
 
 | Element | Geometry |
 |---|---|
@@ -82,13 +82,13 @@ The envelope-and-badge set was designed on 5 October 2026 with AI assistance (Cl
 
 `EML.icon` is the editable Icon Composer source package for the macOS application icon. Its SVG assets contain only the authored foreground geometry on a 1024-pixel design canvas; the package defines the brand background and foreground layers. The source does not contain a rounded-rectangle mask. Apple tooling and macOS apply the final enclosure and appearance rendering.
 
-`build.sh` compiles `EML.icon` with Xcode's `actool`. The resulting `Assets.car` carries the layered icon for current macOS releases, while the generated `EML.icns` is the downlevel representation used by older supported macOS releases. Both are produced from the same icon source before the application is signed. A native build fails rather than silently falling back to a separately rendered legacy icon if a compatible `actool` is unavailable.
+The Rust native app builder compiles `EML.icon` with the selected Xcode's `actool`. `Assets.car` and `EML.icns` come from the same source before app signing. Missing compatible tools or outputs fail the build; no alternative icon renderer is a product build input.
 
 The icon shows a paperclip cut into separated white and yellow halves on Royal blue. Dark appearance has a navy background; tinted appearance reduces the yellow layer opacity. Background values use extended-sRGB tags accepted by Apple tooling, and SVG fills specify their RGB colours. The system supplies the enclosure, materials and remaining appearance rendering.
 
 ## License
 
-The icon document, SVG layers, interface drawing code in `Artwork.swift`, reference SVGs in `artwork-svg/`, construction scripts in `ICON-GEOMETRY.md` and `ARTWORK-GEOMETRY.md`, and generated artwork use the proprietary artwork terms in the root `LICENSE`. Other application, preview and build code remains MPL-covered. Keep the artwork unchanged when redistributing it with the application; independent reuse or modification requires permission. Previously granted permissions remain valid. This notice records licensing intent, not a certification of copyright ownership or trademark clearance.
+The icon document, SVG layers, interface drawing code in `../Sources/EMLAttachmentRemover/StatusArtwork.swift`, reference SVGs in `artwork-svg/`, retained construction material in `ICON-GEOMETRY.md` and `ARTWORK-GEOMETRY.md`, and generated artwork use the proprietary artwork terms in the root `LICENSE`. Other application, preview and build code remains MPL-covered. Keep the artwork unchanged when redistributing it with the application; independent reuse or modification requires permission. Previously granted permissions remain valid. This notice records licensing intent, not a certification of copyright ownership or trademark clearance.
 
 The application still uses native macOS controls, menus, file selection, drawing APIs, and system fonts at runtime. Those operating-system components are not copied into the artwork or redistributed under this project's MPL 2.0 license. Compiler/SDK and operating-system use remain subject to their respective vendor terms.
 

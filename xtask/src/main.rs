@@ -4,6 +4,10 @@ mod campaign;
 mod distribution;
 mod fuzz;
 #[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+mod macos_app;
+#[cfg(target_os = "macos")]
 mod macos_process;
 mod mutants;
 use clap::{Parser, Subcommand};
@@ -28,6 +32,11 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Assemble a native signed app for integration; not shipping qualification.
+    BuildMacosApp {
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Run real native macOS helper/pipe/ownership fixtures with the pinned Xcode.
     MacosProcessTests,
     /// Print native target policy and expected archive identities; build nothing.
@@ -79,6 +88,18 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::BuildMacosApp { out } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos_app::run(&root, &out)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = out;
+                    Err("Native macOS is required for app assembly".into())
+                }
+            }
             Task::MacosProcessTests => {
                 #[cfg(target_os = "macos")]
                 {

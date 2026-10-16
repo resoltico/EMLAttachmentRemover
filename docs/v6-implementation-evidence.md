@@ -1940,3 +1940,82 @@ argument override policy and frozen report/transport export are source-reviewed;
 actual saved-domain/GUI evidence remains pending. Complete quit, system bridge,
 app entry, full purge, Windows console/confinement and all shipping/GUI gates keep
 full implementation acceptance incomplete. Old Windows creation gate is FAILED.
+
+At exact `afa5e978cf5eff9a830b55b46b58c73f9b375381`,
+[Unix run38938665514](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38938665514)
+passed all seven jobs. Independent review inspected both uploaded Mac process
+artifacts: Xcode26.3/17C529, Swift6.2.4, Rust1.99.0/b940084, selected default SDK26.2
+inside that bundle; actual macOS15.7.9/24G830/untranslated ARM64 and Intel. Both
+helper/driver were thin matching CPU/minimum15.0. Helper Mach SDK field was26.2;
+driver Mach SDK field was15.0 on both CPUs, separately recorded without inventing
+an SDK-field equality requirement. Each artifact had13 clean Controller receipts
+(six primary/seven setup), actual exit0/no timeout/cancel/survivors, cleanuptrue
+and null detail. Ordinary eight grouped receipts and both negative variants
+appeared exactly once with real golden/source/EOF/ack assertions. Both Swift
+steps passed20 functions/22 scenarios, no warnings/failures/skips/issues.
+
+All four filesystem hosts retained Core43 and collection/destination/dry/execution/
+existing/source/request/diagnostic scopes, CLI49 and FS31Mac/27Linux. All72 Rust
+summaries were clean (four expected empty filesystem doctests). Mac probe passed
+xtask19/process18; Linux16/process18, including the previously locally failing
+cross-session case. Requested/observed credential controls and owned cleanup
+remained positive (14Mac/17Linux observations per host).
+[Windows run38938665426](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38938665426)
+passed applicable Core39/execution10, CLI46 and xtask13 on both native GNU LLVM
+CPUs/NTFS without emulation. FS49non-gate/1filter passed; the separate old gate
+0passed/1failed/49filtered remained the sole failure; Windows overall FAILED.
+Own raw logs: target/afa5e97-{unix,windows}-ci.log; copied uploaded Mac evidence:
+target/native-evidence/afa5e97/. This closes pinned native2 ordinary process
+fixtures, not actual post-feed controls, shutdown/GUI, signatures or archives.
+
+## SwiftUI entry, quit state and signed-app assembly source
+
+The actual SwiftPM executable now uses one SwiftUI Window, the shared session
+Store and native helper. Only PlatformIntegration.swift imports AppKit: real
+Services/Objective-C URL pasteboard ingress, exact Finder reveal, asynchronous
+termination and one Finder URL-batch delegate. No old AppKit view/controller is
+wrapped or copied. A false last-window termination policy preserves the session;
+SwiftUI macOS15 presented launch/disabled restoration handle the intended reopen
+behavior, still awaiting actual Dock/closed-origin qualification.
+
+Confirmed quit gates new inputs/pickers, cancels waiting requests and captures
+the current submitted task/control before suspension. One monotonic10s/2s task
+requests at-least cooperative/force intent, then native KILL if needed, and awaits
+full submitted settlement before reply. A readonly pre-helper metadata lookup can
+be abandoned only with permanent gate/token preventing a late helper submission.
+Cancel changes no queue/token/preferences. Already visible unrelated alerts cancel
+that termination request instead of replacing SwiftUI's live presenting data;
+pending confirmation is surfaced in the main window. These are reviewed source
+and state checks, not native timer/GUI claims.
+
+The test target imports the actual executable. Five new serialized state tests
+use UUID-owned defaults suites, save/restore the shared volatile argument domain,
+and synthetic selections/folders under target/application-state-tests. They
+cover saved/session/corrupt preferences, no initialization write, explicit-choice
+recovery, cancellation/confirmed pre-helper gate, both existing alert cases and
+monotonic intent levels. Deferred completion is observed with a bounded wait;
+timeouts stop admission/try settlement, retain resources/context if unconfirmed,
+and prevent later shared-domain tests from mutating that context. Local final
+Swift25 functions/22 shared cases passed (target/swift-app-stage-final-tests.log;
+subsequent hygiene run also passed25), actual app build passed warnings-as-errors.
+No owner persistent domain or installed app was used.
+
+Retained EML.icon/SVG/geometry documents moved to macos-app/Artwork; original
+geometry/assets remain, LICENSE paths updated without changing grants. Supplied
+historical construction text is provenance only, not Python tooling/build input.
+The Rust native build context is now shared by process fixtures and the real app
+assembler, avoiding a second pin/target/version source. Source assembly builds
+release CLI/SwiftPM, checks actual overflow/CPU/minimum, compiles icon, reads back
+generated plist, copies full LICENSE, signs CLI once/copies it, signs outer app,
+verifies signatures/helper equality and inspects app AND helper dependencies.
+Non-system runtime requirements fail explicitly pending reviewed bundling.
+Native CI will run this path on both Macs and retain build diagnostics; actual
+assembly/signature execution remains pending at this source checkpoint.
+
+Local xtask20 and workspace Clippy/format/actionlint passed after correcting
+refactor-only unused/needless borrow lints without suppressions. No full repeated
+campaign was run: MIME guard code/campaign limits remain unchanged. Actual GUI
+launcher cleanup is still under separate challenge; LaunchServices app lifetime
+cannot be certified by the outer Unix Controller alone, and global path scans
+are not helper-absence proof. No GUI execution occurred. Full notices/native-link/
+archive tests, final purge, Windows acceptance and complete WP gates remain open.

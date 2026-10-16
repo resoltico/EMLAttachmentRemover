@@ -1,6 +1,6 @@
 # Interface artwork construction reference
 
-The editable production drawing is `Artwork.swift`. The following supplied Python construction script documents how the SVG reference exports were produced. It is a separate reference renderer, not a runtime or build input, and is covered by the proprietary artwork terms in the root LICENSE. Preserve its geometry and palettes alongside any deliberate changes to the reference exports; do not treat it as a second authority for runtime behavior. Run the script in a copy of the reference directory to avoid overwriting edited assets.
+The current editable runtime drawing is `../Sources/EMLAttachmentRemover/StatusArtwork.swift`. The supplied historical construction script below records the provenance of the retained SVG references and is preserved as artwork source material under the proprietary terms in the root LICENSE. It is not an executable tool, supported setup instruction, generator, test or build input. Runtime geometry/palettes remain authoritative in the SwiftUI source; this historical record makes no current AppKit/Python runtime claim.
 
 ```python
 """Exports the status artwork from Artwork.swift's geometry as SVG reference files.
