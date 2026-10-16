@@ -8,6 +8,8 @@ mod macos;
 #[cfg(target_os = "macos")]
 mod macos_app;
 #[cfg(target_os = "macos")]
+mod macos_gui;
+#[cfg(target_os = "macos")]
 mod macos_process;
 mod mutants;
 use clap::{Parser, Subcommand};
@@ -32,6 +34,13 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Run owned actual GUI checks on a fresh hosted macOS runner only.
+    MacosGuiTests {
+        #[arg(long)]
+        app: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Assemble a native signed app for integration; not shipping qualification.
     BuildMacosApp {
         #[arg(long)]
@@ -88,6 +97,18 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::MacosGuiTests { app, out } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos_gui::run(&root, &app, &out)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = (app, out);
+                    Err("Native macOS is required for GUI integration".into())
+                }
+            }
             Task::BuildMacosApp { out } => {
                 #[cfg(target_os = "macos")]
                 {

@@ -26,6 +26,8 @@ struct RunWindow: View {
                 .font(.caption).foregroundStyle(.secondary)
               }
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("run-list-entry")
             .tag(record.id)
             .contextMenu {
               if record.waiting {

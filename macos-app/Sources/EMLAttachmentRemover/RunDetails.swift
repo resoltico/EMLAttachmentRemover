@@ -123,6 +123,8 @@ struct RunDetails: View {
       }
     }
     .padding()
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("run-details")
   }
 
   private var failed: Bool {

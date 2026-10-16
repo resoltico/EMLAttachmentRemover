@@ -99,6 +99,9 @@ jobs:
       - name: Assemble and inspect actual signed native SwiftUI app
         if: ${{ runner.os == 'macOS' }}
         run: cargo xtask build-macos-app --out target/native-app-build
+      - name: Actual owned GUI Open With and fresh preference observations
+        if: ${{ runner.os == 'macOS' }}
+        run: cargo xtask macos-gui-tests --app 'target/native-app-build/EML Attachment Remover.app' --out target/native-gui-tests
       - name: Retain native process fixture evidence
         if: ${{ always() && runner.os == 'macOS' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -113,4 +116,7 @@ jobs:
             target/native-app-build/*.json
             target/native-app-build/*.jsonl
             target/native-app-build/icon-assets/icon-partial.plist
+            target/native-gui-tests/*.log
+            target/native-gui-tests/*.json
+            target/native-gui-tests/*.plist
           if-no-files-found: error
