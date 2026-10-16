@@ -1715,3 +1715,56 @@ transport suites. Native adapter runtime remains pending.
 The CLI executable, interruptible request reading/signals, complete shared scenario
 set, Swift consumer and native shipping smoke remain unfinished. The old Windows
 creation gate remains FAILED and no full product/archive/GUI qualification follows.
+
+At exact `0a2059101b7761d42c5dd88e651ab0b64000c2eb`,
+[Unix run38911695925](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38911695925)
+passed all seven jobs, including CLI lib7/events4/path6/request16 on all four
+native filesystem hosts. All11 new transport names ran once per host;64 clean
+summaries include four expected empty filesystem doctests, with no failures,
+ignores or filters. Earlier Core/filesystem/credential/process/tool checks remain
+in that run.
+[Windows run38911695926](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38911695926)
+passed the same four transport suites on native x64 and ARM64, all33 applicable
+transport names once per CPU, and the earlier Core suites. Each CPU passed49
+non-gate filesystem tests with one filter. The unchanged old gate was the sole
+failure:0passed/1failed/49filtered. Overall Windows remains FAILED. Independent
+exact-head/raw/test-discovery review closed this bounded adapter slice. Raw logs
+were downloaded successfully to target/0a20591-{unix,windows}-ci.log.
+
+## CLI executable and owned lifecycle
+
+The CLI now delegates business execution to Core and uses checked human/JSON
+sinks. Native clap arguments, captured cwd, EOF-bounded request transport and
+per-run ctrlc callbacks are executable behavior. One transport-only worker may
+remain blocked until process exit on cancellation; main never joins that worker
+or starts source work before successful EOF. First delivered callback requests
+stop; second exits130. No process-name lookup or owner-console manipulation is
+used. Windows close/logoff/shutdown remain subject to the OS termination deadline,
+not a graceful-completion guarantee. No Windows console stop qualification is
+claimed yet.
+
+Four executable units cover native arguments, conflicts, exact8MiB plus actual
+EOF, one-over rejection, short reads/EINTR and native failure versus cancellation.
+Twelve actual owned-process tests cover help/version/channel/exit behavior,
+positional Create/UpToDate with independent golden bytes, request file/stdin and
+both formats, malformed/oversize input, pre-stream versus streamed failures,
+request EOF, terminal-control escaping, fixed argv0 help and closed stdout before
+request EOF (exit1/no copy). Unix-only tests additionally establish actual FIFO
+reader readiness before INT/TERM/HUP. The force control reads an actual64KiB
+prefix through removal metadata, stops drainage, then sends distinct owned PID
+INT/TERM requests (avoiding identical-standard-signal coalescing) and verifies
+exit130, incomplete reporting and unchanged complete output/source. An earlier
+passing version relied on100ms sleeps; independent QA correctly rejected those
+as callback/output readiness evidence. Padding a stdin write is not claimed as
+pipe-drain or handler-readiness proof, and no general native pipe-capacity claim
+is made.
+
+Local full workspace run exited0 with283passes across23positive/five expected
+empty suites, no failures/ignores/filters (target/cli-workspace-local.log); the
+subsequent added closed-stdout control ran in a12-test clean CLI process suite
+(target/cli-process-final.log). Host workspace Clippy, MSVC CLI all-target Clippy
+(compile only), formatting, actionlint and diff checks passed. Workflows now
+select executable units and actual process tests; Windows requires six positive
+unfiltered transport suites. Native executable runtime remains pending at this
+point. Windows console controls, complete shared scenarios, app/archives and the
+old failing filesystem gate keep full product acceptance incomplete.

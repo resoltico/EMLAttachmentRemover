@@ -72,7 +72,7 @@ jobs:
       - name: Native protocol path transport
         run: |
           cargo clippy --locked --package remove-eml-attachments --all-targets -- -D warnings
-          cargo test --locked --package remove-eml-attachments --lib --test events --test request --test path
+          cargo test --locked --package remove-eml-attachments --lib --bin remove-eml-attachments --test cli_process --test events --test request --test path
       - name: Real different-UID namespace controls on owned fixtures
         run: |
           cargo build --locked --package eml-fs --example namespace-credentials

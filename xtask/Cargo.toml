@@ -8,8 +8,8 @@ publish.workspace = true
 
 [dependencies]
 getrandom = "0.4.3"
-ctrlc = { version = "3.5.2", features = ["termination"] }
-clap = { version = "4.6.7", features = ["derive"] }
+ctrlc.workspace = true
+clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml = "1.1.8"

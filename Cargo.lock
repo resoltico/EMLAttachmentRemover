@@ -535,7 +535,10 @@ name = "remove-eml-attachments"
 version = "6.0.0"
 dependencies = [
  "base64",
+ "clap",
+ "ctrlc",
  "eml-core",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",

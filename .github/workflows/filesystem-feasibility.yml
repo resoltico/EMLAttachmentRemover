@@ -80,12 +80,12 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
         run: |
-          $transportOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package remove-eml-attachments --lib --test events --test request --test path --target ${{ matrix.target }} -- --color never 2>&1
+          $transportOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package remove-eml-attachments --lib --bin remove-eml-attachments --test cli_process --test events --test request --test path --target ${{ matrix.target }} -- --color never 2>&1
           $transportExit = $LASTEXITCODE
           $transportOutput | ForEach-Object { Write-Output $_ }
           if ($transportExit -ne 0) { exit $transportExit }
-          if (@($transportOutput | Where-Object { $_.ToString() -match '^running [1-9][0-9]* tests?$' }).Count -ne 4) { throw 'Expected nonempty native output-unit, event, request and path suites' }
-          if (@($transportOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 4) { throw 'Output-unit, event, request and path suites require positive passes and zero failures, ignores or filters' }
+          if (@($transportOutput | Where-Object { $_.ToString() -match '^running [1-9][0-9]* tests?$' }).Count -ne 6) { throw 'Expected nonempty native output-unit, executable-unit, process, event, request and path suites' }
+          if (@($transportOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 6) { throw 'Output-unit, executable-unit, process, event, request and path suites require positive passes and zero failures, ignores or filters' }
       - name: Native collection, destination planning and held-source preparation
         if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
         env:

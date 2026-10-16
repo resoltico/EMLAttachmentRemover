@@ -11,9 +11,14 @@ eml-core = { path = "../eml-core" }
 base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+clap.workspace = true
+ctrlc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+rustix = { version = "1.1.5", features = ["process", "fs"] }
 
 [lints]
 workspace = true

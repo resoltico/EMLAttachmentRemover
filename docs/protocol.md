@@ -1,8 +1,9 @@
 # Protocol1 implementation contract corrections
 
-The protocol mapper and CLI are still being implemented. These reviewed
-corrections do not claim an implemented or qualified transport. The supplied
-archive and checksum remain unchanged.
+The Rust CLI implements protocol1 request decoding, checked event rendering and
+process-local cancellation. Qualification is recorded by capability and exact
+source in v6-implementation-evidence.md; complete shipping/app qualification is
+still unfinished. The supplied archive and checksum remain unchanged.
 
 Cleanup residual names use platform-native component validation. POSIX rejects
 slash and NUL; backslash is a valid filename byte. Windows rejects both separators
@@ -21,8 +22,8 @@ unprovable memory lifetime must not fabricate an unpublished receipt.
 
 ## Implemented request decoding
 
-The `remove-eml-attachments` package currently provides a transport library, not
-an executable. `decode_request` accepts a complete byte buffer plus the captured
+The `remove-eml-attachments` package provides a thin executable and a transport
+library. `decode_request` accepts a complete byte buffer plus the captured
 absolute working directory. It checks the 8 MiB limit, strict protocol-1 JSON,
 required fields (including explicit null for absent output directory), duplicate
 and unknown keys, native encoding and canonical padded Base64. Native bytes are
@@ -30,9 +31,8 @@ converted directly to Unix bytes or Windows UTF-16LE, without Unicode conversion
 then core resource admission runs. Error values do not retain or echo JSON/path
 content; malformed-document diagnostics expose only parser line/column.
 
-This does not implement interruptible stdin reading, signals, execution, event
-rendering, filesystem admission or output delivery. Decoder tests cannot qualify
-those still-required capabilities. Core and filesystem crates have no JSON
+Decoder tests alone do not qualify process input, signals, execution or output
+delivery. Core and filesystem crates have no JSON
 dependency. Request shape and native-byte tests live in the frontend package;
 business path limits remain in core. Their pure error type is RequestPathError;
 the read-only collector's outer InvalidRequest additionally retains genuine
@@ -45,8 +45,9 @@ and Windows UTF-16LE units are encoded directly, including non-Unicode units.
 No display string is used to reconstruct the native value. Spelling, including
 symlink/dot-dot expressions, is retained. JSON escaping keeps embedded LF inside
 the string; raw U+0085/U+2028/U+2029 remain valid string content. This primitive
-does not implement human terminal escaping, LF event framing, whole-event/run
-size admission or the CLI executable. Its tests perform no filesystem I/O.
+does not itself perform human terminal escaping, LF event framing or
+whole-event/run size admission. Those are separate checked output adapters.
+Its tests perform no filesystem I/O.
 
 ### Core-supplied display and native path facts
 
@@ -79,13 +80,12 @@ escapes C0/C1 controls, Unicode line/paragraph separators and Unicode bidi-contr
 marks using visible Rust-style escapes. Printable Unicode, ordinary backslashes
 and joiners remain readable. It is lossy display, not shell quoting, an
 operational expression or a guarantee against every Unicode visual ambiguity.
-Formatting errors propagate to the caller. Complete human event/error rendering
-and actual stdout delivery still need implementation and integration tests.
+Formatting errors propagate to the caller. HumanSink and the executable use this
+formatter for event paths and diagnostics, with checked writes and flushes.
 
 ## Collection-admission event indices
 
-The read-only collector now supplies bounded work positions/provenance. Event
-emission and the runner/reducer remain unimplemented. Item indices identify
+The collector supplies bounded work positions/provenance. Item indices identify
 positions in the known work list.
 They are neither emission ordinals nor raw argument indices. Strictly increasing
 indices within `start.total` may have gaps when admission leaves known inputs
@@ -140,8 +140,8 @@ later enforce that condition and preserve all observed publication effects.
 
 ## Typed core execution observations
 
-Core dry_run now emits borrowed typed start/item/summary values through EventSink;
-JSON framing/rendering and the executable remain unfinished. The read-only
+Core dry_run emits borrowed typed start/item/summary values through EventSink.
+The read-only
 operation explicitly requires a DryRun request before I/O/events and never
 substitutes for general Create execution. Core counts completed terminal results
 once before delivery, including an item whose delivery fails. Transport failure
@@ -162,9 +162,8 @@ The same typed event/outcome hierarchy now serves Core run for Create and DryRun
 normal execution does not silently become a plan. Bounded common native
 integration passed at6e7bb6a. Native receipts, source/output reservations,
 metadata budgeting and counts remain business-library decisions. The CLI package
-now has the checked event renderer below, with native adapter validation pending;
-it still has no executable. These capabilities do not qualify process/application
-delivery.
+has the checked event renderer below. Process/application qualification remains
+distinct from library adapter qualification.
 
 ## Implemented event adapters and framing bound
 
@@ -189,6 +188,31 @@ recorded as an oracle or exact peak-memory promises.
 Current tests include hand-authored native planned-create golden lines, actual
 Created/UpToDate projection, raw Unicode separators, human escaping, exact/+1
 line storage, run storage and actual partial-write/flush progress with permanent
-failure. The complete required shared scenario set, executable stdin/signals,
-shipping smoke and Swift consumer remain unfinished. Native adapter runtime is
-pending; this library slice alone does not qualify the process protocol.
+failure. The complete required shared scenario set, shipping smoke and Swift
+consumer remain unfinished. Native adapter runtime passed at0a20591; that library
+slice alone does not qualify the process protocol.
+
+## Executable transport and termination
+
+The executable accepts native positional paths or one EOF-terminated request
+document, never both. It captures the working directory once. Request open/read
+and stdin locking run on a transport-only worker; the main thread checks its
+per-run cancellation token while waiting. Reads are bounded to64KiB with an8MiB
+document ceiling plus one rejection byte. An exact-limit document still requires
+an actual EOF. Cancellation does not join a reader blocked in an OS call; process
+exit disposes of that transport worker without starting business work.
+
+Handlers are installed before arguments or request I/O. The first delivered
+callback requests Core stop; the second exits130, accepting incomplete reporting
+and the documented crash residue. Standard Unix signals can coalesce. Windows
+console close/logoff/shutdown may terminate the process under the OS deadline
+before its queued Rust callback runs; graceful completion is not promised for
+those events. Ctrl-C/Break native lifecycle qualification remains required.
+
+Usage/request/core-prerequisite errors have no event stream and exit2. Transport
+thread/handler setup failure exits1. Whole untrusted diagnostic strings are
+terminal-escaped before one authored LF, so path/argument newlines cannot forge
+diagnostic structure. Authored help/version use checked stdout. A successfully
+delivered Core summary fixes the executable exit class even if a first stop
+arrives afterward. Closed stdout before request EOF is tested to reject the start
+event and prevent any source-copy work.
