@@ -755,3 +755,61 @@ fn relative_io_keeps_the_captured_directory_after_its_address_moves() {
     assert_eq!(fs::read_dir(cwd.join("out")).unwrap().count(), 0);
     root.close().unwrap();
 }
+
+#[path = "support/directory_alias.rs"]
+mod directory_alias;
+#[test]
+fn selected_directory_alias_keeps_reported_spelling_through_preparation_and_comparison() {
+    for output in [None, Some("out")] {
+        let root = root();
+        let target = root.path().join("target");
+        let alias = root.path().join("alias");
+        fs::create_dir(&target).unwrap();
+        fs::create_dir(root.path().join("out")).unwrap();
+        fs::write(target.join("a.eml"), INPUT).unwrap();
+        fs::write(target.join("a.no-attachments.eml"), GOLDEN).unwrap();
+        directory_alias::create(&target, &alias);
+        let mut sink = Sink::default();
+        let outcome = dry_run(
+            &request(root.path(), &["alias"], output),
+            &RunControl::default(),
+            &mut sink,
+        )
+        .unwrap();
+        assert_eq!(outcome.exit_class(), ExitClass::Success);
+        assert_eq!(outcome.total(), 1);
+        assert!(sink.items[0].source_native.ends_with("alias/a.eml"));
+        let expected = if output.is_some() {
+            "out/alias/a.no-attachments.eml"
+        } else {
+            "alias/a.no-attachments.eml"
+        };
+        assert_eq!(
+            sink.items[0].destination.as_deref(),
+            Some(Path::new(expected))
+        );
+        assert!(
+            sink.items[0]
+                .destination_native
+                .as_ref()
+                .unwrap()
+                .ends_with(expected)
+        );
+        assert_eq!(
+            sink.items[0].action,
+            Some(if output.is_some() {
+                PlanAction::Create
+            } else {
+                PlanAction::VerifyExisting
+            })
+        );
+        assert_eq!(sink.items[0].removals, Some(1));
+        assert_eq!(fs::read(target.join("a.eml")).unwrap(), INPUT);
+        assert_eq!(
+            fs::read(target.join("a.no-attachments.eml")).unwrap(),
+            GOLDEN
+        );
+        assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 0);
+        root.close().unwrap();
+    }
+}

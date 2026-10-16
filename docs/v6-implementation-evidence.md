@@ -1434,3 +1434,68 @@ new-copy/UpToDate qualification, Windows existing-file sync and ancestor/address
 binding, CLI/GUI, packaging and required final archive/native/GUI gates remain
 unfinished. The unchanged Windows creation gate remains FAILED; no overall
 product/WP acceptance follows from this bounded read-only operation.
+
+At exact `ac8e193c12c90cad80b5785929fb28defcd63f24`,
+[Unix run38888468516](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38888468516)
+passed all seven jobs. All18 dry-run integrations and3 new classification units
+passed exactly once per filesystem host; actual core32/collection11/destination11/
+dry_run18/existing5/source6/request9/diagnostic3/path6/decoder16 passed with zero
+failures/ignores/filters. FS31Mac/27Linux, real cross-UID/ACL controls and both
+process18 runs remained successful. [Windows run38888468345](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38888468345)
+executed all17 dry-run cases and3 new classification units exactly once on both
+native CPUs. Core31/collection12/destination11/dry_run17/existing4/source5 and
+prior request9/diagnostic3/path6/decoder16 passed unfiltered without failures or
+ignores. FS41nongate/1filter passed each; the actual unchanged old strict gate
+remained0passed/1failed/0ignored/41filtered, sole failed step per CPU. Windows
+overall remains FAILED. Independent exact-head/raw/discovery review closed bounded
+read-only serial execution only. Retained logs: target/ac8e193-unix-ci.log and
+target/ac8e193-windows-ci.log. This head contains no later resync primitives and
+supplies no general Create, UpToDate, CLI/JSON, GUI, archive or writable-confinement
+qualification.
+
+## Windows existing-file flush access
+
+The bounded filesystem prerequisite adds fixed BoundFile::open_for_sync,
+actual sync_file and checked consuming close. Source/default opens stay read-only;
+all primary owners retain shareREAD. Binding observation uses only READ_ATTRIBUTES
+with compatible sharing, retaining parent/entry/held signature checks without
+self-conflicting against the new owner's write access. Existing creation and
+ordinary file owners share one unchanged checked CloseHandle implementation.
+
+Independent design challenge corrected the initial proposal to request write
+access before comparison: a readable readonly different destination must remain
+a byte conflict. The approved concrete Core lifecycle is read-only comparison,
+checked release of only that holder, fixed sync open, full binding/alias checks,
+the same bounded comparison again, then actual file/namespace/address checks.
+The selected source remains held. This primitive does not implement that Core
+consumer or qualify UpToDate. ReOpenFile cannot bypass a still-open reader's
+sharing restriction; SDK primary references are linked in windows-publication.md.
+
+Three new Windows tests reuse the existing restricted same-UserSID actor and
+fresh owned fixture ACL, without product ACL changes or another actor framework.
+They exercise a readonly-handle flush access failure, checked RO closure and fresh
+RW same-ID/signature/read/actual-flush/self-validation/checked closure while a
+separate source stays held; an actual readonly-file access refusal with untouched
+bytes/readonly flag and fixture-only restoration; and a live RO holder's32
+sharing refusal followed by fresh sync access after checked close. No data or
+metadata setter is exposed by the product primitive. They are compiled, not yet
+executed natively at this checkpoint.
+
+One additional all-platform serial test covers a benign static selected directory
+alias through actual preparation and comparison: default VerifyExisting and
+explicit-root Create plan preserve selected alias spelling, unchanged original/
+existing bytes and empty output. It shares the established provider setup helper
+with collection tests, with no profile/path interpolation/privilege adjustment or
+post-bind alias mutation. The earlier suspected parent-alias defect was retracted
+on reading the actual follow-final observation flags; no canonical I/O rebase was
+implemented and this test does not claim such a defect was fixed.
+
+Stable cargo test --locked --workspace exited0 with236 passes across18 positive
+suites/six expected empty suites, zero failures/ignores/filters
+(target/existing-sync-workspace-final.log). Host workspace and MSVC three-package
+all-target Clippy, excluded native-probe all-target check, actionlint, formatting
+and diff checks passed. Independent source/API/test/docs review closed this scope.
+Native runtime for this slice remains pending; MSVC compilation is not native
+integration evidence. The actual old Windows creation gate stays FAILED. Full
+Core resynchronization/publication, CLI/GUI and archive qualification remain
+unfinished.

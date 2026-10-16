@@ -596,3 +596,39 @@ cancellation integration or final-copy qualification.
 
 Component-limit reference:
 [GetVolumeInformationByHandleW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getvolumeinformationbyhandlew).
+
+## Existing-file flush access primitive
+
+BoundFile now supplies a fixed open_for_sync profile: OPEN_EXISTING,
+GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ and final OPEN_REPARSE_POINT, with
+ordinary disk type, full signature and parent/binding checks. No data-write or
+metadata-setting API is exposed. sync_file returns the actual FlushFileBuffers
+receipt; readonly handles report failure rather than fabricated success. The
+consuming close method checks the one native CloseHandle result. Creation and
+ordinary-file ownership share that same close implementation, with no retry or
+second guessed close on failure.
+
+Binding revalidation opens only a FILE_READ_ATTRIBUTES observer with compatible
+sharing. The live primary owner continues requesting FILE_SHARE_READ and excluding
+normal incompatible writers/deleters. A validation observer must not deny the
+write access already held by a sync owner and self-conflict. This is observation,
+not new creation protection or metadata immutability.
+
+The core resynchronization consumer is still to be implemented: first compare
+read-only, retain its observations, checked-close only that comparison owner,
+open the fixed sync profile, require the same full parent/file signature, repeat
+all alias guards and the same bounded comparison, then flush that newly compared
+owner and qualify namespace/address. Keep the selected source held throughout.
+A failed write-capable open retains prior equality/stability observations and an
+unattempted flush; different bytes remain a conflict before sync access is tried.
+No upfront read/write open, source-handle release, permission/attribute change,
+unbounded retry or alternate comparison engine is permitted.
+
+[ReOpenFile requires compatibility with every still-open holder](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-reopenfile);
+it does not bypass the first reader's sharing exclusion.
+[FlushFileBuffers requires GENERIC_WRITE](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+The native ordinary-file tests use the existing fresh owned current-user ACL
+fixture and restricted same-UserSID token, with administrator groups deny-only.
+They test actual read/flush/self-validation, source retention, readonly denial,
+sharing exclusion and checked closure. Native execution of this amendment is
+pending; it does not qualify Core UpToDate or full destination confinement.

@@ -4,13 +4,24 @@ use std::{
     fs::File,
     io,
     mem::size_of,
-    os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle},
+    os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, IntoRawHandle, OwnedHandle},
     path::Path,
 };
 use windows_sys::Win32::{
-    Foundation::{GetLastError, INVALID_HANDLE_VALUE},
+    Foundation::{CloseHandle, GetLastError, INVALID_HANDLE_VALUE},
     Storage::FileSystem::*,
 };
+
+pub(super) fn close(file: File) -> io::Result<()> {
+    let raw = file.into_raw_handle();
+    // SAFETY: exactly one owned valid file handle transferred out of File.
+    // No second close is guessed after a failed native close.
+    if unsafe { CloseHandle(raw) } == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
 
 pub(super) fn component_limit(handle: &impl AsHandle) -> io::Result<usize> {
     let mut maximum = 0;

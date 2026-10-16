@@ -11,7 +11,7 @@ use std::{
     mem::size_of,
     os::windows::{
         ffi::OsStrExt,
-        io::{AsRawHandle, FromRawHandle, IntoRawHandle, OwnedHandle},
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
     },
     path::Path,
 };
@@ -25,8 +25,8 @@ use windows_sys::{
     },
     Win32::{
         Foundation::{
-            CloseHandle, GENERIC_WRITE, INVALID_HANDLE_VALUE, OBJ_DONT_REPARSE,
-            STATUS_OBJECT_NAME_COLLISION, STATUS_OBJECT_NAME_NOT_FOUND, UNICODE_STRING,
+            GENERIC_WRITE, INVALID_HANDLE_VALUE, OBJ_DONT_REPARSE, STATUS_OBJECT_NAME_COLLISION,
+            STATUS_OBJECT_NAME_NOT_FOUND, UNICODE_STRING,
         },
         Storage::FileSystem::*,
         System::{IO::IO_STATUS_BLOCK, WindowsProgramming::FILE_CREATED},
@@ -77,7 +77,8 @@ fn native_code(error: &io::Error) -> Option<i64> {
     })
 }
 pub(super) fn flush(file: &File) -> SyncReceipt {
-    // SAFETY: live held file opened with the mapped GENERIC_WRITE access set.
+    // SAFETY: live borrowed file handle; the native operation checks required
+    // access and reports its actual result. No buffer or ownership is transferred.
     if unsafe { FlushFileBuffers(file.as_raw_handle()) } != 0 {
         return SyncReceipt {
             method: SyncMethod::FlushFileBuffers,
@@ -94,16 +95,6 @@ pub(super) fn flush(file: &File) -> SyncReceipt {
             SyncState::Failed
         },
         native_code: native_code(&error),
-    }
-}
-fn close(file: File) -> io::Result<()> {
-    let raw = file.into_raw_handle();
-    // SAFETY: exactly one owned valid file handle transferred out of File.
-    // No second close is guessed after a failed native close.
-    if unsafe { CloseHandle(raw) } == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
     }
 }
 fn remove(
@@ -132,7 +123,7 @@ fn remove(
     };
     // Once disposition was requested, query no further child metadata through
     // this handle. Close explicitly, then observe only through its held parent.
-    let closed = close(file);
+    let closed = handle::close(file);
     let first = marked.as_ref().err().or_else(|| closed.as_ref().err());
     match handle::directory_identity(&parent.file) {
         Ok(identity) if identity == parent.identity => {}
@@ -352,7 +343,7 @@ impl WritableDirectory {
         // not establish authority to delete a newly created namespace object.
         let file = File::from(unsafe { OwnedHandle::from_raw_handle(raw) });
         if iosb.Information != FILE_CREATED as usize {
-            let cleanup_code = close(file).err().as_ref().and_then(native_code);
+            let cleanup_code = handle::close(file).err().as_ref().and_then(native_code);
             return Err(CreationFailure {
                 error: io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -384,7 +375,7 @@ impl Creation {
     }
     /// Release without disposition. This never removes a possibly published file.
     pub(super) fn release(self) -> io::Result<()> {
-        close(self.file)
+        handle::close(self.file)
     }
     pub(super) fn validate_file(&self, identity: Identity, length: u64) -> io::Result<()> {
         if handle::directory_identity(&self.parent.file)? != self.parent.identity {

@@ -367,19 +367,8 @@ fn initially_stopped_collection_retains_no_metadata_only_root_as_work() {
     root.close().unwrap();
 }
 
-fn directory_alias(target: &Path, alias: &Path) {
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(target, alias).unwrap();
-    #[cfg(windows)]
-    {
-        // Static fixture setup through the native provider; no profile, shell
-        // interpolation of paths, privilege adjustment or post-bind mutation.
-        let status = std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:EML_OWNED_ALIAS -Target $env:EML_OWNED_TARGET | Out-Null"])
-            .env("EML_OWNED_ALIAS", alias).env("EML_OWNED_TARGET", target).status().unwrap();
-        assert!(status.success());
-    }
-}
+#[path = "support/directory_alias.rs"]
+mod directory_alias;
 
 #[test]
 fn selected_directory_aliases_keep_distinct_spellings_and_walked_aliases_are_excluded() {
@@ -388,9 +377,9 @@ fn selected_directory_aliases_keep_distinct_spellings_and_walked_aliases_are_exc
     fs::create_dir(root.path().join("outside")).unwrap();
     fs::write(root.path().join("target/a.eml"), b"owned alias body").unwrap();
     fs::write(root.path().join("outside/not-walked.eml"), b"outside").unwrap();
-    directory_alias(&root.path().join("target"), &root.path().join("alpha"));
-    directory_alias(&root.path().join("target"), &root.path().join("beta"));
-    directory_alias(
+    directory_alias::create(&root.path().join("target"), &root.path().join("alpha"));
+    directory_alias::create(&root.path().join("target"), &root.path().join("beta"));
+    directory_alias::create(
         &root.path().join("outside"),
         &root.path().join("target/walked-link"),
     );
