@@ -48,7 +48,11 @@ private enum GUIFailure: Error {
     switch status {
     case .success: return value
     case .noValue, .attributeUnsupported: return nil
-    default: throw GUIFailure.accessibility(Int(status.rawValue))
+    default:
+      print(
+        "AX read failed: operation=copyAttribute attribute=\(key) status=\(status.rawValue) remaining=\(ContinuousClock.now.duration(to: budget.end))"
+      )
+      throw GUIFailure.accessibility(Int(status.rawValue))
     }
   }
   func elements(from start: AXUIElement? = nil, budget: Budget) throws -> [AXUIElement] {
@@ -142,6 +146,7 @@ private enum GUIFailure: Error {
     var receipts = [receipt]
     var application: NSRunningApplication?
     var helperSettlementProven = false
+    var fileOpenSubmitted = false
     var failure: Error?
     do {
       let configuration = NSWorkspace.OpenConfiguration()
@@ -162,10 +167,24 @@ private enum GUIFailure: Error {
       }
       guard isOwned(launched, appURL: appURL) else { throw GUIFailure.unexpectedApplication }
       application = launched
+      print("GUI phase: exact launch receipt validated")
       let ax = try Accessibility(launched)
-      while !(try ax.text(budget: action)).contains(where: {
-        $0.contains("Drop EML files or folders")
-      }) { try await action.pause() }
+      while true {
+        do {
+          if try ax.text(budget: action).contains(where: {
+            $0.contains("Drop EML files or folders")
+          }) {
+            break
+          }
+        } catch GUIFailure.accessibility(let code)
+          where code == Int(AXError.cannotComplete.rawValue)
+        {
+          guard !launched.isTerminated else { throw GUIFailure.unexpectedApplication }
+          // Only startup reads are retried; each traversal starts afresh.
+        }
+        try await action.pause()
+      }
+      print("GUI phase: empty window ready")
       let source = owned.appending(path: "a.eml")
       let copy = owned.appending(path: "a.no-attachments.eml")
       let input = try Data(
@@ -188,6 +207,8 @@ private enum GUIFailure: Error {
           opened.complete = true
         }
       }
+      fileOpenSubmitted = true
+      print("GUI phase: file-open submitted")
       while !opened.complete { try await action.pause() }
       guard opened.error == nil, opened.application?.isEqual(launched) == true
       else { throw GUIFailure.unexpectedApplication }
@@ -219,13 +240,17 @@ private enum GUIFailure: Error {
         throw GUIFailure.unexpectedApplication
       }
       helperSettlementProven = true  // Actual selected processing result, not version probe.
+      print("GUI phase: selected processing settlement proven")
       guard try Data(contentsOf: source) == input, try Data(contentsOf: copy) == golden else {
         throw GUIFailure.bytesChanged
       }
       print(
         "actual GUI Open With: one selected Created1/upToDate0 run, processing exit0/summary0 and independent golden/source bytes"
       )
-    } catch { failure = error }
+    } catch {
+      print("GUI phase: failure; file-open submitted=\(fileOpenSubmitted)")
+      failure = error
+    }
 
     // Launch receipt acquisition/validation is inside this same cleanup boundary.
     // An overdue callback remains Unknown, never proof that no app was launched.

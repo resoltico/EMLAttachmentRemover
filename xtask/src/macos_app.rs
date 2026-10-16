@@ -234,6 +234,9 @@ pub(crate) fn icon_command(
     // actool launches a host AssetRuntime agent; do not give that runtime the
     // build SDK root. Compiler SDK selection remains explicit and unchanged.
     icon.env_remove("SDKROOT");
+    // Remove the whole inherited fallback variable, including any pre-Cargo
+    // entries. dyld defaults remain; this is not an established causal fix.
+    icon.env_remove("DYLD_FALLBACK_LIBRARY_PATH");
     let loader_presence: serde_json::Map<String, Value> = [
         "SDKROOT",
         "DYLD_ROOT_PATH",
@@ -253,7 +256,7 @@ pub(crate) fn icon_command(
     fs::write(
         out.join("icon-environment.json"),
         serde_json::to_vec_pretty(
-            &json!({"inherited_presence_only":loader_presence,"actool_sdkroot_removed":true,"developer":build.developer,"actool":actool}),
+            &json!({"inherited_presence_only":loader_presence,"actool_sdkroot_removed":true,"actool_fallback_library_path_removed":true,"developer":build.developer,"actool":actool}),
         )?,
     )?;
     icon.arg(root.join("macos-app/Artwork/EML.icon"))
