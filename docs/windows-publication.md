@@ -125,10 +125,11 @@ create/open dispositions and explicit file/directory and reparse options.
 and [documents `OBJ_DONT_REPARSE`](https://learn.microsoft.com/en-us/windows/win32/api/ntdef/ns-ntdef-_object_attributes).
 Generated bindings for the function and structures exist in the pinned crate;
 that is source feasibility, not a successful GNU LLVM link or native behavior.
-The user-mode documentation describes `RootDirectory` as a handle obtained by
-an earlier `NtCreateFile`; the design must not silently assume the existing
-`CreateFileW` pin satisfies that documented precondition. Challenge a
-consistent relative-open chain and its exact access, sharing, completion,
+The user-mode documentation describes `RootDirectory` through an earlier
+`NtCreateFile`, but a second root capture is not required merely by that wording.
+The reviewed read-only interoperability basis below uses the already held
+ordinary Win32 directory handle. Challenge the creation route's exact
+access, sharing, completion,
 buffer-lifetime and ownership rules before adding product FFI. Any accepted
 revision must record explicit supersession of the extracted contract's §6
 `NtCreateFile` exclusion, WP3's Win32-only wording and §10's reviewed unsafe
@@ -259,6 +260,62 @@ replacement in the comparison/reopen gap (different bytes, identical bytes with
 different identity, source aliases and same-run output aliases), denied-write
 resync and successful identical-copy resync. This lifecycle clarification is
 reviewed design, not execution evidence for the still-incomplete product backend.
+
+## Existing-only native child-open contract
+
+This narrow reviewed addendum permits generated `NtOpenFile` for existing child
+observations and directory traversal. It supersedes the pack's Win32-only API
+scope only for these read-only operations. The source-reviewed implementation
+awaits native validation. It does not admit `NtCreateFile`, creation dispositions,
+write/delete/ACL rights or publication, and does not close the failed creation
+gate or the separate unqualified creation proposal above.
+
+Reuse the already owned ordinary Win32 root handle as `RootDirectory`.
+[Pinned Rust1.99 directory code](https://github.com/rust-lang/rust/blob/1.99.0/library/std/src/sys/fs/windows/dir.rs)
+corroborates that handle interoperability; no unstable Rust API is used and no
+second directory capture or absolute NT-name conversion follows from it.
+
+Completion is based on the OS contract rather than successful samples.
+[IRP_MJ_CREATE](https://learn.microsoft.com/en-us/previous-versions/windows/drivers/ifs/irp-mj-create)
+covers existing-object opens and uses the synchronous-API request flag.
+[Microsoft's completion description](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/breaking-oplocks)
+states that the I/O manager blocks these always-synchronous requests instead of
+returning pending status to the caller. Lower-driver pending is handled inside
+the I/O manager. The generic
+[IO_STATUS_BLOCK rule](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ns-wdm-_io_status_block)
+is conditional on an API returning pending; it does not override that fixed-open
+contract. The wrapper must use `FILE_SYNCHRONOUS_IO_NONALERT` with `SYNCHRONIZE`,
+without alertable, async or oplock-bypass options. Keep native name/structures,
+IOSB and owned handles alive through the synchronous return. Returned final
+NTSTATUS is authoritative; zero-initialized IOSB is never a success oracle.
+Use Microsoft's [NT_SUCCESS semantics](https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/using-ntstatus-values):
+success/informational values are nonnegative, warnings/errors negative. No exact
+zero-only predicate or speculative adoption of failed output handles is added.
+No async ownership framework, leak, forced library exit or early unsupported
+return substitutes for completed I/O. An OS-blocked call still needs the
+supervisor's owned-process hard stop; no bounded I/O latency is promised.
+
+Leaf observation uses read-attributes/synchronize, observation sharing and
+`FILE_OPEN_REPARSE_POINT` without `OBJ_DONT_REPARSE`. It reports positive reparse
+kind and full identity before any ordinary-file signature. Ordinary-directory
+traversal uses list/read-attributes/traverse/synchronize, observation sharing,
+`FILE_DIRECTORY_FILE` and `OBJ_DONT_REPARSE`. Both use the fixed nonalert synchronous
+option. The selected Win32 root now requests traverse access for this actual child
+operation. No inheritance, kernel-only or backup-intent option is added to native
+child opens. Enumeration names are passed exactly, without forced case folding.
+
+Neither operation accepts a caller-provided flag mask or multi-component name.
+Validate NUL, separators, dot components, streams/devices and the checked
+`UNICODE_STRING`16-bit byte extent before the call. Native lookup remains
+authoritative for filesystem-specific existing-name limits; destination naming's
+actual component-limit query is still separate work. Native full128-bit identity
+is never inferred from enumeration's64-bit record ID. `NtOpenError` retains exact
+NTSTATUS and its secondary Win32 translation inside the I/O error payload; the
+translation is not fabricated as that I/O error's primary raw code.
+
+As with the Unix held-child primitive, the collector must compare the returned
+directory identity with its earlier collected entry identity before descent.
+The primitive does not claim a complete collector or atomic directory snapshot.
 
 ## Captured native path normalization
 

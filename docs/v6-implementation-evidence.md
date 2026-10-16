@@ -630,3 +630,51 @@ oracle and all C0/C1/line/bidi control rejection cases. Local path5 and request1
 passed without failures/ignores/filters; native-Mac and compile-only Windows MSVC
 all-target Clippy passed. There is no shell-quoting, full human-event or stdout
 delivery claim. Native six-platform execution of this formatter remains pending.
+
+At exact head `8b874a61209a93338729a9f6d50dc0f81b4713ec`,
+[Unix run38837652481](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38837652481)
+passed all seven jobs. Path5/request16 passed without failures/ignores/filters on
+each native Unix target. The
+[Windows run38837652427](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38837652427)
+executed the same path5/request16 successfully on both native CPUs; both formatter
+test names are individually present on all six targets. Raw logs retain twelve
+formatter test passes, two per target. The Windows non-gate library21 still
+passed with one filter; each actual creation gate failed0passed/1failed/21filtered,
+remaining the only failed step. This closes tested path-display primitives,
+not full human events, actual stdout delivery or CLI execution.
+
+## Existing-only Windows child lookup checkpoint
+
+The native mechanism follows the separately challenged synchronous-existing-open
+contract in windows-publication.md. It reuses the original Win32 root handle,
+validates one native component and fixes both access/options selections inside
+the private adapter. Observation exposes positive reparse kind/full identity
+before ordinary-file metadata; directory open refuses reparse processing. The
+future collector must compare the returned directory with its earlier observation
+before descent. No complete collector, source-data reader or writable backend is
+provided by this slice.
+
+Three real filesystem cases are prepared for both native Windows CPUs under the
+existing restricted runner token: full entry/signature/child IDs and native units,
+held-parent lookup after an owned folder rename, positive reparse entry distinct
+from its target/refused descent, pre-call invalid-component/extent rejection and
+real missing-child error domains. One separate native translation-adapter case
+uses a literal known status/code/display oracle. It is not a synthetic open or
+real-filesystem integration substitute. Own test challenge avoids assuming child
+file timestamps are unchanged merely because an ancestor was renamed.
+
+Source review challenged an exact-zero success predicate and speculative closure
+of failed output handles, then retracted those proposals against primary
+NT_SUCCESS guidance and ownership documentation. The code retains nonnegative
+success/informational semantics, with synchronous completion already established;
+it never infers success from IOSB initialization. The valid independent error
+oracle finding was implemented. Independent production/security and command-
+central source reviews closed with no remaining findings after stable MSVC
+Clippy/diff verification. Native execution remains pending; all actual creation-
+gate failures remain in force.
+
+Windows MSVC all-target check/Clippy passed as compile-only preflight. Local Mac
+filesystem30 passed without failures/ignores/filters; doctests0, local Clippy passed.
+Adding the generated Wdk_Foundation feature introduced no package/version or lock
+change. Complete locked/offline fuzz metadata resolves27 packages with eml-fs;
+this is graph admission only, not another fuzz campaign.

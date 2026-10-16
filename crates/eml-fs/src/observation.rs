@@ -29,7 +29,6 @@ impl BoundFileError {
             other => other,
         }
     }
-    #[cfg(any(unix, test))]
     pub(crate) fn into_io_error(self) -> io::Error {
         match self {
             Self::ObservationFailed(error) => error,

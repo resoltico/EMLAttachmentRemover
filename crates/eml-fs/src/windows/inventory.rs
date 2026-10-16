@@ -1,8 +1,8 @@
 //! Read-only selected directories and names from their exclusively borrowed cursor.
-use super::handle;
-use crate::Identity;
+use super::{child, handle};
+use crate::{BoundFileError, EntryKind, EntryObservation, Identity};
 use std::{
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     fs::File,
     io,
     mem::offset_of,
@@ -26,14 +26,17 @@ impl BoundDirectory {
     pub fn open(path: &Path) -> io::Result<Self> {
         let file = handle::open(
             path,
-            FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES,
+            FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             FILE_FLAG_BACKUP_SEMANTICS,
         )?;
+        Self::from_file(file)
+    }
+    fn from_file(file: File) -> io::Result<Self> {
         if !handle::is_disk(&file)? {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Selected root is not a disk object",
+                "Opened directory is not a disk object",
             ));
         }
         let attributes = handle::attributes(&file)?;
@@ -42,13 +45,51 @@ impl BoundDirectory {
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Selected root is not an ordinary disk directory",
+                "Opened object is not an ordinary disk directory",
             ));
         }
         Ok(Self {
             identity: handle::identity(&file)?,
             file,
         })
+    }
+    /// Observe one existing child without following its final reparse point.
+    /// Reparse kind is established before requesting ordinary-file signatures.
+    pub fn observe_child(&self, name: &OsStr) -> io::Result<EntryObservation> {
+        let file = child::observe(&self.file, name)?;
+        if !handle::is_disk(&file)? {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Child observation is not a disk object",
+            ));
+        }
+        let attributes = handle::attributes(&file)?;
+        let kind = if attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            EntryKind::Reparse
+        } else if attributes.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
+            EntryKind::Directory
+        } else {
+            EntryKind::File
+        };
+        let signature = if kind == EntryKind::File {
+            Some(handle::signature(&file).map_err(BoundFileError::into_io_error)?)
+        } else {
+            None
+        };
+        Ok(EntryObservation {
+            identity: match signature {
+                Some(value) => value.identity,
+                None => handle::identity(&file)?,
+            },
+            kind,
+            file: signature,
+        })
+    }
+    /// Open one ordinary existing directory relative to this held parent,
+    /// refusing reparse processing. Before descent the collector must compare
+    /// this returned identity with its earlier entry observation.
+    pub fn open_child(&self, name: &OsStr) -> io::Result<Self> {
+        Self::from_file(child::directory(&self.file, name)?)
     }
     /// Full native identity of the opened selected directory.
     pub fn identity(&self) -> Identity {
@@ -215,6 +256,136 @@ fn record(bytes: &[u8], offset: usize) -> io::Result<(OsString, Option<usize>)> 
 mod tests {
     use super::*;
     use std::{collections::BTreeSet, ffi::OsStr, os::windows::ffi::OsStrExt};
+
+    #[test]
+    fn native_child_observation_and_descent_use_the_held_parent_and_full_ids() {
+        let fixture = tempfile::tempdir().unwrap();
+        let selected = fixture.path().join("selected");
+        let moved = fixture.path().join("moved");
+        std::fs::create_dir_all(selected.join("mail")).unwrap();
+        std::fs::write(selected.join("mail/source.eml"), b"synthetic").unwrap();
+        let native = OsString::from_wide(&[0x61, 0xd800, 0x62]);
+        std::fs::write(selected.join(&native), b"native synthetic").unwrap();
+        let context = crate::PathContext::capture().unwrap();
+        let actor = super::super::test_actor::RestrictedToken::enter().unwrap();
+        let mut root = BoundDirectory::open(&context.resolve(&selected).unwrap()).unwrap();
+        let observed = root.observe_child(OsStr::new("mail")).unwrap();
+        assert_eq!(observed.kind, EntryKind::Directory);
+        assert!(observed.file.is_none());
+        let mut child = root.open_child(OsStr::new("mail")).unwrap();
+        // This is the earlier observation, not one recreated after the child open.
+        assert_eq!(child.identity(), observed.identity);
+        assert!(names(&mut child).contains(OsStr::new("source.eml")));
+        let source = child.observe_child(OsStr::new("source.eml")).unwrap();
+        assert_eq!(source.kind, EntryKind::File);
+        assert_eq!(source.file.unwrap().size, 9);
+        let direct = crate::BoundFile::open(
+            &context.resolve(&selected.join("mail/source.eml")).unwrap(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(source.file.unwrap(), direct.initial_signature());
+        drop(direct);
+        let native_observed = root.observe_child(&native).unwrap();
+        assert_eq!(native_observed.kind, EntryKind::File);
+        assert_eq!(native_observed.file.unwrap().size, 16);
+        let parent_id = root.identity();
+        std::fs::rename(&selected, &moved).unwrap();
+        assert!(!selected.exists());
+        assert_eq!(handle::identity(&root.file).unwrap(), parent_id);
+        assert_eq!(root.observe_child(OsStr::new("mail")).unwrap(), observed);
+        let after_move = root.observe_child(&native).unwrap();
+        assert_eq!(after_move.identity, native_observed.identity);
+        assert_eq!(after_move.kind, EntryKind::File);
+        assert_eq!(after_move.file.unwrap().size, 16);
+        let reopened = root.open_child(OsStr::new("mail")).unwrap();
+        assert_eq!(reopened.identity(), observed.identity);
+        assert!(names(&mut root).contains(&native));
+        drop(reopened);
+        drop(child);
+        drop(root);
+        drop(actor);
+        fixture.close().unwrap();
+    }
+
+    #[test]
+    fn native_child_reparse_observation_keeps_the_entry_separate_from_its_target() {
+        let fixture = tempfile::tempdir().unwrap();
+        let target = fixture.path().join("target");
+        let selected = fixture.path().join("entry");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::create_dir(&selected).unwrap();
+        std::fs::write(target.join("source.eml"), b"synthetic").unwrap();
+        let link = super::super::test_reparse::writer(&selected).unwrap();
+        super::super::test_reparse::set_mount_point(&link, &target).unwrap();
+        drop(link);
+        let context = crate::PathContext::capture().unwrap();
+        let actor = super::super::test_actor::RestrictedToken::enter().unwrap();
+        let root = BoundDirectory::open(&context.resolve(fixture.path()).unwrap()).unwrap();
+        let target = root.observe_child(OsStr::new("target")).unwrap();
+        let entry = root.observe_child(OsStr::new("entry")).unwrap();
+        assert_eq!(entry.kind, EntryKind::Reparse);
+        assert!(entry.file.is_none());
+        assert_ne!(entry.identity, target.identity);
+        assert!(root.open_child(OsStr::new("entry")).is_err());
+        drop(root);
+        drop(actor);
+        std::fs::remove_dir(selected).unwrap();
+        fixture.close().unwrap();
+    }
+
+    #[test]
+    fn native_child_validation_precedes_open_and_missing_entry_retains_both_error_domains() {
+        let fixture = tempfile::tempdir().unwrap();
+        let context = crate::PathContext::capture().unwrap();
+        let actor = super::super::test_actor::RestrictedToken::enter().unwrap();
+        let mut root = BoundDirectory::open(&context.resolve(fixture.path()).unwrap()).unwrap();
+        let before = names(&mut root);
+        for name in ["", ".", "..", "a/b", r"a\b", "a:b", "NUL", "a\0b"] {
+            let name = OsStr::new(name);
+            let observation = root.observe_child(name).unwrap_err();
+            let directory = root
+                .open_child(name)
+                .err()
+                .expect("invalid component admitted");
+            for error in [observation, directory] {
+                assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+                assert!(
+                    error
+                        .get_ref()
+                        .and_then(|cause| cause.downcast_ref::<crate::NtOpenError>())
+                        .is_none()
+                );
+            }
+        }
+        let too_long = OsString::from_wide(&vec![120; 32768]);
+        assert_eq!(
+            root.observe_child(&too_long).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+        let failure = root.observe_child(OsStr::new("missing")).unwrap_err();
+        let native = failure
+            .get_ref()
+            .unwrap()
+            .downcast_ref::<crate::NtOpenError>()
+            .unwrap();
+        assert!(native.nt_status() < 0);
+        assert_ne!(native.win32_code(), 0);
+        assert!(
+            failure.raw_os_error().is_none(),
+            "do not relabel a translated code as primary"
+        );
+        assert!(
+            failure
+                .to_string()
+                .contains(&format!("0x{:08X}", native.nt_status() as u32))
+        );
+        eprintln!("owned missing-child native error: {native:?}");
+        assert_eq!(names(&mut root), before);
+        drop(root);
+        drop(actor);
+        fixture.close().unwrap();
+    }
 
     fn encoded(name: &[u16], next: u32) -> Vec<u8> {
         let mut bytes = vec![0; NAME_OFFSET + name.len() * 2];

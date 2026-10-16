@@ -33,7 +33,7 @@ mod windows;
 #[cfg(windows)]
 pub use windows::path::{PathContext, validate_component};
 #[cfg(windows)]
-pub use windows::{BoundDirectory, BoundFile, DirectoryEntries};
+pub use windows::{BoundDirectory, BoundFile, DirectoryEntries, NtOpenError};
 
 /// Native object identity; never a pathname hash or lossy display value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

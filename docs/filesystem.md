@@ -233,6 +233,23 @@ References: [unlink/unlinkat](https://man7.org/linux/man-pages/man2/unlink.2.htm
 
 ## Selection spelling, links and overlap
 
+The raw request input, output and captured-cwd expressions each have the core's
+separate path-unit/component admission limits. Prefixing a valid short relative
+POSIX selection with cwd for a derived absolute display does not create a second
+InvalidRequest. Descriptor-relative operations preserve that selection; native
+backend operational ceilings still produce truthful operation failures. Walked
+path limits apply to the selected spelling plus its discovered suffix, without
+charging the captured cwd prefix to a relative expression's component allowance.
+
+The future collector's8MiB path budget charges each retained item source native
+value and known planned destination native value once, including failure items;
+Windows counts two bytes per UTF-16 unit. The4MiB raw-input budget remains
+separate and precedes deduplication. Prefer admitted spelling plus shared root
+context and derive operands. Do not double-charge a second representation of
+the same protocol path or hide independently retained copies. Exact/one-over
+accounting tests remain required with the collector; this clarification does not
+claim that collector implemented.
+
 POSIX selected expressions can be observed or opened relative to an already held
 working directory through `observe_selected` and `open_selected`. These use
 `fstatat`/`openat`, follow explicit selected links and leave symlink/dot-dot
@@ -246,6 +263,7 @@ no filesystem writes, process cwd changes or whole-run admission decisions.
 Windows selected-directory observation currently supports capture and names-only
 enumeration. `BoundDirectory` retains an ordinary disk directory handle and usable
 full128-bit identity. Directory access uses `OPEN_EXISTING`, list/read-attributes,
+and traverse for held-parent child lookup,
 sharing read/write/delete and `FILE_FLAG_BACKUP_SEMANTICS`; code does not enable
 privileges. The backup flag can affect checks when the caller already has backup
 privileges, so restricted-token tests remain separate evidence. This handle is
@@ -262,8 +280,13 @@ next offset or the fixed allocation for its last record, not a fabricated return
 byte count. Zero initialization is not evidence of a returned record. A fresh
 iterator restarts after partial consumption, completion or failure.
 
-This read-only capability does not yet implement Windows child observations,
-relative descent, physical ancestry/overlap admission or the core collector.
+Windows child observation/open now uses the narrowly reviewed existing-only
+native contract in [the API record](windows-publication.md#existing-only-native-child-open-contract).
+The read-only implementation still awaits native validation. A reparse leaf is
+reported before ordinary signature lookup; a traversal open refuses reparse
+processing. The collector must compare its earlier observed full ID before
+descending through the returned directory. Physical ancestry/overlap admission
+and the core collector remain unimplemented.
 The names-only structure's64-bit file ID is never padded into a full identity.
 
 Native contracts: [GetFileInformationByHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getfileinformationbyhandleex),

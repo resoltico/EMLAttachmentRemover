@@ -54,6 +54,20 @@ operational expression or a guarantee against every Unicode visual ambiguity.
 Formatting errors propagate to the caller. Complete human event/error rendering
 and actual stdout delivery still need implementation and integration tests.
 
+## Collection-admission event indices
+
+This is a reviewed contract clarification for the future runner/reducer, not an
+implemented event stream. Item indices identify positions in the known work list.
+They are neither emission ordinals nor raw argument indices. Strictly increasing
+indices within `start.total` may have gaps when admission leaves known inputs
+unstarted. For known file0, missing explicit root1 and known file2, the valid
+admission stream has total3/incomplete collection, one failed item at index1
+with no publication, then failed1/not_processed2 and INPUT_ADMISSION_FAILED/exit1.
+Do not reindex that failure to0 or fabricate the unexpanded contents of folders.
+Collection limit and collection stop remain the separately specified no-item
+cases. Future shared protocol/reducer fixtures must accept this gap and reject
+repeated, decreasing and out-of-range indices.
+
 ## Core diagnostic vocabulary
 
 The core enum owns these stable codes and permitted phases. A source test checks
