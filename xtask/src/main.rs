@@ -3,6 +3,7 @@
 mod archive_verify;
 mod campaign;
 mod check;
+mod ci;
 mod cli_build;
 mod distribution;
 mod fuzz;
@@ -47,6 +48,34 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Execute the exact PR M workspace/core integration on native Linux x64.
+    CiIntegration(ci::IntegrationArguments),
+    /// Bind event H/S/Q and the real PR merge checkout to live ref observations.
+    CiContext(ci::ContextArguments),
+    /// Recheck source/role and live refs before running or accepting CI work.
+    CiCheckout {
+        #[arg(long)]
+        context: PathBuf,
+        #[arg(long)]
+        live: PathBuf,
+        #[arg(long)]
+        role: String,
+        #[arg(long)]
+        run_id: u64,
+        #[arg(long)]
+        attempt: u32,
+        #[arg(long)]
+        workflow_sha: String,
+    },
+    /// Reject failed/missing required GitHub jobs; no artifact qualification claim.
+    CiNeeds {
+        #[arg(long)]
+        event: String,
+        #[arg(long)]
+        needs: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Observe a direct owned signed app child on a fresh hosted runner.
     MacosStartupDiagnostic {
         #[arg(long)]
@@ -159,6 +188,35 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::CiIntegration(arguments) => {
+                initialize_controller(&root)?;
+                ci::integration(&root, arguments)
+            }
+            Task::CiContext(arguments) => {
+                initialize_controller(&root)?;
+                ci::establish(&root, arguments)
+            }
+            Task::CiCheckout {
+                context,
+                live,
+                role,
+                run_id,
+                attempt,
+                workflow_sha,
+            } => {
+                initialize_controller(&root)?;
+                ci::recheck(
+                    &root,
+                    &context,
+                    &live,
+                    &role,
+                    run_id,
+                    attempt,
+                    &workflow_sha,
+                )
+                .map(|_| ())
+            }
+            Task::CiNeeds { event, needs, out } => ci::needs(&event, &needs, &out),
             Task::MacosStartupDiagnostic { out } => {
                 #[cfg(target_os = "macos")]
                 {

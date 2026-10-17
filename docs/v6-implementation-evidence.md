@@ -2337,4 +2337,43 @@ Neither Mac has a GUI pass. Downloaded evidence binds in-job identities but does
 not include archive/executable payloads for an independent downloaded-byte rehash.
 A separate fresh-host direct signed-app child observation is implemented to
 capture actual stdout/stderr/exit under its own finite Controller; it is not
-Finder equivalence, a cause verdict or GUI acceptance and has not run yet.
+Finder equivalence, a cause verdict or GUI acceptance. Its first actual result
+is recorded below.
+
+## Hosted app startup and CI identity observations
+
+The Intel direct signed-app observation at
+`6b35f61485f8cc834d598be84fff594d6d9c7cc2` in
+[run 38982246035](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38982246035)
+observed SIGABRT 6 after 2.447 seconds, with complete owned-process cleanup and
+no timeout, cancellation or unexpected survivor. The actual host was native
+Intel macOS 15.7.9/24G830, image 20260824.0482.1, Xcode 26.3/17C529,
+Swift 6.2.4 and SDK 26.2. The executable SHA-256 was
+`b657a158e5fe52d7954f826851f1394a7c59b2cf3546ba18d8512e2936adb0b3`.
+Stdout was empty; stderr reported Apple's MTLLoader assertion:
+`Target device architecture is nil`. This establishes the observed Metal-loader
+abort, not its underlying cause or equivalence to NSWorkspace launch failure.
+
+The next bounded diagnostics enumerate public Metal devices without selecting
+a default device or loading shaders. They are restricted to fresh owned hosted
+jobs; effective values of four allowlisted loader variables are bounded and
+recorded at the constructed child boundary. These observations do not establish
+that dyld honored those values. Compile/document failures stop the diagnostic;
+a settled ordinary observer runtime failure is retained separately before the
+unchanged primary probe. Timeout or unknown lifetime forbids later admission.
+Actual execution of these added observations remains pending.
+
+The CI identity workflow binds PR H/base and actual GitHub M parents separately,
+retains workflow-definition/run/attempt identity, and reobserves live refs before
+and after M's native Linux workspace tests. Main S remains the exact pushed
+commit; merge-queue Q follows its named live queue ref. Its actual skipped-job
+control uses the same required-job predicate as the positive baseline and checks
+the specific rejection. This workflow does not implement complete six-target
+artifact aggregation or ci-ok. Actual GitHub execution remains pending.
+
+Local Rust xtask verification passed 55 tests with no ignored or filtered cases;
+Clippy, actionlint, formatting and the new observer's Swift typecheck passed.
+The Swift checks used the newer local SDK, without running a graphics payload.
+A negative record test initially exposed ignored extra fields on Serde's tagged
+unit variant; the architecture's empty struct variant now rejects those fields,
+and the repaired negative control passes. Native pinned execution is separate.

@@ -324,7 +324,7 @@ pub(crate) fn icon_command(
     fs::write(
         out.join("icon-environment.json"),
         serde_json::to_vec_pretty(
-            &json!({"inherited_presence_only":loader_presence,"actool_sdkroot_removed":true,"actool_fallback_library_path_removed":true,"developer":build.developer,"actool":actool}),
+            &json!({"inherited_presence_only":loader_presence,"effective_child_loader":macos::loader_environment(&icon),"actool_sdkroot_removed":true,"actool_fallback_library_path_removed":true,"developer":build.developer,"actool":actool}),
         )?,
     )?;
     icon.arg(root.join("macos-app/Artwork/EML.icon"))

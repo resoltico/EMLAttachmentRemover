@@ -17,9 +17,10 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
     }
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
+    let context = macos::load(root)?;
+    macos::observe_graphics(root, &out.join("graphics"), &context)?;
     let build = out.join("app-build");
     macos_app::run(root, &build)?;
-    let context = macos::load(root)?;
     let app = build.join("EML Attachment Remover.app");
     let executable = app.join("Contents/MacOS/EMLAttachmentRemover");
     let bytes = fs::read(&executable)?;
@@ -39,6 +40,10 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
     command
         .current_dir(&out)
         .args(["-copyDestinationBytes", ""]);
+    fs::write(
+        out.join("child-loader.json"),
+        serde_json::to_vec_pretty(&macos::loader_environment(&command))?,
+    )?;
     let result = controller()?.run_separate_output(
         command,
         &out.join("startup.log"),

@@ -1,0 +1,140 @@
+name: CI source identity and guard integration
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: ci-identity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  context:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    outputs:
+      source: ${{ steps.context.outputs.source }}
+      role: ${{ steps.context.outputs.role }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ci-refs
+        id: refs
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          ref: ${{ github.sha }}
+          path: target/ci/merge-repository
+          persist-credentials: false
+      - name: Bind actual H/S/Q and actual M parents
+        id: context
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          LIVE_FILE: ${{ steps.refs.outputs.file }}
+        run: |
+          args=()
+          if [ "$EVENT_NAME" = pull_request ]; then args+=(--merge-repository target/ci/merge-repository); fi
+          cargo xtask ci-context --event-name "$EVENT_NAME" --event "$GITHUB_EVENT_PATH" --event-sha "$EVENT_SHA" --workflow-sha "$WORKFLOW_SHA" --live "$LIVE_FILE" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --out target/ci/context.json "${args[@]}"
+          source=$(jq -er '.source' target/ci/context.json)
+          role=$(jq -er '.role' target/ci/context.json)
+          printf 'source=%s\n' "$source" >> "$GITHUB_OUTPUT"
+          printf 'role=%s\n' "$role" >> "$GITHUB_OUTPUT"
+      - name: Retain identity observation
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-context-${{ github.event.pull_request.head.sha || github.sha }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/ci/context.json
+          if-no-files-found: error
+  merge:
+    name: Actual M Linux integration
+    needs: context
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-context-${{ needs.context.outputs.source }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/ci/context-input
+      - uses: ./.github/actions/ci-refs
+        id: refs
+      - name: Execute verified actual M with discovery and strict summaries
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          rustc -vV
+          cargo xtask ci-integration --context target/ci/context-input/context.json --live target/ci/live.json --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --workflow-sha "$WORKFLOW_SHA" --out target/ci/merge-tests
+      - uses: ./.github/actions/ci-refs
+        id: final_refs
+      - name: Reobserve pair after execution
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          cargo xtask ci-checkout --context target/ci/context-input/context.json --live target/ci/live.json --role M --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --workflow-sha "$WORKFLOW_SHA"
+      - name: Retain actual M evidence and failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-M-${{ github.sha }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/ci/context-input/context.json
+            target/ci/live.json
+            target/ci/merge-tests/*.json
+            target/ci/merge-tests/*.log
+            target/ci/merge-tests/*.stderr
+          if-no-files-found: error
+  skip_probe:
+    name: Deliberately skipped need control
+    # GitHub run attempts start at1; keep an actual skipped dependency as control.
+    if: ${{ github.run_attempt == 0 }}
+    runs-on: ubuntu-22.04
+    steps:
+      - run: exit 1
+  skipped_need_detection:
+    name: Actual GitHub skipped-need rejection
+    needs: skip_probe
+    if: ${{ always() }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Test the production needs predicate with the actual skipped result
+        env:
+          ACTUAL_NEEDS: ${{ toJSON(needs) }}
+        run: |
+          mkdir -p target/ci
+          jq -n '{context:{result:"success"},repository:{result:"success"},native:{result:"success"},merge:{result:"skipped"}}' > target/ci/needs-baseline.json
+          cargo xtask ci-needs --event push --needs target/ci/needs-baseline.json --out target/ci/needs-baseline-decision.json
+          jq -e '.passed == true' target/ci/needs-baseline-decision.json
+          jq --argjson actual "$ACTUAL_NEEDS" '.repository=$actual.skip_probe' target/ci/needs-baseline.json > target/ci/skip-control.json
+          set +e
+          cargo xtask ci-needs --event push --needs target/ci/skip-control.json --out target/ci/skip-decision.json
+          status=$?
+          set -e
+          test "$status" -ne 0
+          jq -e '.passed == false and .rejection.code == "required_job_skipped" and .rejection.job == "repository"' target/ci/skip-decision.json
+      - name: Retain actual control input and specific rejection
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-needs-control-${{ github.event.pull_request.head.sha || github.sha }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/ci/skip-control.json
+            target/ci/skip-decision.json
+            target/ci/needs-baseline.json
+            target/ci/needs-baseline-decision.json
+          if-no-files-found: error

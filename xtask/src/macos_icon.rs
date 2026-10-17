@@ -41,6 +41,7 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
     let build = macos::load(root)?;
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
+    macos::observe_graphics(root, &out.join("graphics"), &build)?;
     let classes = fallback_classes(&root.canonicalize()?, &build.developer.canonicalize()?);
     fs::write(
         out.join("context.json"),

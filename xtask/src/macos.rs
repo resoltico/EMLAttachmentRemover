@@ -10,6 +10,148 @@ use std::{
     time::Duration,
 };
 
+/// Effective loader values for these inheriting diagnostic commands; env_clear
+/// is not used by their reviewed constructors. No other CI environment is read.
+pub(crate) fn loader_environment(command: &Command) -> serde_json::Value {
+    use base64::Engine;
+    use std::os::unix::ffi::OsStrExt;
+    let values = [
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+        "DYLD_FALLBACK_FRAMEWORK_PATH",
+    ]
+    .into_iter()
+    .map(|name| {
+        let explicit = command
+            .get_envs()
+            .find(|(key, _)| *key == OsStr::new(name))
+            .map(|(_, value)| value.map(OsStr::to_owned));
+        let value = explicit.unwrap_or_else(|| std::env::var_os(name));
+        let value = match value {
+            Some(value) if value.as_os_str().as_bytes().len() > 16_384 => {
+                serde_json::json!({"state":"unobserved","reason":"over_limit","limit_bytes":16384})
+            }
+            Some(value) => serde_json::json!({
+                "state":"observed", "display_utf8_lossy":value.to_string_lossy(),
+                "native_encoding":"unix-bytes",
+                "native_base64":base64::engine::general_purpose::STANDARD.encode(value.as_os_str().as_bytes())
+            }),
+            None => serde_json::Value::Null,
+        };
+        (name.to_owned(), value)
+    })
+    .collect();
+    serde_json::Value::Object(values)
+}
+
+pub(crate) fn observe_graphics(root: &Path, out: &Path, build: &MacBuild) -> Result<()> {
+    for (key, expected) in [
+        ("CI", "true"),
+        ("GITHUB_ACTIONS", "true"),
+        ("RUNNER_ENVIRONMENT", "github-hosted"),
+    ] {
+        if std::env::var(key).as_deref() != Ok(expected) {
+            return Err("Graphics observation requires a fresh owned hosted-runner job".into());
+        }
+    }
+    fs::create_dir(out)?;
+    let tool = out.join("MetalDeviceObservation");
+    let mut compile = build.command(root, &build.swiftc);
+    compile
+        .args([
+            "-parse-as-library",
+            "-swift-version",
+            "6",
+            "-warnings-as-errors",
+            "-target",
+            &build.swift_target(),
+            "-sdk",
+        ])
+        .arg(&build.sdk)
+        .args(["-framework", "CoreGraphics"])
+        .arg(root.join("macos-app/Tests/MetalDeviceObservation.swift"))
+        .arg("-o")
+        .arg(&tool);
+    checked_run(compile, &out.join("compile.log"), 120)?;
+    let bytes = fs::read(&tool)?;
+    let identity = fixture_identity(&bytes, &build.architecture, build.minimum)?;
+    let mut command = Command::new(&tool);
+    command.current_dir(root);
+    fs::write(
+        out.join("input.json"),
+        serde_json::to_vec_pretty(
+            &serde_json::json!({"build":build,"tool_image":identity,"tool_bytes":xtask::archive::ByteIdentity::of(&bytes),"loader_environment":loader_environment(&command),"coregraphics_explicitly_linked":true,"scope":"read-only public Metal metadata; no private target architecture, rendering or GPU selection"}),
+        )?,
+    )?;
+    let log = out.join("device.log");
+    let result = controller()?.run_separate_output(command, &log, Duration::from_secs(15))?;
+    fs::write(
+        out.join("process.json"),
+        serde_json::to_vec_pretty(&result.evidence())?,
+    )?;
+    if !controller()?.admits_work() {
+        return Err("Graphics observer lifetime/control closed later process admission".into());
+    }
+    if result.success() {
+        if fs::metadata(&log)?.len() > 65_536 {
+            return Err("Public Metal observation exceeds its document bound".into());
+        }
+        let value: GraphicsObservation = serde_json::from_slice(&fs::read(&log)?)?;
+        value.validate()?;
+        fs::write(out.join("device.json"), serde_json::to_vec_pretty(&value)?)?;
+    }
+    // A settled ordinary observer failure stays distinct from the unchanged
+    // product probe. Its raw status/stdout/stderr remain available for diagnosis.
+    Ok(())
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct GraphicsObservation {
+    scope: String,
+    device_count: usize,
+    devices: Vec<GraphicsDevice>,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct GraphicsDevice {
+    name: String,
+    registry_id: u64,
+    has_unified_memory: bool,
+    families: std::collections::BTreeMap<String, bool>,
+    architecture: GraphicsArchitecture,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+enum GraphicsArchitecture {
+    Observed { public_architecture_name: String },
+    Unobserved {},
+}
+impl GraphicsObservation {
+    fn validate(&self) -> Result<()> {
+        if self.scope.len() > 512
+            || self.device_count != self.devices.len()
+            || self.devices.len() > 16
+        {
+            return Err("Inconsistent public graphics observation".into());
+        }
+        for device in &self.devices {
+            let expected = ["apple1", "apple3", "apple5", "apple7", "metal3"];
+            if device.name.len() > 512
+                || device.families.len() != expected.len()
+                || expected
+                    .iter()
+                    .any(|key| !device.families.contains_key(*key))
+                || matches!(&device.architecture, GraphicsArchitecture::Observed { public_architecture_name } if public_architecture_name.len() > 512)
+            {
+                return Err("Invalid public graphics device record".into());
+            }
+        }
+        Ok(())
+    }
+}
+
 pub(crate) fn selected_command(
     root: &Path,
     developer: &Path,
@@ -339,6 +481,77 @@ pub(crate) fn load(root: &Path) -> Result<MacBuild> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn loader_observation_respects_explicit_removals_and_bounds_before_encoding() {
+        use std::os::unix::ffi::OsStringExt;
+        let mut command = Command::new("owned-unlaunched-fixture");
+        command.env_remove("DYLD_LIBRARY_PATH");
+        command.env(
+            "DYLD_FRAMEWORK_PATH",
+            std::ffi::OsString::from_vec(vec![0xff, b'/']),
+        );
+        command.env("DYLD_FALLBACK_LIBRARY_PATH", "x".repeat(16_385));
+        command.env("DYLD_FALLBACK_FRAMEWORK_PATH", "");
+        let observed = loader_environment(&command);
+        assert!(observed["DYLD_LIBRARY_PATH"].is_null());
+        assert_eq!(observed["DYLD_FRAMEWORK_PATH"]["native_base64"], "/y8=");
+        assert_eq!(
+            observed["DYLD_FALLBACK_LIBRARY_PATH"],
+            serde_json::json!({"state":"unobserved","reason":"over_limit","limit_bytes":16384})
+        );
+        assert_eq!(
+            observed["DYLD_FALLBACK_FRAMEWORK_PATH"]["native_base64"],
+            ""
+        );
+    }
+    #[test]
+    fn graphics_records_reject_inconsistent_or_untyped_device_observations() {
+        let empty =
+            serde_json::json!({"scope":"public enumeration", "device_count":0,"devices":[]});
+        serde_json::from_value::<GraphicsObservation>(empty.clone())
+            .unwrap()
+            .validate()
+            .unwrap();
+        let mut mismatch = empty.clone();
+        mismatch["device_count"] = serde_json::json!(1);
+        assert!(
+            serde_json::from_value::<GraphicsObservation>(mismatch)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
+        assert!(serde_json::from_value::<GraphicsObservation>(serde_json::Value::Null).is_err());
+        let device = serde_json::json!({"name":"owned fixture", "registry_id":1,"has_unified_memory":false,"families":{"apple1":false,"apple3":false,"apple5":false,"apple7":false,"metal3":false},"architecture":{"state":"unobserved"}});
+        let valid =
+            serde_json::json!({"scope":"public enumeration","device_count":1,"devices":[device]});
+        serde_json::from_value::<GraphicsObservation>(valid.clone())
+            .unwrap()
+            .validate()
+            .unwrap();
+        for invalid in [
+            {
+                let mut value = valid.clone();
+                value["devices"][0]["families"]["unknown"] = serde_json::json!(false);
+                value
+            },
+            {
+                let mut value = valid.clone();
+                value["devices"][0]["architecture"] = serde_json::json!({"state":"observed"});
+                value
+            },
+            {
+                let mut value = valid.clone();
+                value["devices"][0]["architecture"] = serde_json::json!({"state":"unobserved","public_architecture_name":"unsupported inference"});
+                value
+            },
+        ] {
+            assert!(
+                serde_json::from_value::<GraphicsObservation>(invalid)
+                    .and_then(|value| value.validate().map_err(serde::de::Error::custom))
+                    .is_err()
+            );
+        }
+    }
     #[test]
     fn main_uuid_requires_one_exact_complete_command() {
         let image = |sizes: &[u32]| {
