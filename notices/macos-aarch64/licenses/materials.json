@@ -1102,10 +1102,10 @@
       "license_id": "MPL-2.0",
       "materials": [
         {
-          "bytes": 20164,
+          "bytes": 19327,
           "kind": "workspace_file",
           "path": "LICENSE",
-          "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666",
+          "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8",
           "upstream": null
         }
       ],
@@ -1124,10 +1124,10 @@
       "license_id": "MPL-2.0",
       "materials": [
         {
-          "bytes": 20164,
+          "bytes": 19327,
           "kind": "workspace_file",
           "path": "LICENSE",
-          "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666",
+          "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8",
           "upstream": null
         }
       ],
@@ -1146,10 +1146,32 @@
       "license_id": "MPL-2.0",
       "materials": [
         {
-          "bytes": 20164,
+          "bytes": 19327,
           "kind": "workspace_file",
           "path": "LICENSE",
-          "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666",
+          "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8",
+          "upstream": null
+        }
+      ],
+      "name": "eml-protocol",
+      "package_archive_identity_checked": false,
+      "review_mapping": "workspace_full_license_plus_identified_standard_mpl_text",
+      "source": null,
+      "unpacked_materials_checked_separately": true,
+      "version": "6.0.0"
+    },
+    {
+      "checksum": null,
+      "file": "licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt",
+      "generator_text_sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+      "license_expression": "MPL-2.0",
+      "license_id": "MPL-2.0",
+      "materials": [
+        {
+          "bytes": 19327,
+          "kind": "workspace_file",
+          "path": "LICENSE",
+          "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8",
           "upstream": null
         }
       ],

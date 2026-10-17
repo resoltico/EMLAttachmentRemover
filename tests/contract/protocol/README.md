@@ -22,9 +22,9 @@ fallback. Partial namespace, unattempted required edges and confirmed cleanup
 with an earlier native error are valid failure observations; they cannot qualify
 success. The invalid request has no event stream and must exit2.
 
-Swift feeds all JSONL cases through the real byte splitter/reducer at every split
-position. Rust executes actual Create/UpToDate and the shared invalid request;
-the planned-create native forms have actual Unix/Windows comparisons. These
-examples do not substitute for actual interruption, filesystem failure,
-producer-consumer, app, artifact or GUI integration. Full required diagnostic and
-shipping qualification is still tracked separately.
+The Rust frontend decoder and eml-app splitter/reducer consume all22 JSONL cases,
+including every byte split. CLI and private-worker process checks exercise real
+Create/UpToDate operations against the independent golden. The invalid request
+has no event stream. These examples do not substitute for native interruption,
+filesystem failure, extracted archive, app or GUI integration. Required shipping
+qualification remains tracked separately.

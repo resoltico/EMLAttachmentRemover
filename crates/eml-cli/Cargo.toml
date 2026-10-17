@@ -8,13 +8,13 @@ publish.workspace = true
 
 [dependencies]
 eml-core = { path = "../eml-core" }
-base64.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+eml-protocol = { path = "../eml-protocol" }
 clap.workspace = true
 ctrlc.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]

@@ -70,7 +70,7 @@ pub(crate) fn observe_graphics(root: &Path, out: &Path, build: &MacBuild) -> Res
         ])
         .arg(&build.sdk)
         .args(["-framework", "CoreGraphics"])
-        .arg(root.join("macos-app/Tests/MetalDeviceObservation.swift"))
+        .arg(root.join("tests/macos/MetalDeviceObservation.swift"))
         .arg("-o")
         .arg(&tool);
     checked_run(compile, &out.join("compile.log"), 120)?;
@@ -169,6 +169,60 @@ pub(crate) fn selected_command(
         command.env_remove(name);
     }
     command
+}
+
+pub(crate) fn check_desktop(root: &Path, out: &Path) -> Result<()> {
+    fs::create_dir(out)?;
+    let build = load(root)?;
+    let mut lint = build.command(root, "cargo");
+    lint.args([
+        "clippy",
+        "--locked",
+        "--package",
+        "eml-gui",
+        "--features",
+        "macos-gui",
+        "--target",
+        &build.host,
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings",
+    ])
+    .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text);
+    checked_run(lint, &out.join("slint-profile-clippy.log"), 1200)?;
+    let fixture = out.join("child-fixtures");
+    fs::create_dir(&fixture)?;
+    let tests = crate::qualify::checked_commands(&fixture, |listing| {
+        let mut command = build.command(root, "cargo");
+        command
+            .args([
+                "test",
+                "--locked",
+                "--package",
+                "eml-macos",
+                "--features",
+                "native-fixtures",
+                "--target",
+                &build.host,
+                "--",
+                "--color",
+                "never",
+            ])
+            .env("CARGO_TARGET_DIR", fixture.join("build"))
+            .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text);
+        if listing {
+            command.arg("--list");
+        }
+        command
+    })?;
+    fs::write(
+        out.join("result.json"),
+        serde_json::to_vec_pretty(
+            &serde_json::json!({"build":build,"tests":tests,"scope":"native Slint profile and owned Darwin child fixtures; no actual GUI/bundle/archive acceptance"}),
+        )?,
+    )?;
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -281,8 +335,6 @@ pub(crate) fn fixture_identity(
     }
     Ok(identity)
 }
-
-pub(crate) use crate::cli_build::artifact as cli_artifact;
 
 pub(crate) fn parse_system_dependencies(output: &str) -> Result<Vec<String>> {
     let mut lines = output.lines();

@@ -18,7 +18,7 @@ cargo xtask distribution
 
 `rust-toolchain.toml` selects the compiler and components. Cargo.lock is committed;
 do not regenerate it merely to work around a failed locked command. Normal product
-business behavior belongs in eml-core/eml-fs, not CLI renderers or Swift views.
+business behavior belongs in eml-core/eml-fs, not CLI renderers or desktop views.
 All test mail is synthetic. Put build output and owned fixtures under target/.
 Never use owner mail, saved preferences or unrelated processes for verification.
 

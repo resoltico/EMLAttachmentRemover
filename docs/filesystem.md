@@ -579,4 +579,4 @@ checkpoint that stopped, not a contemporaneous flag or native ErrorKind.
 
 These are implemented source contracts under native verification, not full
 product acceptance. The old Windows creation gate remains failed. Full boundary
-qualification, CLI/JSON, SwiftUI, archive and required GUI gates remain unfinished.
+qualification, CLI/JSON, Slint, archive and required GUI gates remain unfinished.

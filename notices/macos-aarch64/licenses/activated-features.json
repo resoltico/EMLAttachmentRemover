@@ -11,18 +11,6 @@
     {
       "depth": 1,
       "features": [
-        "alloc",
-        "default",
-        "std"
-      ],
-      "name": "base64",
-      "proc_macro": false,
-      "repeated": false,
-      "version": "0.22.1"
-    },
-    {
-      "depth": 1,
-      "features": [
         "color",
         "default",
         "derive",
@@ -597,6 +585,34 @@
     },
     {
       "depth": 1,
+      "features": [],
+      "name": "eml-protocol",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "6.0.0"
+    },
+    {
+      "depth": 2,
+      "features": [
+        "alloc",
+        "default",
+        "std"
+      ],
+      "name": "base64",
+      "proc_macro": false,
+      "repeated": false,
+      "version": "0.22.1"
+    },
+    {
+      "depth": 2,
+      "features": [],
+      "name": "eml-core",
+      "proc_macro": false,
+      "repeated": true,
+      "version": "6.0.0"
+    },
+    {
+      "depth": 2,
       "features": [
         "default",
         "derive",
@@ -609,7 +625,7 @@
       "version": "1.0.229"
     },
     {
-      "depth": 2,
+      "depth": 3,
       "features": [
         "result",
         "std"
@@ -620,7 +636,7 @@
       "version": "1.0.229"
     },
     {
-      "depth": 2,
+      "depth": 3,
       "features": [
         "default"
       ],
@@ -630,7 +646,7 @@
       "version": "1.0.229"
     },
     {
-      "depth": 3,
+      "depth": 4,
       "features": [
         "default",
         "proc-macro"
@@ -641,7 +657,7 @@
       "version": "1.0.107"
     },
     {
-      "depth": 3,
+      "depth": 4,
       "features": [
         "default",
         "proc-macro"
@@ -652,7 +668,7 @@
       "version": "1.0.47"
     },
     {
-      "depth": 3,
+      "depth": 4,
       "features": [
         "clone-impls",
         "default",
@@ -668,7 +684,7 @@
       "version": "3.0.9"
     },
     {
-      "depth": 1,
+      "depth": 2,
       "features": [
         "default",
         "std"
@@ -679,7 +695,7 @@
       "version": "1.0.154"
     },
     {
-      "depth": 2,
+      "depth": 3,
       "features": [],
       "name": "itoa",
       "proc_macro": false,
@@ -687,7 +703,7 @@
       "version": "1.0.18"
     },
     {
-      "depth": 2,
+      "depth": 3,
       "features": [
         "alloc",
         "default",
@@ -699,7 +715,7 @@
       "version": "2.8.3"
     },
     {
-      "depth": 2,
+      "depth": 3,
       "features": [
         "result",
         "std"
@@ -710,7 +726,7 @@
       "version": "1.0.229"
     },
     {
-      "depth": 2,
+      "depth": 3,
       "features": [],
       "name": "zmij",
       "proc_macro": false,

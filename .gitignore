@@ -8,5 +8,3 @@ Thumbs.db
 .idea/
 .vscode/
 target/
-.build/
-.swiftpm/

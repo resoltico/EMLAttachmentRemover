@@ -7,11 +7,11 @@ on:
       - xtask/src/macos_icon.rs
       - xtask/src/macos_app.rs
       - xtask/src/macos.rs
-      - macos-app/Tests/MetalDeviceObservation.swift
+      - tests/macos/MetalDeviceObservation.swift
       - xtask/src/process/**
       - xtask/tools.toml
       - xtask/distribution.toml
-      - macos-app/Artwork/EML.icon/**
+      - artwork/EML.icon/**
 permissions:
   contents: read
 jobs:

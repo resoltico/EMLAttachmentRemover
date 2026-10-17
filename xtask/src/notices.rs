@@ -902,6 +902,7 @@ fn generated_materials(root: &Path) -> Result<(PathBuf, Files)> {
             fact.path.as_str(),
             "Cargo.toml"
                 | "crates/eml-cli/Cargo.toml"
+                | "crates/eml-protocol/Cargo.toml"
                 | "crates/eml-core/Cargo.toml"
                 | "crates/eml-fs/Cargo.toml"
                 | "LICENSE"

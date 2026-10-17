@@ -12,13 +12,7 @@ mod macos;
 #[cfg(target_os = "macos")]
 mod macos_app;
 #[cfg(target_os = "macos")]
-mod macos_gui;
-#[cfg(target_os = "macos")]
 mod macos_icon;
-#[cfg(target_os = "macos")]
-mod macos_process;
-#[cfg(target_os = "macos")]
-mod macos_startup;
 mod mutants;
 mod native_host;
 mod notices;
@@ -48,6 +42,11 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Check the actual macOS Slint profile and owned native child fixtures.
+    CheckMacosDesktop {
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Execute the exact PR M workspace/core integration on native Linux x64.
     CiIntegration(ci::IntegrationArguments),
     /// Bind event H/S/Q and the real PR merge checkout to live ref observations.
@@ -73,11 +72,6 @@ enum Task {
         event: String,
         #[arg(long)]
         needs: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Observe a direct owned signed app child on a fresh hosted runner.
-    MacosStartupDiagnostic {
         #[arg(long)]
         out: PathBuf,
     },
@@ -125,20 +119,11 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Run owned actual GUI checks on a fresh hosted macOS runner only.
-    MacosGuiTests {
-        #[arg(long)]
-        app: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
     /// Assemble a native signed app for integration; not shipping qualification.
     BuildMacosApp {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Run real native macOS helper/pipe/ownership fixtures with the pinned Xcode.
-    MacosProcessTests,
     /// Print native target policy and expected archive identities; build nothing.
     Distribution,
     /// Run one bounded pure-preparation fuzz campaign with owned corpus storage.
@@ -188,6 +173,18 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::CheckMacosDesktop { out } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos::check_desktop(&root, &out)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = out;
+                    Err("Native macOS is required for desktop profile checks".into())
+                }
+            }
             Task::CiIntegration(arguments) => {
                 initialize_controller(&root)?;
                 ci::integration(&root, arguments)
@@ -217,18 +214,6 @@ fn main() -> ExitCode {
                 .map(|_| ())
             }
             Task::CiNeeds { event, needs, out } => ci::needs(&event, &needs, &out),
-            Task::MacosStartupDiagnostic { out } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos_startup::run(&root, &out)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = out;
-                    Err("Native macOS is required for signed app startup observation".into())
-                }
-            }
             Task::Tools => {
                 initialize_controller(&root)?;
                 tools::run(&root)
@@ -292,18 +277,6 @@ fn main() -> ExitCode {
                     Err("Native macOS is required for icon observations".into())
                 }
             }
-            Task::MacosGuiTests { app, out } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos_gui::run(&root, &app, &out)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = (app, out);
-                    Err("Native macOS is required for GUI integration".into())
-                }
-            }
             Task::BuildMacosApp { out } => {
                 #[cfg(target_os = "macos")]
                 {
@@ -314,17 +287,6 @@ fn main() -> ExitCode {
                 {
                     let _ = out;
                     Err("Native macOS is required for app assembly".into())
-                }
-            }
-            Task::MacosProcessTests => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos_process::run(&root)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    Err("Native macOS is required for these process fixtures".into())
                 }
             }
             Task::Distribution => distribution::run(&root),

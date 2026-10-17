@@ -154,6 +154,9 @@ eml-core@6.0.0 — MPL-2.0
 eml-fs@6.0.0 — MPL-2.0
   licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt
 
+eml-protocol@6.0.0 — MPL-2.0
+  licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt
+
 remove-eml-attachments@6.0.0 — MPL-2.0
   licenses/crates/66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172.txt
 

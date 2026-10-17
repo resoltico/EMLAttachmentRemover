@@ -168,47 +168,11 @@ pub(crate) fn run(root: &Path) -> Result<()> {
         Ok(json!({"version":expected,"tracked_scripts":paths.len()}))
     });
     #[cfg(target_os = "macos")]
-    let swift_directory = checks.directory.clone();
+    let desktop_checks = checks.directory.join("desktop");
     #[cfg(target_os = "macos")]
-    checks.section("swift", || {
-        let mac = crate::macos::load(root)?;
-        let mut format = mac.command(root, "xcrun");
-        format.args([
-            "swift",
-            "format",
-            "lint",
-            "--strict",
-            "--recursive",
-            "macos-app",
-        ]);
-        let result = controller()?.run(
-            format,
-            &swift_directory.join("swift-format.log"),
-            Duration::from_secs(60),
-        )?;
-        if !result.success() {
-            return Ok(json!({"passed":false,"phase":"format","process":result.evidence()}));
-        }
-        let mut tests = mac.command(root, "xcrun");
-        tests
-            .args([
-                "swift",
-                "test",
-                "--package-path",
-                "macos-app",
-                "--scratch-path",
-            ])
-            .arg(swift_directory.join("swift-build"))
-            .args(["-Xswiftc", "-warnings-as-errors"]);
-        let result = controller()?.run(
-            tests,
-            &swift_directory.join("swift-tests.log"),
-            Duration::from_secs(600),
-        )?;
-        if !result.success() {
-            return Ok(json!({"passed":false,"phase":"tests","process":result.evidence()}));
-        }
-        Ok(json!({"scope":"pinned native Swift format and tests"}))
+    checks.section("macos-desktop", || {
+        crate::macos::check_desktop(root, &desktop_checks)?;
+        Ok(json!({"scope":"pinned native Slint profile and owned child tests; no GUI acceptance"}))
     });
     checks.section("notices", || {
         crate::notices::run(root, false)?;

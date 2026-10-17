@@ -826,10 +826,10 @@
           "mapping": "workspace_full_license_plus_identified_standard_mpl_text",
           "materials": [
             {
-              "bytes": 20164,
+              "bytes": 19327,
               "kind": "workspace_file",
               "path": "LICENSE",
-              "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+              "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
             }
           ],
           "standard_text": {
@@ -878,10 +878,10 @@
           "mapping": "workspace_full_license_plus_identified_standard_mpl_text",
           "materials": [
             {
-              "bytes": 20164,
+              "bytes": 19327,
               "kind": "workspace_file",
               "path": "LICENSE",
-              "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+              "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
             }
           ],
           "standard_text": {
@@ -908,6 +908,58 @@
         "kind": "workspace",
         "manifest_path": "crates/eml-fs/Cargo.toml",
         "manifest_sha256": "30a2d5e98106a1e53cc40ac7270c34648ca43ab0859c5ba731d446c0687ee435"
+      },
+      "source": null,
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "6.0.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 16727,
+          "generator_text_sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+          "license_id": "MPL-2.0",
+          "mapping": "workspace_full_license_plus_identified_standard_mpl_text",
+          "materials": [
+            {
+              "bytes": 19327,
+              "kind": "workspace_file",
+              "path": "LICENSE",
+              "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
+            }
+          ],
+          "standard_text": {
+            "bytes": 16727,
+            "license_id": "MPL-2.0",
+            "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+            "source": "Canonical SPDX license text emitted in the reviewed cargo-about 0.9.2 report; preserve separately from full root LICENSE."
+          },
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": null,
+      "license_expression": "MPL-2.0",
+      "name": "eml-protocol",
+      "provenance": {
+        "checksum_basis": "No registry archive checksum for a workspace package.",
+        "kind": "workspace",
+        "manifest_path": "crates/eml-protocol/Cargo.toml",
+        "manifest_sha256": "772cf78824d2f36c6763af25dd928bd4299f9f173f2e2acde70e1e37caf115e1"
       },
       "source": null,
       "targets": [
@@ -1658,10 +1710,10 @@
           "mapping": "workspace_full_license_plus_identified_standard_mpl_text",
           "materials": [
             {
-              "bytes": 20164,
+              "bytes": 19327,
               "kind": "workspace_file",
               "path": "LICENSE",
-              "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+              "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
             }
           ],
           "standard_text": {
@@ -1687,7 +1739,7 @@
         "checksum_basis": "No registry archive checksum for a workspace package.",
         "kind": "workspace",
         "manifest_path": "crates/eml-cli/Cargo.toml",
-        "manifest_sha256": "7641f708283690d4854363564d93a95debe4ecd07d205f7f7ab65a16f1fb19fe"
+        "manifest_sha256": "f1272667caa6d9efa2df55defe00806cdb7dcf8c287b1fa79b165ad75f03a751"
       },
       "source": null,
       "targets": [
@@ -2379,25 +2431,24 @@
     }
   ],
   "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
-  "repository_head_observed": "f931b74cf25bc70ca039d495afee991011ac0541",
   "source_inputs": [
     {
-      "bytes": 24091,
+      "bytes": 148375,
       "kind": "review_input",
       "path": "Cargo.lock",
-      "sha256": "576bc9afd8110e4f8239536589ec42893f825ef4e95063fecc767bf2842555e9"
+      "sha256": "f556765659e02fb71fc65ce1338f3b87cca6f1963c5939fa75549e37909225a3"
     },
     {
-      "bytes": 715,
+      "bytes": 815,
       "kind": "review_input",
       "path": "Cargo.toml",
-      "sha256": "b2214596ca5d5a244ea466abca823a6ba78dd22407fdae3c6f1f24fc7f611890"
+      "sha256": "b8a89c628e8a706318739a544be6a0507599ff75da65fef55d08407c14674351"
     },
     {
-      "bytes": 516,
+      "bytes": 537,
       "kind": "review_input",
       "path": "crates/eml-cli/Cargo.toml",
-      "sha256": "7641f708283690d4854363564d93a95debe4ecd07d205f7f7ab65a16f1fb19fe"
+      "sha256": "f1272667caa6d9efa2df55defe00806cdb7dcf8c287b1fa79b165ad75f03a751"
     },
     {
       "bytes": 398,
@@ -2430,10 +2481,10 @@
       "sha256": "7c16c05ae632c2287bb41583f350aab99f04ed0e48105e3c2be1304bfe659248"
     },
     {
-      "bytes": 20164,
+      "bytes": 19327,
       "kind": "review_input",
       "path": "LICENSE",
-      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+      "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
     },
     {
       "bytes": 683,
@@ -2446,67 +2497,102 @@
       "kind": "review_input",
       "path": "xtask/licenses/objc2/LICENSE.md",
       "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+    },
+    {
+      "bytes": 361,
+      "kind": "review_input",
+      "path": "crates/eml-protocol/Cargo.toml",
+      "sha256": "772cf78824d2f36c6763af25dd928bd4299f9f173f2e2acde70e1e37caf115e1"
     }
   ],
   "status": "independent_qa_candidate",
   "targets": [
     {
-      "license_text_group_count": 23,
-      "package_count": 46,
-      "package_license_text_binding_count": 50,
-      "review_candidate_path": "target/license-review/review-aarch64-apple-darwin.json",
-      "review_candidate_sha256": "1c9efab4bf5f75f9436b59ff7cfa8b7e18ac22c6ea2e8f0fb8838f657db50a45",
       "target": "aarch64-apple-darwin"
     },
     {
-      "license_text_group_count": 17,
-      "package_count": 40,
-      "package_license_text_binding_count": 43,
-      "review_candidate_path": "target/license-review/review-aarch64-pc-windows-gnullvm.json",
-      "review_candidate_sha256": "b16c8003a5625c2d0396b2f2f4dc16fdb5bf03b26b119ba7226bc4fcf246764c",
       "target": "aarch64-pc-windows-gnullvm"
     },
     {
-      "license_text_group_count": 21,
-      "package_count": 42,
-      "package_license_text_binding_count": 46,
-      "review_candidate_path": "target/license-review/review-aarch64-unknown-linux-gnu.json",
-      "review_candidate_sha256": "81f7b4fa96e2f0fcff44cee9056ab4027d8b7f3d6e3341d677d67952ab78e438",
       "target": "aarch64-unknown-linux-gnu"
     },
     {
-      "license_text_group_count": 24,
-      "package_count": 47,
-      "package_license_text_binding_count": 51,
-      "review_candidate_path": "target/license-review/review-x86_64-apple-darwin.json",
-      "review_candidate_sha256": "9333b8bb1f47fdd3a0feecc5d9c37364fa7ea883584b361df950f605aaa28632",
       "target": "x86_64-apple-darwin"
     },
     {
-      "license_text_group_count": 18,
-      "package_count": 41,
-      "package_license_text_binding_count": 44,
-      "review_candidate_path": "target/license-review/review-x86_64-pc-windows-gnullvm.json",
-      "review_candidate_sha256": "d0e661c09a072494153131767ca1ba30d4e7bee498b354a4f03de2522797383d",
       "target": "x86_64-pc-windows-gnullvm"
     },
     {
-      "license_text_group_count": 22,
-      "package_count": 43,
-      "package_license_text_binding_count": 47,
-      "review_candidate_path": "target/license-review/review-x86_64-unknown-linux-gnu.json",
-      "review_candidate_sha256": "ba8fe2fa3518b3ca2e5aa1523833bd66a863c9568f34c5e6dede1dbbf390092f",
       "target": "x86_64-unknown-linux-gnu"
     }
   ],
-  "totals": {
-    "exact_package_file_bindings_including_two_windows_mappings": 49,
-    "original_canonical_generator_fallback_bindings": 9,
-    "package_identities": 52,
-    "package_license_text_bindings": 56,
-    "registry_identities": 49,
-    "retained_objc2_supplement_bindings": 4,
-    "workspace_identities": 3,
-    "workspace_mpl_bindings": 3
+  "initial_review": {
+    "repository_head_observed": "f931b74cf25bc70ca039d495afee991011ac0541",
+    "targets": [
+      {
+        "license_text_group_count": 23,
+        "package_count": 46,
+        "package_license_text_binding_count": 50,
+        "review_candidate_path": "target/license-review/review-aarch64-apple-darwin.json",
+        "review_candidate_sha256": "1c9efab4bf5f75f9436b59ff7cfa8b7e18ac22c6ea2e8f0fb8838f657db50a45",
+        "target": "aarch64-apple-darwin"
+      },
+      {
+        "license_text_group_count": 17,
+        "package_count": 40,
+        "package_license_text_binding_count": 43,
+        "review_candidate_path": "target/license-review/review-aarch64-pc-windows-gnullvm.json",
+        "review_candidate_sha256": "b16c8003a5625c2d0396b2f2f4dc16fdb5bf03b26b119ba7226bc4fcf246764c",
+        "target": "aarch64-pc-windows-gnullvm"
+      },
+      {
+        "license_text_group_count": 21,
+        "package_count": 42,
+        "package_license_text_binding_count": 46,
+        "review_candidate_path": "target/license-review/review-aarch64-unknown-linux-gnu.json",
+        "review_candidate_sha256": "81f7b4fa96e2f0fcff44cee9056ab4027d8b7f3d6e3341d677d67952ab78e438",
+        "target": "aarch64-unknown-linux-gnu"
+      },
+      {
+        "license_text_group_count": 24,
+        "package_count": 47,
+        "package_license_text_binding_count": 51,
+        "review_candidate_path": "target/license-review/review-x86_64-apple-darwin.json",
+        "review_candidate_sha256": "9333b8bb1f47fdd3a0feecc5d9c37364fa7ea883584b361df950f605aaa28632",
+        "target": "x86_64-apple-darwin"
+      },
+      {
+        "license_text_group_count": 18,
+        "package_count": 41,
+        "package_license_text_binding_count": 44,
+        "review_candidate_path": "target/license-review/review-x86_64-pc-windows-gnullvm.json",
+        "review_candidate_sha256": "d0e661c09a072494153131767ca1ba30d4e7bee498b354a4f03de2522797383d",
+        "target": "x86_64-pc-windows-gnullvm"
+      },
+      {
+        "license_text_group_count": 22,
+        "package_count": 43,
+        "package_license_text_binding_count": 47,
+        "review_candidate_path": "target/license-review/review-x86_64-unknown-linux-gnu.json",
+        "review_candidate_sha256": "ba8fe2fa3518b3ca2e5aa1523833bd66a863c9568f34c5e6dede1dbbf390092f",
+        "target": "x86_64-unknown-linux-gnu"
+      }
+    ],
+    "totals": {
+      "exact_package_file_bindings_including_two_windows_mappings": 49,
+      "original_canonical_generator_fallback_bindings": 9,
+      "package_identities": 52,
+      "package_license_text_bindings": 56,
+      "registry_identities": 49,
+      "retained_objc2_supplement_bindings": 4,
+      "workspace_identities": 3,
+      "workspace_mpl_bindings": 3
+    }
+  },
+  "repository_head_observed": "2f281cba8b840858810ec4b1c2208b5fdf8b860b",
+  "independent_amendment": {
+    "scope": "CLI normal/build closure on all six declared targets; GUI/worker/native-bridge material review is separate and not supplied here",
+    "basis": "Independent source/license/permission-paragraph review and all-six-target dependency/feature comparison: only the new workspace eml-protocol joins the prior CLI closure; all49 registry identities/material bindings remain unchanged. The new local MPL binding uses unchanged canonical MPL text and the reviewed current full root LICENSE. Actual cargo-about reports were separately observed before updating this record.",
+    "generation_execution_attestation": false
   }
 }

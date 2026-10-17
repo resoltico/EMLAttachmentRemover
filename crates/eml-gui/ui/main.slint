@@ -1,0 +1,66 @@
+// Copyright2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
+import { AboutSlint, Button, HorizontalBox, VerticalBox, TextEdit, ScrollView } from "std-widgets.slint";
+
+export component AboutWindow inherits Window {
+    title: "About EML Attachment Remover";
+    preferred-width: 580px;
+    preferred-height: 440px;
+    in property <string> identity;
+    VerticalBox {
+        TextEdit { text: root.identity; read-only: true; accessible-label: "Product identity and licensing"; }
+        AboutSlint {}
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "EML Attachment Remover";
+    preferred-width: 960px;
+    preferred-height: 720px;
+    min-width: 680px;
+    min-height: 520px;
+    in property <bool> admission-ready: false;
+    in property <bool> running: false;
+    in property <bool> force-available: false;
+    in property <bool> report-selected: false;
+    in property <string> destination: "Beside each original";
+    in property <string> activity: "Desktop replacement in progress; processing controls are not connected yet.";
+    in property <[string]> runs;
+    in property <string> report-text;
+    callback select_files();
+    callback select_folder();
+    callback choose_destination();
+    callback stop_requested();
+    callback force_requested();
+    callback export_requested();
+    callback dismiss_requested();
+    callback about_requested();
+    VerticalBox {
+        padding: 20px;
+        spacing: 14px;
+        HorizontalBox {
+            Text { text: "EML Attachment Remover"; font-size: 24px; font-weight: 600; }
+            Button { text: "About"; clicked => {root.about_requested();} }
+        }
+        Text { text: "Create attachment-stripped copies. Original messages stay untouched."; wrap: word-wrap; }
+        HorizontalBox {
+            Button { text: "Choose messages…"; enabled: root.admission-ready; clicked => {root.select_files();} }
+            Button { text: "Choose folder…"; enabled: root.admission-ready; clicked => {root.select_folder();} }
+            Button { text: "Copy destination…"; enabled: root.admission-ready; clicked => {root.choose_destination();} }
+        }
+        Text { text: "Copy destination: " + root.destination; overflow: elide; accessible-label: "Copy destination"; }
+        Text { text: root.activity; wrap: word-wrap; accessible-label: "Run status"; }
+        HorizontalBox {
+            Button { text: "Stop"; enabled: root.running; clicked => {root.stop_requested();} }
+            Button { text: "Force Stop…"; enabled: root.force-available; clicked => {root.force_requested();} }
+            Button { text: "Export technical report…"; enabled: root.report-selected; clicked => {root.export_requested();} }
+            Button { text: "Dismiss report"; enabled: root.report-selected && !root.running; clicked => {root.dismiss_requested();} }
+        }
+        ScrollView {
+            VerticalBox {
+                for run in root.runs: Text { text: run; wrap: word-wrap; }
+            }
+        }
+        TextEdit { text: root.report-text; read-only: true; accessible-label: "Selected run results"; }
+    }
+}

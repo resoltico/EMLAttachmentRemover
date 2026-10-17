@@ -88,6 +88,13 @@ pub(crate) fn checked_tests(
         }
         command
     };
+    let counts = checked_commands(out, command)?;
+    Ok(
+        json!({"discovery":counts,"profile":if release {"release"} else {"test"},"target":target,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"}),
+    )
+}
+
+pub(crate) fn checked_commands(out: &Path, command: impl Fn(bool) -> Command) -> Result<Value> {
     let mut transcripts = Vec::new();
     for (listing, label) in [(true, "native-test-discovery"), (false, "native-tests")] {
         let log = out.join(format!("{label}.log"));
@@ -107,10 +114,7 @@ pub(crate) fn checked_tests(
             fs::read_to_string(log.with_extension("stderr"))?,
         ));
     }
-    let counts = validate_test_transcripts(&transcripts)?;
-    Ok(
-        json!({"discovery":counts,"profile":if release {"release"} else {"test"},"target":target,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"}),
-    )
+    validate_test_transcripts(&transcripts)
 }
 
 fn validate_test_transcripts(transcripts: &[(String, String)]) -> Result<Value> {
@@ -311,8 +315,7 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
         #[cfg(target_os = "macos")]
         {
             let app_stage = out.join("app-build");
-            fs::create_dir(&app_stage)?;
-            crate::macos_app::assemble(root, &app_stage, &cli, &materials)?;
+            crate::macos_app::run(root, &app_stage)?;
             Err("CLI archive and native app assembly completed; required ditto extracted-app/complete GUI/volume qualification remains incomplete".into())
         }
         #[cfg(not(target_os="macos"))]

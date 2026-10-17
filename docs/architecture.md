@@ -13,11 +13,19 @@ The workspace separates message policy and native storage from frontends.
 - **remove-eml-attachments** decodes bounded native-path requests, adapts process
   signals and renders checked human or LF-delimited JSON events. Its executable
   calls the reusable business workflow rather than maintaining another engine.
-- **RunModel** validates protocol 1 bytes and retains bounded results for the app.
-  **EMLAttachmentRemover** provides fresh SwiftUI screens and serial helper
-  ownership. PlatformIntegration contains only necessary macOS system bridges.
-  Helper lifecycle ownership is documented separately in
-  [macos-process-ownership](macos-process-ownership.md).
+- **eml-protocol** shares native-path/request/event transport across products.
+  Human wording and command-line arguments remain private CLI concerns.
+- **eml-worker** is the GUI's private process boundary and calls eml-core
+  directly. It does not invoke the CLI product. Its separate process preserves
+  the required force-stop capability for stalled native operations.
+- **eml-app** owns bounded request snapshots, serial queue/report reservations,
+  LF framing and checked protocol reduction. It has no UI-toolkit dependency.
+  The [frontend design](desktop-frontend-design.md) and
+  [process ownership](macos-process-ownership.md) describe its native integration.
+- **eml-gui** contains the Slint macOS screens under the explicit macos-gui
+  Cargo feature. Its first screen build is additional local evidence; control
+  wiring and native qualification remain incomplete. **eml-macos** carries the
+  reviewed Darwin ownership boundary into Rust, separate from business policy.
 - **xtask** owns repository checks, bounded campaigns, native build identity,
   complete target notices, archive creation/readback and qualification evidence.
   Developer process supervision is separate from product helper ownership.
@@ -30,7 +38,8 @@ publication knowledge, requested address, file/namespace synchronization and
 cleanup cannot be collapsed into a Boolean success.
 
 A native release CLI is built once into an owned copy, signed on macOS and frozen.
-Both its archive and the macOS embedded helper consume those same bytes. Archive
+Its CLI archive consumes those exact bytes. The desktop product builds its own
+private worker from the same core/protocol libraries. Archive
 verification reads a bounded immutable snapshot, validates exact structure and
 legal materials, extracts into an admitted owned directory, checks native runtime
 identity and runs the actual extracted executable against independent goldens.

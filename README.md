@@ -1,8 +1,9 @@
 # EML Attachment Remover
 
 Create attachment-stripped EML copies while leaving original messages untouched.
-The v6 source uses reusable Rust libraries, a native CLI and a fresh SwiftUI macOS
-app. Version 6 remains **Unreleased**. Required native Windows, macOS app, GUI and
+The v6 source uses reusable Rust libraries and a native CLI. The macOS frontend
+is being replaced with Slint following the [owner's scope decision](docs/desktop-frontend-design.md).
+Version 6 remains **Unreleased**. Required native Windows, macOS app, GUI and
 complete release qualification is incomplete; see the
 [implementation evidence](docs/v6-implementation-evidence.md). Published v5
 releases and their source history remain unchanged.
@@ -84,7 +85,7 @@ are refused. See [filesystem boundaries](docs/filesystem.md) and
 
 The authoritative [distribution table](xtask/distribution.toml) declares six
 separate CLI builds: macOS Intel/Apple Silicon, Linux x64/ARM64 and Windows
-x64/ARM64. Two separate macOS apps contain their same-target signed CLI. No
+x64/ARM64. Two separate macOS apps use their same-CPU private core-backed worker. No
 universal binary or other-platform GUI is provided. These are target policies;
 actual completed and failed gates are recorded separately in the evidence log.
 
@@ -92,8 +93,8 @@ macOS requires 15.0 or later. Qualification selects Xcode 26.3 build 17C529, not
 machine's default Xcode. Builds are ad hoc signed, without Developer ID or
 notarization; first launch may require app-specific **Open Anyway** in macOS
 Privacy & Security. No Gatekeeper configuration change is part of this project.
-The app has one main window with queued runs, source/destination selection,
-per-file results and technical reports. Its full native GUI qualification remains
+The desktop workflow being implemented has one main window with queued runs,
+source/destination selection, per-file results and technical reports. Full native GUI qualification remains
 open; [app details](docs/macos-app.md) distinguish source behavior from execution.
 
 Linux targets Ubuntu 22.04+ with GNU/glibc, with required GLIBC symbols capped at
@@ -109,7 +110,7 @@ See [CONTRIBUTING](CONTRIBUTING.md) for setup and checks, the
 [verification](docs/verification.md) for bounded campaigns and remaining gates.
 The repository uses Rust tooling; it contains no Python product or build system.
 The editable owner artwork and its historical construction records remain under
-[macos-app/Artwork](macos-app/Artwork).
+[artwork](artwork).
 
 Software uses MPL 2.0; owner artwork has separate terms in [LICENSE](LICENSE).
 Retained third-party materials and target-specific complete notices live under

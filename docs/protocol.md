@@ -188,7 +188,7 @@ recorded as an oracle or exact peak-memory promises.
 Current tests include hand-authored native planned-create golden lines, actual
 Created/UpToDate projection, raw Unicode separators, human escaping, exact/+1
 line storage, run storage and actual partial-write/flush progress with permanent
-failure. The complete required shared scenario set, shipping smoke and Swift
+failure. The complete required shared scenario set, shipping smoke and Rust frontend
 consumer remain unfinished. Native adapter runtime passed at0a20591; that library
 slice alone does not qualify the process protocol.
 

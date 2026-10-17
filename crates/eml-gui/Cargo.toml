@@ -1,0 +1,28 @@
+[package]
+name = "eml-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+autobins = false
+
+[features]
+macos-gui = ["dep:slint", "dep:slint-build"]
+
+[dependencies]
+eml-app = { path = "../eml-app" }
+slint = { version = "=1.18.1", optional = true, default-features = false, features = ["std", "compat-1-18", "backend-winit", "renderer-software", "accessibility"] }
+
+[build-dependencies]
+slint-build = { version = "=1.18.1", optional = true, default-features = false, features = ["compat-1-18"] }
+
+[[bin]]
+name = "EMLAttachmentRemover"
+path = "src/main.rs"
+required-features = ["macos-gui"]
+
+[lints.rust]
+# Only the generated Slint module admits its generated unsafe vtables.
+unsafe_code = "deny"
+missing_docs = "warn"

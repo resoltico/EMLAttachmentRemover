@@ -1,9 +1,8 @@
 //! Process-local arguments, request transport, signals and checked channels only.
+use crate::human::HumanSink;
 use clap::{Parser, ValueEnum, error::ErrorKind};
 use eml_core::{InvalidRequest, OutputLocation, RunControl, RunMode, RunRequest};
-use remove_eml_attachments::{
-    HumanSink, JsonSink, MAX_REQUEST_BYTES, TerminalPath, decode_request,
-};
+use eml_protocol::{JsonSink, MAX_REQUEST_BYTES, TerminalPath, decode_request};
 use std::{
     ffi::{OsStr, OsString},
     fs::File,

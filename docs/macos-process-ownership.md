@@ -1,71 +1,44 @@
-# Helper process ownership
+# Desktop worker ownership
 
-The app uses one narrow Darwin child owner for its bundled helper's launch,
-signals and reap. Foundation still supplies pipes, data, URLs and the transport
-model. The design pack's Foundation Process mechanism was changed to preserve
-its ownership-safe final SIGKILL requirement: Foundation does not expose an
-unconditional launch-bound hard-kill capability, and a later PID lookup is not
-such a capability. The owner delegated the resolution with “qa and proceed per
-your best judgment”; the separately challenged QA decision selected this minimal
-native ownership boundary. The CLI protocol and Rust business libraries are
-unchanged by that decision.
+The Slint product uses one minimal Darwin owner for its private core-backed
+worker. No command-line product is involved. `eml-macos` contains the native
+spawn/signal/reap boundary; eml-app owns request, control and completion policy.
 
-HelperChild obtains its positive PID directly from posix_spawn. One shared
-Mutex-protected reference holds the revocable authority. The supervisor actor
-alone polls waitpid with WNOHANG and sends INT/KILL; terminal reap clears authority
-inside the same critical section before another signal can use it. Traced stop
-status retains ownership; unexpected ECHILD revokes authority and fails explicit
-qualification. Aliases share revocation. There is no background reaper with a
-delayed PID notification, process-name lookup, group-zero send, Mach capability
-exchange, debugger entitlement or watchdog process.
+The positive PID comes directly from successful posix_spawn. Polling and signals
+share one tiny mutex. A terminal waitpid result revokes authority before unlock;
+traced stops retain it, and unexpected ECHILD revokes it and fails explicitly.
+There is no background reaper, delayed PID notification, process-name lookup or
+negative/group-zero signal. Native operations are named Interrupt/Kill; the
+supervisor owns cooperative/second-interrupt and bounded-Quit escalation policy.
 
-The app requires a stable default SIGCHLD disposition and no competing wait-family
-calls. Spawn checks the current disposition without changing it; continued
-stability and exclusive reaping remain application-wide requirements. Child
-signal defaults/mask are explicit. The executable's native path comes from the
-bundled URL, with no shell or PATH fallback. Standard descriptors are copied above 2 with
-CLOEXEC before child redirection; parent child-only pipe ends close on success
-and failure. A successfully spawned child remains owned if later startup cleanup
-fails and is settled before that error returns. Request-pipe SIGPIPE suppression
-is per descriptor.
+Spawn requires a stable default SIGCHLD disposition and exclusive reaping. It
+checks without changing the parent's handler. Child defaults and an empty signal
+mask are explicit; Rust Command's inherited mask is insufficient. Standard
+streams use stable CLOEXEC copies above2 and Darwin's close-default spawn policy.
+The owned request pipe suppresses SIGPIPE per descriptor. Parent child-only ends
+are closed once with errors retained, without retrying numeric descriptors.
 
-Each request has one monotonic HelperRunControl. A UI Stop records its intent
-synchronously before notifying the actor, so admission scheduling cannot lose it.
-Native notifications remain bound to the admitted reference and launch UUID.
-Before request feeding, stopped input is withheld; once beginFeeding grants
-permission, input may have been sent, even before a physical write. That boundary
-cannot support a no-work claim. A stop attempt against no child does not consume
-the delivery latch; successful handoff rechecks intent. Forced prelaunch
-settlement may use the retained native KILL authority and is not described as two
-delivered CLI callbacks.
+An Ok SpawnObservation can retain both a real child and cleanup issues. The
+supervisor must immediately retain that child and settle it before returning a
+startup failure. Earlier pipe/dup failures use ordinary RAII and do not supply
+checked-close receipts. Dropping OwnedChild does not terminate or reap it.
 
-Blocking launch and pipe operations use dedicated threads. The actor's wait poll
-does not block for future child state, so it remains able to handle controls.
-Stdout decoding uses the real bounded LF splitter/reducer, with at most one
-unacknowledged MainActor snapshot. Stderr drains independently while retaining
-at most 64 KiB. Errors notify the correct actor phase before presentation waits;
-drainage continues without further decoding after malformed output. Completion
-requires terminal reap, writer settlement, both EOF paths and final acknowledged
-presentation. A generic valid dry-run stream remains valid model data but is
-refused by this app's Create-only reader.
+Stop/closing intent must remain monotonic through an in-flight launch. Apply it
+before feeding a late successful child. No pipe I/O, blocking wait, reader join
+or UI acknowledgement belongs under the native authority lock. The no-grandchild
+worker contract is an ownership requirement, not a reason to retain a process
+group identifier after its leader is reaped.
 
-The version probe drains/reaps before real processing and requires exact output
-and normal success; its monotonic deadline uses the same owned kill path. Normal
-run completion preserves Core's summary/actual-exit agreement; a late Stop does
-not rewrite completed outcomes. Confirmed-quit admission gating now uses this
-owner with monotonic 10 s / 2 s escalation and full submitted-task settlement.
-Cancel leaves queue/token/preferences unchanged; an existing different alert
-cancels the termination request rather than replacing live presentation data.
-Pre-helper readonly metadata may be abandoned only behind the permanent closing
-gate/token; its late continuation cannot submit a helper. Store tests cover that
-pre-helper path, not a blocked-OS handshake or actual native quit escalation.
-Full GUI/shutdown qualification remains pending.
+Completion requires terminal reap, request-writer settlement/explicit input
+closure, both output EOF/reader settlements and final model application. Report
+backpressure cannot block Stop or the event loop. Unknown lifetime closes later
+admission. First Stop preserves completed outcomes; Force Stop sends the second
+interrupt after confirmation. Confirmed Quit additionally has its bounded final
+Kill path and retains explicit uncertainty if settlement cannot be proved.
 
-Local real-helper fixtures have exercised golden Create/UpToDate, pre-stream
-refusal, pre-admission stop/force, control-character native paths, owned KILL9,
-shared revocation and pipe/ack settlement. These are additional installed-Xcode
-ARM results, distinct from signed GUI/app/archive and pinned native-two-platform
-qualification. Exact spawn-inflight scheduling remains source-reviewed rather
-than claimed as a deterministic native test. The Rust macos-process-tests command
-selects the pinned Xcode/default SDK/toolchain and derives target/minimum/version
-facts from existing authorities; useful failure records remain under target/.
+Five owned native tests passed locally: real stdio/EOF/normal exit, Interrupt
+while waiting for input, live-child Kill, deliberately blocked spawning-thread
+mask reset, and failed-spawn/no-authority behavior. Post-reap signal attempts
+were rejected. Test cleanup failures abort later cases visibly and preserve the
+original failure. These observations do not establish complete production
+supervisor, inherited-descriptor, GUI or pinned native2 qualification.

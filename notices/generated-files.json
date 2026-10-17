@@ -7,16 +7,16 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 20164,
+      "bytes": 19327,
       "kind": "file",
       "path": "linux-aarch64/LICENSE",
-      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+      "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
     },
     {
-      "bytes": 5789,
+      "bytes": 5908,
       "kind": "file",
       "path": "linux-aarch64/THIRD-PARTY-NOTICES.txt",
-      "sha256": "dd2cf5ddfa18d7b198a848f47655f28a1199444b02606a51507d42ad760b7a54"
+      "sha256": "1a807e9f0edae04e89612af3bd338f39c0ee94afb1bc0b82ab2d963428ea66e8"
     },
     {
       "bytes": 0,
@@ -25,10 +25,10 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 11633,
+      "bytes": 11948,
       "kind": "file",
       "path": "linux-aarch64/licenses/activated-features.json",
-      "sha256": "a8a57f49bf2cbfc94cc6ea87db683663af0bc2a8479ea7c6cee56f5be039db18"
+      "sha256": "9cb696b520e61a8dd4254f7e54082a83b7a4a1eab86a0cac901fbc6825b50cbf"
     },
     {
       "bytes": 0,
@@ -163,10 +163,10 @@
       "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
     },
     {
-      "bytes": 44747,
+      "bytes": 45574,
       "kind": "file",
       "path": "linux-aarch64/licenses/materials.json",
-      "sha256": "af2416bff64bded288207112b94f9916cbbcc02232664c1ff16be9b6a7d9c1a1"
+      "sha256": "f18a4ba0a5d5300768822921742748e3ac2fd5ad986a62c3376e20a6424ffd97"
     },
     {
       "bytes": 0,
@@ -217,16 +217,16 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 20164,
+      "bytes": 19327,
       "kind": "file",
       "path": "linux-x86_64/LICENSE",
-      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+      "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
     },
     {
-      "bytes": 5901,
+      "bytes": 6020,
       "kind": "file",
       "path": "linux-x86_64/THIRD-PARTY-NOTICES.txt",
-      "sha256": "0bed8fa2d89a372d36d2cab95304a3664688ac5f3af41481bbe3be49c5305d86"
+      "sha256": "d3eeae6e0de48a3c933430fb14b0c0115bc219f05f7c1152bec85a03ccdcf77d"
     },
     {
       "bytes": 0,
@@ -235,10 +235,10 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 11817,
+      "bytes": 12132,
       "kind": "file",
       "path": "linux-x86_64/licenses/activated-features.json",
-      "sha256": "fce34361b72c9eb70199e9c465ed444ccf378ac11f11aa150db8172132431025"
+      "sha256": "4f05b26422e095b35cc1bd0a6372f1344d00b9ee034d17819db0dbeccab5b0e6"
     },
     {
       "bytes": 0,
@@ -379,10 +379,10 @@
       "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
     },
     {
-      "bytes": 45660,
+      "bytes": 46487,
       "kind": "file",
       "path": "linux-x86_64/licenses/materials.json",
-      "sha256": "a429095b6d6ff7acb1ee867714851e9e9c8b05dfe763d443b0b48e193fe6d97c"
+      "sha256": "c18f36522ee05622e2c3ccb8f23bfaea11c172b16cfc2ac4d6ea68a5d2eccef7"
     },
     {
       "bytes": 0,
@@ -433,16 +433,16 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 20164,
+      "bytes": 19327,
       "kind": "file",
       "path": "macos-aarch64/LICENSE",
-      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+      "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
     },
     {
-      "bytes": 6507,
+      "bytes": 6626,
       "kind": "file",
       "path": "macos-aarch64/THIRD-PARTY-NOTICES.txt",
-      "sha256": "41ada1362121031c9371ce16ce4b4592800dd09fff80bfc6fac972d4c2a41386"
+      "sha256": "f21c0f02fe9bedb1d54e6c5046cd13b3f675bbc7c658260193da632b87ef0b61"
     },
     {
       "bytes": 0,
@@ -451,10 +451,10 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 13372,
+      "bytes": 13687,
       "kind": "file",
       "path": "macos-aarch64/licenses/activated-features.json",
-      "sha256": "fc9986b963e41eb545dd659c6067b4cdc13b6dbd7e515bd3980b7f98bbf14f37"
+      "sha256": "967ad0381415c534c0903eaba1ca9090f6537b4475dabda3c68a624097a7d50b"
     },
     {
       "bytes": 0,
@@ -601,10 +601,10 @@
       "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
     },
     {
-      "bytes": 49584,
+      "bytes": 50411,
       "kind": "file",
       "path": "macos-aarch64/licenses/materials.json",
-      "sha256": "4f591671dd706c892a8d28a272c32c5d571de3bca5829e9b91b1a08edf0cec39"
+      "sha256": "40a2b26e6144e7acda02273e0e392aa97a1879d4e574f4bacb344af5c66aca06"
     },
     {
       "bytes": 0,
@@ -673,16 +673,16 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 20164,
+      "bytes": 19327,
       "kind": "file",
       "path": "macos-x86_64/LICENSE",
-      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+      "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
     },
     {
-      "bytes": 6619,
+      "bytes": 6738,
       "kind": "file",
       "path": "macos-x86_64/THIRD-PARTY-NOTICES.txt",
-      "sha256": "97709596fdc78917c7172fa2844ce55eab2c4d5f7898ce408c1c5b7dacbd0d87"
+      "sha256": "c2d3fe7098ee03bea7a760cd33ab2b306295f33a344c7d0b22d127286e4f7d32"
     },
     {
       "bytes": 0,
@@ -691,10 +691,10 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 13556,
+      "bytes": 13871,
       "kind": "file",
       "path": "macos-x86_64/licenses/activated-features.json",
-      "sha256": "133d280df5b33ce8d81aa15236209d61da47c64b0177cb2ff7ccbd9aaadf4132"
+      "sha256": "7ae16431315257dd1034b6ecf8f4b1a7f0053a128b579f433667ea78e747a090"
     },
     {
       "bytes": 0,
@@ -847,10 +847,10 @@
       "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
     },
     {
-      "bytes": 50497,
+      "bytes": 51324,
       "kind": "file",
       "path": "macos-x86_64/licenses/materials.json",
-      "sha256": "a6ce30a5a73845ae3afb85957cd551fc1397547c448e6d01867e1456737855cd"
+      "sha256": "44ee01aededbadd1d79781b9fad7c8831bac777a8d07f7ed977abb0ee6f9cb64"
     },
     {
       "bytes": 0,
@@ -919,16 +919,16 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 20164,
+      "bytes": 19327,
       "kind": "file",
       "path": "windows-aarch64/LICENSE",
-      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+      "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
     },
     {
-      "bytes": 5687,
+      "bytes": 5806,
       "kind": "file",
       "path": "windows-aarch64/THIRD-PARTY-NOTICES.txt",
-      "sha256": "e8afbd7f9814e26a3e206d82b1610b83727e875eccece47df6159182702cea63"
+      "sha256": "2869f0060845149a8dbeb9174f0c3b0ecb97f8291e66751697208d9f49280cd8"
     },
     {
       "bytes": 0,
@@ -937,10 +937,10 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 12714,
+      "bytes": 13029,
       "kind": "file",
       "path": "windows-aarch64/licenses/activated-features.json",
-      "sha256": "e89d6edb0bd8fd140fd8c3783320f7b6c0435e4133c1f3d38cbc8bc6fc191e2d"
+      "sha256": "f3b4e04e045f86b22128b97658ba8747e11f276a48c956c6b17c49a887b0ea23"
     },
     {
       "bytes": 0,
@@ -1051,10 +1051,10 @@
       "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
     },
     {
-      "bytes": 46490,
+      "bytes": 47317,
       "kind": "file",
       "path": "windows-aarch64/licenses/materials.json",
-      "sha256": "39010ade81171c576edaf17e27db6a596c26f8d79b8384db867f4f4d0e2d9d52"
+      "sha256": "fb72fb7fa1bc2a9b974dc807f96d6b9def45f6939884fc15396d0272da2f6535"
     },
     {
       "bytes": 0,
@@ -1153,16 +1153,16 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 20164,
+      "bytes": 19327,
       "kind": "file",
       "path": "windows-x86_64/LICENSE",
-      "sha256": "125efa051aa4e99aa85cae8c20ade585396ff873734c8dd379e7f3ed8e5ed666"
+      "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
     },
     {
-      "bytes": 5799,
+      "bytes": 5918,
       "kind": "file",
       "path": "windows-x86_64/THIRD-PARTY-NOTICES.txt",
-      "sha256": "d1d841e33603679078e50636246f610348cf26f6963174ede6d22ec849a990d3"
+      "sha256": "f43b4531fb26711212959753299a3b6759c94f0ec38cb999fa530bdd86a03ce9"
     },
     {
       "bytes": 0,
@@ -1171,10 +1171,10 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "bytes": 12898,
+      "bytes": 13213,
       "kind": "file",
       "path": "windows-x86_64/licenses/activated-features.json",
-      "sha256": "4d22342ed4e905184714093e0ecce7265d5a516c1e1d9899994f9dc7fb898af6"
+      "sha256": "f94d22f1aed9b289452afbf404ecbc293d84624ea8bbe4354d9f21466fc7ca7e"
     },
     {
       "bytes": 0,
@@ -1291,10 +1291,10 @@
       "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
     },
     {
-      "bytes": 47403,
+      "bytes": 48230,
       "kind": "file",
       "path": "windows-x86_64/licenses/materials.json",
-      "sha256": "698eb649c3121dfc52adbf62ca58cc2209a88cd44ae7e194a273c2c77acc538d"
+      "sha256": "b3bf14ee65c5fb39f7109304ece91c557d9a6463a0daee04de6e84c5834bd0d7"
     },
     {
       "bytes": 0,

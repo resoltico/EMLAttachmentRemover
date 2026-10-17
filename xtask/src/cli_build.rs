@@ -9,16 +9,12 @@ use std::{
 };
 
 pub(crate) struct FrozenCli {
-    #[cfg(target_os = "macos")]
-    path: PathBuf,
     bytes: Vec<u8>,
     identity: xtask::archive::ByteIdentity,
     target: String,
     platform: String,
     version: String,
     host: Value,
-    #[cfg(target_os = "macos")]
-    mac: crate::macos::MacBuild,
 }
 impl FrozenCli {
     pub fn target(&self) -> &str {
@@ -33,19 +29,11 @@ impl FrozenCli {
     pub fn host(&self) -> &Value {
         &self.host
     }
-    #[cfg(target_os = "macos")]
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
     pub fn identity(&self) -> &xtask::archive::ByteIdentity {
         &self.identity
-    }
-    #[cfg(target_os = "macos")]
-    pub fn mac(&self) -> &crate::macos::MacBuild {
-        &self.mac
     }
 }
 
@@ -181,16 +169,12 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
         )?,
     )?;
     Ok(FrozenCli {
-        #[cfg(target_os = "macos")]
-        path: destination,
         bytes,
         identity,
         target: target.to_owned(),
         platform: platform.to_owned(),
         version,
         host,
-        #[cfg(target_os = "macos")]
-        mac,
     })
 }
 pub(crate) fn artifact(root: &Path, output: &[u8]) -> Result<PathBuf> {
@@ -242,12 +226,12 @@ pub(crate) fn named_artifact(
         candidates.push(PathBuf::from(
             value["executable"]
                 .as_str()
-                .ok_or("CLI executable artifact missing")?,
+                .ok_or("Native executable artifact missing")?,
         ));
     }
     if finished != 1 || candidates.len() != 1 {
         return Err(
-            "Expected one successful Cargo build and one actual workspace CLI executable".into(),
+            "Expected one successful Cargo build and one actual workspace executable".into(),
         );
     }
     Ok(candidates.remove(0))
