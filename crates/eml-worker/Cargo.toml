@@ -1,0 +1,21 @@
+[package]
+name = "eml-worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+eml-core = { path = "../eml-core" }
+eml-protocol = { path = "../eml-protocol" }
+ctrlc.workspace = true
+
+[dev-dependencies]
+eml-app = { path = "../eml-app" }
+tempfile.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+
+[lints]
+workspace = true

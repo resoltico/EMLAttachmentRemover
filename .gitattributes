@@ -1,2 +1,6 @@
 * text=auto eol=lf
 *.sh text eol=lf
+*.eml -text -diff
+xtask/licenses/** -text
+notices/** -text
+tests/contract/notices/*.txt -text

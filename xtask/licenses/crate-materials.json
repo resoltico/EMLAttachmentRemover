@@ -1,0 +1,2598 @@
+{
+  "generation_execution_attestation": false,
+  "generator_pin": {
+    "authority": "xtask/tools.toml",
+    "name": "cargo-about",
+    "version": "0.9.2"
+  },
+  "inputs_basis": "Current working-file bytes are hashed below; the observed HEAD alone does not claim that every input is committed.",
+  "limitations": [
+    "QA source-material candidate only: not approval, legal assurance, native qualification, or attestation of a generator command execution.",
+    "Raw reports do not embed selected-target provenance, resolved feature activation, invocation or configuration digests; adjacent about logs are empty. Target membership here comes from the six named report files.",
+    "Cargo.lock registry archive checksums are recorded; existing local source files were read and hashed. Registry archives were not downloaded or rehashed in this review.",
+    "A coalesced generator group representative path is not per-used_by provenance; every original non-null binding has a separately byte-matched package legal file.",
+    "Canonical MIT/MPL generator hashes remain distinct from mapped actual files; both Windows mappings intentionally differ from the canonical generator text.",
+    "Windows linked native-runtime materials remain outside this candidate. Rust precompiled-standard-library materials have a separate retained-material review and are not among these crate bindings."
+  ],
+  "packages": [
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "anstream",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "anstyle",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.14"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "anstyle-parse",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "anstyle-query",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.1.5"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-pc-windows-gnullvm",
+            "x86_64-pc-windows-gnullvm"
+          ]
+        }
+      ],
+      "checksum": "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "anstyle-wincon",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-pc-windows-gnullvm",
+        "x86_64-pc-windows-gnullvm"
+      ],
+      "version": "3.0.11"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1076,
+          "generator_text_sha256": "0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1076,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "base64",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.22.1"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1071,
+          "generator_text_sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1071,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "bitflags",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "2.13.2"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 1078,
+          "generator_text_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+          "license_id": "MIT",
+          "mapping": "version_and_revision_bound_upstream_explanation_plus_identified_standard_mit_text",
+          "materials": [
+            {
+              "bytes": 1339,
+              "kind": "retained_upstream_repository_file",
+              "path": "xtask/licenses/objc2/LICENSE.md",
+              "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+              "upstream": {
+                "crate_path_in_vcs": "crates/block2",
+                "path": "LICENSE.md",
+                "repository": "https://github.com/madsmtm/objc2",
+                "revision": "b4167b582b2f75f9a1be75495c41b765344fd03c"
+              }
+            }
+          ],
+          "standard_text": {
+            "attribution_note": "The template contains copyright placeholders; it is not an upstream copyright attribution.",
+            "bytes": 1078,
+            "license_id": "MIT",
+            "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+            "source": "Canonical SPDX MIT text emitted in the reviewed cargo-about 0.9.2 report."
+          },
+          "targets": [
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin"
+          ]
+        }
+      ],
+      "checksum": "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5",
+      "license_expression": "MIT",
+      "name": "block2",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin"
+      ],
+      "version": "0.6.2"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1057,
+          "generator_text_sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1057,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "cfg-if",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.5"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1472,
+          "generator_text_sha256": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1472,
+              "kind": "package_file",
+              "path": "NOTICES.md",
+              "sha256": "1e2b7ade3fb228130408b9990cae6a7618eb314c75aa0b164bfe485d9d9756ee"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-unknown-linux-gnu"
+          ]
+        },
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1076,
+          "generator_text_sha256": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1076,
+              "kind": "package_file",
+              "path": "LICENSE",
+              "sha256": "31b94860253d8ec7b4529f51901044d3b459d6292d996504a36b1bae3a36a812"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527",
+      "license_expression": "MIT",
+      "name": "cfg_aliases",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.2.2"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "aa8876b300ab35ba921adea3dfd70157a46249b33f95c9084ae5709785478946",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "clap",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "4.6.7"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "ec0797fb7aeb1406c84efac526901f7ec3ead2124f946b494e72879d4b54704d",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "clap_builder",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "4.6.7"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "f9c751b79415d4e559e3d1fcf128e09e720eb673a06d26cf6f392d37d75b66e0",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "clap_derive",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "4.6.7"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "clap_lex",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.1.1"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "colorchoice",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.5"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1076,
+          "generator_text_sha256": "8569ebf6bf52937b961d9c9c934d8400a2bb6b09651a9afacbb3fc18fe5c09b1",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1076,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "8569ebf6bf52937b961d9c9c934d8400a2bb6b09651a9afacbb3fc18fe5c09b1"
+            }
+          ],
+          "targets": [
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "core_detect",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "e0b1fab2ae45819af2d0731d60f2afe17227ebb1a1538a236da84c93e9a60162",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "ctrlc",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "3.5.2"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 1078,
+          "generator_text_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+          "license_id": "MIT",
+          "mapping": "version_and_revision_bound_upstream_explanation_plus_identified_standard_mit_text",
+          "materials": [
+            {
+              "bytes": 1339,
+              "kind": "retained_upstream_repository_file",
+              "path": "xtask/licenses/objc2/LICENSE.md",
+              "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+              "upstream": {
+                "crate_path_in_vcs": "crates/dispatch2",
+                "path": "LICENSE.md",
+                "repository": "https://github.com/madsmtm/objc2",
+                "revision": "8852b424193ca41602281b3d7540d7c8ed51e49a"
+              }
+            }
+          ],
+          "standard_text": {
+            "attribution_note": "The template contains copyright placeholders; it is not an upstream copyright attribution.",
+            "bytes": 1078,
+            "license_id": "MIT",
+            "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+            "source": "Canonical SPDX MIT text emitted in the reviewed cargo-about 0.9.2 report."
+          },
+          "targets": [
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin"
+          ]
+        }
+      ],
+      "checksum": "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38",
+      "license_expression": "Zlib OR Apache-2.0 OR MIT",
+      "name": "dispatch2",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin"
+      ],
+      "version": "0.3.1"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 16727,
+          "generator_text_sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+          "license_id": "MPL-2.0",
+          "mapping": "workspace_full_license_plus_identified_standard_mpl_text",
+          "materials": [
+            {
+              "bytes": 19327,
+              "kind": "workspace_file",
+              "path": "LICENSE",
+              "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
+            }
+          ],
+          "standard_text": {
+            "bytes": 16727,
+            "license_id": "MPL-2.0",
+            "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+            "source": "Canonical SPDX license text emitted in the reviewed cargo-about 0.9.2 report; preserve separately from full root LICENSE."
+          },
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": null,
+      "license_expression": "MPL-2.0",
+      "name": "eml-core",
+      "provenance": {
+        "checksum_basis": "No registry archive checksum for a workspace package.",
+        "kind": "workspace",
+        "manifest_path": "crates/eml-core/Cargo.toml",
+        "manifest_sha256": "76a22fc16fa9b5e3b50c0ec579e19a67a0a58caca876bc5a5a78fc9da74b707d"
+      },
+      "source": null,
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "6.0.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 16727,
+          "generator_text_sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+          "license_id": "MPL-2.0",
+          "mapping": "workspace_full_license_plus_identified_standard_mpl_text",
+          "materials": [
+            {
+              "bytes": 19327,
+              "kind": "workspace_file",
+              "path": "LICENSE",
+              "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
+            }
+          ],
+          "standard_text": {
+            "bytes": 16727,
+            "license_id": "MPL-2.0",
+            "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+            "source": "Canonical SPDX license text emitted in the reviewed cargo-about 0.9.2 report; preserve separately from full root LICENSE."
+          },
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": null,
+      "license_expression": "MPL-2.0",
+      "name": "eml-fs",
+      "provenance": {
+        "checksum_basis": "No registry archive checksum for a workspace package.",
+        "kind": "workspace",
+        "manifest_path": "crates/eml-fs/Cargo.toml",
+        "manifest_sha256": "30a2d5e98106a1e53cc40ac7270c34648ca43ab0859c5ba731d446c0687ee435"
+      },
+      "source": null,
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "6.0.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 16727,
+          "generator_text_sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+          "license_id": "MPL-2.0",
+          "mapping": "workspace_full_license_plus_identified_standard_mpl_text",
+          "materials": [
+            {
+              "bytes": 19327,
+              "kind": "workspace_file",
+              "path": "LICENSE",
+              "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
+            }
+          ],
+          "standard_text": {
+            "bytes": 16727,
+            "license_id": "MPL-2.0",
+            "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+            "source": "Canonical SPDX license text emitted in the reviewed cargo-about 0.9.2 report; preserve separately from full root LICENSE."
+          },
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": null,
+      "license_expression": "MPL-2.0",
+      "name": "eml-protocol",
+      "provenance": {
+        "checksum_basis": "No registry archive checksum for a workspace package.",
+        "kind": "workspace",
+        "manifest_path": "crates/eml-protocol/Cargo.toml",
+        "manifest_sha256": "772cf78824d2f36c6763af25dd928bd4299f9f173f2e2acde70e1e37caf115e1"
+      },
+      "source": null,
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "6.0.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 2333,
+          "generator_text_sha256": "3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32",
+          "license_id": "BSD-3-Clause",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 2333,
+              "kind": "package_file",
+              "path": "src/gb18030_2022.rs",
+              "sha256": "3c2e06492c5e00fcd39515e4af4c560d8cee5c31e7a7e388db682bc9ee33ee32"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        },
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1501,
+          "generator_text_sha256": "838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50",
+          "license_id": "BSD-3-Clause",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1501,
+              "kind": "package_file",
+              "path": "LICENSE-WHATWG",
+              "sha256": "838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        },
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1053,
+          "generator_text_sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1053,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "8e985e0451871ad22fb8d2b6b076e2028a502a0d3950998c2c5c0a4f9b5d9679",
+      "license_expression": "(Apache-2.0 OR MIT) AND BSD-3-Clause",
+      "name": "encoding_rs",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.8.42"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1054,
+          "generator_text_sha256": "8764a597675778ddfd4e25f81b08a05dbcf089ac05662df7613fe67f150e3aa2",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1054,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "8764a597675778ddfd4e25f81b08a05dbcf089ac05662df7613fe67f150e3aa2"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin"
+          ]
+        }
+      ],
+      "checksum": "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "errno",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin"
+      ],
+      "version": "0.3.14"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1130,
+          "generator_text_sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1130,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "getrandom",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.4.3"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1071,
+          "generator_text_sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1071,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "heck",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.5.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "is_terminal_polyfill",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.70.2"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "itoa",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.18"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1066,
+          "generator_text_sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1066,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "libc",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.2.190"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-unknown-linux-gnu",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53",
+      "license_expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "name": "linux-raw-sys",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.12.1"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1081,
+          "generator_text_sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1081,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
+      "license_expression": "Unlicense OR MIT",
+      "name": "memchr",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "2.8.3"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1053,
+          "generator_text_sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1053,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d",
+      "license_expression": "Apache-2.0 OR MIT",
+      "name": "multiversion_no_op",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1097,
+          "generator_text_sha256": "66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1097,
+              "kind": "package_file",
+              "path": "LICENSE",
+              "sha256": "66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d",
+      "license_expression": "MIT",
+      "name": "nix",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.31.3"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 1078,
+          "generator_text_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+          "license_id": "MIT",
+          "mapping": "version_and_revision_bound_upstream_explanation_plus_identified_standard_mit_text",
+          "materials": [
+            {
+              "bytes": 1339,
+              "kind": "retained_upstream_repository_file",
+              "path": "xtask/licenses/objc2/LICENSE.md",
+              "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+              "upstream": {
+                "crate_path_in_vcs": "crates/objc2",
+                "path": "LICENSE.md",
+                "repository": "https://github.com/madsmtm/objc2",
+                "revision": "d7d2fa23ceaa5e6096c923b081040e5d81b3b9df"
+              }
+            }
+          ],
+          "standard_text": {
+            "attribution_note": "The template contains copyright placeholders; it is not an upstream copyright attribution.",
+            "bytes": 1078,
+            "license_id": "MIT",
+            "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+            "source": "Canonical SPDX MIT text emitted in the reviewed cargo-about 0.9.2 report."
+          },
+          "targets": [
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin"
+          ]
+        }
+      ],
+      "checksum": "08849bbd4767dfae9457696856ae1c84fe4e0281bbe4a7abff2d0e06fb7981f8",
+      "license_expression": "MIT",
+      "name": "objc2",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin"
+      ],
+      "version": "0.6.5"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 1078,
+          "generator_text_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+          "license_id": "MIT",
+          "mapping": "version_and_revision_bound_upstream_explanation_plus_identified_standard_mit_text",
+          "materials": [
+            {
+              "bytes": 1339,
+              "kind": "retained_upstream_repository_file",
+              "path": "xtask/licenses/objc2/LICENSE.md",
+              "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+              "upstream": {
+                "crate_path_in_vcs": "crates/objc2-encode",
+                "path": "LICENSE.md",
+                "repository": "https://github.com/madsmtm/objc2",
+                "revision": "8d214f5477365ffcbcbb7de058c86ed9a518efb7"
+              }
+            }
+          ],
+          "standard_text": {
+            "attribution_note": "The template contains copyright placeholders; it is not an upstream copyright attribution.",
+            "bytes": 1078,
+            "license_id": "MIT",
+            "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+            "source": "Canonical SPDX MIT text emitted in the reviewed cargo-about 0.9.2 report."
+          },
+          "targets": [
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin"
+          ]
+        }
+      ],
+      "checksum": "ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33",
+      "license_expression": "MIT",
+      "name": "objc2-encode",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin"
+      ],
+      "version": "4.1.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1062,
+          "generator_text_sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1062,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+            }
+          ],
+          "targets": [
+            "aarch64-pc-windows-gnullvm",
+            "x86_64-pc-windows-gnullvm"
+          ]
+        }
+      ],
+      "checksum": "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "once_cell_polyfill",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-pc-windows-gnullvm",
+        "x86_64-pc-windows-gnullvm"
+      ],
+      "version": "1.70.2"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "proc-macro2",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.107"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "quote",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.47"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 16727,
+          "generator_text_sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+          "license_id": "MPL-2.0",
+          "mapping": "workspace_full_license_plus_identified_standard_mpl_text",
+          "materials": [
+            {
+              "bytes": 19327,
+              "kind": "workspace_file",
+              "path": "LICENSE",
+              "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
+            }
+          ],
+          "standard_text": {
+            "bytes": 16727,
+            "license_id": "MPL-2.0",
+            "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172",
+            "source": "Canonical SPDX license text emitted in the reviewed cargo-about 0.9.2 report; preserve separately from full root LICENSE."
+          },
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": null,
+      "license_expression": "MPL-2.0",
+      "name": "remove-eml-attachments",
+      "provenance": {
+        "checksum_basis": "No registry archive checksum for a workspace package.",
+        "kind": "workspace",
+        "manifest_path": "crates/eml-cli/Cargo.toml",
+        "manifest_sha256": "f1272667caa6d9efa2df55defe00806cdb7dcf8c287b1fa79b165ad75f03a751"
+      },
+      "source": null,
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "6.0.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "891efababe418670775f199f0d233d84843c227a0949a883ce15b37c78d6629d",
+      "license_expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "name": "rustix",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.1.5"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "rustversion",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.23"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1097,
+          "generator_text_sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1097,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "fb77f0a9c53e473abe5103c8632ef9f0f2874d4fb3f17cb2d8c661aab9cee9d7"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "scopeguard",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.2.0"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "serde",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.229"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "serde_core",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.229"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "serde_derive",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.229"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "serde_json",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.154"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1035,
+          "generator_text_sha256": "1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1035,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "simdutf8",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.1.5"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1166,
+          "generator_text_sha256": "1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1166,
+              "kind": "package_file",
+              "path": "LICENSE",
+              "sha256": "1e697ce8d21401fbf1bddd9b5c3fd4c4c79ae1e3bdf51f81761c85e11d5a89cd"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f",
+      "license_expression": "MIT",
+      "name": "strsim",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.11.1"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "syn",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "3.0.9"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        },
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1995,
+          "generator_text_sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1",
+          "license_id": "Unicode-3.0",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1995,
+              "kind": "package_file",
+              "path": "LICENSE-UNICODE",
+              "sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563",
+      "license_expression": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "name": "unicode-ident",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.27"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1052,
+          "generator_text_sha256": "e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1052,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "e4c9b06fa850cb9b540a5e400e9f6394cf15efcf4098144de477d1d3dae10150"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821",
+      "license_expression": "Apache-2.0 OR MIT",
+      "name": "utf8parse",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "0.2.2"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 1078,
+          "generator_text_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+          "license_id": "MIT",
+          "mapping": "canonical_generator_fallback_mapped_explicitly_to_actual_package_mit_file",
+          "materials": [
+            {
+              "bytes": 1141,
+              "kind": "package_file",
+              "path": "license-mit",
+              "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+              "upstream": {
+                "crate_path_in_vcs": "crates/libs/link",
+                "path": "license-mit",
+                "repository": "https://github.com/microsoft/windows-rs",
+                "revision": "d468916ac27a36fb8a12bafc1bf5c0ec2fe92238"
+              }
+            }
+          ],
+          "renderer_requirement": "Use the mapped copyright-bearing package file. Keep the distinct canonical generator hash as a guard input; do not silently equate these two texts.",
+          "targets": [
+            "aarch64-pc-windows-gnullvm",
+            "x86_64-pc-windows-gnullvm"
+          ]
+        }
+      ],
+      "checksum": "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "windows-link",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-pc-windows-gnullvm",
+        "x86_64-pc-windows-gnullvm"
+      ],
+      "version": "0.2.1"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": true,
+          "generator_text_bytes": 1078,
+          "generator_text_sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+          "license_id": "MIT",
+          "mapping": "canonical_generator_fallback_mapped_explicitly_to_actual_package_mit_file",
+          "materials": [
+            {
+              "bytes": 1141,
+              "kind": "package_file",
+              "path": "license-mit",
+              "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+              "upstream": {
+                "crate_path_in_vcs": "crates/libs/sys",
+                "path": "license-mit",
+                "repository": "https://github.com/microsoft/windows-rs",
+                "revision": "32c3144490c016fe496a0aed769bce60987a2e9d"
+              }
+            }
+          ],
+          "renderer_requirement": "Use the mapped copyright-bearing package file. Keep the distinct canonical generator hash as a guard input; do not silently equate these two texts.",
+          "targets": [
+            "aarch64-pc-windows-gnullvm",
+            "x86_64-pc-windows-gnullvm"
+          ]
+        }
+      ],
+      "checksum": "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc",
+      "license_expression": "MIT OR Apache-2.0",
+      "name": "windows-sys",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-pc-windows-gnullvm",
+        "x86_64-pc-windows-gnullvm"
+      ],
+      "version": "0.61.2"
+    },
+    {
+      "bindings": [
+        {
+          "generator_group_source_path_was_null": false,
+          "generator_text_bytes": 1023,
+          "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "license_id": "MIT",
+          "mapping": "exact_per_package_legal_file",
+          "materials": [
+            {
+              "bytes": 1023,
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+          ],
+          "targets": [
+            "aarch64-apple-darwin",
+            "aarch64-pc-windows-gnullvm",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-gnullvm",
+            "x86_64-unknown-linux-gnu"
+          ]
+        }
+      ],
+      "checksum": "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b",
+      "license_expression": "MIT",
+      "name": "zmij",
+      "provenance": {
+        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "kind": "registry"
+      },
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "targets": [
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-gnullvm",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "version": "1.0.23"
+    }
+  ],
+  "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
+  "source_inputs": [
+    {
+      "bytes": 148375,
+      "kind": "review_input",
+      "path": "Cargo.lock",
+      "sha256": "f556765659e02fb71fc65ce1338f3b87cca6f1963c5939fa75549e37909225a3"
+    },
+    {
+      "bytes": 815,
+      "kind": "review_input",
+      "path": "Cargo.toml",
+      "sha256": "b8a89c628e8a706318739a544be6a0507599ff75da65fef55d08407c14674351"
+    },
+    {
+      "bytes": 537,
+      "kind": "review_input",
+      "path": "crates/eml-cli/Cargo.toml",
+      "sha256": "f1272667caa6d9efa2df55defe00806cdb7dcf8c287b1fa79b165ad75f03a751"
+    },
+    {
+      "bytes": 398,
+      "kind": "review_input",
+      "path": "crates/eml-core/Cargo.toml",
+      "sha256": "76a22fc16fa9b5e3b50c0ec579e19a67a0a58caca876bc5a5a78fc9da74b707d"
+    },
+    {
+      "bytes": 918,
+      "kind": "review_input",
+      "path": "crates/eml-fs/Cargo.toml",
+      "sha256": "30a2d5e98106a1e53cc40ac7270c34648ca43ab0859c5ba731d446c0687ee435"
+    },
+    {
+      "bytes": 308,
+      "kind": "review_input",
+      "path": "xtask/tools.toml",
+      "sha256": "ad27bf09ec17beae9286784afe18faad47719efccd27cf1800494e03bf310523"
+    },
+    {
+      "bytes": 800,
+      "kind": "review_input",
+      "path": "xtask/distribution.toml",
+      "sha256": "fc76259fd25cb3c2ea2d76e2fda0d88814e8123a8eafc0e0183ba770d151dc27"
+    },
+    {
+      "bytes": 234,
+      "kind": "review_input",
+      "path": "target/about-native.toml",
+      "sha256": "7c16c05ae632c2287bb41583f350aab99f04ed0e48105e3c2be1304bfe659248"
+    },
+    {
+      "bytes": 19327,
+      "kind": "review_input",
+      "path": "LICENSE",
+      "sha256": "c979f0b98a10756fb6ef9689cf3cf57f49c96367fad20c96d963dadd3a42a0b8"
+    },
+    {
+      "bytes": 683,
+      "kind": "review_input",
+      "path": "xtask/licenses/objc2/source.json",
+      "sha256": "2b65c098b4183d47454a1a37a0d2b375e82a909719842b5187dde67a4c4d9972"
+    },
+    {
+      "bytes": 1339,
+      "kind": "review_input",
+      "path": "xtask/licenses/objc2/LICENSE.md",
+      "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
+    },
+    {
+      "bytes": 361,
+      "kind": "review_input",
+      "path": "crates/eml-protocol/Cargo.toml",
+      "sha256": "772cf78824d2f36c6763af25dd928bd4299f9f173f2e2acde70e1e37caf115e1"
+    }
+  ],
+  "status": "independent_qa_candidate",
+  "targets": [
+    {
+      "target": "aarch64-apple-darwin"
+    },
+    {
+      "target": "aarch64-pc-windows-gnullvm"
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu"
+    },
+    {
+      "target": "x86_64-apple-darwin"
+    },
+    {
+      "target": "x86_64-pc-windows-gnullvm"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu"
+    }
+  ],
+  "initial_review": {
+    "repository_head_observed": "f931b74cf25bc70ca039d495afee991011ac0541",
+    "targets": [
+      {
+        "license_text_group_count": 23,
+        "package_count": 46,
+        "package_license_text_binding_count": 50,
+        "review_candidate_path": "target/license-review/review-aarch64-apple-darwin.json",
+        "review_candidate_sha256": "1c9efab4bf5f75f9436b59ff7cfa8b7e18ac22c6ea2e8f0fb8838f657db50a45",
+        "target": "aarch64-apple-darwin"
+      },
+      {
+        "license_text_group_count": 17,
+        "package_count": 40,
+        "package_license_text_binding_count": 43,
+        "review_candidate_path": "target/license-review/review-aarch64-pc-windows-gnullvm.json",
+        "review_candidate_sha256": "b16c8003a5625c2d0396b2f2f4dc16fdb5bf03b26b119ba7226bc4fcf246764c",
+        "target": "aarch64-pc-windows-gnullvm"
+      },
+      {
+        "license_text_group_count": 21,
+        "package_count": 42,
+        "package_license_text_binding_count": 46,
+        "review_candidate_path": "target/license-review/review-aarch64-unknown-linux-gnu.json",
+        "review_candidate_sha256": "81f7b4fa96e2f0fcff44cee9056ab4027d8b7f3d6e3341d677d67952ab78e438",
+        "target": "aarch64-unknown-linux-gnu"
+      },
+      {
+        "license_text_group_count": 24,
+        "package_count": 47,
+        "package_license_text_binding_count": 51,
+        "review_candidate_path": "target/license-review/review-x86_64-apple-darwin.json",
+        "review_candidate_sha256": "9333b8bb1f47fdd3a0feecc5d9c37364fa7ea883584b361df950f605aaa28632",
+        "target": "x86_64-apple-darwin"
+      },
+      {
+        "license_text_group_count": 18,
+        "package_count": 41,
+        "package_license_text_binding_count": 44,
+        "review_candidate_path": "target/license-review/review-x86_64-pc-windows-gnullvm.json",
+        "review_candidate_sha256": "d0e661c09a072494153131767ca1ba30d4e7bee498b354a4f03de2522797383d",
+        "target": "x86_64-pc-windows-gnullvm"
+      },
+      {
+        "license_text_group_count": 22,
+        "package_count": 43,
+        "package_license_text_binding_count": 47,
+        "review_candidate_path": "target/license-review/review-x86_64-unknown-linux-gnu.json",
+        "review_candidate_sha256": "ba8fe2fa3518b3ca2e5aa1523833bd66a863c9568f34c5e6dede1dbbf390092f",
+        "target": "x86_64-unknown-linux-gnu"
+      }
+    ],
+    "totals": {
+      "exact_package_file_bindings_including_two_windows_mappings": 49,
+      "original_canonical_generator_fallback_bindings": 9,
+      "package_identities": 52,
+      "package_license_text_bindings": 56,
+      "registry_identities": 49,
+      "retained_objc2_supplement_bindings": 4,
+      "workspace_identities": 3,
+      "workspace_mpl_bindings": 3
+    }
+  },
+  "repository_head_observed": "2f281cba8b840858810ec4b1c2208b5fdf8b860b",
+  "independent_amendment": {
+    "scope": "CLI normal/build closure on all six declared targets; GUI/worker/native-bridge material review is separate and not supplied here",
+    "basis": "Independent source/license/permission-paragraph review and all-six-target dependency/feature comparison: only the new workspace eml-protocol joins the prior CLI closure; all49 registry identities/material bindings remain unchanged. The new local MPL binding uses unchanged canonical MPL text and the reviewed current full root LICENSE. Actual cargo-about reports were separately observed before updating this record.",
+    "generation_execution_attestation": false
+  }
+}

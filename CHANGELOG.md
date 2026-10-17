@@ -4,6 +4,22 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: v6 replaces the Python product and old macOS UI.** Build the reusable Rust libraries/native CLI with Rust 1.99.0; the macOS frontend is being replaced with Slint and a private core-backed worker. The GUI and CLI are separate products using the same business libraries. Python packages, wheels, zipapps, bundled/external interpreter editions, managed installer and Python development tooling are removed. No old decoder, dual engine, preference migration or backward compatibility is provided. Native packaging and full GUI/platform acceptance remain incomplete; see the [implementation evidence](docs/v6-implementation-evidence.md).
+- **Breaking for CLI/report consumers:** the supported options are `--output-dir`, `--dry-run`, `--format human|json` and `--request FILE|-`, plus help/version. Protocol 1 uses LF-delimited start/item/summary events and lossless native path values. Former explicit-output, schema 3, paths0, request-stdin and separate progress interfaces are removed; update integrations to the [current protocol](docs/protocol.md).
+- **Breaking copy naming and layout:** copies use `.no-attachments.eml`; selected directory trees mirror under root labels in an output folder. Name shortening follows native component limits without digest or numeric collision probing. Conflicting reservations, differing existing files, source aliases and overlapping output trees are refused. Use reported destinations rather than deriving former names.
+- **Breaking for macOS app users:** one main window retains serial queued runs and bounded reports instead of independent report windows. Fresh destination preferences have no old reader or migration. Actual Finder, Services, Stop/Force Stop, quit/reopen and accessibility qualification remain required before v6 delivery.
+
+### Added
+
+- Native build/archive tooling for separate macOS Intel/Apple Silicon, Linux x64/ARM64 and Windows x64/ARM64 CLIs, and separate Intel/Apple Silicon macOS apps. The declared target policy is not a support qualification claim; completed and failed native checks are recorded separately. Linux archives have actual native extraction/runtime/behavior evidence; Windows packaging and complete app archive/GUI checks remain open.
+- Independent source-span authorization, synthetic goldens, native filesystem observations, bounded native-path requests and explicit publication/address/synchronization/cleanup receipts. Failed reporting or a post-publication error cannot establish that no complete copy exists; inspect the receipt and the documented [storage limits](docs/filesystem.md).
+
+### Internal
+
+- Rust repository tooling retains scoped native build/archive evidence, complete target-specific crate/standard-library legal materials and bounded fuzz/mutation results. Required upstream tool advisory findings, native boundary failures and unavailable checks remain visible; no v6 tag, release or asset has been published.
+
 ## [5.0.0] - 2026-10-15
 
 ### Changed

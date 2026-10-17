@@ -1,0 +1,12 @@
+Content-Type: multipart/related; boundary=B; start="<root>"
+
+--B
+Content-Type: image/png
+Content-ID: <resource>
+
+x
+--B
+Content-ID: <root>
+
+body
+--B--

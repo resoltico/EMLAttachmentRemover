@@ -1,0 +1,39 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+getrandom = "0.4.3"
+ctrlc.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+eml-fs = { path = "../crates/eml-fs" }
+toml = "1.1.8"
+tempfile.workspace = true
+object = { version = "0.39.1", default-features = false, features = ["read", "std"] }
+sha2 = "0.11.0"
+tar = { version = "0.4.46", default-features = false }
+flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
+zip = { version = "9.0.3", default-features = false, features = ["deflate-flate2"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.5", features = ["process", "fs"] }
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "process-probe"
+path = "tests/support/process_probe.rs"
+test = false
+
+[[bin]]
+name = "archive-counterfeit"
+path = "tests/support/archive_counterfeit.rs"
+test = false

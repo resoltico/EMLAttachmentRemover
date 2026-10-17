@@ -1,0 +1,32 @@
+[workspace]
+members = ["crates/eml-core", "crates/eml-fs", "crates/eml-protocol", "crates/eml-cli", "crates/eml-app", "crates/eml-worker", "crates/eml-gui", "crates/eml-macos", "xtask"]
+exclude = ["tests/native-filesystem", "fuzz"]
+resolver = "3"
+
+[workspace.package]
+version = "6.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MPL-2.0"
+publish = false
+
+[workspace.dependencies]
+memchr = "2.8.3"
+encoding_rs = "0.8.42"
+base64 = "0.22.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tempfile = "3.27.0"
+clap = { version = "4.6.7", features = ["derive"] }
+ctrlc = { version = "3.5.2", features = ["termination"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[profile.release]
+overflow-checks = true
+
+[profile.mutants]
+inherits = "test"
+debug = false

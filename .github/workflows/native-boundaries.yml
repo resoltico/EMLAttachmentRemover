@@ -1,0 +1,155 @@
+name: Native library boundary checks
+on:
+  push:
+    branches: [codex/v6-rust-swiftui]
+permissions:
+  contents: read
+jobs:
+  distribution:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Derive Unix filesystem evidence matrix
+        id: targets
+        run: |
+          plan=$(cargo xtask distribution)
+          matrix=$(jq -ce '{include: [.native_targets[] | select(.os != "windows") | {platform,target,runner}]} | select(.include | length == 4)' <<< "$plan")
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+  probes:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record actual compiler and machine
+        run: |
+          rustc -vV
+          uname -a
+      - name: Real owned process lifetime and signal probes
+        run: |
+          cargo test --locked --package xtask --bin xtask
+          cargo test --locked --package xtask --lib
+          cargo test --locked --package xtask --test processes
+      - name: Regenerate and check six target notice material trees
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            export CARGO_HOME
+            CARGO_HOME=$(mktemp -d "$RUNNER_TEMP/eml-cargo-home.XXXXXXXX")
+            test -z "$(ls -A "$CARGO_HOME")"
+            mkdir -p target/cold-bootstrap
+            source=$(git rev-parse HEAD)
+            jq -n --arg path "$CARGO_HOME" --arg source "$source" '{source:$source,cargo_home:$path,initially_empty:true,scope:"owned empty Cargo home for actual pinned tools and notice checks; shared Rustup installation unchanged"}' > target/cold-bootstrap/input.json
+          fi
+          cargo xtask tools
+          cargo xtask notices --check
+      - name: Retain actual tool and cold-bootstrap evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: private-tools-${{ github.sha }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/cold-bootstrap/*.json
+            target/repository-tools/build-*/*.json
+            target/repository-tools/build-*/*.jsonl
+            target/repository-tools/build-*/*.log
+            target/process-control/**/output.*
+          if-no-files-found: error
+  filesystem:
+    name: Filesystem / ${{ matrix.platform }}
+    needs: distribution
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.distribution.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record actual compiler and machine
+        run: |
+          rustc -vV
+          uname -a
+      - name: Native distribution planner
+        run: cargo xtask distribution
+      - name: Held filesystem and namespace admission tests
+        run: |
+          cargo clippy --locked --package eml-fs --all-targets -- -D warnings
+          cargo test --locked --package eml-fs -- --nocapture
+      - name: Native core request resource admission
+        run: |
+          cargo clippy --locked --package eml-core --all-targets -- -D warnings
+          cargo test --locked --package eml-core --test request
+      - name: Native core diagnostic vocabulary
+        run: cargo test --locked --package eml-core --test diagnostic
+      - name: Native collection, destination planning and held-source preparation
+        run: cargo test --locked --package eml-core --lib --test collection --test destination --test dry_run --test execution --test existing --test source
+      - name: Native protocol path transport
+        run: |
+          cargo clippy --locked --package remove-eml-attachments --all-targets -- -D warnings
+          cargo test --locked --package eml-protocol --lib --test events --test request --test path --test records
+          cargo test --locked --package remove-eml-attachments --bin remove-eml-attachments --test cli_process
+          cargo test --locked --package eml-app
+          cargo test --locked --package eml-worker --test worker_process
+      - name: Native Slint profile and owned Darwin child checks
+        if: ${{ runner.os == 'macOS' }}
+        run: cargo xtask check-macos-desktop --out target/native-desktop-checks
+      - name: Real different-UID namespace controls on owned fixtures
+        run: |
+          cargo build --locked --package eml-fs --example namespace-credentials
+          victim_uid=$(id -u)
+          victim_gid=$(id -g)
+          sudo -n "$PWD/target/debug/examples/namespace-credentials" "$victim_uid" "$victim_gid"
+      - name: Build and audit private pinned repository tools
+        run: |
+          cargo xtask tools
+      - name: Build and verify actual native Linux CLI archive
+        if: ${{ runner.os == 'Linux' }}
+        run: cargo xtask build-cli-archive --target '${{ matrix.target }}' --out target/native-cli-build
+      - name: Build native Slint and private-worker executables; required app gates remain explicit
+        if: ${{ runner.os == 'macOS' }}
+        run: cargo xtask build-macos-app --out target/native-app-build
+      - name: Retain native process fixture evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: process-boundary-${{ github.sha }}-${{ matrix.platform }}
+          path: |
+            target/native-desktop-checks/**/*.log
+            target/native-desktop-checks/**/*.stderr
+            target/native-desktop-checks/**/*.json
+            target/repository-tools/build-*/*.json
+            target/repository-tools/build-*/*.jsonl
+            target/repository-tools/build-*/*.log
+            target/process-control/**/output.*
+            target/native-app-build/*.log
+            target/native-app-build/*.json
+            target/native-app-build/*.jsonl
+            target/native-app-build/*.stderr
+            target/native-app-build/icon-assets/icon-partial.plist
+            target/native-app-build/cli-build/*.log
+            target/native-app-build/cli-build/*.json
+            target/native-app-build/cli-build/*.jsonl
+            target/native-app-build/cli-build/*.stderr
+            target/native-cli-build/*.json
+            target/native-cli-build/cli-build/*.log
+            target/native-cli-build/cli-build/*.json
+            target/native-cli-build/cli-build/*.jsonl
+            target/native-cli-build/cli-build/*.stderr
+            target/native-host/inspector-*/*.log
+            target/native-host/inspector-*/*.json
+            target/native-host/inspector-*/*.stderr
+            target/archive-verification/**/*.log
+            target/archive-verification/**/*.json
+            target/archive-verification/**/*.stderr
+          if-no-files-found: error

@@ -1,0 +1,21 @@
+[package]
+name = "eml-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+eml-fs = { path = "../eml-fs" }
+memchr.workspace = true
+encoding_rs.workspace = true
+base64.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+proptest = "1.12.0"
+mail-parser = "0.11.9"
+
+[lints]
+workspace = true

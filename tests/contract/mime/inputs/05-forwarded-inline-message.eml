@@ -1,0 +1,36 @@
+From: Alice <alice@example.test>
+To: Bob <bob@example.test>
+Subject: Fixture
+Date: Wed, 14 Oct 2026 10:00:00 +0000
+Message-ID: <fixture@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="m1"
+
+--m1
+Content-Type: text/plain; charset=utf-8
+
+Forwarding below.
+--m1
+Content-Type: message/rfc822
+
+From: Carol <carol@example.test>
+Subject: Original
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="i1"
+
+--i1
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hello Bob,
+see attached.
+
+--i1
+Content-Type: application/pdf; name="report.pdf"
+Content-Disposition: attachment; filename="report.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQgZmFrZSBwZGYgYnl0ZXMgZm9yIHRlc3RzICVQREYtMS40IGZha2UgcGRmIGJ5dGVzIGZvciB0ZXN0cyAlUERGLTEuNCBmYWtlIHBkZiBieXRlcyBmb3IgdGVzdHMgJVBERi0xLjQgZmFrZSBwZGYgYnl0ZXMgZm9yIHRlc3RzICVQREYtMS40IGZha2UgcGRmIGJ5dGVzIGZvciB0ZXN0cyAlUERGLTEuNCBmYWtlIHBkZiBieXRlcyBmb3IgdGVzdHMgJVBERi0xLjQgZmFrZSBwZGYgYnl0ZXMgZm9yIHRlc3RzICVQREYtMS40IGZha2UgcGRmIGJ5dGVzIGZvciB0ZXN0cyA=
+--i1--
+
+--m1--

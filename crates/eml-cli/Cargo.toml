@@ -1,0 +1,24 @@
+[package]
+name = "remove-eml-attachments"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+eml-core = { path = "../eml-core" }
+eml-protocol = { path = "../eml-protocol" }
+clap.workspace = true
+ctrlc.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+rustix = { version = "1.1.5", features = ["process", "fs"] }
+
+[lints]
+workspace = true

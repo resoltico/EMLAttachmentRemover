@@ -1,0 +1,37 @@
+From: Alice <alice@example.test>
+To: Bob <bob@example.test>
+Subject: Fixture
+Date: Wed, 14 Oct 2026 10:00:00 +0000
+Message-ID: <fixture@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="Apple-Mail-A"
+
+--Apple-Mail-A
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hello Bob,
+see attached.
+
+--Apple-Mail-A
+Content-Type: multipart/mixed; boundary="Apple-Mail-M"
+
+--Apple-Mail-M
+Content-Type: text/html; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+<html><body>Before image</body></html>
+--Apple-Mail-M
+Content-Type: image/jpeg; name="IMG_0001.jpeg"
+Content-Disposition: inline; filename="IMG_0001.jpeg"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgogZmFrZSBwbmcgiVBORw0KGgogZmFrZSBwbmcgiVBORw0KGgogZmFrZSBwbmcgiVBORw0KGgogZmFrZSBwbmcgiVBORw0KGgogZmFrZSBwbmcgiVBORw0KGgogZmFrZSBwbmcgiVBORw0KGgogZmFrZSBwbmcgiVBORw0KGgogZmFrZSBwbmcg
+--Apple-Mail-M
+Content-Type: text/html; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+<html><body>After image</body></html>
+--Apple-Mail-M--
+
+--Apple-Mail-A--

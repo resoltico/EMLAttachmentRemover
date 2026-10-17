@@ -1,0 +1,2 @@
+{"type":"start","protocol":1,"program":"remove-eml-attachments","version":"@VERSION@","dry_run":false,"total":0,"collection_complete":true}
+{"type":"summary","counts":{"created":0,"up_to_date":0,"planned":0,"failed":0,"not_processed":0},"interrupted":false,"collection_complete":true,"run_error":{"code":"NO_INPUTS","phase":"collection","detail":"No EML inputs were discovered","section":null},"exit_code":1}
