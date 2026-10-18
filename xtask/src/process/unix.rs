@@ -400,7 +400,9 @@ fn inspect(program: &Path, session: Pid, until: Instant) -> Result<(Vec<Row>, bo
         return Err("Inspection budget exhausted before spawn".into());
     }
     let mut process = Command::new(program)
-        .args(["-axo", "pid=,pgid=,state=,comm="])
+        // The short kernel command name is sufficient for diagnostics. Avoid
+        // resolving executable paths for every process in this global census.
+        .args(["-axo", "pid=,pgid=,state=,ucomm="])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

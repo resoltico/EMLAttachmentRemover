@@ -90,10 +90,6 @@ pub(crate) fn checked_tests(
         command.args(["--", "--color", "never"]);
         if listing {
             command.arg("--list");
-        } else {
-            // Each owned-process case contains its own concurrent adversaries.
-            // Avoid overlapping independent timing campaigns on small hosts.
-            command.arg("--test-threads=1");
         }
         #[cfg(target_os = "macos")]
         if let Some(mac) = &mac {
