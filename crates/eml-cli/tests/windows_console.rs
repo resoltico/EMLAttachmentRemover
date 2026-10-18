@@ -52,7 +52,13 @@ fn send(process: &Process<'_>, event: ConsoleEvent, root: &Path, name: &str) {
     let sender = process
         .start_interrupt(Path::new(SENDER), event, &stdout, &stderr)
         .unwrap();
-    assert_eq!(wait(&sender), 0);
+    let code = wait(&sender);
+    assert_eq!(
+        code,
+        0,
+        "Owned sender exit {code:#010x}; stderr: {:?}",
+        fs::read(root.join(format!("{name}.stderr"))).unwrap()
+    );
 }
 #[test]
 fn windows_first_console_interrupt_cancels_unfinished_request_after_actual_reader_handshake() {

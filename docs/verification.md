@@ -26,6 +26,14 @@ the owned process group settled with zero survivors. The next Intel harness
 captures a 15-second sample of only its NSWorkspace-returned app process during
 that query, and records the test runner's read-only accessibility trust state.
 Neither diagnostic changes system authorization or qualifies the app itself.
+The ARM H876c480 failure's retained native AX snapshot identifies both item
+refusals as SourceChanged at publication, not a missing UI report. The next
+owned harness disables NSWorkspace's optional Recent Items updates for both
+launch and document delivery, records native source ctime/mtime/owner/flags and
+xattr names, and checks original bytes in teardown even after failed assertions.
+Possible LaunchServices metadata interference remains a hypothesis; all Core
+identity/digest/signature guards are retained. H eb3addc's ARM app case passed
+while its merge 3e32026c ARM case failed; that variation remains explicit.
 The local SDK27 Intel source-build probe was run on ARM and caused Xcode to
 extract Apple's Intel stock test runner. That probe is outside the native-only
 test-infrastructure allowance and is excluded from acceptance evidence. Modified
@@ -76,6 +84,23 @@ its read-end copy after launch, and requires completion of a bounded write
 larger than that capacity while retaining the writer without EOF. The real CLI
 must consume input for this handshake to finish. This change addresses a
 possible fixture deadlock; native execution must still prove interruption.
+
+At M3e32026c the ARM native request handshake completes, but both console cases
+fail because the sender exits with 0xC000013A. The sender now retains its handler
+until normal exit instead of resetting it through FreeConsole. That actual
+corrected console execution is still pending. The same native suite passes the
+directory-alias case and the stale final-link rejection control. Its obsolete
+tar-extraction Unsupported expectation failed after protected Windows extraction
+became available; the shared positive byte/readback and negative material cases
+now run on Windows as well as Unix, with platform-specific mode checks retained.
+
+The actual ARM final CLI link succeeds and retains map/verbose/image identities
+at M3e32026c. PE policy then rejects bcryptprimitives.dll. It is now explicitly
+reviewed as the Windows OS provider for
+[ProcessPrng](https://learn.microsoft.com/en-us/windows/win32/seccng/processprng),
+which Microsoft's supported-client table places below this product's Windows10
+floor and the pinned getrandom source directly imports. This precise DLL
+admission does not approve other imports or complete static native-input review.
 
 `cargo xtask release-check --source FULL_SHA --version VERSION` is read-only
 admission for a later explicit owner release: exact clean source, fresh observed

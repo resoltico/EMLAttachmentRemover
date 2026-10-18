@@ -44,11 +44,18 @@ selected console event only within the target's private console. It never
 detaches an existing caller console and never inherits a Job handle which could
 prolong the Job after parent death. Sender acceptance is not proof of CLI handler
 completion; tests independently require actual process exit and zero members.
+The sender retains its ignore handler until normal process exit. It does not
+call FreeConsole after generation: Microsoft documents that this
+[resets the control-handler table](https://learn.microsoft.com/en-us/windows/console/setconsolectrlhandler),
+which can race the sender's own queued Ctrl-C into default termination. The
+actual native 0xC000013A sender failures are retained; corrected execution is
+still required on both CPUs.
 
 The two real CLI cases use anonymous owned pipes. One observes actual consumption
 of an unfinished request before CTRL_C. The other observes a partial real report
 and independently golden-checked complete copy, then sends distinct CTRL_C and
 CTRL_BREAK deliveries through the same CLI handler while output is blocked.
 Both require actual130 status, preserved original/copy facts and complete owned
-settlement. They remain unrun until recorded on both native CPUs. The helper and
+settlement. Both reached actual sender failure on ARM at source 3e32026c; the
+request handshake itself now completes. The helper and
 pipe fixtures are nonshipping; ordinary CLI product features do not enable them.

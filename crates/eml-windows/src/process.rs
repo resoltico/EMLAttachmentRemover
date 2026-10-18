@@ -20,7 +20,7 @@ use windows_sys::Win32::{
     Globalization::{CSTR_EQUAL, CSTR_GREATER_THAN, CSTR_LESS_THAN, CompareStringOrdinal},
     System::{
         Console::{
-            AttachConsole, CTRL_BREAK_EVENT, CTRL_C_EVENT, FreeConsole, GenerateConsoleCtrlEvent,
+            AttachConsole, CTRL_BREAK_EVENT, CTRL_C_EVENT, GenerateConsoleCtrlEvent,
             SetConsoleCtrlHandler,
         },
         JobObjects::*,
@@ -602,25 +602,19 @@ pub fn console_helper_entry() -> Option<std::process::ExitCode> {
                 "Target already terminated",
             ));
         }
-        // Never FreeConsole before attach: an accidental call from an existing
-        // console fails without changing that console's association.
+        // An accidental call from an existing console fails without changing
+        // that console's association.
         unsafe {
             native(AttachConsole(pid))?;
         }
-        let sent = (|| -> io::Result<()> {
-            unsafe {
-                native(SetConsoleCtrlHandler(Some(ignore_sender_event), 1))?;
-                native(GenerateConsoleCtrlEvent(event, 0))?;
-            }
-            Ok(())
-        })();
-        let detached = unsafe { native(FreeConsole()) };
-        match (sent, detached) {
-            (Ok(()), Ok(())) => Ok(()),
-            (a, b) => Err(io::Error::other(format!(
-                "Private console delivery: {a:?}; sender detach: {b:?}"
-            ))),
+        unsafe {
+            native(SetConsoleCtrlHandler(Some(ignore_sender_event), 1))?;
+            native(GenerateConsoleCtrlEvent(event, 0))?;
         }
+        // Keep the handler installed until this short sender exits normally.
+        // FreeConsole resets the table and can race its own queued Ctrl-C into
+        // the default termination handler. Process exit releases its attachment.
+        Ok(())
     })();
     Some(match result {
         Ok(()) => std::process::ExitCode::SUCCESS,

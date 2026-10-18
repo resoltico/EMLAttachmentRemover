@@ -26,6 +26,8 @@ fn library(bytes: &[u8]) -> Result<String> {
             | "userenv.dll"
             | "ws2_32.dll"
             | "bcrypt.dll"
+            // ProcessPrng is an OS CNG entry point used by Rust/getrandom.
+            | "bcryptprimitives.dll"
             | "bcryptprng.dll"
             | "secur32.dll"
             | "crypt32.dll"

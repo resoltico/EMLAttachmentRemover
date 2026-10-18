@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 import AppKit
 import ApplicationServices
+import Darwin
 import XCTest
 
 final class DesktopInteractionTests: XCTestCase {
@@ -15,8 +16,12 @@ final class DesktopInteractionTests: XCTestCase {
         let root = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
         let sources = ["one.eml", "two.eml"].map { root.appendingPathComponent($0) }
         let original = try Data(contentsOf: repository.appendingPathComponent("tests/contract/mime/inputs/01-gmail-attachment.eml"))
+        for source in sources { observeSource(source, phase: "before launch") }
         addTeardownBlock { @MainActor in
-            for source in sources { XCTAssertEqual(try Data(contentsOf: source), original) }
+            for source in sources {
+                self.observeSource(source, phase: "after owned app settlement")
+                XCTAssertEqual(try Data(contentsOf: source), original)
+            }
         }
         let bundle = try XCTUnwrap(Bundle(url: appURL))
         let identifier = try XCTUnwrap(bundle.bundleIdentifier)
@@ -28,6 +33,7 @@ final class DesktopInteractionTests: XCTestCase {
         let previousDestination = defaults["copyDestinationBytes"] as? String
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
+        configuration.addsToRecentItems = false
         configuration.arguments = ["-copyDestinationBytes", ""]
         let owned = try await NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
         let app = XCUIApplication(url: appURL)
@@ -88,6 +94,7 @@ final class DesktopInteractionTests: XCTestCase {
 
         let delivery = NSWorkspace.OpenConfiguration()
         delivery.createsNewApplicationInstance = false
+        delivery.addsToRecentItems = false
         let recipient = try await NSWorkspace.shared.open(sources, withApplicationAt: appURL, configuration: delivery)
         XCTAssertEqual(recipient.processIdentifier, owned.processIdentifier, "File batch reached another instance")
         let finished = NSPredicate { _, _ in
@@ -142,6 +149,36 @@ final class DesktopInteractionTests: XCTestCase {
         XCTAssertTrue(owned.isTerminated)
         XCTAssertEqual(UserDefaults.standard.persistentDomain(forName: identifier)?["copyDestinationBytes"] as? String, previousDestination,
                        "Invocation override must not persist a destination")
+    }
+
+    @MainActor
+    private func observeSource(_ source: URL, phase: String) {
+        var facts = stat()
+        let result = source.withUnsafeFileSystemRepresentation { path -> Int32 in
+            guard let path else { return -1 }
+            return lstat(path, &facts)
+        }
+        print("Owned source \(phase) \(source.lastPathComponent.debugDescription): stat=\(result); dev=\(facts.st_dev); inode=\(facts.st_ino); uid=\(facts.st_uid); gid=\(facts.st_gid); mode=\(facts.st_mode); size=\(facts.st_size); flags=\(facts.st_flags); mtime=\(facts.st_mtimespec.tv_sec).\(facts.st_mtimespec.tv_nsec); ctime=\(facts.st_ctimespec.tv_sec).\(facts.st_ctimespec.tv_nsec)")
+        source.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return }
+            let count = listxattr(path, nil, 0, XATTR_NOFOLLOW)
+            guard count >= 0 && count <= 65536 else {
+                print("Owned source xattr name extent unverified: \(count)")
+                return
+            }
+            var names = [CChar](repeating: 0, count: max(1, count))
+            let observed = names.withUnsafeMutableBufferPointer { buffer in
+                listxattr(path, buffer.baseAddress, buffer.count, XATTR_NOFOLLOW)
+            }
+            guard observed >= 0 && observed <= names.count else {
+                print("Owned source xattr names changed or unavailable: \(observed)")
+                return
+            }
+            let labels = names.prefix(observed).split(separator: 0).map {
+                String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+            }
+            print("Owned source xattr names \(phase): \(labels.debugDescription)")
+        }
     }
 
     @MainActor

@@ -1639,7 +1639,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
     fn cli_ustar_extracts_exact_materials_inside_the_retained_private_enclosure() {
         let owned = tempfile::tempdir().unwrap();
         let materials = synthetic_materials();
@@ -1667,23 +1666,25 @@ mod tests {
             fs::read(extracted.root().join("tool")).unwrap(),
             payloads[0]
         );
-        use std::os::unix::fs::PermissionsExt;
-        for (path, mode) in [
-            (extracted.root().to_owned(), 0o755),
-            (extracted.root().parent().unwrap().to_owned(), 0o700),
-            (extracted.root().join("tool"), 0o755),
-            (extracted.root().join("LICENSE"), 0o644),
-            (extracted.root().join("licenses/rust"), 0o755),
-        ] {
-            assert_eq!(
-                fs::metadata(path).unwrap().permissions().mode() & 0o777,
-                mode
-            );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for (path, mode) in [
+                (extracted.root().to_owned(), 0o755),
+                (extracted.root().parent().unwrap().to_owned(), 0o700),
+                (extracted.root().join("tool"), 0o755),
+                (extracted.root().join("LICENSE"), 0o644),
+                (extracted.root().join("licenses/rust"), 0o755),
+            ] {
+                assert_eq!(
+                    fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                    mode
+                );
+            }
         }
     }
 
     #[test]
-    #[cfg(unix)]
     fn cli_tar_rejects_missing_extra_and_changed_materials() {
         let owned = tempfile::tempdir().unwrap();
         let materials = synthetic_materials();
@@ -1739,37 +1740,6 @@ mod tests {
                 .is_err()
         );
         assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 1);
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn windows_tar_extraction_requires_protected_acl_evidence() {
-        let owned = tempfile::tempdir().unwrap();
-        let materials = synthetic_materials();
-        let mut entries: Vec<_> = materials
-            .iter()
-            .map(|(name, bytes)| (format!("package/{name}"), bytes.clone()))
-            .collect();
-        entries.push((
-            "package/tool".into(),
-            b"owned executable fixture, not invoked".to_vec(),
-        ));
-        let borrowed: Vec<_> = entries
-            .iter()
-            .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
-            .collect();
-        let snapshot = ArchiveSnapshot {
-            bytes: gzip(&ustar(&borrowed)),
-        };
-        assert_eq!(
-            snapshot
-                .extract_cli_tar_gz("package", "tool", &materials, owned.path())
-                .err()
-                .unwrap()
-                .kind(),
-            io::ErrorKind::Unsupported
-        );
-        assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 0);
     }
 
     #[test]
