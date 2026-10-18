@@ -125,7 +125,7 @@ fn stopped_before_launch_does_not_start_even_an_unavailable_helper() {
     root.close().unwrap();
 }
 #[test]
-fn wrong_version_refuses_before_request_and_captured_invalid_destination_remains_a_core_refusal() {
+fn wrong_version_and_invalid_destination_refuse_before_request() {
     let root = root();
     let source = root.path().join("message.eml");
     fs::write(&source, INPUT).unwrap();
@@ -147,7 +147,7 @@ fn wrong_version_refuses_before_request_and_captured_invalid_destination_remains
         Some(root.path().join("absent-destination")),
     );
     let mut worker = WorkerRun::start(
-        PathBuf::from(BIN),
+        root.path().join("absent-helper"),
         env!("CARGO_PKG_VERSION").into(),
         request,
         control,
@@ -155,8 +155,14 @@ fn wrong_version_refuses_before_request_and_captured_invalid_destination_remains
     .unwrap();
     let done = finish(&mut worker);
     assert!(done.settled && done.reusable, "{done:?}");
-    assert_eq!(done.exit_code, Some(2));
-    assert!(done.input_may_have_been_sent);
+    assert_eq!(done.failure, Some(WorkerFailure::Request));
+    assert_eq!(done.exit_code, None);
+    assert!(!done.input_may_have_been_sent);
+    assert!(
+        done.faults
+            .iter()
+            .any(|fault| fault.contains("Choose an existing copy destination"))
+    );
     assert!(fs::read(source).unwrap() == INPUT);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     root.close().unwrap();

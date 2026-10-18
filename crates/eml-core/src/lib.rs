@@ -44,7 +44,7 @@ mod selection;
 pub use collection::{
     CollectedObservation, CollectedSource, CollectedSources, CollectionState, InvalidRequest,
     MAX_COLLECTED_ITEMS, MAX_COLLECTED_PATH_BYTES, MAX_DIRECTORY_ENTRIES, MAX_WALK_DEPTH,
-    SourceOrigin, collect_sources,
+    SourceOrigin, check_output_location, collect_sources,
 };
 mod grammar;
 mod message;

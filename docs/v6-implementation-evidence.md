@@ -425,3 +425,15 @@ instances exited; a fresh observer found zero keys. This supplementary SDK27
 observation did not select files through the native picker or prove processing,
 drop, Services, accessibility, close/reopen or final native archive acceptance.
 No owner destination preference was changed. Complete GUI acceptance remains open.
+
+The desktop supervisor now checks a captured output before even probing the
+worker executable, on its existing owned background thread. The Core binding
+routine is shared with collection, so the GUI introduces no filesystem policy.
+This read-only diagnostic does not authorize subsequent processing: collection
+rebinds the output and publication retains its existing checks. A missing output
+produces a settled, reusable Request refusal with actionable destination guidance,
+no fabricated process exit and no request sent. A real missing-helper negative
+control demonstrates that output refusal precedes launch. Nine actual supervised
+worker tests and the Core read-only/file-versus-directory/disappearance test
+passed locally, along with strict GUI Clippy. Blocking native I/O remains owned
+until actual settlement; this does not claim a hard deadline for filesystem calls.

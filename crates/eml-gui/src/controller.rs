@@ -16,6 +16,9 @@ use std::{
 fn terminal_label(completion: &eml_app::WorkerCompletion) -> &'static str {
     use eml_app::WorkerFailure;
     match completion.failure {
+        Some(WorkerFailure::Request) => {
+            "Selection not started. Choose an existing copy destination or Beside originals. Originals are unchanged."
+        }
         Some(WorkerFailure::Launch) => {
             "The bundled worker could not start. Reinstall the app and try again."
         }

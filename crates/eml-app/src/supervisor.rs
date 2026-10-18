@@ -22,6 +22,8 @@ use std::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkerFailure {
+    /// Core refused the captured output before any helper launch.
+    Request,
     /// The exact bundled executable could not be started or set up.
     Launch,
     /// Exact private worker version/compiled CPU/OS did not match.
@@ -371,6 +373,21 @@ fn execute_inner(
             return completion;
         }
         _ => {}
+    }
+    // This owner thread may block in native filesystem I/O. No UI thread waits
+    // on it, and its lifetime remains owned until it actually settles. Core
+    // repeats the binding during processing; this is never publication authority.
+    if let Err(error) = eml_core::check_output_location(request.request()) {
+        completion.failure = Some(WorkerFailure::Request);
+        completion.settled = true;
+        completion.reusable = true;
+        issue(
+            &mut completion.faults,
+            format!(
+                "Selection not started: {error}. Choose an existing copy destination or Beside originals. Originals are unchanged."
+            ),
+        );
+        return completion;
     }
     let probe = observe(&helper, None, &token, None, Arc::clone(&health));
     let probe = match probe {

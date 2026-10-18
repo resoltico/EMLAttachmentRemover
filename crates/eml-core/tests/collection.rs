@@ -28,6 +28,41 @@ fn displays(result: &eml_core::CollectedSources<'_>) -> Vec<PathBuf> {
 }
 
 #[test]
+fn output_preflight_is_read_only_and_does_not_authorize_later_collection() {
+    let root = scratch();
+    let output = root.path().join("copies");
+    let mut req = request(root.path(), &["missing-source.eml"]);
+    req.output = OutputLocation::Directory(output.clone());
+    assert!(matches!(
+        eml_core::check_output_location(&req),
+        Err(InvalidRequest::OutputDirectory(_))
+    ));
+    assert!(
+        !output.exists(),
+        "Preflight created the missing destination"
+    );
+    fs::write(&output, b"ordinary file is not a directory").unwrap();
+    assert!(matches!(
+        eml_core::check_output_location(&req),
+        Err(InvalidRequest::OutputDirectory(_))
+    ));
+    assert_eq!(
+        fs::read(&output).unwrap(),
+        b"ordinary file is not a directory"
+    );
+    fs::remove_file(&output).unwrap();
+    fs::create_dir(&output).unwrap();
+    eml_core::check_output_location(&req).unwrap();
+    assert_eq!(fs::read_dir(&output).unwrap().count(), 0);
+    fs::remove_dir(&output).unwrap();
+    assert!(matches!(
+        collect_sources(&req, &RunControl::default()),
+        Err(InvalidRequest::OutputDirectory(_))
+    ));
+    root.close().unwrap();
+}
+
+#[test]
 fn ordered_dfs_skips_only_walked_names_and_keeps_first_encounter_layout() {
     let root = scratch();
     fs::create_dir_all(root.path().join("selected/nested")).unwrap();

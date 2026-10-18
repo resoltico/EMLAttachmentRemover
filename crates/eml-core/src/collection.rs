@@ -215,6 +215,49 @@ pub fn collect_sources<'a>(
     let random = RandomState::new();
     collect_with_hash(request, control, move |path| random.hash_one(path))
 }
+
+/// Check the captured output using the same read-only binding rules as collection.
+/// This is an early diagnostic only: collection and publication must bind again.
+/// It neither walks sources nor creates a destination. Call outside a UI thread.
+pub fn check_output_location(request: &RunRequest) -> Result<(), InvalidRequest> {
+    request
+        .validate_path_limits()
+        .map_err(InvalidRequest::Paths)?;
+    if matches!(request.output, OutputLocation::BesideSource) {
+        return Ok(());
+    }
+    let context = WorkingContext::capture(&request.working_directory)
+        .map_err(InvalidRequest::WorkingDirectory)?;
+    bind_output(request, &context).map(|_| ())
+}
+
+fn bind_output(
+    request: &RunRequest,
+    context: &WorkingContext,
+) -> Result<Option<BoundDirectory>, InvalidRequest> {
+    let OutputLocation::Directory(path) = &request.output else {
+        return Ok(None);
+    };
+    let observed = context
+        .observe(path)
+        .map_err(|error| InvalidRequest::OutputDirectory(selection_io(error)))?;
+    if observed.kind != EntryKind::Directory {
+        return Err(InvalidRequest::OutputDirectory(io::Error::new(
+            io::ErrorKind::NotADirectory,
+            "Output is not an ordinary directory",
+        )));
+    }
+    let directory = context
+        .directory(path)
+        .map_err(|error| InvalidRequest::OutputDirectory(selection_io(error)))?;
+    if directory.identity() != observed.identity {
+        return Err(InvalidRequest::OutputDirectory(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Output root identity changed",
+        )));
+    }
+    Ok(Some(directory))
+}
 fn collect_with_hash<'a>(
     request: &'a RunRequest,
     control: &RunControl,
@@ -236,27 +279,7 @@ fn collect_with_hash<'a>(
     }
     let context = WorkingContext::capture(&request.working_directory)
         .map_err(InvalidRequest::WorkingDirectory)?;
-    if let OutputLocation::Directory(path) = &request.output {
-        let observed = context
-            .observe(path)
-            .map_err(|error| InvalidRequest::OutputDirectory(selection_io(error)))?;
-        if observed.kind != EntryKind::Directory {
-            return Err(InvalidRequest::OutputDirectory(io::Error::new(
-                io::ErrorKind::NotADirectory,
-                "Output is not an ordinary directory",
-            )));
-        }
-        let directory = context
-            .directory(path)
-            .map_err(|error| InvalidRequest::OutputDirectory(selection_io(error)))?;
-        if directory.identity() != observed.identity {
-            return Err(InvalidRequest::OutputDirectory(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Output root identity changed",
-            )));
-        }
-        collector.result.output = Some(directory);
-    }
+    collector.result.output = bind_output(request, &context)?;
     collector.result.context = Some(context);
     if !collector.bind_roots() {
         return Ok(collector.result);
