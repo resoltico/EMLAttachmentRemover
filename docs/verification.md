@@ -21,6 +21,16 @@ waits for the owned NSRunningApplication's native finished-launching state and
 activates its exact app. This is a pending diagnostic change, not evidence that
 the Intel AX failure is fixed.
 
+H876c480 again timed out on the Intel AX snapshot after native launch/activation;
+the owned process group settled with zero survivors. The next Intel harness
+captures a 15-second sample of only its NSWorkspace-returned app process during
+that query, and records the test runner's read-only accessibility trust state.
+Neither diagnostic changes system authorization or qualifies the app itself.
+The local SDK27 Intel source-build probe was run on ARM and caused Xcode to
+extract Apple's Intel stock test runner. That probe is outside the native-only
+test-infrastructure allowance and is excluded from acceptance evidence. Modified
+Intel test code must compile and execute on the real pinned Intel runner.
+
 The no-universal/no-lipo product policy remains absolute for every shipping CLI,
 app and worker. A reviewed test-infrastructure clarification permits Xcode itself
 to run only `lipo -extract` on Apple's supplied stock XCTRunner test agent for the

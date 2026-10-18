@@ -1,6 +1,7 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
 import AppKit
+import ApplicationServices
 import XCTest
 
 final class DesktopInteractionTests: XCTestCase {
@@ -48,6 +49,8 @@ final class DesktopInteractionTests: XCTestCase {
             return
         }
         app.activate()
+        // Read-only diagnostic; never prompt for or change accessibility access.
+        print("Test runner accessibility trust: \(AXIsProcessTrusted())")
         #if arch(x86_64)
         // Diagnose the repeatable Intel AX snapshot stall using only the exact
         // NSWorkspace-returned app PID. No name lookup, signal or owner app.
