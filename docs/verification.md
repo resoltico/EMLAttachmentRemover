@@ -120,6 +120,17 @@ member inventory, or proof against adversarial changes between observations.
 Native execution of this additional capture and complete static-input review
 remain required.
 
+At Hc83b04b both native Windows CPUs execute the real console cases successfully,
+and the actual final links pass PE import inspection (ARM119/x64118 imported
+functions; no delayed imports). The native workspace aggregate still fails:
+the exact-one-test cwd child inherited stdout and leaked a filtered libtest
+summary/interleaved case name into the outer unfiltered transcript. Its output
+is now captured separately, and the parent requires successful status, the exact
+one-case pass and one successful child summary. The outer discovery/case/suite/
+filtered checks are retained unchanged. Corrected aggregate execution is pending.
+At the same H, the ARM app producer and its same-archive macOS15 row pass the
+actual basic GUI scenario. Intel app failure and full GUI conditions remain open.
+
 `cargo xtask release-check --source FULL_SHA --version VERSION` is read-only
 admission for a later explicit owner release: exact clean source, fresh observed
 main ancestry, Cargo version, one nonempty calendar-dated release section, absent

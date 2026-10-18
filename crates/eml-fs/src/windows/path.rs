@@ -579,6 +579,8 @@ mod tests {
     #[test]
     fn captured_state_survives_owned_child_cwd_change() {
         const CHILD_ROOT: &str = "EML_OWNED_PATH_CAPTURE_TEST_ROOT";
+        const TEST_NAME: &str =
+            "windows::path::tests::captured_state_survives_owned_child_cwd_change";
         if let Some(root) = std::env::var_os(CHILD_ROOT) {
             let root = PathBuf::from(root);
             let context = PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
@@ -638,18 +640,32 @@ mod tests {
             b"changed second directory",
         )
         .unwrap();
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "windows::path::tests::captured_state_survives_owned_child_cwd_change",
-                "--test-threads=1",
-                "--nocapture",
-            ])
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", TEST_NAME, "--test-threads=1", "--color", "never"])
             .env(CHILD_ROOT, root.path())
             .current_dir(root.path().join("first"))
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success());
+        assert!(output.status.success(), "Owned cwd child: {output:?}");
+        // Its intentional exact-one-test selection is fixture evidence, not an
+        // extra outer suite/case or a filtered workspace qualification result.
+        let stdout = std::str::from_utf8(&output.stdout).unwrap();
+        assert_eq!(
+            stdout
+                .lines()
+                .filter(|line| *line == format!("test {TEST_NAME} ... ok"))
+                .count(),
+            1,
+            "Owned cwd child: {output:?}"
+        );
+        assert_eq!(
+            stdout
+                .lines()
+                .filter(|line| line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;"))
+                .count(),
+            1,
+            "Owned cwd child: {output:?}"
+        );
         root.close().unwrap();
     }
     fn read_direct_ordinary(path: &Path) -> io::Result<Vec<u8>> {
