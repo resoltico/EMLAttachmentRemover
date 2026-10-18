@@ -19,6 +19,15 @@ const SELECTION: &str = "(authorize_deletions|check_edit_ranges)";
 fn command(campaign: &Campaign, selection: &str) -> Result<Command> {
     let mut command = campaign.tool_command("mutants")?;
     command.args(["--no-config", "--package", "eml-core", "--re", selection]);
+    // cargo-mutants27.1's struct-field visitor bypasses its name filter.
+    // Bound both discovery and execution to the real guard-containing files;
+    // positive_guards still rejects any function outside the requested scope.
+    for path in [
+        "crates/eml-core/src/plan.rs",
+        "crates/eml-core/src/verify.rs",
+    ] {
+        command.args(["--file", path]);
+    }
     Ok(command)
 }
 fn discovery(campaign: &Campaign, selection: &str) -> Result<Vec<Value>> {
@@ -290,8 +299,14 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
     let all = discovery(&campaign, SELECTION)?;
     let guard_counts = positive_guards(&all)?;
     let mut merge_base = None;
-    let selection = if initial {
-        SELECTION.to_owned()
+    let (selection, required_guards) = if initial {
+        (
+            SELECTION.to_owned(),
+            GUARDS
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect::<BTreeSet<_>>(),
+        )
     } else {
         let resolved = resolved_base
             .as_deref()
@@ -324,11 +339,24 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
             campaign.report(&serde_json::json!({"source":campaign.sha,"merge_base":merge_base,"status":"not_applicable","reason":"Neither selected guard changed; other code is not claimed mutation-covered","guard_discovery":guard_counts}))?;
             return Ok(());
         }
-        format!("({})", guards.into_iter().collect::<Vec<_>>().join("|"))
+        (
+            format!("({})", guards.iter().cloned().collect::<Vec<_>>().join("|")),
+            guards,
+        )
     };
     let selected = discovery(&campaign, &selection)?;
     if selected.is_empty() {
         return Err("Changed guards require positive mutant discovery".into());
+    }
+    let selected_guards = selected
+        .iter()
+        .map(function)
+        .map(|result| result.map(str::to_owned))
+        .collect::<Result<BTreeSet<_>>>()?;
+    if selected_guards != required_guards {
+        return Err(
+            "Mutation selection omitted a required guard or escaped the changed guard scope".into(),
+        );
     }
     fs::write(
         campaign.directory.join("discovery.json"),
@@ -341,14 +369,9 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
         campaign.sha,
         campaign.directory.display()
     )?;
-    let mut child = campaign.tool_command("mutants")?;
+    let mut child = command(&campaign, &selection)?;
     child
         .args([
-            "--no-config",
-            "--package",
-            "eml-core",
-            "--re",
-            &selection,
             "--cap-lints=true",
             "--profile",
             "mutants",
