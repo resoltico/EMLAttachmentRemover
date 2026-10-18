@@ -484,19 +484,19 @@ fresh before/after processes. Native pinned-Xcode execution on both CPUs remains
 required. File/folder pickers, drag, Services, queue/retention, active Stop/Force
 Stop/Quit, other frames and accessibility/appearance checks remain open.
 
-The first ordinary-user exFAT create invocation at30faf41 was refused by the
-hosted ARM image service with Operation not permitted, before attach/Core work.
-It is a failed/unrun volume gate. The probe now uses sudo -n only for the owned
-image-service create/attach/info/detach operations on fresh hosted runners; Core
-and primitive observations still execute as the ordinary runner. Original
-failure evidence is retained and actual privileged-service results are pending.
+ExFAT image creation failed at30faf41, at PR merge4185d7e/run39103853108
+with the attempted administrator route, and locally at4aca758. All returned
+Operation not permitted before the explicit probe attach/Core steps. Local native
+hdiutil debug output established the cause: newfs_exfat rejected the volume
+label's length, then hdiutil translated that formatter status into EPERM. The
+native newfs_exfat manual specifies at most11 UTF16 characters. The label is now
+EMLPROBE; the unnecessary sudo path is completely removed. These failed attempts
+remain failures, not exFAT integration evidence or proof of a host privilege limit.
 
-The privileged image service also refused create at PR merge4185d7e
-(run39103853108), still before attach/Core work. Local ordinary-user execution
-of the same owned-image probe is now supported without any sudo path. It requires
-a clean committed checkout, creates only its admitted private enclosure/image,
+The same ordinary-user owned-image probe works locally or on CI. It requires a
+clean committed checkout, creates only its admitted private enclosure/image,
 retains exact mount/device/backing-file ownership checks and does not run a GUI.
-Its actual result remains pending; hosted privilege failures remain failures.
+The corrected actual volume result remains pending.
 
 That merge's app startup also caught an integration defect in the first drop
 hook: Slint had not yet materialized a native window immediately after show, so
