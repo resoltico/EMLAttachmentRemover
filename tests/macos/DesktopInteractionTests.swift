@@ -265,6 +265,7 @@ final class DesktopInteractionTests: XCTestCase {
     snapshot(app, "about")
     about.buttons["_XCUI:CloseWindow"].click()
     // Keyboard traversal must cause distinct native effects, not merely send keys.
+    print("EML_NATIVE_PICKER_REQUESTED")
     app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
     app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
     let keyboardPicker = app.sheets.firstMatch
@@ -834,6 +835,7 @@ final class DesktopInteractionTests: XCTestCase {
 
   @MainActor
   private func choose(_ app: XCUIApplication, path: URL, folder: Bool) async throws {
+    print("EML_NATIVE_PICKER_REQUESTED")
     if folder {
       app.buttons["Choose folder…"].click()
     } else {

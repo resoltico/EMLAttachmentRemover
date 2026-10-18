@@ -1163,3 +1163,41 @@ Forward/reverse Tab navigation must activate distinct real native picker/About
 presentations. SDK27 XCTest build-for-testing passed. These new interaction cases
 remain unrun on pinned hosted Macs; appearance and broader accessibility
 acceptance remain open. No local owner GUI operation or preference write occurred.
+
+## Both-CPU lifecycle evidence and picker-stall diagnosis
+
+The completed Hff4abfb Intel artifact also passed all four real-Core native GUI
+fixture scenarios, one test each with zero failures/skips and strict whole-domain
+preference preservation. The shipping workflow failed its first Command-O input
+picker: accessibility queries became unavailable during the request. The inline
+Swift panel probe returned from construction but remained invisible and ended
+with callback timeout/exit2; it did not pass presentation on that host. Product
+and runner cleanup settled normally, and all four originals remained unchanged.
+Both app gates, both dependent floor consumers and both aggregate gates failed.
+
+H5094081d4980a03604b5e1c6d6f77243116ba654 renewed the bounded campaigns:
+978,497 fuzz executions,12 fixtures+10 edges,60second requested/61,516ms observed,
+no finding/artifact;15 discovered/executed mutants,14 caught,1 reviewed
+compiler-invalid, zero missed/timeouts,64,242ms. The clean notices source-material
+check passed all10 profiles/603 entries. CI39160517086 is the new exact-H run and
+M9dbe8c7530ce305fac970ee452e24fa6b5e83d91 has ordered parents base/H; native
+execution remains pending until its individual jobs finish.
+
+A diagnostic-only test-log marker now asks the external lifetime owner to capture
+at most three three-second stack samples of its retained application. The owner
+checks bundle/launch identity before sampling, records whether that retained
+instance remained alive afterward, bounds the sampler and retains actual text
+beside owner-result.json for upload. Relay reads/writes are bounded/throwing;
+runner failure is preserved before any EOF/relay failure, with separate relay
+observations. The sampler gets only250ms extra settlement during cancellation,
+leaving the existing owner cleanup grace available. No local app is launched and
+no picker verdict is manufactured. Every marker byte split, incomplete-marker
+rejection and EOF/first-error preservation passed in the actual Swift fixture;
+SDK27 normal-owner compilation, strict Swift formatting, xtask Clippy and workflow
+lint passed. Real hosted stack capture remains unrun.
+
+The product's technical disclosure now includes its own native appearance and
+Increase Contrast observations, refreshed when those values change. This
+frontend diagnosis is separate from Core outcomes and report export facts.
+Enabled GUI strict Clippy passed; real light/dark/contrast interaction and
+screenshots are still required. No owner appearance preference was changed.

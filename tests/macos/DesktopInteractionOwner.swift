@@ -4,9 +4,56 @@ import AppKit
 import Darwin
 import Foundation
 
+// The pipe callback and lifetime owner share only this bounded observation.
+// NSLock protects every mutable field; no native app capability crosses threads.
+final class PickerDiagnosticOutput: @unchecked Sendable {
+  private let lock = NSLock()
+  private var tail = Data()
+  private var pending = false
+  private var ended = false
+  private var relayFailure: String?
+  func failRelay(_ reason: String) {
+    lock.lock()
+    relayFailure = relayFailure ?? reason
+    lock.unlock()
+  }
+  func observedRelayFailure() -> String? {
+    lock.lock()
+    defer { lock.unlock() }
+    return relayFailure
+  }
+  func finish() {
+    lock.lock()
+    ended = true
+    lock.unlock()
+  }
+  func hasEnded() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return ended
+  }
+  func observe(_ bytes: Data) {
+    let marker = Data("EML_NATIVE_PICKER_REQUESTED".utf8)
+    lock.lock()
+    defer { lock.unlock() }
+    let combined = tail + bytes
+    if combined.range(of: marker) != nil { pending = true }
+    tail = combined.suffix(marker.count - 1)
+  }
+  func take() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    let value = pending
+    pending = false
+    return value
+  }
+}
+
 // Test-only lifetime authority. XCTest receives observations for attachment;
 // this process retains the NSWorkspace-returned object across runner failure.
-@main
+#if !PICKER_MARKER_TESTS
+  @main
+#endif
 @MainActor
 struct DesktopInteractionOwner {
   private final class Cancellation { var requested = false }
@@ -27,6 +74,10 @@ struct DesktopInteractionOwner {
     var forcedApp = false
     var timedOut = false
     var unexpected: [pid_t] = []
+    var stackSamples: [[String: Any]] = []
+    var outputPipe: Pipe?
+    let pickerMarker = PickerDiagnosticOutput()
+    var outputDrainComplete: Bool?
     let child = Process()
     let executionDeadline = ProcessInfo.processInfo.systemUptime + 1800
     let cancellation = Cancellation()
@@ -116,12 +167,71 @@ struct DesktopInteractionOwner {
       child.executableURL = URL(fileURLWithPath: arguments[4])
       child.arguments = Array(arguments.dropFirst(5))
       child.standardInput = FileHandle.nullDevice
-      child.standardOutput = FileHandle.standardOutput
+      if input["picker_stack"] == "true" {
+        let pipe = Pipe()
+        outputPipe = pipe
+        child.standardOutput = pipe
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+          do {
+            let bytes = try handle.read(upToCount: 64 * 1024) ?? Data()
+            if bytes.isEmpty {
+              handle.readabilityHandler = nil
+              pickerMarker.finish()
+            } else {
+              pickerMarker.observe(bytes)
+              do { try FileHandle.standardOutput.write(contentsOf: bytes) } catch {
+                pickerMarker.failRelay("Output write failed: \(error)")
+              }
+            }
+          } catch {
+            pickerMarker.failRelay("Output read failed: \(error)")
+            handle.readabilityHandler = nil
+            pickerMarker.finish()
+          }
+
+        }
+      } else {
+        child.standardOutput = FileHandle.standardOutput
+      }
       child.standardError = FileHandle.standardError
       try child.run()
       var ready = false
       var shortDeadline: TimeInterval?
       while child.isRunning {
+        if pickerMarker.take(), stackSamples.count < 3, !launched.isTerminated {
+          let sample = Process()
+          let sampleURL = URL(fileURLWithPath: arguments[3]).deletingLastPathComponent()
+            .appendingPathComponent("native-picker-stack-\(stackSamples.count).txt")
+          guard !FileManager.default.fileExists(atPath: sampleURL.path),
+            launched.launchDate?.timeIntervalSince1970 == date.timeIntervalSince1970,
+            launched.bundleURL?.standardizedFileURL == appURL.standardizedFileURL
+          else { throw Failure.launchIdentity }
+          sample.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+          sample.arguments = [String(launched.processIdentifier), "3", "-file", sampleURL.path]
+          sample.standardInput = FileHandle.nullDevice
+          sample.standardOutput = FileHandle.standardError
+          sample.standardError = FileHandle.standardError
+          try sample.run()
+          let sampleDeadline = min(executionDeadline, ProcessInfo.processInfo.systemUptime + 10)
+          while sample.isRunning && !cancellation.requested
+            && ProcessInfo.processInfo.systemUptime < sampleDeadline
+          {
+            try await Task.sleep(for: .milliseconds(50))
+          }
+          if sample.isRunning { sample.terminate() }
+          let settle = ProcessInfo.processInfo.systemUptime + 0.25
+          while sample.isRunning && ProcessInfo.processInfo.systemUptime < settle {
+            try await Task.sleep(for: .milliseconds(50))
+          }
+          guard !sample.isRunning else { throw Failure.deadline }
+          sample.waitUntilExit()
+          stackSamples.append([
+            "path": sampleURL.path, "status": sample.terminationStatus,
+            "reason": sample.terminationReason.rawValue,
+            "retained_target_alive_after": !launched.isTerminated,
+            "scope": "read-only diagnostic; never a picker or product qualification verdict",
+          ])
+        }
         let runnerReady =
           input["runner_ready"].map { FileManager.default.fileExists(atPath: $0) } ?? true
         if !ready && runnerReady {
@@ -158,6 +268,20 @@ struct DesktopInteractionOwner {
         failure =
           "Interaction runner failed: reason=\(child.terminationReason.rawValue), status=\(child.terminationStatus)"
       }
+      if outputPipe != nil {
+        let drainDeadline = ProcessInfo.processInfo.systemUptime + 2
+        while !pickerMarker.hasEnded() && ProcessInfo.processInfo.systemUptime < drainDeadline {
+          try await Task.sleep(for: .milliseconds(50))
+        }
+        outputDrainComplete = pickerMarker.hasEnded()
+        if !pickerMarker.hasEnded() {
+          failure = failure ?? "Interaction output drain did not settle"
+        }
+        if let relayFailure = pickerMarker.observedRelayFailure() {
+          failure = failure ?? relayFailure
+        }
+      }
+
     } catch { failure = String(describing: error) }
 
     // Internal failure/deadline and the controller's opted-in TERM grace.
@@ -224,6 +348,13 @@ struct DesktopInteractionOwner {
         "source_check_failure": originalsUnchanged
           ? NSNull() : "Owned original fixture bytes changed or could not be read",
         "owned_pasteboard_released": hadBoard,
+        "native_picker_stack_samples": stackSamples,
+        "native_picker_output_relay": [
+          "enabled": outputPipe != nil,
+          "eof_observed": pickerMarker.hasEnded(),
+          "drain_within_deadline": outputDrainComplete.map { $0 as Any } ?? NSNull(),
+          "failure": pickerMarker.observedRelayFailure().map { $0 as Any } ?? NSNull(),
+        ],
       ]
       var observation = result
       observation["ownership_receipt"] = ownershipReceipt.map { $0 as Any } ?? NSNull()
@@ -232,6 +363,7 @@ struct DesktopInteractionOwner {
       ).write(to: resultURL, options: .withoutOverwriting)
     } catch { failure = failure ?? String(describing: error) }
     for source in signals { source.cancel() }
+    outputPipe?.fileHandleForReading.readabilityHandler = nil
     if let failure {
       try? FileHandle.standardError.write(
         contentsOf: Data("Desktop fixture owner: \(failure)\n".utf8))

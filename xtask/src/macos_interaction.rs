@@ -344,6 +344,9 @@ pub(crate) fn run_case(
     fs::create_dir(&input)?;
     let mut invocation =
         json!({"app":app,"fixture":fixture.path(),"host_scope":"fresh-github-hosted-runner"});
+    if case == DesktopCase::Workflow {
+        invocation["picker_stack"] = json!("true");
+    }
     if case != DesktopCase::Workflow {
         use base64::Engine;
         use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
@@ -417,6 +420,30 @@ pub(crate) fn run_case(
         30,
     )?;
     let owner = out.join("DesktopInteractionOwner");
+    if case == DesktopCase::Workflow {
+        let tests = out.join("PickerDiagnosticOutputTests");
+        let mut compile = build.command(root, &build.swiftc);
+        compile
+            .args([
+                "-parse-as-library",
+                "-D",
+                "PICKER_MARKER_TESTS",
+                "-target",
+                &build.swift_target(),
+                "-sdk",
+            ])
+            .arg(&build.sdk)
+            .arg(root.join("tests/macos/DesktopInteractionOwner.swift"))
+            .arg(root.join("tests/macos/PickerDiagnosticOutputTests.swift"))
+            .arg("-o")
+            .arg(&tests);
+        crate::macos::checked_run(compile, &out.join("picker-marker-tests-build.log"), 120)?;
+        crate::macos::checked_run(
+            build.command(root, &tests),
+            &out.join("picker-marker-tests.log"),
+            30,
+        )?;
+    }
     let mut compile = build.command(root, &build.swiftc);
     compile
         .args([

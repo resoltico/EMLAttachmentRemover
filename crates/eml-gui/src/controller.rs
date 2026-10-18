@@ -778,7 +778,8 @@ impl Controller {
                 && self.export.is_none()
                 && selected.is_some_and(|report| report.completion().is_some()),
         );
-        if let Ok((dark, contrast)) = crate::native::appearance() {
+        let appearance = crate::native::appearance().ok();
+        if let Some((dark, contrast)) = appearance {
             window.set_dark_appearance(dark);
             window.set_high_contrast(contrast);
         }
@@ -788,7 +789,7 @@ impl Controller {
                 let pages = facts.items().len().div_ceil(64).max(1);
                 self.page = self.page.min(pages - 1);
                 self.item = self.item.min(facts.items().len().saturating_sub(1));
-                let key = format!("{}:{}:{}:{}:{}:{}:{}:{:?}:{}", report.id(), self.page, self.item, self.part_page, facts.items().len(), facts.start().is_some(), facts.summary().is_some(), facts.failure(), completion.is_some());
+                let key = format!("{}:{}:{}:{}:{}:{}:{}:{:?}:{}:{appearance:?}", report.id(), self.page, self.item, self.part_page, facts.items().len(), facts.start().is_some(), facts.summary().is_some(), facts.failure(), completion.is_some());
                 if self.view_key.as_ref() == Some(&key) {return None;}
                 let mut summary = format!("Run {} · ", report.id());
                 match facts.start() {
@@ -809,6 +810,10 @@ impl Controller {
                 }).collect::<Vec<slint::SharedString>>();
                 let mut detail = String::new();
                 let mut technical = format!("Protocol failure: {:?}\n", facts.failure());
+                match appearance {
+                    Some((dark, contrast)) => technical.push_str(&format!("Interface native appearance: {}; increased contrast: {contrast}\n", if dark {"dark"} else {"light"})),
+                    None => technical.push_str("Interface native appearance: unavailable\n"),
+                }
                 if let Some(completion) = completion {technical.push_str(&format!("Worker exit {:?}; signal {:?}; failure {:?}; settled {}; reusable {}\nInterrupt calls {}; first interrupt observed {}\n{}\nStderr{}:\n{}\n", completion.exit_code, completion.signal, completion.failure, completion.settled, completion.reusable, completion.interrupt_calls_succeeded, completion.first_interrupt_observed, DisplayText::new(&completion.faults.join("; ")), if completion.stderr_truncated {" (truncated)"} else {""}, display_lines(&String::from_utf8_lossy(&completion.stderr))));}
                 if let Some(item) = facts.items().get(self.item) {
                     detail.push_str(&format!("{}\nSource: {}\nCopy: {}\n", item_label(item), DisplayText::new(&item.source.display), item.destination.value().map_or_else(|| "—".into(), |path| DisplayText::new(&path.display).to_string())));
