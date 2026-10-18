@@ -681,3 +681,11 @@ before producing wrapper trace. Cargo stdout's compiler-message JSON was formerl
 behind a generic capture failure. Builds now retain cargo.jsonl/separate stderr
 before checking status and display bounded rendered compiler diagnostics while
 preserving the first process failure. Neither link nor ACL qualification passed.
+
+Repeated cold Slint compilation was delaying real native feedback. Native Mac
+builds now share a target-specific Cargo intermediate directory, with a pinned
+official cache action keyed by compiler/tool policy, manifests/lock, target and
+configuration. The product staging directories remain fresh. Every image is
+copied and frozen again; signatures, archive readback, extraction, Core behavior
+and GUI checks remain mandatory. Cache identity is not qualification. Source
+Clippy and workflow lint pass; actual restored-cache native execution is pending.

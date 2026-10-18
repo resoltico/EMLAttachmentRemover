@@ -423,6 +423,9 @@ pub(crate) struct MacBuild {
     pub sdk_version: String,
 }
 impl MacBuild {
+    pub fn cargo_directory(&self, root: &Path) -> PathBuf {
+        root.join("target/native-cargo").join(&self.host)
+    }
     pub fn command(&self, root: &Path, program: impl AsRef<OsStr>) -> Command {
         let mut command = selected_command(root, &self.developer, program);
         command.env("SDKROOT", &self.sdk);

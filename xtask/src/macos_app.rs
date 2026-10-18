@@ -15,7 +15,7 @@ pub(crate) fn build_sources(root: &Path, out: &Path) -> Result<()> {
     let result = (|| -> Result<()> {
         let build = macos::load(root)?;
         let host = crate::native_host::inspect(root, &build.host, "macos", &build.architecture)?;
-        let target_directory = out.join("cargo");
+        let target_directory = build.cargo_directory(root);
         let mut compile = build.command(root, "cargo");
         compile
             .args([

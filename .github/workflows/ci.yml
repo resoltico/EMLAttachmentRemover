@@ -358,10 +358,26 @@ jobs:
         with:
           artifact-ids: ${{ needs.icon.outputs.artifact_id || needs.icon_fallback.outputs.artifact_id }}
           path: target/icon-input
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cargo_cache
+        with:
+          path: |
+            target/native-cargo/${{ matrix.target }}
+            ~/.cargo/registry/src
+            ~/.cargo/registry/cache
+          key: macos-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
       - name: Build and verify native CLI and complete ad hoc app archives
         run: |
           cargo xtask build-cli-archive --target '${{ matrix.target }}' --out target/native-cli-build
           cargo xtask build-macos-app --icons target/icon-input --out target/native-app-build
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: ${{ !cancelled() && steps.cargo_cache.outputs.cache-hit != 'true' }}
+        with:
+          path: |
+            target/native-cargo/${{ matrix.target }}
+            ~/.cargo/registry/src
+            ~/.cargo/registry/cache
+          key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-products-${{ github.sha }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}

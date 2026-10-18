@@ -75,7 +75,9 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
     let work = xtask::archive::create_artifact_directory(&out)?;
     #[cfg(windows)]
     let cargo = work.path().join("cargo");
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    let cargo = mac.cargo_directory(root);
+    #[cfg(not(any(windows, target_os = "macos")))]
     let cargo = out.join("cargo");
     #[cfg(windows)]
     let wrapper =

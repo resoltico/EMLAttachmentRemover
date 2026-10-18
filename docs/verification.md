@@ -22,6 +22,14 @@ honors this switch. This avoids an observed persistent SWBBuildService child;
 it does not waive generic survivor rejection or change saved Xcode defaults.
 The local source build accepts the mode; pinned native execution remains required.
 
+Native macOS CLI/desktop compilation shares a CPU-specific Cargo directory under
+target/native-cargo/. CI may restore registry inputs and intermediates keyed by
+target, lock/manifests, compiler/tool/SDK policy and Cargo configuration. These
+are unqualified build intermediates. Cargo still selects the current source and
+features; products are separately copied/frozen/signed/staged, then undergo the
+same image, archive, extraction, behavior and GUI checks. No archive, signature,
+qualification record or prior test result is restored as current evidence.
+
 `cargo xtask release-check --source FULL_SHA --version VERSION` is read-only
 admission for a later explicit owner release: exact clean source, fresh observed
 main ancestry, Cargo version, one nonempty calendar-dated release section, absent
