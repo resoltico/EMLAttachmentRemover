@@ -363,3 +363,39 @@ fn native_private_artifact_acl_denies_a_real_distinct_user_and_rejects_writable_
     drop(protected);
     scratch.close().unwrap();
 }
+
+#[test]
+fn native_artifact_move_preserves_existing_winner_and_same_file_identity() {
+    let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/artifact-edge-tests");
+    fs::create_dir_all(&parent).unwrap();
+    let scratch = tempfile::tempdir_in(parent).unwrap();
+    let private = create_private_directory(scratch.path()).unwrap();
+    let source = private.path().join("source.zip");
+    let final_path = private.path().join("final.zip");
+    fs::write(&source, b"complete owned candidate").unwrap();
+    fs::write(&final_path, b"owned existing winner").unwrap();
+    let held = handle::open(
+        &source,
+        FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    )
+    .unwrap();
+    let before = handle::entry_observation(&held).unwrap();
+    let error = rename_artifact_noreplace(&source, &final_path).unwrap_err();
+    assert!(crate::name_collision(&error));
+    assert_eq!(fs::read(&source).unwrap(), b"complete owned candidate");
+    assert_eq!(fs::read(&final_path).unwrap(), b"owned existing winner");
+    fs::remove_file(&final_path).unwrap();
+    rename_artifact_noreplace(&source, &final_path).unwrap();
+    assert!(!source.exists());
+    assert_eq!(fs::read(&final_path).unwrap(), b"complete owned candidate");
+    let after = handle::entry_observation(&held).unwrap();
+    assert_eq!(after.identity, before.identity);
+    assert_eq!(after.kind, before.kind);
+    assert_eq!(after.file.unwrap().size, before.file.unwrap().size);
+    private.check().unwrap();
+    drop(held);
+    drop(private);
+    scratch.close().unwrap();
+}

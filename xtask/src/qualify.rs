@@ -260,10 +260,23 @@ pub(crate) fn staged_cli(
             identity: verified,
         })
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        eml_fs::rename_artifact_noreplace(&path, &output)?;
+        if xtask::archive::ArchiveSnapshot::read(&output)?.identity() != verified {
+            return Err(
+                "Published Windows CLI archive differs from its verified immutable snapshot".into(),
+            );
+        }
+        Ok(PublishedCliArchive {
+            path: output,
+            identity: verified,
+        })
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (verified, output);
-        Err("Native no-replace archive publication remains unavailable on Windows".into())
+        Err("Native artifact publication is unsupported on this host".into())
     }
 }
 

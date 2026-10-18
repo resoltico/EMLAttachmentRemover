@@ -633,3 +633,12 @@ identified the exact selected Xcode SWBBuildService path. Swift Build's primary
 source documents SWIFTBUILD_LAUNCH_IN_PROCESS; that per-command switch is now used
 instead of weakening survivor rejection. Local SDK27 source compilation passed;
 corrected pinned native execution remains pending.
+
+Windows archive publication now uses a zero-flag MoveFileExW edge while the
+admitted source/destination ancestry remains held. There is no replace or copy
+fallback. The published immutable snapshot is read back against the pre-edge
+verified identity; failure does not delete a possibly published archive. The new
+mandatory native test checks an actual existing-winner collision, unchanged bytes
+and the same held file identity after a successful move. Source Clippy passes;
+native execution remains pending. This tooling edge does not replace Core's
+separate candidate publication/address/synchronization receipts.

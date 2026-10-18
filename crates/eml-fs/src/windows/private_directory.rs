@@ -437,3 +437,14 @@ pub fn create_private_directory(parent: &Path) -> io::Result<PrivateDirectory> {
 #[cfg(all(test, feature = "native-fixtures"))]
 #[path = "private_directory_tests.rs"]
 mod tests;
+
+/// Move one verified artifact without replacement or copy fallback. Callers must
+/// retain protected source/destination ancestry through this path edge and
+/// reobserve the published bytes. This is not a business-copy receipt.
+pub fn rename_artifact_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
+    let source = super::path::openable(source)?;
+    let destination = super::path::openable(destination)?;
+    // SAFETY: terminated validated ordinary absolute paths. Zero flags prohibit
+    // replacement and cross-volume copy fallback; no delete-on-failure fallback.
+    checked(unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), 0) })
+}

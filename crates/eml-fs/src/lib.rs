@@ -41,7 +41,7 @@ pub use windows::{
     BoundDirectory, BoundFile, ContainmentFailure, DirectoryCreation, DirectoryEntries, EntryPin,
     NtStatusError, PinnedRoot, PrivateDirectory, PublicationCandidate, PublishAttempt,
     ReadyCandidate, RootBindingError, WritableDirectory, create_private_directory,
-    observe_selected,
+    observe_selected, rename_artifact_noreplace,
 };
 
 /// Native object identity; never a pathname hash or lossy display value.

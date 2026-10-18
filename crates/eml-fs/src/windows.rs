@@ -10,7 +10,9 @@ mod inventory;
 pub(crate) mod path;
 mod private_directory;
 mod publication;
-pub use private_directory::{PrivateDirectory, create_private_directory};
+pub use private_directory::{
+    PrivateDirectory, create_private_directory, rename_artifact_noreplace,
+};
 mod root;
 mod status;
 mod writable;
