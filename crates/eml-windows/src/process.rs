@@ -533,22 +533,29 @@ pub fn anonymous_pipe() -> io::Result<(File, File)> {
         File::from(unsafe { OwnedHandle::from_raw_handle(writer) }),
     ))
 }
-/// Observe pending pipe bytes without consuming the real reader's handshake.
+/// Read the finite inbound capacity of an idle anonymous read end before launch.
+/// Never query this synchronous handle while another thread/process is reading.
 #[cfg(feature = "native-fixtures")]
-pub fn pending_pipe_bytes(reader: &File) -> io::Result<u32> {
-    let mut available = 0;
-    // SAFETY: kernel validates the borrowed pipe handle; only a DWORD is written.
+pub fn anonymous_pipe_capacity(reader: &File) -> io::Result<u32> {
+    use windows_sys::Win32::System::Pipes::{GetNamedPipeInfo, PIPE_SERVER_END};
+    let mut flags = 0;
+    let mut capacity = 0;
+    // SAFETY: caller has not launched a concurrent reader; native DWORD outputs.
     unsafe {
-        native(windows_sys::Win32::System::Pipes::PeekNamedPipe(
+        native(GetNamedPipeInfo(
             reader.as_raw_handle(),
+            &mut flags,
             ptr::null_mut(),
-            0,
-            ptr::null_mut(),
-            &mut available,
+            &mut capacity,
             ptr::null_mut(),
         ))?;
     }
-    Ok(available)
+    if flags != PIPE_SERVER_END || capacity == 0 || capacity > 1024 * 1024 {
+        return Err(invalid(
+            "Anonymous input pipe has no verified finite byte capacity",
+        ));
+    }
+    Ok(capacity)
 }
 
 /// Dispatch only the private owned-console sender role in a separate helper.

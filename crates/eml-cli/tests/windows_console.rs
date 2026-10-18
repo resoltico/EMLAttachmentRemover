@@ -1,6 +1,8 @@
 //! Actual CLI private-console interruption with owned process/pipe capabilities.
 #![cfg(all(windows, feature = "native-fixtures"))]
-use eml_windows::{ConsoleEvent, Job, Process, ProcessSpec, anonymous_pipe, pending_pipe_bytes};
+use eml_windows::{
+    ConsoleEvent, Job, Process, ProcessSpec, anonymous_pipe, anonymous_pipe_capacity,
+};
 use std::{
     fs,
     io::{Read, Write},
@@ -59,6 +61,7 @@ fn windows_first_console_interrupt_cancels_unfinished_request_after_actual_reade
     fs::write(root.path().join("a.eml"), original).unwrap();
     let job = Job::new().unwrap();
     let (read, mut write) = anonymous_pipe().unwrap();
+    let capacity = anonymous_pipe_capacity(&read).unwrap() as usize;
     let stdout = output(root.path(), "stdout");
     let stderr = output(root.path(), "stderr");
     let environment = std::env::vars_os().collect::<Vec<_>>();
@@ -81,20 +84,35 @@ fn windows_first_console_interrupt_cancels_unfinished_request_after_actual_reade
             &stderr,
         )
         .unwrap();
-    write.write_all(b"{\"protocol\":1,").unwrap();
-    let began = Instant::now();
-    while pending_pipe_bytes(&read).unwrap() != 0 {
-        assert!(process.exit_code().unwrap().is_none());
-        assert!(began.elapsed() < Duration::from_secs(10));
-        thread::sleep(Duration::from_millis(5));
-    }
+    drop(read);
+    // A completed write larger than the observed finite buffer proves actual
+    // CLI consumption. Keep EOF absent. Do not PeekNamedPipe on the synchronous
+    // read object shared with the child's potentially blocked ReadFile.
+    let mut unfinished = b"{\"protocol\":1,".to_vec();
+    unfinished.resize(capacity + unfinished.len() + 1, b' ');
+    assert!(unfinished.len() < eml_protocol::MAX_REQUEST_BYTES);
+    let (sent, received) = std::sync::mpsc::sync_channel(1);
+    let writer = thread::spawn(move || {
+        let result = write.write_all(&unfinished);
+        let _ = sent.send((write, result));
+    });
+    let (write, written) = match received.recv_timeout(Duration::from_secs(10)) {
+        Ok(value) => value,
+        Err(error) => {
+            job.terminate(125).unwrap();
+            empty(&job);
+            writer.join().unwrap();
+            panic!("CLI did not consume the actual oversized pipe write: {error}");
+        }
+    };
+    writer.join().unwrap();
+    written.unwrap();
     assert!(process.exit_code().unwrap().is_none());
     send(&process, ConsoleEvent::Interrupt, root.path(), "interrupt");
     assert_eq!(wait(&process), 130);
     empty(&job);
     drop(process);
     drop(job);
-    drop(read);
     drop(write);
     drop(stdout);
     drop(stderr);

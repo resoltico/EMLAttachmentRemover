@@ -47,6 +47,15 @@ Job and CLI console fixtures. The independent required-name/ignored-name
 discovery remains mandatory before execution. This gives a hung test an owned
 Job deadline and preserves its transcript before the overall hosted job expires.
 
+The first Windows console fixture no longer peeks at the synchronous read
+handle shared with the CLI. Microsoft documents that
+[PeekNamedPipe can block on synchronous handles with concurrent I/O](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-peeknamedpipe).
+Before launch the fixture queries the actual finite inbound buffer size, closes
+its read-end copy after launch, and requires completion of a bounded write
+larger than that capacity while retaining the writer without EOF. The real CLI
+must consume input for this handshake to finish. This change addresses a
+possible fixture deadlock; native execution must still prove interruption.
+
 `cargo xtask release-check --source FULL_SHA --version VERSION` is read-only
 admission for a later explicit owner release: exact clean source, fresh observed
 main ancestry, Cargo version, one nonempty calendar-dated release section, absent

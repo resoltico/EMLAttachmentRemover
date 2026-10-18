@@ -19,4 +19,4 @@ pub use process::{
     ConsoleEvent, Job, Process, ProcessSpec, console_helper_entry, environment_name_equal,
 };
 #[cfg(all(windows, feature = "native-fixtures"))]
-pub use process::{anonymous_pipe, pending_pipe_bytes};
+pub use process::{anonymous_pipe, anonymous_pipe_capacity};
