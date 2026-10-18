@@ -54,8 +54,17 @@ final class DesktopInteractionTests: XCTestCase {
         delivery.createsNewApplicationInstance = false
         let recipient = try await NSWorkspace.shared.open(sources, withApplicationAt: appURL, configuration: delivery)
         XCTAssertEqual(recipient.processIdentifier, owned.processIdentifier, "File batch reached another instance")
-        let finished = window.buttons.matching(NSPredicate(format: "title CONTAINS %@ AND title CONTAINS %@", "2 created", "Finished")).firstMatch
-        guard finished.waitForExistence(timeout: 30) else {
+        let finished = NSPredicate { _, _ in
+            app.buttons.allElementsBoundByIndex.contains { button in
+                let text = button.title + "\n" + button.label + "\n" + (button.value as? String ?? "")
+                return text.contains("2 created") && text.contains("Finished")
+            }
+        }
+        let finishedObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: finished, object: nil)], timeout: 30)
+        guard finishedObservation == .completed else {
+            for button in app.buttons.allElementsBoundByIndex {
+                print("Observed button title=\(button.title.debugDescription), label=\(button.label.debugDescription), value=\(String(describing: button.value).prefix(2048))")
+            }
             XCTFail("Native batch did not reach its two-created presentation: \(app.debugDescription)")
             return
         }

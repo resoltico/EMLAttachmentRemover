@@ -587,3 +587,22 @@ survivors' PID/group/state and bounded executable names, while full survivor
 counts and all existing ownership/signal rules remain authoritative. Names are
 diagnostic only, never signal authority; non-Unicode names do not become
 operational paths. All19 actual Unix process regression tests still pass.
+
+The first protected-root native execution at Hbdc6f8a/run39111459989 failed before
+temporary-account creation: x64 rejected the D: owner; ARM rejected writable C:\a
+ancestry. Both failure logs are retained. The correction prepares a separate exact
+clean source checkout in a newly protected user-profile enclosure and points
+native tests/scratch/evidence there; it does not relax parent admission or alter
+the original workspace permissions. Corrected native execution remains pending.
+
+PE inspection now parses both ordinary and delayed imports, validates descriptor/
+thunk bounds and console CPU/type, and refuses unknown DLL basenames including
+separate LLVM/Visual C++ runtimes. Its hand-authored structural controls pass;
+they are not native runtime evidence. Final Windows CLI builds now capture one
+actual selected-sysroot link through a private Rust wrapper with fresh map and
+verbose trace, then bind those records to the final image/source/target. A
+mandatory stale-evidence control rejects changed image/source/target/trace.
+Both target Clippy checks pass. The hosted observation command returns only this
+scoped capture; it does not qualify selected static inputs or archives. Actual
+capture, member-by-member native-input review, runtime integration and complete
+Windows packages remain required.

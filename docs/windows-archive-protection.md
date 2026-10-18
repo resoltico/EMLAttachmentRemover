@@ -36,3 +36,12 @@ temporary account SID may be deleted; failed restoration aborts and failed
 cleanup fails the test. A same-SID restricted token is not this proof.
 
 Native x64/ARM execution and complete Windows packaging remain required.
+
+The first native run rejected the default hosted workspaces: x64's D: owner was
+outside the admitted principals, and ARM's C:\a allowed untrusted mutation.
+Those are real failed prerequisites, not exceptions to the namespace policy.
+Hosted verification now prepares a new exact-source checkout beneath an admitted
+user-profile temporary enclosure. Existing workspace ACLs stay unchanged. Tests,
+compiler scratch and retained evidence live under that checkout's target/. The
+new location must pass native admission and the distinct-user test before it can
+establish a protected extraction gate.

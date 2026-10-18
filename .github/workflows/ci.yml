@@ -143,8 +143,21 @@ jobs:
           New-Item -ItemType Directory $scratch | Out-Null
           'TEMP=' + $scratch >> $env:GITHUB_ENV
           'TMP=' + $scratch >> $env:GITHUB_ENV
+      - name: Prepare exact-source Windows checkout under admitted user storage
+        id: private_workspace
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          cargo xtask prepare-windows-workspace > target/windows-native-workspace.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $workspace = Get-Content target/windows-native-workspace.json -Raw | ConvertFrom-Json
+          'path=' + $workspace.path >> $env:GITHUB_OUTPUT
+          'TEMP=' + $workspace.scratch >> $env:GITHUB_ENV
+          'TMP=' + $workspace.scratch >> $env:GITHUB_ENV
+          'EML_WINDOWS_EVIDENCE_DIR=' + (Join-Path $workspace.path 'target/windows-creation-evidence') >> $env:GITHUB_ENV
       - name: Windows required-name discovery and unfiltered native workspace execution
         if: ${{ runner.os == 'Windows' }}
+        working-directory: ${{ steps.private_workspace.outputs.path }}
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
@@ -170,11 +183,19 @@ jobs:
           exit $LASTEXITCODE
       - name: Windows standalone real filesystem primitive
         if: ${{ runner.os == 'Windows' }}
+        working-directory: ${{ steps.private_workspace.outputs.path }}
         shell: pwsh
         env:
           EXPECTED_TARGET: ${{ matrix.target }}
         run: |
           cargo run --locked --manifest-path tests/native-filesystem/Cargo.toml --target '${{ matrix.target }}'
+          exit $LASTEXITCODE
+      - name: Observe actual native Windows CLI link and PE tables
+        if: ${{ runner.os == 'Windows' }}
+        working-directory: ${{ steps.private_workspace.outputs.path }}
+        shell: pwsh
+        run: |
+          cargo xtask observe-windows-link --target '${{ matrix.target }}' --out target/windows-link-observation
           exit $LASTEXITCODE
       - name: Record Unix native source/compiler and check pinned Xcode
         if: ${{ runner.os != 'Windows' }}
@@ -227,24 +248,30 @@ jobs:
         with:
           name: native-tests-${{ github.sha }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: |
-            target/native-tests/**/*.json
-            target/native-tests/**/*.log
-            target/native-tests/**/*.stderr
-            !target/native-tests/native-test-build/**
-            target/native-desktop-checks/**/*.json
-            target/native-desktop-checks/**/*.log
-            target/native-desktop-checks/**/*.stderr
-            !target/native-desktop-checks/child-fixtures/build/**
-            target/windows-creation-evidence/*.json
-            target/*.list
-            target/native-cli-build/*.json
-            target/native-cli-build/*.tar.gz
-            target/archive-verification/**
-            target/native-host/**
-            target/owned-exfat-observation/**/*.json
-            target/owned-exfat-observation/**/*.log
-            target/owned-exfat-observation/**/*.stderr
-            target/owned-exfat-observation/**/*.plist
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/**/*.stderr
+            !${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/native-test-build/**
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.stderr
+            !${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/child-fixtures/build/**
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-creation-evidence/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/*.list
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.tar.gz
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/archive-verification/**
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-host/**
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/owned-exfat-observation/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/owned-exfat-observation/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/owned-exfat-observation/**/*.stderr
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/owned-exfat-observation/**/*.plist
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-native-workspace.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.stderr
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.map
+            !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/cargo/**
           if-no-files-found: error
   icon:
     needs: plan

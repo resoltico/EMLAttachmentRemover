@@ -205,7 +205,15 @@ pub(crate) fn runtime(
             json!({"external_system_dependencies":dependencies,"interpreter":expected,"required_glibc_versions":required,"maximum_policy":maximum_glibc}),
         );
     }
-    Err("Windows PE imports and final binary-bound native-input review remain unavailable".into())
+    if os == "windows" {
+        let imports = crate::windows_runtime::inspect(&fs::read(executable)?, architecture)?;
+        fs::write(
+            logs.join("pe-imports.json"),
+            serde_json::to_vec_pretty(&imports)?,
+        )?;
+        return Err("PE import inspection completed; required final binary-bound static native-input review remains unavailable".into());
+    }
+    Err("Unsupported runtime inspection platform".into())
 }
 
 pub(crate) fn run(root: &Path, archive: &Path, target: &str) -> Result<()> {

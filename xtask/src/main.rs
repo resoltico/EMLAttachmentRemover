@@ -25,6 +25,11 @@ mod qualify;
 mod release_check;
 mod smoke;
 mod tools;
+#[cfg(windows)]
+mod windows_link;
+mod windows_runtime;
+#[cfg(windows)]
+mod windows_workspace;
 use clap::{Parser, Subcommand};
 use std::{
     error::Error,
@@ -47,6 +52,15 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Capture an actual native Windows CLI link; static-input review is separate.
+    ObserveWindowsLink {
+        #[arg(long)]
+        target: String,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Prepare an exact-source hosted Windows checkout in protected user storage.
+    PrepareWindowsWorkspace,
     /// Read-only source, version, dated changelog and remote release admission.
     ReleaseCheck {
         #[arg(long)]
@@ -177,6 +191,10 @@ fn initialize_controller(root: &std::path::Path) -> Result<()> {
     Ok(())
 }
 fn main() -> ExitCode {
+    #[cfg(windows)]
+    if let Some(exit) = windows_link::helper_entry() {
+        return exit;
+    }
     if let Some(exit) = xtask::process::helper_entry() {
         return exit;
     }
@@ -184,6 +202,38 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::ObserveWindowsLink { target, out } => {
+                #[cfg(windows)]
+                {
+                    initialize_controller(&root)?;
+                    std::fs::create_dir(&out)?;
+                    let out = out.canonicalize()?;
+                    let cli = cli_build::build(&root, &target, &out.join("cli-build"))?;
+                    std::fs::write(
+                        out.join("result.json"),
+                        serde_json::to_vec_pretty(
+                            &serde_json::json!({"target":cli.target(),"host":cli.host(),"image":cli.identity(),"scope":"native compiler/final-link/PE capture only; selected static native-input review and archive/runtime qualification remain required"}),
+                        )?,
+                    )?;
+                    Ok(())
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = (target, out);
+                    Err("Final Windows link observation requires native Windows".into())
+                }
+            }
+            Task::PrepareWindowsWorkspace => {
+                #[cfg(windows)]
+                {
+                    initialize_controller(&root)?;
+                    windows_workspace::prepare(&root)
+                }
+                #[cfg(not(windows))]
+                {
+                    Err("Protected Windows checkout preparation requires native Windows".into())
+                }
+            }
             Task::ReleaseCheck { source, version } => {
                 initialize_controller(&root)?;
                 release_check::run(&root, &source, &version)

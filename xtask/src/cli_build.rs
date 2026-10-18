@@ -71,6 +71,15 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
     }
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
+    #[cfg(windows)]
+    let work = xtask::archive::create_artifact_directory(&out)?;
+    #[cfg(windows)]
+    let cargo = work.path().join("cargo");
+    #[cfg(not(windows))]
+    let cargo = out.join("cargo");
+    #[cfg(windows)]
+    let wrapper =
+        crate::windows_link::prepare(root, target, &work.path().join("native-link"), &cargo)?;
     #[cfg(target_os = "macos")]
     let mut command = mac.command(root, "cargo");
     #[cfg(not(target_os = "macos"))]
@@ -81,7 +90,7 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
     };
     command
         .args([
-            "build",
+            if cfg!(windows) { "rustc" } else { "build" },
             "--locked",
             "--release",
             "--package",
@@ -90,7 +99,16 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
             target,
             "--message-format=json",
         ])
-        .env("CARGO_TARGET_DIR", out.join("cargo"));
+        .env("CARGO_TARGET_DIR", &cargo);
+    #[cfg(windows)]
+    command
+        .args(["--bin", "remove-eml-attachments", "--", "-C"])
+        .arg(format!(
+            "linker={}",
+            wrapper
+                .to_str()
+                .ok_or("Native wrapper needs a Unicode tooling path")?
+        ));
     #[cfg(target_os = "macos")]
     command.env("MACOSX_DEPLOYMENT_TARGET", &mac.minimum_text);
     let output = capture(&mut command)?;
@@ -157,6 +175,24 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
         return Err("Native CLI exceeds package executable bound".into());
     }
     let identity = xtask::archive::ByteIdentity::of(&bytes);
+    #[cfg(windows)]
+    {
+        let captured = crate::windows_link::captured(
+            &work.path().join("native-link"),
+            &bytes,
+            &crate::git(root, &["rev-parse", "HEAD"])?,
+            target,
+        )?;
+        let imports = crate::windows_runtime::inspect(&bytes, architecture)?;
+        fs::write(
+            out.join("native-link-capture.json"),
+            serde_json::to_vec_pretty(&captured)?,
+        )?;
+        fs::write(
+            out.join("pe-imports.json"),
+            serde_json::to_vec_pretty(&imports)?,
+        )?;
+    }
     let version = plan["version"]
         .as_str()
         .ok_or("Missing Cargo-derived version")?
