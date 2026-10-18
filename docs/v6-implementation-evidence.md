@@ -669,3 +669,15 @@ execution remains pending. Complete legal generation still produces602 files
 across ten product profiles. The CLI's optional path edge/helper are enabled only
 by native-fixtures and introduce no registry identity or normal shipping closure
 change; ordinary product archives contain neither test helper nor fixture code.
+
+H59f31dd's native x64/ARM tests proved the direct effective UserSID query now
+works, then the administrator-membership convenience API failed its token reopen.
+The fixture now queries bounded TokenGroups through the same query-only effective
+pseudo-handle and checks every actual group SID. It still requires a distinct
+authenticated UserSID, successful writable control and actual private denials.
+Corrected execution remains pending. The independent final-link observation
+passed topology/host admission and reached the application compile, but failed
+before producing wrapper trace. Cargo stdout's compiler-message JSON was formerly
+behind a generic capture failure. Builds now retain cargo.jsonl/separate stderr
+before checking status and display bounded rendered compiler diagnostics while
+preserving the first process failure. Neither link nor ACL qualification passed.

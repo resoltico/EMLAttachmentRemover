@@ -207,22 +207,50 @@ impl TemporaryAccount {
                 return Err(invalid("ACL actor is not the distinct authenticated user"));
             }
             let administrators = Sid::named("S-1-5-32-544")?;
-            let mut member = 0;
+            let mut words = vec![0usize; 8192];
+            let mut used = 0;
+            let effective = std::ptr::without_provenance_mut::<c_void>((-6isize) as usize);
+            // SDK effective-token pseudo handle supplies query rights directly;
+            // do not reopen the token inside CheckTokenMembership(NULL,...).
             unsafe {
-                checked(CheckTokenMembership(
-                    ptr::null_mut(),
-                    administrators.pointer(),
-                    &mut member,
-                ))
-                .map_err(|error| {
-                    io::Error::new(
-                        error.kind(),
-                        format!("Distinct-user administrator membership read: {error}"),
-                    )
-                })?;
+                checked(GetTokenInformation(
+                    effective,
+                    TokenGroups,
+                    words.as_mut_ptr().cast(),
+                    size_of_val(words.as_slice()) as u32,
+                    &mut used,
+                ))?;
             }
-            if member != 0 {
-                return Err(invalid("ACL actor is an administrator"));
+            let start = offset_of!(TOKEN_GROUPS, Groups);
+            if used as usize > size_of_val(words.as_slice()) || (used as usize) < start {
+                return Err(invalid("Unverified effective token-group extent"));
+            }
+            let count = unsafe { (*words.as_ptr().cast::<TOKEN_GROUPS>()).GroupCount } as usize;
+            let extent = start
+                .checked_add(
+                    count
+                        .checked_mul(size_of::<SID_AND_ATTRIBUTES>())
+                        .ok_or_else(|| invalid("Token group count overflow"))?,
+                )
+                .ok_or_else(|| invalid("Token group extent overflow"))?;
+            if extent > used as usize {
+                return Err(invalid("Token groups exceed their allocation"));
+            }
+            for index in 0..count {
+                let group = unsafe {
+                    ptr::read_unaligned(
+                        words
+                            .as_ptr()
+                            .cast::<u8>()
+                            .add(start + index * size_of::<SID_AND_ATTRIBUTES>())
+                            .cast::<SID_AND_ATTRIBUTES>(),
+                    )
+                };
+                if Sid::copy(group.Sid, words.as_ptr() as usize, used as usize)?
+                    .equals(&administrators)
+                {
+                    return Err(invalid("ACL actor carries an administrator group SID"));
+                }
             }
             operation()
         }));

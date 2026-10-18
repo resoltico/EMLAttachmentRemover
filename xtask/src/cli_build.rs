@@ -111,8 +111,34 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
         ));
     #[cfg(target_os = "macos")]
     command.env("MACOSX_DEPLOYMENT_TARGET", &mac.minimum_text);
-    let output = capture(&mut command)?;
-    fs::write(out.join("cargo.jsonl"), &output)?;
+    let log = out.join("cargo.jsonl");
+    let process = crate::controller()?.run_separate_output(
+        command,
+        &log,
+        std::time::Duration::from_secs(1200),
+    )?;
+    let mut output = Vec::new();
+    fs::File::open(&log)?
+        .take(16 * 1024 * 1024 + 1)
+        .read_to_end(&mut output)?;
+    if output.len() > 16 * 1024 * 1024 {
+        return Err(
+            "Cargo build output exceeds its bounded document size; retained native output".into(),
+        );
+    }
+    if !process.success() {
+        for value in serde_json::Deserializer::from_slice(&output)
+            .into_iter::<Value>()
+            .flatten()
+        {
+            if value["reason"] == "compiler-message"
+                && let Some(rendered) = value["message"]["rendered"].as_str()
+            {
+                eprintln!("{}", rendered.chars().take(65536).collect::<String>());
+            }
+        }
+    }
+    process.require_success(&log)?;
     let compiled = artifact(root, &output)?;
     let compiled_metadata = fs::symlink_metadata(&compiled)?;
     if !compiled_metadata.is_file() || compiled_metadata.len() > 256 * 1024 * 1024 {
