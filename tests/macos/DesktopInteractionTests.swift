@@ -65,6 +65,47 @@ final class DesktopInteractionTests: XCTestCase {
         XCTAssertEqual(instances.count, 1)
         XCTAssertEqual(instances.first?.processIdentifier, owned.processIdentifier)
         snapshot(app, "ready")
+        app.buttons["About"].click()
+        let about = app.windows["About EML Attachment Remover"]
+        XCTAssertTrue(about.waitForExistence(timeout: 10), app.debugDescription)
+        let version = try XCTUnwrap(bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+        let identity = app.descendants(matching: .any).allElementsBoundByIndex.first {
+            $0.title == "Product identity and licensing"
+        }
+        XCTAssertTrue((identity?.value as? String)?.contains("EML Attachment Remover \(version)") == true)
+        snapshot(app, "about")
+        about.buttons["_XCUI:CloseWindow"].click()
+
+        app.menuBars.menuBarItems["Help"].click()
+        app.menuItems["Software and Artwork Licenses…"].click()
+        let licenses = app.windows["Software and Artwork Licenses"]
+        XCTAssertTrue(licenses.waitForExistence(timeout: 10), app.debugDescription)
+        let licenseText = try XCTUnwrap(app.descendants(matching: .any).allElementsBoundByIndex.first {
+            $0.title == "Complete software and owner artwork license terms"
+        })
+        let expectedLicense = try XCTUnwrap(String(data: Data(contentsOf: repository.appendingPathComponent("LICENSE")), encoding: .utf8))
+        XCTAssertEqual(licenseText.value as? String, expectedLicense)
+        licenseText.click()
+        app.typeKey("a", modifierFlags: .command)
+        let edit = app.menuBars.menuBarItems["Edit"]
+        edit.click()
+        XCTAssertTrue(edit.menus.menuItems["Copy"].isEnabled)
+        app.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+        snapshot(app, "licenses")
+        licenses.buttons["_XCUI:CloseWindow"].click()
+
+        window.buttons["_XCUI:CloseWindow"].click()
+        let hidden = NSPredicate { _, _ in !window.exists }
+        let hiddenObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 10)
+        XCTAssertEqual(hiddenObservation, .completed)
+        XCTAssertFalse(owned.isTerminated, "Closing the main window terminated the application")
+        let reopen = NSWorkspace.OpenConfiguration()
+        reopen.createsNewApplicationInstance = false
+        reopen.addsToRecentItems = false
+        let restored = try await NSWorkspace.shared.openApplication(at: appURL, configuration: reopen)
+        XCTAssertEqual(restored.processIdentifier, owned.processIdentifier)
+        XCTAssertTrue(window.waitForExistence(timeout: 10), app.debugDescription)
+        snapshot(app, "reopened")
 
         let delivery = NSWorkspace.OpenConfiguration()
         delivery.createsNewApplicationInstance = false

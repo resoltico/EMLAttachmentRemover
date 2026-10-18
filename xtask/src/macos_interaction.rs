@@ -130,7 +130,7 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
         return Err("Actual desktop test discovery/execution is incomplete or failed".into());
     }
     let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"app":app,"process":process.evidence(),"summary":summary,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"unchanged":true},
-        "scope":"actual extracted app: owned NSWorkspace launch, two-file native Open With batch, two independent golden/original checks, terminal worker settlement rendered, Ready/Finished screenshots, Quit cancel/confirm and destination override non-persistence; other GUI paths remain separate required checks"});
+        "scope":"actual extracted app: owned NSWorkspace launch, About/version, complete license value and keyboard Edit command, main close/reopen, two-file native Open With batch, two independent golden/original checks, terminal worker settlement rendered, native screenshots, Quit cancel/confirm and destination override non-persistence; other GUI paths remain separate required checks"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     Ok(result)
 }
