@@ -130,6 +130,7 @@ struct Observation {
     redirected: bool,
     restored: bool,
     saw_outside_empty: bool,
+    outside_object: Option<Identity>,
     original_had_no_candidate: bool,
     write_samples: usize,
     max_outside: u64,
@@ -207,6 +208,7 @@ fn redirected_destination_receives_no_bytes() {
             redirected: false,
             restored: false,
             saw_outside_empty: false,
+            outside_object: None,
             original_had_no_candidate: false,
             write_samples: 0,
             max_outside: 0,
@@ -242,6 +244,7 @@ fn redirected_destination_receives_no_bytes() {
     let placed=target_view.observe_child(event.name).expect("The native call must actually have created at the redirect target");
     assert_eq!(placed.identity,full_identity(event.object.unwrap()).unwrap());
     assert_eq!(placed.file.unwrap().size,0);
+    state.outside_object=Some(placed.identity);
     state.saw_outside_empty=true;
     state.restore();
     let original=if profile==Profile::MirrorRedirect {state.mirror.as_ref().unwrap().1.clone()} else {state.destination.clone()};
@@ -251,7 +254,17 @@ fn redirected_destination_receives_no_bytes() {
     assert!(state.original_had_no_candidate);
     state.sample();
    }
-   if event.boundary==CreationBoundary::AfterWrite {state.write_samples+=1;state.sample();}
+   if event.boundary==CreationBoundary::AfterWrite {
+    state.write_samples+=1;
+    state.sample();
+    let object=event.object.expect("A completed write retains its exact native file");
+    if state.outside_object==Some(full_identity(object).unwrap()) {
+     // Windows directory enumeration can retain the size from before an
+     // exclusive writer closes. Query the exact object already independently
+     // located at the redirect target, while the write is still observable.
+     state.max_outside=state.max_outside.max(object.metadata().unwrap().len());
+    }
+   }
   }).unwrap();
         let tree = matches!(
             profile,
