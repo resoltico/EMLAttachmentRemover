@@ -23,15 +23,9 @@ impl EventSink for Sink {
         Ok(())
     }
 }
-fn plist(
-    root: &Path,
-    out: &Path,
-    program: &str,
-    args: &[&std::ffi::OsStr],
-    label: &str,
-) -> Result<Value> {
+fn plist(root: &Path, out: &Path, args: &[&std::ffi::OsStr], label: &str) -> Result<Value> {
     let path = out.join(format!("{label}.plist"));
-    let mut command = std::process::Command::new(program);
+    let mut command = image_command();
     command.current_dir(root).args(args);
     let result = controller()?.run_separate_output(command, &path, Duration::from_secs(60))?;
     result.require_success(&path)?;
@@ -43,6 +37,14 @@ fn plist(
     }
     Ok(serde_json::from_slice(&bytes)?)
 }
+fn image_command() -> std::process::Command {
+    // Hosted macOS image services refuse creation as the ordinary runner. This
+    // test-only command is confined to a fresh runner and its admitted enclosure;
+    // neither the processor nor the app acquires administrator privileges.
+    let mut command = std::process::Command::new("/usr/bin/sudo");
+    command.args(["-n", "/usr/bin/hdiutil"]);
+    command
+}
 fn association(
     root: &Path,
     out: &Path,
@@ -53,7 +55,6 @@ fn association(
     let info = plist(
         root,
         out,
-        "/usr/bin/hdiutil",
         &[std::ffi::OsStr::new("info"), std::ffi::OsStr::new("-plist")],
         label,
     )?;
@@ -253,7 +254,7 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
     ));
     let mount = enclosure.path().join("mount");
     fs::create_dir(&mount)?;
-    let mut create = std::process::Command::new("/usr/bin/hdiutil");
+    let mut create = image_command();
     create
         .args([
             "create",
@@ -274,7 +275,6 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
         plist(
             root,
             &out,
-            "/usr/bin/hdiutil",
             &[
                 std::ffi::OsStr::new("attach"),
                 std::ffi::OsStr::new("-nobrowse"),
@@ -316,7 +316,7 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
                     "Owned image device reassociated; do not detach an unverified device".into(),
                 );
             }
-            let mut detach = std::process::Command::new("/usr/bin/hdiutil");
+            let mut detach = image_command();
             detach.args(["detach", &actual]);
             macos::checked_run(detach, &out.join("detach.log"), 60)?;
         }
@@ -332,7 +332,7 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
             json!({"detached":true,"owned_image_removed":true,"device":device,"forced_detach":false}),
         )
     })();
-    let record = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"observation":observation.as_ref().ok(),"probe_error":observation.as_ref().err().map(ToString::to_string),"cleanup":cleanup.as_ref().ok(),"cleanup_error":cleanup.as_ref().err().map(ToString::to_string)});
+    let record = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"image_service_privilege":"sudo -n hdiutil on fresh hosted runner; Core and primitives remain ordinary runner UID","observation":observation.as_ref().ok(),"probe_error":observation.as_ref().err().map(ToString::to_string),"cleanup":cleanup.as_ref().ok(),"cleanup_error":cleanup.as_ref().err().map(ToString::to_string)});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&record)?)?;
     match (observation, cleanup) {
         (Ok(_), Ok(_)) => Ok(()),
