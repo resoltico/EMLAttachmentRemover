@@ -211,7 +211,28 @@ pub(crate) fn runtime(
             logs.join("pe-imports.json"),
             serde_json::to_vec_pretty(&imports)?,
         )?;
-        return Err("PE import inspection completed; required final binary-bound static native-input review remains unavailable".into());
+        #[cfg(windows)]
+        {
+            let evidence = fs::read(
+                executable
+                    .parent()
+                    .ok_or("Missing extracted CLI directory")?
+                    .join(crate::windows_evidence::MATERIAL),
+            )?;
+            let target = format!("{architecture}-pc-windows-gnullvm");
+            crate::windows_evidence::verify(
+                root,
+                &target,
+                &crate::git(root, &["rev-parse", "HEAD"])?,
+                &fs::read(executable)?,
+                &evidence,
+            )?;
+            return Ok(
+                json!({"pe":imports,"static_input_evidence":"reclassified against repository policy and bound to extracted executable; native qualification execution remains separate"}),
+            );
+        }
+        #[cfg(not(windows))]
+        return Err("Windows final-link verification requires its native platform".into());
     }
     Err("Unsupported runtime inspection platform".into())
 }
@@ -308,6 +329,15 @@ fn verify(
                 .ok_or("Missing archive platform text")?,
         );
         materials.insert("README.txt".into(), readme.into_bytes());
+        #[cfg(windows)]
+        if os == "windows" {
+            let evidence = snapshot.read_cli_zip_material(
+                root_name,
+                crate::windows_evidence::MATERIAL,
+                crate::windows_evidence::MAX_BYTES,
+            )?;
+            materials.insert(crate::windows_evidence::MATERIAL.into(), evidence);
+        }
         let extracted = if os == "linux" {
             snapshot.extract_cli_tar_gz(root_name, executable, &materials, &work)?
         } else {

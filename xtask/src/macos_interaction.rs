@@ -94,7 +94,11 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
             "ALWAYS_SEARCH_USER_PATHS=NO",
             "test",
         ]);
-    let process = controller()?.run(command, &out.join("xctest.log"), Duration::from_secs(300))?;
+    // The expanded multi-window scenario includes XCTest's own interruption
+    // synchronization. On the native Intel runner individual checks took 60s
+    // while the app continued responding. Keep behavior/settlement deadlines in
+    // the test unchanged; allow their full sequence to finish before outer cleanup.
+    let process = controller()?.run(command, &out.join("xctest.log"), Duration::from_secs(900))?;
     fs::write(
         out.join("process.json"),
         serde_json::to_vec_pretty(&process.evidence())?,

@@ -279,6 +279,45 @@ impl ArchiveSnapshot {
         Ok(Self { bytes })
     }
 
+    /// Read one bounded untrusted CLI evidence material from this immutable ZIP.
+    /// No extraction occurs; callers must validate its contents independently.
+    pub fn read_cli_zip_material(
+        &self,
+        root: &str,
+        relative: &str,
+        maximum: usize,
+    ) -> io::Result<Vec<u8>> {
+        validate_member_name(root)?;
+        validate_member_name(relative)?;
+        if root.contains('/') || relative.ends_with('/') || maximum > 16 * 1024 * 1024 {
+            return Err(invalid("Invalid bounded CLI evidence request"));
+        }
+        let members = inspect_zip_directory(&mut Cursor::new(&self.bytes))?;
+        let name = format!("{root}/{relative}");
+        let matches = members
+            .iter()
+            .filter(|member| member.name == name)
+            .collect::<Vec<_>>();
+        if matches.len() != 1 || matches[0].size as usize > maximum {
+            return Err(invalid(
+                "Missing, duplicate or oversized CLI evidence material",
+            ));
+        }
+        let mut archive = zip::ZipArchive::new(Cursor::new(&self.bytes))?;
+        if archive.len() != members.len() || archive.has_overlapping_entries()? {
+            return Err(invalid("CLI evidence ZIP records differ or overlap"));
+        }
+        let mut bytes = Vec::new();
+        archive
+            .by_name(&name)?
+            .take(maximum as u64 + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() != matches[0].size as usize {
+            return Err(invalid("CLI evidence material actual size differs"));
+        }
+        Ok(bytes)
+    }
+
     /// Extract this CLI ZIP profile into a fresh private directory, retaining
     /// partial evidence on failure. Material paths and bytes come from the
     /// independently generated target notice/README inputs, not the archive.
@@ -1462,6 +1501,51 @@ mod tests {
             writer.write_all(bytes).unwrap();
         }
         writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn cli_evidence_reader_requires_one_bounded_crc_checked_material() {
+        let name = "licenses/windows-runtime/link-evidence.json";
+        let mut materials = synthetic_materials();
+        let missing = ArchiveSnapshot {
+            bytes: synthetic_cli_zip(&materials),
+        };
+        assert!(
+            missing
+                .read_cli_zip_material("package", name, 1024)
+                .is_err()
+        );
+        materials.insert(
+            name.into(),
+            b"owned synthetic evidence; not native provenance".to_vec(),
+        );
+        let bytes = synthetic_cli_zip(&materials);
+        let snapshot = ArchiveSnapshot {
+            bytes: bytes.clone(),
+        };
+        assert_eq!(
+            snapshot
+                .read_cli_zip_material("package", name, 1024)
+                .unwrap(),
+            materials[name]
+        );
+        assert!(snapshot.read_cli_zip_material("package", name, 2).is_err());
+        assert!(
+            snapshot
+                .read_cli_zip_material("package", "../outside", 1024)
+                .is_err()
+        );
+        let mut changed = bytes;
+        let body = changed
+            .windows(materials[name].len())
+            .position(|window| window == materials[name])
+            .unwrap();
+        changed[body] ^= 1;
+        assert!(
+            ArchiveSnapshot { bytes: changed }
+                .read_cli_zip_material("package", name, 1024)
+                .is_err()
+        );
     }
 
     fn ustar(entries: &[(&str, &[u8])]) -> Vec<u8> {

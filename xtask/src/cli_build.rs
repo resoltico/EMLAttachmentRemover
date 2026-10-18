@@ -15,6 +15,7 @@ pub(crate) struct FrozenCli {
     platform: String,
     version: String,
     host: Value,
+    windows_evidence: Option<Vec<u8>>,
 }
 impl FrozenCli {
     pub fn target(&self) -> &str {
@@ -34,6 +35,9 @@ impl FrozenCli {
     }
     pub fn identity(&self) -> &xtask::archive::ByteIdentity {
         &self.identity
+    }
+    pub fn windows_evidence(&self) -> Option<&[u8]> {
+        self.windows_evidence.as_deref()
     }
 }
 
@@ -232,7 +236,7 @@ fn build_inner(
     }
     let identity = xtask::archive::ByteIdentity::of(&bytes);
     #[cfg(windows)]
-    {
+    let windows_evidence = {
         let captured = crate::windows_link::captured(
             &work.path().join("native-link"),
             &bytes,
@@ -270,6 +274,35 @@ fn build_inner(
                 .as_str()
                 .ok_or("Missing actual linked executable basename")?,
         )?;
+        let evidence = crate::windows_evidence::capture(
+            root,
+            crate::windows_evidence::Capture {
+                source: &crate::git(root, &["rev-parse", "HEAD"])?,
+                target,
+                compiler: host["compiler"]
+                    .as_str()
+                    .ok_or("Missing observed compiler")?,
+                linker_version: captured["actual_linker_version"]
+                    .as_str()
+                    .ok_or("Missing actual linker version")?,
+                executable: &bytes,
+                linked_basename: captured["linked_basename"]
+                    .as_str()
+                    .ok_or("Missing linked executable basename")?,
+                runtime_directory: &crate::windows_link::runtime_directory(
+                    &work.path().join("native-link"),
+                    target,
+                )?,
+                cargo_directory: &cargo,
+                link_directory: &work.path().join("native-link"),
+                inputs: &input_files,
+                official: &official,
+                rust: &rust_inputs,
+                map: &fs::read_to_string(work.path().join("native-link/application.map"))?,
+                trace: &fs::read_to_string(work.path().join("native-link/linker.log"))?,
+            },
+        )?;
+        fs::write(out.join("link-evidence.json"), &evidence)?;
         fs::write(
             out.join("official-input-identities.json"),
             serde_json::to_vec_pretty(&json!({
@@ -285,7 +318,10 @@ fn build_inner(
             out.join("pe-imports.json"),
             serde_json::to_vec_pretty(&imports)?,
         )?;
-    }
+        Some(evidence)
+    };
+    #[cfg(not(windows))]
+    let windows_evidence = None;
     let version = plan["version"]
         .as_str()
         .ok_or("Missing Cargo-derived version")?
@@ -304,6 +340,7 @@ fn build_inner(
         platform: platform.to_owned(),
         version,
         host,
+        windows_evidence,
     })
 }
 

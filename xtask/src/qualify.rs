@@ -201,6 +201,12 @@ pub(crate) fn staged_cli(
         .find(|row| row["target"] == cli.target())
         .ok_or("Missing target identity")?;
     let mut materials = checked.files().clone();
+    if let Some(evidence) = cli.windows_evidence() {
+        materials.insert(
+            "licenses/windows-runtime/link-evidence.json".into(),
+            evidence.to_vec(),
+        );
+    }
     materials.insert(
         "README.txt".into(),
         archive_verify::cli_readme(
@@ -329,6 +335,8 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
     let result: Result<()> = (|| {
         let tests = checked_tests(root, Some(target), true, &out)?;
         let cli = cli_build::build(root, target, &out.join("cli-build"))?;
+        #[cfg(windows)]
+        cli_build::unknown_input_control(root, target, &cli, &out.join("unknown-input-control"))?;
         let materials = notices::checked_target(root, cli.platform())?;
         let archive = staged_cli(root, &cli, &materials, &out)?;
         fs::write(

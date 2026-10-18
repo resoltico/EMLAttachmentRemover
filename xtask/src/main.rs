@@ -26,6 +26,8 @@ mod release_check;
 mod smoke;
 mod tools;
 #[cfg(any(windows, test))]
+mod windows_evidence;
+#[cfg(any(windows, test))]
 mod windows_input_review;
 #[cfg(windows)]
 mod windows_link;
@@ -229,10 +231,12 @@ fn main() -> ExitCode {
                         &cli,
                         &out.join("unknown-input-control"),
                     )?;
+                    let materials = notices::checked_target(&root, cli.platform())?;
+                    let archive = qualify::staged_cli(&root, &cli, &materials, &out)?;
                     std::fs::write(
                         out.join("result.json"),
                         serde_json::to_vec_pretty(
-                            &serde_json::json!({"target":cli.target(),"host":cli.host(),"image":cli.identity(),"unknown_input_control":unknown_input,"scope":"native compiler/final-link/PE/input admission and actual unknown-object rejection; complete archive/runtime qualification remains required"}),
+                            &serde_json::json!({"target":cli.target(),"host":cli.host(),"image":cli.identity(),"unknown_input_control":unknown_input,"archive":archive,"scope":"native compiler/final-link/PE/input admission, actual unknown-object rejection and extracted CLI archive behavior; full qualification remains separate"}),
                         )?,
                     )?;
                     Ok(())

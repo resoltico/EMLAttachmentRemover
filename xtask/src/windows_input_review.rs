@@ -46,6 +46,7 @@ pub(crate) struct SelectedMember {
 #[derive(Serialize)]
 #[cfg(windows)]
 pub(crate) struct RustInput {
+    pub member: String,
     pub name: String,
     pub origin: String,
     pub identity: ByteIdentity,
@@ -167,6 +168,7 @@ pub(crate) fn rust_inputs(
                 return Err("Cargo Rust archive changed after the actual link".into());
             }
             result.push(RustInput {
+                member: input.member.clone(),
                 name: format!(
                     "$CARGO_TARGET/{target}/release/deps/{}",
                     path.file_name()
@@ -188,6 +190,7 @@ pub(crate) fn rust_inputs(
             {
                 application_objects += 1;
                 result.push(RustInput {
+                    member: input.member.clone(),
                     name: format!("$CARGO_TARGET/{target}/release/deps/{relative}"),
                     origin: "application Rust compiler code generation".into(),
                     identity: input.identity.clone(),
@@ -201,6 +204,7 @@ pub(crate) fn rust_inputs(
             {
                 symbols += 1;
                 result.push(RustInput {
+                    member: input.member.clone(),
                     name: "$RUSTC_TEMP/symbols.o".into(),
                     origin: "Rust compiler symbol object".into(),
                     identity: input.identity.clone(),
@@ -389,6 +393,24 @@ fn references(root: &Path) -> Result<References> {
         }
     }
     Ok(references)
+}
+
+pub(crate) fn check_reference(
+    root: &Path,
+    target: &str,
+    relative: &str,
+    identity: &ByteIdentity,
+) -> Result<String> {
+    let references = references(root)?;
+    let reference = references
+        .targets
+        .get(target)
+        .and_then(|files| files.get(relative))
+        .ok_or("Unreviewed official runtime input")?;
+    if reference.identity != *identity {
+        return Err("Runtime input differs from official component reference".into());
+    }
+    Ok(reference.component.clone())
 }
 
 pub(crate) fn official_inputs(

@@ -3,6 +3,36 @@
 Implementation remains in progress. No complete v6 product/archive qualification
 or release acceptance is claimed. Version6 stays under Unreleased.
 
+## Current verification work
+
+At source `4d2fea1add469e8d85c163c54a33465bf26eacd6`, run39132668909's
+Apple Silicon app producer completed the expanded actual GUI scenario, including
+About, full license text, Edit commands, main-window reopen, two-message copies
+and Quit from a hidden main window. The Intel producer timed out at the outer
+300-second harness limit while progressing through the license window. Its log
+contains three completed 60-second XCTest interruption checks followed by actual
+successful events. Cleanup completed with zero survivors. This remains a failed
+Intel run; it does not qualify the scenario. The total harness allowance is now
+900 seconds for the expanded sequence; individual behavior/settlement deadlines
+are unchanged. Both native Linux test rows and the Apple Silicon native test row
+passed at that source. Windows final-link admission failed on the compiler's
+temporary symbols object; QA traced this to the wrong Cargo output directory and
+public executable stem, corrected in `e9b1fbf`.
+
+Windows archive verification now carries one normalized final-link observation
+document, binds it to extracted executable bytes, checks official component
+references and Cargo origins, reclassifies every input, and reconciles the full
+inventory with direct linker read records. The native driver also runs a real
+extra-object rejection before packaging and exercising the extracted CLI.
+Local negative controls cover stale/changed/missing evidence, unknown/duplicate
+inputs, altered trace and missing startup. Independent read-only QA replay of
+the normalization/reconciliation against earlier actual captures matched81 x64
+and80 ARM64 direct reads without missing, unknown or duplicate entries. This is
+retained-data compatibility evidence, not execution of the new native driver.
+Both native Windows runs and complete archive qualification remain required.
+The document establishes recorded consistency and policy bindings; only the
+associated native workflow establishes actual compilation/link execution.
+
 ## Scope, source and prerequisites
 
 CLI and GUI are separate products and thin adapters over the same Rust business

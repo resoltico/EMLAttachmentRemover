@@ -190,10 +190,17 @@ jobs:
         run: |
           cargo run --locked --manifest-path tests/native-filesystem/Cargo.toml --target '${{ matrix.target }}'
           exit $LASTEXITCODE
-      - name: Observe actual native Windows CLI link and PE tables
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.1
+        if: ${{ runner.os == 'Windows' && steps.private_workspace.outcome == 'success' }}
+        with:
+          artifact-ids: ${{ needs.legal.outputs.artifact_id }}
+          path: ${{ steps.private_workspace.outputs.path }}/target/generated-legal-materials
+      - name: Verify actual native Windows final link and extracted CLI archive
         if: ${{ always() && runner.os == 'Windows' && steps.private_workspace.outcome == 'success' }}
         working-directory: ${{ steps.private_workspace.outputs.path }}
         shell: pwsh
+        env:
+          EML_GENERATED_LEGAL_MATERIALS: ${{ steps.private_workspace.outputs.path }}/target/generated-legal-materials
         run: |
           cargo xtask observe-windows-link --target '${{ matrix.target }}' --out target/windows-link-observation
           exit $LASTEXITCODE
@@ -272,6 +279,7 @@ jobs:
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.stderr
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.map
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/*.zip
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/cargo/**
           if-no-files-found: error
   icon:
