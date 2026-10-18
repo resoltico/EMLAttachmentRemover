@@ -517,15 +517,10 @@ mod probe {
             Some(Gid::from_raw(victim_gid)),
         )?;
         fs::fchmod(shared.directory(), Mode::from_raw_mode(0o777))?;
-        #[cfg(target_os = "macos")]
-        run_child(
-            &executable,
-            actor,
-            actor,
-            "deny-rename",
-            shared.directory().requested_path(),
-            shared.directory().requested_path(),
-        )?;
+        // This parent was refused before product mkdir. Do not depend on the
+        // additional rename denial observed on older Darwin versions: macOS26
+        // permits that rename. The actual other-UID removal/replacement below
+        // proves why stage0700 alone is insufficient on this refused model.
         let replacement = run_replacement(&executable, actor, shared.directory().requested_path())?;
         fs::fchown(shared.directory(), Some(Uid::ROOT), Some(Gid::ROOT))?;
         fs::fchmod(shared.directory(), Mode::from_raw_mode(0o700))?;

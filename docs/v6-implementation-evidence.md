@@ -298,3 +298,22 @@ metadata and wrong expected bytes. All 22 archive tests passed, including existi
 CLI rejection/readback controls; CLI ZIPs still forbid extensions/descriptors.
 This is format-boundary evidence, not an app build, extracted app execution or
 GUI acceptance. Complete bundle assembly and native floor smoke remain open.
+
+## macOS26 different-UID probe correction
+
+At `26cdd708549297d2239c5c36a5cd16f642057dcb`, native macOS26 ARM passed
+pinned-Xcode desktop/library checks and the strict different-UID rename/removal
+checks for admitted private, self-sticky and trusted-root-sticky parents. The
+[namespace probe then failed](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39096472740/job/117583965544)
+because another UID could rename a manually seeded 0700 directory in the shared
+non-sticky 0777 parent. Older Darwin runs had denied that extra operation.
+
+The product had already refused that parent before mkdir. Its admission predicate
+requires the current/trusted-root owner and either no group/other-write bits or
+the supported sticky policy, plus the Darwin ACL predicate; cleanup rechecks the
+same protection. No product safety argument uses the extra denial on a refused
+parent. The obsolete macOS-only assertion is removed. All three admitted-parent
+protection checks remain strict, and the real other-UID rmdir/replacement control
+on the refused parent remains required. This corrects a probe assumption without
+relaxing product admission or cleanup. Corrected native execution remains pending;
+the original failure is retained rather than reported as passing.

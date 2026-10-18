@@ -54,7 +54,10 @@ moved another owned empty directory into that name, then removed the replacement
 This demonstrated the mechanism; it was not a cross-UID exploit test. Later native
 Linux controls established another UID can rename an owned0700 directory under
 a suitable nonsticky shared parent. Darwin's directory-rename authorization
-differs, as the native checkpoint notes below explain.
+differs across releases: macOS15 denied an additional rename on the refused
+shared model, while macOS26 ARM permitted it. Product safety does not depend on
+that extra denial; the parent admission below remains required before creation
+and cleanup.
 A held private staging descriptor protects its contents, not its outer name.
 
 The correction refuses namespace creation unless the held immediate parent
