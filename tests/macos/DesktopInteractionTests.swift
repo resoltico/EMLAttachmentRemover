@@ -63,26 +63,11 @@ final class DesktopInteractionTests: XCTestCase {
         // Read-only diagnostic; never prompt for or change accessibility access.
         print("Test runner accessibility trust: \(AXIsProcessTrusted())")
         #if arch(x86_64)
-        // Diagnose the repeatable Intel AX snapshot stall using only the exact
-        // NSWorkspace-returned app PID. No name lookup, signal or owner app.
-        let sampling = Process()
-        let sampleLog = root.appendingPathComponent("owned-app-sample.log")
-        let sampleOutput = root.appendingPathComponent("owned-app-sample-output.log")
-        try Data().write(to: sampleOutput, options: .withoutOverwriting)
-        let output = try FileHandle(forWritingTo: sampleOutput)
-        sampling.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
-        sampling.arguments = [String(owned.processIdentifier), "15", "10", "-mayDie", "-file", sampleLog.path]
-        sampling.standardInput = FileHandle.nullDevice
-        sampling.standardOutput = output
-        sampling.standardError = output
-        XCTAssertFalse(owned.isTerminated)
-        try sampling.run()
-        addTeardownBlock { @MainActor in
-            let ended = NSPredicate { _, _ in !sampling.isRunning }
-            let result = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: ended, object: nil)], timeout: 20)
-            XCTAssertEqual(result, .completed, "Owned diagnostic process did not settle")
-            if !sampling.isRunning { print("Owned app diagnostic sample status: \(sampling.terminationStatus)") }
-            try output.close()
+        do { try sampleOwnedApp(owned) }
+        catch {
+            // A diagnostic setup error is retained without preventing the real
+            // AX assertion. Actual launched diagnostics still require settlement.
+            print("Owned app sample setup unavailable: \(error)")
         }
         #endif
         let window = app.windows["EML Attachment Remover"]
@@ -149,6 +134,44 @@ final class DesktopInteractionTests: XCTestCase {
         XCTAssertTrue(owned.isTerminated)
         XCTAssertEqual(UserDefaults.standard.persistentDomain(forName: identifier)?["copyDestinationBytes"] as? String, previousDestination,
                        "Invocation override must not persist a destination")
+    }
+
+    @MainActor
+    private func sampleOwnedApp(_ owned: NSRunningApplication) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eml-gui-sample-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        let sampleLog = directory.appendingPathComponent("owned-app-sample.log")
+        let sampleOutput = directory.appendingPathComponent("owned-app-sample-output.log")
+        let sampling = Process()
+        addTeardownBlock { @MainActor in
+            guard !sampling.isRunning else {
+                print("Retained unsettled owned diagnostic directory: \(directory.path)")
+                return
+            }
+            if let output = sampling.standardOutput as? FileHandle { try output.close() }
+            for file in [sampleLog, sampleOutput] where FileManager.default.fileExists(atPath: file.path) {
+                let attachment = XCTAttachment(contentsOfFile: file)
+                attachment.name = file.lastPathComponent
+                attachment.lifetime = .keepAlways
+                self.add(attachment)
+            }
+            try FileManager.default.removeItem(at: directory)
+        }
+        try Data().write(to: sampleOutput, options: .withoutOverwriting)
+        let output = try FileHandle(forWritingTo: sampleOutput)
+        sampling.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+        sampling.arguments = [String(owned.processIdentifier), "15", "10", "-mayDie", "-file", sampleLog.path]
+        sampling.standardInput = FileHandle.nullDevice
+        sampling.standardOutput = output
+        sampling.standardError = output
+        XCTAssertFalse(owned.isTerminated)
+        try sampling.run()
+        addTeardownBlock { @MainActor in
+            let ended = NSPredicate { _, _ in !sampling.isRunning }
+            let result = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: ended, object: nil)], timeout: 20)
+            XCTAssertEqual(result, .completed, "Owned diagnostic process did not settle")
+            if !sampling.isRunning { print("Owned app diagnostic sample status: \(sampling.terminationStatus)") }
+        }
     }
 
     @MainActor
