@@ -52,9 +52,10 @@ final class NativePanelDiagnostic: NSObject, NSApplicationDelegate {
 struct DiagnosticMain {
   @MainActor
   static func main() {
+    let application = NSApplication.shared
     let delegate = NativePanelDiagnostic()
-    NSApp.setActivationPolicy(.regular)
-    NSApp.delegate = delegate
-    withExtendedLifetime(delegate) { NSApp.run() }
+    application.setActivationPolicy(.regular)
+    application.delegate = delegate
+    withExtendedLifetime(delegate) { application.run() }
   }
 }
