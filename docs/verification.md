@@ -22,10 +22,12 @@ activates its exact app. This is a pending diagnostic change, not evidence that
 the Intel AX failure is fixed.
 
 H876c480 again timed out on the Intel AX snapshot after native launch/activation;
-the owned process group settled with zero survivors. The next Intel harness
-captures a 15-second sample of only its NSWorkspace-returned app process during
-that query, and records the test runner's read-only accessibility trust state.
-Neither diagnostic changes system authorization or qualifies the app itself.
+the owned process group settled with zero survivors. An Intel sampler first
+failed writing into the fixture directory, then ran from runner-owned temporary
+storage at H515d61b but exited255 without a stack. Its diagnostic output is
+retained as an XCTest attachment. The real GUI assertions passed on both CPUs
+and both floor hosts; the unsuccessful sampler is removed for the next normal
+harness run. Earlier AX failures remain recorded without a claimed proven cause.
 The ARM H876c480 failure's retained native AX snapshot identifies both item
 refusals as SourceChanged at publication, not a missing UI report. The next
 owned harness disables NSWorkspace's optional Recent Items updates for both

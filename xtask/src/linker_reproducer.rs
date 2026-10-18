@@ -57,7 +57,7 @@ pub fn inspect(bytes: &[u8]) -> Result<Vec<InputObservation>, Box<dyn std::error
             return Err("Native reproducer input bytes exceed their bounds".into());
         }
         let mut contents = Vec::new();
-        entry.read_to_end(&mut contents)?;
+        (&mut entry).take(size + 1).read_to_end(&mut contents)?;
         if contents.len() as u64 != size {
             return Err("Native reproducer input is truncated".into());
         }
@@ -66,10 +66,11 @@ pub fn inspect(bytes: &[u8]) -> Result<Vec<InputObservation>, Box<dyn std::error
             identity: ByteIdentity::of(&contents),
         });
     }
-    if inputs.is_empty()
-        || !inputs
-            .iter()
-            .any(|input| input.member.ends_with("/response.txt"))
+    if !inputs.iter().any(|input| {
+        !input.member.ends_with("/response.txt") && !input.member.ends_with("/version.txt")
+    }) || !inputs
+        .iter()
+        .any(|input| input.member.ends_with("/response.txt"))
         || !inputs
             .iter()
             .any(|input| input.member.ends_with("/version.txt"))
@@ -128,6 +129,7 @@ mod tests {
     }
     #[test]
     fn reproducer_rejects_duplicates_traversal_links_and_oversized_members() {
+        assert!(inspect(&archive(&[])).is_err());
         for (name, kind) in [
             ("reproducer/response.txt", tar::EntryType::Regular),
             ("reproducer/../outside", tar::EntryType::Regular),
