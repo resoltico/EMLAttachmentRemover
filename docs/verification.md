@@ -31,6 +31,12 @@ extract Apple's Intel stock test runner. That probe is outside the native-only
 test-infrastructure allowance and is excluded from acceptance evidence. Modified
 Intel test code must compile and execute on the real pinned Intel runner.
 
+Each minimum-OS app row waits for the producers but attempts its own exact
+current-source artifact lookup even when the other CPU's producer failed. A
+missing producer artifact fails that row; it cannot select an older archive.
+This lets independent floor checks run on an available qualified producer while
+the strict aggregate continues to reject every failed required producer or row.
+
 The no-universal/no-lipo product policy remains absolute for every shipping CLI,
 app and worker. A reviewed test-infrastructure clarification permits Xcode itself
 to run only `lipo -extract` on Apple's supplied stock XCTRunner test agent for the

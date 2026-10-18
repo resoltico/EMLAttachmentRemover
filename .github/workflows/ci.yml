@@ -408,7 +408,7 @@ jobs:
           if-no-files-found: error
   app_smoke:
     needs: [plan, legal, app]
-    if: ${{ always() && needs.plan.result == 'success' && needs.legal.result == 'success' && needs.app.result == 'success' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.legal.result == 'success' }}
     name: macOS15 extracted archives / ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25

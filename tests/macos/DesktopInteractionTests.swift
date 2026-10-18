@@ -13,6 +13,11 @@ final class DesktopInteractionTests: XCTestCase {
         let input = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: inputURL)) as? [String: String])
         let appURL = URL(fileURLWithPath: try XCTUnwrap(input["app"]))
         let root = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
+        let sources = ["one.eml", "two.eml"].map { root.appendingPathComponent($0) }
+        let original = try Data(contentsOf: repository.appendingPathComponent("tests/contract/mime/inputs/01-gmail-attachment.eml"))
+        addTeardownBlock { @MainActor in
+            for source in sources { XCTAssertEqual(try Data(contentsOf: source), original) }
+        }
         let bundle = try XCTUnwrap(Bundle(url: appURL))
         let identifier = try XCTUnwrap(bundle.bundleIdentifier)
         XCTAssertEqual(input["host_scope"], "fresh-github-hosted-runner")
@@ -81,7 +86,6 @@ final class DesktopInteractionTests: XCTestCase {
         XCTAssertEqual(instances.first?.processIdentifier, owned.processIdentifier)
         snapshot(app, "ready")
 
-        let sources = ["one.eml", "two.eml"].map { root.appendingPathComponent($0) }
         let delivery = NSWorkspace.OpenConfiguration()
         delivery.createsNewApplicationInstance = false
         let recipient = try await NSWorkspace.shared.open(sources, withApplicationAt: appURL, configuration: delivery)
@@ -96,6 +100,11 @@ final class DesktopInteractionTests: XCTestCase {
         guard finishedObservation == .completed else {
             for button in app.buttons.allElementsBoundByIndex {
                 print("Observed button title=\(button.title.debugDescription), label=\(button.label.debugDescription), value=\(String(describing: button.value).prefix(2048))")
+            }
+            for element in app.descendants(matching: .any).allElementsBoundByIndex {
+                if element.title.hasPrefix("Selected message") {
+                    print("Observed failed-batch detail: \(String(describing: element.value).prefix(16384))")
+                }
             }
             XCTFail("Native batch did not reach its two-created presentation: \(app.debugDescription)")
             return
@@ -117,9 +126,7 @@ final class DesktopInteractionTests: XCTestCase {
         XCTAssertEqual(observation, .completed, "Settled native report is unavailable: \(app.debugDescription)")
         guard observation == .completed else { return }
         let golden = try Data(contentsOf: repository.appendingPathComponent("tests/contract/mime/golden/01-gmail-attachment.eml"))
-        let original = try Data(contentsOf: repository.appendingPathComponent("tests/contract/mime/inputs/01-gmail-attachment.eml"))
         for source in sources {
-            XCTAssertEqual(try Data(contentsOf: source), original)
             let copy = source.deletingPathExtension().appendingPathExtension("no-attachments.eml")
             XCTAssertEqual(try Data(contentsOf: copy), golden)
         }
