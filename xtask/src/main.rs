@@ -27,6 +27,7 @@ mod smoke;
 mod tools;
 #[cfg(windows)]
 mod windows_link;
+mod windows_references;
 mod windows_runtime;
 #[cfg(windows)]
 mod windows_workspace;
@@ -52,6 +53,13 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Derive byte references from pinned official Windows component archives; not approval.
+    WindowsRuntimeReferences {
+        #[arg(long)]
+        archives: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Capture an actual native Windows CLI link; static-input review is separate.
     ObserveWindowsLink {
         #[arg(long)]
@@ -202,6 +210,10 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::WindowsRuntimeReferences { archives, out } => {
+                initialize_controller(&root)?;
+                windows_references::generate(&root, &archives, &out)
+            }
             Task::ObserveWindowsLink { target, out } => {
                 #[cfg(windows)]
                 {

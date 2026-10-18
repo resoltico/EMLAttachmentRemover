@@ -155,6 +155,18 @@ state; they no longer rely solely on a polling timer with all windows hidden.
 The same failing hidden-Quit stimulus/assertions are retained for the next native
 run. This is a pending fix, not a passing GUI gate.
 
+`cargo xtask windows-runtime-references --archives DIR --out NEW_FILE` derives
+component-inputs.json from the four archives pinned by legal/windows-runtime/
+source.json. It checks the Rust authority and archive checksums, retains immutable
+owned snapshots, inspects names and streams selected members through the system
+tar into fixed owned stdout files, never extracting to advertised paths. It is a
+Unix tooling task, not Windows qualification or an approval generator. The
+committed references contain42 files per CPU. All31 actual sysroot input files
+in each H0f66f2d native manifest match those independent official references.
+A real corrupt-archive control rejects at the checksum check and creates no
+reference output. Source review, selected-member admission and Cargo-object
+provenance remain separate unfinished work.
+
 Both H515d61b Windows workspace selections now pass complete accounting:369 cases
 each, with the nested cwd child isolated from the outer transcript. Both native
 macOS app producers and both same-archive macOS15 rows pass the basic GUI case.
