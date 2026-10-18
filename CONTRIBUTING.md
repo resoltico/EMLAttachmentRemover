@@ -81,6 +81,9 @@ cargo xtask qualify --target TARGET --out target/native-qualification
 cargo xtask verify-archive --archive ARCHIVE --target TARGET
 ```
 
+On macOS, `qualify` additionally requires `--icons target/icon-input`, produced
+by the same-source icon command above, and runs only on a fresh hosted Mac.
+
 Supervised commands select the native Unix or Windows process backend. Bounded
 fuzz/mutation campaigns require Unix. Install the exact Cargo tools,
 actionlint and shellcheck declared in xtask/tools.toml on PATH. Every Cargo-tool

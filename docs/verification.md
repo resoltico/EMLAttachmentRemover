@@ -286,7 +286,9 @@ failed section. Repository tools are exact-version local prerequisites; CI insta
 prebuilt Cargo tools with source-build fallback disabled. Missing
 required local Xcode currently prevents a full pass. `qualify`, `verify-archive`, `build-cli-archive` and
 `build-macos-sources` distinguish bounded native/archive checks from complete platform
-qualification. The full app/archive/GUI and Windows gates have not passed. See
+qualification. Linux/Windows CLI release/archive gates have passing native
+checkpoints; complete macOS app/archive/GUI and final-head product gates remain
+open. See
 the [implementation evidence](v6-implementation-evidence.md) for exact source
 identities and outcomes. The bounded campaign commands are below.
 
@@ -306,15 +308,30 @@ verifies its base/H parents, executes the real Linux workspace selection and
 records all three identities. After both branches finish, an API read rejects a
 changed PR head/base. The Rust `ci-result` admission rejects absent results,
 failure, cancellation and unexpected skips; negative controls exercise each
-required role. The delivered workflow version still requires actual GitHub
-execution before its source/ref/evidence flow can be called verified.
+required role. Actual GitHub runs have exercised exact-head native execution and
+current-merge integration, retaining their identities. Failed app prerequisites
+continue to fail the floor consumers and aggregate. See the source-bound
+checkpoints in the implementation evidence; workflow wiring alone establishes
+neither complete product qualification nor unexecuted publication behavior.
 
 On Linux and Windows, `qualify` now orchestrates strict release-profile discovery
 and execution, the standalone real filesystem probe, native CLI build, complete
 materials, final-runtime review, extraction and behavioral smoke. Linux also runs
 the real different-UID namespace control; Windows release tests include the
 distinct-account, Job and console cases, followed by an actual extra-object
-rejection. On macOS, `qualify --target <native-target> --icons <validated-icon-directory> --out <new-directory>` reuses the same release-suite discovery, owned exFAT observation and complete app archive builder. It requires a fresh hosted runner before native operations, preserves the validated same-source shared icon producer and emits one qualification record for the CLI and nested app archive. CI's app job owns these release/volume checks; the separate native matrix retains debug, desktop, formatting and namespace checks. macOS15 consumers still exercise exactly the producer archives. This orchestration is implemented but its new native execution remains pending; full GUI acceptance is still open. Source compilation and scoped checks do not qualify unexecuted paths.
+rejection. On macOS,
+`qualify --target <native-target> --icons <validated-icon-directory> --out <new-directory>`
+reuses the same release-suite discovery, owned exFAT observation and complete app
+archive builder. It requires a fresh hosted runner before native operations,
+preserves the validated same-source shared icon producer and emits one
+qualification record for the CLI and nested app archive. CI's app job owns these
+release/volume checks; the separate native matrix retains debug, desktop,
+formatting and namespace checks. macOS15 consumers exercise exactly the producer
+archives. This orchestration has executed release tests, volume/build checks and
+actual extracted-app interactions, then failed at the GUI gates documented in
+the implementation evidence. Later GUI paths and current-source floor acceptance
+remain unqualified. Source compilation and scoped checks do not qualify those
+unexecuted paths.
 
 `cargo xtask distribution` prints the native target policy and expected archive
 identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.

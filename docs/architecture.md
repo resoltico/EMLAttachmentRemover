@@ -23,8 +23,9 @@ The workspace separates message policy and native storage from frontends.
   The [frontend design](desktop-frontend-design.md) and
   [process ownership](macos-process-ownership.md) describe its native integration.
 - **eml-gui** contains the Slint macOS screens under the explicit macos-gui
-  Cargo feature. Its first screen build is additional local evidence; control
-  wiring and native qualification remain incomplete. **eml-macos** carries the
+  Cargo feature. It renders queue, progress, reports and confirmation state and
+  routes native ingress and user actions to the shared application contracts.
+  Full native GUI qualification remains incomplete. **eml-macos** carries the
   reviewed Darwin ownership boundary into Rust, separate from business policy.
 - **xtask** owns repository checks, bounded campaigns, native build identity,
   complete target notices, archive creation/readback and qualification evidence.
@@ -33,7 +34,7 @@ The workspace separates message policy and native storage from frontends.
   calls out of xtask and filesystem policy. It is not linked into the CLI or
   macOS app and introduces no Windows frontend. See
   [Windows process ownership](windows-process-ownership.md) for its actual scope
-  and outstanding native/console checks.
+  and source-bound native/console evidence.
   Developer process supervision is separate from product helper ownership.
 
 A PreparedMessage retains source bytes and authorized deletion ranges. Production
@@ -55,9 +56,10 @@ This is packaging publication, separate from the product's message-copy edge.
 The native target table and tool pins have single authorities under xtask/;
 Cargo metadata supplies the workspace version. Generated target legal trees have
 reviewed source bindings and deterministic freshness checks. Cargo notices do not
-replace native runtime input review. Windows final-link provenance, private
-archive extraction/process supervision and complete app/archive/GUI qualification
-remain open; see the [implementation evidence](v6-implementation-evidence.md).
+replace native runtime input review. Windows final-link provenance and private
+archive extraction/process supervision have passing native checkpoints; complete
+macOS app/archive/GUI and final-head product qualification remain open. See the
+[implementation evidence](v6-implementation-evidence.md) for identities and limits.
 
 Other-platform GUIs can call the reusable library contracts when an actual
 frontend is proposed. There is no second engine, old report decoder, preference

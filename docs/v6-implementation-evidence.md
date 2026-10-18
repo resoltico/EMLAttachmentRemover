@@ -1413,10 +1413,11 @@ The fixture now requests and acknowledges a baseline sample before dispatching
 its first picker action, then keeps the existing in-operation samples. Status,
 phase and actual retained-target liveness remain separate facts; baseline
 settlement does not assert a successful capture. After runner settlement, one
-read-only log query covers the owned launch through settlement and filters both
-the exact product PID and its unique executable path. It cannot expose unrelated
-process logs, and absence cannot rule out errors emitted by ViewBridge or another
-service. Query execution is limited to eight seconds and stops at an observed
+read-only log query covers the owned launch through settlement and requests the
+exact product PID and its unique executable path. A later owned negative control
+found these separate query options combine as alternatives, not a conjunction;
+the correction is recorded below. Absence cannot rule out errors emitted by
+ViewBridge or another service. Query execution is limited to eight seconds and stops at an observed
 1MiB file size; polling is explicitly not a hard byte cap. Actual bytes, status,
 timeout and size-stop are recorded. The exact diagnostic child remains retained
 across throwing reads/cancellation; unresolved settlement fails the owner result
@@ -1484,9 +1485,10 @@ and Core NotPublished receipt, and the missing-copy hold/restore sequence.
 The owner records actual restoration, no held copy left behind, normal app
 termination and four successful before/during-picker samples. Its broad owned-PID
 log query stopped at an observed2970732bytes; that truncated query cannot rule
-out later errors. The next query retains exact PID/path/time constraints and
-filters error/fault or exception/panel/ViewBridge context. It excludes other
-messages and service-process logs, and remains subject to its recorded limits.
+out later errors. The next query attempted error/fault or
+exception/panel/ViewBridge filtering, but the separate PID option overrode that
+narrowing through alternative matching. The actual observed limit and later
+single-conjunction correction are recorded below.
 
 The collision screenshot also exposed stale product activity: the export actor
 had joined and its cancellation action was disabled, but the activity still
@@ -1518,3 +1520,32 @@ and toolchains match the preceding audit: Ubuntu22.04.5, Windows kernels
 10.0.26200 ARM/10.0.20348 x64, macOS26.6.2 ARM/26.6.1 Intel, Rust1.99.0,
 and Xcode26.3/SDK26.2 for Mac checks. Mac release/archive/GUI and floor gates
 remain separate; these six passing rows do not qualify those failed gates.
+
+## Exact Finder-window capture and diagnostic conjunction
+
+At H23bae7df187ea4293733387e8ab8db169e6d28ca/run39175311216 all six
+native test rows and exact-M integration passed again, with unchanged discovery
+counts and runtime requirements. Independent artifact review confirms all four
+Linux/Windows extracted CLI gates and both fake-executable rejection controls.
+The ARM GUI test ran248.408seconds and passed the settled-export regression and
+exact selected Finder Image lookup. It then failed taking a screenshot of the
+Finder application element, whose frame is empty. XCTest raised a further
+interruption exception during teardown; neither failure is discarded. The
+capture now targets the already identified owned folder window, using the same
+screenshot attachment helper generalized to XCUIElement. Actual drag and later
+GUI phases remain unrun at that head. The owner reaped the runner, observed
+normal app termination and verified all four originals unchanged.
+
+The attempted narrow log query still stopped at1744855bytes and included
+messages that do not satisfy its context predicate. A separate owned native
+Swift OSLog process emitted one KEEP-context message and one DROP-noise message.
+Actual `/usr/bin/log` queries with separate --process and --predicate options
+returned both, whereas one predicate combining processIdentifier, executable
+path and context returned KEEP and excluded DROP. Both commands exited0. This
+is real-boundary diagnostic filtering evidence on the local host, not product
+GUI or pinned-Xcode qualification. The query now uses that single conjunction,
+records its applied predicate and retains the launch interval, eight-second
+deadline, observed-size stop and exact retained-child settlement. Missing
+messages and service-process logs still cannot be ruled out. Local SDK27 Swift6
+owner/XCTest compilation and strict Swift formatting passed; native rerun remains
+required. The Intel app gate at this head is still running at this checkpoint.

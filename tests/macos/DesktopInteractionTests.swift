@@ -758,7 +758,7 @@ final class DesktopInteractionTests: XCTestCase {
     }
     let firstCopy = sources[0].deletingPathExtension().appendingPathExtension("no-attachments.eml")
     _ = try finderEntry(folder, file: firstCopy, selected: true)
-    snapshot(finder, "native-finder-revealed-exact-copy")
+    snapshot(folder, "native-finder-revealed-exact-copy")
 
     // Free one full-report reservation before a real native file drag.
     guard owned.activate(options: []) else { throw InteractionFailure.expectedPresentation }
@@ -1231,8 +1231,8 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
-  func snapshot(_ app: XCUIApplication, _ name: String) {
-    let attachment = XCTAttachment(screenshot: app.screenshot())
+  func snapshot(_ element: XCUIElement, _ name: String) {
+    let attachment = XCTAttachment(screenshot: element.screenshot())
     attachment.name = name
     attachment.lifetime = .keepAlways
     add(attachment)
