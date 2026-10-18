@@ -19,6 +19,16 @@ const QUIT: u8 = 1;
 const REOPEN: u8 = 2;
 const BROKEN: u8 = 4;
 static EVENTS: AtomicU8 = AtomicU8::new(0);
+fn wake_event_loop() {
+    // Native application callbacks can arrive with every window hidden. Post a
+    // real backend event rather than relying only on a pending polling timer.
+    // Keep a platform/library failure inside the native ABI boundary.
+    if !std::panic::catch_unwind(|| slint::invoke_from_event_loop(|| {}))
+        .is_ok_and(|result| result.is_ok())
+    {
+        EVENTS.fetch_or(BROKEN, Ordering::Release);
+    }
+}
 #[derive(Default)]
 struct PendingIngress {
     // Native callbacks retain at most the waiting-selection limit before the
@@ -69,7 +79,7 @@ fn collect_native(
             .begin()
     })?;
     let collected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(collect));
-    INGRESS.with(|pending| {
+    let result = INGRESS.with(|pending| {
         let mut pending = pending
             .try_borrow_mut()
             .map_err(|_| NativeError::IngressUnavailable)?;
@@ -85,7 +95,11 @@ fn collect_native(
                 Err(NativeError::IngressUnavailable)
             }
         }
-    })
+    });
+    if commit {
+        wake_event_loop();
+    }
+    result
 }
 
 pub(crate) fn receive_drop(board: *mut std::ffi::c_void, commit: bool) -> bool {
@@ -112,12 +126,14 @@ pub(crate) fn receive_drop(board: *mut std::ffi::c_void, commit: bool) -> bool {
 
 extern "C" fn should_terminate(_: &AnyObject, _: Sel, _: &NSApplication) -> usize {
     EVENTS.fetch_or(QUIT, Ordering::Release);
+    wake_event_loop();
     // Native termination is cancelled until the Slint controller confirms
     // intent, settles its actors, and exits the event loop.
     0
 }
 extern "C" fn should_reopen(_: &AnyObject, _: Sel, _: &NSApplication, _: Bool) -> Bool {
     EVENTS.fetch_or(REOPEN, Ordering::Release);
+    wake_event_loop();
     Bool::NO
 }
 extern "C" fn terminate_after_close(_: &AnyObject, _: Sel, _: &NSApplication) -> Bool {
@@ -311,7 +327,7 @@ impl ApplicationHooks {
         let events = EVENTS.swap(0, Ordering::AcqRel);
         if events & BROKEN != 0 {
             return Err(
-                "Native file delivery failed at the platform boundary; further admission is closed",
+                "Native application integration failed at the platform boundary; further admission is closed",
             );
         }
         let selections = INGRESS.with(|pending| {

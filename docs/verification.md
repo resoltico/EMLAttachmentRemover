@@ -144,6 +144,17 @@ from a hidden main window, cancellation and final confirmation. Production
 stop/force/cleanup timing and ownership are unchanged; native verification is
 still required.
 
+At H0f66f2d both Windows native rows pass, including actual reproducer capture
+and compiler/linker LLVM-version agreement. Input manifests contain82 x64 and81
+ARM files. Selected static-input/source/legal classification and its real
+unknown-input control remain separate unfinished gates. The ARM extended GUI
+case passes About/version, complete license text, keyboard Edit and close/reopen,
+then fails hidden-window Quit restoration. Native intent callbacks and committed
+ingress now explicitly post a Slint backend wake after storing their bounded
+state; they no longer rely solely on a polling timer with all windows hidden.
+The same failing hidden-Quit stimulus/assertions are retained for the next native
+run. This is a pending fix, not a passing GUI gate.
+
 Both H515d61b Windows workspace selections now pass complete accounting:369 cases
 each, with the nested cwd child isolated from the outer transcript. Both native
 macOS app producers and both same-archive macOS15 rows pass the basic GUI case.
