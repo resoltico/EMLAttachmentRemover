@@ -12626,10 +12626,10 @@
       "sha256": "52c21442a62c86d82331f740bd623d3508182a3a9aaf003fd3bfb1819c5ea61f"
     },
     {
-      "bytes": 1070,
+      "bytes": 1174,
       "kind": "review_input",
       "path": "crates/eml-fs/Cargo.toml",
-      "sha256": "706db32ef53ba685d6c6765d68e11c82755f1578bd76ab81e6d09c10f2a25f90"
+      "sha256": "9d77e31e9ea2d9dd7ebe1e41a02443067676580ccae60675c3d71e1a97138d72"
     },
     {
       "bytes": 308,
@@ -12832,6 +12832,10 @@
     {
       "basis_head": "e8fe1d4f6334dd6d072c2c5f3771597d3982ae1e",
       "scope": "Reviewed the workspace addition of eml-windows and its Windows-only xtask edge: an owned native Job/process tooling boundary, not a shipping dependency or frontend. Cargo.lock changes only this local6.0.0 package and the xtask path dependency. Existing registry versions/checksums are unchanged. Product normal closures and per-package legal text bindings remain subject to actual ten-profile generation."
+    },
+    {
+      "basis_head": "4d01b5c96850aff18ed62c58d0a200f225fb5d58",
+      "scope": "Reviewed eml-fs manifest changes: existing windows-sys0.61.2 enables Authorization/SystemServices for native private artifact ACL handling and NetManagement only as a Windows dev dependency for the actual distinct-user test. Registry identities/checksums remain unchanged. Selected grants and complete product normal closures are checked by full notice generation."
     }
   ],
   "product_material_review": {

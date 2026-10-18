@@ -229,6 +229,7 @@ pub(super) fn run(
         timed_out,
         cancelled,
         unexpected_survivors,
+        survivor_observations: _,
         cleanup_complete,
         execution_ms: _,
         cleanup_ms,
@@ -391,6 +392,7 @@ struct Row {
     pid: Pid,
     group: i32,
     state: String,
+    command: String,
 }
 fn inspect(program: &Path, session: Pid, until: Instant) -> Result<(Vec<Row>, bool)> {
     let until = until.min(Instant::now() + Duration::from_secs(2));
@@ -398,7 +400,7 @@ fn inspect(program: &Path, session: Pid, until: Instant) -> Result<(Vec<Row>, bo
         return Err("Inspection budget exhausted before spawn".into());
     }
     let mut process = Command::new(program)
-        .args(["-axo", "pid=,pgid=,state="])
+        .args(["-axo", "pid=,pgid=,state=,comm="])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -435,21 +437,31 @@ fn inspect(program: &Path, session: Pid, until: Instant) -> Result<(Vec<Row>, bo
     if bytes.len() > 8 * 1024 * 1024 {
         return Err("Process inspection output exceeds its bound".into());
     }
-    let output = std::str::from_utf8(&bytes)?;
     let mut rows = Vec::new();
     let mut self_seen = false;
     let mut unstable = false;
-    for line in output.lines() {
-        let fields = line.split_whitespace().collect::<Vec<_>>();
-        if fields.len() != 3 {
+    for line in bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+    {
+        let fields = line
+            .split(|byte| byte.is_ascii_whitespace())
+            .filter(|field| !field.is_empty())
+            .collect::<Vec<_>>();
+        if fields.len() < 4 {
             return Err("Malformed numeric process inspection".into());
         }
-        let numeric: i32 = fields[0].parse()?;
+        let numeric: i32 = std::str::from_utf8(fields[0])?.parse()?;
         let Some(pid) = Pid::from_raw(numeric) else {
             return Err("Invalid inspected process ID".into());
         };
-        let group = fields[1].parse()?;
-        let state = fields[2].to_owned();
+        let group = std::str::from_utf8(fields[1])?.parse()?;
+        let state = std::str::from_utf8(fields[2])?.to_owned();
+        // Diagnostic only: never use this executable name for ownership/signals.
+        let command = String::from_utf8_lossy(&fields[3..].join(&b' '))
+            .chars()
+            .take(512)
+            .collect();
         if pid == getpid() {
             self_seen = true;
         }
@@ -472,7 +484,12 @@ fn inspect(program: &Path, session: Pid, until: Instant) -> Result<(Vec<Row>, bo
                     unstable = true;
                     continue;
                 }
-                rows.push(Row { pid, group, state });
+                rows.push(Row {
+                    pid,
+                    group,
+                    state,
+                    command,
+                });
             }
             Ok(_) => (),
             Err(error) if error == rustix::io::Errno::SRCH => {
@@ -498,9 +515,19 @@ struct Session {
     cleaned: bool,
 }
 impl Session {
-    fn cleanup(&mut self, ordinary_exit: bool) -> (bool, usize, Duration, Option<String>) {
+    fn cleanup(
+        &mut self,
+        ordinary_exit: bool,
+    ) -> (
+        bool,
+        usize,
+        Duration,
+        Option<String>,
+        Vec<serde_json::Value>,
+    ) {
         let began = Instant::now();
         let mut unexpected = BTreeSet::new();
+        let mut observations = BTreeMap::new();
         let mut detail = None;
         let mut stable = 0;
         let discovery_until = began + CLEANUP_GRACE / 2;
@@ -541,6 +568,9 @@ impl Session {
                 }
                 if ordinary_exit && !row.state.starts_with('Z') {
                     unexpected.insert(pid);
+                    if observations.len() < 64 {
+                        observations.entry(pid).or_insert_with(||serde_json::json!({"pid":pid,"group":row.group,"state":row.state,"command":row.command,"scope":"observed owned-session member; name is diagnostic only"}));
+                    }
                 }
                 if !self.pins.contains_key(&row.group) {
                     let Some(group) = Pid::from_raw(row.group) else {
@@ -656,7 +686,13 @@ impl Session {
             detail = Some("Worker could not be reaped within cleanup grace".into());
         }
         self.cleaned = detail.is_none();
-        (self.cleaned, unexpected.len(), began.elapsed(), detail)
+        (
+            self.cleaned,
+            unexpected.len(),
+            began.elapsed(),
+            detail,
+            observations.into_values().collect(),
+        )
     }
 }
 impl Drop for Session {
@@ -762,7 +798,7 @@ pub(super) fn session_entry() -> ExitCode {
         };
         let execution = started.elapsed();
         let ordinary = state.raw_status.is_some() && !timed_out && !cancelled;
-        let (complete, survivors, cleanup, detail) = state.cleanup(ordinary);
+        let (complete, survivors, cleanup, detail, observations) = state.cleanup(ordinary);
         frame(
             &mut std::io::stdout().lock(),
             &Message::Finished {
@@ -770,6 +806,7 @@ pub(super) fn session_entry() -> ExitCode {
                 timed_out,
                 cancelled,
                 unexpected_survivors: survivors,
+                survivor_observations: observations,
                 cleanup_complete: complete,
                 execution_ms: execution.as_millis().try_into()?,
                 cleanup_ms: cleanup.as_millis().try_into()?,

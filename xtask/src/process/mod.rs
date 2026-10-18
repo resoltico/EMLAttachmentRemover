@@ -302,6 +302,7 @@ pub(crate) enum Message {
         timed_out: bool,
         cancelled: bool,
         unexpected_survivors: usize,
+        survivor_observations: Vec<serde_json::Value>,
         cleanup_complete: bool,
         execution_ms: u64,
         cleanup_ms: u64,

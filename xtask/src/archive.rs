@@ -54,6 +54,8 @@ pub struct ArtifactDirectory {
     _held: eml_fs::CreatedDirectory,
     #[cfg(unix)]
     _ancestors: Vec<eml_fs::BoundDirectory>,
+    #[cfg(windows)]
+    _windows: eml_fs::PrivateDirectory,
 }
 
 impl ArtifactDirectory {
@@ -139,8 +141,19 @@ pub fn create_artifact_directory(parent: &Path) -> io::Result<ArtifactDirectory>
     ))
 }
 
-/// Refuse hosts without the required protected-root implementation.
-#[cfg(not(unix))]
+/// Create only beneath a natively admitted protected Windows ancestor chain.
+#[cfg(windows)]
+pub fn create_artifact_directory(parent: &Path) -> io::Result<ArtifactDirectory> {
+    let directory = eml_fs::create_private_directory(parent)?;
+    directory.check()?;
+    Ok(ArtifactDirectory {
+        path: directory.path().to_owned(),
+        _windows: directory,
+    })
+}
+
+/// Refuse hosts without a protected-root implementation.
+#[cfg(not(any(unix, windows)))]
 pub fn create_artifact_directory(_parent: &Path) -> io::Result<ArtifactDirectory> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
@@ -271,7 +284,7 @@ impl ArchiveSnapshot {
     /// independently generated target notice/README inputs, not the archive.
     /// This checks CRCs and exact inventory, but does not execute the CLI.
     /// Unix creation uses eml-fs namespace admission and private ACL/mode rules.
-    /// Windows currently refuses pending its protected-root ACL implementation.
+    /// Windows requires admitted ancestor ACLs and a protected owner-created root.
     pub fn extract_cli_zip(
         &self,
         root_name: &str,
@@ -1896,9 +1909,18 @@ mod tests {
         let snapshot = ArchiveSnapshot {
             bytes: synthetic_cli_zip(&materials),
         };
-        let result = snapshot.extract_cli_zip("package", "tool", &materials, owned.path());
-        assert_eq!(result.err().unwrap().kind(), io::ErrorKind::Unsupported);
-        assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 0);
+        let result = snapshot
+            .extract_cli_zip("package", "tool", &materials, owned.path())
+            .unwrap();
+        for (name, bytes) in materials {
+            assert_eq!(fs::read(result.root().join(name)).unwrap(), bytes);
+        }
+        assert_eq!(
+            fs::read(result.root().join("tool")).unwrap(),
+            b"synthetic executable fixture; never invoked"
+        );
+        drop(result);
+        assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 1);
     }
 
     #[test]

@@ -137,7 +137,7 @@ fn check_pin(pin: &BoundDirectory) -> io::Result<()> {
         ))
     }
 }
-fn root_and_names(path: &Path) -> io::Result<(PathBuf, Vec<&OsStr>)> {
+pub(super) fn root_and_names(path: &Path) -> io::Result<(PathBuf, Vec<&OsStr>)> {
     path::validate_operation(path)?;
     let mut parts = path.components();
     let Some(Component::Prefix(prefix)) = parts.next() else {

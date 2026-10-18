@@ -565,3 +565,25 @@ fields and the running inspector's PE CPU, separately from Rust compiler host
 and runner labels. It refuses emulated/mismatched machines before a native CLI
 build. Both target Clippy checks pass; the added actual-machine test and native
 host qualification still need execution at the source containing them.
+
+## Protected Windows artifact enclosure and GUI diagnostics
+
+Windows archive extraction now retains an eml-fs private directory with held
+ordinary/no-delete-share ancestry and native owner/DACL admission. Creation uses
+an explicit protected DACL and actual creator SID; preexisting permissions remain
+unchanged. Source Clippy passes both Windows targets. The actual distinct-user
+test is mandatory in native discovery: an owned fresh-host account is logged on
+and used for real synchronous path access, with verified distinct effective SID,
+positive control, private denials, restoration and identity-checked account
+cleanup. This has not yet executed and does not qualify the protected-root gate.
+See windows-archive-protection.md for the scope and separate trusted-user model.
+
+The H4d01b5c GUI test still failed its run-button query; macOS exposes the observed
+string as title, separately from label/value. Its teardown reached actual owned
+GUI termination through Command-Q/confirmation, but the outer controller still
+found one unexpected owned-session process. That remains a failed gate. The query
+now uses the real title attribute. Unix diagnostics retain up to64 observed
+survivors' PID/group/state and bounded executable names, while full survivor
+counts and all existing ownership/signal rules remain authoritative. Names are
+diagnostic only, never signal authority; non-Unicode names do not become
+operational paths. All19 actual Unix process regression tests still pass.
