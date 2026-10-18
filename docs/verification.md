@@ -10,6 +10,11 @@ revised check remains unrun on the pinned native runners. The harness also
 exercises Quit cancellation/confirmation and compares
 the complete app persistent domain using separate fresh observer processes before
 and after the argument-domain-only run. It does not run on an owner desktop.
+The Intel run at the same source timed out in the initial AX window query;
+cleanup completed with zero survivors. Before making that query the harness now
+waits for the owned NSRunningApplication's native finished-launching state and
+activates its exact app. This is a pending diagnostic change, not evidence that
+the Intel AX failure is fixed.
 
 The no-universal/no-lipo product policy remains absolute for every shipping CLI,
 app and worker. A reviewed test-infrastructure clarification permits Xcode itself

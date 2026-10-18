@@ -41,12 +41,18 @@ final class DesktopInteractionTests: XCTestCase {
                 XCTAssertTrue(owned.isTerminated)
             }
         }
+        let launched = NSPredicate { _, _ in owned.isFinishedLaunching && !owned.isTerminated }
+        let launchObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: launched, object: nil)], timeout: 20)
+        guard launchObservation == .completed else {
+            XCTFail("Owned application did not finish native launch")
+            return
+        }
+        app.activate()
         let window = app.windows["EML Attachment Remover"]
         XCTAssertTrue(window.waitForExistence(timeout: 20), app.debugDescription)
         let instances = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
         XCTAssertEqual(instances.count, 1)
         XCTAssertEqual(instances.first?.processIdentifier, owned.processIdentifier)
-        app.activate()
         snapshot(app, "ready")
 
         let sources = ["one.eml", "two.eml"].map { root.appendingPathComponent($0) }
