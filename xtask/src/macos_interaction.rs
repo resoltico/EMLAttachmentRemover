@@ -350,7 +350,7 @@ pub(crate) fn run_case(
     let mut invocation =
         json!({"app":app,"fixture":fixture.path(),"host_scope":"fresh-github-hosted-runner"});
     if case == DesktopCase::Workflow {
-        invocation["picker_stack"] = json!("true");
+        invocation["fixture_output"] = json!("true");
     }
     if case == DesktopCase::Appearance {
         invocation["appearance_session"] = json!("true");
@@ -429,26 +429,27 @@ pub(crate) fn run_case(
     )?;
     let owner = out.join("DesktopInteractionOwner");
     if case == DesktopCase::Workflow {
-        let tests = out.join("PickerDiagnosticOutputTests");
+        let tests = out.join("DesktopFixtureTests");
         let mut compile = build.command(root, &build.swiftc);
         compile
             .args([
                 "-parse-as-library",
                 "-D",
-                "PICKER_MARKER_TESTS",
+                "DESKTOP_FIXTURE_TESTS",
                 "-target",
                 &build.swift_target(),
                 "-sdk",
             ])
             .arg(&build.sdk)
             .arg(root.join("tests/macos/DesktopInteractionOwner.swift"))
-            .arg(root.join("tests/macos/PickerDiagnosticOutputTests.swift"))
+            .arg(root.join("tests/macos/DesktopFixtureOutput.swift"))
+            .arg(root.join("tests/macos/DesktopFixtureTests.swift"))
             .arg("-o")
             .arg(&tests);
-        crate::macos::checked_run(compile, &out.join("picker-marker-tests-build.log"), 120)?;
+        crate::macos::checked_run(compile, &out.join("desktop-fixture-tests-build.log"), 120)?;
         crate::macos::checked_run(
             build.command(root, &tests),
-            &out.join("picker-marker-tests.log"),
+            &out.join("desktop-fixture-tests.log"),
             30,
         )?;
     }
@@ -465,6 +466,7 @@ pub(crate) fn run_case(
         ])
         .arg(&build.sdk)
         .arg(root.join("tests/macos/DesktopInteractionOwner.swift"))
+        .arg(root.join("tests/macos/DesktopFixtureOutput.swift"))
         .arg("-o")
         .arg(&owner);
     crate::macos::checked_run(compile, &out.join("interaction-owner-build.log"), 120)?;
@@ -679,6 +681,15 @@ pub(crate) fn run_case(
         return Err("Native picker evidence is missing or belongs to another app/fixture".into());
     }
     let preferences = crate::desktop_preferences::compare(&before, &after, true)?;
+    if ownership["missing_copy_observation"]["held"] != true
+        || ownership["missing_copy_observation"]["restored_by_request"] != true
+        || ownership["missing_copy_observation"]["copy_left_held"] != false
+        || ownership["missing_copy_observation"]["restoration_failure"] != Value::Null
+    {
+        return Err(
+            "The owned missing-copy navigation control did not complete and restore".into(),
+        );
+    }
     let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"app":app,"process":process.evidence(),"lifetime_controls":lifetime_controls,"lifetime_owner":ownership,"summary":summary,"ownership_receipt":receipt,"picker_observation":picker,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"comparison":preferences,"argument_only_controls":control_preferences},
         "scope":"actual extracted app: owned NSWorkspace launch, About/version, complete license value and keyboard Edit command, main close/reopen, two-file Open With, native message/folder import, report-space pause/dismiss/resume, real Services with CJK native filename, eight waiting requests/ninth refusal/UI removal, native Save report export/readback and collision refusal, independent golden/original checks, settled worker presentation, screenshots, hidden-window Quit cancel/confirm and destination override non-persistence; remaining GUI paths require separate checks"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;

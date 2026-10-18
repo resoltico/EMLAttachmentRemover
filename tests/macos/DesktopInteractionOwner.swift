@@ -4,54 +4,9 @@ import AppKit
 import Darwin
 import Foundation
 
-// The pipe callback and lifetime owner share only this bounded observation.
-// NSLock protects every mutable field; no native app capability crosses threads.
-final class PickerDiagnosticOutput: @unchecked Sendable {
-  private let lock = NSLock()
-  private var tail = Data()
-  private var pending = false
-  private var ended = false
-  private var relayFailure: String?
-  func failRelay(_ reason: String) {
-    lock.lock()
-    relayFailure = relayFailure ?? reason
-    lock.unlock()
-  }
-  func observedRelayFailure() -> String? {
-    lock.lock()
-    defer { lock.unlock() }
-    return relayFailure
-  }
-  func finish() {
-    lock.lock()
-    ended = true
-    lock.unlock()
-  }
-  func hasEnded() -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    return ended
-  }
-  func observe(_ bytes: Data) {
-    let marker = Data("EML_NATIVE_PICKER_REQUESTED".utf8)
-    lock.lock()
-    defer { lock.unlock() }
-    let combined = tail + bytes
-    if combined.range(of: marker) != nil { pending = true }
-    tail = combined.suffix(marker.count - 1)
-  }
-  func take() -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    let value = pending
-    pending = false
-    return value
-  }
-}
-
 // Test-only lifetime authority. XCTest receives observations for attachment;
 // this process retains the NSWorkspace-returned object across runner failure.
-#if !PICKER_MARKER_TESTS
+#if !DESKTOP_FIXTURE_TESTS
   @main
 #endif
 @MainActor
@@ -78,8 +33,13 @@ struct DesktopInteractionOwner {
     var unexpectedSettings: [pid_t] = []
     var stackSamples: [[String: Any]] = []
     var outputPipe: Pipe?
-    let pickerMarker = PickerDiagnosticOutput()
+    let fixtureOutput = DesktopFixtureOutput()
     var outputDrainComplete: Bool?
+    var heldCopy: (source: URL, held: URL, expected: Data)?
+    var copyWasHeld = false
+    var copyRestoredByRequest = false
+    var copyRestoredDuringCleanup = false
+    var copyRestorationFailure: String?
     let child = Process()
     let executionDeadline = ProcessInfo.processInfo.systemUptime + 1800
     let cancellation = Cancellation()
@@ -195,29 +155,11 @@ struct DesktopInteractionOwner {
       child.executableURL = URL(fileURLWithPath: arguments[4])
       child.arguments = Array(arguments.dropFirst(5))
       child.standardInput = FileHandle.nullDevice
-      if input["picker_stack"] == "true" {
+      if input["fixture_output"] == "true" {
         let pipe = Pipe()
         outputPipe = pipe
         child.standardOutput = pipe
-        pipe.fileHandleForReading.readabilityHandler = { handle in
-          do {
-            let bytes = try handle.read(upToCount: 64 * 1024) ?? Data()
-            if bytes.isEmpty {
-              handle.readabilityHandler = nil
-              pickerMarker.finish()
-            } else {
-              pickerMarker.observe(bytes)
-              do { try FileHandle.standardOutput.write(contentsOf: bytes) } catch {
-                pickerMarker.failRelay("Output write failed: \(error)")
-              }
-            }
-          } catch {
-            pickerMarker.failRelay("Output read failed: \(error)")
-            handle.readabilityHandler = nil
-            pickerMarker.finish()
-          }
-
-        }
+        try fixtureOutput.relay(from: pipe.fileHandleForReading, to: FileHandle.standardOutput)
       } else {
         child.standardOutput = FileHandle.standardOutput
       }
@@ -226,7 +168,45 @@ struct DesktopInteractionOwner {
       var ready = false
       var shortDeadline: TimeInterval?
       while child.isRunning {
-        if pickerMarker.take(), stackSamples.count < 3, !launched.isTerminated {
+        if let relayFailure = fixtureOutput.observedRelayFailure() {
+          failure = failure ?? relayFailure
+          throw Failure.invalidInput
+        }
+        let request = fixtureOutput.take()
+        if request == .holdCopy {
+          guard !copyWasHeld, originals.count == 4 else { throw Failure.invalidInput }
+          let source = originals[3].0.deletingPathExtension().appendingPathExtension(
+            "no-attachments.eml")
+          let held = fixture.appendingPathComponent("held-service-copy.eml")
+          let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+          let golden = try Data(
+            contentsOf: repository.appendingPathComponent(
+              "tests/contract/mime/golden/01-gmail-attachment.eml"))
+          guard try Data(contentsOf: source) == golden,
+            !FileManager.default.fileExists(atPath: held.path)
+          else { throw Failure.invalidInput }
+          try moveWithoutReplacement(from: source, to: held)
+          heldCopy = (source, held, golden)
+          copyWasHeld = true
+          guard try Data(contentsOf: held) == golden,
+            !FileManager.default.fileExists(atPath: source.path)
+          else { throw Failure.invalidInput }
+          try acknowledge("owned copy held\n", at: fixture.appendingPathComponent("copy-held"))
+        } else if request == .restoreCopy {
+          guard let held = heldCopy, try Data(contentsOf: held.held) == held.expected,
+            !FileManager.default.fileExists(atPath: held.source.path)
+          else { throw Failure.invalidInput }
+          try moveWithoutReplacement(from: held.held, to: held.source)
+          heldCopy = nil
+          guard try Data(contentsOf: held.source) == held.expected else {
+            throw Failure.invalidInput
+          }
+          copyRestoredByRequest = true
+          try acknowledge(
+            "owned copy restored\n", at: fixture.appendingPathComponent("copy-restored"))
+        }
+        if request == .picker, stackSamples.count < 3, !launched.isTerminated {
           let sample = Process()
           let sampleURL = URL(fileURLWithPath: arguments[3]).deletingLastPathComponent()
             .appendingPathComponent("native-picker-stack-\(stackSamples.count).txt")
@@ -307,19 +287,19 @@ struct DesktopInteractionOwner {
       }
       if outputPipe != nil {
         let drainDeadline = ProcessInfo.processInfo.systemUptime + 2
-        while !pickerMarker.hasEnded() && ProcessInfo.processInfo.systemUptime < drainDeadline {
+        while !fixtureOutput.hasEnded() && ProcessInfo.processInfo.systemUptime < drainDeadline {
           try await Task.sleep(for: .milliseconds(50))
         }
-        outputDrainComplete = pickerMarker.hasEnded()
-        if !pickerMarker.hasEnded() {
+        outputDrainComplete = fixtureOutput.hasEnded()
+        if !fixtureOutput.hasEnded() {
           failure = failure ?? "Interaction output drain did not settle"
         }
-        if let relayFailure = pickerMarker.observedRelayFailure() {
+        if let relayFailure = fixtureOutput.observedRelayFailure() {
           failure = failure ?? relayFailure
         }
       }
 
-    } catch { failure = String(describing: error) }
+    } catch { failure = failure ?? String(describing: error) }
 
     // Internal failure/deadline and the controller's opted-in TERM grace.
     // A hard kill or unresolved launch callback can still bypass cleanup;
@@ -379,6 +359,22 @@ struct DesktopInteractionOwner {
       failure = failure ?? "App required forced cleanup; normal app/worker settlement is unverified"
     }
     do {
+      if let held = heldCopy {
+        do {
+          guard try Data(contentsOf: held.held) == held.expected,
+            !FileManager.default.fileExists(atPath: held.source.path)
+          else { throw Failure.invalidInput }
+          try moveWithoutReplacement(from: held.held, to: held.source)
+          guard try Data(contentsOf: held.source) == held.expected else {
+            throw Failure.invalidInput
+          }
+          heldCopy = nil
+          copyRestoredDuringCleanup = true
+        } catch {
+          copyRestorationFailure = String(describing: error)
+          failure = failure ?? "Owned copy restoration failed: \(error)"
+        }
+      }
       originalsUnchanged =
         !originals.isEmpty
         && originals.allSatisfy { url, bytes in (try? Data(contentsOf: url)) == bytes }
@@ -410,11 +406,18 @@ struct DesktopInteractionOwner {
           ? NSNull() : "Owned original fixture bytes changed or could not be read",
         "owned_pasteboard_released": hadBoard,
         "native_picker_stack_samples": stackSamples,
-        "native_picker_output_relay": [
+        "missing_copy_observation": [
+          "held": copyWasHeld, "restored_by_request": copyRestoredByRequest,
+          "restored_during_cleanup": copyRestoredDuringCleanup,
+          "copy_left_held": heldCopy != nil,
+          "restoration_failure": copyRestorationFailure.map { $0 as Any } ?? NSNull(),
+          "scope": "only the owned synthetic output; hard-kill restoration remains unverified",
+        ],
+        "fixture_output_relay": [
           "enabled": outputPipe != nil,
-          "eof_observed": pickerMarker.hasEnded(),
+          "eof_observed": fixtureOutput.hasEnded(),
           "drain_within_deadline": outputDrainComplete.map { $0 as Any } ?? NSNull(),
-          "failure": pickerMarker.observedRelayFailure().map { $0 as Any } ?? NSNull(),
+          "failure": fixtureOutput.observedRelayFailure().map { $0 as Any } ?? NSNull(),
         ],
       ]
       var observation = result
@@ -430,5 +433,23 @@ struct DesktopInteractionOwner {
         contentsOf: Data("Desktop fixture owner: \(failure)\n".utf8))
     }
     Darwin.exit(failure == nil ? 0 : 1)
+  }
+
+  static func moveWithoutReplacement(from source: URL, to destination: URL) throws {
+    let code = source.withUnsafeFileSystemRepresentation { old -> Int32 in
+      destination.withUnsafeFileSystemRepresentation { new -> Int32 in
+        guard let old, let new else { return EINVAL }
+        return renamex_np(old, new, UInt32(RENAME_EXCL)) == 0 ? 0 : errno
+      }
+    }
+    guard code == 0 else { throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO) }
+  }
+
+  static func acknowledge(_ text: String, at destination: URL) throws {
+    let pending = destination.deletingLastPathComponent().appendingPathComponent(
+      "ack-\(UUID().uuidString)")
+    try Data(text.utf8).write(to: pending, options: .withoutOverwriting)
+    try FileManager.default.linkItem(at: pending, to: destination)
+    try FileManager.default.removeItem(at: pending)
   }
 }

@@ -7,6 +7,8 @@ use std::{
     process::Command,
     time::Duration,
 };
+#[cfg(target_os = "macos")]
+const MACOS_RELEASE_TEST_FEATURES: &str = "eml-gui/macos-gui,eml-gui/native-fixtures,eml-worker/native-fixtures,eml-macos/native-fixtures,eml-core/native-fixtures";
 
 fn test_suites(stderr: &str) -> Result<std::collections::BTreeSet<String>> {
     let mut suites = std::collections::BTreeSet::new();
@@ -63,6 +65,14 @@ pub(crate) fn checked_tests(
     } else {
         None
     };
+    let target_directory = out.join("native-test-build");
+    // Release discovery/execution precedes shipping builds. Cargo fingerprints
+    // feature sets separately; shipping artifacts still reject native-fixtures
+    // and inspect their actual release profile.
+    #[cfg(target_os = "macos")]
+    let target_directory = mac
+        .as_ref()
+        .map_or_else(|| target_directory, |build| build.cargo_directory(root));
     let command = |listing: bool| {
         let mut command = Command::new("cargo");
         command
@@ -75,7 +85,7 @@ pub(crate) fn checked_tests(
                 "--workspace",
                 "--no-fail-fast",
             ])
-            .env("CARGO_TARGET_DIR", out.join("native-test-build"));
+            .env("CARGO_TARGET_DIR", &target_directory);
         if release {
             command.arg("--release");
         }
@@ -84,7 +94,7 @@ pub(crate) fn checked_tests(
         }
         #[cfg(target_os = "macos")]
         if release {
-            command.args(["--features", "eml-gui/macos-gui,eml-gui/native-fixtures,eml-worker/native-fixtures,eml-macos/native-fixtures,eml-core/native-fixtures"]);
+            command.args(["--features", MACOS_RELEASE_TEST_FEATURES]);
         }
         #[cfg(windows)]
         {
@@ -113,9 +123,16 @@ pub(crate) fn checked_tests(
         command
     };
     let counts = checked_commands(out, command)?;
-    Ok(
-        json!({"discovery":counts,"profile":if release {"release"} else {"test"},"target":target,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"}),
-    )
+    let result = json!({"discovery":counts,"profile":if release {"release"} else {"test"},"target":target,"cargo_target_directory":target_directory,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"});
+    #[cfg(target_os = "macos")]
+    let result = {
+        let mut result = result;
+        if release {
+            result["requested_features"] = json!(MACOS_RELEASE_TEST_FEATURES);
+        }
+        result
+    };
+    Ok(result)
 }
 
 pub(crate) fn checked_commands(out: &Path, command: impl Fn(bool) -> Command) -> Result<Value> {

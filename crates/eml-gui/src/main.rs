@@ -16,7 +16,7 @@ mod application;
 mod controller;
 #[allow(
     unsafe_code,
-    reason = "Necessary native file ingress, system dialogs and URL/raw-window boundary"
+    reason = "Necessary native file ingress, dialogs, responder editing and URL/raw-window boundary"
 )]
 mod native;
 #[allow(
@@ -46,6 +46,28 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
         .select()?;
     let lifecycle = application::ApplicationHooks::install()?;
     let window = view::MainWindow::new()?;
+    // Native text editing is synchronous: queuing Select All could let the
+    // next typed character arrive before AppKit changes the selection.
+    let weak = window.as_weak();
+    window.on_native_copy(move || {
+        if weak
+            .upgrade()
+            .is_some_and(|window| window.get_native_dialog_active())
+            && let Err(error) = native::edit(native::EditAction::Copy)
+        {
+            eprintln!("Native Copy: {error}");
+        }
+    });
+    let weak = window.as_weak();
+    window.on_native_select_all(move || {
+        if weak
+            .upgrade()
+            .is_some_and(|window| window.get_native_dialog_active())
+            && let Err(error) = native::edit(native::EditAction::SelectAll)
+        {
+            eprintln!("Native Select All: {error}");
+        }
+    });
     let about = view::AboutWindow::new()?;
     about.set_identity(format!("EML Attachment Remover {}\nSoftware: MPL-2.0\nSlint: Royalty-free Desktop, Mobile, and Web Applications License 2.0",env!("CARGO_PKG_VERSION")).into());
     let weak = about.as_weak();

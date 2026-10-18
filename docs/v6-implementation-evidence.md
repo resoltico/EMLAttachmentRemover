@@ -1232,3 +1232,71 @@ message/folder import, preserving the original cold picker sequence for diagnosi
 Compact checkbox usability uses real mouse off/on and observed value/full-detail
 changes; keyboard evidence belongs to the separate traversal scenario. Corrected
 execution and Intel app completion are still pending at this checkpoint.
+
+## Native export editing and serialized fixture controls
+
+At H69a58cf2f91c3cba549ad55672a91c9b984c4ced/run39163470950, the ARM
+shipping workflow passed its initial dimension/AX compact checks, mouse disclosure, forward/reverse
+keyboard effects, CJK/Arabic/bidi Services, eight waiting requests/ninth refusal
+and real removals. It then failed the expected report-path read. The retained
+actual report was named EML-reportservice-report.json: Command-A had not selected
+the old native Save filename before typing. The app's global Slint Select All
+command was disabled while its own text editor lacked focus, including when a
+native text field was editing. The source correction enables Copy/Select All for
+an owned active native dialog and synchronously forwards the two fixed standard
+selectors through AppKit's first-responder chain. Slint text editing remains the
+route outside native dialogs. The native test now requires the exact filename
+field value before Save and keeps its actual path/content/collision checks.
+Enabled GUI strict Clippy passed with SDK27; repaired native execution is pending.
+
+The H5094081 Intel artifact completed all four publication scenarios with one
+passing test each and zero failures/skips. Its shipping workflow failed the same
+one-Tab keyboard oracle as ARM; its root workflow concluded cancelled when
+superseded. This is not a passing aggregate or floor qualification.
+
+The missing-copy navigation scenario no longer writes from XCTest. Its external
+owner accepts only fixed complete-line fixture requests, verifies independent
+golden bytes, moves only the designated synthetic output with Darwin RENAME_EXCL,
+and publishes exact acknowledgment bytes with a no-replace hard link after the
+complete write. The UI reads those acknowledgments and exercises actual Finder
+failure feedback. Normal requested restoration and failure cleanup are separately
+recorded; neither overwrites an unexpected entry, and the primary test failure
+is retained. Hard-kill restoration remains unverified.
+
+Shared Swift fixture checks passed every request-byte split, ordered requests,
+incidental/unfinished/oversized-line rejection, queue overflow and EOF/first-error
+preservation. An actual owned pipe demonstrated request delivery before writer
+closure. A controlled alternative using Foundation read(upToCount:65536) failed
+that before-EOF assertion (exit133); it is rejected diagnostic evidence, not a
+passing product check. The retained implementation uses one bounded nonblocking
+Darwin read per readiness callback. Real temporary-file tests passed no-replace
+moves/restoration, collision preservation and complete no-clobber acknowledgment
+publication. The temporary directory was removed and absence verified. No app or
+owner preference was changed by those local checks. Actual hosted missing-copy
+control and live xcodebuild relay evidence remain required.
+
+macOS release discovery/execution now shares MacBuild's target-specific Cargo
+build directory with later shipping compilation. Actual tests still execute;
+Cargo feature fingerprints separate fixture/normal builds, and shipping artifact
+feature/profile checks remain mandatory. Records include the actual build
+directory and requested release features. This removes duplicated compilation,
+not required checks. Its native execution remains pending.
+
+Physical review of H69's retained minimum-size frame exposed a stronger failure:
+the selected editor collapsed and the bottom controls clipped despite those AX
+checks. The source correction derives single-line picker labels from the same run
+rows, reduces short-layout chrome, retains a55px minimum editor and hides item
+pagination only when neither direction exists. A scrollable outer region keeps
+additional queue/notice/warning content reachable. Native checks now require
+actual visible editor/action bounds and scrolling back to top controls, with
+queued-warning and incomplete-report conditions as well as the simple result.
+SDK27 enabled GUI Clippy and XCTest source compilation passed; revised physical
+frames and enabled-pagination integration remain required.
+
+H69's Intel shipping workflow still failed its first input panel. No stack sample
+was retained there. The new real-pipe negative control demonstrates why the old
+Foundation read could delay fixture observations until enough output arrived;
+the new nonblocking relay and unbuffered fixed-line request emission must now
+establish timely hosted capture. This is not a root-cause claim about the picker,
+and changing test order provides no waiver for that failure. Both H69 app gates
+and the required downstream archive/aggregate gates remain failed.

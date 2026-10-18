@@ -675,6 +675,11 @@ impl Controller {
             .collect::<Vec<slint::SharedString>>();
         if runs != self.run_rows {
             self.run_rows = runs.clone();
+            let picker = runs
+                .iter()
+                .map(|row| row.as_str().replace('\n', " · ").into())
+                .collect::<Vec<slint::SharedString>>();
+            window.set_run_picker_labels(ModelRc::new(VecModel::from(picker)));
             window.set_runs(ModelRc::new(VecModel::from(runs)));
         }
         if waiting != self.waiting_rows {
@@ -688,6 +693,7 @@ impl Controller {
                 .map_or(-1, |index| index as i32),
         );
         let idle_dialog = self.dialog.is_none() && self.confirmation.is_none();
+        window.set_native_dialog_active(self.dialog.is_some());
         window.set_admission_ready(
             self.closing_since.is_none()
                 && self.admission_failure.is_none()

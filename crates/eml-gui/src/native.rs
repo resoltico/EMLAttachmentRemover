@@ -1,8 +1,9 @@
-//! Owned parented system dialogs and lossless local-file URL transport only.
+//! Parented system dialogs, responder editing and lossless local-file URL transport.
 use block2::RcBlock;
 use objc2::{
     MainThreadMarker, Message,
     rc::{Retained, Weak},
+    sel,
 };
 use objc2_app_kit::{
     NSModalResponse, NSModalResponseCancel, NSModalResponseOK, NSOpenPanel, NSSavePanel, NSView,
@@ -18,6 +19,25 @@ use std::{
     ptr::NonNull,
     rc::Rc,
 };
+
+pub(crate) enum EditAction {
+    Copy,
+    SelectAll,
+}
+pub(crate) fn edit(action: EditAction) -> Result<(), NativeError> {
+    let main = MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
+    let selector = match action {
+        EditAction::Copy => sel!(copy:),
+        EditAction::SelectAll => sel!(selectAll:),
+    };
+    // SAFETY: these fixed AppKit standard actions take one nullable sender.
+    // Nil target asks AppKit to resolve the current native first responder.
+    unsafe {
+        objc2_app_kit::NSApplication::sharedApplication(main)
+            .sendAction_to_from(selector, None, None);
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum NativeError {

@@ -154,6 +154,8 @@ final class DesktopInteractionTests: XCTestCase {
           app,
           containing:
             "1 item has no reported result. Complete copies may exist; inspect the destination.")
+        try await checkCompactReport(
+          app, window: app.windows["EML Attachment Remover"], source: originals[0])
       }
       XCTAssertEqual(
         try Data(
@@ -184,7 +186,7 @@ final class DesktopInteractionTests: XCTestCase {
     let result = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 20)
     guard result == .completed else {
-      XCTFail("Real worker observation unavailable: \(url.lastPathComponent)")
+      XCTFail("Owned fixture observation unavailable: \(url.lastPathComponent)")
       throw InteractionFailure.expectedPresentation
     }
   }
@@ -201,6 +203,7 @@ final class DesktopInteractionTests: XCTestCase {
     let sources = ["one.eml", "two.eml"].map { root.appendingPathComponent($0) }
     let folderSource = root.appendingPathComponent("folder-input/folder.eml")
     let serviceSource = root.appendingPathComponent("service-input/日本語-مرحبا-\u{202e}report.eml")
+    let serviceDisplayName = #"日本語-مرحبا-\u{202e}report.eml"#
     let allSources = sources + [folderSource, serviceSource]
     let original = try Data(
       contentsOf: repository.appendingPathComponent(
@@ -402,7 +405,7 @@ final class DesktopInteractionTests: XCTestCase {
     // the first Tab reaches About, and the second reaches Choose messages.
     app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
     app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
-    print("EML_NATIVE_PICKER_REQUESTED")
+    try DesktopFixtureRequest.picker.send()
     app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
     let keyboardPicker = app.sheets.firstMatch
     guard keyboardPicker.waitForExistence(timeout: 10) else {
@@ -462,8 +465,8 @@ final class DesktopInteractionTests: XCTestCase {
     app.buttons["Dismiss report"].click()
     try await requireRun(
       app, counts: "1 created · 0 up to date", source: serviceSource,
-      displayedName: "日本語-مرحبا-\\u{202e}report.eml")
-    try await requireText(app, containing: "日本語-مرحبا-\\u{202e}report.eml")
+      displayedName: serviceDisplayName)
+    try await requireText(app, containing: serviceDisplayName)
     XCTAssertEqual(
       try Data(
         contentsOf: serviceSource.deletingPathExtension().appendingPathExtension(
@@ -497,6 +500,8 @@ final class DesktopInteractionTests: XCTestCase {
     )
     try await requireWaiting(app, count: 8)
     snapshot(app, "ninth-request-refused")
+    try await checkCompactReport(
+      app, window: window, source: serviceSource, displayedName: serviceDisplayName)
     app.buttons["Dismiss notice"].click()
     for remaining in stride(from: 7, through: 0, by: -1) {
       // Read the actual native title: XCTest's filtered identifier/title query
@@ -572,13 +577,16 @@ final class DesktopInteractionTests: XCTestCase {
     snapshot(app, "report-export-collision-refused")
     app.buttons["Dismiss notice"].click()
 
-    // Move only this owned synthetic output. The earlier receipt remains valid
+    // The external owner moves only this synthetic output. The receipt remains valid
     // historical evidence, while actual navigation must report its missing path.
     let serviceCopy = serviceSource.deletingPathExtension().appendingPathExtension(
       "no-attachments.eml")
     let heldCopy = root.appendingPathComponent("held-service-copy.eml")
     XCTAssertFalse(FileManager.default.fileExists(atPath: heldCopy.path))
-    try FileManager.default.moveItem(at: serviceCopy, to: heldCopy)
+    try DesktopFixtureRequest.holdCopy.send()
+    let heldAcknowledgment = root.appendingPathComponent("copy-held")
+    try await requireObservation(heldAcknowledgment, prefix: "owned copy held\n")
+    XCTAssertEqual(try Data(contentsOf: heldAcknowledgment), Data("owned copy held\n".utf8))
     do {
       let reveal = app.buttons["Show in Finder"]
       XCTAssertTrue(reveal.isEnabled, "Earlier usable-copy receipt should permit navigation")
@@ -588,12 +596,18 @@ final class DesktopInteractionTests: XCTestCase {
       snapshot(app, "finder-missing-copy-reported")
       XCTAssertEqual(try Data(contentsOf: heldCopy), golden)
       XCTAssertEqual(try Data(contentsOf: serviceSource), original)
-      try FileManager.default.moveItem(at: heldCopy, to: serviceCopy)
+      try DesktopFixtureRequest.restoreCopy.send()
+      let restored = root.appendingPathComponent("copy-restored")
+      try await requireObservation(restored, prefix: "owned copy restored\n")
+      XCTAssertEqual(try Data(contentsOf: restored), Data("owned copy restored\n".utf8))
     } catch {
       // Restore the owned output even when the UI assertion fails.
       let primaryError = error
       do {
-        try FileManager.default.moveItem(at: heldCopy, to: serviceCopy)
+        try DesktopFixtureRequest.restoreCopy.send()
+        let restored = root.appendingPathComponent("copy-restored")
+        try await requireObservation(restored, prefix: "owned copy restored\n")
+        XCTAssertEqual(try Data(contentsOf: restored), Data("owned copy restored\n".utf8))
       } catch {
         XCTFail("Owned copy restoration failed: \(error); primary UI failure: \(primaryError)")
       }
@@ -697,7 +711,9 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
-  private func checkCompactReport(_ app: XCUIApplication, window: XCUIElement, source: URL)
+  private func checkCompactReport(
+    _ app: XCUIApplication, window: XCUIElement, source: URL, displayedName: String? = nil
+  )
     async throws
   {
     let previous = window.frame
@@ -724,15 +740,40 @@ final class DesktopInteractionTests: XCTestCase {
     XCTAssertTrue(selector.isEnabled && selector.isHittable, app.debugDescription)
     XCTAssertFalse(
       window.buttons.allElementsBoundByIndex.contains { $0.title.hasPrefix("Run 1\n") })
-    try await requireText(app, containing: source.lastPathComponent)
+    try await requireText(app, containing: displayedName ?? source.lastPathComponent)
+    let detail = window.textViews["Selected message, removed parts and technical observations"]
+    if !detail.isHittable || !window.frame.contains(detail.frame) {
+      let topControl = app.buttons["About"]
+      guard topControl.isHittable else { throw InteractionFailure.expectedPresentation }
+      topControl.scroll(byDeltaX: 0, deltaY: -600)
+    }
+    guard detail.isHittable, detail.frame.height >= 55, window.frame.contains(detail.frame) else {
+      XCTFail(
+        "Compact selected detail is collapsed or clipped: \(detail.frame); \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
     let technical = app.checkBoxes["Technical details"]
-    XCTAssertTrue(technical.isEnabled && technical.isHittable)
+    guard technical.isEnabled && technical.isHittable && window.frame.contains(technical.frame),
+      window.frame.contains(app.buttons["Show in Finder"].frame)
+    else { throw InteractionFailure.expectedPresentation }
     technical.click()
     let unchecked = String(describing: technical.value)
     technical.click()
     XCTAssertNotEqual(String(describing: technical.value), unchecked)
-    try await requireText(app, containing: "settled true; reusable true")
+    try await requireText(app, containing: "settled true")
+    for label in ["Previous items", "Next items", "Previous parts", "Next parts"] {
+      let control = app.buttons[label]
+      if control.exists && control.isEnabled {
+        guard control.isHittable && window.frame.contains(control.frame) else {
+          throw InteractionFailure.expectedPresentation
+        }
+      }
+    }
     snapshot(app, "minimum-compact-accessible-report")
+    technical.scroll(byDeltaX: 0, deltaY: 1000)
+    guard app.buttons["About"].isHittable,
+      window.frame.contains(app.buttons["About"].frame)
+    else { throw InteractionFailure.expectedPresentation }
     let restore = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
       .withOffset(CGVector(dx: previous.width - 2, dy: previous.height - 2))
     window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
@@ -812,6 +853,12 @@ final class DesktopInteractionTests: XCTestCase {
     filename.click()
     app.typeKey("a", modifierFlags: .command)
     app.typeText(destination.lastPathComponent)
+    guard filename.value as? String == destination.lastPathComponent else {
+      XCTFail(
+        "Native Save filename was not replaced: \(String(describing: filename.value)); \(app.debugDescription)"
+      )
+      throw InteractionFailure.expectedPresentation
+    }
     panel.buttons["Save"].click()
     if replacingOwnedSentinel {
       let replace = app.buttons["Replace"]
@@ -846,7 +893,7 @@ final class DesktopInteractionTests: XCTestCase {
 
   @MainActor
   private func choose(_ app: XCUIApplication, path: URL, folder: Bool) async throws {
-    print("EML_NATIVE_PICKER_REQUESTED")
+    try DesktopFixtureRequest.picker.send()
     if folder {
       app.buttons["Choose folder…"].click()
     } else {
