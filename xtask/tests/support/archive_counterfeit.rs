@@ -23,14 +23,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     {
         return Err("Refusing non-synthetic/unmarked counterfeit input".into());
     }
+    let mode = std::env::var("EML_ARCHIVE_COUNTERFEIT_MODE")?;
+    if !matches!(mode.as_str(), "identity-copy" | "summary-only") {
+        return Err("Unknown owned counterfeit mode".into());
+    }
     let mut trace = Vec::new();
-    fs::File::open(parent.join("counterfeit-trace.jsonl"))?
+    fs::File::open(parent.join(format!("counterfeit-{mode}-trace.jsonl")))?
         .take(1024 * 1024 + 1)
         .read_to_end(&mut trace)?;
     if trace.len() > 1024 * 1024 || trace.last() != Some(&b'\n') {
         return Err("Invalid bounded counterfeit trace".into());
     }
-    let mode = std::env::var("EML_ARCHIVE_COUNTERFEIT_MODE")?;
     let output = match mode.as_str() {
         "identity-copy" => {
             let mut output = fs::OpenOptions::new()

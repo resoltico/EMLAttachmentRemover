@@ -634,10 +634,7 @@ fn counterfeit_controls(
         parent.join("owned-counterfeit-marker"),
         b"EML owned synthetic counterfeit cases\n",
     )?;
-    fs::write(
-        parent.join("counterfeit-trace.jsonl"),
-        document(&logs.join("created.log"))?,
-    )?;
+    let trace = document(&logs.join("created.log"))?;
     let mut results = Vec::new();
     for (mode, expected) in [
         ("identity-copy", FailureKind::GoldenCopy),
@@ -646,6 +643,14 @@ fn counterfeit_controls(
         let directory = parent.join(mode);
         fs::create_dir(&directory)?;
         fs::write(directory.join("a.eml"), INPUT)?;
+        let trace_path = parent.join(format!("counterfeit-{mode}-trace.jsonl"));
+        use std::io::Write;
+        let mut owned_trace = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(trace_path)?;
+        owned_trace.write_all(&counterfeit_trace(&trace, &directory)?)?;
+        drop(owned_trace);
         let source = observe(&directory.join("a.eml"))?;
         let mut version_command = extracted_command(&executable, &directory);
         version_command.arg("--version");
@@ -696,6 +701,21 @@ fn counterfeit_controls(
         results.push(json!({"mode":mode,"actual_exit":0,"version_accepted":true,"rejected_at":format!("{expected:?}")}));
     }
     Ok(json!(results))
+}
+
+fn counterfeit_trace(bytes: &[u8], directory: &Path) -> Result<Vec<u8>> {
+    let mut events = frames(bytes)?;
+    // Windows transport uses absolute native units. Preserve every claimed
+    // outcome/receipt while binding only the two path fields to this separate
+    // owned case, so the identity-copy control reaches the independent byte oracle.
+    events[1]["source"] = native_path(directory, "a.eml")?;
+    events[1]["destination"] = native_path(directory, "a.no-attachments.eml")?;
+    let mut result = Vec::new();
+    for event in events {
+        serde_json::to_writer(&mut result, &event)?;
+        result.push(b'\n');
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -811,6 +831,32 @@ mod tests {
             )),
             FailureKind::GoldenCopy
         );
+    }
+
+    #[test]
+    fn independent_counterfeit_case_rebinds_native_paths_before_the_byte_oracle() {
+        let producer = tempfile::tempdir().unwrap();
+        let (_, events) = created(producer.path());
+        let counterfeit = tempfile::tempdir().unwrap();
+        fs::write(counterfeit.path().join("a.eml"), INPUT).unwrap();
+        fs::write(counterfeit.path().join("a.no-attachments.eml"), INPUT).unwrap();
+        let source = observe(&counterfeit.path().join("a.eml")).unwrap();
+        let trace = counterfeit_trace(&encode(&events), counterfeit.path()).unwrap();
+        assert_eq!(
+            kind(verify(
+                counterfeit.path(),
+                "remove-eml-attachments",
+                "6.0.0",
+                Case::Created,
+                &trace,
+                &source,
+                None
+            )),
+            FailureKind::GoldenCopy
+        );
+        let rebound = frames(&trace).unwrap();
+        assert_eq!(rebound[1]["removed"], events[1]["removed"]);
+        assert_eq!(rebound[1]["publication"], events[1]["publication"]);
     }
 
     #[test]
