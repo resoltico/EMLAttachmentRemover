@@ -105,6 +105,43 @@ impl TemporaryAccount {
             cleanup_attempted: false,
         };
         account.sid = Some(account_sid(&account.name)?);
+        let users = Sid::named("S-1-5-32-545")?;
+        let mut group = vec![0u16; 256];
+        let mut group_length = group.len() as u32;
+        let mut domain_name = vec![0u16; 256];
+        let mut domain_length = domain_name.len() as u32;
+        let mut use_kind = 0;
+        // Resolve the built-in Users alias by SID instead of a localized label.
+        unsafe {
+            checked(LookupAccountSidW(
+                ptr::null(),
+                users.pointer(),
+                group.as_mut_ptr(),
+                &mut group_length,
+                domain_name.as_mut_ptr(),
+                &mut domain_length,
+                &mut use_kind,
+            ))?;
+        }
+        let member = LOCALGROUP_MEMBERS_INFO_0 {
+            lgrmi0_sid: account.sid.as_ref().expect("captured user SID").pointer(),
+        };
+        // Only this newly owned account's membership is added. Deleting its
+        // still-matching SID removes that membership without changing any policy.
+        let code = unsafe {
+            NetLocalGroupAddMembers(
+                ptr::null(),
+                group.as_ptr(),
+                0,
+                (&member as *const LOCALGROUP_MEMBERS_INFO_0).cast(),
+                1,
+            )
+        };
+        if code != 0 && code != windows_sys::Win32::Foundation::ERROR_MEMBER_IN_ALIAS {
+            return Err(io::Error::other(format!(
+                "Owned account Users membership failed: NetAPI {code}"
+            )));
+        }
         let domain = [b'.' as u16, 0];
         let mut raw = ptr::null_mut();
         // SAFETY: local explicit synthetic credentials and a unique token output;
@@ -145,10 +182,20 @@ impl TemporaryAccount {
         // SAFETY: explicit-credential token is retained throughout this synchronous
         // thread-only scope; check success before any filesystem operation.
         unsafe {
-            checked(ImpersonateLoggedOnUser(token.as_raw_handle()))?;
+            checked(ImpersonateLoggedOnUser(token.as_raw_handle())).map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("Explicit-credential impersonation: {error}"),
+                )
+            })?;
         }
         let result = catch_unwind(AssertUnwindSafe(|| {
-            let actual = Sid::user()?;
+            let actual = Sid::user().map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("Distinct-user identity read: {error}"),
+                )
+            })?;
             if actual.equals(&original)
                 || !actual.equals(self.sid.as_ref().expect("captured account SID"))
             {
@@ -161,7 +208,13 @@ impl TemporaryAccount {
                     ptr::null_mut(),
                     administrators.pointer(),
                     &mut member,
-                ))?;
+                ))
+                .map_err(|error| {
+                    io::Error::new(
+                        error.kind(),
+                        format!("Distinct-user administrator membership read: {error}"),
+                    )
+                })?;
             }
             if member != 0 {
                 return Err(invalid("ACL actor is an administrator"));
@@ -272,7 +325,12 @@ fn native_private_artifact_acl_denies_a_real_distinct_user_and_rejects_writable_
     let mut account = TemporaryAccount::new().unwrap();
     let observed = account.as_user(|| {
         let positive = permissive.join("positive");
-        fs::write(&positive, b"actual distinct-user control")?;
+        fs::write(&positive, b"actual distinct-user control").map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("Distinct-user writable positive control: {error}"),
+            )
+        })?;
         let read = fs::read(&inside)
             .err()
             .ok_or_else(|| invalid("Different user read private bytes"))?;

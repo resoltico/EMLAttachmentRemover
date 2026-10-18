@@ -191,7 +191,7 @@ jobs:
           cargo run --locked --manifest-path tests/native-filesystem/Cargo.toml --target '${{ matrix.target }}'
           exit $LASTEXITCODE
       - name: Observe actual native Windows CLI link and PE tables
-        if: ${{ runner.os == 'Windows' }}
+        if: ${{ always() && runner.os == 'Windows' && steps.private_workspace.outcome == 'success' }}
         working-directory: ${{ steps.private_workspace.outputs.path }}
         shell: pwsh
         run: |

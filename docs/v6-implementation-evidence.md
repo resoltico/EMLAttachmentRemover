@@ -613,3 +613,14 @@ verbatim-prefix destination argument. The corrected transport removes only that
 prefix in the short native drive path supplied to Git/.NET; UTF16 units and the
 native canonical handles remain unchanged. This is not a relaxation of ACL
 admission. Actual clone/test/link observation after that correction is pending.
+
+The corrected protected checkout at M cd5be321/run39113174422 succeeded on both
+Windows CPUs. The distinct-user test then created/authenticated and cleaned up
+its owned account, but its scoped operation returned access denied before the
+expected two-denial result. This remains failed. The fixture now explicitly adds
+only its own account to the built-in Users alias, queries effective-token identity
+under that token's own access context, and identifies each possible failure stage.
+It neither changes existing accounts/policy nor substitutes a same-SID token.
+The independent final-link observation may continue after a failed native suite
+only when protected checkout preparation succeeded; the suite/job/ci-ok failure
+remains authoritative and cannot be masked by a later successful observation.

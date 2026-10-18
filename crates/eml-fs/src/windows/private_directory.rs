@@ -125,7 +125,9 @@ impl Sid {
     fn user() -> io::Result<Self> {
         let mut raw = ptr::null_mut();
         // SAFETY: current-thread pseudo handle is borrowed; output is unique.
-        if unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut raw) } == 0 {
+        // Query under the effective identity: the original process principal
+        // need not have query rights on another authenticated user's token.
+        if unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 0, &mut raw) } == 0 {
             let error = io::Error::last_os_error();
             if error.raw_os_error() != Some(ERROR_NO_TOKEN as i32) {
                 return Err(error);
