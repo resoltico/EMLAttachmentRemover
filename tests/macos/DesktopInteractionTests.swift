@@ -75,17 +75,14 @@ final class DesktopInteractionTests: XCTestCase {
         guard technical.exists else { XCTFail("Technical details control is unavailable"); return }
         technical.click()
         print("Observed technical disclosure title=\(technical.title.debugDescription), value=\(String(describing: technical.value))")
-        let detail = app.textViews.firstMatch
-        guard detail.waitForExistence(timeout: 5) else {
-            XCTFail("Main report text is unavailable: \(app.debugDescription)")
-            return
-        }
-        print("Observed report value type=\(type(of: detail.value)), value=\(String(describing: detail.value).prefix(2048))")
         let completed = NSPredicate { _, _ in
-            detail.exists && (detail.value as? String)?.contains("settled true; reusable true") == true
+            app.descendants(matching: .any).allElementsBoundByIndex.contains {
+                $0.title == "Selected message, removed parts and technical observations"
+                    && ($0.value as? String)?.contains("settled true; reusable true") == true
+            }
         }
         let observation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: completed, object: nil)], timeout: 20)
-        XCTAssertEqual(observation, .completed)
+        XCTAssertEqual(observation, .completed, "Settled native report is unavailable: \(app.debugDescription)")
         guard observation == .completed else { return }
         let golden = try Data(contentsOf: repository.appendingPathComponent("tests/contract/mime/golden/01-gmail-attachment.eml"))
         let original = try Data(contentsOf: repository.appendingPathComponent("tests/contract/mime/inputs/01-gmail-attachment.eml"))

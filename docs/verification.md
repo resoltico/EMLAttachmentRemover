@@ -2,8 +2,12 @@
 
 Hosted native app readback now includes an XCTest interaction harness for the
 actual extracted app, with an NSWorkspace-returned owned instance and independent
-two-file golden checks. It remains an unrun gate until actual native results are
-recorded. The harness also exercises Quit cancellation/confirmation and compares
+two-file golden checks. At source 8e9e2af, the actual ARM run reached two created
+copies but failed the typed XCTest TextView lookup although the AX hierarchy
+contained the report. The harness now polls all AX descendants by the observed
+report title and still requires the actual settled/reusable report value. This
+revised check remains unrun on the pinned native runners. The harness also
+exercises Quit cancellation/confirmation and compares
 the complete app persistent domain using separate fresh observer processes before
 and after the argument-domain-only run. It does not run on an owner desktop.
 
@@ -20,7 +24,8 @@ process only. Swift Build's
 [documented default connection mode](https://github.com/swiftlang/swift-build/blob/main/Sources/SwiftBuild/SWBBuildServiceConnection.swift)
 honors this switch. This avoids an observed persistent SWBBuildService child;
 it does not waive generic survivor rejection or change saved Xcode defaults.
-The local source build accepts the mode; pinned native execution remains required.
+The actual ARM run at 8e9e2af used this mode and recorded zero unexpected
+survivors with complete cleanup; its report assertion still failed separately.
 
 Native macOS CLI/desktop compilation shares a CPU-specific Cargo directory under
 target/native-cargo/. CI may restore registry inputs and intermediates keyed by
