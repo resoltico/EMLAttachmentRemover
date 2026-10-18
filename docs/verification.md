@@ -35,6 +35,13 @@ features; products are separately copied/frozen/signed/staged, then undergo the
 same image, archive, extraction, behavior and GUI checks. No archive, signature,
 qualification record or prior test result is restored as current evidence.
 
+Windows workspace execution uses the same bounded native-test controller as
+Unix, including complete discovery/execution comparison and retained separate
+stdout/stderr. Its Windows feature selection includes the real filesystem,
+Job and CLI console fixtures. The independent required-name/ignored-name
+discovery remains mandatory before execution. This gives a hung test an owned
+Job deadline and preserves its transcript before the overall hosted job expires.
+
 `cargo xtask release-check --source FULL_SHA --version VERSION` is read-only
 admission for a later explicit owner release: exact clean source, fresh observed
 main ancestry, Cargo version, one nonempty calendar-dated release section, absent

@@ -75,6 +75,11 @@ pub(crate) fn checked_tests(
         if let Some(target) = target {
             command.args(["--target", target]);
         }
+        #[cfg(windows)]
+        command.args([
+            "--features",
+            "eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures",
+        ]);
         command.args(["--", "--color", "never"]);
         if listing {
             command.arg("--list");

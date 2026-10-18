@@ -176,7 +176,7 @@ jobs:
           if ($code -ne 0) { exit $code }
           $ignored | Set-Content -Encoding utf8 target/ignored.list
           & ./tests/windows/assert-test-sentinels.ps1 -Listing target/tests.list -IgnoredListing target/ignored.list
-          cargo @arguments -- --color never
+          cargo xtask native-tests --target '${{ matrix.target }}' --out target/native-tests
           $code = $LASTEXITCODE
           if ($code -ne 0) { exit $code }
           cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures --target '${{ matrix.target }}' -- -D warnings
