@@ -109,6 +109,17 @@ which Microsoft's supported-client table places below this product's Windows10
 floor and the pinned getrandom source directly imports. This precise DLL
 admission does not approve other imports or complete static native-input review.
 
+The next link wrapper also captures explicit positional object/Rust-archive
+byte identities and the selected toolchain's installed self-contained runtime
+candidates before invoking the real linker, then compares those observations
+again before returning to rustc. This retains evidence for transient objects
+which rustc can remove afterward. The bounded input manifest is bound to the
+same image/map/trace receipt; changing it fails the stale-evidence control.
+These are pre/post byte/address observations, not legal approval, a selected
+member inventory, or proof against adversarial changes between observations.
+Native execution of this additional capture and complete static-input review
+remain required.
+
 `cargo xtask release-check --source FULL_SHA --version VERSION` is read-only
 admission for a later explicit owner release: exact clean source, fresh observed
 main ancestry, Cargo version, one nonempty calendar-dated release section, absent
