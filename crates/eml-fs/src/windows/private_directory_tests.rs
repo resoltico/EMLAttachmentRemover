@@ -1,10 +1,15 @@
 //! Real distinct-user ACL access; only an owned account on fresh hosted VMs.
 use super::*;
+use std::os::windows::io::{FromRawHandle, OwnedHandle};
 use std::{
     fs,
     panic::{AssertUnwindSafe, catch_unwind},
 };
 use windows_sys::Win32::NetworkManagement::NetManagement::*;
+use windows_sys::Win32::{
+    Foundation::ERROR_NO_TOKEN,
+    System::Threading::{GetCurrentThread, OpenThreadToken},
+};
 
 struct NetBuffer(*mut u8);
 impl Drop for NetBuffer {

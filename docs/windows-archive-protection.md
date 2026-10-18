@@ -37,6 +37,13 @@ cleanup fails the test. A same-SID restricted token is not this proof.
 
 Native x64/ARM execution and complete Windows packaging remain required.
 
+Effective identity is queried using the SDK's query-only
+[GetCurrentThreadEffectiveToken](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getcurrentthreadeffectivetoken)
+pseudo-handle. The SDK inline value is reproduced because windows-sys does not
+export that inline; it is never owned, closed or used to mutate a token. This
+avoids reopening another authenticated user's token through a separate DACL
+access check while still observing the actual current effective UserSID.
+
 The first native run rejected the default hosted workspaces: x64's D: owner was
 outside the admitted principals, and ARM's C:\a allowed untrusted mutation.
 Those are real failed prerequisites, not exceptions to the namespace policy.

@@ -642,3 +642,18 @@ mandatory native test checks an actual existing-winner collision, unchanged byte
 and the same held file identity after a successful move. Source Clippy passes;
 native execution remains pending. This tooling edge does not replace Core's
 separate candidate publication/address/synchronization receipts.
+
+At M e210daae/run39114175768 the refined distinct-user diagnostic established
+that the denied operation was the effective identity query, before filesystem
+access, not a positive writable control. The query now uses the SDK's read-only
+effective-token pseudo-handle, eliminating both separate token-open paths. Native
+execution is pending. The same run's independent link observation was correctly
+refused by the generic topology guard because CI supplies the selected native
+sysroot linker. A narrow review now admits only that exact native compiler/host/
+sysroot path; all other compiler, wrapper, runner and linker overrides remain
+refused. These failures are retained and neither gate is relabeled as passed.
+
+Integrated local checks at H18ca0b2 passed416 tests across52 summaries, with no
+failed/ignored/filtered cases, and strict workspace Clippy passed. The actual
+read-only release-check command rejected6.0.0's Unreleased state before release
+admission. No tag, release, publication or settings mutation occurred.

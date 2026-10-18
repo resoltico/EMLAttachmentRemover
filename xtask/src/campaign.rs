@@ -303,6 +303,10 @@ fn config_hooks(value: &toml::Value) -> bool {
 pub(crate) fn require_stock_topology(root: &Path) -> Result<()> {
     for (key, value) in std::env::vars_os() {
         if key.to_str().is_some_and(hook_name) && !value.is_empty() {
+            #[cfg(windows)]
+            if reviewed_windows_linker(root, &key, &value)? {
+                continue;
+            }
             return Err("Compiler/runner/wrapper overrides require explicit topology review before bounded verification".into());
         }
     }
@@ -318,6 +322,57 @@ pub(crate) fn require_stock_topology(root: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+#[cfg(windows)]
+fn reviewed_windows_linker(
+    root: &Path,
+    key: &std::ffi::OsStr,
+    value: &std::ffi::OsStr,
+) -> Result<bool> {
+    let target = match std::env::consts::ARCH {
+        "x86_64" => "x86_64-pc-windows-gnullvm",
+        "aarch64" => "aarch64-pc-windows-gnullvm",
+        _ => return Ok(false),
+    };
+    let name = format!(
+        "CARGO_TARGET_{}_LINKER",
+        target.to_ascii_uppercase().replace('-', "_")
+    );
+    if key != std::ffi::OsStr::new(&name) {
+        return Ok(false);
+    }
+    let compiler = String::from_utf8(capture(Command::new("rustc").current_dir(root).arg("-vV"))?)?;
+    let authority: toml::Value =
+        toml::from_str(&fs::read_to_string(root.join("rust-toolchain.toml"))?)?;
+    let required = authority["toolchain"]["channel"]
+        .as_str()
+        .ok_or("Missing Rust compiler authority")?;
+    if !compiler
+        .lines()
+        .any(|line| line == format!("host: {target}"))
+        || !compiler
+            .lines()
+            .any(|line| line == format!("release: {required}"))
+    {
+        return Err("Native linker override does not belong to the pinned native compiler".into());
+    }
+    let sysroot = PathBuf::from(
+        String::from_utf8(capture(
+            Command::new("rustc")
+                .current_dir(root)
+                .args(["--print", "sysroot"]),
+        )?)?
+        .trim(),
+    );
+    let expected = sysroot
+        .join("lib/rustlib")
+        .join(target)
+        .join("bin/rust-lld.exe")
+        .canonicalize()?;
+    if Path::new(value).canonicalize()? != expected {
+        return Err("Only the selected native sysroot rust-lld override is reviewed".into());
+    }
+    Ok(true)
 }
 #[cfg(test)]
 mod topology_tests {

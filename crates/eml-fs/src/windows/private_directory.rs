@@ -6,24 +6,18 @@ use std::{
     fs::File,
     io,
     mem::{offset_of, size_of, size_of_val},
-    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    os::windows::io::AsRawHandle,
     path::{Path, PathBuf},
     ptr,
 };
 use windows_sys::Win32::{
-    Foundation::{
-        ERROR_ALREADY_EXISTS, ERROR_FILE_EXISTS, ERROR_NO_TOKEN, GENERIC_ALL, GENERIC_WRITE,
-        LocalFree,
-    },
+    Foundation::{ERROR_ALREADY_EXISTS, ERROR_FILE_EXISTS, GENERIC_ALL, GENERIC_WRITE, LocalFree},
     Security::{
         Authorization::{ConvertStringSidToSidW, GetSecurityInfo, SE_FILE_OBJECT},
         *,
     },
     Storage::FileSystem::*,
-    System::{
-        SystemServices::{ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE},
-        Threading::{GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken},
-    },
+    System::SystemServices::{ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE},
 };
 
 /// A canonical private directory and every held ordinary ancestor. Pathname
@@ -123,28 +117,16 @@ impl Sid {
         Ok(sid)
     }
     fn user() -> io::Result<Self> {
-        let mut raw = ptr::null_mut();
-        // SAFETY: current-thread pseudo handle is borrowed; output is unique.
-        // Query under the effective identity: the original process principal
-        // need not have query rights on another authenticated user's token.
-        if unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 0, &mut raw) } == 0 {
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() != Some(ERROR_NO_TOKEN as i32) {
-                return Err(error);
-            }
-            // SAFETY: fallback only for the actual absence of a thread token.
-            unsafe {
-                checked(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw))?;
-            }
-        }
-        // SAFETY: successful token open transferred one unique handle.
-        let token = unsafe { OwnedHandle::from_raw_handle(raw) };
+        // GetCurrentThreadEffectiveToken is an SDK inline returning HANDLE(-6).
+        // windows-sys exposes no binding for it. This query-only pseudo handle
+        // refers to the actual effective token and is never owned or closed.
+        let token = std::ptr::without_provenance_mut::<c_void>((-6isize) as usize);
         let mut words = vec![0usize; 8192];
         let mut used = 0;
         // SAFETY: aligned bounded buffer and live token; synchronous native query.
         unsafe {
             checked(GetTokenInformation(
-                token.as_raw_handle(),
+                token,
                 TokenUser,
                 words.as_mut_ptr().cast(),
                 size_of_val(words.as_slice()) as u32,
