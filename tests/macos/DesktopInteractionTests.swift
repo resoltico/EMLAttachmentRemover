@@ -29,7 +29,11 @@ final class DesktopInteractionTests: XCTestCase {
             if !owned.isTerminated {
                 // Request the actual app's owned shutdown path. A failed cleanup
                 // remains a failed test; no process-name kill or helper sweep.
-                _ = owned.terminate()
+                let accepted = owned.terminate()
+                print("Owned termination request accepted: \(accepted); observed state: \(app.state)")
+                if !app.buttons["Confirm"].waitForExistence(timeout: 3), !owned.isTerminated {
+                    app.typeKey("q", modifierFlags: .command)
+                }
                 if app.buttons["Confirm"].waitForExistence(timeout: 3) {
                     app.buttons["Confirm"].click()
                 }
@@ -50,10 +54,13 @@ final class DesktopInteractionTests: XCTestCase {
         delivery.createsNewApplicationInstance = false
         let recipient = try await NSWorkspace.shared.open(sources, withApplicationAt: appURL, configuration: delivery)
         XCTAssertEqual(recipient.processIdentifier, owned.processIdentifier, "File batch reached another instance")
-        let finished = app.staticTexts.matching(NSPredicate(format: "value CONTAINS %@", "2 created")).firstMatch
+        let finished = window.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "2 created", "Finished")).firstMatch
         guard finished.waitForExistence(timeout: 30) else {
             XCTFail("Native batch did not reach its two-created presentation: \(app.debugDescription)")
             return
+        }
+        for text in window.staticTexts.allElementsBoundByIndex {
+            print("Observed static text label=\(text.label.debugDescription), value=\(String(describing: text.value).prefix(2048))")
         }
         let technical = app.checkBoxes["Technical details"]
         guard technical.exists else { XCTFail("Technical details control is unavailable"); return }
@@ -63,8 +70,11 @@ final class DesktopInteractionTests: XCTestCase {
             XCTFail("Main report text is unavailable")
             return
         }
-        let completed = NSPredicate(format: "value CONTAINS %@", "settled true; reusable true")
-        let observation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: completed, object: detail)], timeout: 20)
+        print("Observed report value type=\(type(of: detail.value)), value=\(String(describing: detail.value).prefix(2048))")
+        let completed = NSPredicate { _, _ in
+            detail.exists && (detail.value as? String)?.contains("settled true; reusable true") == true
+        }
+        let observation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: completed, object: nil)], timeout: 20)
         XCTAssertEqual(observation, .completed)
         guard observation == .completed else { return }
         let golden = try Data(contentsOf: repository.appendingPathComponent("tests/contract/mime/golden/01-gmail-attachment.eml"))
