@@ -38,6 +38,18 @@ impl FrozenCli {
 }
 
 pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> {
+    build_inner(root, target, out, None)
+}
+
+fn build_inner(
+    root: &Path,
+    target: &str,
+    out: &Path,
+    additional_input: Option<&Path>,
+) -> Result<FrozenCli> {
+    if additional_input.is_some() && !cfg!(windows) {
+        return Err("Additional native-input control requires Windows".into());
+    }
     crate::campaign::require_stock_topology(root)?;
     let plan: Value = serde_json::from_slice(&capture(
         Command::new(std::env::current_exe()?)
@@ -118,6 +130,15 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
                 .to_str()
                 .ok_or("Native wrapper needs a Unicode tooling path")?
         ));
+    #[cfg(windows)]
+    if let Some(input) = additional_input {
+        command.arg("-C").arg(format!(
+            "link-arg={}",
+            input
+                .to_str()
+                .ok_or("Native control input needs a Unicode tooling path")?
+        ));
+    }
     #[cfg(target_os = "macos")]
     command.env("MACOSX_DEPLOYMENT_TARGET", &mac.minimum_text);
     let log = out.join("cargo.jsonl");
@@ -222,6 +243,32 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
                 .ok_or("Missing observed compiler")?,
         )?;
         let imports = crate::windows_runtime::inspect(&bytes, architecture)?;
+        let input_manifest: Value =
+            serde_json::from_slice(&fs::read(work.path().join("native-link/inputs.json"))?)?;
+        let input_files: Vec<xtask::linker_reproducer::InputObservation> =
+            serde_json::from_value(input_manifest["inputs"].clone())?;
+        let official = crate::windows_input_review::official_inputs(root, target, &input_files)?;
+        let selected = crate::windows_input_review::selected_members(
+            target,
+            &official,
+            &fs::read_to_string(work.path().join("native-link/linker.log"))?,
+            &fs::read_to_string(work.path().join("native-link/application.map"))?,
+        )?;
+        let rust_inputs = crate::windows_input_review::rust_inputs(
+            root,
+            target,
+            &input_files,
+            &official,
+            &output,
+            &compiled,
+        )?;
+        fs::write(
+            out.join("official-input-identities.json"),
+            serde_json::to_vec_pretty(&json!({
+            "source":crate::git(root,&["rev-parse","HEAD"])?,"target":target,"inputs":official,"selected_native_members":selected,"rust_inputs":rust_inputs,
+            "scope":"official component identities, selected runtime member/source bindings and Cargo/compiler Rust input classes; complete archive-bound admission and real native rejection control remain separate"
+            }))?,
+        )?;
         fs::write(
             out.join("native-link-capture.json"),
             serde_json::to_vec_pretty(&captured)?,
@@ -250,6 +297,111 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
         version,
         host,
     })
+}
+
+#[cfg(windows)]
+pub(crate) fn unknown_input_control(
+    root: &Path,
+    target: &str,
+    baseline: &FrozenCli,
+    out: &Path,
+) -> Result<Value> {
+    use std::time::Duration;
+    fs::create_dir(out)?;
+    let out = out.canonicalize()?;
+    let source = out.join("owned_unknown_native.rs");
+    let object = out.join("owned_unknown_native.o");
+    let mut source_file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&source)?;
+    source_file.write_all(
+        b"#[unsafe(no_mangle)] pub extern \"C\" fn eml_unreviewed_native_probe() -> u64 { 17 }\n",
+    )?;
+    drop(source_file);
+    let mut compile = Command::new("rustc");
+    compile
+        .current_dir(root)
+        .args([
+            "--crate-name",
+            "eml_unreviewed_native_probe",
+            "--crate-type",
+            "lib",
+            "--edition",
+            "2024",
+            "--emit",
+            "obj",
+            "--target",
+            target,
+        ])
+        .arg(&source)
+        .arg("-o")
+        .arg(&object);
+    let log = out.join("object-build.log");
+    let compiled = crate::controller()?.run(compile, &log, Duration::from_secs(120))?;
+    compiled.require_success(&log)?;
+    let object_identity = xtask::archive::ByteIdentity::of(&fs::read(&object)?);
+    let attempt = out.join("with-unknown-input");
+    let rejection = match build_inner(root, target, &attempt, Some(&object)) {
+        Ok(_) => return Err("Actual unreviewed native object was accepted".into()),
+        Err(error)
+            if error
+                .to_string()
+                .contains("Unreviewed actual final-link input:")
+                && error.to_string().contains("owned_unknown_native.o") =>
+        {
+            error.to_string()
+        }
+        Err(error) => {
+            return Err(format!(
+                "Native unknown-input control failed for a different reason: {error}"
+            )
+            .into());
+        }
+    };
+    let mut receipts = Vec::new();
+    for entry in fs::read_dir(&attempt)? {
+        let directory = entry?.path().join("native-link");
+        if directory.join("link.json").is_file() {
+            receipts.push(directory);
+        }
+    }
+    if receipts.len() != 1 {
+        return Err("Native unknown-input control has no unique actual linker receipt".into());
+    }
+    let receipt: Value = serde_json::from_slice(&fs::read(receipts[0].join("link.json"))?)?;
+    let inputs: Value = serde_json::from_slice(&fs::read(receipts[0].join("inputs.json"))?)?;
+    if receipt["actual_linker_status"] != 0
+        || inputs["target"] != target
+        || !inputs["inputs"]
+            .as_array()
+            .ok_or("Missing actual negative-control inputs")?
+            .iter()
+            .any(|input| {
+                input["member"]
+                    .as_str()
+                    .is_some_and(|name| name.ends_with("/owned_unknown_native.o"))
+                    && input["identity"]
+                        == serde_json::to_value(&object_identity)
+                            .expect("Byte identity serialization")
+            })
+    {
+        return Err(
+            "Unknown-input rejection did not follow an actual successful link consuming the probe"
+                .into(),
+        );
+    }
+    let rejected =
+        xtask::archive::ByteIdentity::of(&fs::read(attempt.join("remove-eml-attachments.exe"))?);
+    if receipt["linked_image"] != serde_json::to_value(&rejected)? {
+        return Err(
+            "Rejected native input trace is not bound to the actual control executable".into(),
+        );
+    }
+    let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"target":target,"baseline_image":baseline.identity(),"object":object_identity,"object_compile":compiled.evidence(),"actual_linker_status":0,"rejected_image":rejected,"rejection":rejection,
+        "scope":"real native rustc object and successful final CLI link consumed the unreviewed input; independent input admission rejected it before packaging"});
+    fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+    Ok(result)
 }
 pub(crate) fn artifact(root: &Path, output: &[u8]) -> Result<PathBuf> {
     named_artifact(

@@ -25,6 +25,8 @@ mod qualify;
 mod release_check;
 mod smoke;
 mod tools;
+#[cfg(any(windows, test))]
+mod windows_input_review;
 #[cfg(windows)]
 mod windows_link;
 mod windows_references;
@@ -221,10 +223,16 @@ fn main() -> ExitCode {
                     std::fs::create_dir(&out)?;
                     let out = out.canonicalize()?;
                     let cli = cli_build::build(&root, &target, &out.join("cli-build"))?;
+                    let unknown_input = cli_build::unknown_input_control(
+                        &root,
+                        &target,
+                        &cli,
+                        &out.join("unknown-input-control"),
+                    )?;
                     std::fs::write(
                         out.join("result.json"),
                         serde_json::to_vec_pretty(
-                            &serde_json::json!({"target":cli.target(),"host":cli.host(),"image":cli.identity(),"scope":"native compiler/final-link/PE capture only; selected static native-input review and archive/runtime qualification remain required"}),
+                            &serde_json::json!({"target":cli.target(),"host":cli.host(),"image":cli.identity(),"unknown_input_control":unknown_input,"scope":"native compiler/final-link/PE/input admission and actual unknown-object rejection; complete archive/runtime qualification remains required"}),
                         )?,
                     )?;
                     Ok(())

@@ -167,6 +167,27 @@ A real corrupt-archive control rejects at the checksum check and creates no
 reference output. Source review, selected-member admission and Cargo-object
 provenance remain separate unfinished work.
 
+The next Windows capture checks every observed sysroot file against those
+independent references, requires crt2.o and mainCRTStartup, and rejects selected
+native support members without a source binding. Bindings cover the32 mapped
+MinGW sources (read in full) and the selected LLVM unwind source license
+declarations, using the retained complete component notices. Cargo runtime rlibs
+must match actual target compiler-artifact paths/bytes; application and symbol
+objects must occupy their compiler output roles. Other inputs and build-script
+native dependencies are rejected. A native probe is compiled and actually linked
+into a second CLI; its rejection must identify that object after successful
+linking and actual reproducer consumption. Three local reference/member/path
+controls and both Windows-target source Clippy checks pass. Actual execution of
+this complete admission/control and archive-bound packaging remain pending.
+
+The hidden-Quit probe is also corrected to use the actual application Quit menu,
+with an assertion that opening that menu did not reopen the hidden window first.
+NSRunningApplication.terminate returned false without establishing delivery;
+the same failed run's genuinely synthesized Command-Q in teardown did expose
+confirmation and settle the owned instance. Prior failures stay visible. This
+changes the stimulus to the ordinary GUI contract, retaining all visibility,
+cancel, confirmation and settlement assertions.
+
 Both H515d61b Windows workspace selections now pass complete accounting:369 cases
 each, with the nested cwd child isolated from the outer transcript. Both native
 macOS app producers and both same-archive macOS15 rows pass the basic GUI case.

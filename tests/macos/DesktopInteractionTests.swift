@@ -167,7 +167,9 @@ final class DesktopInteractionTests: XCTestCase {
         let hiddenForQuit = NSPredicate { _, _ in !window.exists }
         let hiddenForQuitObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: hiddenForQuit, object: nil)], timeout: 10)
         XCTAssertEqual(hiddenForQuitObservation, .completed)
-        print("Native hidden-window Quit request accepted: \(owned.terminate())")
+        app.menuBars.menuBarItems["EML Attachment Remover"].click()
+        XCTAssertFalse(window.exists, "Opening the app menu unexpectedly reopened the main window")
+        app.menuItems["Quit EML Attachment Remover"].click()
         guard app.buttons["Cancel"].waitForExistence(timeout: 5) else {
             XCTFail("Hidden-window Quit did not expose its Cancel control: \(app.debugDescription)")
             return

@@ -2,7 +2,8 @@
 use crate::archive::ByteIdentity;
 use std::{collections::BTreeSet, io::Read};
 /// One bounded byte observation from the actual linker's reproducer.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InputObservation {
     /// Opaque relative reproducer member name; never a filesystem operation path.
     pub member: String,
