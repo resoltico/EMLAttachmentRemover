@@ -233,6 +233,24 @@ qualification. The full app/archive/GUI and Windows gates have not passed. See
 the [implementation evidence](v6-implementation-evidence.md) for exact source
 identities and outcomes. The bounded campaign commands are below.
 
+The reusable native workflow explicitly checks out its source input: PR head H,
+main source S, or merge-queue source Q. PR integration separately checks out M,
+verifies its base/H parents, executes the real Linux workspace selection and
+records all three identities. After both branches finish, an API read rejects a
+changed PR head/base. The Rust `ci-result` admission rejects absent results,
+failure, cancellation and unexpected skips; negative controls exercise each
+required role. The delivered workflow version still requires actual GitHub
+execution before its source/ref/evidence flow can be called verified.
+
+On Linux and Windows, `qualify` now orchestrates strict release-profile discovery
+and execution, the standalone real filesystem probe, native CLI build, complete
+materials, final-runtime review, extraction and behavioral smoke. Linux also runs
+the real different-UID namespace control; Windows release tests include the
+distinct-account, Job and console cases, followed by an actual extra-object
+rejection. macOS's `qualify` entry point remains incomplete while full GUI
+acceptance is open. Source compilation and scoped checks do not qualify these
+new orchestration paths; their native runs remain required.
+
 `cargo xtask distribution` prints the native target policy and expected archive
 identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.
 It creates no product archive or qualification record. The consolidated CI

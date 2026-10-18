@@ -1,0 +1,500 @@
+name: Native source verification
+on:
+  workflow_call:
+    inputs:
+      source:
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    outputs:
+      native: ${{ steps.plan.outputs.native }}
+      apps: ${{ steps.plan.outputs.apps }}
+      smoke: ${{ steps.plan.outputs.smoke }}
+      about: ${{ steps.plan.outputs.about }}
+      deny: ${{ steps.plan.outputs.deny }}
+      actionlint: ${{ steps.plan.outputs.actionlint }}
+      shellcheck: ${{ steps.plan.outputs.shellcheck }}
+      xcode: ${{ steps.plan.outputs.xcode }}
+      xcode_build: ${{ steps.plan.outputs.xcode_build }}
+      minimum: ${{ steps.plan.outputs.minimum }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; default PR merge checkout
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source }}
+      - id: plan
+        env:
+          EVENT_SOURCE: ${{ inputs.source }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EVENT_SOURCE"
+          mkdir -p target
+          cargo xtask distribution > target/distribution.json
+          {
+            jq -ce '{include:[.native_targets[]|{platform,target,runner,os}]}' target/distribution.json | sed 's/^/native=/'
+            jq -ce '{include:[.native_targets[]|select(.app)|{platform,target,runner}]}' target/distribution.json | sed 's/^/apps=/'
+            jq -ce '{include:[.native_targets[]|select(.app)|{platform,target,runner:.app_smoke_runner}]}' target/distribution.json | sed 's/^/smoke=/'
+            for name in about deny actionlint shellcheck; do
+              key="$name"
+              if [ "$name" = about ] || [ "$name" = deny ]; then key="cargo_$name"; fi
+              printf '%s=%s\n' "$name" "$(jq -er --arg key "$key" '.tools[$key]' target/distribution.json)"
+            done
+            printf 'xcode=%s\nxcode_build=%s\nminimum=%s\n' "$(jq -er '.xcode.version' target/distribution.json)" "$(jq -er '.xcode.build' target/distribution.json)" "$(jq -er '.policy.macos_minimum' target/distribution.json)"
+          } >> "$GITHUB_OUTPUT"
+          git show -s --format='Actual checkout: %H; parents: %P'
+  lint:
+    needs: plan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source }}
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+        with:
+          tool: shellcheck@${{ needs.plan.outputs.shellcheck }}
+          checksum: true
+          fallback: none
+      - name: Install exact upstream prebuilt actionlint
+        env:
+          VERSION: ${{ needs.plan.outputs.actionlint }}
+        run: |
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --max-time 60 --max-filesize 20000000 "https://github.com/rhysd/actionlint/releases/download/v$VERSION/actionlint_${VERSION}_linux_amd64.tar.gz" -o "$archive"
+          printf '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  %s\n' "$archive" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/actionlint-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/actionlint-bin" actionlint
+          printf '%s\n' "$RUNNER_TEMP/actionlint-bin" >> "$GITHUB_PATH"
+          test "$("$RUNNER_TEMP/actionlint-bin/actionlint" --version | head -1)" = "$VERSION"
+      - name: Rust, documentation and workflow checks
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo fmt --all --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo doc --locked --workspace --no-deps
+          actionlint
+          git ls-files -z -- '*.sh' | xargs -0 -r shellcheck --
+  legal:
+    needs: plan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source }}
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+        with:
+          tool: cargo-about@${{ needs.plan.outputs.about }},cargo-deny@${{ needs.plan.outputs.deny }}
+          checksum: true
+          fallback: none
+      - name: Default workspace, excluded fuzz and enabled macOS GUI dependency policies
+        run: |
+          cargo deny --locked --config xtask/dependencies.toml check advisories sources licenses
+          cargo deny --locked --manifest-path fuzz/Cargo.toml --config xtask/dependencies.toml check advisories sources licenses
+          for target in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo deny --locked --target "$target" --features eml-gui/macos-gui --config xtask/dependencies.toml check advisories sources licenses
+          done
+      - name: Generate complete selected legal components on a clean source
+        run: cargo xtask notices --out target/generated-legal-materials
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: upload
+        with:
+          name: legal-${{ inputs.source }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/generated-legal-materials/**
+          if-no-files-found: error
+  test:
+    needs: [plan, legal]
+    name: Native tests / ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.native) }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: ${{ needs.plan.outputs.minimum }}
+      EML_WINDOWS_EVIDENCE_DIR: ${{ github.workspace }}/target/windows-creation-evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source }}
+      - name: Native Windows GNU LLVM toolchain and owned scratch
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.99.0-${{ matrix.target }} --profile minimal --component rust-mingw --component clippy
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sysroot = rustc +1.99.0-${{ matrix.target }} --print sysroot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $linker = Join-Path $sysroot 'lib/rustlib/${{ matrix.target }}/bin/rust-lld.exe'
+          if (!(Test-Path $linker)) { throw 'Missing selected native sysroot rust-lld' }
+          'CARGO_TARGET_${{ matrix.target }}_LINKER'.ToUpper().Replace('-', '_') + '=' + $linker >> $env:GITHUB_ENV
+          'RUSTUP_TOOLCHAIN=1.99.0-${{ matrix.target }}' >> $env:GITHUB_ENV
+          $scratch = Join-Path $env:GITHUB_WORKSPACE 'target/native-scratch'
+          New-Item -ItemType Directory $scratch | Out-Null
+          'TEMP=' + $scratch >> $env:GITHUB_ENV
+          'TMP=' + $scratch >> $env:GITHUB_ENV
+      - name: Prepare exact-source Windows checkout under admitted user storage
+        id: private_workspace
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          cargo xtask prepare-windows-workspace > target/windows-native-workspace.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $workspace = Get-Content target/windows-native-workspace.json -Raw | ConvertFrom-Json
+          'path=' + $workspace.path >> $env:GITHUB_OUTPUT
+          'TEMP=' + $workspace.scratch >> $env:GITHUB_ENV
+          'TMP=' + $workspace.scratch >> $env:GITHUB_ENV
+          'EML_WINDOWS_EVIDENCE_DIR=' + (Join-Path $workspace.path 'target/windows-creation-evidence') >> $env:GITHUB_ENV
+      - name: Windows required-name discovery and unfiltered native workspace execution
+        if: ${{ runner.os == 'Windows' }}
+        working-directory: ${{ steps.private_workspace.outputs.path }}
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustc -vV
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $arguments = @('test', '--workspace', '--locked', '--features', 'eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures', '--target', '${{ matrix.target }}')
+          $listing = & cargo @arguments -- --list --color never 2>&1
+          $code = $LASTEXITCODE
+          $listing | ForEach-Object { Write-Output $_ }
+          if ($code -ne 0) { exit $code }
+          $listing | Set-Content -Encoding utf8 target/tests.list
+          $ignored = & cargo @arguments -- --list --ignored --color never 2>&1
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { exit $code }
+          $ignored | Set-Content -Encoding utf8 target/ignored.list
+          & ./tests/windows/assert-test-sentinels.ps1 -Listing target/tests.list -IgnoredListing target/ignored.list
+          cargo xtask native-tests --target '${{ matrix.target }}' --out target/native-tests
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { exit $code }
+          cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures --target '${{ matrix.target }}' -- -D warnings
+          exit $LASTEXITCODE
+      - name: Windows standalone real filesystem primitive
+        if: ${{ runner.os == 'Windows' }}
+        working-directory: ${{ steps.private_workspace.outputs.path }}
+        shell: pwsh
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: |
+          cargo run --locked --manifest-path tests/native-filesystem/Cargo.toml --target '${{ matrix.target }}'
+          exit $LASTEXITCODE
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.1
+        if: ${{ runner.os == 'Windows' && steps.private_workspace.outcome == 'success' }}
+        with:
+          artifact-ids: ${{ needs.legal.outputs.artifact_id }}
+          path: ${{ steps.private_workspace.outputs.path }}/target/generated-legal-materials
+      - name: Qualify native Windows release tests, final link and extracted CLI archive
+        if: ${{ always() && runner.os == 'Windows' && steps.private_workspace.outcome == 'success' }}
+        working-directory: ${{ steps.private_workspace.outputs.path }}
+        shell: pwsh
+        env:
+          EML_GENERATED_LEGAL_MATERIALS: ${{ steps.private_workspace.outputs.path }}/target/generated-legal-materials
+        run: |
+          cargo xtask qualify --target '${{ matrix.target }}' --out target/windows-link-observation
+          exit $LASTEXITCODE
+      - name: Record Unix native source/compiler and check pinned Xcode
+        if: ${{ runner.os != 'Windows' }}
+        env:
+          XCODE_VERSION: ${{ needs.plan.outputs.xcode }}
+          XCODE_BUILD: ${{ needs.plan.outputs.xcode_build }}
+        run: |
+          git show -s --format='Actual checkout: %H; parents: %P'
+          rustc -vV
+          uname -a
+          if [ "$RUNNER_OS" = macOS ]; then
+            developer="/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+            test "$(DEVELOPER_DIR="$developer" xcodebuild -version)" = "$(printf 'Xcode %s\nBuild version %s' "$XCODE_VERSION" "$XCODE_BUILD")"
+            printf 'DEVELOPER_DIR=%s\n' "$developer" >> "$GITHUB_ENV"
+            sw_vers
+          fi
+      - name: Unix strict discovery/execution and workspace Clippy
+        if: ${{ runner.os != 'Windows' }}
+        run: |
+          cargo xtask native-tests --target '${{ matrix.target }}' --out target/native-tests
+          cargo clippy --locked --workspace --all-targets --target '${{ matrix.target }}' -- -D warnings
+      - name: Qualified Slint profile and actual Darwin child/preference fixtures
+        if: ${{ runner.os == 'macOS' }}
+        run: cargo xtask check-macos-desktop --out target/native-desktop-checks
+      - name: Unix real different-UID namespace controls and standalone filesystem primitive
+        if: ${{ runner.os != 'Windows' }}
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: |
+          cargo build --locked --package eml-fs --example namespace-credentials
+          victim_uid=$(id -u)
+          victim_gid=$(id -g)
+          sudo -n "$PWD/target/debug/examples/namespace-credentials" "$victim_uid" "$victim_gid"
+          cargo run --locked --manifest-path tests/native-filesystem/Cargo.toml --target '${{ matrix.target }}'
+      - name: Actual exclusively owned exFAT image and Core observations
+        if: ${{ runner.os == 'macOS' }}
+        run: cargo xtask check-macos-volume --out target/owned-exfat-observation
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: ${{ runner.os == 'Linux' }}
+        with:
+          artifact-ids: ${{ needs.legal.outputs.artifact_id }}
+          path: target/legal-input
+      - name: Qualify native Linux release tests and extracted CLI archive
+        if: ${{ runner.os == 'Linux' }}
+        env:
+          EML_GENERATED_LEGAL_MATERIALS: ${{ github.workspace }}/target/legal-input
+        run: cargo xtask qualify --target '${{ matrix.target }}' --out target/native-cli-build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: native-tests-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/**/*.stderr
+            !${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/native-test-build/**
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.stderr
+            !${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/child-fixtures/build/**
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-creation-evidence/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/*.list
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.stderr
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.tar.gz
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/cli-build/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/cli-build/cargo.jsonl
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/cli-build/cargo.stderr
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/archive-verification/**
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-host/**
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/owned-exfat-observation/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/owned-exfat-observation/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/owned-exfat-observation/**/*.stderr
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/owned-exfat-observation/**/*.plist
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-native-workspace.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.jsonl
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.stderr
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.map
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/*.zip
+            !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/cargo/**
+            !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/native-test-build/**
+            !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/native-primitives-build/**
+          if-no-files-found: error
+  icon:
+    needs: plan
+    runs-on: macos-26
+    timeout-minutes: 15
+    outputs:
+      available: ${{ steps.result.outputs.available }}
+      retry: ${{ steps.result.outputs.retry }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source }}
+      - name: Compile the one shared icon input set
+        id: compile
+        continue-on-error: true
+        run: cargo xtask compile-macos-icon --out target/icon-produced
+      - name: Keep actual failure distinct from an approved alternate-host attempt
+        id: result
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.compile.outcome }}
+        run: |
+          if [ "$OUTCOME" = success ]; then
+            jq -e '.outputs_validated == true' target/icon-produced/result.json
+            printf 'available=true\nretry=false\n' >> "$GITHUB_OUTPUT"
+          else
+            jq -e '.outputs_validated == false and .retry_allowed == true' target/icon-produced/result.json
+            printf 'available=false\nretry=true\n' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: upload
+        if: ${{ steps.result.outputs.available == 'true' }}
+        with:
+          name: icon-${{ inputs.source }}-macos-26-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/icon-produced/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: icon-observations-${{ inputs.source }}-macos-26-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/icon-produced/**
+          if-no-files-found: error
+  icon_fallback:
+    needs: [plan, icon]
+    if: ${{ needs.icon.outputs.retry == 'true' }}
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source }}
+      - name: Approved native Intel alternate icon host
+        run: cargo xtask compile-macos-icon --out target/icon-produced
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: upload
+        with:
+          name: icon-${{ inputs.source }}-macos-15-intel-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/icon-produced/**
+          if-no-files-found: error
+  app:
+    needs: [plan, legal, icon, icon_fallback]
+    if: ${{ always() && needs.plan.result == 'success' && needs.legal.result == 'success' && ((needs.icon.result == 'success' && needs.icon.outputs.available == 'true') || needs.icon_fallback.result == 'success') }}
+    name: Native app / ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.apps) }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: ${{ needs.plan.outputs.minimum }}
+      EML_GENERATED_LEGAL_MATERIALS: ${{ github.workspace }}/target/legal-input
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.legal.outputs.artifact_id }}
+          path: target/legal-input
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.icon.outputs.artifact_id || needs.icon_fallback.outputs.artifact_id }}
+          path: target/icon-input
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cargo_cache
+        with:
+          path: |
+            target/native-cargo/${{ matrix.target }}
+            ~/.cargo/registry/src
+            ~/.cargo/registry/cache
+          key: macos-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
+      - name: Build and verify native CLI and complete ad hoc app archives
+        run: |
+          cargo xtask build-cli-archive --target '${{ matrix.target }}' --out target/native-cli-build
+          cargo xtask build-macos-app --icons target/icon-input --out target/native-app-build
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: ${{ !cancelled() && steps.cargo_cache.outputs.cache-hit != 'true' }}
+        with:
+          path: |
+            target/native-cargo/${{ matrix.target }}
+            ~/.cargo/registry/src
+            ~/.cargo/registry/cache
+          key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-products-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/native-app-build/*.zip
+            target/native-app-build/*.reference.json
+            target/native-app-build/app-result.json
+            target/native-cli-build/*.zip
+            target/native-cli-build/cli-result.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: native-app-evidence-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/native-app-build/**/*.json
+            target/native-app-build/**/*.jsonl
+            target/native-app-build/**/*.log
+            target/native-app-build/**/*.stderr
+            target/native-app-build/**/gui-interaction/Results.xcresult/**
+            target/native-app-build/**/gui-interaction/preferences-*.plist
+            target/native-app-build/*.zip
+            !target/native-app-build/sources/cargo/**
+            !target/native-app-build/**/gui-interaction/build/**
+            target/native-cli-build/*.json
+            target/archive-verification/**
+          if-no-files-found: error
+  app_smoke:
+    needs: [plan, legal, app]
+    if: ${{ always() && needs.plan.result == 'success' && needs.legal.result == 'success' }}
+    name: macOS15 extracted archives / ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.smoke) }}
+    env:
+      EML_GENERATED_LEGAL_MATERIALS: ${{ github.workspace }}/target/legal-input
+      MACOSX_DEPLOYMENT_TARGET: ${{ needs.plan.outputs.minimum }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.legal.outputs.artifact_id }}
+          path: target/legal-input
+      - name: Select the exact current producer artifact ID
+        id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          ARTIFACT_NAME: native-products-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+        run: |
+          id=$(gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts" | jq -er --arg name "$ARTIFACT_NAME" '[.[]|.artifacts[]|select(.name==$name and .expired==false)] | if length==1 then .[0].id else error("missing or ambiguous exact producer artifact") end')
+          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
+          printf 'Exact producer artifact ID: %s\n' "$id"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ steps.artifact.outputs.id }}
+          path: target/products
+      - name: Run the same native CLI and app archive bytes on the floor host
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          cargo xtask distribution > target/distribution.json
+          app=$(jq -er --arg platform "$PLATFORM" '.expected_artifacts[]|select(.platform==$platform and .role=="app")|.name' target/distribution.json)
+          cli=$(jq -er --arg platform "$PLATFORM" '.expected_artifacts[]|select(.platform==$platform and .role=="cli")|.name' target/distribution.json)
+          cargo xtask verify-archive --archive "target/products/native-cli-build/$cli" --target "$TARGET"
+          cargo xtask smoke-macos-app --archive "target/products/native-app-build/$app" --reference "target/products/native-app-build/$app.reference.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: floor-smoke-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/app-archive-smoke/**
+            !target/app-archive-smoke/**/gui-interaction/build/**
+            target/archive-verification/**
+            target/native-host/**
+          if-no-files-found: error
+  ci-ok:
+    if: ${{ always() }}
+    needs: [plan, lint, legal, test, app, app_smoke]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source }}
+          persist-credentials: false
+      - name: Require every registered job and native matrix to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          mkdir -p target
+          printf '%s' "$NEEDS" > target/ci-needs.json
+          cargo xtask ci-result --event workflow_call --native --needs target/ci-needs.json

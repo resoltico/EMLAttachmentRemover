@@ -27,7 +27,8 @@ Install that host from the authoritative target table, select its
 `lib/rustlib/TARGET/bin/rust-lld.exe` as `CARGO_TARGET_TARGET_LINKER` (uppercase,
 hyphens replaced by underscores), and pass the explicit target to Cargo.
 `.cargo/config.toml` owns linking flags. MSVC and cross-compilation do not qualify
-this contract. The native Windows steps in .github/workflows/ci.yml show the exact invocation.
+this contract. The native Windows steps in
+[native-qualification.yml](.github/workflows/native-qualification.yml) show the exact invocation.
 
 macOS app checks require the Xcode version/build in xtask/tools.toml. Set
 DEVELOPER_DIR only for each invocation to that Xcode's Contents/Developer path;
@@ -49,11 +50,15 @@ Keep each app ZIP's frozen `.reference.json` receipt for native floor smoke and
 `verify-archive`; it binds producer bytes, not review quality. Ad hoc signing is
 the only supported signing mode; no Apple developer account is required.
 
-One `ci.yml` handles branch heads, standard PR merge checkouts, main and merge
-queues. It retains actual checkout identities, six native test jobs, strict Slint
-fixtures, real different-UID controls, complete legal generation, native app/CLI
-archives and matching macOS15 smoke. `ci-ok` always runs and accepts only success
-for every required job/matrix. Icon diagnostics are manual only. Partial reruns
+`ci.yml` sends exact PR head H, main source S or merge-queue source Q through
+the reusable native workflow. PR Linux integration uses the exact merge M and
+checks its ordered base/H parents. A final API observation rejects stale head/base
+pairings. Native jobs retain compiler/host identities, strict Slint fixtures,
+real different-UID controls, complete legal generation, native archives and
+matching macOS15 smoke. `ci-ok` always runs and rejects failed, missing and
+unexpectedly skipped jobs; only non-PR events omit merge integration/freshness.
+Full product acceptance remains separately open as recorded above. Icon diagnostics
+are manual only. Partial reruns
 that lack the exact current producer artifact fail; rerun the complete workflow.
 Actionlint uses its exact checksum-pinned upstream prebuilt because install-action
 does not provide it; supported tools use SHA-pinned install-action, checksums and

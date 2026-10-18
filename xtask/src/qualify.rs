@@ -83,10 +83,18 @@ pub(crate) fn checked_tests(
             command.args(["--target", target]);
         }
         #[cfg(windows)]
-        command.args([
-            "--features",
-            "eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures",
-        ]);
+        {
+            command.args([
+                "--features",
+                "eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures",
+            ]);
+            if release {
+                command.env(
+                    "EML_WINDOWS_EVIDENCE_DIR",
+                    out.join("windows-creation-evidence"),
+                );
+            }
+        }
         command.args(["--", "--color", "never"]);
         if listing {
             command.arg("--list");
@@ -334,6 +342,8 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
     let out = out.canonicalize()?;
     let result: Result<()> = (|| {
         let tests = checked_tests(root, Some(target), true, &out)?;
+        #[cfg(not(target_os = "macos"))]
+        let primitives = native_primitives(root, target, &out)?;
         let cli = cli_build::build(root, target, &out.join("cli-build"))?;
         #[cfg(windows)]
         cli_build::unknown_input_control(root, target, &cli, &out.join("unknown-input-control"))?;
@@ -352,8 +362,18 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
             crate::macos_app::build_sources(root, &app_stage)?;
             Err("CLI archive and native GUI/worker executable builds completed; complete app/GUI/volume qualification remains incomplete".into())
         }
-        #[cfg(not(target_os="macos"))]
-        Err("CLI archive completed; remaining native privilege/console/final-link and complete qualification gates remain incomplete".into())
+        #[cfg(not(target_os = "macos"))]
+        {
+            fs::write(
+                out.join("qualification.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "source":source.trim(),"target":target,"host":cli.host(),"release_tests":tests,
+                    "native_primitives":primitives,"cli_image":cli.identity(),"archive":archive,
+                    "scope":"native CLI release tests, real namespace/filesystem controls, final executable/runtime inspection and extracted archive behavior; repository-wide and other-platform qualification is separate"
+                }))?,
+            )?;
+            Ok(())
+        }
     })();
     if let Err(error) = result {
         let evidence = format!("source={} target={target}\n{error}\n", source.trim());
@@ -366,6 +386,73 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
         return Err(error);
     }
     Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn native_primitives(root: &Path, target: &str, out: &Path) -> Result<Value> {
+    let build = out.join("native-primitives-build");
+    let mut command = Command::new("cargo");
+    command
+        .current_dir(root)
+        .args([
+            "run",
+            "--locked",
+            "--release",
+            "--manifest-path",
+            "tests/native-filesystem/Cargo.toml",
+            "--target",
+            target,
+        ])
+        .env("CARGO_TARGET_DIR", &build)
+        .env("EXPECTED_TARGET", target);
+    let log = out.join("native-filesystem.log");
+    let process = controller()?.run(command, &log, Duration::from_secs(600))?;
+    process.require_success(&log)?;
+    #[cfg(target_os = "linux")]
+    let namespace = {
+        let mut compile = Command::new("cargo");
+        compile
+            .current_dir(root)
+            .args([
+                "build",
+                "--locked",
+                "--release",
+                "--package",
+                "eml-fs",
+                "--example",
+                "namespace-credentials",
+                "--target",
+                target,
+            ])
+            .env("CARGO_TARGET_DIR", &build);
+        let log = out.join("namespace-build.log");
+        controller()?
+            .run(compile, &log, Duration::from_secs(600))?
+            .require_success(&log)?;
+        let mut ids = Vec::new();
+        for flag in ["-u", "-g"] {
+            let value =
+                String::from_utf8(capture(Command::new("id").current_dir(root).arg(flag))?)?;
+            ids.push(value.trim().parse::<u32>()?.to_string());
+        }
+        let mut command = Command::new("sudo");
+        command
+            .current_dir(root)
+            .arg("-n")
+            .arg(
+                build
+                    .join(target)
+                    .join("release/examples/namespace-credentials"),
+            )
+            .args(&ids);
+        let log = out.join("namespace-credentials.log");
+        let process = controller()?.run(command, &log, Duration::from_secs(120))?;
+        process.require_success(&log)?;
+        json!({"process":process.evidence(),"victim_uid":ids[0],"victim_gid":ids[1]})
+    };
+    #[cfg(not(target_os = "linux"))]
+    let namespace = json!({"scope":"Windows distinct-account ACL and containment cases are required by the release workspace test selection"});
+    Ok(json!({"filesystem":process.evidence(),"namespace":namespace}))
 }
 
 fn summary_passes(line: &str) -> Result<u64> {

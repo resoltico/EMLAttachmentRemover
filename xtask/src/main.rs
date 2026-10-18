@@ -3,6 +3,7 @@
 mod archive_verify;
 mod campaign;
 mod check;
+mod ci;
 mod cli_build;
 mod distribution;
 mod fuzz;
@@ -57,6 +58,15 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Admit exact event-specific CI results, rejecting absent or skipped required jobs.
+    CiResult {
+        #[arg(long)]
+        event: String,
+        #[arg(long)]
+        native: bool,
+        #[arg(long)]
+        needs: PathBuf,
+    },
     /// Derive byte references from pinned official Windows component archives; not approval.
     WindowsRuntimeReferences {
         #[arg(long)]
@@ -214,6 +224,11 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::CiResult {
+                event,
+                native,
+                needs,
+            } => ci::run(&event, native, &needs),
             Task::WindowsRuntimeReferences { archives, out } => {
                 initialize_controller(&root)?;
                 windows_references::generate(&root, &archives, &out)
