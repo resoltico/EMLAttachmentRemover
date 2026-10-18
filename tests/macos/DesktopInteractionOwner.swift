@@ -32,6 +32,10 @@ struct DesktopInteractionOwner {
     var unexpected: [pid_t] = []
     var unexpectedSettings: [pid_t] = []
     var stackSamples: [[String: Any]] = []
+    var pickerBaselineSettled = false
+    var pickerLogObservation: [String: Any]?
+    var diagnosticProcess: Process?
+    var diagnosticSettled = true
     var outputPipe: Pipe?
     let fixtureOutput = DesktopFixtureOutput()
     var outputDrainComplete: Bool?
@@ -213,7 +217,10 @@ struct DesktopInteractionOwner {
           try acknowledge(
             "owned copy restored\n", at: fixture.appendingPathComponent("copy-restored"))
         }
-        if request == .picker, stackSamples.count < 3, !launched.isTerminated {
+        if request == .picker || request == .pickerBaseline,
+          stackSamples.count < 4, !launched.isTerminated
+        {
+          if request == .pickerBaseline && pickerBaselineSettled { throw Failure.invalidInput }
           let sample = Process()
           let sampleURL = URL(fileURLWithPath: arguments[3]).deletingLastPathComponent()
             .appendingPathComponent("native-picker-stack-\(stackSamples.count).txt")
@@ -227,6 +234,7 @@ struct DesktopInteractionOwner {
           sample.standardOutput = FileHandle.standardError
           sample.standardError = FileHandle.standardError
           try sample.run()
+          diagnosticProcess = sample
           let sampleDeadline = min(executionDeadline, ProcessInfo.processInfo.systemUptime + 10)
           while sample.isRunning && !cancellation.requested
             && ProcessInfo.processInfo.systemUptime < sampleDeadline
@@ -240,12 +248,20 @@ struct DesktopInteractionOwner {
           }
           guard !sample.isRunning else { throw Failure.deadline }
           sample.waitUntilExit()
+          diagnosticProcess = nil
           stackSamples.append([
+            "phase": request == .pickerBaseline ? "before-picker" : "after-picker-request",
             "path": sampleURL.path, "status": sample.terminationStatus,
             "reason": sample.terminationReason.rawValue,
             "retained_target_alive_after": !launched.isTerminated,
             "scope": "read-only diagnostic; never a picker or product qualification verdict",
           ])
+          if request == .pickerBaseline {
+            pickerBaselineSettled = true
+            try acknowledge(
+              "owned picker baseline settled\n",
+              at: fixture.appendingPathComponent("picker-baseline-settled"))
+          }
         }
         let runnerReady =
           input["runner_ready"].map { FileManager.default.fileExists(atPath: $0) } ?? true
@@ -305,8 +321,84 @@ struct DesktopInteractionOwner {
           failure = failure ?? relayFailure
         }
       }
+      // Collect after runner settlement so the interval includes late initialization errors.
+      if pickerBaselineSettled {
+        // Query only the retained product PID and its owned launch interval.
+        // System-wide logs and unrelated processes are outside this fixture.
+        let logURL = URL(fileURLWithPath: arguments[3]).deletingLastPathComponent()
+          .appendingPathComponent(
+            "native-picker-owned-process.log")
+        try Data().write(to: logURL, options: .withoutOverwriting)
+        let output = try FileHandle(forWritingTo: logURL)
+        let log = Process()
+        log.executableURL = URL(fileURLWithPath: "/usr/bin/log")
+        let end = Date().timeIntervalSince1970
+        guard let image = Bundle(url: appURL)?.executableURL else { throw Failure.invalidInput }
+        let predicate = NSPredicate(format: "processImagePath == %@", image.path).predicateFormat
+        log.arguments = [
+          "show", "--process", String(launched.processIdentifier), "--start",
+          "@\(Int(date.timeIntervalSince1970))", "--end", "@\(Int(end) + 1)", "--style",
+          "compact", "--info", "--debug", "--color", "none", "--predicate", predicate,
+        ]
+        log.standardInput = FileHandle.nullDevice
+        log.standardOutput = output
+        log.standardError = output
+        try log.run()
+        diagnosticProcess = log
+        let deadline = min(executionDeadline, ProcessInfo.processInfo.systemUptime + 8)
+        var outputLimitReached = false
+        while log.isRunning && !cancellation.requested
+          && ProcessInfo.processInfo.systemUptime < deadline
+        {
+          let size =
+            (try FileManager.default.attributesOfItem(atPath: logURL.path)[.size] as? NSNumber)?
+            .uint64Value ?? 0
+          if size >= 1024 * 1024 {
+            outputLimitReached = true
+            break
+          }
+          try await Task.sleep(for: .milliseconds(50))
+        }
+        let timedOut = log.isRunning && ProcessInfo.processInfo.systemUptime >= deadline
+        if log.isRunning { log.terminate() }
+        let settle = ProcessInfo.processInfo.systemUptime + 0.25
+        while log.isRunning && ProcessInfo.processInfo.systemUptime < settle {
+          try await Task.sleep(for: .milliseconds(50))
+        }
+        guard !log.isRunning else { throw Failure.deadline }
+        log.waitUntilExit()
+        diagnosticProcess = nil
+        try output.close()
+        pickerLogObservation = [
+          "path": logURL.path, "pid": launched.processIdentifier,
+          "start": date.timeIntervalSince1970, "end": end,
+          "status": log.terminationStatus, "reason": log.terminationReason.rawValue,
+          "timed_out": timedOut, "output_limit_reached": outputLimitReached,
+          "bytes":
+            (try FileManager.default.attributesOfItem(atPath: logURL.path)[.size] as? NSNumber)?
+            .uint64Value ?? 0,
+          "scope":
+            "owned product PID and unique executable path only; sampled output-size stop is not a hard byte cap; diagnostic, not product qualification",
+        ]
+      }
 
     } catch { failure = failure ?? String(describing: error) }
+
+    // Retain the exact diagnostic child across throwing reads or cancellation.
+    // A failure to settle it remains a failed owner result.
+    if let diagnostic = diagnosticProcess {
+      if diagnostic.isRunning { diagnostic.terminate() }
+      let deadline = ProcessInfo.processInfo.systemUptime + 0.25
+      while diagnostic.isRunning && ProcessInfo.processInfo.systemUptime < deadline {
+        try? await Task.sleep(for: .milliseconds(25))
+      }
+      diagnosticSettled = !diagnostic.isRunning
+      if diagnosticSettled {
+        diagnostic.waitUntilExit()
+      } else {
+        failure = failure ?? "Owned read-only diagnostic did not settle"
+      }
+    }
 
     // Internal failure/deadline and the controller's opted-in TERM grace.
     // A hard kill or unresolved launch callback can still bypass cleanup;
@@ -413,6 +505,8 @@ struct DesktopInteractionOwner {
           ? NSNull() : "Owned original fixture bytes changed or could not be read",
         "owned_pasteboard_released": hadBoard,
         "native_picker_stack_samples": stackSamples,
+        "native_picker_owned_process_log": pickerLogObservation ?? NSNull(),
+        "native_picker_diagnostic_settled": diagnosticSettled,
         "missing_copy_observation": [
           "held": copyWasHeld, "restored_by_request": copyRestoredByRequest,
           "restored_during_cleanup": copyRestoredDuringCleanup,

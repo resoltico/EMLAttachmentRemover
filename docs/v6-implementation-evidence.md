@@ -1391,3 +1391,35 @@ legal profiles/603 entries passed from the clean clone. A tracked-source audit
 found586 paths and no Python product/tooling paths; the published changelog is
 byte-exact after normalizing14 immutable baseline links. Main was fetched again
 and still equals the published baseline, with no later commits to incorporate.
+
+## Intel native panel initialization observation
+
+The Hff8f7e7 Intel shipping workflow failed its first native input panel after
+802.397seconds. Its unbuffered request/nonblocking relay produced a successful
+three-second sample of the exact retained app PID29397 while alive. All2,491
+main-thread samples were inside NSOpenPanel.openPanel, NSSavePanel
+_initBridgeAndStuff and HIRunLoopSemaphore's nested run loop. Configuration,
+sheet presentation and completion callback were not reached during that sample.
+This establishes an initialization wait, not its cause or an infinite deadlock.
+A suspended HIE thread's name mentions a swallowed exception, but its timestamp
+predates the picker by nearly ten minutes; neither the exception reason nor a
+causal connection is known. No product workaround or runner-policy change is
+justified by that stack alone. Owner records retain clean relay EOF, reaped
+runner, normal app termination and four unchanged originals. Both app gates,
+required floor consumers and root CI aggregate failed; all six native test rows
+and exact-M integration passed. Later GUI stages remain unrun at that head.
+
+The fixture now requests and acknowledges a baseline sample before dispatching
+its first picker action, then keeps the existing in-operation samples. Status,
+phase and actual retained-target liveness remain separate facts; baseline
+settlement does not assert a successful capture. After runner settlement, one
+read-only log query covers the owned launch through settlement and filters both
+the exact product PID and its unique executable path. It cannot expose unrelated
+process logs, and absence cannot rule out errors emitted by ViewBridge or another
+service. Query execution is limited to eight seconds and stops at an observed
+1MiB file size; polling is explicitly not a hard byte cap. Actual bytes, status,
+timeout and size-stop are recorded. The exact diagnostic child remains retained
+across throwing reads/cancellation; unresolved settlement fails the owner result
+without replacing the first GUI failure. Native execution of this addition is
+pending. SDK27 Swift6 warnings-as-errors owner/XCTest compilation, strict Swift
+formatting and real pipe/no-replace/acknowledgment fixture checks passed locally.

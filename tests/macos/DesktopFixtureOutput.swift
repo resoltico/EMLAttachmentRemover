@@ -4,6 +4,7 @@ import Darwin
 import Foundation
 
 enum DesktopFixtureRequest: String, CaseIterable, Sendable {
+  case pickerBaseline = "EML_NATIVE_PICKER_BASELINE"
   case picker = "EML_NATIVE_PICKER_REQUESTED"
   case holdCopy = "EML_OWNED_COPY_HOLD"
   case restoreCopy = "EML_OWNED_COPY_RESTORE"

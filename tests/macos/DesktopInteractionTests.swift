@@ -5,6 +5,7 @@ import Darwin
 import XCTest
 
 final class DesktopInteractionTests: XCTestCase {
+  private var pickerBaselineSettled = false
   enum InteractionFailure: Error { case expectedPresentation }
   @MainActor
   func testOwnedPagination() async throws {
@@ -1079,6 +1080,22 @@ final class DesktopInteractionTests: XCTestCase {
   private func choose(_ app: XCUIApplication, path: URL, folder: Bool, destination: Bool = false)
     async throws
   {
+    if !pickerBaselineSettled {
+      let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
+      let input = try XCTUnwrap(
+        JSONSerialization.jsonObject(
+          with: Data(
+            contentsOf: repository.appendingPathComponent("target/desktop-interaction/input.json")))
+          as? [String: String])
+      let acknowledgment = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
+        .appendingPathComponent("picker-baseline-settled")
+      try DesktopFixtureRequest.pickerBaseline.send()
+      try await requireObservation(acknowledgment, prefix: "owned picker baseline settled\n")
+      XCTAssertEqual(
+        try Data(contentsOf: acknowledgment), Data("owned picker baseline settled\n".utf8))
+      pickerBaselineSettled = true
+    }
     try DesktopFixtureRequest.picker.send()
     if destination {
       app.buttons["Copy destination…"].click()
