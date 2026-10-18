@@ -450,8 +450,9 @@ path source. The patch exposes one synchronous native pasteboard callback on the
 existing delegate, corrects draggingEntered's NSDragOperation ABI, permits only
 Copy and removes the lossy per-file drop path. The application uses its existing
 bounded/reentrancy-aware ingress and native file-URL reader, with distinct
-non-enqueuing inspection and committing delivery. Reopen reinstalls the receiver
-on the actual current native window.
+non-enqueuing inspection and committing delivery. The callback is bound through
+Slint's Winit attributes hook when each native application window is created,
+including recreated windows; it does not depend on a post-show raw-window lookup.
 
 Both actual generator graphs retain259/260 GUI package identities and the same
 license expressions, with winit explicitly recorded as reviewed retained source.
@@ -489,6 +490,21 @@ It is a failed/unrun volume gate. The probe now uses sudo -n only for the owned
 image-service create/attach/info/detach operations on fresh hosted runners; Core
 and primitive observations still execute as the ordinary runner. Original
 failure evidence is retained and actual privileged-service results are pending.
+
+The privileged image service also refused create at PR merge4185d7e
+(run39103853108), still before attach/Core work. Local ordinary-user execution
+of the same owned-image probe is now supported without any sudo path. It requires
+a clean committed checkout, creates only its admitted private enclosure/image,
+retains exact mount/device/backing-file ownership checks and does not run a GUI.
+Its actual result remains pending; hosted privilege failures remain failures.
+
+That merge's app startup also caught an integration defect in the first drop
+hook: Slint had not yet materialized a native window immediately after show, so
+the runtime setter returned ParentUnavailable and the app exited1. The patch now
+binds an immutable receiver through native window-creation attributes and removes
+the runtime setter/lookup entirely. Local strict Clippy and GUI tests pass after
+the correction. The original real startup failure remains explicit; native
+startup/interaction must be rerun at the corrected source.
 
 Read-only release admission has two passing negative-control tests covering
 Unreleased, empty/duplicate/invalid-date sections and API failures/published or

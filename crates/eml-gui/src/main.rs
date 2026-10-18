@@ -7,6 +7,7 @@ mod view {
     slint::include_modules!();
 }
 use slint::ComponentHandle;
+use slint::winit_030::winit::platform::macos::WindowAttributesExtMacOS;
 #[allow(
     unsafe_code,
     reason = "Necessary absent-only native lifecycle, file-open and Services methods"
@@ -39,6 +40,9 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
     slint::BackendSelector::new()
         .backend_name("winit".into())
         .renderer_name("software".into())
+        .with_winit_window_attributes_hook(|attributes| {
+            attributes.with_file_url_drop_receiver(application::receive_drop)
+        })
         .select()?;
     let lifecycle = application::ApplicationHooks::install()?;
     let window = view::MainWindow::new()?;
@@ -157,8 +161,6 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
                     if events.reopen || !events.selections.is_empty() {
                         if let Err(error) = window.show() {
                             controller.system_notice(&format!("Main window: {error}"));
-                        } else if let Err(error) = native::install_drop(window.window()) {
-                            controller.boundary_failure(&format!("Native drop receiver: {error}"));
                         } else if let Err(error) = native::restore(window.window()) {
                             controller.system_notice(&format!("Main window: {error}"));
                         }
@@ -182,7 +184,6 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
     window.show()?;
-    native::install_drop(window.window())?;
     slint::run_event_loop_until_quit()?;
     Ok(())
 }

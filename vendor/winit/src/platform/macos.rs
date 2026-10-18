@@ -95,15 +95,6 @@ use crate::window::{Window, WindowAttributes};
 
 /// Additional methods on [`Window`] that are specific to MacOS.
 pub trait WindowExtMacOS {
-    /// Install the application's atomic native file-URL drop receiver.
-    ///
-    /// The receiver runs on the main thread with a borrowed NSPasteboard pointer
-    /// valid only during the callback. `commit` is false for inspection and true
-    /// for delivery of one complete drop batch. It must not unwind or retain the
-    /// pointer. Returning false refuses the operation. No per-file events or
-    /// filename-string fallback are emitted. Only Copy operations are accepted.
-    fn set_file_url_drop_receiver(&self, receiver: Option<fn(*mut std::ffi::c_void, bool) -> bool>);
-
     /// Returns whether or not the window is in simple fullscreen mode.
     fn simple_fullscreen(&self) -> bool;
 
@@ -184,10 +175,6 @@ pub trait WindowExtMacOS {
 }
 
 impl WindowExtMacOS for Window {
-    fn set_file_url_drop_receiver(&self, receiver: Option<fn(*mut std::ffi::c_void, bool) -> bool>) {
-        self.window.maybe_wait_on_main(move |delegate| delegate.set_file_url_drop_receiver(receiver));
-    }
-
     #[inline]
     fn simple_fullscreen(&self) -> bool {
         self.window.maybe_wait_on_main(|w| w.simple_fullscreen())
@@ -293,6 +280,15 @@ pub enum ActivationPolicy {
 /// - `with_titlebar_buttons_hidden`
 /// - `with_fullsize_content_view`
 pub trait WindowAttributesExtMacOS {
+    /// Bind the application's atomic native file-URL receiver at window creation.
+    ///
+    /// The receiver runs on the main thread with a borrowed NSPasteboard pointer
+    /// valid only during the callback. `commit` is false for inspection and true
+    /// for delivery of one complete drop batch. It must not unwind or retain the
+    /// pointer. Returning false refuses the operation. No per-file events or
+    /// filename-string fallback are emitted. Only Copy operations are accepted.
+    fn with_file_url_drop_receiver(self, receiver: fn(*mut std::ffi::c_void, bool) -> bool) -> Self;
+
     /// Enables click-and-drag behavior for the entire window, not just the titlebar.
     fn with_movable_by_window_background(self, movable_by_window_background: bool) -> Self;
     /// Makes the titlebar transparent and allows the content to appear behind it.
@@ -322,6 +318,11 @@ pub trait WindowAttributesExtMacOS {
 }
 
 impl WindowAttributesExtMacOS for WindowAttributes {
+    fn with_file_url_drop_receiver(mut self, receiver: fn(*mut std::ffi::c_void, bool) -> bool) -> Self {
+        self.platform_specific.file_url_drop_receiver = Some(receiver);
+        self
+    }
+
     #[inline]
     fn with_movable_by_window_background(mut self, movable_by_window_background: bool) -> Self {
         self.platform_specific.movable_by_window_background = movable_by_window_background;

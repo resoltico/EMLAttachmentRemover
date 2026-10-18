@@ -1,4 +1,4 @@
-//! Owned exFAT image capability and actual Core observations on fresh CI hosts.
+//! Owned native exFAT image capability and actual Core observations.
 use crate::{Result, controller, macos};
 use eml_core::{
     Event, EventSink, FailureEffect, ItemResult, OutputLocation, RunControl, RunMode, RunRequest,
@@ -23,9 +23,15 @@ impl EventSink for Sink {
         Ok(())
     }
 }
-fn plist(root: &Path, out: &Path, args: &[&std::ffi::OsStr], label: &str) -> Result<Value> {
+fn plist(
+    root: &Path,
+    out: &Path,
+    args: &[&std::ffi::OsStr],
+    label: &str,
+    privileged: bool,
+) -> Result<Value> {
     let path = out.join(format!("{label}.plist"));
-    let mut command = image_command();
+    let mut command = image_command(privileged);
     command.current_dir(root).args(args);
     let result = controller()?.run_separate_output(command, &path, Duration::from_secs(60))?;
     result.require_success(&path)?;
@@ -37,12 +43,18 @@ fn plist(root: &Path, out: &Path, args: &[&std::ffi::OsStr], label: &str) -> Res
     }
     Ok(serde_json::from_slice(&bytes)?)
 }
-fn image_command() -> std::process::Command {
+fn image_command(privileged: bool) -> std::process::Command {
     // Hosted macOS image services refuse creation as the ordinary runner. This
     // test-only command is confined to a fresh runner and its admitted enclosure;
     // neither the processor nor the app acquires administrator privileges.
-    let mut command = std::process::Command::new("/usr/bin/sudo");
-    command.args(["-n", "/usr/bin/hdiutil"]);
+    let mut command = std::process::Command::new(if privileged {
+        "/usr/bin/sudo"
+    } else {
+        "/usr/bin/hdiutil"
+    });
+    if privileged {
+        command.args(["-n", "/usr/bin/hdiutil"]);
+    }
     command
 }
 fn association(
@@ -51,12 +63,14 @@ fn association(
     image: &Path,
     mount: &Path,
     label: &str,
+    privileged: bool,
 ) -> Result<Option<String>> {
     let info = plist(
         root,
         out,
         &[std::ffi::OsStr::new("info"), std::ffi::OsStr::new("-plist")],
         label,
+        privileged,
     )?;
     select_association(&info, image, mount)
 }
@@ -235,10 +249,15 @@ fn core(root: &Path, mount: &Path) -> Result<Value> {
     )
 }
 pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
-    if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
-        || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
-    {
-        return Err("Owned exFAT integration requires a fresh hosted runner; local disk-image privilege remains unrun".into());
+    let privileged = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+        && std::env::var("RUNNER_ENVIRONMENT").as_deref() == Ok("github-hosted");
+    if std::env::var_os("GITHUB_ACTIONS").is_some() && !privileged {
+        return Err(
+            "Unrecognized hosted image-service context; no privilege escalation is admitted".into(),
+        );
+    }
+    if !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty() {
+        return Err("Commit source before the owned volume observation".into());
     }
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
@@ -254,7 +273,7 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
     ));
     let mount = enclosure.path().join("mount");
     fs::create_dir(&mount)?;
-    let mut create = image_command();
+    let mut create = image_command(privileged);
     create
         .args([
             "create",
@@ -285,8 +304,16 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
                 image.as_os_str(),
             ],
             "attach",
+            privileged,
         )?;
-        device = association(root, &out, &image, &mount, "attached-association")?;
+        device = association(
+            root,
+            &out,
+            &image,
+            &mount,
+            "attached-association",
+            privileged,
+        )?;
         if device.is_none() {
             return Err("Owned image attach has no verified device/mount association".into());
         }
@@ -309,18 +336,34 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
         {
             return Err("Owned image identity changed before cleanup".into());
         }
-        let actual = association(root, &out, &image, &mount, "cleanup-association")?;
+        let actual = association(
+            root,
+            &out,
+            &image,
+            &mount,
+            "cleanup-association",
+            privileged,
+        )?;
         if let Some(actual) = actual {
             if device.as_ref().is_some_and(|device| device != &actual) {
                 return Err(
                     "Owned image device reassociated; do not detach an unverified device".into(),
                 );
             }
-            let mut detach = image_command();
+            let mut detach = image_command(privileged);
             detach.args(["detach", &actual]);
             macos::checked_run(detach, &out.join("detach.log"), 60)?;
         }
-        if association(root, &out, &image, &mount, "detached-association")?.is_some() {
+        if association(
+            root,
+            &out,
+            &image,
+            &mount,
+            "detached-association",
+            privileged,
+        )?
+        .is_some()
+        {
             return Err("Owned image remains associated after detach".into());
         }
         let current = fs::symlink_metadata(&image)?;
@@ -332,7 +375,7 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
             json!({"detached":true,"owned_image_removed":true,"device":device,"forced_detach":false}),
         )
     })();
-    let record = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"image_service_privilege":"sudo -n hdiutil on fresh hosted runner; Core and primitives remain ordinary runner UID","observation":observation.as_ref().ok(),"probe_error":observation.as_ref().err().map(ToString::to_string),"cleanup":cleanup.as_ref().ok(),"cleanup_error":cleanup.as_ref().err().map(ToString::to_string)});
+    let record = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"image_service_privilege":if privileged {"sudo -n hdiutil on fresh hosted runner; Core and primitives remain ordinary runner UID"}else{"ordinary local user only; no elevation"},"actual_os":crate::capture(&mut std::process::Command::new("/usr/bin/sw_vers")).ok().and_then(|bytes|String::from_utf8(bytes).ok()),"observation":observation.as_ref().ok(),"probe_error":observation.as_ref().err().map(ToString::to_string),"cleanup":cleanup.as_ref().ok(),"cleanup_error":cleanup.as_ref().err().map(ToString::to_string)});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&record)?)?;
     match (observation, cleanup) {
         (Ok(_), Ok(_)) => Ok(()),

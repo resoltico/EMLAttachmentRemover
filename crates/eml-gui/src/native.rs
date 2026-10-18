@@ -11,7 +11,6 @@ use objc2_app_kit::{
 use objc2_foundation::{NSArray, NSString, NSURL};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::WinitWindowAccessor;
-use slint::winit_030::winit::platform::macos::WindowExtMacOS;
 use std::{
     cell::Cell,
     os::unix::ffi::{OsStrExt, OsStringExt},
@@ -234,15 +233,6 @@ fn parent(window: &slint::Window) -> Result<Retained<NSWindow>, NativeError> {
         })
         .ok_or(NativeError::ParentUnavailable)?
 }
-pub(crate) fn install_drop(window: &slint::Window) -> Result<(), NativeError> {
-    let _main = MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
-    window
-        .with_winit_window(|window| {
-            window.set_file_url_drop_receiver(Some(crate::application::receive_drop))
-        })
-        .ok_or(NativeError::ParentUnavailable)
-}
-
 pub(crate) fn restore(window: &slint::Window) -> Result<(), NativeError> {
     let parent = parent(window)?;
     if parent.isMiniaturized() {

@@ -58,6 +58,7 @@ pub struct PlatformSpecificWindowAttributes {
     pub tabbing_identifier: Option<String>,
     pub option_as_alt: OptionAsAlt,
     pub borderless_game: bool,
+    pub file_url_drop_receiver: Option<fn(*mut c_void, bool) -> bool>,
 }
 
 impl Default for PlatformSpecificWindowAttributes {
@@ -76,6 +77,7 @@ impl Default for PlatformSpecificWindowAttributes {
             tabbing_identifier: None,
             option_as_alt: Default::default(),
             borderless_game: false,
+            file_url_drop_receiver: None,
         }
     }
 }
@@ -125,7 +127,7 @@ pub(crate) struct State {
     is_simple_fullscreen: Cell<bool>,
     saved_style: Cell<Option<NSWindowStyleMask>>,
     is_borderless_game: Cell<bool>,
-    file_url_drop_receiver: Cell<Option<fn(*mut c_void, bool) -> bool>>,
+    file_url_drop_receiver: Option<fn(*mut c_void, bool) -> bool>,
 }
 
 declare_class!(
@@ -648,7 +650,7 @@ fn new_window(
 
 impl WindowDelegate {
     fn receive_file_urls(&self, sender: &NSObject, commit: bool) -> bool {
-        let Some(receiver) = self.ivars().file_url_drop_receiver.get() else { return false; };
+        let Some(receiver) = self.ivars().file_url_drop_receiver else { return false; };
         // NSDraggingInfo provides these native objects for this synchronous
         // callback. Keep the pasteboard retained throughout the borrowed call.
         let mask: NSDragOperation = unsafe { objc2::msg_send![sender, draggingSourceOperationMask] };
@@ -719,7 +721,7 @@ impl WindowDelegate {
             is_simple_fullscreen: Cell::new(false),
             saved_style: Cell::new(None),
             is_borderless_game: Cell::new(attrs.platform_specific.borderless_game),
-            file_url_drop_receiver: Cell::new(None),
+            file_url_drop_receiver: attrs.platform_specific.file_url_drop_receiver,
         });
         let delegate: Retained<WindowDelegate> = unsafe { msg_send_id![super(delegate), init] };
 
@@ -1710,10 +1712,6 @@ fn restore_and_release_display(monitor: &MonitorHandle) {
 }
 
 impl WindowExtMacOS for WindowDelegate {
-    fn set_file_url_drop_receiver(&self, receiver: Option<fn(*mut c_void, bool) -> bool>) {
-        self.ivars().file_url_drop_receiver.set(receiver);
-    }
-
     #[inline]
     fn simple_fullscreen(&self) -> bool {
         self.ivars().is_simple_fullscreen.get()
