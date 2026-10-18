@@ -74,9 +74,10 @@ final class DesktopInteractionTests: XCTestCase {
         let technical = app.checkBoxes["Technical details"]
         guard technical.exists else { XCTFail("Technical details control is unavailable"); return }
         technical.click()
-        let detail = window.textViews.firstMatch
+        print("Observed technical disclosure title=\(technical.title.debugDescription), value=\(String(describing: technical.value))")
+        let detail = app.textViews.firstMatch
         guard detail.waitForExistence(timeout: 5) else {
-            XCTFail("Main report text is unavailable")
+            XCTFail("Main report text is unavailable: \(app.debugDescription)")
             return
         }
         print("Observed report value type=\(type(of: detail.value)), value=\(String(describing: detail.value).prefix(2048))")

@@ -15,6 +15,13 @@ ONLY_ACTIVE_ARCH=YES; no `lipo -create`, product transformation, or test
 runner/framework/bundle inclusion in shipping archives is permitted. Local SDK27
 test compilation is supplementary, not pinned-Xcode/native GUI evidence.
 
+The XCTest xcodebuild command sets SWIFTBUILD_LAUNCH_IN_PROCESS=YES for that
+process only. Swift Build's
+[documented default connection mode](https://github.com/swiftlang/swift-build/blob/main/Sources/SwiftBuild/SWBBuildServiceConnection.swift)
+honors this switch. This avoids an observed persistent SWBBuildService child;
+it does not waive generic survivor rejection or change saved Xcode defaults.
+The local source build accepts the mode; pinned native execution remains required.
+
 `cargo xtask release-check --source FULL_SHA --version VERSION` is read-only
 admission for a later explicit owner release: exact clean source, fresh observed
 main ancestry, Cargo version, one nonempty calendar-dated release section, absent

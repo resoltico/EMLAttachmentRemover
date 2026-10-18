@@ -624,3 +624,12 @@ It neither changes existing accounts/policy nor substitutes a same-SID token.
 The independent final-link observation may continue after a failed native suite
 only when protected checkout preparation succeeded; the suite/job/ci-ok failure
 remains authoritative and cannot be masked by a later successful observation.
+
+At M cd5be321 the direct native accessibility getters observed the finished run
+and reached the technical-disclosure control. The test then failed because its
+window-scoped TextView query did not find the report; it now uses the actual
+application's TextView query and records disclosure state. Survivor diagnostics
+identified the exact selected Xcode SWBBuildService path. Swift Build's primary
+source documents SWIFTBUILD_LAUNCH_IN_PROCESS; that per-command switch is now used
+instead of weakening survivor rejection. Local SDK27 source compilation passed;
+corrected pinned native execution remains pending.

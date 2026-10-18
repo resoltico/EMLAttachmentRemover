@@ -69,6 +69,10 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     let before = preference_snapshot(root, app, build, &observer, &out, "before")?;
     let results = out.join("Results.xcresult");
     let mut command = build.command(root, build.developer.join("usr/bin/xcodebuild"));
+    // Swift Build's documented default connection mode honors this per-process
+    // override. Keep the build service within xcodebuild's owned lifetime rather
+    // than accepting a persistent child or weakening generic survivor rejection.
+    command.env("SWIFTBUILD_LAUNCH_IN_PROCESS", "YES");
     command
         .args([
             "-project",
