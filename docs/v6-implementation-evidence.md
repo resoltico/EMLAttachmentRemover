@@ -1355,3 +1355,39 @@ structural seeds,4MiB maximum input,5s case timeout and1024MiB RSS limit. There
 was no finding or crash artifact. Clean-source notices --check passed all10
 profiles/603 entries. These records identify that source checkpoint rather than
 establishing delivered-head GUI/archive qualification.
+
+## Current native export boundary and physical compact review
+
+At Hff8f7e760184286ccc31530222f52f9f3553a608/run39167274744, all six
+native test rows passed. ARM's shipping workflow passed exact native Save filename
+replacement and actual technical-report export/readback. Its collision scenario
+then failed because an application-wide Replace query matched both the nested
+save confirmation and a Touch Bar button. The source test now binds the observed
+nested sheet's action-button-1, requires exactly one such sheet and checks its
+Replace title/hittability. The collision sentinel/no-overwrite outcome remains
+required; the failed selector is not a passing collision check. Forced cleanup
+was recorded and worker settlement remained unverified after that test failure.
+Later Finder/missing-copy/publication/appearance stages were unrun there.
+
+Physical review of ARM's revised compact frames found the selected editor no
+longer collapsed. The queued-warning frame shows the bottom actions after actual
+outer scrolling, but the simple frame still omitted those actions despite AX
+hittability/frame checks. The test now always exercises the outer scroll before
+checking and capturing the bottom controls, logs their actual frames, and still
+requires returning to the top controls and restoring the original window size.
+That revised execution and physical frame review remain pending.
+
+At clean source68eeb7a19c546c629c67fbe7de55bbd7e4fa875e, mutation campaign
+run-APJAtZ discovered/executed15 cases (five authorize_deletions, ten
+check_edit_ranges):14 caught, one reviewed compiler-invalid Authorization:Default
+case, zero missed/timeouts,55,057ms. A separate fresh clean clone's60-second fuzz
+run-MhCzli completed1,740,208 executions in61,684ms, with the required limits and
+12+10 seeds, no finding/artifact. Its cargo xtask check passed14 sections and429
+discovered/executed tests across36 positive summaries. Two pinned macOS sections
+failed explicitly because Xcode26.3 is unavailable on this owner host. Actual
+local qualify refused this non-hosted desktop before creating output; neither
+that refusal nor supplemental SDK27 compilation qualifies a native app. All10
+legal profiles/603 entries passed from the clean clone. A tracked-source audit
+found586 paths and no Python product/tooling paths; the published changelog is
+byte-exact after normalizing14 immutable baseline links. Main was fetched again
+and still equals the published baseline, with no later commits to incorporate.

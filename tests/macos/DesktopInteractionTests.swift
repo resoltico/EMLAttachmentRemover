@@ -873,17 +873,20 @@ final class DesktopInteractionTests: XCTestCase {
       window.buttons.allElementsBoundByIndex.contains { $0.title.hasPrefix("Run 1\n") })
     try await requireText(app, containing: displayedName ?? source.lastPathComponent)
     let detail = window.textViews["Selected message, removed parts and technical observations"]
-    if !detail.isHittable || !window.frame.contains(detail.frame) {
-      let topControl = app.buttons["About"]
-      guard topControl.isHittable else { throw InteractionFailure.expectedPresentation }
-      topControl.scroll(byDeltaX: 0, deltaY: -600)
-    }
+    // Exercise the actual outer scroll even when AX reports clipped controls as
+    // hittable. The retained frame must show the bottom actions physically.
+    let topControl = app.buttons["About"]
+    guard topControl.isHittable else { throw InteractionFailure.expectedPresentation }
+    topControl.scroll(byDeltaX: 0, deltaY: -600)
     guard detail.isHittable, detail.frame.height >= 55, window.frame.contains(detail.frame) else {
       XCTFail(
         "Compact selected detail is collapsed or clipped: \(detail.frame); \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
     let technical = app.checkBoxes["Technical details"]
+    print(
+      "Compact actual frames: window=\(window.frame), detail=\(detail.frame), technical=\(technical.frame), finder=\(app.buttons["Show in Finder"].frame)"
+    )
     guard technical.isEnabled && technical.isHittable && window.frame.contains(technical.frame),
       window.frame.contains(app.buttons["Show in Finder"].frame)
     else { throw InteractionFailure.expectedPresentation }
@@ -1037,8 +1040,13 @@ final class DesktopInteractionTests: XCTestCase {
     }
     panel.buttons["Save"].click()
     if replacingOwnedSentinel {
-      let replace = app.buttons["Replace"]
-      guard replace.waitForExistence(timeout: 5) else {
+      // AppKit also exposes a Touch Bar Replace button. Bind the actual nested
+      // confirmation in this owned save panel, rather than the app-wide title.
+      let confirmation = panel.sheets.firstMatch
+      let replace = confirmation.buttons["action-button-1"]
+      guard confirmation.waitForExistence(timeout: 5), panel.sheets.count == 1,
+        replace.waitForExistence(timeout: 5), replace.title == "Replace", replace.isHittable
+      else {
         XCTFail(
           "Expected native replacement confirmation for owned report sentinel: \(app.debugDescription)"
         )
