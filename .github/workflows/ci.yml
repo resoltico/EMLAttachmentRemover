@@ -35,6 +35,7 @@ jobs:
           EVENT_SOURCE: ${{ github.sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$EVENT_SOURCE"
+          mkdir -p target
           cargo xtask distribution > target/distribution.json
           {
             jq -ce '{include:[.native_targets[]|{platform,target,runner,os}]}' target/distribution.json | sed 's/^/native=/'
