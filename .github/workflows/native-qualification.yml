@@ -396,7 +396,9 @@ jobs:
             target/native-cargo/${{ matrix.target }}
             ~/.cargo/registry/src
             ~/.cargo/registry/cache
-          key: macos-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
+          key: macos-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}-${{ inputs.source }}
+          restore-keys: |
+            macos-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
       - name: Qualify native release tests, exFAT, CLI and complete ad hoc app archives
         run: cargo xtask qualify --target '${{ matrix.target }}' --icons target/icon-input --out target/native-app-build
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

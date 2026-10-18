@@ -1423,3 +1423,12 @@ across throwing reads/cancellation; unresolved settlement fails the owner result
 without replacing the first GUI failure. Native execution of this addition is
 pending. SDK27 Swift6 warnings-as-errors owner/XCTest compilation, strict Swift
 formatting and real pipe/no-replace/acknowledgment fixture checks passed locally.
+
+The macOS compiled-Cargo cache now uses a source-specific write key with a
+matching dependency/toolchain/target restore prefix. The earlier immutable
+exact-hit key prevented saving release-test artifacts newly moved into that
+cached directory, so later heads repeatedly rebuilt them. Cargo still checks
+source/feature fingerprints after restoration; actual tests, signatures,
+archive readback and GUI scenarios rerun. No qualification verdict is cached.
+Actionlint passed. Native cache restoration/saving on the revised key remains
+an execution observation, not assumed evidence of a faster or passing run.
