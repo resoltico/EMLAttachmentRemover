@@ -149,6 +149,30 @@ final class DesktopInteractionTests: XCTestCase {
     try await requireObservation(
       observation.appendingPathComponent("ready"), prefix: "real publication boundary\n")
 
+    if scenario == "stop" {
+      let window = app.windows["EML Attachment Remover"]
+      window.buttons["_XCUI:CloseWindow"].click()
+      let hidden = NSPredicate { _, _ in !window.exists }
+      guard
+        await XCTWaiter.fulfillment(
+          of: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 10)
+          == .completed,
+        !owned.isTerminated
+      else { throw InteractionFailure.expectedPresentation }
+      let reopened = try await NSWorkspace.shared.openApplication(
+        at: appURL, configuration: delivery)
+      guard reopened.processIdentifier == pid, window.waitForExistence(timeout: 10) else {
+        throw InteractionFailure.expectedPresentation
+      }
+      XCTAssertTrue(app.buttons["Stop"].isEnabled)
+      XCTAssertFalse(
+        FileManager.default.fileExists(
+          atPath: observation.appendingPathComponent("first-interrupt").path))
+      try await requireText(app, containing: originals[0].lastPathComponent)
+      try await requireAccessibleLabel(app, prefix: "Processing")
+      snapshot(app, "active-work-retained-after-close-reopen")
+    }
+
     if scenario == "active-quit" {
       snapshot(app, "real-core-running-before-active-quit")
       let queued = try await NSWorkspace.shared.open(
@@ -331,6 +355,10 @@ final class DesktopInteractionTests: XCTestCase {
     XCTAssertEqual(instances.count, 1)
     XCTAssertEqual(instances.first?.processIdentifier, owned.processIdentifier)
     snapshot(app, "ready")
+    try await requireAccessibleLabel(
+      app, prefix: "Drop local EML files or folders to create copies.")
+    try await requireAccessibleLabel(app, prefix: "Copy destination: ")
+    try await requireAccessibleLabel(app, prefix: "Run status: ")
     app.buttons["About"].click()
     let about = app.windows["About EML Attachment Remover"]
     XCTAssertTrue(about.waitForExistence(timeout: 10), app.debugDescription)
@@ -454,6 +482,8 @@ final class DesktopInteractionTests: XCTestCase {
       XCTAssertEqual(try Data(contentsOf: copy), golden)
     }
     snapshot(app, "finished")
+    try await requireAccessibleLabel(app, prefix: "Completed")
+    try await requireAccessibleLabel(app, prefix: "Run summary: ")
     try await checkCompactReport(app, window: window, source: sources[0])
 
     // The real message importer reruns one original. Two full reports then
@@ -759,6 +789,29 @@ final class DesktopInteractionTests: XCTestCase {
     snapshot(app, "native-finder-file-drop-up-to-date")
     try await closeOwnedFinderWindow(finder, title: folderTitle)
     guard owned.activate(options: []) else { throw InteractionFailure.expectedPresentation }
+
+    // Both report reservations are occupied. Capture a changed destination in
+    // a queued request, then change the current choice before freeing its slot.
+    let chosenDestination = root.appendingPathComponent("chosen-destination")
+    try await choose(app, path: chosenDestination, folder: true, destination: true)
+    try await requireAccessibleLabel(app, prefix: "Copy destination: " + chosenDestination.path)
+    let queuedDestination = try await NSWorkspace.shared.open(
+      [sources[0]], withApplicationAt: appURL, configuration: delivery)
+    guard queuedDestination.processIdentifier == owned.processIdentifier else {
+      throw InteractionFailure.expectedPresentation
+    }
+    try await requireWaiting(app, count: 1)
+    let destinationCopy = chosenDestination.appendingPathComponent("one.no-attachments.eml")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: destinationCopy.path))
+    app.buttons["Beside originals"].click()
+    try await requireAccessibleLabel(app, prefix: "Copy destination: Beside each original")
+    app.buttons["Dismiss report"].click()
+    try await requireRun(app, counts: "1 created · 0 up to date", source: sources[0])
+    try await requireText(app, containing: "Copy: " + destinationCopy.path)
+    XCTAssertEqual(try Data(contentsOf: destinationCopy), golden)
+    XCTAssertEqual(try Data(contentsOf: firstCopy), golden)
+    try await requireWaiting(app, count: 0)
+    snapshot(app, "queued-run-retains-chosen-destination")
     window.buttons["_XCUI:CloseWindow"].click()
     let hiddenForQuit = NSPredicate { _, _ in !window.exists }
     let hiddenForQuitObservation = await XCTWaiter.fulfillment(
@@ -772,6 +825,7 @@ final class DesktopInteractionTests: XCTestCase {
       return
     }
     XCTAssertTrue(window.exists, "Quit confirmation did not restore the main window")
+    try await requireAccessibleLabel(app, prefix: "Confirmation: ")
     app.buttons["Cancel"].click()
     XCTAssertFalse(owned.isTerminated)
     snapshot(app, "quit-cancelled-from-hidden")
@@ -1014,9 +1068,13 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
-  private func choose(_ app: XCUIApplication, path: URL, folder: Bool) async throws {
+  private func choose(_ app: XCUIApplication, path: URL, folder: Bool, destination: Bool = false)
+    async throws
+  {
     try DesktopFixtureRequest.picker.send()
-    if folder {
+    if destination {
+      app.buttons["Copy destination…"].click()
+    } else if folder {
       app.buttons["Choose folder…"].click()
     } else {
       app.typeKey("o", modifierFlags: .command)
@@ -1043,6 +1101,23 @@ final class DesktopInteractionTests: XCTestCase {
     XCTAssertEqual(
       result, .completed, "The real native input panel did not complete: \(app.debugDescription)")
     guard result == .completed else { throw InteractionFailure.expectedPresentation }
+  }
+
+  @MainActor
+  private func requireAccessibleLabel(_ app: XCUIApplication, prefix: String) async throws {
+    let predicate = NSPredicate { _, _ in
+      app.descendants(matching: .any).allElementsBoundByIndex.contains {
+        $0.title.hasPrefix(prefix) || $0.label.hasPrefix(prefix)
+      }
+    }
+    guard
+      await XCTWaiter.fulfillment(
+        of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 10)
+        == .completed
+    else {
+      XCTFail("Required native accessibility label is absent: \(prefix); \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
   }
 
   @MainActor

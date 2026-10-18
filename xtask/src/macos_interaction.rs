@@ -341,6 +341,9 @@ pub(crate) fn run_case(
         fixture.path().join("report-collision.json"),
         b"Owned report collision sentinel\n",
     )?;
+    if case == DesktopCase::Workflow {
+        fs::create_dir(fixture.path().join("chosen-destination"))?;
+    }
     if case == DesktopCase::Pagination {
         let directory = fixture.path().join("pagination-input");
         fs::create_dir(&directory)?;

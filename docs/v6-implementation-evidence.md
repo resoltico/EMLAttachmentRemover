@@ -1326,3 +1326,32 @@ lifetime. Strict xtask Clippy,69 command tests with zero failures/skips, SDK27
 Swift6 warnings-as-errors owner compilation and XCTest build-for-testing passed.
 These establish source/fixture behavior; enabled GUI pagination and revised
 compact screenshots still require both pinned native hosted runs.
+
+## Active reopen, destination capture and native labels
+
+The Stop fixture now hides and reopens the same owned application while its real
+Core worker remains at the publication boundary. The test requires retained
+source presentation, enabled Stop, Processing accessibility label and no
+interrupt before proceeding through the actual Stop lifecycle. The basic workflow
+also selects a real destination through the native folder panel, queues one file
+while two reports reserve capacity, switches the current choice to Beside
+originals, then dismisses a report. The queued output must still appear in the
+captured folder and match the independent golden; the existing beside-original
+copy must remain unchanged. The argument-domain override makes explicit picker
+changes session-only through the existing product preference behavior. No test
+writes defaults or introduces another preference allowance.
+
+Actual native AX assertions now cover the ready drop instruction, destination,
+activity, summary, Processing/Completed artwork and confirmation labels, in
+addition to existing identity/license/detail/selector full values. This tests the
+required VoiceOver labels through the native accessibility tree; it does not
+claim VoiceOver speech or change system assistive-technology settings. Source
+checks passed strict xtask Clippy,69 command tests with no failures/skips and
+SDK27 Swift6 XCTest build-for-testing. Actual hosted execution remains pending.
+
+At clean source d94d763521f41fbd3e31a002877c99159b964dde, bounded fuzz run
+run-q20I20 completed1,458,612 executions in61,485ms with all12 fixture and10
+structural seeds,4MiB maximum input,5s case timeout and1024MiB RSS limit. There
+was no finding or crash artifact. Clean-source notices --check passed all10
+profiles/603 entries. These records identify that source checkpoint rather than
+establishing delivered-head GUI/archive qualification.
