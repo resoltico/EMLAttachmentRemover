@@ -19,7 +19,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::io::stderr().flush()?;
         std::process::exit(23);
     }
-    if mode == "marker" {
+    if mode == "cooperative-resource" {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        let stopped = Arc::new(AtomicBool::new(false));
+        let signal = Arc::clone(&stopped);
+        ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
+        std::fs::write(
+            root.join("external-resource"),
+            b"owned resource requiring cleanup",
+        )?;
+        std::fs::write(root.join("worker-ready"), b"handler installed")?;
+        let began = std::time::Instant::now();
+        while !stopped.load(Ordering::Relaxed) {
+            if began.elapsed() > Duration::from_secs(10) {
+                return Err("Cooperative stop was not delivered".into());
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::fs::remove_file(root.join("external-resource"))?;
+        std::fs::write(
+            root.join("cooperative-stop-observed"),
+            b"TERM cleanup completed",
+        )?;
+    } else if mode == "marker" {
         #[cfg(unix)]
         std::fs::write(
             root.join("worker-group"),

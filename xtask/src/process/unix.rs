@@ -53,6 +53,7 @@ struct ParentSession {
     writer: Option<std::process::ChildStdin>,
     activated: bool,
     reaped: bool,
+    cooperative_grace: Duration,
 }
 impl Drop for ParentSession {
     fn drop(&mut self) {
@@ -61,7 +62,7 @@ impl Drop for ParentSession {
             return;
         }
         let began = Instant::now();
-        while began.elapsed() < CLEANUP_GRACE + Duration::from_secs(2) {
+        while began.elapsed() < self.cooperative_grace + CLEANUP_GRACE + Duration::from_secs(2) {
             match self.child.try_wait() {
                 Ok(Some(_)) => {
                     self.reaped = true;
@@ -85,6 +86,7 @@ pub(super) fn run(
     log: &Path,
     deadline: Duration,
     capture: bool,
+    cooperative_grace: Duration,
 ) -> Result<ProcessResult> {
     if controller.stopped.load(Ordering::Relaxed) {
         return Err("Verification was cancelled before process launch".into());
@@ -107,6 +109,7 @@ pub(super) fn run(
         writer,
         activated: false,
         reaped: false,
+        cooperative_grace,
     };
     let (send, receive) = mpsc::channel();
     let reading = std::thread::spawn(move || {
@@ -154,6 +157,7 @@ pub(super) fn run(
             .collect(),
         log: log.as_os_str().as_bytes().to_vec(),
         deadline_ms: deadline.as_millis().try_into()?,
+        cooperative_stop_ms: cooperative_grace.as_millis().try_into()?,
         inspector: controller.inspector.as_os_str().as_bytes().to_vec(),
         capture,
     };
@@ -209,7 +213,9 @@ pub(super) fn run(
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Err(mpsc::RecvTimeoutError::Timeout) => (),
         }
-        if started.elapsed() > deadline + CLEANUP_GRACE + Duration::from_secs(10) {
+        if started.elapsed()
+            > deadline + cooperative_grace + CLEANUP_GRACE + Duration::from_secs(10)
+        {
             drop(owned.writer.take());
             return Err("Supervisor result missing after bounded execution/cleanup grace; cleanup unconfirmed".into());
         }
@@ -514,8 +520,45 @@ struct Session {
     worker: Option<Child>,
     raw_status: Option<i32>,
     cleaned: bool,
+    root_group: Option<Pid>,
+    cooperative_grace: Duration,
+    cooperative_requested: bool,
 }
 impl Session {
+    fn cooperate(&mut self) -> Result<()> {
+        if self.cooperative_requested
+            || self.cooperative_grace.is_zero()
+            || self.raw_status.is_some()
+            || self.worker.is_none()
+        {
+            return Ok(());
+        }
+        self.cooperative_requested = true;
+        let group = self
+            .root_group
+            .ok_or("Cooperative worker root group is absent")?;
+        let pin = self
+            .pins
+            .get(&number(group))
+            .ok_or("Cooperative worker root pin is absent")?;
+        // As in hard cleanup, no pin has been polled/reaped before the last
+        // group signal. An exited pin remains an unreaped PID/group reservation.
+        kill_process_group(pin.id, Signal::TERM)?;
+        let began = Instant::now();
+        while began.elapsed() < self.cooperative_grace {
+            if let Some(status) = self
+                .worker
+                .as_mut()
+                .ok_or("Cooperative worker disappeared")?
+                .try_wait()?
+            {
+                self.raw_status = Some(status.into_raw());
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        Ok(())
+    }
     fn cleanup(
         &mut self,
         ordinary_exit: bool,
@@ -526,10 +569,16 @@ impl Session {
         Option<String>,
         Vec<serde_json::Value>,
     ) {
+        let total_began = Instant::now();
+        let cooperative_error = if ordinary_exit {
+            None
+        } else {
+            self.cooperate().err().map(|error| error.to_string())
+        };
         let began = Instant::now();
         let mut unexpected = BTreeSet::new();
         let mut observations = BTreeMap::new();
-        let mut detail = None;
+        let mut detail = cooperative_error;
         let mut stable = 0;
         let discovery_until = began + CLEANUP_GRACE / 2;
         let cleanup_until = began + CLEANUP_GRACE;
@@ -690,7 +739,7 @@ impl Session {
         (
             self.cleaned,
             unexpected.len(),
-            began.elapsed(),
+            total_began.elapsed(),
             detail,
             observations.into_values().collect(),
         )
@@ -721,6 +770,9 @@ pub(super) fn session_entry() -> ExitCode {
         let mut input = BufReader::new(std::io::stdin());
         let bytes = read_frame(&mut input)?;
         let request: Request = serde_json::from_slice(&bytes)?;
+        if Duration::from_millis(request.cooperative_stop_ms) > COOPERATIVE_STOP_LIMIT {
+            return Err("Private process cooperative stop exceeds its policy bound".into());
+        }
         // Refuse an unsupported/malformed inspector before starting any worker.
         let inspector = PathBuf::from(OsString::from_vec(request.inspector.clone()));
         let _ = inspect(&inspector, session, Instant::now() + Duration::from_secs(2))?;
@@ -738,6 +790,9 @@ pub(super) fn session_entry() -> ExitCode {
             worker: None,
             raw_status: None,
             cleaned: false,
+            root_group: None,
+            cooperative_grace: Duration::from_millis(request.cooperative_stop_ms),
+            cooperative_requested: false,
         };
         let root = pin(
             &state.helper,
@@ -746,6 +801,7 @@ pub(super) fn session_entry() -> ExitCode {
             Instant::now() + Duration::from_secs(2),
         )?;
         let group = root.id;
+        state.root_group = Some(group);
         state.pins.insert(number(group), root);
         if stopped.load(Ordering::Relaxed) {
             return Ok(false);

@@ -5,16 +5,29 @@ or release acceptance is claimed. Version6 stays under Unreleased.
 
 ## Current verification work
 
+At source `0b20c5fd0c34b460309af7e4127a413909c2c2c9`, run39133969827's
+Windows ARM row passed377 discovered/executed debug cases, native input admission,
+the real successful-link/unknown-object rejection, archive extraction and the
+five real CLI behavior cases. Its archive gate then failed because the separate
+identity-copy counterfeit reused absolute Windows path fields from the real case,
+so it reached the contract guard before the intended independent byte guard.
+The fixture now rebinds only its source/destination transport fields to its own
+case; claimed outcomes, removals and receipts remain unchanged. A regression
+requires the byte guard to reject the resulting identity copy. The failed native
+run remains failed; complete Windows archive admission requires a native rerun.
+
 At source `4d2fea1add469e8d85c163c54a33465bf26eacd6`, run39132668909's
 Apple Silicon app producer completed the expanded actual GUI scenario, including
 About, full license text, Edit commands, main-window reopen, two-message copies
 and Quit from a hidden main window. The Intel producer timed out at the outer
 300-second harness limit while progressing through the license window. Its log
 contains three completed 60-second XCTest interruption checks followed by actual
-successful events. Cleanup completed with zero survivors. This remains a failed
+successful events. The command controller observed no remaining descendants;
+settlement of the NSWorkspace-launched app outside that graph was unverified
+because the outer timeout could bypass XCTest teardown. This remains a failed
 Intel run; it does not qualify the scenario. The total harness allowance is now
-900 seconds for the expanded sequence; individual behavior/settlement deadlines
-are unchanged. Both native Linux test rows and the Apple Silicon native test row
+900 seconds for that sequence; individual behavior/settlement deadlines
+were unchanged. Both native Linux test rows and the Apple Silicon native test row
 passed at that source. Windows final-link admission failed on the compiler's
 temporary symbols object; QA traced this to the wrong Cargo output directory and
 public executable stem, corrected in `e9b1fbf`.
@@ -32,6 +45,38 @@ retained-data compatibility evidence, not execution of the new native driver.
 Both native Windows runs and complete archive qualification remain required.
 The document establishes recorded consistency and policy bindings; only the
 associated native workflow establishes actual compilation/link execution.
+
+The current workflow separates exact-head native verification from Linux merge
+integration through a reusable source-parameterized workflow and a final PR
+head/base freshness read. Rust aggregate controls reject every required failed,
+canceled, skipped or missing role and unknown event policy. Linux and Windows
+`qualify` now include their release-profile workspace and real filesystem/namespace
+checks before package admission. These orchestration changes require native
+execution; macOS full GUI/qualification and future publication tooling remain open.
+
+Both native app producers and both macOS15 same-archive rows passed the identity/license/Edit/reopen/hidden-Quit
+scenario at `0b20c5fd0c34b460309af7e4127a413909c2c2c9`. The new GUI scenario adds
+real message/folder pickers, report-space pause/resume, Services and a CJK native
+filename. A separate test-only Swift owner now retains the actual NSWorkspace
+application and named pasteboard outside XCTest, runs/reaps the runner, compares
+all four originals and records bounded cleanup without replacing the initial
+failure. Forced app exit never establishes worker settlement. This owner has a
+1200-second execution budget plus a separate outer cleanup allowance; product
+and behavior deadlines are unchanged. Local ARM SDK27 source builds pass. Native
+execution and timeout/cancellation/crash/failure controls for the new lifetime
+owner remain required; no full GUI acceptance is claimed.
+
+The Unix verification controller now has an opt-in cooperative TERM opportunity
+of at most eight seconds through its retained root group pin, before the existing
+freeze/discovery/hard cleanup. Default commands retain zero cooperative grace.
+All pins remain unreaped through every signal; error/Drop paths grant grace at
+most once. Parent/result/drop budgets and reported cleanup time include it.
+Local xtask verification passed25 library,56 command and24 real Unix lifetime
+cases, including actual deadline, cancellation, control-EOF, ignored-TERM and
+invalid-grace controls. Exit zero after cooperative cleanup still fails timeout
+or cancellation and closes admission. These process controls do not substitute
+for native Cocoa owner controls. A launch callback that never returns, a hard
+owner kill, or a missing owner result leaves app cleanup unverified.
 
 ## Scope, source and prerequisites
 

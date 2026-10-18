@@ -19,6 +19,9 @@ pub(crate) mod unix;
 #[cfg(unix)]
 /// Maximum Unix tool-session cleanup grace, shared with real lifetime probes.
 pub const CLEANUP_GRACE: Duration = Duration::from_secs(10);
+#[cfg(unix)]
+/// Maximum optional cooperative stop before ordinary pinned-group hard cleanup.
+pub const COOPERATIVE_STOP_LIMIT: Duration = Duration::from_secs(8);
 #[cfg(windows)]
 mod windows;
 /// Tool-controller errors; no source mail is included.
@@ -176,7 +179,14 @@ impl Controller {
         }
         #[cfg(unix)]
         {
-            self.observe(unix::run(self, command, log, deadline, false))
+            self.observe(unix::run(
+                self,
+                command,
+                log,
+                deadline,
+                false,
+                Duration::ZERO,
+            ))
         }
         #[cfg(windows)]
         {
@@ -189,6 +199,24 @@ impl Controller {
                 "Owned Unix-session verification control is unavailable on this host".into(),
             ))
         }
+    }
+    /// Give a Unix worker a bounded TERM opportunity through its retained root
+    /// group pin before normal hard cleanup. Timeout/cancellation still fail.
+    /// Used by native fixtures owning resources outside their process session.
+    #[cfg(unix)]
+    pub fn run_with_cooperative_stop(
+        &self,
+        command: Command,
+        log: &Path,
+        deadline: Duration,
+        grace: Duration,
+    ) -> Result<ProcessResult> {
+        if !self.admits_work() || grace.is_zero() || grace > COOPERATIVE_STOP_LIMIT {
+            return Err(
+                "Cooperative stop requires open admission and a positive bounded grace".into(),
+            );
+        }
+        self.observe(unix::run(self, command, log, deadline, false, grace))
     }
     /// Preserve stdout at `log` and stderr at `log.with_extension("stderr")`,
     /// returning the actual status even when nonzero. Callers must check timing,
@@ -206,7 +234,14 @@ impl Controller {
         }
         #[cfg(unix)]
         {
-            self.observe(unix::run(self, command, log, deadline, true))
+            self.observe(unix::run(
+                self,
+                command,
+                log,
+                deadline,
+                true,
+                Duration::ZERO,
+            ))
         }
         #[cfg(windows)]
         {
@@ -290,6 +325,7 @@ pub(crate) struct Request {
     env: Vec<(Vec<u8>, Option<Vec<u8>>)>,
     log: Vec<u8>,
     deadline_ms: u64,
+    cooperative_stop_ms: u64,
     inspector: Vec<u8>,
     capture: bool,
 }

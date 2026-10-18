@@ -5,8 +5,9 @@ import Darwin
 import XCTest
 
 final class DesktopInteractionTests: XCTestCase {
+    private enum InteractionFailure: Error { case expectedPresentation }
     @MainActor
-    func testOwnedFinderBatchAndQuitSettlement() async throws {
+    func testOwnedDesktopWorkflowAndNativeIngress() async throws {
         let repository = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let inputURL = repository.appendingPathComponent("target/desktop-interaction/input.json")
@@ -14,61 +15,46 @@ final class DesktopInteractionTests: XCTestCase {
         let appURL = URL(fileURLWithPath: try XCTUnwrap(input["app"]))
         let root = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
         let sources = ["one.eml", "two.eml"].map { root.appendingPathComponent($0) }
+        let folderSource = root.appendingPathComponent("folder-input/folder.eml")
+        let serviceSource = root.appendingPathComponent("service-input/日本語.eml")
+        let allSources = sources + [folderSource, serviceSource]
         let original = try Data(contentsOf: repository.appendingPathComponent("tests/contract/mime/inputs/01-gmail-attachment.eml"))
-        for source in sources { observeSource(source, phase: "before launch") }
+        for source in allSources { observeSource(source, phase: "before GUI interactions") }
         addTeardownBlock { @MainActor in
-            for source in sources {
-                self.observeSource(source, phase: "after owned app settlement")
+            for source in allSources {
+                self.observeSource(source, phase: "after GUI interactions")
                 XCTAssertEqual(try Data(contentsOf: source), original)
             }
         }
         let bundle = try XCTUnwrap(Bundle(url: appURL))
         let identifier = try XCTUnwrap(bundle.bundleIdentifier)
         XCTAssertEqual(input["host_scope"], "fresh-github-hosted-runner")
-        // This test is admitted only by the Rust harness on an ephemeral host.
-        // It never launches an installed owner app or terminates a preexisting one.
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: identifier).isEmpty else {
-            XCTFail("Refusing to interact with a preexisting application instance")
-            return
-        }
+        // The separate fixture owner retains launch/cleanup authority even if
+        // XCTest dies. These fields only admit attachment to that actual instance.
+        let ownershipURL = inputURL.deletingLastPathComponent().appendingPathComponent("ownership.json")
+        let ownership = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: ownershipURL)) as? [String: Any])
+        let pid = try XCTUnwrap(ownership["pid"] as? NSNumber).int32Value
+        let launchDate = try XCTUnwrap(ownership["launch_date"] as? NSNumber).doubleValue
+        let owned = try XCTUnwrap(NSRunningApplication(processIdentifier: pid))
+        XCTAssertEqual(owned.bundleIdentifier, identifier)
+        XCTAssertEqual(owned.bundleURL?.standardizedFileURL, appURL.standardizedFileURL)
+        XCTAssertEqual(ownership["bundle_path"] as? String, appURL.path)
+        XCTAssertEqual(owned.launchDate?.timeIntervalSince1970, launchDate)
+        guard !owned.isTerminated,
+              owned.bundleURL?.standardizedFileURL == appURL.standardizedFileURL,
+              owned.launchDate?.timeIntervalSince1970 == launchDate else { throw InteractionFailure.expectedPresentation }
+        let admitted = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
+        guard admitted.count == 1, admitted[0].processIdentifier == pid else { throw InteractionFailure.expectedPresentation }
         let defaults = UserDefaults.standard.persistentDomain(forName: identifier) ?? [:]
         let previousDestination = defaults["copyDestinationBytes"] as? String
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.createsNewApplicationInstance = true
-        configuration.addsToRecentItems = false
-        configuration.arguments = ["-copyDestinationBytes", ""]
-        let owned = try await NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
         let app = XCUIApplication(url: appURL)
-        addTeardownBlock { @MainActor in
-            if !owned.isTerminated {
-                // Request the actual app's owned shutdown path. A failed cleanup
-                // remains a failed test; no process-name kill or helper sweep.
-                let accepted = owned.terminate()
-                print("Owned termination request accepted: \(accepted); observed state: \(app.state)")
-                if !app.buttons["Confirm"].waitForExistence(timeout: 3), !owned.isTerminated {
-                    app.typeKey("q", modifierFlags: .command)
-                }
-                if app.buttons["Confirm"].waitForExistence(timeout: 3) {
-                    app.buttons["Confirm"].click()
-                }
-                let ended = app.wait(for: .notRunning, timeout: 20)
-                XCTAssertTrue(ended, "Owned GUI normal settlement remains unverified")
-                if !ended && !owned.isTerminated {
-                    // Exact NSWorkspace-returned test instance only. A cleanup
-                    // fallback cannot turn the failed normal-quit gate green.
-                    print("Owned GUI forced cleanup requested: \(owned.forceTerminate())")
-                    XCTAssertTrue(app.wait(for: .notRunning, timeout: 5), "Owned GUI forced cleanup remains unverified")
-                }
-                XCTAssertTrue(owned.isTerminated)
-            }
-        }
         let launched = NSPredicate { _, _ in owned.isFinishedLaunching && !owned.isTerminated }
         let launchObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: launched, object: nil)], timeout: 20)
         guard launchObservation == .completed else {
             XCTFail("Owned application did not finish native launch")
             return
         }
-        app.activate()
+        guard owned.activate(options: []) else { throw InteractionFailure.expectedPresentation }
         let window = app.windows["EML Attachment Remover"]
         XCTAssertTrue(window.waitForExistence(timeout: 20), app.debugDescription)
         let instances = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
@@ -163,6 +149,40 @@ final class DesktopInteractionTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: copy), golden)
         }
         snapshot(app, "finished")
+
+        // The real message importer reruns one original. Two full reports then
+        // reserve all report space; the subsequent folder must wait visibly.
+        try await choose(app, path: sources[0], folder: false)
+        try await requireRun(app, counts: "0 created · 1 up to date", source: sources[0])
+        snapshot(app, "message-import-up-to-date")
+        try await choose(app, path: folderSource.deletingLastPathComponent(), folder: true)
+        try await requireText(app, containing: "Queue paused: dismiss a retained report to make room.")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folderSource.deletingPathExtension().appendingPathExtension("no-attachments.eml").path))
+        snapshot(app, "report-space-paused")
+        app.buttons["Dismiss report"].click()
+        try await requireRun(app, counts: "1 created · 0 up to date", source: folderSource)
+        XCTAssertEqual(try Data(contentsOf: folderSource.deletingPathExtension().appendingPathExtension("no-attachments.eml")), golden)
+        snapshot(app, "folder-import-finished")
+
+        // Use the actual system Services route and an owned named pasteboard;
+        // never replace the user's general clipboard or call the provider directly.
+        let boardName = try XCTUnwrap(ownership["pasteboard"] as? String)
+        guard !boardName.isEmpty, boardName != NSPasteboard.general.name.rawValue else { throw InteractionFailure.expectedPresentation }
+        let serviceBoard = NSPasteboard(name: NSPasteboard.Name(boardName))
+        XCTAssertTrue(serviceBoard.writeObjects([serviceSource as NSURL]))
+        NSUpdateDynamicServices()
+        guard NSPerformService("Create EML Copies Without Attachments", serviceBoard) else {
+            XCTFail("The registered native service did not accept the owned file URL")
+            throw InteractionFailure.expectedPresentation
+        }
+        try await requireText(app, containing: "Queue paused: dismiss a retained report to make room.")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: serviceSource.deletingPathExtension().appendingPathExtension("no-attachments.eml").path))
+        app.buttons["Dismiss report"].click()
+        try await requireRun(app, counts: "1 created · 0 up to date", source: serviceSource)
+        try await requireText(app, containing: "日本語.eml")
+        XCTAssertEqual(try Data(contentsOf: serviceSource.deletingPathExtension().appendingPathExtension("no-attachments.eml")), golden)
+        XCTAssertEqual(NSRunningApplication.runningApplications(withBundleIdentifier: identifier).map(\.processIdentifier), [owned.processIdentifier])
+        snapshot(app, "services-finished-CJK")
         window.buttons["_XCUI:CloseWindow"].click()
         let hiddenForQuit = NSPredicate { _, _ in !window.exists }
         let hiddenForQuitObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: hiddenForQuit, object: nil)], timeout: 10)
@@ -185,6 +205,67 @@ final class DesktopInteractionTests: XCTestCase {
         XCTAssertTrue(owned.isTerminated)
         XCTAssertEqual(UserDefaults.standard.persistentDomain(forName: identifier)?["copyDestinationBytes"] as? String, previousDestination,
                        "Invocation override must not persist a destination")
+    }
+
+    @MainActor
+    private func choose(_ app: XCUIApplication, path: URL, folder: Bool) async throws {
+        if folder { app.buttons["Choose folder…"].click() }
+        else { app.typeKey("o", modifierFlags: .command) }
+        let panel = app.sheets.firstMatch
+        guard panel.waitForExistence(timeout: 10) else {
+            XCTFail("Native input panel did not appear: \(app.debugDescription)")
+            throw InteractionFailure.expectedPresentation
+        }
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        app.typeText(path.path)
+        app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+        if panel.exists {
+            let open = panel.buttons["Open"]
+            guard open.waitForExistence(timeout: 5), open.isEnabled else {
+                XCTFail("Native input selection did not become available: \(app.debugDescription)")
+                throw InteractionFailure.expectedPresentation
+            }
+            open.click()
+        }
+        let closed = NSPredicate { _, _ in !panel.exists }
+        let result = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: closed, object: nil)], timeout: 10)
+        XCTAssertEqual(result, .completed, "The real native input panel did not complete: \(app.debugDescription)")
+        guard result == .completed else { throw InteractionFailure.expectedPresentation }
+    }
+
+    @MainActor
+    private func requireRun(_ app: XCUIApplication, counts: String, source: URL) async throws {
+        let predicate = NSPredicate { _, _ in
+            app.buttons.allElementsBoundByIndex.contains {
+                let text = $0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")
+                return text.contains(counts) && text.contains("Finished") && !text.contains("Finished with errors") && text.contains("0 failed · 0 not processed")
+            }
+        }
+        let result = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 30)
+        XCTAssertEqual(result, .completed, "Expected terminal run counts \(counts): \(app.debugDescription)")
+        guard result == .completed else { throw InteractionFailure.expectedPresentation }
+        let detail = NSPredicate { _, _ in
+            app.descendants(matching: .any).allElementsBoundByIndex.contains {
+                $0.title == "Selected message, removed parts and technical observations"
+                    && ($0.value as? String)?.contains(source.lastPathComponent) == true
+                    && ($0.value as? String)?.contains("settled true; reusable true") == true
+            }
+        }
+        let selected = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: detail, object: nil)], timeout: 20)
+        XCTAssertEqual(selected, .completed, "Expected settled details for \(source.lastPathComponent): \(app.debugDescription)")
+        guard selected == .completed else { throw InteractionFailure.expectedPresentation }
+    }
+
+    @MainActor
+    private func requireText(_ app: XCUIApplication, containing text: String) async throws {
+        let predicate = NSPredicate { _, _ in
+            app.descendants(matching: .any).allElementsBoundByIndex.contains {
+                ($0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")).contains(text)
+            }
+        }
+        let result = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 20)
+        XCTAssertEqual(result, .completed, "Expected presentation \(text): \(app.debugDescription)")
+        guard result == .completed else { throw InteractionFailure.expectedPresentation }
     }
 
     @MainActor

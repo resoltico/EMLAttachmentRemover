@@ -129,6 +129,120 @@ fn overdue_observed_success_cannot_qualify() {
     assert!(result.timed_out);
     assert!(!result.success());
 }
+
+#[test]
+fn cooperative_deadline_cleans_external_resource_but_cannot_qualify_exit_zero() {
+    let _scenario = scenario();
+    let root = scratch();
+    let result = controller(root.path())
+        .run_with_cooperative_stop(
+            worker(root.path(), "cooperative-resource"),
+            &root.path().join("worker.log"),
+            Duration::from_secs(3),
+            Duration::from_secs(1),
+        )
+        .unwrap();
+    assert!(result.timed_out && !result.cancelled && result.status.success());
+    assert!(result.cleanup_complete && !result.success());
+    assert!(root.path().join("cooperative-stop-observed").is_file());
+    assert!(!root.path().join("external-resource").exists());
+}
+
+#[test]
+fn cooperative_cancellation_closes_admission_even_after_clean_exit_zero() {
+    let _scenario = scenario();
+    let root = scratch();
+    let controller = controller(root.path());
+    let result = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            wait_file(&root.path().join("worker-ready"));
+            controller.request_stop();
+        });
+        controller
+            .run_with_cooperative_stop(
+                worker(root.path(), "cooperative-resource"),
+                &root.path().join("worker.log"),
+                Duration::from_secs(10),
+                Duration::from_secs(1),
+            )
+            .unwrap()
+    });
+    assert!(
+        result.cancelled && result.status.success() && result.cleanup_complete && !result.success()
+    );
+    assert!(!controller.admits_work());
+    assert!(root.path().join("cooperative-stop-observed").is_file());
+    assert!(!root.path().join("external-resource").exists());
+}
+
+#[test]
+fn cooperative_control_eof_allows_cleanup_before_pinned_group_termination() {
+    let _scenario = scenario();
+    let root = scratch();
+    let (mut child, writer, mut reader) = raw_session_with_cooperative_stop(
+        root.path(),
+        "cooperative-resource",
+        Path::new("/bin/ps"),
+        10_000,
+        1000,
+    );
+    wait_file(&root.path().join("worker-ready"));
+    drop(writer);
+    let mut line = String::new();
+    reader.read_line(&mut line).unwrap();
+    let result: serde_json::Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(result["event"], "finished");
+    assert_eq!(result["cancelled"], true);
+    assert_eq!(result["cleanup_complete"], true);
+    assert!(child.wait().unwrap().success());
+    assert!(root.path().join("cooperative-stop-observed").is_file());
+    assert!(!root.path().join("external-resource").exists());
+}
+
+#[test]
+fn ignored_cooperative_stop_still_uses_bounded_pinned_hard_cleanup() {
+    let _scenario = scenario();
+    let root = scratch();
+    let result = controller(root.path())
+        .run_with_cooperative_stop(
+            worker(root.path(), "ignore-term"),
+            &root.path().join("worker.log"),
+            Duration::from_secs(3),
+            Duration::from_millis(200),
+        )
+        .unwrap();
+    assert!(
+        result.timed_out
+            && result.cleanup_complete
+            && !result.status.success()
+            && !result.success()
+    );
+    worker_dead(root.path());
+    assert!(!root.path().join("invoked").exists());
+}
+
+#[test]
+fn excessive_cooperative_grace_is_rejected_before_launch() {
+    let _scenario = scenario();
+    let root = scratch();
+    for grace in [
+        Duration::ZERO,
+        xtask::process::COOPERATIVE_STOP_LIMIT + Duration::from_millis(1),
+    ] {
+        assert!(
+            controller(root.path())
+                .run_with_cooperative_stop(
+                    worker(root.path(), "marker"),
+                    &root.path().join("worker.log"),
+                    Duration::from_secs(3),
+                    grace
+                )
+                .is_err()
+        );
+    }
+    assert!(!root.path().join("worker.log").exists());
+    assert!(!root.path().join("worker-group").exists());
+}
 fn worker_dead(root: &Path) {
     let path = root.join("worker-ready");
     assert!(
@@ -338,6 +452,15 @@ fn raw_session(
     inspector: &Path,
     deadline_ms: u64,
 ) -> (Child, ChildStdin, BufReader<ChildStdout>) {
+    raw_session_with_cooperative_stop(root, mode, inspector, deadline_ms, 0)
+}
+fn raw_session_with_cooperative_stop(
+    root: &Path,
+    mode: &str,
+    inspector: &Path,
+    deadline_ms: u64,
+    cooperative_stop_ms: u64,
+) -> (Child, ChildStdin, BufReader<ChildStdout>) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_xtask"))
         .arg("--eml-process-session")
         .stdin(Stdio::piped())
@@ -355,7 +478,7 @@ fn raw_session(
     let mut writer = child.stdin.take().unwrap();
     let request = serde_json::json!({
         "program":Path::new(env!("CARGO_BIN_EXE_process-probe")).as_os_str().as_bytes(),"args":[mode.as_bytes(),root.as_os_str().as_bytes()],
-        "cwd":root.as_os_str().as_bytes(),"env":[],"log":root.join("raw.log").as_os_str().as_bytes(),"deadline_ms":deadline_ms,
+        "cwd":root.as_os_str().as_bytes(),"env":[],"log":root.join("raw.log").as_os_str().as_bytes(),"deadline_ms":deadline_ms,"cooperative_stop_ms":cooperative_stop_ms,
         "inspector":inspector.as_os_str().as_bytes(),"capture":false});
     writer
         .write_all(&serde_json::to_vec(&request).unwrap())
@@ -565,7 +688,7 @@ fn inherited_child_signal_policy_requires_waitable_result_or_refusal() {
         serde_json::from_str::<serde_json::Value>(&line).unwrap()["event"],
         "ready"
     );
-    let request = serde_json::json!({"program":b"/usr/bin/true","args":[],"cwd":root.path().as_os_str().as_bytes(),"env":[],"log":root.path().join("waitable.log").as_os_str().as_bytes(),"deadline_ms":5000,"inspector":b"/bin/ps","capture":false});
+    let request = serde_json::json!({"program":b"/usr/bin/true","args":[],"cwd":root.path().as_os_str().as_bytes(),"env":[],"log":root.path().join("waitable.log").as_os_str().as_bytes(),"deadline_ms":5000,"cooperative_stop_ms":0,"inspector":b"/bin/ps","capture":false});
     writer
         .write_all(&serde_json::to_vec(&request).unwrap())
         .unwrap();
