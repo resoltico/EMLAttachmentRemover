@@ -161,17 +161,19 @@ is inferred from the local Mac checks.
 
 ## Tools, notices and scoped native evidence
 
-Private Rust developer tools were built from reviewed unchanged published sources
+Earlier private Rust developer tools were built from reviewed unchanged published sources
 and compatible repository-owned locks. All four source/lock graphs were audited
 with the newly built cargo-deny; no advisory ignores or broad dev exclusions were
 added. Published-source inputs, private binaries, actual profiles, versions and
-consumer admission are distinct evidence. Selected paths have no global-tool or
-PATH fallback. Current workspace changes require dependent graph checks again.
+consumer admission are distinct evidence. Those build inputs are historical evidence. Current tools are exact-version
+prerequisites resolved on PATH, with checksum-verified prebuilt installation in
+CI and no source-build fallback. The source-build path and its private locks have
+been removed; workspace and fuzz dependency policy remain required.
 
-Six CLI legal trees include actual dependency licenses/notices, Rust legal files
+Build-generated six-target CLI legal materials include actual dependency licenses/notices, Rust legal files
 and target-specific runtime/source bindings. Windows runtime source pointers are
 not final selected-link evidence. Artwork path and source changes require real
-generator/freshness runs; current GUI/worker legal closure must be generated and
+generator runs; current GUI/worker legal closure must be generated and
 reviewed separately. Do not infer that CLI notices cover the enabled GUI graph.
 
 The bounded core fuzz campaign recorded1,540,438 executions without a finding;
@@ -199,10 +201,6 @@ not current Slint or complete native/artifact qualification.
 
 ## Required open gates
 
-- Complete native Windows property-equivalent confinement evidence; the required
-  attribute-only directory writer gate remains failed on both CPUs. Other passing
-  cases and same-SID restricted-token observations do not waive it or establish a
-  different-user boundary.
 - Windows owned process/console/Job supervision, private extraction and final
   PE import/delay-import/selected-link provenance, including rejection controls.
 - Actual owned exFAT image creation/mount/sync/publication/cleanup evidence.
@@ -220,3 +218,41 @@ not current Slint or complete native/artifact qualification.
 
 Failed/unrun gates remain failed/unrun. Checksums identify bytes; they do not
 replace source review, real native integration or owner acceptance.
+
+## Windows detect-before-bytes correction
+
+At `39f7ee34217742de377303deaab47f7ac8d91aac`, the [native Windows run](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39091719923)
+passed the unfiltered workspace selection, required-name discovery, standalone
+filesystem probe and one-off rejection experiments on both GNU LLVM native CPUs.
+The required test was actually compiled out and then marked ignored in separate
+owned checkouts; both cases were refused by exact name. Disabling only the
+containment predicate made the product gate fail with native exit101 and513
+message bytes observed through the exact object independently placed at the
+redirect target. Both originals remained unchanged. The protected product run
+observed zero bytes there and no write callback. The mutation was restored and
+its tracked checkout verified clean. The one-off workflow/script is now removed;
+the positive gates and named-sentinel check remain required.
+
+The first experiment at `b8d020f` failed its evidence check: directory enumeration
+reported the old zero length despite a completed write. The strengthened observer
+retains independent target placement/full-ID evidence and queries size through
+the exact live file handle before cleanup can erase the effect. The initial
+failed experiment remains [recorded](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39091321146).
+This was an inadequate size oracle, not a passing product containment claim.
+The earlier category-only failure at `9b403ba` remains distinct from the fully
+passing product/standalone run at [47a3fc3](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39090882290).
+
+Generated CLI legal output is no longer tracked. The complete reviewed package,
+Rust-library and native-runtime source materials remain under `legal/`; build
+commands generate all accompanying files from those inputs. Local generation
+passed all six selected CLI targets after review of the opt-in fixture-only
+manifest additions. The first generation refusal is retained; it correctly
+reported an outdated Core manifest review input. GUI/worker legal review is still
+separate. The local native CLI archive attempt remains unrun beyond its required
+Xcode preflight because Xcode26.3/17C529 is unavailable on this host. The renamed
+`build-macos-sources` command describes its actual executable-only output and
+returns success when those outputs validate; it does not qualify a complete app.
+
+CI consolidation, complete app/archive production, matching macOS15 smoke and the
+final six-platform aggregate remain open. No current source-only job is evidence
+for those gates.

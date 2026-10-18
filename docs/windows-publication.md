@@ -2,9 +2,9 @@
 
 The owner-approved Windows/CI correction selects WD1a: documented Win32 creation
 and no-replace rename, with detection before message bytes. This boundary is
-being implemented and still requires native qualification on both gnullvm CPUs.
-The earlier NT creation/rename implementation and its passing cases do
-not establish that qualification.
+implemented and passed the complete product gate on both native gnullvm CPUs at
+[39f7ee3](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39091719923).
+This filesystem evidence does not qualify Windows archives or process supervision.
 
 The required property, P-W, is that this app never stages or publishes message
 bytes outside the bound destination, and never reports Created without final
@@ -123,6 +123,42 @@ the Windows floor. CreateDirectory2W returns a handle but requires Windows11
 - If a native run disproves a relied-on premise, stop and obtain the owner decision
   after that run. Do not keep an impossible assertion as a red required gate.
 
+## Existing-only native child-open contract
+
+The creation and publication paths no longer use `NtCreateFile` or
+`NtSetInformationFile`. The separate existing-only child primitive retains
+`NtOpenFile` with one validated relative UTF-16 component under the held parent.
+It cannot create an entry. Observation opens the reparse leaf for attributes;
+traversal and mutation pins use `OBJ_DONT_REPARSE`, directory-only and synchronous
+nonalert options. The returned status, rather than the initially zero IOSB,
+determines completion and ownership. Failed status retains NTSTATUS; a successful
+call without a usable handle is refused. There is no asynchronous or oplock-
+bypass mode, pending-stack-buffer retry or absolute NT namespace fallback.
+
+This completion basis follows the I/O manager's synchronous IRP_MJ_CREATE
+contract, including lower-driver pending completion described by Microsoft's
+[Breaking Oplocks](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/breaking-oplocks).
+The [`NtOpenFile` contract](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntopenfile)
+and fixed options remain distinct from Win32 creation. Do not describe the
+removal of the two mutation calls as removal of every NT API.
+
+## Native acceptance
+
+Both CPUs passed the unfiltered workspace tests, exact-name sentinels and
+standalone native primitive at the source linked above. The product scenarios
+exercise redirected candidate creation, redirected mirror/guard creation,
+ordinary Created with hand-authored golden bytes, unchanged originals, actual
+file/namespace synchronization, no-replace conflicts, tagged-candidate refusal
+and unowned mirror replacement/cancellation without deletion.
+
+The one-off compiled-out and ignored sentinel experiments were refused by name
+on both CPUs. With only the containment predicate disabled in an owned clone,
+the same byte-effect oracle observed513 bytes at the redirect target and the
+native test exited101. The protected run observed zero. Target placement was
+independently established with the exact returned full file ID before restoring
+the parent's reparse state; live file-handle size avoids stale directory-entry
+metadata. These experiments are detection evidence, not qualifying artifacts.
+
 ## Primary contracts
 
 - [CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew): attribute access is outside data-sharing restrictions; CREATE_NEW, access/sharing and returned-handle semantics.
@@ -133,9 +169,10 @@ the Windows floor. CreateDirectory2W returns a handle but requires Windows11
 
 ## Earlier observations
 
-At [b68680d Windows run39082273887](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39082273887), both native CPUs passed the metadata-pin/no-replace/readback case and49 library cases with the old assertion separately filtered. That assertion failed on both CPUs because empty-directory conversion succeeded. The earlier generic-write sharing denial did not establish attribute-only exclusion. These observations are retained as evidence; the disproved assertion is being converted to a platform-fact test, not retained as an intentional required failure or waived as passing.
+At [b68680d Windows run39082273887](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39082273887), both native CPUs passed the metadata-pin/no-replace/readback case and49 library cases with the old assertion separately filtered. That assertion failed on both CPUs because empty-directory conversion succeeded. The earlier generic-write sharing denial did not establish attribute-only exclusion. These observations are retained as evidence; the disproved assertion is replaced by a passing platform-fact test, not retained as an intentional required failure or waived as passing.
 
 Earlier relative-root FileRenameInfo returned error87; the absolute-name attempt
 returned error32 under write-sharing exclusion. The selected absolute-name route
-under read/write/no-delete pins must succeed natively. No success is inferred
+under read/write/no-delete pins passed natively on both CPUs, including normal
+Created and conflict controls. No success is inferred
 from the draft sketch's MSVC type check, generated layout checks or hashes.

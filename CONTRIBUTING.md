@@ -33,32 +33,37 @@ macOS app checks require the Xcode version/build in xtask/tools.toml. Set
 DEVELOPER_DIR only for each invocation to that Xcode's Contents/Developer path;
 do not change xcode-select or saved owner preferences. The builder verifies the
 compiler, SDK, CPU and deployment policy. A newer local Xcode is supplementary
-evidence. Build with `cargo xtask build-macos-app --out target/app-build`, using a
+evidence. Build the native GUI/worker executables with
+`cargo xtask build-macos-sources --out target/desktop-sources`, using a
 new output directory. Actual GUI automation is confined to owned hosted runners;
 local tests must not change Accessibility permissions or preference domains.
 
 ## Checks and evidence
 
 ```sh
-cargo xtask tools
+# Install exact tool versions from xtask/tools.toml on PATH
 cargo xtask check
-cargo xtask notices --check
+cargo xtask notices --out target/legal-materials
 cargo xtask qualify --target TARGET --out target/native-qualification
 cargo xtask verify-archive --archive ARCHIVE --target TARGET
 ```
 
-These supervised tool/check commands currently require Unix; their Windows
-process backend is a required open gate. Install the pinned actionlint and
-shellcheck separately; tools builds the four Cargo tools, not those programs or
-the separate fuzz compiler.
+These supervised check commands currently require Unix; their Windows process
+backend remains an open distribution gate. Install the exact Cargo tools,
+actionlint and shellcheck declared in xtask/tools.toml on PATH. Every Cargo-tool
+consumer checks the selected executable's version, including notices and isolated
+campaigns. CI uses checksum-verified prebuilt Cargo tools with source-build
+fallback disabled. No repository task installs or replaces global tools.
 
-`cargo xtask tools` builds exact versions from xtask/tools.toml in private owned
-target storage, using reviewed dependency locks and cargo-about's required `cli`
-feature. It does not replace global tools. The complete check command retains
-independent failed sections under target/repository-checks. Original published
-tool-lock failures and replacement lock/build outcomes are recorded separately.
-Required local Xcode absence remains explicit; no blanket advisory exception is
-authorized.
+The complete check command retains independent failed sections under
+target/repository-checks. Required local Xcode absence remains explicit. Legal
+materials are generated into a new output directory at build time from the
+reviewed inputs in legal/; there is no tracked generated tree to refresh. The
+GUI/worker closure requires its own review. Native Intel macOS builds consume
+same-source Linux-generated legal inputs because cargo-about has no Intel macOS
+prebuilt download at the selected version; this does not establish native
+execution or legal review.
+
 `qualify` currently fails at remaining required platform/app gates even after a
 bounded CLI package check succeeds. TARGET and ARCHIVE must match actual native
 host and declared artifact identities. Reusing a populated output directory is

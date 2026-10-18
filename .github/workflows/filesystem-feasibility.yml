@@ -85,19 +85,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +1.99.0-${{ matrix.target }} run --locked --manifest-path tests/native-filesystem/Cargo.toml --target ${{ matrix.target }}
           exit $LASTEXITCODE
-      - name: One-off native rejection-control experiments
-        run: |
-          $clone = Join-Path $env:GITHUB_WORKSPACE 'target/windows-rejection-source'
-          git clone --no-hardlinks --no-checkout $env:GITHUB_WORKSPACE $clone
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git -C $clone checkout --detach $env:GITHUB_SHA
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $env:CARGO_TARGET_DIR = Join-Path $env:GITHUB_WORKSPACE 'target/windows-rejection-build'
-          $evidence = Join-Path $env:GITHUB_WORKSPACE 'target/windows-rejection-controls'
-          Push-Location $clone
-          try {
-            & (Join-Path $env:GITHUB_WORKSPACE 'tests/windows/run-rejection-controls.ps1') -Target '${{ matrix.target }}' -Evidence $evidence
-          } finally { Pop-Location }
       - name: Retain native Windows boundary observations
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -106,5 +93,4 @@ jobs:
           path: |
             target/windows-creation-evidence/*.json
             target/native-feasibility/*.list
-            target/windows-rejection-controls/**
           if-no-files-found: error

@@ -344,13 +344,13 @@ DWORD, and uses the public staging/rename path for exact/max+1 controls. Source
 and bounded both-CPU native checks closed at e36855b. Metadata
 availability supplies no write-admission or confinement authority.
 
-The separate Windows `WritableDirectory`/`CreatedDirectory` primitive now performs
-exclusive empty-directory creation from a root-scoped write capability, with
-independent child/parent flush receipts and explicit handle-only empty cleanup.
-Its [reviewed contract](windows-publication.md#empty-directory-creation-design-for-native-qualification)
-passed its bounded source and both-CPU native checks. It writes no message data,
-changes no existing destination ACL and does not qualify creation under parent
-mutation or publication.
+The Windows `WritableDirectory`/`DirectoryCreation` boundary uses the
+[detect-before-bytes contract](windows-publication.md). A zero-byte owned file
+first proves containment and keeps its parent nonempty while CreateDirectoryW
+and the later no-follow mirror open/binding occur. The guard is checked-cleaned
+only after the mirror is ordinary, contained and pinned without delete sharing.
+The mirror binding grants no ownership or deletion authority. Required child and
+parent namespace synchronization remains independent of that ownership limit.
 
 Windows `stage_bytes` now supplies the separate owned-file storage capability:
 bounded same-handle write/readback/EOF checks, actual file synchronization and
@@ -566,8 +566,10 @@ resolve an attempted address without granting ownership; missing/error lookup
 cannot erase it. Only both successful edge operations or confirmed owned removal
 retire the matching debt. Upper pins not modified by this workflow are not flushed.
 
-Cleanup is candidate-first then reverse identity-safe owned-empty layout removal
-only before publication. A known stage residual component and first native
+Cleanup is candidate-first. POSIX then removes provably owned empty layout in
+reverse order, only before publication. Windows releases unowned mirror bindings
+with Unknown cleanup, no guessed residual name and no deletion. Such a mirror
+may have moved, been populated or replaced during the Boolean create/open gap. A known stage residual component and first native
 cleanup error survive aggregation. Multiple verified layout residues may be
 Residual with no guessed name; genuinely unverified cleanup is Unknown. No
 ancestor basename is placed into the fixed candidate-residual slot. Published or
@@ -578,5 +580,36 @@ before later address failures. Staging interruption is classified from the exact
 checkpoint that stopped, not a contemporaneous flag or native ErrorKind.
 
 These are implemented source contracts under native verification, not full
-product acceptance. The old Windows creation gate remains failed. Full boundary
+product acceptance. The replacement Windows product and platform-fact gates passed on both native
+CPUs at [39f7ee3](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39091719923). Full boundary
 qualification, CLI/JSON, Slint, archive and required GUI gates remain unfinished.
+
+## Supersession of design-pack §6 and §10 item7
+
+Windows pins deny delete sharing and allow read/write sharing. The earlier claim
+that write-sharing exclusion prevents attribute-only reparse conversion is
+withdrawn: [CreateFileW dwShareMode](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+does not exclude attribute access. The relied-on replacement is the
+[MS-FSA nonempty-directory rule](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4aeefef8-92c3-4abc-af7a-a610caf8a165).
+CreateFileW/CREATE_NEW must be followed by actual containment/type/full-ID/zero-
+length observations before any message byte. Mismatch is ADDRESS_CHANGED;
+failed observation is ADDRESS_UNVERIFIED. A refused empty owned file may briefly
+exist elsewhere; cleanup uses its exact handle and preserves uncertainty.
+
+Publication uses documented absolute FileRenameInfo with replacement disabled.
+NtCreateFile and NtSetInformationFile are removed; the narrow existing-only
+NtOpenFile primitive remains. Final identity/readback/address, file and namespace
+synchronization, publication uncertainty and cleanup are separate obligations.
+Windows copies inherit destination ACLs. A writer able to convert an empty
+selected directory may make the item fail, but no message bytes may be staged or
+published outside the bound destination (P-W). Other writers can still change
+final entries after qualification; owner-only Windows access is not promised.
+
+The required native controls are now the actual empty/nonempty conversion fact,
+the Core redirect product gate, normal Created, first-write tagged-candidate
+refusal, no-replace/identity/sync/cleanup and unowned mirror replacement controls.
+The compiled-out/ignored sentinel and containment-disabled experiments passed
+their detection criteria on both native CPUs. They do not replace the positive
+unfiltered run. Same-SID restricted-token evidence is not different-user ACL
+execution. POSIX different-UID checks retain their separate scope. See
+[Windows publication](windows-publication.md) for receipts and native run links.

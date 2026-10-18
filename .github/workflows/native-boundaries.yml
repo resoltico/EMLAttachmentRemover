@@ -40,7 +40,18 @@ jobs:
           cargo test --locked --package xtask --bin xtask
           cargo test --locked --package xtask --lib
           cargo test --locked --package xtask --test processes
-      - name: Regenerate and check six target notice material trees
+      - name: Select exact prebuilt tool versions
+        id: tools
+        run: |
+          cargo xtask distribution > target/tool-plan.json
+          printf 'about=%s\n' "$(jq -er '.tools.cargo_about' target/tool-plan.json)" >> "$GITHUB_OUTPUT"
+          printf 'deny=%s\n' "$(jq -er '.tools.cargo_deny' target/tool-plan.json)" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+        with:
+          tool: cargo-about@${{ steps.tools.outputs.about }},cargo-deny@${{ steps.tools.outputs.deny }}
+          checksum: true
+          fallback: none
+      - name: Generate complete six-target CLI legal materials
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             export CARGO_HOME
@@ -50,18 +61,15 @@ jobs:
             source=$(git rev-parse HEAD)
             jq -n --arg path "$CARGO_HOME" --arg source "$source" '{source:$source,cargo_home:$path,initially_empty:true,scope:"owned empty Cargo home for actual pinned tools and notice checks; shared Rustup installation unchanged"}' > target/cold-bootstrap/input.json
           fi
-          cargo xtask tools
-          cargo xtask notices --check
-      - name: Retain actual tool and cold-bootstrap evidence
+          cargo xtask notices --out target/generated-legal-materials
+      - name: Retain actual legal generation and cold-bootstrap evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: private-tools-${{ github.sha }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          name: legal-generation-${{ github.sha }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: |
             target/cold-bootstrap/*.json
-            target/repository-tools/build-*/*.json
-            target/repository-tools/build-*/*.jsonl
-            target/repository-tools/build-*/*.log
+            target/generated-legal-materials/**
             target/process-control/**/output.*
           if-no-files-found: error
   filesystem:
@@ -110,15 +118,24 @@ jobs:
           victim_uid=$(id -u)
           victim_gid=$(id -g)
           sudo -n "$PWD/target/debug/examples/namespace-credentials" "$victim_uid" "$victim_gid"
-      - name: Build and audit private pinned repository tools
+      - name: Select exact prebuilt notice generator
+        if: ${{ runner.os == 'Linux' }}
+        id: tools
         run: |
-          cargo xtask tools
+          cargo xtask distribution > target/tool-plan.json
+          printf 'about=%s\n' "$(jq -er '.tools.cargo_about' target/tool-plan.json)" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+        if: ${{ runner.os == 'Linux' }}
+        with:
+          tool: cargo-about@${{ steps.tools.outputs.about }}
+          checksum: true
+          fallback: none
       - name: Build and verify actual native Linux CLI archive
         if: ${{ runner.os == 'Linux' }}
         run: cargo xtask build-cli-archive --target '${{ matrix.target }}' --out target/native-cli-build
-      - name: Build native Slint and private-worker executables; required app gates remain explicit
+      - name: Build native Slint and private-worker executables
         if: ${{ runner.os == 'macOS' }}
-        run: cargo xtask build-macos-app --out target/native-app-build
+        run: cargo xtask build-macos-sources --out target/native-app-build
       - name: Retain native process fixture evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -128,9 +145,6 @@ jobs:
             target/native-desktop-checks/**/*.log
             target/native-desktop-checks/**/*.stderr
             target/native-desktop-checks/**/*.json
-            target/repository-tools/build-*/*.json
-            target/repository-tools/build-*/*.jsonl
-            target/repository-tools/build-*/*.log
             target/process-control/**/output.*
             target/native-app-build/*.log
             target/native-app-build/*.json

@@ -65,7 +65,7 @@ impl Campaign {
         let mut command = self.command(self.tool_path(name)?)?;
         command.arg(name).env("CARGO_HOME", cargo_home()?).env(
             "RUSTUP_TOOLCHAIN",
-            crate::tool_sources::compiler(&self.tooling_root)?,
+            crate::tools::compiler(&self.tooling_root)?,
         );
         Ok(command)
     }
@@ -102,7 +102,7 @@ pub(crate) fn tool_version(root: &Path, tool: &str, pin_name: &str) -> Result<St
     )?)?;
     if actual.trim() != format!("cargo-{tool} {expected}") {
         return Err(format!(
-            "Expected cargo-{tool} {expected}; rebuild the private pinned tools with cargo xtask tools"
+            "Expected cargo-{tool} {expected}; install the exact version declared in xtask/tools.toml"
         )
         .into());
     }

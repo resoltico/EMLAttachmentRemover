@@ -118,20 +118,6 @@ pub(crate) fn run(root: &Path) -> Result<()> {
             Ok(json!({"log":log,"passed":result.success(),"process":result.evidence()}))
         });
     }
-    for (name, pin) in crate::tool_sources::CARGO_TOOLS {
-        let directory = checks.directory.clone();
-        let log = directory.join(format!("dependencies-tool-{name}.log"));
-        checks.section(&format!("dependencies-tool-{name}"), || {
-            let selected_source = crate::tool_sources::build_source(root, name, pin, &directory)?;
-            let manifest = selected_source.manifest;
-            let mut command = crate::tools::command(root,"deny")?;
-            command.current_dir(manifest.parent().and_then(Path::parent).ok_or("Tool scratch missing")?).args(["--locked", "--manifest-path"]).arg(manifest).arg("--config").arg(&policy);
-            if name == "about" { command.args(["--features", "cli"]); }
-            command.args(["check", "advisories", "sources", "licenses"]);
-            let result = controller()?.run(command, &log, Duration::from_secs(600))?;
-            Ok(json!({"log":log,"passed":result.success(),"process":result.evidence(),"scope":"authenticated pinned tool source and selected reviewed build lock; original published lock findings remain separate"}))
-        });
-    }
     checks.section("actionlint", || {
         let expected = campaign::pin(root, "actionlint")?;
         let actual = String::from_utf8(capture(Command::new("actionlint").arg("--version"))?)?;
@@ -173,10 +159,6 @@ pub(crate) fn run(root: &Path) -> Result<()> {
     checks.section("macos-desktop", || {
         crate::macos::check_desktop(root, &desktop_checks)?;
         Ok(json!({"scope":"pinned native Slint profile and owned child tests; no GUI acceptance"}))
-    });
-    checks.section("notices", || {
-        crate::notices::run(root, false)?;
-        Ok(json!({"scope":"in-process complete six-target freshness"}))
     });
     let failed = checks
         .results

@@ -460,7 +460,7 @@ fn render(
                         let source = review
                             .source_inputs
                             .iter()
-                            .find(|fact| fact.path == "xtask/licenses/objc2/source.json")
+                            .find(|fact| fact.path == "legal/objc2/source.json")
                             .ok_or("Missing reviewed supplement source record")?;
                         insert(
                             &mut files,
@@ -602,7 +602,7 @@ fn target_materials(
     )?;
     let rust = bundle(
         root,
-        "xtask/licenses/rust",
+        "legal/rust",
         "licenses/rust",
         &[
             "COPYRIGHT-library.html",
@@ -635,7 +635,7 @@ fn target_materials(
     let windows = if platform.starts_with("windows-") {
         let material = bundle(
             root,
-            "xtask/licenses/windows-runtime",
+            "legal/windows-runtime",
             "licenses/windows-runtime",
             &[
                 "mingw-COPYING",
@@ -782,116 +782,42 @@ fn output_manifest(files: &Files) -> Result<Vec<u8>> {
     )?)
 }
 
-fn admitted_output(output: &Path) -> Result<Option<Files>> {
-    if !output.try_exists()? {
-        return Ok(None);
-    }
-    let existing = enumerate(output)?;
-    let mut payload = existing.clone();
-    let prior = payload
-        .remove(OUTPUT_MANIFEST)
-        .ok_or("Refusing to replace a notice tree without its generated-file ownership record")?;
-    if output_manifest(&payload)? != prior {
-        return Err("Refusing to replace notice output with unrelated edits or files".into());
-    }
-    Ok(Some(existing))
-}
-
-#[cfg(unix)]
-fn move_without_replacement(from: &Path, to: &Path) -> std::io::Result<()> {
-    rustix::fs::renameat_with(
-        rustix::fs::CWD,
-        from,
-        rustix::fs::CWD,
-        to,
-        rustix::fs::RenameFlags::NOREPLACE,
-    )
-    .map_err(Into::into)
-}
-#[cfg(not(unix))]
-fn move_without_replacement(_from: &Path, _to: &Path) -> std::io::Result<()> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "Native no-replace notice-directory update is not implemented on this host",
-    ))
-}
-
 fn matches_tree(path: &Path, expected: &Files) -> Result<()> {
     if enumerate(path)? != *expected {
-        return Err("Notice paths, types or bytes differ from the admitted tree".into());
+        return Err("Generated legal materials differ from the expected tree".into());
     }
     Ok(())
 }
 
-fn replace_tree(
-    output: &Path,
-    expected: &Files,
-    admitted: Option<&Files>,
-    final_check: impl FnOnce(&Path) -> Result<()>,
-) -> Result<()> {
-    let parent = output.parent().ok_or("Notice output has no parent")?;
-    let stage = tempfile::Builder::new()
-        .prefix(".notice-generation-")
-        .tempdir_in(parent)?;
-    let fresh = stage.path().join("fresh");
-    fs::create_dir(&fresh)?;
-    for (name, bytes) in expected {
-        let path = fresh.join(relative(name)?);
+/// New output only: there is no replacement or migration of tracked notices.
+fn write_new_tree(output: &Path, files: &Files) -> Result<()> {
+    use std::io::Write;
+    fs::create_dir(output)?;
+    for (name, bytes) in files {
+        let path = output.join(relative(name)?);
         if name.ends_with('/') {
             fs::create_dir_all(path)?;
         } else {
-            fs::create_dir_all(path.parent().ok_or("Missing generated material parent")?)?;
-            fs::write(path, bytes)?;
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut file = fs::File::options()
+                .write(true)
+                .create_new(true)
+                .open(path)?;
+            file.write_all(bytes)?;
+            file.flush()?;
         }
     }
-    matches_tree(&fresh, expected)?;
-    let previous = stage.path().join("previous");
-    let mut moved_previous = false;
-    let mut installed = false;
-    let attempt = (|| -> Result<()> {
-        if let Some(admitted) = admitted {
-            move_without_replacement(output, &previous)?;
-            moved_previous = true;
-            // Check what was actually displaced, after staging, before any
-            // deletion authority is accepted for the old tree.
-            matches_tree(&previous, admitted)?;
-        }
-        move_without_replacement(&fresh, output)?;
-        installed = true;
-        final_check(output)
-    })();
-    if let Err(original) = attempt {
-        let mut errors = vec![original.to_string()];
-        if installed
-            && let Err(error) =
-                move_without_replacement(output, &stage.path().join("failed-output"))
-        {
-            errors.push(format!(
-                "Could not retain failed output separately: {error}"
-            ));
-        }
-        if moved_previous && let Err(error) = move_without_replacement(&previous, output) {
-            errors.push(format!("Could not restore displaced output: {error}"));
-        }
-        let retained = stage.keep();
-        return Err(format!("{}; retained {}", errors.join("; "), retained.display()).into());
-    }
-    let stage_path = stage.path().to_owned();
-    stage.close().map_err(|error| {
-        format!(
-            "Notice output verified but owned staging cleanup failed: {error}; inspect {}",
-            stage_path.display()
-        )
-    })?;
-    Ok(())
+    matches_tree(output, files)
 }
 
-fn generated_materials(root: &Path) -> Result<(PathBuf, Files)> {
+fn generated_materials(root: &Path, selected_platform: Option<&str>) -> Result<(PathBuf, Files)> {
     campaign::require_stock_topology(root)?;
     let tool = campaign::tool_version(root, "about", "cargo_about")?;
     let root = root.canonicalize()?;
     let review: Review = serde_json::from_slice(&read(
-        &root.join("xtask/licenses/crate-materials.json"),
+        &root.join("legal/crate-materials.json"),
         MAX_LEGAL_BYTES,
     )?)?;
     if review.generator_pin["name"] != "cargo-about" || review.generator_pin["version"] != tool {
@@ -942,10 +868,22 @@ fn generated_materials(root: &Path) -> Result<(PathBuf, Files)> {
         return Err("Notice target set differs from reviewed native policy".into());
     }
     let mut all = BTreeMap::new();
+    insert(
+        &mut all,
+        "source.json".into(),
+        serde_json::to_vec_pretty(&json!({
+            "head": crate::git(&root, &["rev-parse", "HEAD"])?,
+            "working_tree": crate::git(&root, &["status", "--porcelain=v1", "--untracked-files=all"])?,
+            "scope": "generated legal materials; not native execution or legal review evidence"
+        }))?,
+    )?;
     for target in targets {
         let platform = target["platform"]
             .as_str()
             .ok_or("Missing platform identity")?;
+        if selected_platform.is_some_and(|selected| selected != platform) {
+            continue;
+        }
         let target = target["target"].as_str().ok_or("Missing target identity")?;
         eprintln!("Generating notice materials: {platform} ({target})");
         for (path, bytes) in target_materials(
@@ -970,26 +908,12 @@ fn generated_materials(root: &Path) -> Result<(PathBuf, Files)> {
     Ok((root, all))
 }
 
-pub(crate) fn run(root: &Path, write: bool) -> Result<()> {
-    let (root, all) = generated_materials(root)?;
-    let output = root.join("notices");
-    if !write {
-        if !output.try_exists()? {
-            return Err("Generated notice tree is missing; run cargo xtask notices --write and review the generated materials".into());
-        }
-        if enumerate(&output)? != all {
-            return Err("Generated notices are missing, extra or stale; run cargo xtask notices --write and review the changes".into());
-        }
-        return Ok(());
-    }
-    let admitted = admitted_output(&output)?;
-    replace_tree(&output, &all, admitted.as_ref(), |path| {
-        matches_tree(path, &all)
-    })
+pub(crate) fn run(root: &Path, output: &Path) -> Result<()> {
+    let (_, all) = generated_materials(root, None)?;
+    write_new_tree(output, &all)
 }
 
-/// Regenerate and verify the complete tracked tree before returning one target's
-/// fresh legal bytes. The caller never trusts an archive-supplied inventory.
+/// Fresh target-selected legal bytes, generated from reviewed upstream inputs.
 pub(crate) struct CheckedTargetMaterials {
     files: Files,
     target: String,
@@ -1015,8 +939,33 @@ pub(crate) fn checked_target(root: &Path, platform: &str) -> Result<CheckedTarge
     if relative(platform)?.components().count() != 1 {
         return Err("Invalid notice platform component".into());
     }
-    let (root, all) = generated_materials(root)?;
-    matches_tree(&root.join("notices"), &all)?;
+    // cargo-about has no Intel macOS prebuilt at the pinned version. Native
+    // builds may consume the target-selected output of the same CI run's Linux
+    // producer. Identity checks bind that input, without treating it as review.
+    let all = if let Some(directory) = std::env::var_os("EML_GENERATED_LEGAL_MATERIALS") {
+        let mut all = enumerate(Path::new(&directory))?;
+        let marker = all
+            .remove(OUTPUT_MANIFEST)
+            .ok_or("Missing generated legal inventory")?;
+        if output_manifest(&all)? != marker {
+            return Err("Generated legal inventory differs from its actual files".into());
+        }
+        let source: Value = serde_json::from_slice(
+            all.get("source.json")
+                .ok_or("Missing legal producer source")?,
+        )?;
+        if source["head"] != crate::git(root, &["rev-parse", "HEAD"])?
+            || source["working_tree"] != ""
+            || !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty()
+        {
+            return Err(
+                "Legal producer and native consumer must use the same clean source checkout".into(),
+            );
+        }
+        all
+    } else {
+        generated_materials(root, Some(platform))?.1
+    };
     let prefix = format!("{platform}/");
     let selected: Files = all
         .into_iter()
@@ -1211,30 +1160,6 @@ mod tests {
     }
 
     #[test]
-    fn actual_output_admission_rejects_absent_tampered_and_stale_ownership_records() {
-        let owned = tempfile::tempdir().unwrap();
-        let output = owned.path().join("notices");
-        assert!(admitted_output(&output).unwrap().is_none());
-        fs::create_dir(&output).unwrap();
-        fs::write(output.join("license"), b"before").unwrap();
-        assert!(admitted_output(&output).is_err());
-        let payload = enumerate(&output).unwrap();
-        let marker = output_manifest(&payload).unwrap();
-        fs::write(output.join(OUTPUT_MANIFEST), &marker).unwrap();
-        assert!(admitted_output(&output).unwrap().is_some());
-        fs::write(output.join(OUTPUT_MANIFEST), b"tampered record").unwrap();
-        assert!(admitted_output(&output).is_err());
-        fs::write(output.join(OUTPUT_MANIFEST), &marker).unwrap();
-        fs::write(output.join("license"), b"after!").unwrap();
-        assert!(admitted_output(&output).is_err());
-        fs::write(output.join("license"), b"before").unwrap();
-        fs::create_dir(output.join("unrelated-empty")).unwrap();
-        assert!(admitted_output(&output).is_err());
-        assert_eq!(fs::read(output.join("license")).unwrap(), b"before");
-        assert!(output.join("unrelated-empty").is_dir());
-    }
-
-    #[test]
     #[cfg(unix)]
     fn native_backslash_names_are_refused_without_collapsing_aliases() {
         let root = tempfile::tempdir().unwrap();
@@ -1263,144 +1188,18 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
-    fn previous_tree(root: &Path) -> (PathBuf, Files) {
-        let output = root.join("notices");
-        fs::create_dir(&output).unwrap();
-        fs::write(output.join("license"), b"previous owned bytes").unwrap();
-        let admitted = enumerate(&output).unwrap();
-        (output, admitted)
-    }
-
     #[test]
-    #[cfg(unix)]
-    fn post_swap_validation_failure_restores_previous_bytes() {
+    fn generation_refuses_an_existing_output_without_changing_it() {
         let owned = tempfile::tempdir().unwrap();
-        let (output, admitted) = previous_tree(owned.path());
-        let expected = BTreeMap::from([("license".into(), b"next owned bytes".to_vec())]);
-        let result = replace_tree(&output, &expected, Some(&admitted), |path| {
-            fs::write(path.join("unexpected"), b"owned readback change")?;
-            matches_tree(path, &expected)
-        });
-        assert!(result.is_err());
-        matches_tree(&output, &admitted).unwrap();
-        let stage = fs::read_dir(owned.path())
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .find(|path| {
-                path.file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .starts_with(".notice-generation-")
-            })
-            .unwrap();
-        assert_eq!(
-            fs::read(stage.join("failed-output/license")).unwrap(),
-            b"next owned bytes"
-        );
-        assert_eq!(
-            fs::read(stage.join("failed-output/unexpected")).unwrap(),
-            b"owned readback change"
-        );
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn failed_restoration_retains_old_data_and_both_errors() {
-        let owned = tempfile::tempdir().unwrap();
-        let (output, admitted) = previous_tree(owned.path());
-        let expected = BTreeMap::from([("license".into(), b"next owned bytes".to_vec())]);
-        let mut retained = None;
-        let result = replace_tree(&output, &expected, Some(&admitted), |path| {
-            let stage = fs::read_dir(owned.path())?
-                .map(|entry| entry.map(|entry| entry.path()))
-                .collect::<std::io::Result<Vec<_>>>()?
-                .into_iter()
-                .find(|path| {
-                    path.file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .starts_with(".notice-generation-")
-                })
-                .ok_or("Missing owned test stage")?;
-            fs::rename(stage.join("previous"), stage.join("preserved-original"))?;
-            fs::remove_file(path.join("license"))?;
-            retained = Some(stage);
-            matches_tree(path, &expected)
-        });
-        let error = result.unwrap_err().to_string();
-        assert!(error.contains("differ from the admitted tree"));
-        assert!(error.contains("Could not restore displaced output"));
-        let retained = retained.unwrap();
-        assert_eq!(
-            fs::read(retained.join("preserved-original/license")).unwrap(),
-            b"previous owned bytes"
-        );
-        assert!(retained.join("failed-output").is_dir());
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn blocked_quarantine_and_restore_preserve_both_trees_and_errors() {
-        let owned = tempfile::tempdir().unwrap();
-        let (output, admitted) = previous_tree(owned.path());
-        let expected = BTreeMap::from([("license".into(), b"next owned bytes".to_vec())]);
-        let mut retained = None;
-        let result = replace_tree(&output, &expected, Some(&admitted), |path| {
-            let stage = fs::read_dir(owned.path())?
-                .map(|entry| entry.map(|entry| entry.path()))
-                .collect::<std::io::Result<Vec<_>>>()?
-                .into_iter()
-                .find(|path| {
-                    path.file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .starts_with(".notice-generation-")
-                })
-                .ok_or("Missing owned test stage")?;
-            fs::create_dir(stage.join("failed-output"))?;
-            fs::write(path.join("license"), b"observed changed new output")?;
-            retained = Some(stage);
-            matches_tree(path, &expected)
-        });
-        let error = result.unwrap_err().to_string();
-        assert!(error.contains("Could not retain failed output separately"));
-        assert!(error.contains("Could not restore displaced output"));
+        let output = owned.path().join("generated");
+        let files = BTreeMap::from([("license".into(), b"retained legal text".to_vec())]);
+        write_new_tree(&output, &files).unwrap();
+        fs::write(output.join("unrelated"), b"keep this").unwrap();
+        assert!(write_new_tree(&output, &files).is_err());
+        assert_eq!(fs::read(output.join("unrelated")).unwrap(), b"keep this");
         assert_eq!(
             fs::read(output.join("license")).unwrap(),
-            b"observed changed new output"
+            b"retained legal text"
         );
-        assert_eq!(
-            fs::read(retained.unwrap().join("previous/license")).unwrap(),
-            b"previous owned bytes"
-        );
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn commit_boundary_changes_are_restored_and_unexpected_output_is_not_replaced() {
-        let owned = tempfile::tempdir().unwrap();
-        let (output, admitted) = previous_tree(owned.path());
-        let expected = BTreeMap::from([("license".into(), b"next owned bytes".to_vec())]);
-        fs::write(output.join("license"), b"later unrelated edit").unwrap();
-        assert!(
-            replace_tree(&output, &expected, Some(&admitted), |path| matches_tree(
-                path, &expected
-            ))
-            .is_err()
-        );
-        assert_eq!(
-            fs::read(output.join("license")).unwrap(),
-            b"later unrelated edit"
-        );
-        let unexpected = owned.path().join("unexpected");
-        fs::create_dir(&unexpected).unwrap();
-        assert!(
-            replace_tree(&unexpected, &expected, None, |path| matches_tree(
-                path, &expected
-            ))
-            .is_err()
-        );
-        assert_eq!(fs::read_dir(unexpected).unwrap().count(), 0);
     }
 }

@@ -18,7 +18,6 @@ mod native_host;
 mod notices;
 mod qualify;
 mod smoke;
-mod tool_sources;
 mod tools;
 use clap::{Parser, Subcommand};
 use std::{
@@ -75,8 +74,6 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Build and audit private pinned tools using reviewed build locks.
-    Tools,
     /// Run independent repository checks, retaining every failed section.
     Check,
     /// Build and verify one native CLI archive; remaining qualification is separate.
@@ -107,20 +104,18 @@ enum Task {
         #[arg(long)]
         target: String,
     },
-    /// Generate or check complete target legal materials against reviewed inputs.
+    /// Generate complete per-target legal materials into a new output directory.
     Notices {
-        #[arg(long, conflicts_with = "check", required_unless_present = "check")]
-        write: bool,
-        #[arg(long, conflicts_with = "write")]
-        check: bool,
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Observe exactly two pinned icon compilations; never qualifies an app.
     MacosIconDiagnostic {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Assemble a native signed app for integration; not shipping qualification.
-    BuildMacosApp {
+    /// Build and ad hoc sign native GUI/worker executables; no app/archive verdict.
+    BuildMacosSources {
         #[arg(long)]
         out: PathBuf,
     },
@@ -214,10 +209,6 @@ fn main() -> ExitCode {
                 .map(|_| ())
             }
             Task::CiNeeds { event, needs, out } => ci::needs(&event, &needs, &out),
-            Task::Tools => {
-                initialize_controller(&root)?;
-                tools::run(&root)
-            }
             Task::Check => {
                 initialize_controller(&root)?;
                 check::run(&root)
@@ -261,9 +252,9 @@ fn main() -> ExitCode {
                 initialize_controller(&root)?;
                 archive_verify::run(&root, &archive, &target)
             }
-            Task::Notices { write, check: _ } => {
+            Task::Notices { out } => {
                 initialize_controller(&root)?;
-                notices::run(&root, write)
+                notices::run(&root, &out)
             }
             Task::MacosIconDiagnostic { out } => {
                 #[cfg(target_os = "macos")]
@@ -277,7 +268,7 @@ fn main() -> ExitCode {
                     Err("Native macOS is required for icon observations".into())
                 }
             }
-            Task::BuildMacosApp { out } => {
+            Task::BuildMacosSources { out } => {
                 #[cfg(target_os = "macos")]
                 {
                     initialize_controller(&root)?;

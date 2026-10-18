@@ -48,6 +48,7 @@ development-window observations cover message selection, a real core-backed run
 with independent golden/original checks, explicit report save, metadata and
 technical disclosure, supplied SVG artwork, and idle Quit confirmation/cancel.
 Those observations do not qualify pinned/native2 or the remaining system/GUI
-paths. `cargo xtask build-macos-app` currently
+paths. `cargo xtask build-macos-sources` currently
 retains native Rust release executable/profile/ad-hoc-signature evidence and
-fails explicitly because complete bundle/legal/archive/GUI gates remain open.
+succeeds when those requested outputs validate. Complete bundle/legal/archive/GUI
+qualification remains a separate open gate.

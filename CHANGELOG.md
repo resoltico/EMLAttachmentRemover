@@ -18,7 +18,7 @@ Notable changes to this project are documented in this file. The format is based
 
 ### Internal
 
-- Rust repository tooling retains scoped native build/archive evidence, complete target-specific crate/standard-library legal materials and bounded fuzz/mutation results. Required upstream tool advisory findings, native boundary failures and unavailable checks remain visible; no v6 tag, release or asset has been published.
+- Rust repository tooling retains scoped native build/archive evidence, complete target-specific crate/standard-library legal materials and bounded fuzz/mutation results. Install the exact developer-tool versions declared in xtask/tools.toml; CI uses checksum-verified prebuilt tools with source-build fallback disabled. Complete notices and accompanying license files are generated during distribution builds instead of tracked in the source tree. Required upstream tool advisory findings, native boundary failures and unavailable checks remain visible; no v6 tag, release or asset has been published.
 
 ## [5.0.0] - 2026-10-15
 

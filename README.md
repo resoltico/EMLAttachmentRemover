@@ -79,7 +79,10 @@ assuming every failed result means no copy exists. OS flush success is not a
 promise of hardware durability, network-server persistence or immunity to later
 changes by an equally privileged actor. Unsupported permission/volume models
 are refused. See [filesystem boundaries](docs/filesystem.md) and
-[Windows publication](docs/windows-publication.md).
+[Windows publication](docs/windows-publication.md). Windows copies inherit the
+destination folder's ACL. Another writer may make an item fail by redirecting an
+empty destination, but the app checks containment before writing message bytes;
+it does not promise that other writers cannot later change a completed copy.
 
 ## Native platform policy
 
@@ -113,8 +116,8 @@ The editable owner artwork and its historical construction records remain under
 [artwork](artwork).
 
 Software uses MPL 2.0; owner artwork has separate terms in [LICENSE](LICENSE).
-Retained third-party materials and target-specific complete notices live under
-[notices](notices) and [xtask/licenses](xtask/licenses). Corresponding source must
+Reviewed upstream third-party materials live under [legal](legal). Builds generate
+target-specific complete notices and accompanying license files inside each archive. Corresponding source must
 be made available when distributing MPL-covered binaries; use the matching source
 commit/tag and preserve all applicable notices. No v6 download, tag or published
 source archive is claimed here.

@@ -1,11 +1,11 @@
 # Verification in progress
 
 The v6 workspace and product remain incomplete. `cargo xtask check` executes
-independent Rust, dependency, notice and workflow sections and retains every
-failed section. The selected tool-build locks have passed their actual graph
-audits; original published-lock findings remain historical evidence. Missing
+independent Rust, dependency and workflow sections and retains every
+failed section. Repository tools are exact-version local prerequisites; CI installs checksum-verified
+prebuilt Cargo tools with source-build fallback disabled. Missing
 required local Xcode currently prevents a full pass. `qualify`, `verify-archive`, `build-cli-archive` and
-`build-macos-app` distinguish bounded native/archive checks from complete platform
+`build-macos-sources` distinguish bounded native/archive checks from complete platform
 qualification. The full app/archive/GUI and Windows gates have not passed. See
 the [implementation evidence](v6-implementation-evidence.md) for exact source
 identities and outcomes. The bounded campaign commands are below.
@@ -22,11 +22,10 @@ LLVM toolchain/target invocation; native execution remains separately evidenced.
 Compiler pins stay in rust-toolchain.toml and xtask/tools.toml; deployment/runtime
 floors in the distribution table are policies, not proof of OS execution.
 
-From a committed clean checkout, build the private tools selected by
-xtask/tools.toml and its reviewed dependency locks:
+From a committed clean checkout, install the exact tools selected by
+xtask/tools.toml on PATH, then run:
 
 ```sh
-cargo xtask tools
 cargo fetch --locked --manifest-path fuzz/Cargo.toml
 cargo xtask fuzz --seconds 60
 cargo xtask mutants --initial
