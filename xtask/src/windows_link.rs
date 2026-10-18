@@ -2,82 +2,12 @@
 use crate::{Result, capture};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeSet,
-    ffi::OsString,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, ExitCode, Stdio},
 };
 use xtask::archive::ByteIdentity;
-#[derive(Serialize)]
-struct InputObservation {
-    path: PathBuf,
-    canonical_path: PathBuf,
-    identity: ByteIdentity,
-}
-
-fn input_observations(control: &Control, arguments: &[OsString]) -> Result<Vec<InputObservation>> {
-    let mut paths = BTreeSet::new();
-    for argument in arguments {
-        let path = Path::new(argument);
-        if path
-            .extension()
-            .is_some_and(|extension| matches!(extension.to_str(), Some("o" | "a" | "rlib")))
-        {
-            if !path.is_absolute() {
-                return Err("Final link input needs an absolute native tooling path".into());
-            }
-            paths.insert(path.to_owned());
-        }
-    }
-    if paths.is_empty() {
-        return Err(
-            "No explicit final link inputs were captured; response-file review may be required"
-                .into(),
-        );
-    }
-    let runtime = control
-        .linker
-        .parent()
-        .and_then(Path::parent)
-        .ok_or("Missing selected linker target directory")?
-        .join("lib/self-contained");
-    let mut candidates = 0;
-    for entry in fs::read_dir(runtime)? {
-        let path = entry?.path();
-        if path
-            .extension()
-            .is_some_and(|extension| matches!(extension.to_str(), Some("o" | "a")))
-        {
-            candidates += 1;
-            paths.insert(path);
-        }
-    }
-    if candidates == 0 || paths.len() > 4096 {
-        return Err("Native runtime candidate inventory is empty or exceeds its bound".into());
-    }
-    let mut total = 0usize;
-    paths
-        .into_iter()
-        .map(|path| {
-            let bytes = bounded(&path, 256 * 1024 * 1024)?;
-            total = total
-                .checked_add(bytes.len())
-                .ok_or("Final link input size overflow")?;
-            if total > 512 * 1024 * 1024 {
-                return Err(
-                    "Final link input observations exceed their aggregate byte bound".into(),
-                );
-            }
-            Ok(InputObservation {
-                canonical_path: path.canonicalize()?,
-                path,
-                identity: ByteIdentity::of(&bytes),
-            })
-        })
-        .collect()
-}
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Control {
@@ -163,15 +93,11 @@ fn run_helper() -> Result<()> {
         return Err("Native link control does not match its owned enclosure".into());
     }
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
-    // Preserve transient rustc objects before rustc can remove them after this
-    // wrapper returns. Candidate runtime archives are observations, not approval
-    // of every archive/member or proof that the linker selected all candidates.
-    let inputs = input_observations(&control, &arguments)?;
-    let input_bytes = serde_json::to_vec_pretty(&serde_json::json!({
-        "source":control.source,"target":control.target,"inputs":inputs,
-        "scope":"explicit positional input and installed runtime candidate byte observations; selected-input and legal review remain separate"
-    }))?;
-    write_new(&work.join("inputs.json"), &input_bytes)?;
+    let reproducer_path = work.join("reproducer.tar");
+    match fs::symlink_metadata(&reproducer_path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        _ => return Err("Native reproducer output is not a fresh absent address".into()),
+    }
     let mut command = Command::new(&control.linker);
     // rustc's explicit ld.lld flavor supplies GNU arguments to this wrapper;
     // rust-lld itself dispatches its selected driver through -flavor gnu.
@@ -187,7 +113,13 @@ fn run_helper() -> Result<()> {
                 .to_str()
                 .ok_or("Native link map needs a Unicode tooling path")?
         ))
-        .arg("--verbose");
+        .arg("--verbose")
+        .arg(format!(
+            "--reproduce={}",
+            reproducer_path
+                .to_str()
+                .ok_or("Native reproducer needs a Unicode tooling path")?
+        ));
     let trace = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -201,7 +133,7 @@ fn run_helper() -> Result<()> {
     let status = command.spawn()?.wait()?;
     let linker = ByteIdentity::of(&bounded(&control.linker, 256 * 1024 * 1024)?);
     let trace = bounded(&control.trace, 64 * 1024 * 1024)?;
-    let mut record = serde_json::json!({"source":control.source,"target":control.target,"actual_linker":linker,"actual_linker_status":status.code(),"trace":ByteIdentity::of(&trace),"inputs":ByteIdentity::of(&input_bytes),"input_observations_match":false,"scope":"actual final link capture; selected-input review remains separate"});
+    let mut record = serde_json::json!({"source":control.source,"target":control.target,"actual_linker":linker,"actual_linker_status":status.code(),"trace":ByteIdentity::of(&trace),"scope":"actual final link capture; selected-input review remains separate"});
     if !status.success() {
         write_new(&control.receipt, &serde_json::to_vec_pretty(&record)?)?;
         return Err(format!(
@@ -210,17 +142,20 @@ fn run_helper() -> Result<()> {
         )
         .into());
     }
-    for input in &inputs {
-        if input.path.canonicalize()? != input.canonical_path
-            || ByteIdentity::of(&bounded(&input.path, 256 * 1024 * 1024)?) != input.identity
-        {
-            write_new(&control.receipt, &serde_json::to_vec_pretty(&record)?)?;
-            return Err(
-                "Final link input byte/address observations changed during the actual link".into(),
-            );
-        }
+    // LLD expands rustc's response file itself and preserves actual input bytes
+    // before rustc can remove transient objects. Never replay the command file.
+    let reproducer = bounded(&reproducer_path, 512 * 1024 * 1024)?;
+    let inputs = xtask::linker_reproducer::inspect(&reproducer)?;
+    let input_bytes = serde_json::to_vec_pretty(&serde_json::json!({
+        "source":control.source,"target":control.target,"inputs":inputs,
+        "scope":"actual linker reproducer member byte identities; selected-member, source and legal review remain separate"
+    }))?;
+    if input_bytes.len() > 4 * 1024 * 1024 {
+        return Err("Native input manifest exceeds its bound".into());
     }
-    record["input_observations_match"] = serde_json::Value::Bool(true);
+    write_new(&work.join("inputs.json"), &input_bytes)?;
+    record["inputs"] = serde_json::to_value(ByteIdentity::of(&input_bytes))?;
+    record["reproducer"] = serde_json::to_value(ByteIdentity::of(&reproducer))?;
     let map = bounded(&control.map, 64 * 1024 * 1024)?;
     if trace.is_empty() || map.is_empty() {
         return Err("Native final-link map/verbose trace is empty".into());
@@ -270,7 +205,11 @@ pub(crate) fn captured(
     if record["source"] != source
         || record["target"] != target
         || record["actual_linker_status"] != 0
-        || record["input_observations_match"] != true
+        || record["reproducer"]
+            != serde_json::to_value(ByteIdentity::of(&bounded(
+                &work.join("reproducer.tar"),
+                512 * 1024 * 1024,
+            )?))?
         || record["inputs"]
             != serde_json::to_value(ByteIdentity::of(&bounded(
                 &work.join("inputs.json"),
@@ -309,11 +248,16 @@ mod tests {
         fs::write(work.join("application.map"), b"owned map").unwrap();
         fs::write(work.join("linker.log"), b"owned trace").unwrap();
         fs::write(
+            work.join("reproducer.tar"),
+            b"owned synthetic reproducer identity; not native input",
+        )
+        .unwrap();
+        fs::write(
             work.join("inputs.json"),
             b"owned synthetic input record; not native provenance",
         )
         .unwrap();
-        let record = serde_json::json!({"source":source,"target":target,"actual_linker_status":0,"input_observations_match":true,"inputs":ByteIdentity::of(b"owned synthetic input record; not native provenance"),"linked_image":ByteIdentity::of(image),"map":ByteIdentity::of(b"owned map"),"trace":ByteIdentity::of(b"owned trace")});
+        let record = serde_json::json!({"source":source,"target":target,"actual_linker_status":0,"reproducer":ByteIdentity::of(b"owned synthetic reproducer identity; not native input"),"inputs":ByteIdentity::of(b"owned synthetic input record; not native provenance"),"linked_image":ByteIdentity::of(image),"map":ByteIdentity::of(b"owned map"),"trace":ByteIdentity::of(b"owned trace")});
         fs::write(work.join("link.json"), serde_json::to_vec(&record).unwrap()).unwrap();
         captured(work, image, &source, target).unwrap();
         assert!(captured(work, b"different final bytes", &source, target).is_err());
@@ -323,6 +267,13 @@ mod tests {
         assert!(captured(work, image, &source, target).is_err());
         fs::write(work.join("linker.log"), b"owned trace").unwrap();
         fs::write(work.join("inputs.json"), b"changed input observations").unwrap();
+        assert!(captured(work, image, &source, target).is_err());
+        fs::write(
+            work.join("inputs.json"),
+            b"owned synthetic input record; not native provenance",
+        )
+        .unwrap();
+        fs::write(work.join("reproducer.tar"), b"changed reproducer").unwrap();
         assert!(captured(work, image, &source, target).is_err());
     }
 }

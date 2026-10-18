@@ -109,16 +109,24 @@ which Microsoft's supported-client table places below this product's Windows10
 floor and the pinned getrandom source directly imports. This precise DLL
 admission does not approve other imports or complete static native-input review.
 
-The next link wrapper also captures explicit positional object/Rust-archive
-byte identities and the selected toolchain's installed self-contained runtime
-candidates before invoking the real linker, then compares those observations
-again before returning to rustc. This retains evidence for transient objects
-which rustc can remove afterward. The bounded input manifest is bound to the
-same image/map/trace receipt; changing it fails the stale-evidence control.
-These are pre/post byte/address observations, not legal approval, a selected
-member inventory, or proof against adversarial changes between observations.
-Native execution of this additional capture and complete static-input review
-remain required.
+At H515d61b the explicit-argument capture fails because rustc supplies a response
+file rather than positional object paths. That observer was removed. The wrapper
+now requests LLD's native
+[link reproducer](https://lld.llvm.org/windows_support.html), allowing the actual
+linker to expand its own response-file syntax and retain its input bytes before
+rustc removes transient objects. A separate read-only bounded tar inspector
+records member identities without extracting or executing the reproducer.
+Duplicate/traversal/link/oversize controls and a known-payload digest case pass
+locally. The input manifest and whole reproducer are bound to the same image/map/
+trace receipt. Member identities do not establish source/legal review or which
+archive members were selected; native execution and complete static-input review
+remain required. Shipping archive readers and their narrow formats are unchanged.
+
+Both H515d61b Windows workspace selections now pass complete accounting:369 cases
+each, with the nested cwd child isolated from the outer transcript. Both native
+macOS app producers and both same-archive macOS15 rows pass the basic GUI case.
+The separate Windows link-observation step remains failed at that H due to the
+response-file capture issue above. Those outcomes do not qualify complete v6.
 
 At Hc83b04b both native Windows CPUs execute the real console cases successfully,
 and the actual final links pass PE import inspection (ARM119/x64118 imported

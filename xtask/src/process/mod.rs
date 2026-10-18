@@ -17,7 +17,8 @@ use std::{
 #[cfg(unix)]
 pub(crate) mod unix;
 #[cfg(unix)]
-pub use unix::CLEANUP_GRACE;
+/// Maximum Unix tool-session cleanup grace, shared with real lifetime probes.
+pub const CLEANUP_GRACE: Duration = Duration::from_secs(10);
 #[cfg(windows)]
 mod windows;
 /// Tool-controller errors; no source mail is included.
