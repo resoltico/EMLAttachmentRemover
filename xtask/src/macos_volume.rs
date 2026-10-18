@@ -263,8 +263,6 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
             "ExFAT",
             "-volname",
             "EMLOwnedProbe",
-            "-format",
-            "UDRW",
         ])
         .arg(&image);
     macos::checked_run(create, &out.join("create.log"), 60)?;
