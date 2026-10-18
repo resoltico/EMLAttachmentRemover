@@ -1,5 +1,10 @@
 name: Native AppKit panel observation
 on:
+  pull_request:
+    paths:
+      - .github/workflows/macos-panel-diagnostic.yml
+      - tests/macos/NativePanelDiagnostic.swift
+      - xtask/src/macos_panel.rs
   workflow_dispatch:
     inputs:
       source:
@@ -8,6 +13,9 @@ on:
         type: string
 permissions:
   contents: read
+concurrency:
+  group: panel-observation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   panel:
     runs-on: ${{ matrix.runner }}
@@ -19,11 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.source }}
+          ref: ${{ inputs.source || github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Observe exact-source native system boundary
         env:
-          SOURCE: ${{ inputs.source }}
+          SOURCE: ${{ inputs.source || github.event.pull_request.head.sha }}
         run: |
           [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$SOURCE"
@@ -35,7 +43,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
-          name: panel-${{ inputs.source }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          name: panel-${{ inputs.source || github.event.pull_request.head.sha }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: |
             target/panel-*.txt
             target/panel-observation/**
