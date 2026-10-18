@@ -11,5 +11,12 @@ pub fn create(target: &Path, alias: &Path) {
             .args(["-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:EML_OWNED_ALIAS -Target $env:EML_OWNED_TARGET | Out-Null"])
             .env("EML_OWNED_ALIAS", alias).env("EML_OWNED_TARGET", target).status().unwrap();
         assert!(status.success());
+        let resolved = std::fs::canonicalize(alias)
+            .unwrap_or_else(|error| panic!("Owned junction does not resolve: {alias:?}: {error}"));
+        assert_eq!(
+            resolved,
+            target.canonicalize().unwrap(),
+            "Owned junction resolved to another directory"
+        );
     }
 }

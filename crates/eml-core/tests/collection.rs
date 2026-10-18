@@ -420,7 +420,16 @@ fn selected_directory_aliases_keep_distinct_spellings_and_walked_aliases_are_exc
     );
     let req = request(root.path(), &["alpha", "beta"]);
     let found = collect_sources(&req, &RunControl::default()).unwrap();
-    assert_eq!(found.state(), CollectionState::Collected);
+    assert_eq!(
+        found.state(),
+        CollectionState::Collected,
+        "Selected alias observations: {:?}",
+        found
+            .items()
+            .iter()
+            .map(|item| (item.native_path(), item.observation()))
+            .collect::<Vec<_>>()
+    );
     assert_eq!(
         displays(&found),
         ["alpha/a.eml", "beta/a.eml"].map(PathBuf::from)

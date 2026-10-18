@@ -67,7 +67,14 @@ pub(crate) fn checked_tests(
         let mut command = Command::new("cargo");
         command
             .current_dir(root)
-            .args(["test", "--color", "never", "--locked", "--workspace"])
+            .args([
+                "test",
+                "--color",
+                "never",
+                "--locked",
+                "--workspace",
+                "--no-fail-fast",
+            ])
             .env("CARGO_TARGET_DIR", out.join("native-test-build"));
         if release {
             command.arg("--release");
