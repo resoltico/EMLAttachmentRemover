@@ -27,7 +27,10 @@ final class DesktopInteractionTests: XCTestCase {
         XCTAssertEqual(input["host_scope"], "fresh-github-hosted-runner")
         // This test is admitted only by the Rust harness on an ephemeral host.
         // It never launches an installed owner app or terminates a preexisting one.
-        XCTAssertTrue(NSRunningApplication.runningApplications(withBundleIdentifier: identifier).isEmpty)
+        guard NSRunningApplication.runningApplications(withBundleIdentifier: identifier).isEmpty else {
+            XCTFail("Refusing to interact with a preexisting application instance")
+            return
+        }
         let defaults = UserDefaults.standard.persistentDomain(forName: identifier) ?? [:]
         let previousDestination = defaults["copyDestinationBytes"] as? String
         let configuration = NSWorkspace.OpenConfiguration()
@@ -48,7 +51,14 @@ final class DesktopInteractionTests: XCTestCase {
                 if app.buttons["Confirm"].waitForExistence(timeout: 3) {
                     app.buttons["Confirm"].click()
                 }
-                XCTAssertTrue(app.wait(for: .notRunning, timeout: 20), "Owned GUI settlement remains unverified")
+                let ended = app.wait(for: .notRunning, timeout: 20)
+                XCTAssertTrue(ended, "Owned GUI normal settlement remains unverified")
+                if !ended && !owned.isTerminated {
+                    // Exact NSWorkspace-returned test instance only. A cleanup
+                    // fallback cannot turn the failed normal-quit gate green.
+                    print("Owned GUI forced cleanup requested: \(owned.forceTerminate())")
+                    XCTAssertTrue(app.wait(for: .notRunning, timeout: 5), "Owned GUI forced cleanup remains unverified")
+                }
                 XCTAssertTrue(owned.isTerminated)
             }
         }
@@ -158,7 +168,10 @@ final class DesktopInteractionTests: XCTestCase {
         let hiddenForQuitObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: hiddenForQuit, object: nil)], timeout: 10)
         XCTAssertEqual(hiddenForQuitObservation, .completed)
         print("Native hidden-window Quit request accepted: \(owned.terminate())")
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+        guard app.buttons["Cancel"].waitForExistence(timeout: 5) else {
+            XCTFail("Hidden-window Quit did not expose its Cancel control: \(app.debugDescription)")
+            return
+        }
         XCTAssertTrue(window.exists, "Quit confirmation did not restore the main window")
         app.buttons["Cancel"].click()
         XCTAssertFalse(owned.isTerminated)
