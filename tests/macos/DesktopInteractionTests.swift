@@ -167,6 +167,9 @@ final class DesktopInteractionTests: XCTestCase {
         try await requireRun(app, counts: "1 created · 0 up to date", source: folderSource)
         XCTAssertEqual(try Data(contentsOf: folderSource.deletingPathExtension().appendingPathExtension("no-attachments.eml")), golden)
         snapshot(app, "folder-import-finished")
+        let pickerObservation: [String: Any] = ["schema": 1, "owned_pid": pid, "message": sources[0].path,
+                                               "folder": folderSource.deletingLastPathComponent().path]
+        try JSONSerialization.data(withJSONObject: pickerObservation).write(to: inputURL.deletingLastPathComponent().appendingPathComponent("picker-observation.json"), options: .withoutOverwriting)
 
         // Use the actual system Services route and an owned named pasteboard;
         // never replace the user's general clipboard or call the provider directly.

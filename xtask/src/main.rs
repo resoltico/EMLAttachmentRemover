@@ -5,6 +5,8 @@ mod campaign;
 mod check;
 mod ci;
 mod cli_build;
+#[cfg(any(target_os = "macos", test))]
+mod desktop_preferences;
 mod distribution;
 mod fuzz;
 #[cfg(target_os = "macos")]

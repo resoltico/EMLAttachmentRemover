@@ -11,6 +11,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let root = PathBuf::from(args.next().ok_or("root")?);
+    if mode == "abort" {
+        #[cfg(unix)]
+        rustix::process::setrlimit(
+            rustix::process::Resource::Core,
+            rustix::process::Rlimit {
+                current: Some(0),
+                maximum: Some(0),
+            },
+        )?;
+        std::process::abort();
+    }
     if mode == "streams-exit" {
         use std::io::Write;
         std::io::stdout().write_all(b"owned stdout\n")?;
@@ -33,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         std::fs::write(root.join("worker-ready"), b"handler installed")?;
         let began = std::time::Instant::now();
-        while !stopped.load(Ordering::Relaxed) {
+        while !stopped.load(Ordering::Relaxed) && !root.join("control-release").exists() {
             if began.elapsed() > Duration::from_secs(10) {
                 return Err("Cooperative stop was not delivered".into());
             }
@@ -42,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::remove_file(root.join("external-resource"))?;
         std::fs::write(
             root.join("cooperative-stop-observed"),
-            b"TERM cleanup completed",
+            b"owned resource cleanup completed",
         )?;
     } else if mode == "marker" {
         #[cfg(unix)]

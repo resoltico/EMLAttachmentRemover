@@ -10,7 +10,7 @@ import Foundation
 @MainActor
 struct DesktopInteractionOwner {
     private final class Cancellation { var requested = false }
-    private enum Failure: Error { case invalidInput, existingApplication, launchIdentity, unexpectedApplication, deadline, cancelled }
+    private enum Failure: Error { case invalidInput, existingApplication, launchIdentity, unexpectedApplication, forcedApplication, deadline, cancelled }
 
     static func main() async {
         var failure: String?
@@ -43,6 +43,8 @@ struct DesktopInteractionOwner {
             resultURL = URL(fileURLWithPath: arguments[3])
             let input = try JSONSerialization.jsonObject(with: Data(contentsOf: inputURL)) as? [String: String]
             guard let input, input["host_scope"] == "fresh-github-hosted-runner", let appPath = input["app"], let fixturePath = input["fixture"] else { throw Failure.invalidInput }
+            let control = input["owner_control"] ?? "normal"
+            guard ["normal", "deadline", "force-app"].contains(control) else { throw Failure.invalidInput }
             let appURL = URL(fileURLWithPath: appPath)
             guard let identifier = Bundle(url: appURL)?.bundleIdentifier else { throw Failure.invalidInput }
             guard NSRunningApplication.runningApplications(withBundleIdentifier: identifier).isEmpty else { throw Failure.existingApplication }
@@ -61,6 +63,12 @@ struct DesktopInteractionOwner {
             if cancellation.requested { throw Failure.cancelled }
             if ProcessInfo.processInfo.systemUptime >= executionDeadline { timedOut = true; throw Failure.deadline }
             guard let date = launched.launchDate, launched.bundleURL?.standardizedFileURL == appURL.standardizedFileURL else { throw Failure.launchIdentity }
+            let launchDeadline = min(executionDeadline, ProcessInfo.processInfo.systemUptime + 20)
+            while !launched.isFinishedLaunching {
+                if cancellation.requested { throw Failure.cancelled }
+                if launched.isTerminated || ProcessInfo.processInfo.systemUptime >= launchDeadline { throw Failure.launchIdentity }
+                try await Task.sleep(for: .milliseconds(50))
+            }
             let pasteboard = NSPasteboard.withUniqueName()
             board = pasteboard
             let receipt: [String: Any] = ["pid": launched.processIdentifier, "launch_date": date.timeIntervalSince1970, "bundle_path": appPath, "pasteboard": pasteboard.name.rawValue]
@@ -72,18 +80,32 @@ struct DesktopInteractionOwner {
             child.standardOutput = FileHandle.standardOutput
             child.standardError = FileHandle.standardError
             try child.run()
+            var ready = false
+            var shortDeadline: TimeInterval?
             while child.isRunning {
+                let runnerReady = input["runner_ready"].map { FileManager.default.fileExists(atPath: $0) } ?? true
+                if !ready && runnerReady {
+                    let marker = receiptURL.deletingPathExtension().appendingPathExtension("ready.json")
+                    try JSONSerialization.data(withJSONObject: ["app_pid": launched.processIdentifier, "runner_pid": child.processIdentifier]).write(to: marker, options: .withoutOverwriting)
+                    ready = true
+                    if control == "deadline" { shortDeadline = ProcessInfo.processInfo.systemUptime + 0.25 }
+                    if control == "force-app" {
+                        forcedApp = true
+                        _ = launched.forceTerminate()
+                        throw Failure.forcedApplication
+                    }
+                }
                 unexpected = NSRunningApplication.runningApplications(withBundleIdentifier: identifier).filter { !$0.isTerminated && $0.processIdentifier != launched.processIdentifier }.map(\.processIdentifier)
                 if !unexpected.isEmpty { throw Failure.unexpectedApplication }
                 if cancellation.requested { throw Failure.cancelled }
-                if ProcessInfo.processInfo.systemUptime >= executionDeadline { timedOut = true; throw Failure.deadline }
+                if ProcessInfo.processInfo.systemUptime >= min(executionDeadline, shortDeadline ?? executionDeadline) { timedOut = true; throw Failure.deadline }
                 try await Task.sleep(for: .milliseconds(50))
             }
             // Observed exit precedes this reap; never wait synchronously on a live child.
             child.waitUntilExit()
             childReaped = true
             childExit = child.terminationStatus
-            if child.terminationReason != .exit || child.terminationStatus != 0 { failure = "XCTest failed: reason=\(child.terminationReason.rawValue), status=\(child.terminationStatus)" }
+            if child.terminationReason != .exit || child.terminationStatus != 0 { failure = "Interaction runner failed: reason=\(child.terminationReason.rawValue), status=\(child.terminationStatus)" }
         } catch { failure = String(describing: error) }
 
         // Internal failure/deadline and the controller's opted-in TERM grace.
@@ -98,7 +120,7 @@ struct DesktopInteractionOwner {
         if child.isRunning {
             // Foundation Process does not expose a retained kernel PID pin.
             // Leave any hard escalation to the outer Rust session/group owner.
-            failure = failure ?? "XCTest did not terminate cooperatively; outer owned-group cleanup required"
+            failure = failure ?? "Interaction runner did not terminate cooperatively; outer owned-group cleanup required"
         }
         if let app, !app.isTerminated { forcedApp = true; _ = app.forceTerminate() }
         let cleanupDeadline = ProcessInfo.processInfo.systemUptime + 5
@@ -111,7 +133,7 @@ struct DesktopInteractionOwner {
             childExit = child.terminationStatus
         }
         let appTerminated = app?.isTerminated == true
-        if !childReaped || !appTerminated { failure = failure ?? "Owned app or XCTest settlement remains unverified" }
+        if !childReaped || !appTerminated { failure = failure ?? "Owned app or interaction runner settlement remains unverified" }
         if forcedApp { failure = failure ?? "App required forced cleanup; normal app/worker settlement is unverified" }
         do {
             originalsUnchanged = !originals.isEmpty && originals.allSatisfy { url, bytes in (try? Data(contentsOf: url)) == bytes }
@@ -120,7 +142,7 @@ struct DesktopInteractionOwner {
             board?.releaseGlobally()
             board = nil
             guard let resultURL else { throw Failure.invalidInput }
-            let result: [String: Any] = ["failure": failure.map { $0 as Any } ?? NSNull(), "timed_out": timedOut, "cancelled": cancellation.requested, "xctest_reaped": childReaped, "xctest_status": childExit.map { $0 as Any } ?? NSNull(), "owned_app_terminated": appTerminated, "forced_app_cleanup": forcedApp, "worker_settlement": forcedApp ? "unverified after forced app exit" : "requires successful XCTest terminal report and normal Quit", "unexpected_application_pids": unexpected, "originals_unchanged": originalsUnchanged, "owned_pasteboard_released": hadBoard]
+            let result: [String: Any] = ["failure": failure.map { $0 as Any } ?? NSNull(), "timed_out": timedOut, "cancelled": cancellation.requested, "runner_reaped": childReaped, "runner_status": childExit.map { $0 as Any } ?? NSNull(), "owned_app_terminated": appTerminated, "forced_app_cleanup": forcedApp, "worker_settlement": forcedApp ? "unverified after forced app exit" : "requires successful XCTest terminal report and normal Quit", "unexpected_application_pids": unexpected, "originals_captured": originals.count, "originals_unchanged": originalsUnchanged, "source_check_failure": originalsUnchanged ? NSNull() : "Owned original fixture bytes changed or could not be read", "owned_pasteboard_released": hadBoard]
             try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: resultURL, options: .withoutOverwriting)
         } catch { failure = failure ?? String(describing: error) }
         for source in signals { source.cancel() }

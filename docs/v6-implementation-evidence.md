@@ -5,11 +5,44 @@ or release acceptance is claimed. Version6 stays under Unreleased.
 
 ## Current verification work
 
+The Intel app job at H8dad48ca521c3caa47108264312744566e135c84 failed
+at the actual Command-O message picker. Retained xcresult diagnostics show
+NSSavePanel's native configuration-phase semaphore timing out after60 seconds
+inside NSOpenPanel construction. The app exited before the sheet appeared;
+the owner reaped the runner, observed the original app terminated without
+forced termination, released its named pasteboard and verified all four
+originals unchanged. The panel failure remains unresolved. The Apple Silicon
+success below does not qualify Intel or explain the cause of its failure.
+
+H8dad48ca521c3caa47108264312744566e135c84's ARM expanded XCTest completed
+with one passed test/zero failures, including Services/CJK and normal owned app,
+runner and worker settlement. The app job then failed preference inspection:
+plutil's JSON format cannot encode the native picker bookmark Data. The retained
+before domain is empty; after contains exactly the three Cocoa picker-state keys
+listed in the [approved narrow policy](verification.md#native-picker-preference-observations),
+with the expected String/Data/String types. copyDestinationBytes is absent in
+both. The repaired observer retains full plists and typed JSON, and comparison
+requires independently proved actual picker actions before permitting those
+exact changes. All other keys/presence/types/values remain protected; nonpicker
+controls retain whole-domain equality. Six local native value-observation cases
+and comparison rejection controls pass. Final native gate execution is pending.
+
+Five Cocoa lifetime controls are now wired before the ordinary GUI scenario,
+each with fresh four-message fixtures, a separate native controller and retained
+evidence: a short internal deadline after known readiness, actual controller
+cancellation, a genuinely aborted owned runner with core dumps disabled, a
+changed original byte sequence and forced termination through the retained app
+object. The source-change control independently requires the recorded byte-check
+failure alongside the preserved first failure; it does not infer detection from
+exit status alone. Controls require reaping, exact app termination, pasteboard
+release and no replacement app. Native execution remains pending. These cases
+exercise Cocoa lifetime authority, not GUI processing, a natural product crash
+or Cocoa-owner control EOF. The generic Unix EOF case remains separately proven.
+
 At H=`6790042f6294541f644076eef92be9dcfd2d98f3`, run39138182506's exact-M
 Linux integration and both Linux release qualification rows passed. The Windows
-ARM release qualification row also passed, including the corrected counterfeit
-controls and extracted archive behavior. Windows x64 was still running at this
-record. The ARM GUI case passed real message/folder import and report-space
+ARM and x64 release qualification rows also passed, including the corrected
+counterfeit controls and extracted archive behavior. The ARM GUI case passed real message/folder import and report-space
 pause/dismiss/resume, then failed Services setup: the writing client had not
 cleared its owner-created named pasteboard, and the stock restricted-service
 confirmation remained open. The fixture now explicitly takes ownership of only

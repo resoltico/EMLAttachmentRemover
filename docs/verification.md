@@ -1,5 +1,37 @@
 # Verification in progress
 
+## Native picker preference observations
+
+The owner-authorized QA scope distinguishes native picker actions from
+argument-only testing. Full before/after property lists are retained, alongside
+typed JSON preserving Data, fractional Date values, numeric types/precision and
+presence. The destination key and every other preference must remain unchanged.
+Whole-domain equality is still required for nonpicker/argument-only scenarios.
+
+Only a successfully executed scenario with independent native message/folder
+picker observations may change these exact Cocoa state keys:
+
+| Key | Required native type |
+|---|---|
+| NSNavPanelExpandedSizeForOpenMode | String |
+| NSOSPLastRootDirectory | Data |
+| NSWindow Frame GoToSheet | String |
+
+This narrow policy follows actual H8dad before/after observations, real picker
+interaction and the product's sole explicit setter for copyDestinationBytes;
+attributing those changes to Cocoa is a bounded inference, not proof from an
+NS-prefixed name. No other OS key is added automatically. Wrong native types,
+unexpected changes, destination changes/type changes and these same changes in
+a nonpicker scenario fail comparison. Results state whole_domain_unchanged
+truthfully, list permitted changes, and separately report unchanged application
+and other preferences. No preference deletion/reset/synchronization, retired-key
+migration or owner-desktop operation is used to manufacture equality. Product
+code neither reads nor writes these OS state keys.
+
+The H8dad GUI XCTest passed but its overall app job failed when the earlier
+plutil JSON conversion could not represent the Cocoa bookmark Data. That failure
+is retained. Repaired inspection/comparison requires new native execution.
+
 Hosted native app readback now includes an XCTest interaction harness for the
 actual extracted app, with an NSWorkspace-returned owned instance and independent
 two-file golden checks. At source 8e9e2af, the actual ARM run reached two created

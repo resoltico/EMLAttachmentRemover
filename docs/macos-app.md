@@ -5,6 +5,13 @@ GUI are separate products and thin adapters over eml-core. The GUI's private
 eml-worker calls that library directly; it never launches the CLI product.
 Windows/Linux GUI implementations are outside the current scope.
 
+Application destination persistence uses only the fresh copyDestinationBytes
+String key after an explicit destination action; an argument override remains
+session-only. Native system pickers may also retain Cocoa navigation bookmarks
+and panel/window geometry. Product code does not read, migrate, reset or write
+that OS-managed picker state. The narrow, scenario-specific verification policy
+is documented in [verification](verification.md#native-picker-preference-observations).
+
 The explicit Cargo profile is:
 
 ```sh
