@@ -5,11 +5,16 @@ actual extracted app, with an NSWorkspace-returned owned instance and independen
 two-file golden checks. At source 8e9e2af, the actual ARM run reached two created
 copies but failed the typed XCTest TextView lookup although the AX hierarchy
 contained the report. The harness now polls all AX descendants by the observed
-report title and still requires the actual settled/reusable report value. This
-revised check remains unrun on the pinned native runners. The harness also
+report title and still requires the actual settled/reusable report value. At
+PR merge 9fdddcd, native ARM run39118566364 passed the complete XCTest case,
+independent golden/original checks and Quit cancel/confirm with zero survivors.
+Ready/Finished screenshots were exported and the final two-created frame was
+visually inspected. The harness also
 exercises Quit cancellation/confirmation and compares
 the complete app persistent domain using separate fresh observer processes before
 and after the argument-domain-only run. It does not run on an owner desktop.
+Both independent persistent-domain observations were empty at that ARM merge
+checkpoint. This is one real scenario on one CPU, not full GUI qualification.
 The Intel run at the same source timed out in the initial AX window query;
 cleanup completed with zero survivors. Before making that query the harness now
 waits for the owned NSRunningApplication's native finished-launching state and
