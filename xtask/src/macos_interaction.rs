@@ -269,22 +269,26 @@ fn preference_snapshot(
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Result<Value> {
-    run_case(root, app, build, out, DesktopCase::Workflow)
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DesktopCase {
     Workflow,
+    Appearance,
     Stop,
     ForceStop,
     ActiveQuit,
     PublishedError,
 }
 impl DesktopCase {
+    pub(crate) fn is_publication(self) -> bool {
+        matches!(
+            self,
+            Self::Stop | Self::ForceStop | Self::ActiveQuit | Self::PublishedError
+        )
+    }
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Workflow => "workflow",
+            Self::Appearance => "appearance",
             Self::Stop => "stop",
             Self::ForceStop => "force-stop",
             Self::ActiveQuit => "active-quit",
@@ -294,6 +298,7 @@ impl DesktopCase {
     fn method(self) -> &'static str {
         match self {
             Self::Workflow => "testOwnedDesktopWorkflowAndNativeIngress",
+            Self::Appearance => "testOwnedNativeAppearance",
             Self::Stop => "testOwnedCoreStop",
             Self::ForceStop => "testOwnedCoreForceStop",
             Self::ActiveQuit => "testOwnedCoreActiveQuit",
@@ -347,7 +352,10 @@ pub(crate) fn run_case(
     if case == DesktopCase::Workflow {
         invocation["picker_stack"] = json!("true");
     }
-    if case != DesktopCase::Workflow {
+    if case == DesktopCase::Appearance {
+        invocation["appearance_session"] = json!("true");
+    }
+    if case.is_publication() {
         use base64::Engine;
         use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
         let control = fixture.path().join("publication-control");
@@ -574,7 +582,7 @@ pub(crate) fn run_case(
     {
         return Err("Actual desktop test discovery/execution is incomplete or failed".into());
     }
-    if case != DesktopCase::Workflow {
+    if case.is_publication() {
         let actor = crate::macos_publication_ui::finish(root, build, fixture.path(), &out, case)?;
         let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
         let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"actor":actor,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"nonshipping real-Core publication synchronization with actual native GUI lifecycle/presentation; unchanged shipping archive qualification remains separate"});
@@ -597,7 +605,55 @@ pub(crate) fn run_case(
         return Err("XCTest attachment manifest is not an ordinary bounded document".into());
     }
     let manifest: Value = serde_json::from_slice(&fs::read(manifest_path)?)?;
-    let picker_path = attachments.join(picker_attachment_name(&manifest)?);
+    if case == DesktopCase::Appearance {
+        let name = attachment_name(
+            &manifest,
+            "DesktopInteractionTests/testOwnedNativeAppearance()",
+            "native-appearance-observation_",
+        )?;
+        let path = attachments.join(name);
+        if !fs::symlink_metadata(&path)?.is_file() || fs::metadata(&path)?.len() > 16 * 1024 {
+            return Err("Native appearance observation is not an ordinary bounded document".into());
+        }
+        let observation: Value = serde_json::from_slice(&fs::read(path)?)?;
+        if observation["schema"] != 1
+            || observation["restored"] != true
+            || !observation["owned_pid"].as_i64().is_some_and(|pid| pid > 0)
+            || !observation["settings_pid"]
+                .as_i64()
+                .is_some_and(|pid| pid > 0)
+            || observation["owned_pid"] != ownership["ownership_receipt"]["pid"]
+            || observation["settings_pid"] != ownership["ownership_receipt"]["settings"]["pid"]
+            || observation["conditions"] != json!(["light", "dark", "increased-contrast"])
+            || observation["native_product_observations"]
+                != json!([
+                    "Interface native appearance: light; increased contrast: false",
+                    "Interface native appearance: dark; increased contrast: false",
+                    "Interface native appearance: dark; increased contrast: true"
+                ])
+            || !matches!(
+                observation["original_selector"].as_str(),
+                Some("Light" | "Dark" | "Auto")
+            )
+            || !observation["original_contrast"].is_boolean()
+            || !observation["original_reduce_transparency"].is_boolean()
+            || ownership["owned_settings_terminated"] != true
+            || ownership["unexpected_settings_application_pids"] != json!([])
+        {
+            return Err(
+                "Actual appearance evidence or owned Settings settlement is incomplete".into(),
+            );
+        }
+        let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
+        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"appearance":observation,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"actual extracted shipping app under native light/dark/Increase Contrast changes in a final disposable-host phase; original selectors restored through native Settings UI"});
+        fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+        return Ok(result);
+    }
+    let picker_path = attachments.join(attachment_name(
+        &manifest,
+        "DesktopInteractionTests/testOwnedDesktopWorkflowAndNativeIngress()",
+        "native-picker-observation_",
+    )?);
     let receipt_path = input.join("ownership.json");
     for path in [&picker_path, &receipt_path] {
         let metadata = fs::symlink_metadata(path)?;
@@ -629,15 +685,17 @@ pub(crate) fn run_case(
     Ok(result)
 }
 
-fn picker_attachment_name(manifest: &Value) -> Result<&str> {
+fn attachment_name<'a>(
+    manifest: &'a Value,
+    test_identifier: &str,
+    prefix: &str,
+) -> Result<&'a str> {
     let tests = manifest
         .as_array()
         .ok_or("Invalid XCTest attachment manifest")?;
     let mut matches = Vec::new();
     for test in tests {
-        if test["testIdentifier"]
-            != "DesktopInteractionTests/testOwnedDesktopWorkflowAndNativeIngress()"
-        {
+        if test["testIdentifier"] != test_identifier {
             continue;
         }
         for attachment in test["attachments"]
@@ -646,13 +704,11 @@ fn picker_attachment_name(manifest: &Value) -> Result<&str> {
         {
             if attachment["suggestedHumanReadableName"]
                 .as_str()
-                .is_some_and(|name| {
-                    name.starts_with("native-picker-observation_") && name.ends_with(".json")
-                })
+                .is_some_and(|name| name.starts_with(prefix) && name.ends_with(".json"))
             {
                 let name = attachment["exportedFileName"]
                     .as_str()
-                    .ok_or("Missing exported picker attachment filename")?;
+                    .ok_or("Missing exported native observation attachment filename")?;
                 if name.is_empty()
                     || !name
                         .bytes()
@@ -660,21 +716,67 @@ fn picker_attachment_name(manifest: &Value) -> Result<&str> {
                     || name == "."
                     || name == ".."
                 {
-                    return Err("Picker attachment is not a plain exported basename".into());
+                    return Err(
+                        "Native observation attachment is not a plain exported basename".into(),
+                    );
                 }
                 matches.push(name);
             }
         }
     }
     if matches.len() != 1 {
-        return Err("Exactly one actual picker attachment is required".into());
+        return Err("Exactly one matching native observation attachment is required".into());
     }
     Ok(matches[0])
 }
 
 #[cfg(test)]
 mod tests {
+    fn picker_attachment_name(manifest: &serde_json::Value) -> crate::Result<&str> {
+        super::attachment_name(
+            manifest,
+            "DesktopInteractionTests/testOwnedDesktopWorkflowAndNativeIngress()",
+            "native-picker-observation_",
+        )
+    }
     use super::*;
+
+    #[test]
+    fn native_observation_requires_the_requested_case_and_attachment_kind() {
+        let manifest = json!([
+            {"testIdentifier":"DesktopInteractionTests/testOwnedNativeAppearance()", "attachments":[
+                {"suggestedHumanReadableName":"native-appearance-observation_0.json","exportedFileName":"appearance.json"}
+            ]},
+            {"testIdentifier":"DesktopInteractionTests/testOwnedDesktopWorkflowAndNativeIngress()", "attachments":[
+                {"suggestedHumanReadableName":"native-picker-observation_0.json","exportedFileName":"picker.json"}
+            ]}
+        ]);
+        assert_eq!(
+            attachment_name(
+                &manifest,
+                "DesktopInteractionTests/testOwnedNativeAppearance()",
+                "native-appearance-observation_"
+            )
+            .unwrap(),
+            "appearance.json"
+        );
+        assert!(
+            attachment_name(
+                &manifest,
+                "DesktopInteractionTests/testOwnedNativeAppearance()",
+                "native-picker-observation_"
+            )
+            .is_err()
+        );
+        assert!(
+            attachment_name(
+                &manifest,
+                "OtherCase/testOwnedNativeAppearance()",
+                "native-appearance-observation_"
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn picker_attachment_requires_one_matching_test_and_a_plain_filename() {

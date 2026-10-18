@@ -65,6 +65,7 @@ struct DesktopInteractionOwner {
   static func main() async {
     var failure: String?
     var app: NSRunningApplication?
+    var settings: NSRunningApplication?
     var ownershipReceipt: [String: Any]?
     var board: NSPasteboard?
     var originals: [(URL, Data)] = []
@@ -74,6 +75,7 @@ struct DesktopInteractionOwner {
     var forcedApp = false
     var timedOut = false
     var unexpected: [pid_t] = []
+    var unexpectedSettings: [pid_t] = []
     var stackSamples: [[String: Any]] = []
     var outputPipe: Pipe?
     let pickerMarker = PickerDiagnosticOutput()
@@ -122,6 +124,25 @@ struct DesktopInteractionOwner {
         originals.append((url, try Data(contentsOf: url)))
       }
       let configuration = NSWorkspace.OpenConfiguration()
+      if input["appearance_session"] == "true" {
+        let settingsURL = URL(fileURLWithPath: "/System/Applications/System Settings.app")
+        guard
+          NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.apple.systempreferences"
+          )
+          .isEmpty
+        else { throw Failure.existingApplication }
+        let settingsConfiguration = NSWorkspace.OpenConfiguration()
+        settingsConfiguration.createsNewApplicationInstance = true
+        settingsConfiguration.addsToRecentItems = false
+        let ownedSettings = try await NSWorkspace.shared.openApplication(
+          at: settingsURL, configuration: settingsConfiguration)
+        settings = ownedSettings
+        guard ownedSettings.bundleIdentifier == "com.apple.systempreferences",
+          ownedSettings.bundleURL?.standardizedFileURL == settingsURL.standardizedFileURL,
+          ownedSettings.launchDate != nil
+        else { throw Failure.launchIdentity }
+      }
       configuration.createsNewApplicationInstance = true
       configuration.addsToRecentItems = false
       configuration.arguments = ["-copyDestinationBytes", input["destination"] ?? ""]
@@ -156,10 +177,17 @@ struct DesktopInteractionOwner {
       }
       let pasteboard = NSPasteboard.withUniqueName()
       board = pasteboard
-      let receipt: [String: Any] = [
+      var receipt: [String: Any] = [
         "pid": launched.processIdentifier, "launch_date": date.timeIntervalSince1970,
         "bundle_path": appPath, "pasteboard": pasteboard.name.rawValue,
       ]
+      if let settings, let settingsDate = settings.launchDate, let settingsURL = settings.bundleURL
+      {
+        receipt["settings"] = [
+          "pid": settings.processIdentifier, "launch_date": settingsDate.timeIntervalSince1970,
+          "bundle_path": settingsURL.path,
+        ]
+      }
       ownershipReceipt = receipt
       try JSONSerialization.data(withJSONObject: receipt).write(
         to: receiptURL, options: .withoutOverwriting)
@@ -251,6 +279,15 @@ struct DesktopInteractionOwner {
           .filter { !$0.isTerminated && $0.processIdentifier != launched.processIdentifier }.map(
             \.processIdentifier)
         if !unexpected.isEmpty { throw Failure.unexpectedApplication }
+        if let settings {
+          unexpectedSettings = NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.apple.systempreferences"
+          ).filter { !$0.isTerminated && $0.processIdentifier != settings.processIdentifier }
+            .map(\.processIdentifier)
+          if settings.isTerminated || !unexpectedSettings.isEmpty {
+            throw Failure.unexpectedApplication
+          }
+        }
         if cancellation.requested { throw Failure.cancelled }
         if ProcessInfo.processInfo.systemUptime
           >= min(executionDeadline, shortDeadline ?? executionDeadline)
@@ -289,8 +326,10 @@ struct DesktopInteractionOwner {
     // absent evidence must remain unverified.
     if child.isRunning { child.terminate() }
     if let app, !app.isTerminated { _ = app.terminate() }
+    if let settings, !settings.isTerminated { _ = settings.terminate() }
     let grace = ProcessInfo.processInfo.systemUptime + 2
-    while (child.isRunning || app.map { !$0.isTerminated } == true)
+    while (child.isRunning || app.map { !$0.isTerminated } == true
+      || settings.map { !$0.isTerminated } == true)
       && ProcessInfo.processInfo.systemUptime < grace
     {
       try? await Task.sleep(for: .milliseconds(50))
@@ -307,7 +346,8 @@ struct DesktopInteractionOwner {
       _ = app.forceTerminate()
     }
     let cleanupDeadline = ProcessInfo.processInfo.systemUptime + 5
-    while (child.isRunning || app.map { !$0.isTerminated } == true)
+    while (child.isRunning || app.map { !$0.isTerminated } == true
+      || settings.map { !$0.isTerminated } == true)
       && ProcessInfo.processInfo.systemUptime < cleanupDeadline
     {
       try? await Task.sleep(for: .milliseconds(50))
@@ -318,6 +358,20 @@ struct DesktopInteractionOwner {
       childExit = child.terminationStatus
     }
     let appTerminated = app?.isTerminated == true
+    let settingsTerminated = settings?.isTerminated ?? true
+    if let settings {
+      unexpectedSettings = NSRunningApplication.runningApplications(
+        withBundleIdentifier: "com.apple.systempreferences"
+      ).filter { !$0.isTerminated && $0.processIdentifier != settings.processIdentifier }
+        .map(\.processIdentifier)
+      if !unexpectedSettings.isEmpty {
+        failure = failure ?? "Unexpected Settings instance; no authority to terminate it"
+      }
+    }
+    if !settingsTerminated {
+      failure =
+        failure ?? "Owned Settings did not terminate normally; disposable-host cleanup required"
+    }
     if !childReaped || !appTerminated {
       failure = failure ?? "Owned app or interaction runner settlement remains unverified"
     }
@@ -340,6 +394,13 @@ struct DesktopInteractionOwner {
         "cancelled": cancellation.requested, "runner_reaped": childReaped,
         "runner_status": childExit.map { $0 as Any } ?? NSNull(),
         "owned_app_terminated": appTerminated, "forced_app_cleanup": forcedApp,
+        "owned_settings_terminated": settingsTerminated,
+        "unexpected_settings_application_pids": unexpectedSettings,
+        "system_appearance_restoration": settings == nil
+          ? "not_applicable"
+          : (failure == nil
+            ? "requires successful XCTest restoration receipt"
+            : "unverified after failure; disposable hosted session contains remaining state"),
         "worker_settlement": forcedApp
           ? "unverified after forced app exit"
           : "requires successful XCTest terminal report and normal Quit",

@@ -34,7 +34,9 @@ eml-app captures immutable native selections/destinations, reserves bounded
 reports, frames LF bytes and reduces checked protocol1 observations. eml-protocol
 owns wire records shared across products. Display text never reconstructs an
 operation path; explicit report export contains accepted structured facts rather
-than raw protocol frames or message contents. The technical disclosure also shows the interface's current native appearance and Increase Contrast observations, separately from Core outcome/export facts. Native child ownership is described
+than raw protocol frames or message contents. The technical disclosure also shows
+the interface's current native appearance and Increase Contrast observations,
+separately from Core outcome/export facts. Native child ownership is described
 in [process ownership](macos-process-ownership.md).
 
 After a stream ends without a valid summary, known discovered items without an

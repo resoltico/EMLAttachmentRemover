@@ -466,8 +466,28 @@ fn verify_snapshot(
         json!({"outcome":"not_run","reason":"requires an owned fresh hosted runner; saved owner preferences protected"})
     };
     let interaction = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
-        crate::macos_publication_ui::run(root, &app, build, &out.join("gui-publication"))?;
-        crate::macos_interaction::run(root, &app, build, &out.join("gui-interaction"))?
+        use crate::macos_interaction::{DesktopCase, run_case};
+        // Exercise the shipping bundle before registering copied fixture bundles.
+        // The earlier startup observation remains a separate launch.
+        let workflow = run_case(
+            root,
+            &app,
+            build,
+            &out.join("gui-interaction"),
+            DesktopCase::Workflow,
+        )?;
+        let publication =
+            crate::macos_publication_ui::run(root, &app, build, &out.join("gui-publication"))?;
+        // Native Settings changes belong to the final phase on this disposable
+        // host. Failure stops qualification with restoration uncertainty retained.
+        let appearance = run_case(
+            root,
+            &app,
+            build,
+            &out.join("gui-interaction/appearance"),
+            DesktopCase::Appearance,
+        )?;
+        json!({"workflow":workflow,"publication":publication,"appearance":appearance})
     } else {
         json!({"outcome":"not_run","reason":"requires a fresh hosted Mac; local source compilation is not GUI interaction evidence"})
     };

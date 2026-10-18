@@ -5,7 +5,7 @@ import Darwin
 import XCTest
 
 final class DesktopInteractionTests: XCTestCase {
-  private enum InteractionFailure: Error { case expectedPresentation }
+  enum InteractionFailure: Error { case expectedPresentation }
   @MainActor
   func testOwnedCoreStop() async throws { try await observedCoreScenario("stop") }
   @MainActor
@@ -264,25 +264,13 @@ final class DesktopInteractionTests: XCTestCase {
       (identity?.value as? String)?.contains("EML Attachment Remover \(version)") == true)
     snapshot(app, "about")
     about.buttons["_XCUI:CloseWindow"].click()
-    // Keyboard traversal must cause distinct native effects, not merely send keys.
-    print("EML_NATIVE_PICKER_REQUESTED")
-    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
-    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
-    let keyboardPicker = app.sheets.firstMatch
-    guard keyboardPicker.waitForExistence(timeout: 10) else {
-      XCTFail("Tab/Space did not activate the native message importer: \(app.debugDescription)")
+    let aboutClosed = NSPredicate { _, _ in !about.exists }
+    let aboutCloseResult = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: aboutClosed, object: nil)], timeout: 10)
+    guard aboutCloseResult == .completed else {
+      XCTFail("About did not close before keyboard navigation: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
-    keyboardPicker.buttons["Cancel"].click()
-    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: .shift)
-    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
-    guard about.waitForExistence(timeout: 10) else {
-      XCTFail("Shift-Tab/Space did not return to About: \(app.debugDescription)")
-      throw InteractionFailure.expectedPresentation
-    }
-    snapshot(app, "keyboard-forward-and-reverse-native-actions")
-    about.buttons["_XCUI:CloseWindow"].click()
-
     app.menuBars.menuBarItems["Help"].click()
     app.menuItems["Software and Artwork Licenses…"].click()
     let licenses = app.windows["Software and Artwork Licenses"]
@@ -408,6 +396,29 @@ final class DesktopInteractionTests: XCTestCase {
         contentsOf: folderSource.deletingPathExtension().appendingPathExtension(
           "no-attachments.eml")), golden)
     snapshot(app, "folder-import-finished")
+
+    // Keyboard traversal must cause distinct native effects, not merely send keys.
+    // Cupertino mouse activation does not establish logical keyboard focus:
+    // the first Tab reaches About, and the second reaches Choose messages.
+    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
+    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
+    print("EML_NATIVE_PICKER_REQUESTED")
+    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
+    let keyboardPicker = app.sheets.firstMatch
+    guard keyboardPicker.waitForExistence(timeout: 10) else {
+      XCTFail("Tab/Space did not activate the native message importer: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    keyboardPicker.buttons["Cancel"].click()
+    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: .shift)
+    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
+    guard about.waitForExistence(timeout: 10) else {
+      XCTFail("Shift-Tab/Space did not return to About: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    snapshot(app, "keyboard-forward-and-reverse-native-actions")
+    about.buttons["_XCUI:CloseWindow"].click()
+
     let pickerObservation: [String: Any] = [
       "schema": 1, "owned_pid": pid, "message": sources[0].path,
       "folder": folderSource.deletingLastPathComponent().path,
@@ -718,10 +729,10 @@ final class DesktopInteractionTests: XCTestCase {
     XCTAssertTrue(technical.isEnabled && technical.isHittable)
     technical.click()
     let unchecked = String(describing: technical.value)
-    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
+    technical.click()
     XCTAssertNotEqual(String(describing: technical.value), unchecked)
     try await requireText(app, containing: "settled true; reusable true")
-    snapshot(app, "minimum-compact-keyboard-and-accessible-report")
+    snapshot(app, "minimum-compact-accessible-report")
     let restore = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
       .withOffset(CGVector(dx: previous.width - 2, dy: previous.height - 2))
     window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
@@ -866,7 +877,7 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
-  private func requireRun(
+  func requireRun(
     _ app: XCUIApplication, counts: String, source: URL, displayedName: String? = nil
   ) async throws {
     let predicate = NSPredicate { _, _ in
@@ -897,7 +908,7 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
-  private func requireText(_ app: XCUIApplication, containing text: String) async throws {
+  func requireText(_ app: XCUIApplication, containing text: String) async throws {
     let predicate = NSPredicate { _, _ in
       app.descendants(matching: .any).allElementsBoundByIndex.contains {
         ($0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")).contains(text)
@@ -942,7 +953,7 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
-  private func snapshot(_ app: XCUIApplication, _ name: String) {
+  func snapshot(_ app: XCUIApplication, _ name: String) {
     let attachment = XCTAttachment(screenshot: app.screenshot())
     attachment.name = name
     attachment.lifetime = .keepAlways

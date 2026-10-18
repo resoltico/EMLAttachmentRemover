@@ -1201,3 +1201,34 @@ Increase Contrast observations, refreshed when those values change. This
 frontend diagnosis is separate from Core outcomes and report export facts.
 Enabled GUI strict Clippy passed; real light/dark/contrast interaction and
 screenshots are still required. No owner appearance preference was changed.
+
+## Final hosted appearance phase and keyboard oracle correction
+
+The extracted shipping workflow now has a separate final appearance phase. Its
+external lifetime owner refuses an existing System Settings instance, launches
+and retains the actual system app, binds its receipt to bundle/PID/launch date,
+records unexpected replacements and normally terminates only that retained
+instance. The native XCTest captures the original Light/Dark/Auto selector,
+Increase Contrast and Reduce Transparency values. Actual Settings UI actions
+must produce the exact native observations inside the product and physical
+light/dark/increased-contrast screenshots. Native UI restoration and original
+native display values precede the success attachment; a failure leaves
+restoration explicitly unverified and stops qualification on the disposable
+host. No direct preference write, injected rendering flag or product automation
+mode is used. The product's entire preference domain must remain unchanged.
+Nested result bundles/preferences are included in evidence; build intermediates
+remain excluded. Source compilation passed with SDK27/Swift6. Required hosted
+control discovery, restoration and appearance frames remain unrun.
+
+H5094081/run39160517086 passed all six native test rows. Its ARM app completed
+release tests, CLI archive verification, exFAT and all four publication fixtures,
+then rejected the new keyboard scenario: first Tab/Space reopened About instead
+of the expected file importer. The pinned Cupertino widget calls its callback
+on mouse activation without establishing logical keyboard focus, so the test's
+one-Tab expectation was invalid. The corrected scenario uses the actual initial
+two-Tab order and still requires forward importer/reverse About effects. About
+must be observed closed beforehand. Keyboard actions follow the first real
+message/folder import, preserving the original cold picker sequence for diagnosis.
+Compact checkbox usability uses real mouse off/on and observed value/full-detail
+changes; keyboard evidence belongs to the separate traversal scenario. Corrected
+execution and Intel app completion are still pending at this checkpoint.

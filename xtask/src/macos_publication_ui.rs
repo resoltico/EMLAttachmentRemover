@@ -50,7 +50,7 @@ pub(crate) fn execute(
     fixture: &Path,
     launch: impl FnOnce() -> Result<xtask::process::ProcessResult>,
 ) -> Result<xtask::process::ProcessResult> {
-    if case == DesktopCase::Workflow {
+    if !case.is_publication() {
         return launch();
     }
     let finished = AtomicBool::new(false);
