@@ -212,6 +212,12 @@ fn run_helper() -> Result<()> {
         );
     }
     let image = bounded(&outputs[0], 256 * 1024 * 1024)?;
+    let basename = outputs[0]
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("Linked CLI lacks a Unicode basename")?;
+    crate::windows_input_review::application_stem(basename)?;
+    record["linked_basename"] = serde_json::to_value(basename)?;
     record["map"] = serde_json::to_value(ByteIdentity::of(&map))?;
     record["linked_image"] = serde_json::to_value(ByteIdentity::of(&image))?;
     write_new(&control.receipt, &serde_json::to_vec_pretty(&record)?)?;
@@ -278,6 +284,28 @@ pub(crate) fn captured(
         );
     }
     Ok(record)
+}
+
+pub(crate) fn runtime_directory(work: &Path, target: &str) -> Result<PathBuf> {
+    let control: Control =
+        serde_json::from_slice(&bounded(&work.join("control.json"), 64 * 1024)?)?;
+    if control.schema != 1 || control.target != target {
+        return Err("Selected sysroot control differs from the native build".into());
+    }
+    let bin = control
+        .linker
+        .parent()
+        .ok_or("Missing selected linker directory")?;
+    if bin.file_name() != Some(std::ffi::OsStr::new("bin")) {
+        return Err("Selected linker is outside its target bin directory".into());
+    }
+    let runtime = bin
+        .parent()
+        .ok_or("Missing selected linker target directory")?;
+    if runtime.file_name() != Some(std::ffi::OsStr::new(target)) {
+        return Err("Selected linker target directory differs from the build".into());
+    }
+    Ok(runtime.join("lib").canonicalize()?)
 }
 
 #[cfg(test)]

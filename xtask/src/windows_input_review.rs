@@ -76,13 +76,12 @@ pub(crate) fn rust_inputs(
     inputs: &[InputObservation],
     official: &[OfficialInput],
     cargo_output: &[u8],
-    executable: &Path,
+    directory: &Path,
+    linked_basename: &str,
 ) -> Result<Vec<RustInput>> {
     use std::io::Read;
-    let directory = executable
-        .parent()
-        .ok_or("Missing Cargo executable directory")?
-        .canonicalize()?;
+    let directory = directory.canonicalize()?;
+    let stem = application_stem(linked_basename)?;
     let root = root.canonicalize()?;
     let mut libraries = BTreeMap::new();
     for document in
@@ -150,10 +149,6 @@ pub(crate) fn rust_inputs(
         }
     }
     let prefixes = reproducer_names(&directory)?;
-    let stem = executable
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .ok_or("Missing Cargo executable stem")?;
     let mut result = Vec::new();
     let mut application_objects = 0;
     let mut symbols = 0;
@@ -224,6 +219,19 @@ pub(crate) fn rust_inputs(
         );
     }
     Ok(result)
+}
+
+pub(crate) fn application_stem(basename: &str) -> Result<&str> {
+    let stem = basename
+        .strip_suffix(".exe")
+        .ok_or("Linked CLI name lacks its executable suffix")?;
+    let hash = stem
+        .strip_prefix("remove_eml_attachments-")
+        .ok_or("Linked CLI name differs from its Cargo binary target")?;
+    if hash.len() != 16 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("Linked CLI name lacks a bounded Cargo artifact hash".into());
+    }
+    Ok(stem)
 }
 
 fn member_source(target: &str, archive: &str, member: &str) -> Option<(String, String)> {
@@ -387,16 +395,20 @@ pub(crate) fn official_inputs(
     root: &Path,
     target: &str,
     inputs: &[InputObservation],
+    runtime_directory: &Path,
 ) -> Result<Vec<OfficialInput>> {
     let references = references(root)?;
     let expected = references
         .targets
         .get(target)
         .ok_or("Missing target official input references")?;
-    let marker = format!("/lib/rustlib/{target}/lib/");
+    let prefixes = reproducer_names(runtime_directory)?;
     let mut result = Vec::new();
     for input in inputs {
-        let Some((_, relative)) = input.member.split_once(&marker) else {
+        let Some(relative) = prefixes
+            .iter()
+            .find_map(|prefix| input.member.strip_prefix(&format!("{prefix}/")))
+        else {
             continue;
         };
         let reference = expected
@@ -434,6 +446,25 @@ mod tests {
             .to_owned()
     }
     #[test]
+    fn application_objects_use_the_linked_deps_name_not_the_public_binary_name() {
+        for hash in ["43ccdf81f9fa5803", "babb91a3bf518500"] {
+            let basename = format!("remove_eml_attachments-{hash}.exe");
+            let stem = application_stem(&basename).unwrap();
+            let object = format!("{stem}.remove_eml_attachments.2f7a-cgu.0.rcgu.o");
+            assert!(object.starts_with(&format!("{stem}.")));
+            assert!(!object.starts_with("remove-eml-attachments."));
+        }
+        for invalid in [
+            "remove-eml-attachments.exe",
+            "../remove_eml_attachments-43ccdf81f9fa5803.exe",
+            "C:remove_eml_attachments-43ccdf81f9fa5803.exe",
+            "remove_eml_attachments-43ccdf81f9fa5803/other.exe",
+            "remove_eml_attachments-xyz.exe",
+        ] {
+            assert!(application_stem(invalid).is_err(), "{invalid}");
+        }
+    }
+    #[test]
     fn reproducer_keys_match_current_dos_and_verbatim_spelling() {
         let expected = [
             "reproducer/C/Users/u/object.o".to_owned(),
@@ -454,22 +485,42 @@ mod tests {
         let root = root();
         let references = references(&root).unwrap();
         for (target, files) in references.targets {
+            let runtime = format!("C:/observed-sysroot/lib/rustlib/{target}/lib");
             let reference = &files["self-contained/crt2.o"];
             let mut input = InputObservation {
                 member: format!(
-                    "reproducer/observed-sysroot/lib/rustlib/{target}/lib/self-contained/crt2.o"
+                    "reproducer/C/observed-sysroot/lib/rustlib/{target}/lib/self-contained/crt2.o"
                 ),
                 identity: reference.identity.clone(),
             };
-            assert_eq!(official_inputs(&root, &target, &[input]).unwrap().len(), 1);
+            assert_eq!(
+                official_inputs(
+                    &root,
+                    &target,
+                    std::slice::from_ref(&input),
+                    Path::new(&runtime)
+                )
+                .unwrap()
+                .len(),
+                1
+            );
+            assert!(
+                official_inputs(
+                    &root,
+                    &target,
+                    &[input],
+                    Path::new(&runtime.replace("observed-sysroot", "another-sysroot"))
+                )
+                .is_err()
+            );
             input = InputObservation {
                 member: format!(
-                    "reproducer/observed-sysroot/lib/rustlib/{target}/lib/self-contained/crt2.o"
+                    "reproducer/C/observed-sysroot/lib/rustlib/{target}/lib/self-contained/crt2.o"
                 ),
                 identity: ByteIdentity::of(b"changed startup bytes"),
             };
-            assert!(official_inputs(&root, &target, &[input]).is_err());
-            assert!(official_inputs(&root, &target, &[]).is_err());
+            assert!(official_inputs(&root, &target, &[input], Path::new(&runtime)).is_err());
+            assert!(official_inputs(&root, &target, &[], Path::new(&runtime)).is_err());
         }
     }
     #[test]

@@ -247,7 +247,12 @@ fn build_inner(
             serde_json::from_slice(&fs::read(work.path().join("native-link/inputs.json"))?)?;
         let input_files: Vec<xtask::linker_reproducer::InputObservation> =
             serde_json::from_value(input_manifest["inputs"].clone())?;
-        let official = crate::windows_input_review::official_inputs(root, target, &input_files)?;
+        let official = crate::windows_input_review::official_inputs(
+            root,
+            target,
+            &input_files,
+            &crate::windows_link::runtime_directory(&work.path().join("native-link"), target)?,
+        )?;
         let selected = crate::windows_input_review::selected_members(
             target,
             &official,
@@ -260,7 +265,10 @@ fn build_inner(
             &input_files,
             &official,
             &output,
-            &compiled,
+            &cargo.join(target).join("release/deps"),
+            captured["linked_basename"]
+                .as_str()
+                .ok_or("Missing actual linked executable basename")?,
         )?;
         fs::write(
             out.join("official-input-identities.json"),
