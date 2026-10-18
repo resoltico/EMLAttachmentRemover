@@ -12594,10 +12594,10 @@
   "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
   "source_inputs": [
     {
-      "bytes": 148697,
+      "bytes": 148710,
       "kind": "review_input",
       "path": "Cargo.lock",
-      "sha256": "101c58970d25c1834eeed63ba0d051467c49c700f790d5fdd1178b830595ea96"
+      "sha256": "6eb0736dc247456d946604fe6747dfebd6f0d5a7d83b1907993e705265fbde7e"
     },
     {
       "bytes": 815,
@@ -12796,6 +12796,10 @@
     {
       "basis_head": "a33b106896d424c6369b71f78b67ab634ce869a6",
       "scope": "Reviewed the Cargo.lock change: only xtask gains macOS-only eml-app/eml-macos dependencies for real archive smoke; no registry identity/version changes. The distribution diff separates macOS26 build hosts from matching macOS15 smoke hosts; target tuples and legal component closures remain unchanged. Active input identities updated; the original temporary generator configuration is retained as historical review metadata, not a clean-checkout prerequisite."
+    },
+    {
+      "basis_head": "7ee027d889f08cb9937dba2406e11dabb328a7df",
+      "scope": "Reviewed the one Cargo.lock addition: xtask gains a macOS-only direct eml-core dependency for the real owned-volume probe. Registry identities and shipping CLI/GUI/worker component graphs remain unchanged."
     }
   ],
   "product_material_review": {

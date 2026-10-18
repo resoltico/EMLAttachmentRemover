@@ -5743,6 +5743,7 @@ dependencies = [
  "clap",
  "ctrlc",
  "eml-app",
+ "eml-core",
  "eml-fs",
  "eml-macos",
  "flate2",

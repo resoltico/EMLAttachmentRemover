@@ -361,3 +361,39 @@ Complete app production and actual macOS15 smoke in the new CI are pending; no
 build, checksum or synthetic archive-format fixture substitutes for those gates.
 The earlier 641aa1a enum/path-name collision failed compilation and is retained;
 26cdd70 fixed it and passed the affected command tests and three Clippy selections.
+
+## Windows/CI correction qualified at branch head
+
+At H=`6ac5a729ea60a7248a9c5580f6fdd971a3c97d40`, [CI39099729375](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39099729375)
+and its always-running ci-ok passed. All six native test matrices passed,
+including both Windows product P-W gates/standalone primitives, both macOS
+qualified Slint/Darwin fixture sets and all POSIX different-UID controls. The
+macOS26 icon producer succeeded once; the approved alternate host was unnecessary.
+Both separate native app/CLI archive producers passed; their same archive bytes
+then passed actual macOS15 ARM and Intel extraction/signature/runtime/Core-worker
+and GUI-startup smoke. This establishes the scoped archive/startup gates, not
+full GUI paint/interaction/VoiceOver acceptance. Main remains published baseline
+`f7adf489734beff3ca94f829f8db1c110be316f4`; the corresponding PR merge candidate was
+M=`9dde7c86eface828d1421aa05270d55ed814e467`. The [full M run](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39099733317)
+remains separately tracked; it is not relabeled as H.
+
+The first floor matrix at 9ebcdee was unexpectedly skipped through the optional
+icon-fallback dependency despite successful app producers. ci-ok refused that
+state. An explicit always()+successful-required-needs condition corrected the
+scheduler gate; the subsequent real floor jobs passed. Missing/skipped outcomes
+were never reported as success.
+
+Fresh preparation fuzz at 9ebcdee passed 1,710,574 executions with 12 independent
+fixtures plus 10 structural seeds. At 7ee027d the complete named guard mutation set
+ran 15 cases: 14 caught, one reviewed compiler-invalid, none missed or timed out.
+The earlier escaped 16-case discovery and unmutated-baseline timeout are retained
+as failures, not successful campaigns. The selected guard functions did not change.
+
+Owned exFAT integration is now implemented for fresh hosted Macs with native
+hdiutil create/attach/info/detach, exact backing-file/device/mount association,
+actual RENAME_EXCL/conflict checks, real mode/ownership/synchronization facts and
+Core golden/original/physical-publication observations. Cleanup has no force or
+name-pattern sweep. Pure controls reject ambiguous/wrong-mount/device metadata;
+local source/Clippy checks pass. Actual disk-image execution remains required and
+unrun. This does not complete original WP3 or the remaining Windows packaging,
+GUI interaction/accessibility and release-identity/clean-delivery requirements.

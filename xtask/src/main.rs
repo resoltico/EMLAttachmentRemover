@@ -14,6 +14,8 @@ mod macos_app;
 mod macos_archive;
 #[cfg(target_os = "macos")]
 mod macos_icon;
+#[cfg(target_os = "macos")]
+mod macos_volume;
 mod mutants;
 mod native_host;
 mod notices;
@@ -101,6 +103,11 @@ enum Task {
     },
     /// Build and ad hoc sign native GUI/worker executables; no app/archive verdict.
     BuildMacosSources {
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Exercise an actual exclusively owned exFAT image on a fresh native CI host.
+    CheckMacosVolume {
         #[arg(long)]
         out: PathBuf,
     },
@@ -271,6 +278,18 @@ fn main() -> ExitCode {
                 }
             }
             Task::Distribution => distribution::run(&root),
+            Task::CheckMacosVolume { out } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos_volume::run(&root, &out)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = out;
+                    Err("Owned exFAT image checks require native macOS".into())
+                }
+            }
             Task::BuildMacosApp { out, icons } => {
                 #[cfg(target_os = "macos")]
                 {

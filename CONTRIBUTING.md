@@ -122,3 +122,9 @@ net user/operator outcomes under Unreleased; preserve published changelog histor
 Software and artwork have distinct terms in LICENSE. Keep editable artwork and
 its grants intact. No agent task authorizes tagging, publishing, merging, enabling
 auto-merge or changing repository settings. Release remains a later owner action.
+
+On a fresh owned hosted Mac, `cargo xtask check-macos-volume --out NEW_DIRECTORY`
+creates and tests only its own exFAT image/mount, records actual native capability
+and Core outcomes, and detaches only its verified device. Native privilege or
+cleanup failure keeps this required gate failed/unrun. Local owner preferences
+and unrelated disks are never setup resources.
