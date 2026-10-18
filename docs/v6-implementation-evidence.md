@@ -552,3 +552,16 @@ qualification, not a pass. Queries now use the actual observed accessibility
 properties, guard absent elements and register XCTest teardown independently of
 Swift defer. Native-CPU test compilation passes locally; corrected execution is
 still pending. Both hosted Mac exFAT rows at H66f2865 passed independently.
+
+At H70a4482, both native Windows jobs in run39107765307 passed all nine new
+Job/controller cases, with exact-name discovery and no ignored/filtered cases.
+The actual case lines are retained in target/windows-job-x64-first-native.log
+and target/windows-job-arm64-first-native.log. This establishes their scoped
+process/descendant/native-argument/deadline/evidence protections, not console
+event delivery or complete Windows archive acceptance.
+
+Windows host inspection now reads IsWow64Process2, actual RtlGetVersion kernel
+fields and the running inspector's PE CPU, separately from Rust compiler host
+and runner labels. It refuses emulated/mismatched machines before a native CLI
+build. Both target Clippy checks pass; the added actual-machine test and native
+host qualification still need execution at the source containing them.

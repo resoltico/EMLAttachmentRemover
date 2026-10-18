@@ -11,6 +11,19 @@ use std::{
     time::{Duration, Instant},
 };
 const FIXTURE: &str = env!("CARGO_BIN_EXE_job-observation");
+#[test]
+fn native_host_reports_expected_untranslated_cpu_and_actual_kernel() {
+    let observed = eml_windows::host_info().unwrap();
+    let expected = match std::env::consts::ARCH {
+        "x86_64" => 0x8664,
+        "aarch64" => 0xaa64,
+        _ => panic!("Unsupported native test CPU"),
+    };
+    assert_eq!(observed.process_machine, 0);
+    assert_eq!(observed.native_machine, expected);
+    assert!(observed.major >= 10);
+    assert!(observed.build > 0);
+}
 fn scratch() -> scratch::OwnedScratch {
     let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/windows-job-tests");
     fs::create_dir_all(&parent).unwrap();

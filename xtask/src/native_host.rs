@@ -1,21 +1,61 @@
 //! Native execution observations, distinct from compiler/source qualification.
-use crate::Result;
-#[cfg(unix)]
-use crate::capture;
+use crate::{Result, capture};
 use serde_json::Value;
-#[cfg(unix)]
 use serde_json::json;
-use std::path::Path;
 #[cfg(unix)]
-use std::{fs, process::Command};
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 pub(crate) fn inspect(root: &Path, target: &str, os: &str, architecture: &str) -> Result<Value> {
     if std::env::consts::OS != os || std::env::consts::ARCH != architecture {
         return Err("Archive execution requires its actual native OS/CPU; cross execution is not qualification".into());
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        let observed = eml_windows::host_info()?;
+        let expected = match architecture {
+            "x86_64" => 0x8664,
+            "aarch64" => 0xaa64,
+            _ => return Err("Unsupported native Windows CPU".into()),
+        };
+        if observed.process_machine != 0 || observed.native_machine != expected {
+            return Err("Windows process is translated or its actual native machine differs from the target".into());
+        }
+        if observed.major < 10 {
+            return Err("Observed Windows kernel is below the supported policy".into());
+        }
+        let compiler =
+            String::from_utf8(capture(Command::new("rustc").current_dir(root).arg("-vV"))?)?;
+        if !compiler
+            .lines()
+            .any(|line| line == format!("host: {target}"))
+        {
+            return Err("Windows compiler host differs from the native target".into());
+        }
+        let current = std::fs::read(std::env::current_exe()?)?;
+        let image = object::File::parse(current.as_slice())?;
+        let actual = match image {
+            object::File::Pe64(ref image) => {
+                use object::Object;
+                match image.architecture() {
+                    object::Architecture::Aarch64 => "aarch64",
+                    object::Architecture::X86_64 => "x86_64",
+                    _ => return Err("Unsupported running inspector PE CPU".into()),
+                }
+            }
+            _ => return Err("Native Windows inspector is not PE64".into()),
+        };
+        if actual != architecture {
+            return Err("Running inspector PE differs from the requested native CPU".into());
+        }
+        Ok(
+            json!({"target":target,"process_os":os,"process_architecture":architecture,"native_machine":observed.native_machine,"emulated_process_machine":observed.process_machine,"actual_kernel":{"major":observed.major,"minor":observed.minor,"build":observed.build},"compiler":compiler,"runner_image":std::env::var("ImageOS").ok(),"runner_image_version":std::env::var("ImageVersion").ok(),"scope":"actual process-machine/kernel/PE/compiler observations; no all-client-patches compatibility claim"}),
+        )
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (root, target);
-        Err("Windows archive verification awaits its owned process/private extraction and final-link boundaries".into())
+        Err("Unsupported native verification host".into())
     }
     #[cfg(unix)]
     {
