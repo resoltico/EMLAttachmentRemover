@@ -689,3 +689,26 @@ configuration. The product staging directories remain fresh. Every image is
 copied and frozen again; signatures, archive readback, extraction, Core behavior
 and GUI checks remain mandatory. Cache identity is not qualification. Source
 Clippy and workflow lint pass; actual restored-cache native execution is pending.
+
+The retained native logs from H8e9e2af, run
+[39116292733](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39116292733),
+show the real distinct-user ACL case and no-replace artifact move case passing
+on both Windows x64 and ARM64. These are individual observed results: the full
+Windows gate did not pass. Its real partial-report console case failed, and the
+unfinished-request fixture stalled for over 60 seconds before the run was
+cancelled. The synchronous pipe peek has since been removed; real execution of
+the replacement capacity/write handshake is pending at H876c480.
+
+The independent native link step still ran after cancellation and preserved its
+actual failure: the wrapper's lexical parent comparison rejected the ordinary
+current_exe drive spelling against the control's canonical verbatim spelling.
+The wrapper now canonicalizes its native parent before retaining the same strict
+parent checks. Cargo JSONL is also explicitly included in uploaded diagnostics.
+The corrected final link and selected static-input review remain unqualified.
+
+At H876c480 the local workspace/GUI selection completed with 407 passed tests,
+51 summaries and no failed, ignored or filtered cases. The native test controller
+summary validator's two targeted controls passed; Windows-target source Clippy
+passed on both target selections, and workflow lint passed. These compile/local
+results do not substitute for either Windows native console gate or pinned
+macOS GUI execution.

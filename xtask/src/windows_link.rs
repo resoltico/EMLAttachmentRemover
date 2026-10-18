@@ -76,13 +76,19 @@ pub(crate) fn prepare(root: &Path, target: &str, work: &Path, cargo: &Path) -> R
 }
 fn run_helper() -> Result<()> {
     let executable = std::env::current_exe()?;
-    let work = executable.parent().ok_or("Missing native link enclosure")?;
+    // GetModuleFileName/current_exe may return the ordinary drive spelling of
+    // the same executable whose control used canonical verbatim paths. Compare
+    // both against the native canonical parent; do not weaken parent admission.
+    let work = executable
+        .parent()
+        .ok_or("Missing native link enclosure")?
+        .canonicalize()?;
     let control: Control =
         serde_json::from_slice(&bounded(&work.join("control.json"), 64 * 1024)?)?;
     if control.schema != 1
-        || control.map.parent() != Some(work)
-        || control.trace.parent() != Some(work)
-        || control.receipt.parent() != Some(work)
+        || control.map.parent() != Some(work.as_path())
+        || control.trace.parent() != Some(work.as_path())
+        || control.receipt.parent() != Some(work.as_path())
     {
         return Err("Native link control does not match its owned enclosure".into());
     }

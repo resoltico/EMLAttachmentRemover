@@ -268,6 +268,7 @@ jobs:
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/owned-exfat-observation/**/*.plist
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-native-workspace.json
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.jsonl
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.stderr
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.map
