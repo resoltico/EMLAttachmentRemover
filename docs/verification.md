@@ -486,3 +486,17 @@ remain required. The subsequent full 15-case run passed 14 caught plus one revie
 compiler-invalid case, with none missed or timed out. Fuzz at 9ebcdee passed
 1,710,574 executions in its 60-second configured campaign; see exact source records
 in the implementation evidence before treating an earlier source as current.
+
+## Scheduled extended checks
+
+The weekly `Extended verification` workflow checks the current default-branch
+source with fresh advisory data across workspace, excluded fuzz/filesystem and
+enabled macOS dependency graphs. It derives tool versions from the same source,
+runs the independent semantic model with4096 cases and the bounded fuzz harness
+for900 seconds. The model honors `PROPTEST_CASES` within256..4096, preserving
+the normal minimum and limiting inherited requests. Fuzz input, per-case and RSS
+limits remain the harness's reviewed limits. Source identity, property failures,
+fuzz summaries/logs and crash artifacts are retained; scheduled results do not
+replace exact-head six-platform or GUI qualification. No mutation campaign or
+publication is scheduled. Workflow implementation does not establish execution;
+the900-second schedule has not been dispatched during this implementation.

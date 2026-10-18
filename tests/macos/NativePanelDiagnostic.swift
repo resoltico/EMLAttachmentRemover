@@ -6,6 +6,9 @@ final class NativePanelDiagnostic: NSObject, NSApplicationDelegate {
   private var window: NSWindow?
   private var panel: NSOpenPanel?
   private var completed = false
+  private var observedVisible = false
+  private var cancellationRequested = false
+  private(set) var exitCode: Int32 = 2
 
   private func record(_ phase: String) {
     FileHandle.standardOutput.write(Data("Native AppKit panel diagnostic: \(phase)\n".utf8))
@@ -28,6 +31,8 @@ final class NativePanelDiagnostic: NSObject, NSApplicationDelegate {
       ownedPanel.beginSheetModal(for: parent) { [self] response in
         completed = true
         record("callback response \(response.rawValue)")
+        exitCode = observedVisible && cancellationRequested && response == .cancel ? 0 : 3
+        ownedPanel.orderOut(nil)
         panel = nil
         parent.close()
         window = nil
@@ -35,7 +40,9 @@ final class NativePanelDiagnostic: NSObject, NSApplicationDelegate {
       }
       record("presentation returned")
       DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [self] in
-        record("cancel retained panel; visible=\(ownedPanel.isVisible)")
+        observedVisible = ownedPanel.isVisible
+        record("cancel retained panel; visible=\(observedVisible)")
+        cancellationRequested = true
         ownedPanel.cancel(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [self] in
           if !completed {
@@ -57,5 +64,6 @@ struct DiagnosticMain {
     application.setActivationPolicy(.regular)
     application.delegate = delegate
     withExtendedLifetime(delegate) { application.run() }
+    exit(delegate.exitCode)
   }
 }

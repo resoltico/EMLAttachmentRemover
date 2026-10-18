@@ -367,8 +367,21 @@ fn expected(node: &Rendered) -> Result<Expected, Refusal> {
         stripped,
     })
 }
+fn model_config() -> ProptestConfig {
+    let mut config = ProptestConfig::default();
+    // PROPTEST_CASES can extend scheduled coverage without weakening normal checks
+    // or allowing an unbounded campaign through an inherited environment value.
+    config.cases = config.cases.clamp(256, 4096);
+    config.failure_persistence = Some(Box::new(
+        proptest::test_runner::FileFailurePersistence::Direct(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../target/proptest/model.txt"
+        )),
+    ));
+    config
+}
 proptest! {
-    #![proptest_config(ProptestConfig {cases:256,failure_persistence:Some(Box::new(proptest::test_runner::FileFailurePersistence::Direct(concat!(env!("CARGO_MANIFEST_DIR"),"/../../target/proptest/model.txt")))),..ProptestConfig::default()})]
+    #![proptest_config(model_config())]
     #[test] fn semantic_model_preserves_all_authorized_bytes(model in models()) {
         let rendered=render(&model,true,String::new(),None,false,&mut 0);
         let oracle=expected(&rendered);let actual=prepare_message(&rendered.wire,&RunControl::default());
