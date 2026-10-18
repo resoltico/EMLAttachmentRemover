@@ -48,7 +48,16 @@ fn waiting_capacity_cancellation_and_removal_do_not_discard_active_results() {
         waiting.push(queue.enqueue(request()).unwrap());
     }
     assert!(matches!(queue.enqueue(request()), Err(QueueError::Full)));
-    queue.remove_waiting(waiting[2]);
+    assert_eq!(
+        queue
+            .waiting_requests()
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>(),
+        waiting
+    );
+    assert!(queue.remove_waiting(waiting[2]));
+    assert!(!queue.remove_waiting(waiting[2]));
+    assert!(!queue.remove_waiting(active));
     assert_eq!(queue.waiting(), 7);
     queue.enqueue(request()).unwrap();
     queue.cancel_waiting();

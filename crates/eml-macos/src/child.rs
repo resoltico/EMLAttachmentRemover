@@ -45,6 +45,14 @@ struct Authority {
 #[must_use]
 pub struct OwnedChild(Mutex<Authority>);
 impl OwnedChild {
+    /// Read whether this owner has explicitly revoked its positive-PID authority.
+    /// A lock error leaves authority unresolved; callers must retain the owner.
+    pub fn authority_revoked(&self) -> io::Result<bool> {
+        self.0
+            .lock()
+            .map(|authority| authority.pid.is_none())
+            .map_err(|_| io::Error::other("Child authority lock poisoned"))
+    }
     /// Poll under the same tiny lock used for signals; no blocking wait or I/O.
     pub fn poll(&self) -> io::Result<ChildState> {
         let mut authority = self
@@ -129,6 +137,8 @@ pub struct PipeEndpoints {
     pub output: PipeReader,
     /// Diagnostics; drain independently with bounded retained bytes.
     pub errors: PipeReader,
+    /// Optional private worker readiness/first-interrupt acknowledgement channel.
+    pub control: Option<PipeReader>,
 }
 /// A native startup/cleanup failure without user content or path text.
 #[derive(Debug)]
@@ -163,22 +173,50 @@ fn close_descriptor(
     operation: &'static str,
     issues: &mut Vec<SpawnIssue>,
 ) {
+    if let Err(error) = close_owned(descriptor) {
+        issues.push(SpawnIssue {
+            operation,
+            native_code: error.raw_os_error().unwrap_or(libc::EIO),
+        });
+    }
+}
+fn close_owned(descriptor: impl IntoRawFd) -> io::Result<()> {
     // SAFETY: ownership is consumed exactly once. Never retry a close against
     // a numeric descriptor which may already have been released/reused.
     if unsafe { libc::close(descriptor.into_raw_fd()) } != 0 {
-        issues.push(SpawnIssue {
-            operation,
-            native_code: io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO),
-        });
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
     }
+}
+/// Close this owned parent request writer once, retaining errors without retry.
+pub fn close_writer(writer: PipeWriter) -> io::Result<()> {
+    close_owned(writer)
+}
+/// Close this owned reader once after EOF/failure, retaining errors without retry.
+pub fn close_reader(reader: PipeReader) -> io::Result<()> {
+    close_owned(reader)
 }
 
 /// Spawn one exact absolute executable with explicit child signal policy.
 /// No shell, PATH resolution, global signal changes or background reaper is used.
 /// Errors returned as `Err` occur before spawning; inspect `issues` even on `Ok`.
 pub fn spawn(executable: &Path, arguments: &[&OsStr]) -> io::Result<SpawnObservation> {
+    spawn_bound(executable, arguments, false)
+}
+/// Spawn with an additional child-writer descriptor3 and an independent parent
+/// control reader. All stable source copies are moved above descriptors0..3.
+pub fn spawn_with_control_pipe(
+    executable: &Path,
+    arguments: &[&OsStr],
+) -> io::Result<SpawnObservation> {
+    spawn_bound(executable, arguments, true)
+}
+fn spawn_bound(
+    executable: &Path,
+    arguments: &[&OsStr],
+    control_pipe: bool,
+) -> io::Result<SpawnObservation> {
     if !executable.is_absolute() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -215,6 +253,12 @@ pub fn spawn(executable: &Path, arguments: &[&OsStr]) -> io::Result<SpawnObserva
     let (child_input, input) = io::pipe()?;
     let (output, child_output) = io::pipe()?;
     let (errors, child_errors) = io::pipe()?;
+    let (control, child_control) = if control_pipe {
+        let (read, write) = io::pipe()?;
+        (Some(read), Some(write))
+    } else {
+        (None, None)
+    };
     // SAFETY: only this newly owned request pipe is changed. A broken worker
     // pipe must return EPIPE without depending on a global SIGPIPE disposition.
     // Darwin sys/fcntl.h defines F_SETNOSIGPIPE=73; libc0.2.190 omits the binding.
@@ -222,12 +266,17 @@ pub fn spawn(executable: &Path, arguments: &[&OsStr]) -> io::Result<SpawnObserva
     if unsafe { libc::fcntl(input.as_raw_fd(), SET_NO_SIGPIPE, 1) } < 0 {
         return Err(io::Error::last_os_error());
     }
-    // Stable copies above stdio prevent redirection cycles if 0/1/2 were closed.
-    let descriptors = [
-        rustix::io::fcntl_dupfd_cloexec(child_input.as_fd(), 3)?,
-        rustix::io::fcntl_dupfd_cloexec(child_output.as_fd(), 3)?,
-        rustix::io::fcntl_dupfd_cloexec(child_errors.as_fd(), 3)?,
+    // Sources must be above ALL targets, including the optional descriptor3;
+    // otherwise a dup/close action could destroy a later source or target.
+    let minimum = if control_pipe { 4 } else { 3 };
+    let mut descriptors = vec![
+        rustix::io::fcntl_dupfd_cloexec(child_input.as_fd(), minimum)?,
+        rustix::io::fcntl_dupfd_cloexec(child_output.as_fd(), minimum)?,
+        rustix::io::fcntl_dupfd_cloexec(child_errors.as_fd(), minimum)?,
     ];
+    if let Some(writer) = &child_control {
+        descriptors.push(rustix::io::fcntl_dupfd_cloexec(writer.as_fd(), minimum)?);
+    }
     let mut attributes = ptr::null_mut();
     let mut actions = ptr::null_mut();
     let mut attributes_ready = false;
@@ -381,12 +430,16 @@ pub fn spawn(executable: &Path, arguments: &[&OsStr]) -> io::Result<SpawnObserva
     close_descriptor(child_input, "close-parent-child-input", &mut issues);
     close_descriptor(child_output, "close-parent-child-output", &mut issues);
     close_descriptor(child_errors, "close-parent-child-errors", &mut issues);
+    if let Some(writer) = child_control {
+        close_descriptor(writer, "close-parent-child-control", &mut issues);
+    }
     Ok(SpawnObservation {
         child,
         pipes: PipeEndpoints {
             input,
             output,
             errors,
+            control,
         },
         issues,
     })

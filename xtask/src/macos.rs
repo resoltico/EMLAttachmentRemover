@@ -181,7 +181,7 @@ pub(crate) fn check_desktop(root: &Path, out: &Path) -> Result<()> {
         "--package",
         "eml-gui",
         "--features",
-        "macos-gui",
+        "macos-gui,native-fixtures",
         "--target",
         &build.host,
         "--all-targets",
@@ -189,8 +189,9 @@ pub(crate) fn check_desktop(root: &Path, out: &Path) -> Result<()> {
         "-D",
         "warnings",
     ])
-    .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text);
-    checked_run(lint, &out.join("slint-profile-clippy.log"), 1200)?;
+    .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text)
+    .env("SLINT_COMPILER_DENY_WARNINGS", "1");
+    let lint_result = checked_run(lint, &out.join("slint-profile-clippy.log"), 1200);
     let fixture = out.join("child-fixtures");
     fs::create_dir(&fixture)?;
     let tests = crate::qualify::checked_commands(&fixture, |listing| {
@@ -201,8 +202,14 @@ pub(crate) fn check_desktop(root: &Path, out: &Path) -> Result<()> {
                 "--locked",
                 "--package",
                 "eml-macos",
+                "--package",
+                "eml-app",
+                "--package",
+                "eml-worker",
+                "--package",
+                "eml-gui",
                 "--features",
-                "native-fixtures",
+                "eml-macos/native-fixtures,eml-worker/native-fixtures,eml-gui/macos-gui,eml-gui/native-fixtures",
                 "--target",
                 &build.host,
                 "--",
@@ -219,10 +226,10 @@ pub(crate) fn check_desktop(root: &Path, out: &Path) -> Result<()> {
     fs::write(
         out.join("result.json"),
         serde_json::to_vec_pretty(
-            &serde_json::json!({"build":build,"tests":tests,"scope":"native Slint profile and owned Darwin child fixtures; no actual GUI/bundle/archive acceptance"}),
+            &serde_json::json!({"build":build,"tests":tests,"slint_profile_lint":{"passed":lint_result.is_ok(),"failure":lint_result.as_ref().err().map(ToString::to_string)},"scope":"native Slint profile and owned Darwin child fixtures; no actual GUI/bundle/archive acceptance"}),
         )?,
     )?;
-    Ok(())
+    lint_result
 }
 
 #[derive(Deserialize)]

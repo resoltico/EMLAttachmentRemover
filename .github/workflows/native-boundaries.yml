@@ -97,10 +97,10 @@ jobs:
       - name: Native protocol path transport
         run: |
           cargo clippy --locked --package remove-eml-attachments --all-targets -- -D warnings
-          cargo test --locked --package eml-protocol --lib --test events --test request --test path --test records
+          cargo test --locked --package eml-protocol --lib --test events --test request --test path --test records --test worker_control
           cargo test --locked --package remove-eml-attachments --bin remove-eml-attachments --test cli_process
           cargo test --locked --package eml-app
-          cargo test --locked --package eml-worker --test worker_process
+          cargo test --locked --package eml-worker --bin eml-worker --test worker_process
       - name: Native Slint profile and owned Darwin child checks
         if: ${{ runner.os == 'macOS' }}
         run: cargo xtask check-macos-desktop --out target/native-desktop-checks

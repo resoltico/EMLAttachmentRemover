@@ -74,6 +74,8 @@ use std::sync::{
 
 /// Largest admitted source message, in bytes. Equality is permitted.
 pub const MAX_MESSAGE_BYTES: usize = 256 * 1024 * 1024;
+/// Maximum parsed MIME entities in one message, including containers/root.
+pub const MAX_MESSAGE_PARTS: usize = 10_000;
 
 /// Per-run cooperative cancellation; independent of process-global signals.
 #[derive(Clone, Default, Debug)]

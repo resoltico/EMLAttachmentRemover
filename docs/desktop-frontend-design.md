@@ -24,8 +24,7 @@ publication decisions or output naming. Native macOS bridges are limited to
 actual system needs: native file ingress/choosers, Services, exact Finder reveal,
 saved destination preferences and ordinary Quit/reopen behavior.
 
-The owner's subsequent boundary clarification requires the GUI to use the core
-rather than the user-facing CLI. Use a dedicated minimal same-CPU worker as a
+The GUI uses the core through a dedicated minimal same-CPU worker as a
 separately owned child, calling the same reusable core. The CLI remains a
 separate thin command-line adapter; the app does not need its executable.
 Shared native-path/protocol transport belongs in eml-protocol, independently of

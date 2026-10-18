@@ -1,5 +1,9 @@
 //! Stateful protocol reduction; never a second processing/publication engine.
 use base64::{Engine, engine::general_purpose::STANDARD};
+use eml_core::{
+    MAX_COLLECTED_ITEMS, MAX_COLLECTED_PATH_BYTES, MAX_MESSAGE_BYTES, MAX_MESSAGE_PARTS,
+    MAX_REMOVAL_ENTRIES,
+};
 use eml_protocol::{PROGRAM_ID, records::*};
 use serde::Serialize;
 
@@ -42,9 +46,16 @@ pub struct RunReport {
     failure: Option<ProtocolFailure>,
     counts: [u32; 4],
     removed: usize,
-    native_bytes: usize,
-    display_bytes: usize,
+    path_charge_floor: usize,
     finished: bool,
+    native_create_only: bool,
+}
+#[derive(Serialize)]
+struct TechnicalReport<'a> {
+    start: &'a Option<StartRecord>,
+    items: &'a [ItemRecord],
+    summary: &'a Option<SummaryRecord>,
+    protocol_failure: Option<ProtocolFailure>,
 }
 impl RunReport {
     /// Start a report for the independently checked worker version.
@@ -57,14 +68,25 @@ impl RunReport {
             failure: None,
             counts: [0; 4],
             removed: 0,
-            native_bytes: 0,
-            display_bytes: 0,
+            path_charge_floor: 0,
             finished: false,
+            native_create_only: false,
         }
+    }
+    /// The bundled desktop worker must produce create-mode facts for this host.
+    /// General report decoding remains available for independent cross-host fixtures.
+    pub fn for_native_worker(expected_version: impl Into<String>) -> Self {
+        let mut report = Self::new(expected_version);
+        report.native_create_only = true;
+        report
     }
     /// Accepted item facts, retained even after a later malformed record.
     pub fn items(&self) -> &[ItemRecord] {
         &self.items
+    }
+    /// Accepted discovery facts, absent while Core is still scanning.
+    pub fn start(&self) -> Option<&StartRecord> {
+        self.start.as_ref()
     }
     /// Accepted final summary, if any.
     pub fn summary(&self) -> Option<&SummaryRecord> {
@@ -94,7 +116,7 @@ impl RunReport {
             return None;
         }
         let native = &item.destination.value()?.native;
-        let bytes = validate_path(native).ok()?;
+        let bytes = validate_native(native, MAX_COLLECTED_PATH_BYTES).ok()?;
         #[cfg(unix)]
         let path: std::path::PathBuf = {
             use std::os::unix::ffi::OsStringExt;
@@ -154,10 +176,11 @@ impl RunReport {
                 if start.protocol != 1
                     || start.program != PROGRAM_ID
                     || start.version != self.expected_version
+                    || (self.native_create_only && start.dry_run)
                 {
                     return Err(ProtocolFailure::IncompatibleHelper);
                 }
-                if start.total > 4096 {
+                if start.total as usize > MAX_COLLECTED_ITEMS {
                     return Err(ProtocolFailure::InvalidCounts);
                 }
                 self.start = Some(start);
@@ -194,7 +217,7 @@ impl RunReport {
                     c.not_processed,
                 ]
                 .iter()
-                .any(|count| *count > 4096)
+                .any(|count| *count as usize > MAX_COLLECTED_ITEMS)
                     || [c.created, c.up_to_date, c.planned, c.failed] != self.counts
                     || c.not_processed != start.total - self.counts.iter().sum::<u32>()
                     || summary.collection_complete != start.collection_complete
@@ -255,31 +278,68 @@ impl RunReport {
     }
     /// Export only structured accepted facts, never raw frames/message contents.
     pub fn technical_report(&self) -> Result<Vec<u8>, serde_json::Error> {
-        #[derive(Serialize)]
-        struct Export<'a> {
-            start: &'a Option<StartRecord>,
-            items: &'a [ItemRecord],
-            summary: &'a Option<SummaryRecord>,
-            protocol_failure: Option<ProtocolFailure>,
-        }
-        serde_json::to_vec_pretty(&Export {
+        serde_json::to_vec_pretty(&self.export_record())
+    }
+    fn export_record(&self) -> TechnicalReport<'_> {
+        TechnicalReport {
             start: &self.start,
             items: &self.items,
             summary: &self.summary,
             protocol_failure: self.failure,
+        }
+    }
+    #[cfg(target_os = "macos")]
+    pub(crate) fn technical_report_with_lifecycle(
+        &self,
+        run_id: crate::RunId,
+        completion: &crate::WorkerCompletion,
+    ) -> Result<Vec<u8>, serde_json::Error> {
+        #[derive(Serialize)]
+        struct Export<'a> {
+            run_id: crate::RunId,
+            #[serde(flatten)]
+            report: TechnicalReport<'a>,
+            worker: &'a crate::WorkerCompletion,
+        }
+        serde_json::to_vec_pretty(&Export {
+            run_id,
+            report: self.export_record(),
+            worker: completion,
         })
     }
     fn admit_path(&mut self, path: &ReportPathRecord) -> Result<(), ProtocolFailure> {
-        let native = validate_path(&path.native)?;
-        let display = path.display.len();
-        if display > 3 * 32768
-            || display > 3 * 8_388_608 - self.display_bytes
-            || native.len() > 8_388_608 - self.native_bytes
+        if self.native_create_only
+            && path.native.encoding
+                != if cfg!(windows) {
+                    PathEncoding::WindowsUtf16Le
+                } else {
+                    PathEncoding::UnixBytes
+                }
         {
+            return Err(ProtocolFailure::IncompatibleHelper);
+        }
+        let native = validate_native(&path.native, MAX_COLLECTED_PATH_BYTES)?;
+        // Original Unix display bytes cannot be recovered from lossy text:
+        // each U+FFFD might represent one bad byte or a literal three bytes.
+        // Windows replacement preserves the exact original UTF16-unit count.
+        // This necessary floor never rejects valid Core producer accounting;
+        // it also bounds retained native8MiB/displayUTF8 at most24MiB.
+        let display_floor = match path.native.encoding {
+            PathEncoding::UnixBytes => {
+                path.display.len()
+                    - 2 * path
+                        .display
+                        .chars()
+                        .filter(|character| *character == '\u{fffd}')
+                        .count()
+            }
+            PathEncoding::WindowsUtf16Le => path.display.encode_utf16().count() * 2,
+        };
+        let charge = native.len().max(display_floor);
+        if charge > MAX_COLLECTED_PATH_BYTES - self.path_charge_floor {
             return Err(ProtocolFailure::ResourceLimit);
         }
-        self.native_bytes += native.len();
-        self.display_bytes += display;
+        self.path_charge_floor += charge;
         Ok(())
     }
     fn validate_item(&mut self, item: &ItemRecord, dry_run: bool) -> Result<(), ProtocolFailure> {
@@ -296,12 +356,12 @@ impl RunReport {
         }
         let source = item.source_bytes.value().copied();
         let copy = item.copy_bytes.value().copied();
-        if item.removed.len() > 10_000
-            || item.removed.len() > 20_000 - self.removed
+        if item.removed.len() > MAX_MESSAGE_PARTS
+            || item.removed.len() > MAX_REMOVAL_ENTRIES - self.removed
             || item.stripped_fields.len() > 9
             || item.stripped_fields.iter().any(|field| field.len() > 128)
-            || source.is_some_and(|bytes| bytes > 268_435_456)
-            || copy.is_some_and(|bytes| bytes > 268_435_456)
+            || source.is_some_and(|bytes| bytes > MAX_MESSAGE_BYTES as u64)
+            || copy.is_some_and(|bytes| bytes > MAX_MESSAGE_BYTES as u64)
             || source.is_some() != copy.is_some()
             || copy.zip(source).is_some_and(|(copy, source)| copy > source)
         {
@@ -316,7 +376,7 @@ impl RunReport {
                     .filename
                     .value()
                     .is_some_and(|name| name.chars().count() > 255)
-                || part.bytes > 268_435_456
+                || part.bytes > MAX_MESSAGE_BYTES as u64
             {
                 return Err(ProtocolFailure::MalformedRecord);
             }
@@ -385,12 +445,7 @@ impl RunReport {
         }
     }
 }
-fn validate_path(path: &NativePathRecord) -> Result<Vec<u8>, ProtocolFailure> {
-    let maximum = if path.encoding == PathEncoding::UnixBytes {
-        32768usize
-    } else {
-        65536
-    };
+fn validate_native(path: &NativePathRecord, maximum: usize) -> Result<Vec<u8>, ProtocolFailure> {
     if path.base64.len() > maximum.div_ceil(3) * 4 {
         return Err(ProtocolFailure::ResourceLimit);
     }
@@ -468,7 +523,11 @@ fn validate_publication(publication: &PublicationRecord) -> Result<(), ProtocolF
     validate_namespace(&publication.namespace_sync)?;
     let cleanup = &publication.cleanup;
     if let Some(name) = cleanup.residual_name.value() {
-        let bytes = validate_path(name)?;
+        let maximum = match name.encoding {
+            PathEncoding::UnixBytes => 255,
+            PathEncoding::WindowsUtf16Le => 510,
+        };
+        let bytes = validate_native(name, maximum)?;
         if !matches!(cleanup.state, Cleanup::Residual | Cleanup::Unknown)
             || bytes.is_empty()
             || match name.encoding {

@@ -15,8 +15,8 @@ The editable SVG drawings in `artwork-svg/` supply the desktop artwork. Slint mu
 
 `artwork-svg/` holds supplied SVG reference exports of the drawing geometry, for design review and documentation:
 - **Folders:** `regular/` covers 24 pt and up, `compact/` covers below 24 pt, and each has `light`, `dark`, `hc-light` and `hc-dark`.
-- **Regenerating:** The supplied reference generator is preserved in `ARTWORK-GEOMETRY.md`. It is not a runtime or build input. Update reference drawings deliberately when changing production geometry.
-- **Not runtime:** the application does not load these files.
+- **Geometry:** `ARTWORK-GEOMETRY.md` describes the source role and required native visual checks. Update drawings deliberately when changing production geometry.
+- **Embedding:** Slint embeds these SVG inputs in the executable; it does not load external copies at runtime.
 
 ### Geometry
 

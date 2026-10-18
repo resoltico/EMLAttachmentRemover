@@ -230,6 +230,11 @@ mod tests {
         let observed = read.observe_child(name).unwrap().file.unwrap();
         assert_eq!(observed.identity, identity);
         assert_eq!(observed.size, bytes.len() as u64);
+        // A separate metadata file object can coexist with the candidate's
+        // zero sharing while retaining identity across candidate release.
+        let identity_pin = read.pin_child(name).unwrap();
+        assert_eq!(identity_pin.observation().identity, identity);
+        assert_eq!(identity_pin.observation().kind, crate::EntryKind::File);
         let mut actual = [0; 128];
         let mut count = 0;
         loop {
@@ -259,6 +264,8 @@ mod tests {
         assert!(cleanup.native_code.is_none());
         assert_eq!(std::fs::read(&final_path).unwrap(), bytes);
         assert_eq!(read.observe_child(name).unwrap().identity, identity);
+        assert_eq!(identity_pin.observation().identity, identity);
+        identity_pin.close().unwrap();
         assert_eq!(std::fs::read_dir(fixture.path()).unwrap().count(), 1);
         drop(write);
         drop(read);

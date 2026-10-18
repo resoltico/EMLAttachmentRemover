@@ -161,7 +161,13 @@ fn private_worker_identity_and_malformed_input_do_not_invoke_another_product() {
     assert!(version.status.success());
     assert_eq!(
         version.stdout,
-        format!("eml-worker {}\n", env!("CARGO_PKG_VERSION")).as_bytes()
+        format!(
+            "eml-worker {} {}-{}\n",
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::ARCH,
+            std::env::consts::OS
+        )
+        .as_bytes()
     );
     for (args, input) in [
         (&[][..], b"{}".as_slice()),

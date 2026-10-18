@@ -77,24 +77,87 @@ counts, identity kind, index order, partial tails and actual-exit disagreement,
 while preserving earlier accepted outcomes and structured technical exports.
 These are library checks, separate from actual app/GUI qualification.
 
-Five native eml-macos fixtures passed locally: stdio/EOF/normal reap; Interrupt
-while waiting for input; live-child Kill; deliberately blocked spawning-thread
-SIGINT mask reset; and failed spawn with no child authority. Post-reap signals
-were refused. Immediate capability retention and visible bounded failure cleanup
-are source-reviewed. These fixtures do not establish the complete production
-supervisor, inherited-descriptor or GUI lifecycle boundaries.
+The production supervisor now owns private identity and processing launches,
+concurrent bounded stdout/stderr/control drains, request feeding, checked pipe
+release, and actual reap observations on independent threads. It retains child
+and endpoint ownership through parser/backpressure failures and panics; unresolved
+actors close admission and stay visibly pending. Control uses launch-bound
+positive-PID authority, private readiness/first-interrupt observations, immutable
+run identities and fixed confirmed-Quit escalation. Stop intent never rewrites
+accepted Core outcomes or establishes actual signal delivery by itself.
 
-Two actual private-worker process tests exercise GUI request transport directly
-to core: byte-exact Created/UpToDate with unchanged source, plus worker version,
-malformed input and private-argument refusal. Held-open/exact/oversize stdin,
-first/second signals and closed-output paths still need dedicated worker evidence.
+The local integrated workspace command passed417 tests in39 positive plus eight
+expected empty result summaries,
+with zero failures, ignores or filters, using Rust1.99.0, deployment15.0 and the
+local SDK27. The command enabled the native Mac child/worker and GUI fixture
+features. Separate strict Clippy checks include the actual GUI profile and Slint
+compiler warnings as errors. Logs remain under the owned worktree's target
+folder; these are local source-checkpoint observations, not six-platform or
+archive qualification. Later source changes require their applicable checks again.
 
-The initial Slint1.18.1 Winit/software/system-font/accessibility screen builds
-natively. An explicit ARM minimum15 build has thin ARM64 Mach-O, min15.0/SDK27.0.
-No window was launched locally and no saved owner preference was changed.
-Software rendering is an initial implementation profile, not an owner requirement
-or a claim about actual screen-reader/international-text behavior. Screen control
-wiring and the required macOS system integrations remain incomplete.
+The repository entry-point check passed every section except macos-desktop,
+which explicitly failed because required Xcode26.3 is absent locally. Its separate
+default-feature test discovery/execution agreed on395 passing cases,35 positive
+plus nine empty summaries. Compiler/format/check/Clippy/docs, all selected
+workspace/fuzz/tool dependency audits, actionlint1.7.12, shellcheck0.11.0 and
+all-six-target notice freshness passed. Shellcheck found zero tracked shell
+scripts; that is a scoped empty inventory, not script behavior evidence.
+The enabled desktop/native-fixture profile separately passed full workspace
+Clippy with Rust and Slint warnings treated as errors. CLI notice regeneration
+left its tracked legal materials unchanged; enabled GUI/worker legal review
+still remains separate and incomplete.
+
+Seven actual native descriptor/owner cases cover spawn/stdin/stdout/stderr,
+closed standard descriptors, signal-mask reset, terminal signal revocation,
+full nonblocking control pipes and broken-pipe behavior without SIGPIPE exit.
+An executed negative control removing only the control pipe's Darwin
+F_SETNOSIGPIPE protection caused actual SIGPIPE failure; restored code passed.
+Real private-worker checks cover Core/golden execution, readiness, held-input
+Stop, first-interrupt observation, the same handler's second interrupt and
+preserved earlier outcomes. A separate unexpected-pre-readiness-stdout negative
+control demonstrated rejection. Accelerated policy-clock Quit tests establish
+state transitions, not elapsed ten/twelve-second physical deadlines.
+
+Explicit report export retains the exact run's accepted facts and terminal
+worker exit/signal, first lifecycle failure, diagnostics and uncertainty. It uses
+held eml-fs staging/no-replace/sync/cleanup primitives, keeps exact final-file
+identity alive across candidate cleanup, and checks final bytes/address. Actual
+worker-backed tests cover successful export, original/report collision refusal,
+pre-staging cancellation and failed-worker lifecycle export. A busy report lock
+fails promptly rather than blocking export cancellation behind an inspector.
+Export cancellation is separate from Core Stop and does not roll back an
+attempted edge. Native I/O may remain pending; frontend ownership must last
+through actual task/buffer disposal and join.
+
+The connected Slint1.18.1 frontend supplies selection/destination sheets, bounded
+run/item/part views, retained-report controls, confirmation, technical disclosure
+and protected export over the shared session. Supplied SVGs are embedded unchanged;
+necessary native integration reads appearance/contrast without changing it.
+Actual local development-window observations exercised message selection, a real
+Core-backed run, unchanged original and hand-reviewed golden bytes, explicit
+report save, part metadata, success artwork and idle Quit cancel/confirmation.
+The directly owned detail-view process returned exit0 after confirmed Quit.
+These windows preceded subsequent layout refinements; current physical-frame,
+compact layout, other appearance and complete accessibility checks remain open.
+Temporary observation bundle identifiers isolated native panel/window saved
+preferences; their two saved domains were explicitly removed after zero running
+instances were observed. No product destination preference was changed by a
+user choice. This is not a before/after proof for all incidental system UI state.
+
+The actual Foundation preference checks pass both parallel owned-suite cases:
+argument String overrides, session-only later choices, persisted native-byte
+Strings, non-String refusal, no-write reads and fresh-process readback. Exclusive
+temporary directories allocate suite namespaces. Logical zero saved keys is the
+cleanup oracle; an OS-retained empty dictionary/cache is not a remaining value.
+They do not establish the remaining complete app/native2 UI preference gate.
+
+Final Core publication verification now keeps object identity alive. Unix
+verification runs while the candidate remains held. Windows transfers this
+lifetime to a separate metadata-only file object before releasing its strict
+zero-data-sharing candidate, then performs full readback and address checks.
+The existing native Windows sharing test now also retains that metadata pin;
+both native CPUs still must execute these changed assertions. No Windows pass
+is inferred from the local Mac checks.
 
 ## Tools, notices and scoped native evidence
 

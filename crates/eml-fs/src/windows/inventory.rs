@@ -34,7 +34,30 @@ pub struct BoundDirectory {
     pub(super) file: File,
     pub(super) identity: Identity,
 }
+/// A metadata-only native object lifetime, without data or namespace mutation
+/// rights. It prevents identity reuse while a strict candidate is released.
+pub struct EntryPin {
+    file: File,
+    observation: EntryObservation,
+}
+impl EntryPin {
+    /// Native facts captured while opening this still-held object.
+    pub fn observation(&self) -> EntryObservation {
+        self.observation
+    }
+    /// Release this exact metadata owner with a checked native close.
+    pub fn close(self) -> io::Result<()> {
+        handle::close(self.file)
+    }
+}
 impl BoundDirectory {
+    /// Retain one existing no-follow child's metadata handle. This grants no
+    /// creation-address protection and does not qualify the requested path.
+    pub fn pin_child(&self, name: &OsStr) -> io::Result<EntryPin> {
+        let file = child::observe(&self.file, name)?;
+        let observation = handle::entry_observation(&file)?;
+        Ok(EntryPin { file, observation })
+    }
     /// Observe one no-follow child, mapping only structured native NAME_NOT_FOUND
     /// from its existing-only lookup to point absence. All other errors survive.
     /// None is not a parent/address qualification or permission to create.

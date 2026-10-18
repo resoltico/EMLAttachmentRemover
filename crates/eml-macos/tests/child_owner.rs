@@ -1,74 +1,24 @@
 //! Actual owned Darwin children; no windows, preferences or unrelated processes.
 #![cfg(all(target_os = "macos", feature = "native-fixtures"))]
-use eml_macos::{ChildExit, ChildState, OwnedChild, StopSignal, spawn};
+use eml_macos::{ChildExit, ChildState, StopSignal, spawn};
 use std::{
     io::{Read, Write},
     path::Path,
     sync::mpsc,
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 const CHILD: &str = env!("CARGO_BIN_EXE_macos-child-observation");
-struct Settle(OwnedChild);
-impl Drop for Settle {
-    fn drop(&mut self) {
-        match self.0.poll() {
-            Ok(ChildState::Exited(_)) => return,
-            Err(error) => unconfirmed(&format!("initial cleanup poll: {error}")),
-            Ok(ChildState::Running) => {}
-        }
-        if let Err(error) = self.0.signal(StopSignal::Kill) {
-            eprintln!(
-                "Owned native fixture cleanup Kill failed: {error}; still checking terminal state"
-            );
-        }
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline {
-            match self.0.poll() {
-                Ok(ChildState::Exited(_)) => return,
-                Err(error) => unconfirmed(&format!("cleanup poll: {error}")),
-                Ok(ChildState::Running) => thread::sleep(Duration::from_millis(5)),
-            }
-        }
-        unconfirmed("cleanup allowance exhausted");
-    }
-}
-fn unconfirmed(reason: &str) -> ! {
-    eprintln!(
-        "Owned native fixture cleanup is unconfirmed ({reason}); any earlier failure remains; abort later tests and retain owned resources"
-    );
-    std::process::exit(1);
-}
-fn terminal(child: &OwnedChild) -> ChildExit {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        match child.poll().unwrap() {
-            ChildState::Exited(status) => return status,
-            ChildState::Running => {}
-        }
-        assert!(
-            Instant::now() < deadline,
-            "Owned child terminal settlement timed out"
-        );
-        thread::sleep(Duration::from_millis(5));
-    }
-}
-fn drain(mut reader: impl Read + Send + 'static) -> mpsc::Receiver<Vec<u8>> {
-    let (send, receive) = mpsc::sync_channel(1);
-    thread::spawn(move || {
-        let mut bytes = Vec::new();
-        reader.by_ref().take(65537).read_to_end(&mut bytes).unwrap();
-        assert!(bytes.len() <= 65536);
-        drop(send.send(bytes));
-    });
-    receive
-}
+#[path = "../../../tests/support/native_child.rs"]
+mod native_child;
+use native_child::{Settle, drain, terminal};
 #[test]
 fn native_spawn_pipes_eof_exit_and_signal_revocation_are_actual() {
     let result = spawn(Path::new(CHILD), &[]).unwrap();
     let child = result.child.map(Settle);
     assert!(result.issues.is_empty(), "{:?}", result.issues);
     let child = child.unwrap();
+    assert!(!child.0.authority_revoked().unwrap());
     let output = drain(result.pipes.output);
     let errors = drain(result.pipes.errors);
     let mut input = result.pipes.input;
@@ -90,6 +40,7 @@ fn native_spawn_pipes_eof_exit_and_signal_revocation_are_actual() {
         b"owned fixture reached EOF\n"
     );
     assert!(!child.0.signal(StopSignal::Kill).unwrap());
+    assert!(child.0.authority_revoked().unwrap());
     assert!(!child.0.signal(StopSignal::Interrupt).unwrap());
 }
 #[test]
@@ -233,4 +184,99 @@ fn failed_spawn_retains_no_child_authority_and_parent_endpoints_can_close() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn closed_standard_descriptors_do_not_alias_control_or_stdio_spawn_sources() {
+    use std::{ffi::OsStr, time::Instant};
+    let observation = spawn(Path::new(CHILD), &[OsStr::new("--closed-stdio")]).unwrap();
+    let child = observation.child.map(Settle).unwrap();
+    assert!(observation.issues.is_empty(), "{:?}", observation.issues);
+    let output = drain(observation.pipes.output);
+    let errors = drain(observation.pipes.errors);
+    eml_macos::close_writer(observation.pipes.input).unwrap();
+    // The inner fixture has its own five-second bounded cleanup. Give it time
+    // to settle its exact owned child before the outer cleanup allowance.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let exit = loop {
+        if let ChildState::Exited(exit) = child.0.poll().unwrap() {
+            break exit;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Owned descriptor fixture did not settle"
+        );
+        thread::sleep(Duration::from_millis(5));
+    };
+    let bytes = output.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert_eq!(
+        exit,
+        ChildExit {
+            code: Some(0),
+            signal: None
+        },
+        "{}",
+        String::from_utf8_lossy(&bytes)
+    );
+    assert_eq!(bytes, b"closed-stdio-control-ok\n");
+    assert!(
+        errors
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .is_empty()
+    );
+    assert!(child.0.authority_revoked().unwrap());
+}
+
+#[test]
+fn private_control_full_and_broken_pipes_are_nonblocking_errors_without_sigpipe_exit() {
+    use std::ffi::OsStr;
+    for mode in ["--full-control", "--broken-control"] {
+        let observation =
+            eml_macos::spawn_with_control_pipe(Path::new(CHILD), &[OsStr::new(mode)]).unwrap();
+        let child = observation.child.map(Settle).unwrap();
+        assert!(observation.issues.is_empty(), "{:?}", observation.issues);
+        let output = drain(observation.pipes.output);
+        let errors = drain(observation.pipes.errors);
+        let mut input = observation.pipes.input;
+        let control = observation.pipes.control.unwrap();
+        let control = if mode == "--broken-control" {
+            eml_macos::close_reader(control).unwrap();
+            input.write_all(&[1]).unwrap();
+            None
+        } else {
+            Some(control)
+        };
+        eml_macos::close_writer(input).unwrap();
+        let exit = terminal(&child.0);
+        let bytes = output.recv_timeout(Duration::from_secs(2)).unwrap();
+        let diagnostics = errors.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            exit,
+            ChildExit {
+                code: Some(0),
+                signal: None
+            },
+            "{mode}: {}",
+            String::from_utf8_lossy(&diagnostics)
+        );
+        assert!(diagnostics.is_empty());
+        if let Some(mut control) = control {
+            let mut received = Vec::new();
+            (&mut control)
+                .take(1024 * 1024 + 1)
+                .read_to_end(&mut received)
+                .unwrap();
+            assert!(!received.is_empty() && received.len() <= 1024 * 1024);
+            assert!(received.iter().all(|byte| *byte == b'R'));
+            assert_eq!(
+                bytes,
+                format!("full-control:{}\n", received.len()).as_bytes()
+            );
+            eml_macos::close_reader(control).unwrap();
+        } else {
+            assert_eq!(bytes, b"broken-control-survived\n");
+        }
+        assert!(child.0.authority_revoked().unwrap());
+    }
 }

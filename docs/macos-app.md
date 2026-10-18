@@ -30,11 +30,24 @@ operation path; explicit report export contains accepted structured facts rather
 than raw protocol frames or message contents. Native child ownership is described
 in [process ownership](macos-process-ownership.md).
 
-Current controls are inactive while supervisor and system integration are wired.
+The controller connects message/folder/destination sheets, immutable queued runs,
+retained reports, cooperative Stop, confirmed Force Stop and Quit, and explicit
+protected report export. Export captures the exact run's accepted facts and
+terminal worker lifecycle. Its cancellation has separate intent and never rolls
+back attempted publication; its reservation lasts through task/buffer disposal
+and join. Received results and removed-part details are paged in bounded views.
+The event loop remains running when windows are hidden. Minimal application
+hooks extend only absent lifecycle methods on Winit's verified delegate; native
+Quit is deferred to the controller and reopen restores the main window. Actual
+native GUI lifecycle acceptance remains required.
 Required behavior includes file/folder selection, native URL batch ingress,
 Services/drop/Open With, destination preferences with session-only override,
 serial queued runs, two retained reports, Stop/Force Stop, close/hide/reopen,
-confirmed bounded Quit, exact Finder reveal and export/failure handling. None is
-qualified by the initial screen build. `cargo xtask build-macos-app` currently
+confirmed bounded Quit, exact Finder reveal and export/failure handling. Local
+development-window observations cover message selection, a real core-backed run
+with independent golden/original checks, explicit report save, metadata and
+technical disclosure, supplied SVG artwork, and idle Quit confirmation/cancel.
+Those observations do not qualify pinned/native2 or the remaining system/GUI
+paths. `cargo xtask build-macos-app` currently
 retains native Rust release executable/profile/ad-hoc-signature evidence and
 fails explicitly because complete bundle/legal/archive/GUI gates remain open.

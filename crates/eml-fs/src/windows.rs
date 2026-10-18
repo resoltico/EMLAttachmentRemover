@@ -11,7 +11,7 @@ mod status;
 mod writable;
 pub use candidate::ReadyCandidate;
 pub use file::BoundFile;
-pub use inventory::{BoundDirectory, DirectoryEntries, observe_selected};
+pub use inventory::{BoundDirectory, DirectoryEntries, EntryPin, observe_selected};
 pub use publication::{PublicationCandidate, PublishAttempt};
 pub use root::{PinnedRoot, RootBindingError};
 pub use status::NtStatusError;

@@ -5,8 +5,13 @@ use serde::Serialize;
 use std::{collections::VecDeque, path::PathBuf};
 
 /// Session-local identity; never derived from a displayed filename or queue index.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct RunId(u64);
+impl std::fmt::Display for RunId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 /// Application admission failure; no filesystem changes have been attempted.
 #[derive(Debug)]
@@ -154,8 +159,10 @@ impl RunQueue {
         self.reports.len() != before
     }
     /// Remove one waiting selection without affecting active or completed work.
-    pub fn remove_waiting(&mut self, id: RunId) {
+    pub fn remove_waiting(&mut self, id: RunId) -> bool {
+        let before = self.waiting.len();
         self.waiting.retain(|entry| entry.0 != id);
+        self.waiting.len() != before
     }
     /// Cancel queued work, retaining active work and completed reports.
     pub fn cancel_waiting(&mut self) {
@@ -164,6 +171,13 @@ impl RunQueue {
     /// Number of waiting requests, excluding the active run.
     pub fn waiting(&self) -> usize {
         self.waiting.len()
+    }
+    /// Immutable waiting selections in admission order. Core discovery counts
+    /// remain unknown until execution; these entries are Not started.
+    pub fn waiting_requests(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (RunId, &RequestSnapshot)> + ExactSizeIterator {
+        self.waiting.iter().map(|(id, request)| (*id, request))
     }
     /// Reserved reports, including the active run.
     pub fn reports(&self) -> &[RunId] {

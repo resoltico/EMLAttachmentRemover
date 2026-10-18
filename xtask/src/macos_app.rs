@@ -33,7 +33,8 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
                 "--message-format=json",
             ])
             .env("CARGO_TARGET_DIR", &target_directory)
-            .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text);
+            .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text)
+            .env("SLINT_COMPILER_DENY_WARNINGS", "1");
         let log = out.join("desktop-build.jsonl");
         let observed =
             controller()?.run_separate_output(compile, &log, Duration::from_secs(1200))?;

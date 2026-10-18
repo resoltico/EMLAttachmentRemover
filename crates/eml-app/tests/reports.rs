@@ -195,3 +195,86 @@ fn a_framing_failure_is_observable_independently_of_a_protocol_failure() {
     let error = decode(b"\n", 0, 0).err().unwrap();
     assert!(matches!(error, Failure::Framing(FrameError::EmptyRecord)));
 }
+
+fn paths_item(
+    source: (&str, &[u8], &str),
+    destination: (&str, &[u8], &str),
+) -> Vec<serde_json::Value> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let mut frames: Vec<serde_json::Value> = String::from_utf8(fixture("prepublication-failure"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    for (key, (display, raw, encoding)) in [("source", source), ("destination", destination)] {
+        frames[1][key] = serde_json::json!({"display":display,"native":{"encoding":encoding,"base64":STANDARD.encode(raw)}});
+    }
+    frames
+}
+fn accept_item(
+    frames: &[serde_json::Value],
+    mut report: RunReport,
+) -> Result<RunReport, ProtocolFailure> {
+    for frame in &frames[..2] {
+        report.accept_frame(&serde_json::to_vec(frame).unwrap())?;
+    }
+    Ok(report)
+}
+#[test]
+fn report_paths_accept_derived_lengths_and_lossy_native_representations() {
+    let derived = vec![b'a'; 32_769];
+    let frames = paths_item(("a", &derived, "unix-bytes"), ("b", b"b", "unix-bytes"));
+    assert!(accept_item(&frames, RunReport::new("test-version")).is_ok());
+    // A replacement scalar can represent a single invalid byte or its literal
+    // three-byte UTF8 spelling. Both are valid producer observations.
+    for raw in [b"\xff".as_slice(), "\u{fffd}".as_bytes()] {
+        let frames = paths_item(("\u{fffd}", raw, "unix-bytes"), ("b", b"b", "unix-bytes"));
+        assert!(accept_item(&frames, RunReport::new("test-version")).is_ok());
+    }
+    let frames = paths_item(
+        ("\u{fffd}", &[0, 0xd8], "windows-utf16le"),
+        ("b", &[b'b', 0], "windows-utf16le"),
+    );
+    assert!(accept_item(&frames, RunReport::new("test-version")).is_ok());
+}
+#[test]
+fn report_path_budget_charges_each_operand_maximum_at_exact_boundary() {
+    const LIMIT: usize = 8 * 1024 * 1024;
+    // One native-heavy operand and one display-heavy operand: summing separate
+    // native/display totals would incorrectly admit this one-byte overflow.
+    let native = vec![b'a'; LIMIT / 2];
+    for (extra, expected) in [(0, true), (1, false)] {
+        let display = "b".repeat(LIMIT / 2 + extra);
+        let frames = paths_item(("a", &native, "unix-bytes"), (&display, b"b", "unix-bytes"));
+        let result = accept_item(&frames, RunReport::new("test-version"));
+        assert_eq!(result.is_ok(), expected);
+        if !expected {
+            assert!(matches!(result, Err(ProtocolFailure::ResourceLimit)));
+        }
+    }
+}
+#[test]
+fn desktop_worker_rejects_dry_run_and_foreign_native_operands() {
+    let dry: serde_json::Value = serde_json::from_slice(
+        fixture("planned-create-unix")
+            .split(|byte| *byte == b'\n')
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        RunReport::for_native_worker("test-version")
+            .accept_frame(&serde_json::to_vec(&dry).unwrap()),
+        Err(ProtocolFailure::IncompatibleHelper)
+    );
+    let foreign = if cfg!(windows) {
+        ("unix-bytes", b"a".as_slice())
+    } else {
+        ("windows-utf16le", b"a\0".as_slice())
+    };
+    let frames = paths_item(("a", foreign.1, foreign.0), ("b", foreign.1, foreign.0));
+    assert!(matches!(
+        accept_item(&frames, RunReport::for_native_worker("test-version")),
+        Err(ProtocolFailure::IncompatibleHelper)
+    ));
+}

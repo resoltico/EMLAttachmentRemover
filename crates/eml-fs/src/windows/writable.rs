@@ -174,6 +174,11 @@ impl WritableDirectory {
     ) -> io::Result<Option<crate::EntryObservation>> {
         self.0.observe_child_if_present(name)
     }
+    /// Retain existing child identity across release of a strict candidate.
+    /// This metadata-only handle grants no data or namespace mutation rights.
+    pub fn pin_child(&self, name: &OsStr) -> io::Result<super::EntryPin> {
+        self.0.pin_child(name)
+    }
     /// Open one existing ordinary writable child relative to this held parent.
     /// Refuse a different earlier observed full identity; never creates or follows
     /// a reparse point, changes metadata, or supplies ancestry/address qualification.

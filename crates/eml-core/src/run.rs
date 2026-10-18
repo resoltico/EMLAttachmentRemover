@@ -1135,6 +1135,31 @@ fn reconcile_held_effect(
         state
     }
 }
+fn record_publication_address(
+    result: Result<(), OperationFailure>,
+    state: &mut eml_fs::PublicationState,
+    error: &mut Option<OperationFailure>,
+) -> AddressState {
+    match result {
+        Ok(()) => {
+            if *state == eml_fs::PublicationState::Unknown {
+                *state = eml_fs::PublicationState::Published;
+            }
+            AddressState::Verified
+        }
+        Err(failure) => {
+            let address = if failure.code() == ErrorCode::AddressChanged {
+                AddressState::Changed
+            } else {
+                AddressState::Unknown
+            };
+            if error.is_none() {
+                *error = Some(failure);
+            }
+            address
+        }
+    }
+}
 fn verify_published_address(
     plan: &DestinationPlan<'_>,
     index: usize,
@@ -1436,6 +1461,52 @@ fn publish_item<'a>(
             error = Some(failure);
         }
     }
+    // Final identity observations must happen while the candidate still pins
+    // the object. Closing it first would allow a removed identity to be reused.
+    // Once the edge succeeded or may have succeeded, no user stop rolls it back.
+    let mut address = AddressState::Unknown;
+    #[cfg(unix)]
+    if state != eml_fs::PublicationState::NotPublished {
+        address = record_publication_address(
+            verify_published_address(plan, index, &binding, identity, source, &mut confirmed),
+            &mut state,
+            &mut error,
+        );
+    }
+    // Windows intentionally denies data sharing on the candidate. A distinct
+    // metadata file object holds its identity across release without retaining
+    // that data-sharing restriction or allowing the numeric identity to recycle.
+    #[cfg(windows)]
+    let identity_pin = if state != eml_fs::PublicationState::NotPublished {
+        match binding.directory().pin_child(info.basename()) {
+            Ok(pin) => {
+                let observed = pin.observation();
+                if observed.identity == identity && observed.kind == EntryKind::File {
+                    confirmed = true;
+                } else if error.is_none() {
+                    error = Some(OperationFailure::new(
+                        ErrorCode::AddressChanged,
+                        ErrorPhase::Address,
+                        "Published final name changed before identity could be retained",
+                    ));
+                }
+                Some(pin)
+            }
+            Err(native) => {
+                if error.is_none() {
+                    error = Some(OperationFailure::io(
+                        ErrorCode::AddressUnverified,
+                        ErrorPhase::Address,
+                        "Published identity could not be retained across candidate release",
+                        native,
+                    ));
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
     #[cfg(unix)]
     let cleanup = candidate.cleanup();
     #[cfg(windows)]
@@ -1474,23 +1545,25 @@ fn publish_item<'a>(
             "Owned staging cleanup or candidate release did not complete",
         ));
     }
-    // Once the edge succeeded or may have succeeded, no user stop rolls it back.
-    // Keep the full binding alive through close, final reopen and address checks.
-    let mut address = AddressState::Unknown;
-    match verify_published_address(plan, index, &binding, identity, source, &mut confirmed) {
-        Ok(()) => {
-            address = AddressState::Verified;
-            if state == eml_fs::PublicationState::Unknown {
-                state = eml_fs::PublicationState::Published;
-            }
+    #[cfg(windows)]
+    if let Some(pin) = identity_pin {
+        let observed = pin.observation();
+        if observed.identity == identity && observed.kind == EntryKind::File {
+            address = record_publication_address(
+                verify_published_address(plan, index, &binding, identity, source, &mut confirmed),
+                &mut state,
+                &mut error,
+            );
         }
-        Err(failure) => {
-            if failure.code() == ErrorCode::AddressChanged {
-                address = AddressState::Changed;
-            }
-            if error.is_none() {
-                error = Some(failure);
-            }
+        if let Err(native) = pin.close()
+            && error.is_none()
+        {
+            error = Some(OperationFailure::io(
+                ErrorCode::CleanupFailed,
+                ErrorPhase::Cleanup,
+                "Final identity metadata handle could not be released",
+                native,
+            ));
         }
     }
     if confirmed {

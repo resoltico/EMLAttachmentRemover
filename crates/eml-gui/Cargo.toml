@@ -8,11 +8,22 @@ publish.workspace = true
 autobins = false
 
 [features]
-macos-gui = ["dep:slint", "dep:slint-build"]
+native-fixtures = []
+macos-gui = ["dep:slint", "dep:slint-build", "dep:eml-core", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation", "dep:block2", "dep:raw-window-handle", "dep:base64"]
 
 [dependencies]
 eml-app = { path = "../eml-app" }
-slint = { version = "=1.18.1", optional = true, default-features = false, features = ["std", "compat-1-18", "backend-winit", "renderer-software", "accessibility"] }
+eml-protocol = { path = "../eml-protocol" }
+slint = { version = "=1.18.1", optional = true, default-features = false, features = ["std", "compat-1-18", "backend-winit", "renderer-software", "accessibility", "raw-window-handle-06", "unstable-winit-030"] }
+eml-core = { path = "../eml-core", optional = true }
+base64 = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6.5", optional = true }
+objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "block2", "NSApplication", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSView", "NSResponder", "NSAppearance", "NSWorkspace", "NSAccessibility"] }
+objc2-foundation = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSArray", "NSData", "NSString", "NSURL", "NSValue", "NSObject", "NSUserDefaults", "NSDictionary"] }
+block2 = { version = "0.6.2", optional = true }
+raw-window-handle = { version = "0.6.2", optional = true }
 
 [build-dependencies]
 slint-build = { version = "=1.18.1", optional = true, default-features = false, features = ["compat-1-18"] }
@@ -22,7 +33,16 @@ name = "EMLAttachmentRemover"
 path = "src/main.rs"
 required-features = ["macos-gui"]
 
+[[bin]]
+name = "macos-preference-observation"
+path = "tests/support/preference_observation.rs"
+required-features = ["macos-gui", "native-fixtures"]
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+eml-macos = { path = "../eml-macos" }
+tempfile.workspace = true
+
 [lints.rust]
-# Only the generated Slint module admits its generated unsafe vtables.
+# Unsafe is scoped to generated Slint vtables and necessary native system bridges.
 unsafe_code = "deny"
 missing_docs = "warn"

@@ -7,6 +7,22 @@ mod view {
     slint::include_modules!();
 }
 use slint::ComponentHandle;
+#[allow(
+    unsafe_code,
+    reason = "Necessary absent-only native application lifecycle methods"
+)]
+mod application;
+mod controller;
+#[allow(
+    unsafe_code,
+    reason = "Necessary typed AppKit system dialogs and native URL/raw-window boundary"
+)]
+mod native;
+#[allow(
+    unsafe_code,
+    reason = "Typed Foundation String preference and immutable argument-domain constant"
+)]
+mod preferences;
 fn main() -> std::process::ExitCode {
     match start() {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -24,9 +40,10 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
         .backend_name("winit".into())
         .renderer_name("software".into())
         .select()?;
+    let lifecycle = application::ApplicationHooks::install()?;
     let window = view::MainWindow::new()?;
     let about = view::AboutWindow::new()?;
-    about.set_identity(format!("EML Attachment Remover {}\nSoftware: MPL-2.0\nSlint: Royalty-free Desktop, Mobile, and Web Applications License2.0\nLocal build; native product qualification is incomplete.",env!("CARGO_PKG_VERSION")).into());
+    about.set_identity(format!("EML Attachment Remover {}\nSoftware: MPL-2.0\nSlint: Royalty-free Desktop, Mobile, and Web Applications License 2.0\nLocal build; native product qualification is incomplete.",env!("CARGO_PKG_VERSION")).into());
     let weak = about.as_weak();
     window.on_about_requested(move || {
         if let Some(about) = weak.upgrade()
@@ -35,6 +52,119 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("About window: {error}");
         }
     });
-    window.run()?;
+    let weak = window.as_weak();
+    let commands = std::rc::Rc::new(std::cell::RefCell::new(std::collections::VecDeque::new()));
+    let overflowed = std::rc::Rc::new(std::cell::Cell::new(false));
+    macro_rules! action {
+        ($callback:ident, $action:expr) => {{
+            let commands = std::rc::Rc::clone(&commands);
+            let overflowed = std::rc::Rc::clone(&overflowed);
+            window.$callback(move || {
+                let mut commands = commands.borrow_mut();
+                if commands.len() < 32 {
+                    commands.push_back($action);
+                } else {
+                    overflowed.set(true);
+                }
+            });
+        }};
+    }
+    use controller::Action;
+    action!(on_select_files, Action::Files);
+    action!(on_select_folder, Action::Folders);
+    action!(on_choose_destination, Action::Destination);
+    action!(on_beside_requested, Action::Beside);
+    action!(on_stop_requested, Action::Stop);
+    action!(on_force_requested, Action::Force);
+    action!(on_export_requested, Action::Export);
+    action!(on_cancel_export, Action::CancelExport);
+    action!(on_dismiss_requested, Action::Dismiss);
+    action!(on_previous_page, Action::Previous);
+    action!(on_next_page, Action::Next);
+    action!(on_previous_parts, Action::PreviousParts);
+    action!(on_next_parts, Action::NextParts);
+    action!(on_quit_requested, Action::Quit);
+    action!(on_confirm_action, Action::Confirm);
+    action!(on_cancel_confirmation, Action::CancelConfirmation);
+    let selected_commands = std::rc::Rc::clone(&commands);
+    let selected_overflowed = std::rc::Rc::clone(&overflowed);
+    window.on_select_run(move |index| {
+        if let Ok(index) = usize::try_from(index) {
+            let mut commands = selected_commands.borrow_mut();
+            if commands.len() < 32 {
+                commands.push_back(Action::Select(index));
+            } else {
+                selected_overflowed.set(true);
+            }
+        }
+    });
+    let waiting_commands = std::rc::Rc::clone(&commands);
+    let waiting_overflowed = std::rc::Rc::clone(&overflowed);
+    window.on_remove_waiting(move |index| {
+        if let Ok(index) = usize::try_from(index) {
+            let mut commands = waiting_commands.borrow_mut();
+            if commands.len() < 32 {
+                commands.push_back(Action::RemoveWaiting(index));
+            } else {
+                waiting_overflowed.set(true);
+            }
+        }
+    });
+    let item_commands = std::rc::Rc::clone(&commands);
+    let item_overflowed = std::rc::Rc::clone(&overflowed);
+    window.on_select_item(move |index| {
+        if let Ok(index) = usize::try_from(index) {
+            let mut commands = item_commands.borrow_mut();
+            if commands.len() < 32 {
+                commands.push_back(Action::Item(index));
+            } else {
+                item_overflowed.set(true);
+            }
+        }
+    });
+    let mut controller = controller::Controller::new()?;
+    let lifecycle_timer = slint::Timer::default();
+    lifecycle_timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(25),
+        move || {
+            let Some(window) = weak.upgrade() else {
+                return;
+            };
+            if overflowed.replace(false) {
+                controller.boundary_failure(
+                    "Too many pending UI actions; further processing admission is closed.",
+                );
+            }
+            let actions: Vec<_> = commands.borrow_mut().drain(..).collect();
+            for action in actions {
+                controller.action(&window, action);
+            }
+            match lifecycle.take_events() {
+                Ok(events) => {
+                    if events.reopen {
+                        if let Err(error) = window.show() {
+                            eprintln!("Reopen: {error}");
+                        } else if let Err(error) = native::restore(window.window()) {
+                            window.set_activity(error.to_string().into());
+                        }
+                    }
+                    if events.quit {
+                        controller.action(&window, Action::Quit);
+                    }
+                }
+                Err(error) => {
+                    controller.boundary_failure(error);
+                }
+            }
+            if controller.tick(&window)
+                && let Err(error) = slint::quit_event_loop()
+            {
+                controller.boundary_failure(&format!("Quit: {error}"));
+            }
+        },
+    );
+    window.show()?;
+    slint::run_event_loop_until_quit()?;
     Ok(())
 }

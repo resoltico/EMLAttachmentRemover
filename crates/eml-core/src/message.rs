@@ -218,7 +218,7 @@ impl Parser<'_, '_> {
         default: &str,
     ) -> Result<usize, PreparationError> {
         self.control.checkpoint()?;
-        if depth > 64 || self.message.nodes.len() >= 10_000 {
+        if depth > 64 || self.message.nodes.len() >= crate::MAX_MESSAGE_PARTS {
             return Err(limit());
         }
         let (fields, separator, body, envelope) = self.headers(span.clone(), envelope)?;
