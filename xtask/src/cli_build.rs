@@ -80,8 +80,15 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
     #[cfg(not(any(windows, target_os = "macos")))]
     let cargo = out.join("cargo");
     #[cfg(windows)]
-    let wrapper =
-        crate::windows_link::prepare(root, target, &work.path().join("native-link"), &cargo)?;
+    let wrapper = crate::windows_link::prepare(
+        root,
+        target,
+        &work.path().join("native-link"),
+        &cargo,
+        host["compiler"]
+            .as_str()
+            .ok_or("Missing observed compiler")?,
+    )?;
     #[cfg(target_os = "macos")]
     let mut command = mac.command(root, "cargo");
     #[cfg(not(target_os = "macos"))]
@@ -210,6 +217,9 @@ pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> 
             &bytes,
             &crate::git(root, &["rev-parse", "HEAD"])?,
             target,
+            host["compiler"]
+                .as_str()
+                .ok_or("Missing observed compiler")?,
         )?;
         let imports = crate::windows_runtime::inspect(&bytes, architecture)?;
         fs::write(

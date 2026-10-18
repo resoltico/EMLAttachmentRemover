@@ -309,8 +309,13 @@ impl Controller {
                 }
             }
             Action::Quit => {
-                self.invalidate_dialog();
-                self.confirmation = Some(Confirmation::Quit);
+                if self.closing_since.is_none() {
+                    self.invalidate_dialog();
+                    if let Err(error) = crate::native::restore(window.window()) {
+                        self.system_notice(&format!("Quit confirmation window: {error}"));
+                    }
+                    self.confirmation = Some(Confirmation::Quit);
+                }
             }
             Action::CancelConfirmation => {
                 self.confirmation = None;

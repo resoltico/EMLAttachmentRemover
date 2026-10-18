@@ -18,8 +18,8 @@ checkpoint. This is one real scenario on one CPU, not full GUI qualification.
 The Intel run at the same source timed out in the initial AX window query;
 cleanup completed with zero survivors. Before making that query the harness now
 waits for the owned NSRunningApplication's native finished-launching state and
-activates its exact app. This is a pending diagnostic change, not evidence that
-the Intel AX failure is fixed.
+activates its exact app. Later native passes are recorded below; this alone did
+not establish the cause of the earlier Intel AX failure.
 
 H876c480 again timed out on the Intel AX snapshot after native launch/activation;
 the owned process group settled with zero survivors. An Intel sampler first
@@ -124,6 +124,26 @@ trace receipt. Member identities do not establish source/legal review or which
 archive members were selected; native execution and complete static-input review
 remain required. Shipping archive readers and their narrow formats are unchanged.
 
+At H66d8acf both Windows native selections pass371 cases. The actual COFF
+reproducer is produced, but its reader falsely requires version.txt. The
+[pinned compiler LLVM23.1.1 COFF driver](https://github.com/llvm/llvm-project/blob/llvmorg-23.1.1/lld/COFF/Driver.cpp#L2458)
+writes response.txt without that version file. The reader now follows that
+actual format; the selected linker is separately executed with --version and
+checked against the observed compiler's LLVM version, then recorded in the
+bound receipt. The wrong-version rejection remains explicit. Corrected native
+reproducer execution and static-input review are pending.
+
+Both H66d8acf app producers and both macOS15 same-archive rows pass the normal
+basic GUI case with the sampler removed. The extended case for About, complete
+license text, keyboard Edit commands and main close/reopen compiles locally but
+is not yet executed natively. Review also found that Quit could leave its
+confirmation on a hidden main window. All Quit routes now use the shared
+show/deminiaturize/front operation before confirmation; duplicate Quit requests
+after confirmed shutdown are ignored. The extended test includes native Quit
+from a hidden main window, cancellation and final confirmation. Production
+stop/force/cleanup timing and ownership are unchanged; native verification is
+still required.
+
 Both H515d61b Windows workspace selections now pass complete accounting:369 cases
 each, with the nested cwd child isolated from the outer transcript. Both native
 macOS app producers and both same-archive macOS15 rows pass the basic GUI case.
@@ -137,7 +157,8 @@ the exact-one-test cwd child inherited stdout and leaked a filtered libtest
 summary/interleaved case name into the outer unfiltered transcript. Its output
 is now captured separately, and the parent requires successful status, the exact
 one-case pass and one successful child summary. The outer discovery/case/suite/
-filtered checks are retained unchanged. Corrected aggregate execution is pending.
+filtered checks are retained unchanged. Corrected aggregate execution passes at
+H515d61b as recorded above.
 At the same H, the ARM app producer and its same-archive macOS15 row pass the
 actual basic GUI scenario. Intel app failure and full GUI conditions remain open.
 That H's ARM process suite failed its parent-SIGKILL absence probe after two

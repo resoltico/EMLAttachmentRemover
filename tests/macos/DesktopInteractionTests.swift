@@ -153,10 +153,16 @@ final class DesktopInteractionTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: copy), golden)
         }
         snapshot(app, "finished")
-        app.typeKey("q", modifierFlags: .command)
+        window.buttons["_XCUI:CloseWindow"].click()
+        let hiddenForQuit = NSPredicate { _, _ in !window.exists }
+        let hiddenForQuitObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: hiddenForQuit, object: nil)], timeout: 10)
+        XCTAssertEqual(hiddenForQuitObservation, .completed)
+        print("Native hidden-window Quit request accepted: \(owned.terminate())")
         XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+        XCTAssertTrue(window.exists, "Quit confirmation did not restore the main window")
         app.buttons["Cancel"].click()
         XCTAssertFalse(owned.isTerminated)
+        snapshot(app, "quit-cancelled-from-hidden")
         app.typeKey("q", modifierFlags: .command)
         XCTAssertTrue(app.buttons["Confirm"].waitForExistence(timeout: 5))
         app.buttons["Confirm"].click()

@@ -71,11 +71,8 @@ pub fn inspect(bytes: &[u8]) -> Result<Vec<InputObservation>, Box<dyn std::error
     }) || !inputs
         .iter()
         .any(|input| input.member.ends_with("/response.txt"))
-        || !inputs
-            .iter()
-            .any(|input| input.member.ends_with("/version.txt"))
     {
-        return Err("Native reproducer omits inputs or linker command/version records".into());
+        return Err("Native reproducer omits inputs or its linker command record".into());
     }
     Ok(inputs)
 }
@@ -85,18 +82,11 @@ mod tests {
     use super::*;
     fn archive(extra: &[(&str, &[u8], tar::EntryType)]) -> Vec<u8> {
         let mut tar = tar::Builder::new(Vec::new());
-        for (name, body, kind) in [
-            (
-                "reproducer/response.txt",
-                b"not executed".as_slice(),
-                tar::EntryType::Regular,
-            ),
-            (
-                "reproducer/version.txt",
-                b"synthetic parser fixture".as_slice(),
-                tar::EntryType::Regular,
-            ),
-        ]
+        for (name, body, kind) in [(
+            "reproducer/response.txt",
+            b"not executed".as_slice(),
+            tar::EntryType::Regular,
+        )]
         .into_iter()
         .chain(extra.iter().copied())
         {

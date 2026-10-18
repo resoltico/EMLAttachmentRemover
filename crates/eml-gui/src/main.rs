@@ -158,12 +158,10 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
             }
             match lifecycle.take_events() {
                 Ok(events) => {
-                    if events.reopen || !events.selections.is_empty() {
-                        if let Err(error) = window.show() {
-                            controller.system_notice(&format!("Main window: {error}"));
-                        } else if let Err(error) = native::restore(window.window()) {
-                            controller.system_notice(&format!("Main window: {error}"));
-                        }
+                    if (events.reopen || !events.selections.is_empty())
+                        && let Err(error) = native::restore(window.window())
+                    {
+                        controller.system_notice(&format!("Main window: {error}"));
                     }
                     if events.quit {
                         controller.action(&window, Action::Quit);

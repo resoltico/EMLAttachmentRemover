@@ -15,6 +15,7 @@ struct Control {
     source: String,
     target: String,
     linker: PathBuf,
+    linker_version: String,
     map: PathBuf,
     trace: PathBuf,
     receipt: PathBuf,
@@ -37,7 +38,34 @@ fn bounded(path: &Path, limit: u64) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
-pub(crate) fn prepare(root: &Path, target: &str, work: &Path, cargo: &Path) -> Result<PathBuf> {
+fn checked_linker_version(compiler: &str, bytes: &[u8]) -> Result<String> {
+    let expected = compiler
+        .lines()
+        .find_map(|line| line.strip_prefix("LLVM version: "))
+        .ok_or("Compiler has no observed LLVM version")?;
+    if bytes.len() > 4096 {
+        return Err("Linker version output exceeds its bound".into());
+    }
+    let version = std::str::from_utf8(bytes)?.trim_end_matches(['\r', '\n']);
+    if version.lines().count() != 1
+        || version
+            .strip_prefix("LLD ")
+            .and_then(|value| value.split_ascii_whitespace().next())
+            != Some(expected)
+    {
+        return Err(
+            "Selected actual linker version differs from the compiler's LLVM version".into(),
+        );
+    }
+    Ok(version.to_owned())
+}
+pub(crate) fn prepare(
+    root: &Path,
+    target: &str,
+    work: &Path,
+    cargo: &Path,
+    compiler: &str,
+) -> Result<PathBuf> {
     fs::create_dir(work)?;
     let work = work.canonicalize()?;
     let sysroot = PathBuf::from(
@@ -53,6 +81,14 @@ pub(crate) fn prepare(root: &Path, target: &str, work: &Path, cargo: &Path) -> R
         .join(target)
         .join("bin/rust-lld.exe")
         .canonicalize()?;
+    let linker_version = checked_linker_version(
+        compiler,
+        &capture(
+            Command::new(&linker)
+                .current_dir(root)
+                .args(["-flavor", "gnu", "--version"]),
+        )?,
+    )?;
     let wrapper = work.join("eml-native-link.exe");
     write_new(
         &wrapper,
@@ -63,6 +99,7 @@ pub(crate) fn prepare(root: &Path, target: &str, work: &Path, cargo: &Path) -> R
         source: crate::git(root, &["rev-parse", "HEAD"])?,
         target: target.to_owned(),
         linker,
+        linker_version,
         map: work.join("application.map"),
         trace: work.join("linker.log"),
         receipt: work.join("link.json"),
@@ -133,7 +170,7 @@ fn run_helper() -> Result<()> {
     let status = command.spawn()?.wait()?;
     let linker = ByteIdentity::of(&bounded(&control.linker, 256 * 1024 * 1024)?);
     let trace = bounded(&control.trace, 64 * 1024 * 1024)?;
-    let mut record = serde_json::json!({"source":control.source,"target":control.target,"actual_linker":linker,"actual_linker_status":status.code(),"trace":ByteIdentity::of(&trace),"scope":"actual final link capture; selected-input review remains separate"});
+    let mut record = serde_json::json!({"source":control.source,"target":control.target,"actual_linker":linker,"actual_linker_version":control.linker_version,"actual_linker_status":status.code(),"trace":ByteIdentity::of(&trace),"scope":"actual final link capture; selected-input review remains separate"});
     if !status.success() {
         write_new(&control.receipt, &serde_json::to_vec_pretty(&record)?)?;
         return Err(format!(
@@ -199,9 +236,17 @@ pub(crate) fn captured(
     bytes: &[u8],
     source: &str,
     target: &str,
+    compiler: &str,
 ) -> Result<serde_json::Value> {
     let record: serde_json::Value =
         serde_json::from_slice(&bounded(&work.join("link.json"), 1024 * 1024)?)?;
+    checked_linker_version(
+        compiler,
+        record["actual_linker_version"]
+            .as_str()
+            .ok_or("Missing actual linker version")?
+            .as_bytes(),
+    )?;
     if record["source"] != source
         || record["target"] != target
         || record["actual_linker_status"] != 0
@@ -240,6 +285,7 @@ mod tests {
     use super::*;
     #[test]
     fn stale_link_capture_cannot_bind_another_image_source_target_or_trace() {
+        const COMPILER: &str = "LLVM version: 23.1.1";
         let root = tempfile::tempdir().unwrap();
         let work = root.path();
         let source = "a".repeat(40);
@@ -257,23 +303,24 @@ mod tests {
             b"owned synthetic input record; not native provenance",
         )
         .unwrap();
-        let record = serde_json::json!({"source":source,"target":target,"actual_linker_status":0,"reproducer":ByteIdentity::of(b"owned synthetic reproducer identity; not native input"),"inputs":ByteIdentity::of(b"owned synthetic input record; not native provenance"),"linked_image":ByteIdentity::of(image),"map":ByteIdentity::of(b"owned map"),"trace":ByteIdentity::of(b"owned trace")});
+        let record = serde_json::json!({"source":source,"target":target,"actual_linker_version":"LLD 23.1.1 (compatible with GNU linkers)","actual_linker_status":0,"reproducer":ByteIdentity::of(b"owned synthetic reproducer identity; not native input"),"inputs":ByteIdentity::of(b"owned synthetic input record; not native provenance"),"linked_image":ByteIdentity::of(image),"map":ByteIdentity::of(b"owned map"),"trace":ByteIdentity::of(b"owned trace")});
         fs::write(work.join("link.json"), serde_json::to_vec(&record).unwrap()).unwrap();
-        captured(work, image, &source, target).unwrap();
-        assert!(captured(work, b"different final bytes", &source, target).is_err());
-        assert!(captured(work, image, &"b".repeat(40), target).is_err());
-        assert!(captured(work, image, &source, "aarch64-pc-windows-gnullvm").is_err());
+        captured(work, image, &source, target, COMPILER).unwrap();
+        assert!(captured(work, image, &source, target, "LLVM version: 22.0.0").is_err());
+        assert!(captured(work, b"different final bytes", &source, target, COMPILER).is_err());
+        assert!(captured(work, image, &"b".repeat(40), target, COMPILER).is_err());
+        assert!(captured(work, image, &source, "aarch64-pc-windows-gnullvm", COMPILER).is_err());
         fs::write(work.join("linker.log"), b"changed trace").unwrap();
-        assert!(captured(work, image, &source, target).is_err());
+        assert!(captured(work, image, &source, target, COMPILER).is_err());
         fs::write(work.join("linker.log"), b"owned trace").unwrap();
         fs::write(work.join("inputs.json"), b"changed input observations").unwrap();
-        assert!(captured(work, image, &source, target).is_err());
+        assert!(captured(work, image, &source, target, COMPILER).is_err());
         fs::write(
             work.join("inputs.json"),
             b"owned synthetic input record; not native provenance",
         )
         .unwrap();
         fs::write(work.join("reproducer.tar"), b"changed reproducer").unwrap();
-        assert!(captured(work, image, &source, target).is_err());
+        assert!(captured(work, image, &source, target, COMPILER).is_err());
     }
 }

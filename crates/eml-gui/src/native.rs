@@ -233,7 +233,8 @@ fn parent(window: &slint::Window) -> Result<Retained<NSWindow>, NativeError> {
         })
         .ok_or(NativeError::ParentUnavailable)?
 }
-pub(crate) fn restore(window: &slint::Window) -> Result<(), NativeError> {
+pub(crate) fn restore(window: &slint::Window) -> Result<(), Box<dyn std::error::Error>> {
+    window.show()?;
     let parent = parent(window)?;
     if parent.isMiniaturized() {
         parent.deminiaturize(None);
