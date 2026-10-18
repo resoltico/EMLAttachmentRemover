@@ -3,8 +3,44 @@
 The reusable `eml_core::prepare_message` capability prepares immutable bytes,
 authorizes removal independently, and verifies exact expected bytes and retained
 structure. Retained text/plain and text/html payloads are never decoded or
-regenerated. The implementation and its verification are still being qualified;
-this document does not establish product or release acceptance.
+regenerated. Native execution and release acceptance are recorded separately in
+the [implementation evidence](v6-implementation-evidence.md).
+
+## Retained body and removal policy
+
+V6 creates body-only copies. This changes v5's policy of removing only explicit
+attachments and direct non-root related resources. All retained text/plain and
+text/html representations remain in source order, including empty bodies and
+their original encoded payload bytes. A filename does not decide whether a part
+is body content.
+
+An ordinary non-root entity with attachment disposition is removed whole before
+its interior is parsed. A multipart/related container selects its direct body root
+by `start`, or its first child when `start` is absent; every other direct child is
+removed whole as a related resource. Other multipart containers classify all
+children in order. Identity-encoded message/rfc822 and message/global parts are
+descended using the embedded root's own rules; encoded or opaque forwarded
+messages follow the non-body rule.
+
+Every other leaf is removed as a non-body part, including inline images outside
+related containers, text/calendar and delivery-status parts. A container without
+a retained body descendant collapses. Removal metadata describes the ordered
+decisions, so its byte totals need not equal the actual source-minus-copy saving.
+At least one supported text body must remain, or preparation returns `NoBody`
+without a copy.
+
+Signed/encrypted and protected signature/control content reached in body context
+is refused before descent. An attached protected entity or a protected entity
+inside an already removed related resource can instead be removed whole. A
+disposition on a top-level or embedded message root does not make that root an
+ordinary attachment.
+
+Stale length/checksum fields are removed from changed retained ancestors, and
+stale authentication fields from changed message roots. Unchanged siblings retain
+their fields. Independent source authorization and byte/structure verification
+must accept every prepared result. Retained HTML, remote references and mislabeled
+data inside text bodies are not sanitized; an attachment-free result is not a
+malware or safe-rendering assessment.
 
 ## Unquoted parameter whitespace and comments
 

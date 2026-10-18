@@ -1432,3 +1432,37 @@ source/feature fingerprints after restoration; actual tests, signatures,
 archive readback and GUI scenarios rerun. No qualification verdict is cached.
 Actionlint passed. Native cache restoration/saving on the revised key remains
 an execution observation, not assumed evidence of a faster or passing run.
+
+## Native static-text exposure and complete migration notes
+
+At H4dabf4f56373240a99fa65319b0e32ec21a203a1/run39170754807 all six
+native test rows and exact-M integration passed. Both app gates failed at the new
+ready-screen accessible-text assertion:15.379seconds on ARM and25.060seconds on
+Intel. The actual native tree contains the complete authored drop instruction in
+a StaticText value, while title/label are empty. Destination and activity use the
+same native role mapping. This is an invalid oracle, not evidence that the text
+is absent. The corrected helper accepts value only for StaticText, retains
+name/title checks for other controls, shares its matching predicate between wait
+and reporting, and records the observed native role/properties. It establishes
+native accessible text/labels, not spoken VoiceOver behavior. SDK27 Swift6
+XCTest compilation passed. Actual native rerun remains required. This early
+failure left all later GUI scenarios and the new Intel diagnostics unrun.
+
+Both macOS logs confirm restoration of the matching dependency cache and saving
+new source-specific cache keys after these failures. Those are compiled-output
+observations; no test or qualification verdict is reused. The root/floor gates
+remain failed at that checkpoint.
+
+The README CLI instructions were executed with a native ARM release binary from
+a fresh H4dabf4f checkout and owned synthetic messages. Help, dry run, creation,
+existing-copy JSON results and directory mirroring passed independent goldens;
+originals remained unchanged. A missing output root failed2 with no stream and no
+created root. The README now creates its selected output folder explicitly.
+Retired existing/fail-fast/output-format/explicit-output/request-stdin/progress
+interfaces and paths0 each failed2 without a stream. The owned temporary fixture
+was removed and absence verified. This is supplemental CLI evidence, not native
+archive or GUI qualification. Twenty local Markdown targets exist, and published
+changelog text remains exact after normalizing the14 immutable baseline URLs.
+Migration notes now identify the removed public Python API/source distribution,
+CLI options and numeric exit taxonomy, automatic existing-copy comparison and
+body-only MIME policy. No replacement source archive or v6 release is claimed.

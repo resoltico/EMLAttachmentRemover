@@ -1,10 +1,10 @@
 # EML Attachment Remover
 
 Create attachment-stripped EML copies while leaving original messages untouched.
-The v6 source uses reusable Rust libraries and a native CLI. The macOS frontend
-is being replaced with Slint following the [owner's scope decision](docs/desktop-frontend-design.md).
-Version 6 remains **Unreleased**. Required native Windows, macOS app, GUI and
-complete release qualification is incomplete; see the
+The v6 source uses reusable Rust libraries, a native CLI and a Slint macOS
+frontend following the [owner's scope decision](docs/desktop-frontend-design.md).
+Version 6 remains **Unreleased**. Required native, archive and GUI qualification
+outcomes, including failures and unrun gates, are recorded in the
 [implementation evidence](docs/v6-implementation-evidence.md). Published v5
 releases and their source history remain unchanged.
 
@@ -17,6 +17,7 @@ cargo build --locked --release -p remove-eml-attachments
 ./target/release/remove-eml-attachments --help
 ./target/release/remove-eml-attachments --dry-run -- message.eml
 ./target/release/remove-eml-attachments -- message.eml
+mkdir copies
 ./target/release/remove-eml-attachments --output-dir copies -- selected-folder
 ./target/release/remove-eml-attachments --format json -- message.eml
 ```
@@ -27,6 +28,8 @@ its selected Rust sysroot linker and rust-mingw component. See
 program never modifies it. Paths are literal native arguments. Let the shell
 expand home-directory shorthand; display text is not an operational filename.
 Use `--` before filenames that begin with a dash.
+The selected output root must already exist; the program creates only the
+required mirrored directories beneath it.
 
 A copy of `message.eml` is named `message.no-attachments.eml`. The final `.eml`
 extension is recognized without regard to case. A long stem is shortened to the
@@ -63,8 +66,11 @@ A missing summary or truncated stream is incomplete evidence.
 Preparation removes authorized source spans; it does not decode and regenerate
 retained message content. It keeps supported text body alternatives, selects the
 related body root and removes non-root related resources, including inline images.
-It handles embedded messages conservatively and refuses protected
-or structurally unusable messages. Attached files, including mail containers, are
+Other non-body leaves, including inline images outside related containers,
+calendar payloads and opaque encoded forwarded messages, are removed even without
+an attachment disposition. At least one supported text body must remain. It
+handles embedded messages conservatively and refuses protected or structurally
+unusable messages. Attached files, including mail containers, are
 not exported elsewhere. Source bytes, line endings and retained structure are
 independently checked. See [MIME behavior](docs/mime.md).
 
@@ -96,9 +102,9 @@ macOS requires 15.0 or later. Qualification selects Xcode 26.3 build 17C529, not
 machine's default Xcode. Builds are ad hoc signed, without Developer ID or
 notarization; first launch may require app-specific **Open Anyway** in macOS
 Privacy & Security. No Gatekeeper configuration change is part of this project.
-The desktop workflow being implemented has one main window with queued runs,
-source/destination selection, per-file results and technical reports. Full native GUI qualification remains
-open; [app details](docs/macos-app.md) distinguish source behavior from execution.
+The desktop workflow has one main window with queued runs, source/destination
+selection, per-file results and technical reports. [App details](docs/macos-app.md)
+and the evidence log distinguish implemented behavior from native qualification.
 
 Linux targets Ubuntu 22.04+ with GNU/glibc, with required GLIBC symbols capped at
 2.35. Other distributions are unqualified. Windows targets system UCRT; native
