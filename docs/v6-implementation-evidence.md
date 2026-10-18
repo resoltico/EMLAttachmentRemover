@@ -496,7 +496,15 @@ remain failures, not exFAT integration evidence or proof of a host privilege lim
 The same ordinary-user owned-image probe works locally or on CI. It requires a
 clean committed checkout, creates only its admitted private enclosure/image,
 retains exact mount/device/backing-file ownership checks and does not run a GUI.
-The corrected actual volume result remains pending.
+The corrected ordinary-user volume run at66f2865 passed on local native ARM
+macOS27.0/build26A428. Actual exFAT RENAME_EXCL returned unsupported45; a conflict
+returned17 and retained the existing winner and losing candidate. Actual file
+fsync/F_FULLFSYNC and directory fsync succeeded. Core refused Stage/BindFailed,
+reported0 created/1 failed and NotPublished, left no final copy and preserved the
+original. Cleanup rechecked the exact backing-file/device/mount association,
+detached only that device without force and removed only the matching owned image.
+The result is retained in target/owned-local-exfat-valid-label/result.json. This
+qualifies that image/OS only; hosted and minimum-OS observations remain separate.
 
 That merge's app startup also caught an integration defect in the first drop
 hook: Slint had not yet materialized a native window immediately after show, so

@@ -16,7 +16,7 @@ impl EventSink for Sink {
             self.items.push(match item.result {
             ItemResult::Created(ref copy,_)=>{let copy=copy.publication();json!({"status":"created","publication":"published","address":format!("{:?}",copy.address()),"file_sync":format!("{:?}",copy.file_sync()),"namespace_sync":format!("{:?}",copy.namespace_sync()),"cleanup":format!("{:?}",copy.cleanup())})},
             ItemResult::UpToDate(_,_)=>json!({"status":"up_to_date"}),
-            ItemResult::Failed(ref failure)=>json!({"status":"failed","code":format!("{:?}",failure.error().code()),"phase":format!("{:?}",failure.error().phase()),"publication":match failure.effect(){FailureEffect::NotPublished{..}=>"not_published",FailureEffect::Published(_)=>"published",FailureEffect::Unknown(_)=>"unknown"},"effect":format!("{:?}",failure.effect())}),
+            ItemResult::Failed(ref failure)=>json!({"status":"failed","code":format!("{:?}",failure.error().code()),"phase":format!("{:?}",failure.error().phase()),"detail":failure.error().detail(),"native_code":failure.error().native_error().and_then(std::io::Error::raw_os_error),"publication":match failure.effect(){FailureEffect::NotPublished{..}=>"not_published",FailureEffect::Published(_)=>"published",FailureEffect::Unknown(_)=>"unknown"},"effect":format!("{:?}",failure.effect())}),
             ItemResult::Planned(_)=>json!({"status":"unexpected_plan"}),
         });
         }
@@ -223,7 +223,7 @@ fn core(root: &Path, mount: &Path) -> Result<Value> {
         return Err("exFAT refusal disagrees with observed physical publication".into());
     }
     Ok(
-        json!({"created":result.counts().created(),"failed":result.counts().failed(),"physical_complete_copy":present,"original_unchanged":true,"items":sink.items,"scope":"actual reusable Core workflow, independent golden and physical effects; no predetermined unsupported result"}),
+        json!({"created":result.counts().created(),"failed":result.counts().failed(),"physical_final_present":present,"physical_complete_copy":present,"original_unchanged":true,"items":sink.items,"scope":"actual reusable Core workflow, independent golden and physical effects; no predetermined unsupported result"}),
     )
 }
 pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
