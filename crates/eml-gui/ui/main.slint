@@ -170,6 +170,11 @@ export component MainWindow inherits Window {
             }
             VerticalBox {
                 padding: 0px; horizontal-stretch: 1;
+                if root.runs.length == 0 && root.waiting-runs.length == 0: Text {
+                    text: "Drop EML files or folders here, or choose messages or a folder.";
+                    wrap: word-wrap; horizontal-alignment: center;
+                    accessible-label: "Drop local EML files or folders to create copies. You can also use Choose messages or Choose folder.";
+                }
                 Text { text: root.report-text; wrap: word-wrap; accessible-label: "Run summary: " + root.report-text; }
                 ScrollView {
                     height: root.items.length == 0 ? 0px : (root.short-layout ? 65px : 100px);
