@@ -200,7 +200,7 @@ jobs:
           artifact-ids: ${{ needs.legal.outputs.artifact_id }}
           path: ${{ steps.private_workspace.outputs.path }}/target/generated-legal-materials
       - name: Qualify native Windows release tests, final link and extracted CLI archive
-        if: ${{ always() && runner.os == 'Windows' && steps.private_workspace.outcome == 'success' }}
+        if: ${{ !cancelled() && runner.os == 'Windows' && steps.private_workspace.outcome == 'success' }}
         working-directory: ${{ steps.private_workspace.outputs.path }}
         shell: pwsh
         env:
@@ -366,7 +366,7 @@ jobs:
           if-no-files-found: error
   app:
     needs: [plan, legal, icon, icon_fallback]
-    if: ${{ always() && needs.plan.result == 'success' && needs.legal.result == 'success' && ((needs.icon.result == 'success' && needs.icon.outputs.available == 'true') || needs.icon_fallback.result == 'success') }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' && ((needs.icon.result == 'success' && needs.icon.outputs.available == 'true') || needs.icon_fallback.result == 'success') }}
     name: Native app / ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -446,7 +446,7 @@ jobs:
           if-no-files-found: error
   app_smoke:
     needs: [plan, legal, app]
-    if: ${{ always() && needs.plan.result == 'success' && needs.legal.result == 'success' }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' }}
     name: macOS15 extracted archives / ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45

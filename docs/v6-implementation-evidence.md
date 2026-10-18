@@ -1549,3 +1549,15 @@ deadline, observed-size stop and exact retained-child settlement. Missing
 messages and service-process logs still cannot be ruled out. Local SDK27 Swift6
 owner/XCTest compilation and strict Swift formatting passed; native rerun remains
 required. The Intel app gate at this head is still running at this checkpoint.
+
+H3efb1dcb29def9b05cd733dd47be92d967dbd0e3/run39176942678 initially
+remained pending behind that Intel job. Its job-level always() kept the older
+app qualification running despite concurrency cancellation. The heavy app and
+floor jobs and the Windows qualification step now use !cancelled(), preserving
+their explicit prerequisites and independent failure-path execution. This is a
+status check, so skipped icon fallback does not add an implicit success()
+requirement. Aggregates and evidence uploads retain always(); cancelled, absent
+or skipped required roles remain rejected by the existing CI admission controls.
+Actionlint and both targeted CI admission tests passed. Actual GitHub cancellation/settlement remains an execution
+observation, not established by source lint or admission unit tests. See
+[GitHub's cancellation reference](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
