@@ -547,7 +547,10 @@ impl Controller {
             let export = self.export.take().expect("finished owned export");
             match export.actor.join() {
                 Ok(outcome) if outcome.usable() => self.status = "Technical report saved and read back successfully.".into(),
-                Ok(outcome) => self.system_notice(&format!("Report export: publication {:?}; address {:?}; final verification {:?}; file sync {:?}; namespace sync {:?}; cleanup {:?}. {}", outcome.publication, outcome.address_verified, outcome.final_file_verified, outcome.file_sync, outcome.namespace_sync, outcome.cleanup, outcome.failures.join("; "))),
+                Ok(outcome) => {
+                    self.status = "Report export finished; review the notice before trying again.".into();
+                    self.system_notice(&format!("Report export needs attention. Inspect the destination before retrying; choose an unused filename if one already exists. Report export: publication {:?}; address {:?}; final verification {:?}; file sync {:?}; namespace sync {:?}; cleanup {:?}. {}", outcome.publication, outcome.address_verified, outcome.final_file_verified, outcome.file_sync, outcome.namespace_sync, outcome.cleanup, outcome.failures.join("; ")));
+                }
                 Err(_) => self.boundary_failure("Report export panicked; its filesystem outcome is unverified. Inspect the chosen destination before trying again."),
             }
             // The extra reservation is released only after task join and after

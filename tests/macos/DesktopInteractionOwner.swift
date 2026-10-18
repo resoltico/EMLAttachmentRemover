@@ -334,7 +334,14 @@ struct DesktopInteractionOwner {
         log.executableURL = URL(fileURLWithPath: "/usr/bin/log")
         let end = Date().timeIntervalSince1970
         guard let image = Bundle(url: appURL)?.executableURL else { throw Failure.invalidInput }
-        let predicate = NSPredicate(format: "processImagePath == %@", image.path).predicateFormat
+        // Unfiltered XCTest snapshot logs exhausted the diagnostic file budget
+        // before panel initialization. Keep failures and the relevant boundary.
+        let predicate = NSPredicate(
+          format:
+            "processImagePath == %@ AND (logType == %@ OR logType == %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR subsystem CONTAINS[c] %@)",
+          image.path, "error", "fault", "exception", "ViewBridge", "NSOpenPanel", "NSSavePanel",
+          "openAndSavePanel", "ViewBridge"
+        ).predicateFormat
         log.arguments = [
           "show", "--process", String(launched.processIdentifier), "--start",
           "@\(Int(date.timeIntervalSince1970))", "--end", "@\(Int(end) + 1)", "--style",
@@ -374,6 +381,7 @@ struct DesktopInteractionOwner {
           "start": date.timeIntervalSince1970, "end": end,
           "status": log.terminationStatus, "reason": log.terminationReason.rawValue,
           "timed_out": timedOut, "output_limit_reached": outputLimitReached,
+          "filter": "fault/error or exception/panel/ViewBridge context; not all product logs",
           "bytes":
             (try FileManager.default.attributesOfItem(atPath: logURL.path)[.size] as? NSNumber)?
             .uint64Value ?? 0,

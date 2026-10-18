@@ -679,6 +679,8 @@ final class DesktopInteractionTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: collisionURL), sentinel)
     try await saveReport(app, to: collisionURL, replacingOwnedSentinel: true)
     try await requireText(app, containing: "Report export: publication NotPublished")
+    try await requireAccessibleText(app, prefix: "Run status: Report export finished")
+    XCTAssertFalse(app.buttons["Cancel export"].isEnabled)
     try await requireText(app, containing: "os error 17")
     XCTAssertEqual(try Data(contentsOf: collisionURL), sentinel)
     snapshot(app, "report-export-collision-refused")
@@ -994,7 +996,7 @@ final class DesktopInteractionTests: XCTestCase {
     let names = [file.lastPathComponent, file.deletingPathExtension().lastPathComponent]
     let elements = window.descendants(matching: .any).allElementsBoundByIndex
     guard elements.count <= 512 else { throw InteractionFailure.expectedPresentation }
-    let entryKinds: [XCUIElement.ElementType] = [.icon, .cell, .tableRow, .outlineRow]
+    let entryKinds: [XCUIElement.ElementType] = [.image, .icon, .cell, .tableRow, .outlineRow]
     let found = elements.first { element in
       guard entryKinds.contains(element.elementType),
         selected == nil || element.isSelected == selected

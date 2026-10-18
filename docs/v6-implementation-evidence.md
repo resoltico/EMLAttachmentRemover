@@ -1283,8 +1283,8 @@ directory and requested release features. This removes duplicated compilation,
 not required checks. Its native execution remains pending.
 
 Physical review of H69's retained minimum-size frame exposed a stronger failure:
-the selected editor collapsed and the bottom controls clipped despite those AX
-checks. The source correction derives single-line picker labels from the same run
+the selected editor collapsed despite those AX checks. The bottom controls were
+present; this finding concerns the missing selected-detail area. The source correction derives single-line picker labels from the same run
 rows, reduces short-layout chrome, retains a55px minimum editor and hides item
 pagination only when neither direction exists. A scrollable outer region keeps
 additional queue/notice/warning content reachable. Native checks now require
@@ -1369,13 +1369,13 @@ required; the failed selector is not a passing collision check. Forced cleanup
 was recorded and worker settlement remained unverified after that test failure.
 Later Finder/missing-copy/publication/appearance stages were unrun there.
 
-Physical review of ARM's revised compact frames found the selected editor no
-longer collapsed. The queued-warning frame shows the bottom actions after actual
-outer scrolling, but the simple frame still omitted those actions despite AX
-hittability/frame checks. The test now always exercises the outer scroll before
-checking and capturing the bottom controls, logs their actual frames, and still
-requires returning to the top controls and restoring the original window size.
-That revised execution and physical frame review remain pending.
+Reinspection of ARM's revised compact frames, including pixel-derived text
+positions, confirms that both ordinary and queued frames contain all four bottom
+actions, and the selected editor is no longer collapsed. The earlier statement
+that the ordinary frame omitted those actions was mistaken. The subsequent
+always-scroll test exercises overflow and return-to-top interaction; it does not
+establish an additional product repair. Enabled-pagination integration remains
+required separately.
 
 At clean source68eeb7a19c546c629c67fbe7de55bbd7e4fa875e, mutation campaign
 run-APJAtZ discovered/executed15 cases (five authorize_deletions, ten
@@ -1466,3 +1466,55 @@ changelog text remains exact after normalizing the14 immutable baseline URLs.
 Migration notes now identify the removed public Python API/source distribution,
 CLI options and numeric exit taxonomy, automatic existing-copy comparison and
 body-only MIME policy. No replacement source archive or v6 release is claimed.
+
+## Native Finder selection and settled export feedback
+
+At Hf69c49f7819a1bc52a9b166c6b3e6a98d07f5175/run39172780063 all six
+native test rows and current-merge Linux integration passed. The ARM workflow
+ran252.168seconds before its Finder lookup failed. The retained native tree
+shows the exact owned copy as a selected Image inside the uniquely identified
+fixture folder window. The oracle omitted that native role; it now accepts
+Image while retaining the exact name, selection and owned-window constraints.
+This does not establish that the subsequent real drag succeeded.
+
+That run passed native accessible-text observation, keyboard editing, compact
+interaction, multilingual Services input, queue admission/refusal/removal,
+report export/readback, native replacement confirmation with unchanged sentinel
+and Core NotPublished receipt, and the missing-copy hold/restore sequence.
+The owner records actual restoration, no held copy left behind, normal app
+termination and four successful before/during-picker samples. Its broad owned-PID
+log query stopped at an observed2970732bytes; that truncated query cannot rule
+out later errors. The next query retains exact PID/path/time constraints and
+filters error/fault or exception/panel/ViewBridge context. It excludes other
+messages and service-process logs, and remains subject to its recorded limits.
+
+The collision screenshot also exposed stale product activity: the export actor
+had joined and its cancellation action was disabled, but the activity still
+said Exporting. Nonusable settled exports now replace that activity with a
+finished notice and advise inspecting the destination before retrying. All
+publication, verification, synchronization and cleanup receipts remain present;
+no success or absence of a file is inferred. The actual collision regression
+now requires the settled activity and disabled cancellation action as well as
+the independent unchanged sentinel. Local strict enabled-GUI Clippy, Rust and
+Swift formatting, and SDK27 Swift6 owner/XCTest compilation passed. These local
+checks do not qualify native Save/Finder behavior; a hosted rerun is required.
+
+The same head's Intel workflow failed928.056seconds into the test at its first
+input picker. Its successful baseline sample shows the main thread servicing
+the ordinary application run loop before dispatch; the HIE exception-named
+thread is already present. Its successful after-request sample shows2686
+observations inside NSOpenPanel construction and the AppKit bridge semaphore
+wait. This distinguishes the observed transition but does not identify the
+cause. The unfiltered owned-process log also truncated at1529392bytes. The owner
+reaped the runner, observed normal app termination and verified all four
+originals unchanged; no forced app cleanup was needed. Both app gates, floor
+consumers and the root aggregate therefore remain failed at this checkpoint.
+
+Independent artifact audit confirms392 default and392 release tests per Linux
+and Windows target,429 default tests per Mac target, zero failed/ignored tests,
+and67 Darwin fixtures per Mac. Linux/Windows extracted CLI smokes passed all
+five independent-byte cases and rejected both fake executable controls. Hosts
+and toolchains match the preceding audit: Ubuntu22.04.5, Windows kernels
+10.0.26200 ARM/10.0.20348 x64, macOS26.6.2 ARM/26.6.1 Intel, Rust1.99.0,
+and Xcode26.3/SDK26.2 for Mac checks. Mac release/archive/GUI and floor gates
+remain separate; these six passing rows do not qualify those failed gates.
