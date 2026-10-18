@@ -4,6 +4,11 @@ use serde_json::{Value, json};
 use std::{fs, path::Path, time::Duration};
 
 pub(crate) fn observe(root: &Path, build: &MacBuild, out: &Path) -> Result<Value> {
+    if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+        || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
+    {
+        return Err("Native panel observation requires a fresh hosted Mac; owner desktop/preferences are protected".into());
+    }
     fs::create_dir(out)?;
     let app = out.join("NativePanelDiagnostic.app");
     let contents = app.join("Contents");

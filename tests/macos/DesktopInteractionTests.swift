@@ -7,6 +7,182 @@ import XCTest
 final class DesktopInteractionTests: XCTestCase {
   private enum InteractionFailure: Error { case expectedPresentation }
   @MainActor
+  func testOwnedCoreStop() async throws { try await observedCoreScenario("stop") }
+  @MainActor
+  func testOwnedCoreForceStop() async throws { try await observedCoreScenario("force-stop") }
+  @MainActor
+  func testOwnedCoreActiveQuit() async throws { try await observedCoreScenario("active-quit") }
+  @MainActor
+  func testOwnedCorePublishedError() async throws {
+    try await observedCoreScenario("published-error")
+  }
+
+  @MainActor
+  private func observedCoreScenario(_ scenario: String) async throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let inputURL = repository.appendingPathComponent(
+      "target/desktop-interaction-\(scenario)/input.json")
+    let input = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(contentsOf: inputURL)) as? [String: String])
+    XCTAssertEqual(input["scenario"], scenario)
+    XCTAssertEqual(input["host_scope"], "fresh-github-hosted-runner")
+    let appURL = URL(fileURLWithPath: try XCTUnwrap(input["app"]))
+    let fixture = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
+    let observation = URL(fileURLWithPath: try XCTUnwrap(input["observation"]))
+    let receipt = try XCTUnwrap(
+      JSONSerialization.jsonObject(
+        with: Data(
+          contentsOf: inputURL.deletingLastPathComponent().appendingPathComponent("ownership.json"))
+      ) as? [String: Any])
+    let pid = try XCTUnwrap(receipt["pid"] as? NSNumber).int32Value
+    let owned = try XCTUnwrap(NSRunningApplication(processIdentifier: pid))
+    let bundle = try XCTUnwrap(Bundle(url: appURL))
+    guard owned.bundleURL?.standardizedFileURL == appURL.standardizedFileURL,
+      owned.bundleIdentifier == bundle.bundleIdentifier,
+      owned.launchDate?.timeIntervalSince1970 == (receipt["launch_date"] as? NSNumber)?.doubleValue,
+      !owned.isTerminated,
+      NSRunningApplication.runningApplications(
+        withBundleIdentifier: try XCTUnwrap(bundle.bundleIdentifier)
+      ).count == 1
+    else { throw InteractionFailure.expectedPresentation }
+    let original = try Data(
+      contentsOf: repository.appendingPathComponent(
+        "tests/contract/mime/inputs/01-gmail-attachment.eml"))
+    let golden = try Data(
+      contentsOf: repository.appendingPathComponent(
+        "tests/contract/mime/golden/01-gmail-attachment.eml"))
+    let originals = ["one.eml", "two.eml", "folder-input/folder.eml", "service-input/日本語.eml"].map {
+      fixture.appendingPathComponent($0)
+    }
+    addTeardownBlock { @MainActor in
+      for source in originals { XCTAssertEqual(try Data(contentsOf: source), original) }
+    }
+    let app = XCUIApplication(url: appURL)
+    guard owned.activate(options: []) else { throw InteractionFailure.expectedPresentation }
+    XCTAssertTrue(app.windows["EML Attachment Remover"].waitForExistence(timeout: 20))
+    let delivery = NSWorkspace.OpenConfiguration()
+    delivery.createsNewApplicationInstance = false
+    delivery.addsToRecentItems = false
+    let paths = Array(originals.prefix(scenario == "published-error" ? 1 : 2))
+    let delivered = try await NSWorkspace.shared.open(
+      paths, withApplicationAt: appURL, configuration: delivery)
+    guard delivered.processIdentifier == pid else { throw InteractionFailure.expectedPresentation }
+    try await requireObservation(
+      observation.appendingPathComponent("ready"), prefix: "real publication boundary\n")
+
+    if scenario == "active-quit" {
+      snapshot(app, "real-core-running-before-active-quit")
+      let queued = try await NSWorkspace.shared.open(
+        [originals[0]], withApplicationAt: appURL, configuration: delivery)
+      XCTAssertEqual(queued.processIdentifier, pid)
+      try await requireWaiting(app, count: 1)
+      app.typeKey("q", modifierFlags: .command)
+      XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+      app.buttons["Cancel"].click()
+      XCTAssertFalse(owned.isTerminated)
+      XCTAssertFalse(
+        FileManager.default.fileExists(
+          atPath: observation.appendingPathComponent("first-interrupt").path))
+      snapshot(app, "active-quit-cancelled")
+      app.typeKey("q", modifierFlags: .command)
+      XCTAssertTrue(app.buttons["Confirm"].waitForExistence(timeout: 5))
+      app.buttons["Confirm"].click()
+      XCTAssertTrue(app.wait(for: .notRunning, timeout: 20))
+      XCTAssertTrue(owned.isTerminated)
+      try await requireObservation(
+        observation.appendingPathComponent("second-interrupt"), prefix: "observed ")
+      return
+    }
+
+    if scenario != "published-error" {
+      snapshot(app, "real-core-running-before-\(scenario)")
+      XCTAssertTrue(app.buttons["Stop"].isEnabled)
+      app.buttons["Stop"].click()
+      try await requireObservation(
+        observation.appendingPathComponent("first-interrupt"), prefix: "observed ")
+      if scenario == "force-stop" {
+        XCTAssertTrue(app.buttons["Force Stop…"].isEnabled)
+        app.buttons["Force Stop…"].click()
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].click()
+        XCTAssertFalse(
+          FileManager.default.fileExists(
+            atPath: observation.appendingPathComponent("second-interrupt").path))
+        app.buttons["Force Stop…"].click()
+        XCTAssertTrue(app.buttons["Confirm"].waitForExistence(timeout: 5))
+        app.buttons["Confirm"].click()
+        try await requireObservation(
+          observation.appendingPathComponent("second-interrupt"), prefix: "observed ")
+      }
+    }
+    let technical = app.checkBoxes["Technical details"]
+    technical.click()
+    try await requireText(app, containing: "settled true")
+    if scenario == "published-error" {
+      try await requireText(app, containing: "Protocol failure: None")
+      try await requireText(
+        app,
+        containing: "Worker exit Some(1); signal None; failure None; settled true; reusable true")
+      try await requireText(
+        app, containing: "0 created · 0 up to date · 1 failed · 0 not processed")
+      try await requireText(app, containing: "ADDRESS_CHANGED")
+      try await requireText(app, containing: "Copy published with an error")
+      try await requireText(app, containing: "Interrupt calls 0; first interrupt observed false")
+      XCTAssertFalse(app.buttons["Show in Finder"].isEnabled)
+      XCTAssertEqual(
+        try Data(
+          contentsOf: fixture.appendingPathComponent("published-output/one.no-attachments.eml")),
+        golden)
+      snapshot(app, "real-core-published-with-error")
+    } else {
+      try await requireText(
+        app,
+        containing: "Interrupt calls \(scenario == "stop" ? 1 : 2); first interrupt observed true")
+      if scenario == "stop" {
+        try await requireText(app, containing: "Protocol failure: None")
+        try await requireText(
+          app,
+          containing:
+            "Worker exit Some(130); signal None; failure None; settled true; reusable true")
+        try await requireText(
+          app, containing: "1 created · 0 up to date · 1 failed · 0 not processed")
+      }
+      XCTAssertEqual(
+        try Data(
+          contentsOf: fixture.appendingPathComponent("publication-output/one.no-attachments.eml")),
+        golden)
+      XCTAssertFalse(
+        FileManager.default.fileExists(
+          atPath: fixture.appendingPathComponent("publication-output/two.no-attachments.eml").path))
+      snapshot(app, "real-core-\(scenario)-settled")
+    }
+    app.typeKey("q", modifierFlags: .command)
+    XCTAssertTrue(app.buttons["Confirm"].waitForExistence(timeout: 5))
+    app.buttons["Confirm"].click()
+    XCTAssertTrue(app.wait(for: .notRunning, timeout: 20))
+    XCTAssertTrue(owned.isTerminated)
+  }
+
+  @MainActor
+  private func requireObservation(_ url: URL, prefix: String) async throws {
+    let predicate = NSPredicate { _, _ in
+      guard let metadata = try? FileManager.default.attributesOfItem(atPath: url.path),
+        let size = metadata[.size] as? NSNumber, size.intValue <= 128,
+        let bytes = try? Data(contentsOf: url), bytes.count <= 128,
+        let text = String(data: bytes, encoding: .utf8)
+      else { return false }
+      return text.hasPrefix(prefix)
+    }
+    let result = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 20)
+    guard result == .completed else {
+      XCTFail("Real worker observation unavailable: \(url.lastPathComponent)")
+      throw InteractionFailure.expectedPresentation
+    }
+  }
+
+  @MainActor
   func testOwnedDesktopWorkflowAndNativeIngress() async throws {
     let repository = URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -284,14 +460,24 @@ final class DesktopInteractionTests: XCTestCase {
     snapshot(app, "ninth-request-refused")
     app.buttons["Dismiss notice"].click()
     for remaining in stride(from: 7, through: 0, by: -1) {
-      // Slint exposes the dynamic button's AX title, not an AX identifier.
-      let remove = app.buttons.matching(
-        NSPredicate(format: "title == %@", "Remove waiting run")
-      ).firstMatch
-      guard remove.waitForExistence(timeout: 5), remove.isHittable else {
+      // Read the actual native title: XCTest's filtered identifier/title query
+      // did not resolve these buttons despite their retained AX snapshots.
+      let available = NSPredicate { _, _ in
+        window.buttons.allElementsBoundByIndex.contains { $0.title == "Remove waiting run" }
+      }
+      let visible = await XCTWaiter.fulfillment(
+        of: [XCTNSPredicateExpectation(predicate: available, object: nil)], timeout: 10)
+      guard visible == .completed,
+        let remove = window.buttons.allElementsBoundByIndex.first(where: {
+          $0.title == "Remove waiting run"
+        })
+      else {
         XCTFail("Visible waiting-run removal control is unavailable: \(app.debugDescription)")
         throw InteractionFailure.expectedPresentation
       }
+      print(
+        "Native removal control: exists=\(remove.exists), enabled=\(remove.isEnabled), hittable=\(remove.isHittable), frame=\(remove.frame)"
+      )
       remove.click()
       try await requireWaiting(app, count: remaining)
     }

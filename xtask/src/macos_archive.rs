@@ -151,6 +151,10 @@ fn tree(root: &Path, normalize: bool) -> Result<Files> {
     visit(root, root, 0, normalize, &mut files, &mut 0)?;
     Ok(files)
 }
+pub(crate) fn bundle_identity(app: &Path) -> Result<Value> {
+    Ok(serde_json::to_value(tree(app, false)?)?)
+}
+
 fn inspect_images(root: &Path, app: &Path, build: &macos::MacBuild, out: &Path) -> Result<Value> {
     fs::create_dir(out)?;
     let files = tree(app, false)?;
@@ -462,6 +466,7 @@ fn verify_snapshot(
         json!({"outcome":"not_run","reason":"requires an owned fresh hosted runner; saved owner preferences protected"})
     };
     let interaction = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+        crate::macos_publication_ui::run(root, &app, build, &out.join("gui-publication"))?;
         crate::macos_interaction::run(root, &app, build, &out.join("gui-interaction"))?
     } else {
         json!({"outcome":"not_run","reason":"requires a fresh hosted Mac; local source compilation is not GUI interaction evidence"})

@@ -45,10 +45,13 @@ fn root() -> tempfile::TempDir {
     tempfile::tempdir_in(parent).unwrap()
 }
 fn invoke(root: &Path, args: &[&str], input: &[u8]) -> Output {
+    let mut command = Command::new(BIN);
+    command.current_dir(root).args(args);
+    invoke_command(command, input)
+}
+fn invoke_command(mut command: Command, input: &[u8]) -> Output {
     let mut child = OwnedChild(
-        Command::new(BIN)
-            .current_dir(root)
-            .args(args)
+        command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -179,4 +182,148 @@ fn private_worker_identity_and_malformed_input_do_not_invoke_another_product() {
         assert!(!output.stderr.is_empty());
     }
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+}
+
+#[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+#[test]
+fn fixture_configuration_is_ignored_by_identity_probe_and_invalid_processing_fails() {
+    let root = root();
+    let missing = root.path().join("missing-observation");
+    for version in [true, false] {
+        let mut command = Command::new(BIN);
+        command
+            .current_dir(root.path())
+            .env("EML_PUBLICATION_OBSERVATION", &missing);
+        if version {
+            command.arg("--version");
+        }
+        let output = invoke_command(command, &[]);
+        assert_eq!(output.status.code(), Some(if version { 0 } else { 70 }));
+        if version {
+            assert_eq!(
+                output.stdout,
+                format!(
+                    "eml-worker {} {}-macos\n",
+                    env!("CARGO_PKG_VERSION"),
+                    std::env::consts::ARCH
+                )
+                .as_bytes()
+            );
+            assert!(output.stderr.is_empty());
+        } else {
+            assert!(output.stdout.is_empty());
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("publication observation refused")
+            );
+        }
+    }
+    assert!(!missing.exists());
+}
+
+#[cfg(all(target_os = "macos", not(feature = "native-fixtures")))]
+#[test]
+fn shipping_worker_ignores_publication_observation_configuration() {
+    let root = root();
+    let source = root.path().join("message.eml");
+    fs::write(&source, INPUT).unwrap();
+    let request = eml_app::RequestSnapshot::new(vec![source.clone()], None).unwrap();
+    let missing = root.path().join("missing-observation");
+    for version in [true, false] {
+        let mut command = Command::new(BIN);
+        command
+            .current_dir(root.path())
+            .env("EML_PUBLICATION_OBSERVATION", &missing);
+        if version {
+            command.arg("--version");
+        }
+        let output = invoke_command(command, if version { &[] } else { request.encoded() });
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stderr.is_empty());
+    }
+    assert_eq!(
+        fs::read(root.path().join("message.no-attachments.eml")).unwrap(),
+        GOLDEN
+    );
+    assert_eq!(fs::read(source).unwrap(), INPUT);
+    assert!(!missing.exists());
+}
+
+#[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+#[test]
+fn observed_worker_processes_real_message_and_reports_real_post_publication_address_change() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = root();
+    let source = root.path().join("message.eml");
+    fs::write(&source, INPUT).unwrap();
+    let destination = root.path().join("output");
+    let moved = root.path().join("moved-output");
+    fs::create_dir(&destination).unwrap();
+    let observation = root.path().join("control");
+    fs::create_dir(&observation).unwrap();
+    fs::set_permissions(&observation, fs::Permissions::from_mode(0o700)).unwrap();
+    let observation = observation.canonicalize().unwrap();
+    fs::write(observation.join("observation"), b"after:0\n").unwrap();
+    let request =
+        eml_app::RequestSnapshot::new(vec![source.clone()], Some(destination.clone())).unwrap();
+    let mut command = Command::new(BIN);
+    command
+        .current_dir(root.path())
+        .env("EML_PUBLICATION_OBSERVATION", &observation);
+    let output = thread::scope(|scope| {
+        let actor = scope.spawn(|| {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while fs::read(observation.join("ready")).ok().as_deref()
+                != Some(b"real publication boundary\n")
+            {
+                assert!(
+                    Instant::now() < deadline,
+                    "Real publication boundary was not reached"
+                );
+                thread::sleep(Duration::from_millis(5));
+            }
+            assert_eq!(
+                fs::read(destination.join("message.no-attachments.eml")).unwrap(),
+                GOLDEN
+            );
+            fs::rename(&destination, &moved).unwrap();
+            fs::create_dir(&destination).unwrap();
+            let release = observation.join("owned-release");
+            fs::write(&release, b"release\n").unwrap();
+            fs::rename(release, observation.join("release")).unwrap();
+        });
+        let output = invoke_command(command, request.encoded());
+        actor.join().unwrap();
+        output
+    });
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let events: Vec<serde_json::Value> = output
+        .stdout
+        .split(|b| *b == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0]["type"], "start");
+    assert_eq!(events[1]["status"], "failed");
+    assert_eq!(events[1]["publication"]["state"], "published");
+    assert_eq!(events[1]["publication"]["address"], "changed");
+    assert_eq!(events[1]["error"]["code"], "ADDRESS_CHANGED");
+    assert_eq!(events[2]["type"], "summary");
+    assert_eq!(events[2]["counts"]["failed"], 1);
+    assert_eq!(events[2]["exit_code"], 1);
+    assert_eq!(fs::read(source).unwrap(), INPUT);
+    assert_eq!(
+        fs::read(moved.join("message.no-attachments.eml")).unwrap(),
+        GOLDEN
+    );
+    assert_eq!(fs::read_dir(destination).unwrap().count(), 0);
 }

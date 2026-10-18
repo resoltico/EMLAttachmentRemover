@@ -785,7 +785,7 @@ impl Controller {
                 }).collect::<Vec<slint::SharedString>>();
                 let mut detail = String::new();
                 let mut technical = format!("Protocol failure: {:?}\n", facts.failure());
-                if let Some(completion) = completion {technical.push_str(&format!("Worker exit {:?}; signal {:?}; failure {:?}; settled {}; reusable {}\n{}\nStderr{}:\n{}\n", completion.exit_code, completion.signal, completion.failure, completion.settled, completion.reusable, completion.faults.join("; "), if completion.stderr_truncated {" (truncated)"} else {""}, String::from_utf8_lossy(&completion.stderr)));}
+                if let Some(completion) = completion {technical.push_str(&format!("Worker exit {:?}; signal {:?}; failure {:?}; settled {}; reusable {}\nInterrupt calls {}; first interrupt observed {}\n{}\nStderr{}:\n{}\n", completion.exit_code, completion.signal, completion.failure, completion.settled, completion.reusable, completion.interrupt_calls_succeeded, completion.first_interrupt_observed, completion.faults.join("; "), if completion.stderr_truncated {" (truncated)"} else {""}, String::from_utf8_lossy(&completion.stderr)));}
                 if let Some(item) = facts.items().get(self.item) {
                     detail.push_str(&format!("{}\nSource: {}\nCopy: {}\n", item_label(item), item.source.display, item.destination.value().map_or("—", |path| path.display.as_str())));
                     if let Some(saved) = facts.saved_bytes(self.item) {detail.push_str(&format!("Saved {saved} bytes\n"));}

@@ -72,8 +72,18 @@ pub(crate) fn build_sources(root: &Path, out: &Path) -> Result<()> {
                             .as_str()
                             .is_some_and(|path| Path::new(path) == artifact)
                 })
-                .map(|value| value["profile"].clone())
-                .collect();
+                .map(|value| -> Result<Value> {
+                    let features = value["features"]
+                        .as_array()
+                        .ok_or("Missing executable feature selection")?;
+                    if features.iter().any(|feature| feature == "native-fixtures") {
+                        return Err(
+                            "Shipping desktop artifacts must exclude native-fixtures".into()
+                        );
+                    }
+                    Ok(value["profile"].clone())
+                })
+                .collect::<Result<Vec<_>>>()?;
             if profile.len() != 1
                 || profile[0]["test"] != false
                 || profile[0]["overflow_checks"] != true

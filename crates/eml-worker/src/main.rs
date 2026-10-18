@@ -1,5 +1,7 @@
 //! Private desktop worker: native request transport and one reusable core run.
 #![forbid(unsafe_code)]
+#[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+mod publication_observation;
 use eml_core::RunControl;
 use eml_protocol::{JsonSink, MAX_REQUEST_BYTES, decode_request};
 use std::{
@@ -21,6 +23,22 @@ fn entry() -> u8 {
             2,
         );
     }
+    #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+    let observation = if version {
+        None
+    } else {
+        match publication_observation::load() {
+            Ok(value) => value,
+            Err(error) => {
+                return failure(
+                    &format!("Nonshipping publication observation refused: {error}"),
+                    70,
+                );
+            }
+        }
+    };
+    #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+    let signal_observation = observation.clone();
     #[cfg(not(target_os = "macos"))]
     if desktop {
         return failure("Desktop control requires the native macOS worker", 2);
@@ -45,6 +63,10 @@ fn entry() -> u8 {
     let mut signalled = false;
     if ctrlc::set_handler(move || {
         if signalled {
+            #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+            if let Some(observation) = &signal_observation {
+                observation.interrupt(true);
+            }
             std::process::exit(130);
         }
         signalled = true;
@@ -61,6 +83,12 @@ fn entry() -> u8 {
             {
                 std::process::exit(130);
             }
+        }
+        #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+        if let Some(observation) = &signal_observation {
+            // Only expose the first observation after the real Stop flag and
+            // private acknowledgment write, before a fixture actor releases Core.
+            observation.interrupt(false);
         }
     })
     .is_err()
@@ -149,7 +177,16 @@ fn entry() -> u8 {
             );
         }
     };
-    match eml_core::run(&request, &control, &mut JsonSink::new(io::stdout().lock())) {
+    let mut sink = JsonSink::new(io::stdout().lock());
+    #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+    let result = if let Some(observation) = observation {
+        eml_core::run_observed(&request, &control, &mut sink, observation.hooks())
+    } else {
+        eml_core::run(&request, &control, &mut sink)
+    };
+    #[cfg(not(all(target_os = "macos", feature = "native-fixtures")))]
+    let result = eml_core::run(&request, &control, &mut sink);
+    match result {
         Ok(outcome) => outcome.exit_class().code(),
         Err(_) => {
             if control.is_stopped() {

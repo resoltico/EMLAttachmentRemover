@@ -12682,8 +12682,8 @@
     {
       "path": "crates/eml-worker/Cargo.toml",
       "kind": "review_input",
-      "bytes": 833,
-      "sha256": "325ebd46c4d43361d32bd253d6b9a3958f6c6a450332fd55bfbd51a7da40c361"
+      "bytes": 859,
+      "sha256": "2d40ce76eb42cdb8074885edae5432760e751f5a688739ffe38819b9d2a7176b"
     },
     {
       "path": "crates/eml-macos/Cargo.toml",
@@ -12809,6 +12809,10 @@
     "generation_execution_attestation": false
   },
   "review_amendments": [
+    {
+      "basis_head": "6cb173386d1fabbffa27301a7b1b059987513e30",
+      "scope": "The worker native-fixtures feature now explicitly enables the existing Core native-fixtures feature for real publication synchronization tests. Default shipping worker normal dependency/feature trees were compared to the clean cf27856 source for both Darwin targets and remain unchanged. No registry identity, license selection, legal text or shipping feature is added. The manifest input identity is renewed after this source/graph review; hashes do not establish review quality or native execution."
+    },
     {
       "basis_head": "39f7ee34217742de377303deaab47f7ac8d91aac",
       "scope": "Reviewed the Core/FS manifest diff from b68680d79bd4ac4c3ee0e7269fdeadc8c6721250. Only an opt-in native-fixtures feature and its Windows SDK feature propagation were added; no default feature, dependency, version, license or CLI build dependency changed. Fixtures are not selected for shipping CLI materials. Current cargo-about target closures and package bindings remain separately checked during generation. Retained upstream files moved from xtask/licenses to legal without changing their bytes; corresponding source paths updated. This does not extend CLI legal review to GUI or worker."

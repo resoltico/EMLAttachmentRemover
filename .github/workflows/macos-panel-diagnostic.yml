@@ -1,0 +1,42 @@
+name: Native AppKit panel observation
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Exact source commit for the isolated panel observation
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  panel:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15-intel, macos-26-intel, macos-15, macos-26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source }}
+          persist-credentials: false
+      - name: Observe exact-source native system boundary
+        env:
+          SOURCE: ${{ inputs.source }}
+        run: |
+          [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          mkdir -p target
+          git show -s --format='Source: %H; parents: %P' > target/panel-source.txt
+          sw_vers > target/panel-os.txt
+          uname -a > target/panel-host.txt
+          cargo xtask observe-macos-panel --out target/panel-observation
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: panel-${{ inputs.source }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/panel-*.txt
+            target/panel-observation/**
+          if-no-files-found: error

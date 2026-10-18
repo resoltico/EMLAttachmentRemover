@@ -2,6 +2,7 @@
 use crate::{Result, controller, macos::MacBuild};
 use serde_json::{Value, json};
 use std::{fs, path::Path, time::Duration};
+pub(crate) const EXECUTION_LIMIT: Duration = Duration::from_secs(1860);
 
 fn owner_controls(
     root: &Path,
@@ -269,6 +270,45 @@ fn preference_snapshot(
 }
 
 pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Result<Value> {
+    run_case(root, app, build, out, DesktopCase::Workflow)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DesktopCase {
+    Workflow,
+    Stop,
+    ForceStop,
+    ActiveQuit,
+    PublishedError,
+}
+impl DesktopCase {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Workflow => "workflow",
+            Self::Stop => "stop",
+            Self::ForceStop => "force-stop",
+            Self::ActiveQuit => "active-quit",
+            Self::PublishedError => "published-error",
+        }
+    }
+    fn method(self) -> &'static str {
+        match self {
+            Self::Workflow => "testOwnedDesktopWorkflowAndNativeIngress",
+            Self::Stop => "testOwnedCoreStop",
+            Self::ForceStop => "testOwnedCoreForceStop",
+            Self::ActiveQuit => "testOwnedCoreActiveQuit",
+            Self::PublishedError => "testOwnedCorePublishedError",
+        }
+    }
+}
+
+pub(crate) fn run_case(
+    root: &Path,
+    app: &Path,
+    build: &MacBuild,
+    out: &Path,
+    case: DesktopCase,
+) -> Result<Value> {
     if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
         || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
     {
@@ -277,7 +317,9 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let fixture = xtask::archive::create_artifact_directory(&out)?;
-    crate::macos_panel::observe(root, build, &out.join("native-panel-diagnostic"))?;
+    if case == DesktopCase::Workflow {
+        crate::macos_panel::observe(root, build, &out.join("native-panel-diagnostic"))?;
+    }
     let original = include_bytes!("../../tests/contract/mime/inputs/01-gmail-attachment.eml");
     for name in ["one.eml", "two.eml"] {
         fs::write(fixture.path().join(name), original)?;
@@ -297,13 +339,39 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     // One native job owns this new input directory. The test derives its location
     // from its actual source path; there is no shipping automation mode or saved
     // preference transport. Refuse accidental reuse instead of replacing inputs.
-    let input = root.join("target/desktop-interaction");
+    let input = root.join("target").join(if case == DesktopCase::Workflow {
+        "desktop-interaction".to_owned()
+    } else {
+        format!("desktop-interaction-{}", case.name())
+    });
     fs::create_dir(&input)?;
+    let mut invocation =
+        json!({"app":app,"fixture":fixture.path(),"host_scope":"fresh-github-hosted-runner"});
+    if case != DesktopCase::Workflow {
+        use base64::Engine;
+        use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
+        let control = fixture.path().join("publication-control");
+        fs::create_dir(&control)?;
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o700))?;
+        fs::write(
+            control.join("observation"),
+            if case == DesktopCase::PublishedError {
+                b"after:0\n".as_slice()
+            } else {
+                b"before:1\n".as_slice()
+            },
+        )?;
+        let destination = fixture.path().join("publication-output");
+        fs::create_dir(&destination)?;
+        invocation["scenario"] = json!(case.name());
+        invocation["observation"] = json!(control);
+        invocation["destination"] = json!(
+            base64::engine::general_purpose::STANDARD.encode(destination.as_os_str().as_bytes())
+        );
+    }
     fs::write(
         input.join("input.json"),
-        serde_json::to_vec_pretty(&json!({
-            "app":app,"fixture":fixture.path(),"host_scope":"fresh-github-hosted-runner"
-        }))?,
+        serde_json::to_vec_pretty(&invocation)?,
     )?;
     let observer = out.join("DesktopPreferenceSnapshot");
     let mut compile = build.command(root, &build.swiftc);
@@ -369,16 +437,21 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
         .arg(&owner);
     crate::macos::checked_run(compile, &out.join("interaction-owner-build.log"), 120)?;
     let before = preference_snapshot(root, app, build, &observer, &out, "before")?;
-    let lifetime_controls = owner_controls(root, app, build, &owner, &out)?;
-    let after_controls =
-        preference_snapshot(root, app, build, &observer, &out, "after-owner-controls")?;
-    let control_preferences = crate::desktop_preferences::compare(&before, &after_controls, false)?;
-    fs::write(
-        out.join("owner-controls/preferences-result.json"),
-        serde_json::to_vec_pretty(
-            &json!({"before":before,"after":after_controls,"comparison":control_preferences}),
-        )?,
-    )?;
+    let (lifetime_controls, control_preferences) = if case == DesktopCase::Workflow {
+        let controls = owner_controls(root, app, build, &owner, &out)?;
+        let after_controls =
+            preference_snapshot(root, app, build, &observer, &out, "after-owner-controls")?;
+        let comparison = crate::desktop_preferences::compare(&before, &after_controls, false)?;
+        fs::write(
+            out.join("owner-controls/preferences-result.json"),
+            serde_json::to_vec_pretty(
+                &json!({"before":before,"after":after_controls,"comparison":comparison}),
+            )?,
+        )?;
+        (controls, comparison)
+    } else {
+        (Value::Null, Value::Null)
+    };
     let results = out.join("Results.xcresult");
     let mut command = build.command(root, &owner);
     let owner_result = out.join("owner-result.json");
@@ -392,6 +465,10 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     // than accepting a persistent child or weakening generic survivor rejection.
     command.env("SWIFTBUILD_LAUNCH_IN_PROCESS", "YES");
     command
+        .arg(format!(
+            "-only-testing:DesktopInteraction/DesktopInteractionTests/{}",
+            case.method()
+        ))
         .args([
             "-project",
             "tests/macos/DesktopInteraction.xcodeproj",
@@ -416,12 +493,14 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     // synchronization. On the native Intel runner individual checks took 60s
     // while the app continued responding. Keep behavior/settlement deadlines in
     // the test unchanged; allow their full sequence to finish before outer cleanup.
-    let process = controller()?.run_with_cooperative_stop(
-        command,
-        &out.join("xctest.log"),
-        Duration::from_secs(1860),
-        xtask::process::COOPERATIVE_STOP_LIMIT,
-    )?;
+    let process = crate::macos_publication_ui::execute(case, fixture.path(), || {
+        controller()?.run_with_cooperative_stop(
+            command,
+            &out.join("xctest.log"),
+            EXECUTION_LIMIT,
+            xtask::process::COOPERATIVE_STOP_LIMIT,
+        )
+    })?;
     fs::write(
         out.join("process.json"),
         serde_json::to_vec_pretty(&process.evidence())?,
@@ -470,6 +549,13 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
         || summary["skippedTests"] != 0
     {
         return Err("Actual desktop test discovery/execution is incomplete or failed".into());
+    }
+    if case != DesktopCase::Workflow {
+        let actor = crate::macos_publication_ui::finish(root, build, fixture.path(), &out, case)?;
+        let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
+        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"actor":actor,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"nonshipping real-Core publication synchronization with actual native GUI lifecycle/presentation; unchanged shipping archive qualification remains separate"});
+        fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+        return Ok(result);
     }
     // XCTest carries observations through its native result bundle. Its runner
     // need not gain write authority over the source checkout to emit evidence.

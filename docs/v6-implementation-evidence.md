@@ -1033,3 +1033,41 @@ The missing-copy Finder test temporarily moves only an owned synthetic output,
 requires actionable missing-address feedback and restores its independent golden
 bytes, preserving any primary UI error if restoration also fails. SDK27 XCTest
 build-for-testing passes; actual native execution remains pending.
+
+## Real Core publication fixture source checks
+
+The selected-item observation API is compiled only for tests/native-fixtures;
+normal run and observed run share one engine body. Actual native temporary-file
+checks passed for Stop before publication, complete-copy/address-change after
+publication, a refused item's unused hooks not reaching the next item, and a
+second-item Stop retaining the first golden copy with actual counts1/1/0/exit130.
+The feature-enabled worker processed a real message and emitted the actual
+Published/AddressChanged event and summary after an external owned-directory move.
+The normal worker ignored that test configuration and still created golden bytes;
+version probing ignored it, while malformed fixture processing failed70.
+
+Default shipping worker normal dependency/feature trees were compared against
+clean Hcf27856 for both Darwin targets:53 ARM and54 Intel tree records were
+unchanged. The worker manifest review identity was renewed for the explicit
+fixture-feature forwarding; no registry identity/license text/selection changed.
+SDK27 strict GUI Clippy, Swift XCTest build-for-testing and strict formatting
+passed. These are local source checks, not pinned/native GUI integration.
+
+Four native GUI scenarios now use a separately copied/re-signed actual app with
+this real worker: cooperative Stop, confirmed Force Stop, active Quit escalation
+and published-with-error. They run before the still-required baseline workflow,
+with strict preferences and frozen shipping-bundle comparison. Their execution
+is unrun. The shared engine refactor invalidates final campaign attribution;
+the required bounded fuzz/mutation checks must be renewed on the delivered source.
+
+H6cb173386d1fabbffa27301a7b1b059987513e30/run39153501647 retained the ARM
+queue-query failure even after a title-filtered query. Its full native AX snapshot
+contains enabled removal buttons; repeated filtered-query existence checks expired.
+The next test enumerates the owned main window's actual button titles, logs
+native existence/enabled/hittability/frame, performs the real XCTest click and
+requires each exact decrement. No coordinate or business-callback substitute is
+used. Corrected execution and broader accessibility qualification remain open.
+
+A separate focused AppKit diagnostic workflow now compares the same pinned
+native test on hosted macOS15/26 Intel/ARM. This is supplemental diagnosis, not a
+change to the required distribution runners or macOS15 gates. It has not run yet.

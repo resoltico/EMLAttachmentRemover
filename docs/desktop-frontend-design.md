@@ -88,3 +88,37 @@ on fresh hosted runners only, with actual empty entitlements checked. A settled
 diagnostic failure is retained while product interaction still runs; uncertain
 cleanup closes admission. Either outcome only narrows the investigation and
 does not qualify the product picker or establish an operating-system defect.
+
+## Real publication synchronization fixtures
+
+The nonshipping worker feature forwards the existing Core fixture feature. The
+normal engine has one implementation; its shipping entry supplies no observation
+hooks. Fixture-only hooks surround one selected item's real publication boundary.
+They provide no replacement message processor, event, receipt or summary. Unused
+hooks are cleared before the next item, including after a protected-message refusal.
+
+A separately copied app receives the native fixture worker and new ad hoc
+signatures. Cargo feature admission excludes this worker from shipping builds.
+Before/after bundle trees bind both the changed test app and the unchanged
+shipping app. The test environment is supplied only to the exact owned launch;
+shipping worker builds ignore it, and version probes never consume it. Private,
+canonical, same-owner control directories hold bounded recipes and atomic
+no-replace markers. Their ten-minute maximum hold accommodates hosted XCTest
+interaction delays; it does not change product Stop/Quit deadlines.
+
+The external Rust actor, not XCTest, releases a cooperative Stop only after the
+real Stop flag and private acknowledgment write. For Force Stop/active Quit it
+retains the candidate across the first interrupt, and records both actual handler
+observations. Active Quit's second-minus-first observation must satisfy its
+reviewed timing bound. For published-with-error, the actor first checks actual
+published golden bytes, moves only the owned output directory and recreates its
+old address, then releases Core's independent qualification. Actual
+Published/AddressChanged events and retained golden bytes are required.
+
+Each GUI scenario has its own owner launch, one explicitly selected XCTest,
+unchanged original checks, strict whole-domain preference comparison and actual
+supervisor settlement. A read-only worker-PID absence observation supplements
+settlement; it grants no signal authority and is not sufficient by itself.
+Uncertain ownership stops further cases. These observations establish fixture
+lifecycle/presentation boundaries only when executed; the baseline workflow and
+unmodified shipping archive checks remain mandatory. Native execution is pending.

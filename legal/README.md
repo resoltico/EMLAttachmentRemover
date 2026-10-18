@@ -20,10 +20,11 @@ must not be represented as an upstream copyright attribution.
 
 `windows-runtime/` retains the six complete upstream runtime legal materials and
 source-comment notices. Its source record gives the four official distribution
-manifest component identities; those component archives have not yet been
-downloaded/verified for EML's final link. Actual selected native-input and final
-link review remain pending. These legal inputs and a Cargo-only generator do not
-qualify that boundary.
+manifest component identities. Named native Windows checkpoints now retain the
+actual selected-input/final-link reviews and unknown-input rejection controls;
+see [implementation evidence](../docs/v6-implementation-evidence.md). These legal
+files and a Cargo-only generator do not establish that boundary. Qualification
+must still be renewed for the delivered source and any changed native inputs.
 
 `crate-materials.json` retains the independent review's per-package legal-file
 and selected-text observations. It distinguishes generator text from actual

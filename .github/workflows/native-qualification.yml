@@ -444,9 +444,14 @@ jobs:
             target/native-app-build/**/*.stderr
             target/native-app-build/**/gui-interaction/Results.xcresult/**
             target/native-app-build/**/gui-interaction/preferences-*.plist
+            target/native-app-build/**/gui-publication/**/Results.xcresult/**
+            target/native-app-build/**/gui-publication/**/preferences-*.plist
+            target/native-app-build/**/entitlements.plist
             target/native-app-build/*.zip
             !target/native-app-build/sources/cargo/**
             !target/native-app-build/**/gui-interaction/build/**
+            !target/native-app-build/**/gui-publication/**/build/**
+            !target/native-app-build/**/gui-publication/cargo/**
             target/native-cli-build/*.json
             target/archive-verification/**
           if-no-files-found: error
@@ -503,6 +508,8 @@ jobs:
           path: |
             target/app-archive-smoke/**
             !target/app-archive-smoke/**/gui-interaction/build/**
+            !target/app-archive-smoke/**/gui-publication/**/build/**
+            !target/app-archive-smoke/**/gui-publication/cargo/**
             target/archive-verification/**
             target/native-host/**
           if-no-files-found: error

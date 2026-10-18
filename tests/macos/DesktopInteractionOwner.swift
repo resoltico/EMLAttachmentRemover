@@ -70,7 +70,16 @@ struct DesktopInteractionOwner {
       let configuration = NSWorkspace.OpenConfiguration()
       configuration.createsNewApplicationInstance = true
       configuration.addsToRecentItems = false
-      configuration.arguments = ["-copyDestinationBytes", ""]
+      configuration.arguments = ["-copyDestinationBytes", input["destination"] ?? ""]
+      if let observation = input["observation"] {
+        guard
+          ["stop", "force-stop", "active-quit", "published-error"].contains(input["scenario"] ?? "")
+        else {
+          throw Failure.invalidInput
+        }
+        configuration.environment = ProcessInfo.processInfo.environment.merging(
+          ["EML_PUBLICATION_OBSERVATION": observation]) { _, replacement in replacement }
+      }
       if cancellation.requested { throw Failure.cancelled }
       let launched = try await NSWorkspace.shared.openApplication(
         at: appURL, configuration: configuration)

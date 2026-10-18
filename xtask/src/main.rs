@@ -22,6 +22,8 @@ mod macos_interaction;
 #[cfg(target_os = "macos")]
 mod macos_panel;
 #[cfg(target_os = "macos")]
+mod macos_publication_ui;
+#[cfg(target_os = "macos")]
 mod macos_volume;
 mod mutants;
 mod native_host;
@@ -111,6 +113,11 @@ enum Task {
     },
     /// Strictly lint retained Swift bridge/test sources with selected Xcode defaults.
     CheckMacosSwift {
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Observe an ordinary owned AppKit panel on a fresh native hosted Mac.
+    ObserveMacosPanel {
         #[arg(long)]
         out: PathBuf,
     },
@@ -325,6 +332,23 @@ fn main() -> ExitCode {
                 {
                     let _ = out;
                     Err("Selected Xcode is required for Swift bridge/test formatting".into())
+                }
+            }
+            Task::ObserveMacosPanel { out } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    let build = macos::load(&root)?;
+                    let observed = macos_panel::observe(&root, &build, &out)?;
+                    if observed["process"]["exit_code"] != 0 {
+                        return Err("Native AppKit panel did not complete visible owned cancellation; inspect retained diagnostic evidence".into());
+                    }
+                    Ok(())
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = out;
+                    Err("Native AppKit panel observation requires macOS".into())
                 }
             }
             Task::CheckMacosDesktop { out } => {

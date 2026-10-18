@@ -22,9 +22,9 @@ struct RunContext {
     output_candidates: HashSet<Identity>,
     pending_layout: crate::binding::PendingLayout,
     admitted_removals: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "native-fixtures"))]
     before_edge: Option<Box<dyn FnOnce()>>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "native-fixtures"))]
     after_edge: Option<Box<dyn FnOnce()>>,
     #[cfg(all(test, windows))]
     before_sync_reopen: Option<Box<dyn FnOnce()>>,
@@ -36,9 +36,9 @@ impl RunContext {
             output_candidates: HashSet::new(),
             pending_layout: crate::binding::PendingLayout::default(),
             admitted_removals: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "native-fixtures"))]
             before_edge: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "native-fixtures"))]
             after_edge: None,
             #[cfg(all(test, windows))]
             before_sync_reopen: None,
@@ -598,6 +598,44 @@ pub fn run(
     control: &RunControl,
     sink: &mut impl EventSink,
 ) -> Result<RunOutcome, InvalidRequest> {
+    run_inner(
+        request,
+        control,
+        sink,
+        #[cfg(any(test, feature = "native-fixtures"))]
+        None,
+    )
+}
+
+/// Nonshipping synchronization around an actual selected item's publication.
+/// Hooks observe real operations; they supply no replacement events or receipts.
+#[cfg(any(test, feature = "native-fixtures"))]
+pub struct PublicationObservation {
+    /// Zero-based collected item whose publication is observed.
+    pub item_index: usize,
+    /// After real candidate preparation, before the final publication guards.
+    pub before: Option<Box<dyn FnOnce()>>,
+    /// After the native publication attempt, before independent qualification.
+    pub after: Option<Box<dyn FnOnce()>>,
+}
+
+/// Execute the same real engine with nonshipping publication synchronization.
+#[cfg(feature = "native-fixtures")]
+pub fn run_observed(
+    request: &RunRequest,
+    control: &RunControl,
+    sink: &mut impl EventSink,
+    observation: PublicationObservation,
+) -> Result<RunOutcome, InvalidRequest> {
+    run_inner(request, control, sink, Some(observation))
+}
+
+fn run_inner(
+    request: &RunRequest,
+    control: &RunControl,
+    sink: &mut impl EventSink,
+    #[cfg(any(test, feature = "native-fixtures"))] mut observation: Option<PublicationObservation>,
+) -> Result<RunOutcome, InvalidRequest> {
     let sources = collect_sources(request, control)?;
     let plan = plan_destinations(sources, control);
     let total = plan.sources().items().len();
@@ -634,6 +672,22 @@ pub fn run(
     }
     let mut context = RunContext::new(plan.sources());
     for index in 0..total {
+        #[cfg(any(test, feature = "native-fixtures"))]
+        {
+            // A refused/preparation-failed item must not carry its unused
+            // publication observation into a later, publishable item.
+            context.before_edge = None;
+            context.after_edge = None;
+        }
+        #[cfg(any(test, feature = "native-fixtures"))]
+        if observation
+            .as_ref()
+            .is_some_and(|hook| hook.item_index == index)
+        {
+            let hook = observation.take().expect("matched publication observation");
+            context.before_edge = hook.before;
+            context.after_edge = hook.after;
+        }
         if control.is_stopped() {
             outcome.interrupted = true;
             break;
@@ -1372,7 +1426,7 @@ fn publish_item<'a>(
     };
     let identity = ready.identity();
     let file_sync = ready.file_sync();
-    #[cfg(test)]
+    #[cfg(any(test, feature = "native-fixtures"))]
     if let Some(hook) = context.before_edge.take() {
         hook();
     }
@@ -1416,7 +1470,7 @@ fn publish_item<'a>(
         );
     }
     let attempt = ready.publish(info.basename());
-    #[cfg(test)]
+    #[cfg(any(test, feature = "native-fixtures"))]
     if let Some(hook) = context.after_edge.take() {
         hook();
     }

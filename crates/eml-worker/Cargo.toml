@@ -8,7 +8,7 @@ publish.workspace = true
 autobins = false
 
 [features]
-native-fixtures = []
+native-fixtures = ["eml-core/native-fixtures"]
 
 [[bin]]
 name = "eml-worker"
