@@ -48,6 +48,29 @@ final class DesktopInteractionTests: XCTestCase {
             return
         }
         app.activate()
+        #if arch(x86_64)
+        // Diagnose the repeatable Intel AX snapshot stall using only the exact
+        // NSWorkspace-returned app PID. No name lookup, signal or owner app.
+        let sampling = Process()
+        let sampleLog = root.appendingPathComponent("owned-app-sample.log")
+        let sampleOutput = root.appendingPathComponent("owned-app-sample-output.log")
+        try Data().write(to: sampleOutput, options: .withoutOverwriting)
+        let output = try FileHandle(forWritingTo: sampleOutput)
+        sampling.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+        sampling.arguments = [String(owned.processIdentifier), "15", "10", "-mayDie", "-file", sampleLog.path]
+        sampling.standardInput = FileHandle.nullDevice
+        sampling.standardOutput = output
+        sampling.standardError = output
+        XCTAssertFalse(owned.isTerminated)
+        try sampling.run()
+        addTeardownBlock { @MainActor in
+            let ended = NSPredicate { _, _ in !sampling.isRunning }
+            let result = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: ended, object: nil)], timeout: 20)
+            XCTAssertEqual(result, .completed, "Owned diagnostic process did not settle")
+            if !sampling.isRunning { print("Owned app diagnostic sample status: \(sampling.terminationStatus)") }
+            try output.close()
+        }
+        #endif
         let window = app.windows["EML Attachment Remover"]
         XCTAssertTrue(window.waitForExistence(timeout: 20), app.debugDescription)
         let instances = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
