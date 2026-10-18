@@ -170,6 +170,13 @@ pub(crate) fn run(root: &Path) -> Result<()> {
         }
         Ok(json!({"version":expected,"tracked_scripts":paths.len()}))
     });
+    checks.section("notices", || crate::notices::check(root, None));
+    #[cfg(target_os = "macos")]
+    let swift_checks = checks.directory.join("swift-format");
+    #[cfg(target_os = "macos")]
+    checks.section("swift-format", || {
+        crate::macos::check_swift_sources(root, &swift_checks)
+    });
     #[cfg(target_os = "macos")]
     let desktop_checks = checks.directory.join("desktop");
     #[cfg(target_os = "macos")]

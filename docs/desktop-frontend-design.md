@@ -79,8 +79,12 @@ configuration assertion. This did not establish a fix. The deferred states and
 their extra feature declarations were removed; owned synchronous panels retain
 their weak completion references, parent checks, cancellation and native paths.
 
-A small test-only observation now exercises a native Swift AppKit panel in the
-XCTest runner process before the product's own picker. This helps distinguish a
-broader runner/AppKit failure from the product boundary. Its success would not
-clear product-process instrumentation or qualify the product picker. Actual
-product integration and failed diagnostic evidence remain separate.
+An XCTest-process AppKit observation proved unsuitable: its sandbox rejected
+the panel for lack of a user-selected-file entitlement, unlike the product.
+That observation has been removed. A separate, ad hoc signed Swift AppKit test
+app now records construction, presentation and cancellation through an ordinary
+application lifecycle. Its executable runs as a directly owned controller child
+on fresh hosted runners only, with actual empty entitlements checked. A settled
+diagnostic failure is retained while product interaction still runs; uncertain
+cleanup closes admission. Either outcome only narrows the investigation and
+does not qualify the product picker or establish an operating-system defect.

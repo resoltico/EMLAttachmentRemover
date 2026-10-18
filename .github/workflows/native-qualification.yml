@@ -108,7 +108,7 @@ jobs:
             cargo deny --locked --target "$target" --features eml-gui/macos-gui --config xtask/dependencies.toml check advisories sources licenses
           done
       - name: Generate complete selected legal components on a clean source
-        run: cargo xtask notices --out target/generated-legal-materials
+        run: cargo xtask notices --write --out target/generated-legal-materials
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         id: upload
         with:
@@ -228,6 +228,9 @@ jobs:
         run: |
           cargo xtask native-tests --target '${{ matrix.target }}' --out target/native-tests
           cargo clippy --locked --workspace --all-targets --target '${{ matrix.target }}' -- -D warnings
+      - name: Strict selected-Xcode Swift bridge/test formatting
+        if: ${{ runner.os == 'macOS' }}
+        run: cargo xtask check-macos-swift --out target/native-swift-checks
       - name: Qualified Slint profile and actual Darwin child/preference fixtures
         if: ${{ runner.os == 'macOS' }}
         run: cargo xtask check-macos-desktop --out target/native-desktop-checks
@@ -279,6 +282,9 @@ jobs:
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-release-tests/**/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-release-tests/**/*.stderr
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-release-tests/native-test-build/**
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-swift-checks/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-swift-checks/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-swift-checks/**/*.stderr
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.json
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.stderr

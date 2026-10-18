@@ -627,6 +627,9 @@ pub(crate) enum NoticeComponent {
     Worker,
 }
 impl NoticeComponent {
+    fn applies_to(self, platform: &str) -> bool {
+        self == Self::Cli || platform.starts_with("macos-")
+    }
     fn name(self) -> &'static str {
         match self {
             Self::Cli => "cli",
@@ -1060,7 +1063,7 @@ fn generated_materials(
                 .as_str()
                 .ok_or("Missing platform identity")?;
             if selected.is_some_and(|(selected, _)| selected != platform)
-                || (component != NoticeComponent::Cli && !platform.starts_with("macos-"))
+                || !component.applies_to(platform)
             {
                 continue;
             }
@@ -1098,8 +1101,126 @@ fn generated_materials(
 }
 
 pub(crate) fn run(root: &Path, output: &Path) -> Result<()> {
+    match fs::symlink_metadata(output) {
+        Ok(_) => return Err("Notice writing requires a new output directory; use --check to inspect existing materials".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+        Err(error) => return Err(error.into()),
+    }
     let (_, all) = generated_materials(root, None)?;
     write_new_tree(output, &all)
+}
+
+fn source_identity(source: &Value, head: &str, working_tree: &str) -> Result<()> {
+    if source["head"] != head || source["working_tree"] != "" || !working_tree.is_empty() {
+        return Err(
+            "Legal producer and native consumer must use the same clean source checkout".into(),
+        );
+    }
+    Ok(())
+}
+
+fn checked_generated_input(root: &Path, directory: &Path) -> Result<Files> {
+    let mut all = enumerate(directory)?;
+    let marker = all
+        .remove(OUTPUT_MANIFEST)
+        .ok_or("Missing generated legal inventory")?;
+    if output_manifest(&all)? != marker {
+        return Err("Generated legal inventory differs from its actual files".into());
+    }
+    let source: Value = serde_json::from_slice(
+        all.get("source.json")
+            .ok_or("Missing legal producer source")?,
+    )?;
+    source_identity(
+        &source,
+        &crate::git(root, &["rev-parse", "HEAD"])?,
+        &crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?,
+    )?;
+    all.insert(OUTPUT_MANIFEST.into(), marker);
+    Ok(all)
+}
+
+fn checked_pairs(all: &Files, plan: &Value) -> Result<usize> {
+    let targets = plan["native_targets"]
+        .as_array()
+        .ok_or("Missing native notice policy")?;
+    let version = plan["version"].as_str().ok_or("Missing notice version")?;
+    let mut prefixes = BTreeSet::new();
+    for row in targets {
+        let platform = row["platform"].as_str().ok_or("Missing notice platform")?;
+        for component in [
+            NoticeComponent::Cli,
+            NoticeComponent::Gui,
+            NoticeComponent::Worker,
+        ] {
+            if !component.applies_to(platform) {
+                continue;
+            }
+            let prefix = component.prefix(platform);
+            let identity: Value = serde_json::from_slice(
+                all.get(&format!("{prefix}licenses/materials.json"))
+                    .ok_or("Missing required notice component")?,
+            )?;
+            if identity["platform"] != platform
+                || identity["target"] != row["target"]
+                || identity["component"] != component.name()
+                || identity["version"] != version
+            {
+                return Err(
+                    "Notice component identity differs from current target/version policy".into(),
+                );
+            }
+            if !prefixes.insert(prefix) {
+                return Err("Duplicate notice component policy".into());
+            }
+        }
+    }
+    if prefixes.is_empty() {
+        return Err("Notice component selection is empty".into());
+    }
+    for path in all.keys() {
+        if path == "source.json" || path == OUTPUT_MANIFEST {
+            continue;
+        }
+        if !prefixes.iter().any(|prefix| {
+            path.starts_with(prefix) || (path.ends_with('/') && prefix.starts_with(path))
+        }) {
+            return Err("Generated legal tree has an unexpected platform/component".into());
+        }
+    }
+    Ok(prefixes.len())
+}
+
+pub(crate) fn check(root: &Path, output: Option<&Path>) -> Result<Value> {
+    campaign::require_stock_topology(root)?;
+    let (all, mode) = if let Some(directory) = std::env::var_os("EML_GENERATED_LEGAL_MATERIALS") {
+        (
+            checked_generated_input(root, Path::new(&directory))?,
+            "consumer_identity",
+        )
+    } else {
+        (
+            generated_materials(root, None)?.1,
+            "generated_source_material_validation",
+        )
+    };
+    let plan: Value = serde_json::from_slice(&capture(
+        Command::new(std::env::current_exe()?)
+            .current_dir(root)
+            .arg("distribution"),
+    )?)?;
+    let pairs = checked_pairs(&all, &plan)?;
+    if let Some(output) = output {
+        matches_tree(output, &all)?;
+    }
+    let source: Value = serde_json::from_slice(
+        all.get("source.json")
+            .ok_or("Missing notice source receipt")?,
+    )?;
+    Ok(
+        json!({"mode":mode,"profiles":pairs,"entries":all.len(),"source":source,"compared_output":output,
+        "scope":if mode=="consumer_identity" {"same-clean-source generated material identity/completeness; successful same-source producer is a separate prerequisite, not attested by inventory/source SHA"} else {"current selected locked graphs and reviewed source/material bindings regenerated and validated; no native execution or external legal assurance"}}),
+    )
 }
 
 /// Fresh target-selected legal bytes, generated from reviewed upstream inputs.
@@ -1140,26 +1261,7 @@ pub(crate) fn checked_component(
     // builds may consume the target-selected output of the same CI run's Linux
     // producer. Identity checks bind that input, without treating it as review.
     let all = if let Some(directory) = std::env::var_os("EML_GENERATED_LEGAL_MATERIALS") {
-        let mut all = enumerate(Path::new(&directory))?;
-        let marker = all
-            .remove(OUTPUT_MANIFEST)
-            .ok_or("Missing generated legal inventory")?;
-        if output_manifest(&all)? != marker {
-            return Err("Generated legal inventory differs from its actual files".into());
-        }
-        let source: Value = serde_json::from_slice(
-            all.get("source.json")
-                .ok_or("Missing legal producer source")?,
-        )?;
-        if source["head"] != crate::git(root, &["rev-parse", "HEAD"])?
-            || source["working_tree"] != ""
-            || !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty()
-        {
-            return Err(
-                "Legal producer and native consumer must use the same clean source checkout".into(),
-            );
-        }
-        all
+        checked_generated_input(root, Path::new(&directory))?
     } else {
         generated_materials(root, Some((platform, component)))?.1
     };
@@ -1202,6 +1304,90 @@ pub(crate) fn checked_component(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_source_identity_rejects_stale_and_dirty_receipts() {
+        let source = json!({"head":"owned-head","working_tree":""});
+        source_identity(&source, "owned-head", "").unwrap();
+        assert!(source_identity(&source, "different-head", "").is_err());
+        assert!(source_identity(&source, "owned-head", " M source").is_err());
+        for invalid in [
+            json!({"head":"owned-head","working_tree":" M source"}),
+            json!({"head":"owned-head"}),
+            json!({"working_tree":""}),
+        ] {
+            assert!(source_identity(&invalid, "owned-head", "").is_err());
+        }
+    }
+
+    #[test]
+    fn current_policy_requires_every_notice_pair_and_rejects_extra_or_mismatched_components() {
+        let plan = json!({"version":"6.0.0","native_targets":[{"platform":"macos-aarch64","target":"aarch64-apple-darwin"},{"platform":"linux-x86_64","target":"x86_64-unknown-linux-gnu"}]});
+        let mut all = Files::new();
+        for (prefix, platform, target, component) in [
+            (
+                "macos-aarch64/",
+                "macos-aarch64",
+                "aarch64-apple-darwin",
+                "cli",
+            ),
+            (
+                "gui/macos-aarch64/",
+                "macos-aarch64",
+                "aarch64-apple-darwin",
+                "gui",
+            ),
+            (
+                "worker/macos-aarch64/",
+                "macos-aarch64",
+                "aarch64-apple-darwin",
+                "worker",
+            ),
+            (
+                "linux-x86_64/",
+                "linux-x86_64",
+                "x86_64-unknown-linux-gnu",
+                "cli",
+            ),
+        ] {
+            all.insert(format!("{prefix}licenses/materials.json"), serde_json::to_vec(&json!({"platform":platform,"target":target,"component":component,"version":"6.0.0"})).unwrap());
+        }
+        add_directories(&mut all);
+        assert_eq!(checked_pairs(&all, &plan).unwrap(), 4);
+        let path = "gui/macos-aarch64/licenses/materials.json";
+        let mut missing = all.clone();
+        missing.remove(path);
+        assert!(checked_pairs(&missing, &plan).is_err());
+        let mut extra = all.clone();
+        extra.insert(
+            "gui/linux-x86_64/licenses/materials.json".into(),
+            b"{}".to_vec(),
+        );
+        assert!(checked_pairs(&extra, &plan).is_err());
+        for key in ["platform", "target", "component", "version"] {
+            let mut invalid = all.clone();
+            let mut identity: Value = serde_json::from_slice(&invalid[path]).unwrap();
+            identity[key] = json!("wrong");
+            invalid.insert(path.into(), serde_json::to_vec(&identity).unwrap());
+            assert!(checked_pairs(&invalid, &plan).is_err(), "{key}");
+        }
+    }
+
+    #[test]
+    fn existing_generated_tree_check_rejects_changed_missing_and_extra_files() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("materials");
+        let expected = Files::from([("license".into(), b"owned text".to_vec())]);
+        write_new_tree(&output, &expected).unwrap();
+        matches_tree(&output, &expected).unwrap();
+        fs::write(output.join("license"), b"alter text").unwrap();
+        assert!(matches_tree(&output, &expected).is_err());
+        fs::remove_file(output.join("license")).unwrap();
+        assert!(matches_tree(&output, &expected).is_err());
+        fs::write(output.join("license"), b"owned text").unwrap();
+        fs::write(output.join("extra"), b"extra").unwrap();
+        assert!(matches_tree(&output, &expected).is_err());
+    }
 
     #[test]
     fn standard_template_retains_declarations_and_refuses_changed_source_material() {

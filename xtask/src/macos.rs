@@ -171,6 +171,72 @@ pub(crate) fn selected_command(
     command
 }
 
+pub(crate) fn check_swift_sources(root: &Path, out: &Path) -> Result<serde_json::Value> {
+    use std::collections::BTreeSet;
+    fs::create_dir(out)?;
+    let out = out.canonicalize()?;
+    let build = load(root)?;
+    let listed = capture(Command::new("git").current_dir(root).args([
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        "--",
+        "*.swift",
+    ]))?;
+    let paths = listed
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(std::str::from_utf8)
+        .collect::<std::result::Result<BTreeSet<_>, _>>()?;
+    if paths.is_empty() {
+        return Err(
+            "Swift bridge/test discovery is empty; investigate the source selection".into(),
+        );
+    }
+    let canonical_root = root.canonicalize()?;
+    for path in &paths {
+        let input = root.join(path);
+        if !fs::symlink_metadata(&input)?.is_file()
+            || !input.canonicalize()?.starts_with(&canonical_root)
+        {
+            return Err(
+                "Swift formatting requires ordinary source files inside the checkout".into(),
+            );
+        }
+    }
+    let version = String::from_utf8(capture(
+        build
+            .command(root, "/usr/bin/xcrun")
+            .args(["swift-format", "--version"]),
+    )?)?;
+    let defaults = capture(
+        build
+            .command(root, "/usr/bin/xcrun")
+            .args(["swift-format", "dump-configuration"]),
+    )?;
+    if defaults.len() > 1024 * 1024 || version.len() > 4096 {
+        return Err("Selected Swift formatter observation exceeds its bound".into());
+    }
+    let _: serde_json::Value = serde_json::from_slice(&defaults)?;
+    let configuration = out.join("formatter-defaults.json");
+    fs::write(&configuration, defaults)?;
+    let log = out.join("swift-format.log");
+    let mut command = build.command(root, "/usr/bin/xcrun");
+    command
+        .args(["swift-format", "lint", "--strict", "--configuration"])
+        .arg(&configuration)
+        .arg("--")
+        .args(&paths);
+    let process = controller()?.run(command, &log, Duration::from_secs(120))?;
+    let result = serde_json::json!({"build":build,"formatter_version":version.trim(),"source_count":paths.len(),"sources":paths,
+        "process":process.evidence(),"scope":"strict formatting of discovered retained Swift bridge/test sources using selected Xcode defaults; no native GUI qualification"});
+    fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+    process.require_success(&log)?;
+    Ok(result)
+}
+
 pub(crate) fn check_desktop(root: &Path, out: &Path) -> Result<()> {
     fs::create_dir(out)?;
     let build = load(root)?;

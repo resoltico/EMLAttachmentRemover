@@ -277,6 +277,7 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let fixture = xtask::archive::create_artifact_directory(&out)?;
+    crate::macos_panel::observe(root, build, &out.join("native-panel-diagnostic"))?;
     let original = include_bytes!("../../tests/contract/mime/inputs/01-gmail-attachment.eml");
     for name in ["one.eml", "two.eml"] {
         fs::write(fixture.path().join(name), original)?;

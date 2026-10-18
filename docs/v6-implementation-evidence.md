@@ -5,6 +5,23 @@ or release acceptance is claimed. Version6 stays under Unreleased.
 
 ## Current verification work
 
+Strict retained-Swift formatting and notice validation are now independent normal
+check sections. Swift discovery includes tracked/untracked nonignored ordinary
+sources and uses the selected Xcode's explicitly captured default configuration.
+All six retained files pass supplementary local SDK27 strict lint after formatting;
+the actual XCTest/owner builds and six pure value-observation cases passed.
+Pinned26.3 formatting remains a native gate, not established by those local checks.
+
+Notices now require explicit exclusive --write/--check operations. Checks either
+regenerate current reviewed source/material bindings or validate all required
+same-clean-source producer components in consumer_identity mode; an optional
+output comparison is exact. New unit controls reject ambiguous operations,
+stale/dirty source receipts, missing/extra/mismatched components and changed,
+missing or extra generated files. Local tooling tests passed25 library,
+67 command and24 real Unix lifetime cases. Actual new command validation and
+clean native execution remain required; no inventory/source SHA attests producer
+execution or review quality.
+
 All six native-test jobs at H2a36 passed, including both Linux and both Windows
 release qualification jobs. Both app producers failed as recorded below, so
 both macOS15 consumers and aggregate ci-ok failed; exact-M integration and
@@ -952,3 +969,31 @@ summary validator's two targeted controls passed; Windows-target source Clippy
 passed on both target selections, and workflow lint passed. These compile/local
 results do not substitute for either Windows native console gate or pinned
 macOS GUI execution.
+
+## Native panel discriminator and source gates
+
+At H e328c468b37100cb21b8ff3fb7dad9d0eb8dc72d, run39148056169 passed
+all six native-test jobs, including enabled macOS release-profile suites. Both
+app jobs failed in the test runner's AppKit observation: the runner reported
+missing user-selected-file sandbox entitlement. That observation is unsuitable
+for comparing the product and has been removed. These failures do not establish
+the product's picker behavior at that head. Earlier Intel product executions
+still retain the actual 60-second NSOpenPanel configuration assertion.
+
+A separate test-only ad hoc AppKit application now observes the native boundary
+through a normal application lifecycle. It is directly owned by the existing
+process controller, with a 90-second bound, retained phase logs and actual
+empty entitlement inspection. A settled nonzero observation remains explicit
+and does not skip the actual product picker. Uncertain lifetime prevents further
+admission. Compilation on this host passed; hosted execution remains pending.
+Actual GUI/worker entitlement output is now retained alongside image inspection.
+
+Strict Swift formatting uses the selected Xcode's captured default configuration
+and checks every discovered source, independently in normal checks and native CI.
+Local SDK27 formatting and strict lint pass; pinned Xcode26.3 execution is pending.
+Legal notices now require explicit --write or --check modes. All ten profiles
+were generated and checked locally; existing-output writing and stale-tree
+checking were rejected. Linux-generated consumer inventory checking remains a
+separate mode and does not establish producer execution or native integration.
+Read-only independent QA found no concrete blocker in these two source gates;
+that review did not execute the native checks.

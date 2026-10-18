@@ -287,6 +287,16 @@ qualification. The full app/archive/GUI and Windows gates have not passed. See
 the [implementation evidence](v6-implementation-evidence.md) for exact source
 identities and outcomes. The bounded campaign commands are below.
 
+Normal checks include both excluded Rust workspaces, notice source/material
+validation and strict selected-Xcode formatting of retained Swift bridges/tests.
+`notices --write [--out NEW_DIR]` and `notices --check [--out EXISTING_DIR]` are
+explicit exclusive operations. The latter validates current source/material
+bindings and, when supplied, exact generated-tree bytes and source receipt.
+Intel uses the existing successful same-clean-source Linux producer/consumer
+route through `EML_GENERATED_LEGAL_MATERIALS`; its evidence is explicitly
+`consumer_identity`, without claiming local generator execution or review quality.
+See [setup](../CONTRIBUTING.md#checks-and-evidence) for prerequisites and limits.
+
 The reusable native workflow explicitly checks out its source input: PR head H,
 main source S, or merge-queue source Q. PR integration separately checks out M,
 verifies its base/H parents, executes the real Linux workspace selection and

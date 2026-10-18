@@ -174,6 +174,24 @@ fn inspect_images(root: &Path, app: &Path, build: &macos::MacBuild, out: &Path) 
             let mut vtool = build.command(root, "/usr/bin/xcrun");
             vtool.args(["vtool", "-show-build"]).arg(&path);
             macos::checked_run(vtool, &logs.join("vtool.log"), 30)?;
+            let entitlement_path = logs.join("entitlements.plist");
+            let mut entitlements = build.command(root, "/usr/bin/codesign");
+            entitlements
+                .args(["--display", "--entitlements", "-", "--xml"])
+                .arg(&path);
+            controller()?
+                .run_separate_output(entitlements, &entitlement_path, Duration::from_secs(30))?
+                .require_success(&entitlement_path)?;
+            let entitlement_bytes = read(&entitlement_path, 1024 * 1024)?;
+            let entitlements = if entitlement_bytes.is_empty() {
+                Value::Null
+            } else {
+                let mut convert = build.command(root, "/usr/bin/plutil");
+                convert
+                    .args(["-convert", "json", "-o", "-"])
+                    .arg(&entitlement_path);
+                serde_json::from_slice::<Value>(&crate::capture(&mut convert)?)?
+            };
             eprintln!(
                 "Verified {relative}: thin {}, minos {}.{}.{}; actual vtool output retained",
                 image.architecture,
@@ -181,7 +199,7 @@ fn inspect_images(root: &Path, app: &Path, build: &macos::MacBuild, out: &Path) 
                 (image.minimum >> 8) & 255,
                 image.minimum & 255
             );
-            images.push(json!({"path":relative,"image":image,"bytes":identity,"runtime":runtime}));
+            images.push(json!({"path":relative,"image":image,"bytes":identity,"runtime":runtime,"entitlements":entitlements}));
         } else if bytes.get(..4).is_some_and(|magic| {
             matches!(
                 magic,

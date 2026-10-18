@@ -20,6 +20,8 @@ mod macos_icon;
 #[cfg(target_os = "macos")]
 mod macos_interaction;
 #[cfg(target_os = "macos")]
+mod macos_panel;
+#[cfg(target_os = "macos")]
 mod macos_volume;
 mod mutants;
 mod native_host;
@@ -100,6 +102,11 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Strictly lint retained Swift bridge/test sources with selected Xcode defaults.
+    CheckMacosSwift {
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Check the actual macOS Slint profile and owned native child fixtures.
     CheckMacosDesktop {
         #[arg(long)]
@@ -144,10 +151,14 @@ enum Task {
         #[arg(long)]
         target: String,
     },
-    /// Generate complete per-target legal materials into a new output directory.
+    /// Write new legal materials or check source/material and optional generated-tree freshness.
     Notices {
         #[arg(long)]
-        out: PathBuf,
+        out: Option<PathBuf>,
+        #[arg(long, conflicts_with = "check", required_unless_present = "check")]
+        write: bool,
+        #[arg(long, conflicts_with = "write")]
+        check: bool,
     },
     /// Observe exactly two pinned icon compilations; never qualifies an app.
     MacosIconDiagnostic {
@@ -293,6 +304,18 @@ fn main() -> ExitCode {
                 initialize_controller(&root)?;
                 release_assets::run(&root, &archives, &out)
             }
+            Task::CheckMacosSwift { out } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos::check_swift_sources(&root, &out).map(|_| ())
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = out;
+                    Err("Selected Xcode is required for Swift bridge/test formatting".into())
+                }
+            }
             Task::CheckMacosDesktop { out } => {
                 #[cfg(target_os = "macos")]
                 {
@@ -362,9 +385,18 @@ fn main() -> ExitCode {
                 initialize_controller(&root)?;
                 archive_verify::run(&root, &archive, &target)
             }
-            Task::Notices { out } => {
+            Task::Notices { out, check, .. } => {
                 initialize_controller(&root)?;
-                notices::run(&root, &out)
+                if check {
+                    let result = notices::check(&root, out.as_deref())?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                    Ok(())
+                } else {
+                    notices::run(
+                        &root,
+                        &out.unwrap_or_else(|| root.join("target/generated-legal-materials")),
+                    )
+                }
             }
             Task::MacosIconDiagnostic { out } => {
                 #[cfg(target_os = "macos")]
@@ -454,6 +486,23 @@ fn main() -> ExitCode {
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "{error}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn notices_require_one_explicit_operation() {
+        assert!(Arguments::try_parse_from(["xtask", "notices"]).is_err());
+        assert!(Arguments::try_parse_from(["xtask", "notices", "--out", "owned"]).is_err());
+        assert!(Arguments::try_parse_from(["xtask", "notices", "--write", "--check"]).is_err());
+        for mode in ["--write", "--check"] {
+            assert!(Arguments::try_parse_from(["xtask", "notices", mode]).is_ok());
+            assert!(
+                Arguments::try_parse_from(["xtask", "notices", mode, "--out", "owned"]).is_ok()
+            );
         }
     }
 }

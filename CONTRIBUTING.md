@@ -75,13 +75,14 @@ and the original failure evidence.
 ```sh
 # Install exact tool versions from xtask/tools.toml on PATH
 cargo xtask check
-cargo xtask notices --out target/legal-materials
+cargo xtask notices --check
+cargo xtask notices --write --out target/legal-materials
 cargo xtask qualify --target TARGET --out target/native-qualification
 cargo xtask verify-archive --archive ARCHIVE --target TARGET
 ```
 
-These supervised check commands currently require Unix; their Windows process
-backend remains an open distribution gate. Install the exact Cargo tools,
+Supervised commands select the native Unix or Windows process backend. Bounded
+fuzz/mutation campaigns require Unix. Install the exact Cargo tools,
 actionlint and shellcheck declared in xtask/tools.toml on PATH. Every Cargo-tool
 consumer checks the selected executable's version, including notices and isolated
 campaigns. CI uses checksum-verified prebuilt Cargo tools with source-build
@@ -96,8 +97,29 @@ same-source Linux-generated legal inputs because cargo-about has no Intel macOS
 prebuilt download at the selected version; this does not establish native
 execution or legal review.
 
-`qualify` currently fails at remaining required platform/app gates even after a
-bounded CLI package check succeeds. TARGET and ARCHIVE must match actual native
+Without a producer input, `notices --check` regenerates all current selected graphs
+and validates reviewed source/material bindings without maintaining a tracked
+generated tree. `--check --out DIR` also
+compares an existing tree exactly, including its source receipt. `--write` uses
+the default new `target/generated-legal-materials` directory unless `--out` is
+given, and refuses an existing address. The two operations are mutually exclusive.
+On Intel macOS, set `EML_GENERATED_LEGAL_MATERIALS` to the complete legal artifact
+from a successful same-source Linux producer, with both producer and consumer at
+the same clean commit. Check evidence then says `consumer_identity`: it checks
+inventory, source and every required component identity; it does not claim local
+generator execution or independently prove the producer ran. Dirty Intel work
+needs a new committed producer run before that route can pass. There is no
+source-build fallback for an unavailable prebuilt tool.
+
+The macOS normal/native checks also strictly lint every discovered retained Swift
+bridge/test source using the selected Xcode's default formatter configuration.
+`cargo xtask check-macos-swift --out NEW_DIR` runs that check separately. Defaults
+are captured from the pinned tool and passed explicitly, so ancestor/owner
+formatter settings are not inputs. A newer local formatter is supplementary.
+
+macOS `qualify` remains incomplete while its full app/GUI gates are open. Linux
+and Windows have native release/archive qualification checkpoints; final acceptance
+still requires the delivered source's complete matrix. TARGET and ARCHIVE must match actual native
 host and declared artifact identities. Reusing a populated output directory is
 refused. See [verification](docs/verification.md) for the exact implemented scope.
 
