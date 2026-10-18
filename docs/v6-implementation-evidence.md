@@ -226,7 +226,7 @@ passed the unfiltered workspace selection, required-name discovery, standalone
 filesystem probe and one-off rejection experiments on both GNU LLVM native CPUs.
 The required test was actually compiled out and then marked ignored in separate
 owned checkouts; both cases were refused by exact name. Disabling only the
-containment predicate made the product gate fail with native exit101 and513
+containment predicate made the product gate fail with native exit 101 and 513
 message bytes observed through the exact object independently placed at the
 redirect target. Both originals remained unchanged. The protected product run
 observed zero bytes there and no write callback. The mutation was restored and
@@ -256,3 +256,45 @@ returns success when those outputs validate; it does not qualify a complete app.
 CI consolidation, complete app/archive production, matching macOS15 smoke and the
 final six-platform aggregate remain open. No current source-only job is evidence
 for those gates.
+
+## Enabled desktop legal inputs and app archive prerequisites
+
+At `f9da54984a2a76f7b7431c0acb645a4db4f4285a`, the [native boundary run](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39092468611)
+passed on both Linux and both macOS CPUs. Linux passed actual native CLI archive
+creation, extraction, runtime/golden checks and counterfeit controls using the
+new build-time legal generation path. Both Macs passed pinned Xcode desktop
+fixtures and native GUI/worker release executable/ad-hoc-signature checks. These
+are executable/library observations, not complete app archives or GUI acceptance.
+The [Windows run](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39092468604)
+also passed both native CPUs at that head.
+
+The enabled desktop source/material pass now covers both GUI target graphs and
+both private-worker graphs in addition to six CLI graphs. Complete generation
+passed all ten profiles locally, with 267/268 GUI bindings and 39/40 worker bindings
+on ARM/Intel respectively, including ten explicit Slint license supplements per
+GUI graph. The source catalog separately checked 718 raw source members against
+published archive bytes identified by Cargo.lock. Grant/condition/disclaimer
+bodies and source-specific notices were reviewed separately from those identity
+checks; the review records its method and limits, including metadata-only MIT
+attribution information in dispatch and objc2's unchanged Apple SDK discussion.
+It is implementation-agent material review, not external independent legal review.
+Target-selected enabled GUI cargo-deny advisory/source/license checks passed for
+both macOS triples. The unsupported all-platform/all-features GUI selection
+reported additional Linux/Windows-only findings; it is not a shipping GUI scope
+and is not reported as a passing all-feature audit.
+
+The distribution policy separates native macOS26 build hosts from matching
+macOS15 app smoke hosts while retaining deployment minimum15.0 and exact
+Xcode26.3/17C529. A one-attempt icon producer validates actual outputs and records
+whether a settled actool failure permits the approved alternate host. Timeout,
+cancellation, uncertain cleanup and output-validation failure do not qualify for
+that fallback. Native execution of this producer on the new hosts remains open.
+
+A local owned synthetic fixture exercised actual ditto ZIP output. The app ZIP
+profile validates original records before a filename map, signed data descriptors,
+the finite Unix time/uid/gid metadata shape, exact expected files/modes and CRC
+readback. It rejected duplicate original names, changed descriptors, changed
+metadata and wrong expected bytes. All 22 archive tests passed, including existing
+CLI rejection/readback controls; CLI ZIPs still forbid extensions/descriptors.
+This is format-boundary evidence, not an app build, extracted app execution or
+GUI acceptance. Complete bundle assembly and native floor smoke remain open.

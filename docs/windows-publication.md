@@ -153,7 +153,7 @@ and unowned mirror replacement/cancellation without deletion.
 
 The one-off compiled-out and ignored sentinel experiments were refused by name
 on both CPUs. With only the containment predicate disabled in an owned clone,
-the same byte-effect oracle observed513 bytes at the redirect target and the
+the same byte-effect oracle observed 513 bytes at the redirect target and the
 native test exited101. The protected run observed zero. Target placement was
 independently established with the exact returned full file ID before restoring
 the parent's reparse state; live file-handle size avoids stale directory-entry

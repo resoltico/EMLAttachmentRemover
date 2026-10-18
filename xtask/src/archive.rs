@@ -1,4 +1,4 @@
-//! Bounded CLI archive inspection/readback on one immutable snapshot.
+//! Bounded native archive inspection/readback on one immutable snapshot.
 //! Structural/material evidence is separate from executable qualification.
 use sha2::{Digest, Sha256};
 use std::{
@@ -148,6 +148,90 @@ pub fn create_artifact_directory(_parent: &Path) -> io::Result<ArtifactDirectory
 }
 
 impl ArchiveSnapshot {
+    /// Borrow the immutable bytes used by inspection; native extraction receives
+    /// an owned copy of these bytes, never a second read of the caller's path.
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Inspect the finite native ditto app profile, including every CRC, exact
+    /// expected file byte and mode. This does not extract or execute the app.
+    /// Expected keys are paths relative to the one app root; modes are 0644/0755.
+    pub fn inspect_ditto_app(
+        &self,
+        root_name: &str,
+        expected: &BTreeMap<String, (Vec<u8>, u32)>,
+    ) -> io::Result<()> {
+        validate_member_name(root_name)?;
+        if root_name.contains('/')
+            || expected.is_empty()
+            || expected.len() > usize::from(MAX_ENTRIES)
+        {
+            return Err(invalid("Invalid expected app root or file inventory"));
+        }
+        let mut files = BTreeMap::new();
+        let mut directories = BTreeSet::new();
+        for (relative, (bytes, mode)) in expected {
+            let name = format!("{root_name}/{relative}");
+            validate_member_name(&name)?;
+            if relative.ends_with('/')
+                || !matches!(*mode, 0o644 | 0o755)
+                || bytes.len() as u64 > MAX_MEMBER_BYTES
+            {
+                return Err(invalid("Invalid expected app file or mode"));
+            }
+            let mut remaining = name.as_str();
+            while let Some((parent, _)) = remaining.rsplit_once('/') {
+                directories.insert(format!("{parent}/"));
+                remaining = parent;
+            }
+            files.insert(name, (bytes, mode));
+        }
+        if files.len() + directories.len() > usize::from(MAX_ENTRIES) {
+            return Err(invalid("App inventory exceeds its entry bound"));
+        }
+        let members = inspect_zip_profile(&mut Cursor::new(&self.bytes), ZipProfile::DittoApp)?;
+        if members.len() != files.len() + directories.len() {
+            return Err(invalid(
+                "App archive inventory differs from expected files/directories",
+            ));
+        }
+        let mut archive = zip::ZipArchive::new(Cursor::new(&self.bytes))?;
+        if archive.len() != members.len() || archive.has_overlapping_entries()? {
+            return Err(invalid(
+                "App ZIP library view differs from original records",
+            ));
+        }
+        for index in 0..archive.len() {
+            let entry = archive.by_index(index)?;
+            let name = entry.name()?.into_owned();
+            let mode = entry
+                .unix_mode()
+                .ok_or_else(|| invalid("App entry lacks Unix mode"))?
+                & 0o7777;
+            if name.ends_with('/') {
+                if !directories.remove(&name) || mode != 0o755 {
+                    return Err(invalid("Unexpected app directory or permissions"));
+                }
+            } else {
+                let (expected, expected_mode) = files
+                    .remove(&name)
+                    .ok_or_else(|| invalid("Unexpected app file"))?;
+                if mode != *expected_mode || entry.size() != expected.len() as u64 {
+                    return Err(invalid("App file size or permissions differ"));
+                }
+                let mut actual = Vec::new();
+                entry.take(MAX_MEMBER_BYTES + 1).read_to_end(&mut actual)?;
+                if actual != *expected {
+                    return Err(invalid("App file CRC/readback or expected bytes differ"));
+                }
+            }
+        }
+        if !files.is_empty() || !directories.is_empty() {
+            return Err(invalid("App ZIP omits expected entries"));
+        }
+        Ok(())
+    }
     /// Identify the same snapshot used by all parsing and extraction passes.
     pub fn identity(&self) -> ByteIdentity {
         ByteIdentity::of(&self.bytes)
@@ -831,6 +915,19 @@ pub struct ZipMember {
 /// The reader must refer to one stable owned archive throughout later readback.
 /// No filesystem objects are extracted here and data CRCs are checked separately.
 pub fn inspect_zip_directory(reader: &mut (impl Read + Seek)) -> io::Result<Vec<ZipMember>> {
+    inspect_zip_profile(reader, ZipProfile::Cli)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ZipProfile {
+    Cli,
+    DittoApp,
+}
+
+fn inspect_zip_profile(
+    reader: &mut (impl Read + Seek),
+    profile: ZipProfile,
+) -> io::Result<Vec<ZipMember>> {
     let length = reader.seek(SeekFrom::End(0))?;
     if !(22..=MAX_ARCHIVE_BYTES).contains(&length) {
         return Err(invalid("ZIP archive size is outside the supported bound"));
@@ -867,6 +964,7 @@ pub fn inspect_zip_directory(reader: &mut (impl Read + Seek)) -> io::Result<Vec<
     let mut claims = PathClaims::default();
     let mut members = Vec::with_capacity(usize::from(count));
     let mut regions = Vec::with_capacity(usize::from(count));
+    let mut expanded = 0_u64;
     for _ in 0..count {
         let header = directory
             .get(cursor..cursor.saturating_add(46))
@@ -874,10 +972,16 @@ pub fn inspect_zip_directory(reader: &mut (impl Read + Seek)) -> io::Result<Vec<
         if header[..4] != *b"PK\x01\x02" || short(header, 34) != 0 {
             return Err(invalid("Unsupported ZIP central header or disk"));
         }
-        // The seekable CLI writer records final sizes in both headers, without
-        // data descriptors. Apple's ditto profile is reviewed separately.
         let flags = short(header, 8);
-        if flags & !0x0800 != 0 || !matches!(short(header, 10), 0 | 8) {
+        let allowed = if profile == ZipProfile::DittoApp {
+            0x0808
+        } else {
+            0x0800
+        };
+        if flags & !allowed != 0
+            || !matches!(short(header, 10), 0 | 8)
+            || !matches!(short(header, 6), 10 | 20)
+        {
             return Err(invalid("Unsupported ZIP flags or compression"));
         }
         let name_length = usize::from(short(header, 28));
@@ -910,6 +1014,12 @@ pub fn inspect_zip_directory(reader: &mut (impl Read + Seek)) -> io::Result<Vec<
             ));
         }
         let size = long(header, 24);
+        expanded = expanded
+            .checked_add(u64::from(size))
+            .ok_or_else(|| invalid("ZIP expanded size overflow"))?;
+        if u64::from(size) > MAX_MEMBER_BYTES || expanded > MAX_EXPANDED_BYTES {
+            return Err(invalid("ZIP member/expanded size exceeds its bound"));
+        }
         let compressed_size = long(header, 20);
         let local_header = long(header, 42);
         if [size, compressed_size, local_header].contains(&u32::MAX)
@@ -918,17 +1028,31 @@ pub fn inspect_zip_directory(reader: &mut (impl Read + Seek)) -> io::Result<Vec<
         {
             return Err(invalid("Unsupported ZIP64 or invalid local member extent"));
         }
-        if directory_entry && (size != 0 || compressed_size != 0) {
+        if directory_entry
+            && (size != 0
+                || compressed_size != 0
+                || long(header, 16) != 0
+                || short(header, 10) != 0)
+        {
             return Err(invalid("ZIP directory must have no payload"));
         }
         reader.seek(SeekFrom::Start(u64::from(local_header)))?;
         let mut local = [0_u8; 30];
         reader.read_exact(&mut local)?;
         if local[..4] != *b"PK\x03\x04"
-            || local[4..26] != header[6..28]
+            || local[4..14] != header[6..16]
             || usize::from(short(&local, 26)) != name_length
         {
             return Err(invalid("ZIP local and central headers disagree"));
+        }
+        let descriptor = flags & 8 != 0;
+        if (descriptor && local[14..26].iter().any(|byte| *byte != 0))
+            || (!descriptor && local[14..26] != header[16..28])
+            || (directory_entry && descriptor)
+        {
+            return Err(invalid(
+                "ZIP local CRC/size or descriptor declaration disagrees",
+            ));
         }
         let local_extra_length = u64::from(short(&local, 28));
         let data_start = u64::from(local_header) + 30 + name_length as u64 + local_extra_length;
@@ -941,10 +1065,46 @@ pub fn inspect_zip_directory(reader: &mut (impl Read + Seek)) -> io::Result<Vec<
         if local_name != name.as_bytes() {
             return Err(invalid("ZIP local and central member names disagree"));
         }
-        if local_extra_length != 0 || extra_length != 0 {
-            return Err(invalid("CLI ZIP metadata extensions are unsupported"));
+        if profile == ZipProfile::Cli {
+            if local_extra_length != 0 || extra_length != 0 {
+                return Err(invalid("CLI ZIP metadata extensions are unsupported"));
+            }
+        } else {
+            // Native ditto emits one Info-ZIP Unix time field: central length8,
+            // local length12 with uid/gid. These values confer no authority;
+            // native extraction's resulting ownership is checked separately.
+            if local_extra_length != 16 || extra_length != 12 {
+                return Err(invalid("Unsupported ditto metadata extent"));
+            }
+            let central = &directory[cursor + 46 + name_length..record_end];
+            let mut local_extra = [0_u8; 16];
+            reader.read_exact(&mut local_extra)?;
+            if short(central, 0) != 0x5855
+                || short(central, 2) != 8
+                || short(&local_extra, 0) != 0x5855
+                || short(&local_extra, 2) != 12
+                || central[4..12] != local_extra[4..12]
+            {
+                return Err(invalid("Unsupported or inconsistent ditto metadata"));
+            }
         }
-        regions.push((u64::from(local_header), data_end));
+        let end = if descriptor {
+            if data_end + 16 > u64::from(offset) {
+                return Err(invalid("Truncated ditto data descriptor"));
+            }
+            reader.seek(SeekFrom::Start(data_end))?;
+            let mut record = [0_u8; 16];
+            reader.read_exact(&mut record)?;
+            if record[..4] != *b"PK\x07\x08" || record[4..16] != header[16..28] {
+                return Err(invalid(
+                    "Ditto data descriptor differs from central CRC/sizes",
+                ));
+            }
+            data_end + 16
+        } else {
+            data_end
+        };
+        regions.push((u64::from(local_header), end));
         members.push(ZipMember {
             name: name.to_owned(),
             size,
@@ -1043,6 +1203,132 @@ fn reserved_windows_component(component: &str) -> bool {
 mod tests {
     use super::*;
     use std::io::{Cursor, Write};
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn actual_ditto_profile_checks_original_records_descriptors_and_materials() {
+        use std::os::unix::fs::PermissionsExt;
+        let owned = tempfile::tempdir().unwrap();
+        let root = "EML Attachment Remover.app";
+        let app = owned.path().join(root);
+        let expected = BTreeMap::from([
+            (
+                "Contents/MacOS/product".into(),
+                (
+                    b"owned format fixture; not an executable app\n".to_vec(),
+                    0o755,
+                ),
+            ),
+            (
+                "Contents/Resources/a.txt".into(),
+                (b"first owned source material\n".to_vec(), 0o644),
+            ),
+            (
+                "Contents/Resources/b.txt".into(),
+                (b"second owned source material\n".to_vec(), 0o644),
+            ),
+        ]);
+        for (name, (bytes, mode)) in &expected {
+            let path = app.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, bytes).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(*mode)).unwrap();
+        }
+        for name in ["", "Contents", "Contents/MacOS", "Contents/Resources"] {
+            fs::set_permissions(app.join(name), fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let path = owned.path().join("format.zip");
+        assert!(
+            std::process::Command::new("/usr/bin/ditto")
+                .args([
+                    "-c",
+                    "-k",
+                    "--keepParent",
+                    "--norsrc",
+                    "--noextattr",
+                    "--noqtn",
+                    "--noacl"
+                ])
+                .arg(&app)
+                .arg(&path)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let snapshot = ArchiveSnapshot::read(&path).unwrap();
+        snapshot.inspect_ditto_app(root, &expected).unwrap();
+        assert!(
+            inspect_zip_directory(&mut Cursor::new(snapshot.bytes())).is_err(),
+            "The CLI profile must retain its no-extension/no-descriptor contract"
+        );
+        let bytes = snapshot.bytes();
+        let central = long(&bytes[bytes.len() - 22..], 16) as usize;
+        let mut cursor = central;
+        let mut descriptor = None;
+        let mut duplicate = None;
+        let duplicate_name = format!("{root}/Contents/Resources/b.txt");
+        while &bytes[cursor..cursor + 4] == b"PK\x01\x02" {
+            let header = &bytes[cursor..cursor + 46];
+            let name_len = usize::from(short(header, 28));
+            let local = long(header, 42) as usize;
+            if descriptor.is_none() && short(header, 8) & 8 != 0 {
+                descriptor = Some(
+                    local
+                        + 30
+                        + name_len
+                        + usize::from(short(&bytes[local..local + 30], 28))
+                        + long(header, 20) as usize,
+                );
+            }
+            if &bytes[cursor + 46..cursor + 46 + name_len] == duplicate_name.as_bytes() {
+                duplicate = Some((cursor + 46, local + 30));
+            }
+            cursor +=
+                46 + name_len + usize::from(short(header, 30)) + usize::from(short(header, 32));
+        }
+        let mut bad = bytes.to_vec();
+        bad[descriptor.unwrap() + 4] ^= 1;
+        assert!(
+            ArchiveSnapshot { bytes: bad }
+                .inspect_ditto_app(root, &expected)
+                .unwrap_err()
+                .to_string()
+                .contains("descriptor differs")
+        );
+        let mut bad = bytes.to_vec();
+        bad[central + 46 + usize::from(short(&bytes[central..central + 46], 28))] ^= 1;
+        assert!(
+            ArchiveSnapshot { bytes: bad }
+                .inspect_ditto_app(root, &expected)
+                .unwrap_err()
+                .to_string()
+                .contains("ditto metadata")
+        );
+        let mut bad = bytes.to_vec();
+        let (central_name, local_name) = duplicate.unwrap();
+        let replacement = format!("{root}/Contents/Resources/a.txt");
+        bad[central_name..central_name + replacement.len()].copy_from_slice(replacement.as_bytes());
+        bad[local_name..local_name + replacement.len()].copy_from_slice(replacement.as_bytes());
+        assert!(
+            ArchiveSnapshot { bytes: bad }
+                .inspect_ditto_app(root, &expected)
+                .unwrap_err()
+                .to_string()
+                .contains("Duplicate original ZIP member")
+        );
+        let mut wrong_material = expected.clone();
+        wrong_material
+            .get_mut("Contents/Resources/a.txt")
+            .unwrap()
+            .0[0] ^= 1;
+        assert!(
+            snapshot
+                .inspect_ditto_app(root, &wrong_material)
+                .unwrap_err()
+                .to_string()
+                .contains("expected bytes differ")
+        );
+    }
 
     fn archive() -> Vec<u8> {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));

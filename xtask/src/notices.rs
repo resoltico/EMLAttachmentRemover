@@ -33,7 +33,7 @@ struct ReviewedPackage {
     source: Option<String>,
     checksum: Option<String>,
     license_expression: String,
-    targets: Vec<String>,
+    scopes: Vec<String>,
     bindings: Vec<Binding>,
     provenance: Value,
 }
@@ -44,7 +44,7 @@ struct Binding {
     generator_text_bytes: usize,
     mapping: String,
     materials: Vec<Material>,
-    targets: Vec<String>,
+    scopes: Vec<String>,
     standard_text: Option<Value>,
 }
 #[derive(Deserialize)]
@@ -161,7 +161,7 @@ fn feature_tree(text: &str, packages: &BTreeSet<(String, String)>) -> Result<Val
         return Err("Activated feature tree omits reviewed target packages".into());
     }
     Ok(
-        json!({"scope":"actual CLI normal/build feature tree; host paths omitted without merging distinct occurrences", "entries":entries}),
+        json!({"scope":"actual selected component normal/build feature tree; host paths omitted without merging distinct occurrences", "entries":entries}),
     )
 }
 fn relative(path: &str) -> Result<&Path> {
@@ -343,7 +343,7 @@ fn material_bytes(root: &Path, package: &Package, material: &Material) -> Result
 
 fn render(
     root: &Path,
-    target: &str,
+    scope: &str,
     report: &About,
     review: &Review,
     lock: &Lock,
@@ -351,24 +351,43 @@ fn render(
     let expected: BTreeMap<_, _> = review
         .packages
         .iter()
-        .filter(|package| package.targets.iter().any(|value| value == target))
+        .filter(|package| package.scopes.iter().any(|value| value == scope))
         .map(|package| ((package.name.clone(), package.version.clone()), package))
         .collect();
     if expected.is_empty() {
-        return Err("Notice target has no reviewed package closure".into());
+        return Err("Notice scope has no reviewed package closure".into());
+    }
+    if expected.len()
+        != review
+            .packages
+            .iter()
+            .filter(|package| package.scopes.iter().any(|value| value == scope))
+            .count()
+    {
+        return Err("Duplicate reviewed package identity in one component/target scope".into());
     }
     let mut actual = BTreeMap::new();
     for entry in &report.crates {
         let key = (entry.package.name.clone(), entry.package.version.clone());
         let reviewed = expected
             .get(&key)
-            .ok_or("Unreviewed package in target notice closure")?;
+            .ok_or("Unreviewed package in scope notice closure")?;
         if entry.license != reviewed.license_expression
             || actual.insert(key, &entry.package).is_some()
         {
             return Err("Duplicate package or changed notice license expression".into());
         }
         verify_package(root, &entry.package, reviewed, lock)?;
+        if !reviewed
+            .bindings
+            .iter()
+            .any(|binding| binding.scopes.iter().any(|value| value == scope))
+        {
+            return Err(
+                "Reviewed package has no legal material binding for this component and target"
+                    .into(),
+            );
+        }
     }
     if actual.keys().ne(expected.keys()) {
         return Err("Target notice package closure differs from review".into());
@@ -385,7 +404,7 @@ fn render(
             let key = (used.package.name.clone(), used.package.version.clone());
             let package = actual
                 .get(&key)
-                .ok_or("License group refers to a package outside its target closure")?;
+                .ok_or("License group refers to a package outside its scope closure")?;
             if used.package.source != package.source
                 || used.package.manifest_path != package.manifest_path
             {
@@ -396,7 +415,7 @@ fn render(
                 .bindings
                 .iter()
                 .filter(|binding| {
-                    binding.targets.iter().any(|value| value == target)
+                    binding.scopes.iter().any(|value| value == scope)
                         && binding.license_id == license.id
                         && binding.generator_text_sha256 == hash
                         && binding.generator_text_bytes == license.text.len()
@@ -415,6 +434,7 @@ fn render(
                 .iter()
                 .map(|material| material_bytes(root, package, material))
                 .collect::<Result<Vec<_>>>()?;
+            let mut additional = Vec::new();
             let selected = match binding.mapping.as_str() {
                 "exact_per_package_legal_file" => {
                     if materials.len() != 1 || materials[0] != license.text.as_bytes() {
@@ -424,11 +444,34 @@ fn render(
                     }
                     materials[0].clone()
                 }
-                "canonical_generator_fallback_mapped_explicitly_to_actual_package_mit_file" => {
-                    if materials.len() != 1 || license.id != "MIT" {
-                        return Err("Invalid copyright-bearing MIT replacement binding".into());
+                "complete_source_license_materials" => {
+                    if materials.is_empty() || materials.iter().any(Vec::is_empty) {
+                        return Err("Missing complete source license material".into());
+                    }
+                    for material in materials.iter().skip(1) {
+                        additional.push(text_file(&mut files, material.clone())?);
                     }
                     materials[0].clone()
+                }
+                "identified_standard_text_with_source_declarations" => {
+                    let standard = binding
+                        .standard_text
+                        .as_ref()
+                        .ok_or("Missing identified standard text")?;
+                    if standard["sha256"] != hash
+                        || standard["bytes"] != license.text.len()
+                        || standard["license_id"] != license.id
+                        || materials.is_empty()
+                        || materials.iter().any(Vec::is_empty)
+                    {
+                        return Err(
+                            "Standard template or source declarations differ from review".into(),
+                        );
+                    }
+                    for material in &materials {
+                        additional.push(text_file(&mut files, material.clone())?);
+                    }
+                    license.text.as_bytes().to_vec()
                 }
                 "workspace_full_license_plus_identified_standard_mpl_text"
                 | "version_and_revision_bound_upstream_explanation_plus_identified_standard_mit_text" =>
@@ -473,12 +516,53 @@ fn render(
                 _ => return Err("Unknown legal-material mapping requires renewed review".into()),
             };
             let file = text_file(&mut files, selected)?;
+            additional.retain(|path| path != &file);
             inventory.push(json!({"name":package.name,"version":package.version,"source":package.source,
                 "checksum":reviewed.checksum,"license_expression":reviewed.license_expression,
                 "license_id":license.id,"generator_text_sha256":hash,"file":file,
                 "review_mapping":binding.mapping,"package_archive_identity_checked":package.source.is_some(),
                 "unpacked_materials_checked_separately":true,
-                "materials":binding.materials }));
+                "materials":binding.materials,"additional_material_files":additional,
+                "source_provenance":reviewed.provenance }));
+        }
+    }
+    // cargo-about 0.9.2 omits selected LicenseRef text groups, including Slint's
+    // bundled royalty-free license. Preserve this omission as a generator fact;
+    // supplement only an explicitly reviewed exact per-package source file.
+    for (key, reviewed) in &expected {
+        for binding in reviewed.bindings.iter().filter(|binding| {
+            binding.scopes.iter().any(|value| value == scope)
+                && binding.mapping == "explicit_package_license_reference_supplement"
+        }) {
+            if !binding.license_id.starts_with("LicenseRef-")
+                || !reviewed
+                    .license_expression
+                    .split(|value: char| value.is_whitespace() || matches!(value, '(' | ')'))
+                    .any(|value| value == binding.license_id)
+                || !binding.generator_text_sha256.is_empty()
+                || binding.generator_text_bytes != 0
+                || binding.materials.len() != 1
+                || binding.materials[0].kind != "package_file"
+                || observed.iter().any(|(package, _, _)| package == key)
+            {
+                return Err("Invalid or redundant reviewed license-reference supplement".into());
+            }
+            let package = actual[key];
+            let bytes = material_bytes(root, package, &binding.materials[0])?;
+            if bytes.is_empty() {
+                return Err("Empty license-reference supplement".into());
+            }
+            let file = text_file(&mut files, bytes)?;
+            observed.insert((key.clone(), binding.license_id.clone(), String::new()));
+            inventory.push(
+                json!({"name":package.name,"version":package.version,"source":package.source,
+                "checksum":reviewed.checksum,"license_expression":reviewed.license_expression,
+                "license_id":binding.license_id,"generator_text_sha256":null,
+                "generator_observation":"selected package present; license text group omitted",
+                "file":file,"review_mapping":binding.mapping,
+                "package_archive_identity_checked":package.source.is_some(),
+                "unpacked_materials_checked_separately":true,"materials":binding.materials}),
+            );
         }
     }
     let expected_count: usize = expected
@@ -487,7 +571,7 @@ fn render(
             package
                 .bindings
                 .iter()
-                .filter(|binding| binding.targets.iter().any(|value| value == target))
+                .filter(|binding| binding.scopes.iter().any(|value| value == scope))
                 .count()
         })
         .sum();
@@ -534,10 +618,55 @@ fn bundle(
     Ok(record)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Component {
+    Cli,
+    Gui,
+    Worker,
+}
+impl Component {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Cli => "cli",
+            Self::Gui => "gui",
+            Self::Worker => "worker",
+        }
+    }
+    fn package(self) -> &'static str {
+        match self {
+            Self::Cli => "remove-eml-attachments",
+            Self::Gui => "eml-gui",
+            Self::Worker => "eml-worker",
+        }
+    }
+    fn manifest(self) -> &'static str {
+        match self {
+            Self::Cli => "crates/eml-cli/Cargo.toml",
+            Self::Gui => "crates/eml-gui/Cargo.toml",
+            Self::Worker => "crates/eml-worker/Cargo.toml",
+        }
+    }
+    fn config(self) -> &'static str {
+        if self == Self::Gui {
+            "xtask/app-notices.toml"
+        } else {
+            "xtask/notices.toml"
+        }
+    }
+    fn prefix(self, platform: &str) -> String {
+        if self == Self::Cli {
+            format!("{platform}/")
+        } else {
+            format!("{}/{platform}/", self.name())
+        }
+    }
+}
+
 struct NoticeTarget<'a> {
     target: &'a str,
     platform: &'a str,
     version: &'a str,
+    component: Component,
 }
 
 fn target_materials(
@@ -552,29 +681,39 @@ fn target_materials(
         target,
         platform,
         version,
+        component,
     } = selection;
-    let arguments = [
+    let mut arguments = vec![
         "about",
         "generate",
         "--locked",
         "--manifest-path",
-        "crates/eml-cli/Cargo.toml",
+        component.manifest(),
         "--target",
         target,
         "--config",
-        "xtask/notices.toml",
+        component.config(),
         "--format",
         "json",
         "--fail",
     ];
+    if component == Component::Gui {
+        arguments.extend(["--features", "macos-gui"]);
+    }
     let bytes = capture(crate::tools::command(root, "about")?.args(&arguments[1..]))?;
     let report: About = serde_json::from_slice(&bytes)?;
-    let (mut files, inventory) = render(root, target, &report, review, lock)?;
-    let features_arguments = [
+    let (mut files, inventory) = render(
+        root,
+        &format!("{}@{target}", component.name()),
+        &report,
+        review,
+        lock,
+    )?;
+    let mut features_arguments = vec![
         "tree",
         "--locked",
         "--package",
-        "remove-eml-attachments",
+        component.package(),
         "--target",
         target,
         "--edges",
@@ -584,10 +723,13 @@ fn target_materials(
         "--format",
         "{p}|{f}",
     ];
+    if component == Component::Gui {
+        features_arguments.extend(["--features", "eml-gui/macos-gui"]);
+    }
     let features = String::from_utf8(capture(
         Command::new("cargo")
             .current_dir(root)
-            .args(features_arguments),
+            .args(&features_arguments),
     )?)?;
     let packages = report
         .crates
@@ -654,8 +796,11 @@ fn target_materials(
     } else {
         None
     };
-    let mut notice = format!("EML Attachment Remover {version}\nTarget: {target} ({platform})\n\n");
-    notice.push_str("These materials cover the target-selected locked CLI normal/build dependency graph. Build and proc-macro materials are included conservatively; this list does not assert that every listed crate is linked application code.\n\n");
+    let mut notice = format!(
+        "EML Attachment Remover {version}\nProduct: {}\nTarget: {target} ({platform})\n\n",
+        component.name()
+    );
+    notice.push_str("These materials cover the target-selected locked component normal/build dependency graph. Build and proc-macro materials are included conservatively; this list does not assert that every listed crate is linked application code.\n\n");
     notice.push_str("Full Rust standard-library copyright, nested exceptions and source pointers: licenses/rust/COPYRIGHT-library.html and licenses/rust/source.json. Associated complete license texts are in that directory.\n");
     if windows.is_some() {
         notice.push_str("Windows runtime distribution legal materials: licenses/windows-runtime/. The final executable's selected native inputs require a separate link-bound review; this material bundle does not approve that trace.\n");
@@ -669,6 +814,20 @@ fn target_materials(
             item["license_id"].as_str().unwrap_or(""),
             item["file"].as_str().unwrap_or("")
         ));
+        if let Some(additional) = item["additional_material_files"].as_array() {
+            for file in additional {
+                notice.push_str(&format!(
+                    "  Additional source/notice material: {}\n",
+                    file.as_str().ok_or("Invalid accompanying material path")?
+                ));
+            }
+        }
+    }
+    if inventory
+        .iter()
+        .any(|item| item["review_mapping"] == "identified_standard_text_with_source_declarations")
+    {
+        notice.push_str("\nIdentified standard license templates are not upstream copyright attributions. The corresponding complete source declarations and notices are retained separately above; no missing copyright year or owner was invented.\n");
     }
     if files.contains_key("licenses/objc2/LICENSE.md") {
         notice.push_str("\nobjc2-family upstream licensing explanation and exact revisions: licenses/objc2/LICENSE.md and source.json. The identified standard MIT template is included separately; its copyright placeholders are not an upstream attribution. The upstream Apple SDK discussion is retained unchanged.\n");
@@ -682,7 +841,7 @@ fn target_materials(
         &mut files,
         "licenses/materials.json".into(),
         serde_json::to_vec_pretty(&json!({
-            "version":version,"target":target,"platform":platform,
+            "version":version,"target":target,"platform":platform,"component":component.name(),
             "scope":"legal-material generation only; no native execution, archive or final-link qualification",
             "generation":{"tool":review.generator_pin,"arguments":arguments,"config_sha256":digest(config),
             "feature_arguments":features_arguments,"activated_features":"licenses/activated-features.json",
@@ -812,7 +971,10 @@ fn write_new_tree(output: &Path, files: &Files) -> Result<()> {
     matches_tree(output, files)
 }
 
-fn generated_materials(root: &Path, selected_platform: Option<&str>) -> Result<(PathBuf, Files)> {
+fn generated_materials(
+    root: &Path,
+    selected: Option<(&str, Component)>,
+) -> Result<(PathBuf, Files)> {
     campaign::require_stock_topology(root)?;
     let tool = campaign::tool_version(root, "about", "cargo_about")?;
     let root = root.canonicalize()?;
@@ -831,6 +993,10 @@ fn generated_materials(root: &Path, selected_platform: Option<&str>) -> Result<(
                 | "crates/eml-protocol/Cargo.toml"
                 | "crates/eml-core/Cargo.toml"
                 | "crates/eml-fs/Cargo.toml"
+                | "crates/eml-app/Cargo.toml"
+                | "crates/eml-gui/Cargo.toml"
+                | "crates/eml-worker/Cargo.toml"
+                | "crates/eml-macos/Cargo.toml"
                 | "LICENSE"
         ) {
             checked_file(&root, fact)?;
@@ -851,7 +1017,6 @@ fn generated_materials(root: &Path, selected_platform: Option<&str>) -> Result<(
     let compiler = String::from_utf8(capture(
         Command::new("rustc").current_dir(&root).arg("-vV"),
     )?)?;
-    let config = read(&root.join("xtask/notices.toml"), MAX_LEGAL_BYTES)?;
     let targets = plan["native_targets"]
         .as_array()
         .ok_or("Missing native target table")?;
@@ -877,28 +1042,44 @@ fn generated_materials(root: &Path, selected_platform: Option<&str>) -> Result<(
             "scope": "generated legal materials; not native execution or legal review evidence"
         }))?,
     )?;
-    for target in targets {
-        let platform = target["platform"]
-            .as_str()
-            .ok_or("Missing platform identity")?;
-        if selected_platform.is_some_and(|selected| selected != platform) {
+    for component in [Component::Cli, Component::Gui, Component::Worker] {
+        if selected.is_some_and(|(_, selected)| selected != component) {
             continue;
         }
-        let target = target["target"].as_str().ok_or("Missing target identity")?;
-        eprintln!("Generating notice materials: {platform} ({target})");
-        for (path, bytes) in target_materials(
-            &root,
-            NoticeTarget {
-                target,
-                platform,
-                version,
-            },
-            &review,
-            &lock,
-            &compiler,
-            &config,
-        )? {
-            insert(&mut all, format!("{platform}/{path}"), bytes)?;
+        let config = read(&root.join(component.config()), MAX_LEGAL_BYTES)?;
+        for target in targets {
+            let platform = target["platform"]
+                .as_str()
+                .ok_or("Missing platform identity")?;
+            if selected.is_some_and(|(selected, _)| selected != platform)
+                || (component != Component::Cli && !platform.starts_with("macos-"))
+            {
+                continue;
+            }
+            let target = target["target"].as_str().ok_or("Missing target identity")?;
+            eprintln!(
+                "Generating {} legal materials: {platform} ({target})",
+                component.name()
+            );
+            for (path, bytes) in target_materials(
+                &root,
+                NoticeTarget {
+                    target,
+                    platform,
+                    version,
+                    component,
+                },
+                &review,
+                &lock,
+                &compiler,
+                &config,
+            )? {
+                insert(
+                    &mut all,
+                    format!("{}{path}", component.prefix(platform)),
+                    bytes,
+                )?;
+            }
         }
     }
     let marker = OUTPUT_MANIFEST;
@@ -936,6 +1117,14 @@ impl CheckedTargetMaterials {
 }
 
 pub(crate) fn checked_target(root: &Path, platform: &str) -> Result<CheckedTargetMaterials> {
+    checked_component(root, platform, Component::Cli)
+}
+
+pub(crate) fn checked_component(
+    root: &Path,
+    platform: &str,
+    component: Component,
+) -> Result<CheckedTargetMaterials> {
     if relative(platform)?.components().count() != 1 {
         return Err("Invalid notice platform component".into());
     }
@@ -964,9 +1153,9 @@ pub(crate) fn checked_target(root: &Path, platform: &str) -> Result<CheckedTarge
         }
         all
     } else {
-        generated_materials(root, Some(platform))?.1
+        generated_materials(root, Some((platform, component)))?.1
     };
-    let prefix = format!("{platform}/");
+    let prefix = component.prefix(platform);
     let selected: Files = all
         .into_iter()
         .filter_map(|(path, bytes)| {
@@ -985,7 +1174,7 @@ pub(crate) fn checked_target(root: &Path, platform: &str) -> Result<CheckedTarge
             .get("licenses/materials.json")
             .ok_or("Missing checked target material identity")?,
     )?;
-    if identity["platform"] != platform {
+    if identity["platform"] != platform || identity["component"] != component.name() {
         return Err("Checked material platform mismatch".into());
     }
     Ok(CheckedTargetMaterials {
@@ -1005,6 +1194,89 @@ pub(crate) fn checked_target(root: &Path, platform: &str) -> Result<CheckedTarge
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standard_template_retains_declarations_and_refuses_changed_source_material() {
+        let root = tempfile::tempdir().unwrap();
+        let declaration = "Owned synthetic license declaration and attribution\n";
+        fs::write(root.path().join("Cargo.toml"), declaration).unwrap();
+        let standard = "Identified synthetic standard text, not an upstream attribution\n";
+        let package = json!({"name":"owned-declaration","version":"1.0.0","source":null,"manifest_path":root.path().join("Cargo.toml")});
+        let report: About =
+            serde_json::from_value(json!({"crates":[{"package":package,"license":"MIT"}],
+            "licenses":[{"id":"MIT","text":standard,"used_by":[{"crate":package}]}]}))
+            .unwrap();
+        let review: Review = serde_json::from_value(json!({"generator_pin":{},"source_inputs":[],"targets":[{"target":"owned-target"}],
+            "packages":[{"name":"owned-declaration","version":"1.0.0","source":null,"checksum":null,"license_expression":"MIT","scopes":["owned-target"],
+                "provenance":{"kind":"workspace","manifest_path":"Cargo.toml"},"bindings":[{"license_id":"MIT","generator_text_sha256":digest(standard.as_bytes()),"generator_text_bytes":standard.len(),
+                "mapping":"identified_standard_text_with_source_declarations","scopes":["owned-target"],
+                "standard_text":{"license_id":"MIT","sha256":digest(standard.as_bytes()),"bytes":standard.len()},
+                "materials":[{"kind":"package_file","path":"Cargo.toml","bytes":declaration.len(),"sha256":digest(declaration.as_bytes())}]}]}]})).unwrap();
+        let lock: Lock = serde_json::from_value(json!({"package":[{"name":"owned-declaration","version":"1.0.0","source":null,"checksum":null}]})).unwrap();
+        let (files, inventory) =
+            render(root.path(), "owned-target", &report, &review, &lock).unwrap();
+        assert_eq!(
+            files[inventory[0]["file"].as_str().unwrap()],
+            standard.as_bytes()
+        );
+        let additional = inventory[0]["additional_material_files"]
+            .as_array()
+            .unwrap();
+        assert_eq!(additional.len(), 1);
+        assert_eq!(
+            files[additional[0].as_str().unwrap()],
+            declaration.as_bytes()
+        );
+        fs::write(root.path().join("Cargo.toml"), b"changed declaration").unwrap();
+        assert!(render(root.path(), "owned-target", &report, &review, &lock).is_err());
+    }
+
+    #[test]
+    fn omitted_reference_requires_explicit_material_and_preserves_generator_omission() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("Cargo.toml"), b"owned manifest").unwrap();
+        let text = "Synthetic owned custom license material\n";
+        fs::write(root.path().join("LICENSE"), text).unwrap();
+        let package = json!({"name":"owned-reference","version":"1.0.0","source":null,"manifest_path":root.path().join("Cargo.toml")});
+        let mut report: About = serde_json::from_value(json!({"crates":[{"package":package,"license":"LicenseRef-Owned-Fixture"}],"licenses":[]})).unwrap();
+        let mut review: Review = serde_json::from_value(json!({"generator_pin":{},"source_inputs":[],"targets":[{"target":"owned-target"}],
+            "packages":[{"name":"owned-reference","version":"1.0.0","source":null,"checksum":null,"license_expression":"LicenseRef-Owned-Fixture",
+                "scopes":["owned-target"],"provenance":{"kind":"workspace","manifest_path":"Cargo.toml"},"bindings":[]}]})).unwrap();
+        let lock: Lock = serde_json::from_value(json!({"package":[{"name":"owned-reference","version":"1.0.0","source":null,"checksum":null}]})).unwrap();
+        assert!(
+            render(root.path(), "owned-target", &report, &review, &lock)
+                .unwrap_err()
+                .to_string()
+                .contains("no legal material binding")
+        );
+        review.packages[0].bindings.push(serde_json::from_value(json!({"license_id":"LicenseRef-Owned-Fixture","generator_text_sha256":"","generator_text_bytes":0,
+            "mapping":"explicit_package_license_reference_supplement","scopes":["owned-target"],
+            "materials":[{"kind":"package_file","path":"LICENSE","bytes":text.len(),"sha256":digest(text.as_bytes())}]})).unwrap());
+        let (files, inventory) =
+            render(root.path(), "owned-target", &report, &review, &lock).unwrap();
+        assert_eq!(
+            files[inventory[0]["file"].as_str().unwrap()],
+            text.as_bytes()
+        );
+        assert!(inventory[0]["generator_text_sha256"].is_null());
+        assert_eq!(
+            inventory[0]["generator_observation"],
+            "selected package present; license text group omitted"
+        );
+        fs::write(root.path().join("LICENSE"), b"changed material").unwrap();
+        assert!(render(root.path(), "owned-target", &report, &review, &lock).is_err());
+        fs::write(root.path().join("LICENSE"), text).unwrap();
+        report.licenses.push(
+            serde_json::from_value(
+                json!({"id":"LicenseRef-Owned-Fixture","text":text,"used_by":[{"crate":package}]}),
+            )
+            .unwrap(),
+        );
+        assert!(
+            render(root.path(), "owned-target", &report, &review, &lock).is_err(),
+            "Changed generator behavior requires review, not a duplicate supplement"
+        );
+    }
 
     #[test]
     fn activated_features_preserve_occurrences_without_host_paths() {
@@ -1046,10 +1318,10 @@ mod tests {
             packages.push(package);
             locked.push(json!({"name":name,"version":"1.0.0","source":null,"checksum":null}));
             reviewed.push(json!({"name":name,"version":"1.0.0","source":null,"checksum":null,
-                "license_expression":"MIT","targets":["owned-target"],
+                "license_expression":"MIT","scopes":["owned-target"],
                 "provenance":{"kind":"workspace","manifest_path":format!("{name}/Cargo.toml")},
                 "bindings":[{"license_id":"MIT","generator_text_sha256":digest(text.as_bytes()),"generator_text_bytes":text.len(),
-                    "mapping":"exact_per_package_legal_file","targets":["owned-target"],
+                    "mapping":"exact_per_package_legal_file","scopes":["owned-target"],
                     "materials":[{"kind":"package_file","path":"LICENSE","bytes":text.len(),"sha256":digest(text.as_bytes())}]}]}));
         }
         let mut report: About = serde_json::from_value(json!({"crates":packages.iter().map(|package| json!({"package":package,"license":"MIT"})).collect::<Vec<_>>(),
@@ -1097,9 +1369,9 @@ mod tests {
             "licenses":[{"id":"MIT","text":fallback,"source_path":null,"used_by":[{"crate":package}]}]})).unwrap();
         let review: Review = serde_json::from_value(json!({"generator_pin":{},"source_inputs":[],"targets":[{"target":"owned-target"}],
             "packages":[{"name":"owned-binding","version":"1.0.0","source":"registry+https://github.com/rust-lang/crates.io-index","checksum":digest(archive),
-                "license_expression":"MIT OR Apache-2.0","targets":["owned-target"],"provenance":{"kind":"registry"},
+                "license_expression":"MIT OR Apache-2.0","scopes":["owned-target"],"provenance":{"kind":"registry"},
                 "bindings":[{"license_id":"MIT","generator_text_sha256":digest(fallback.as_bytes()),"generator_text_bytes":fallback.len(),
-                    "mapping":"canonical_generator_fallback_mapped_explicitly_to_actual_package_mit_file","targets":["owned-target"],
+                    "mapping":"complete_source_license_materials","scopes":["owned-target"],
                     "materials":[{"kind":"package_file","path":"license-mit","bytes":legal.len(),"sha256":"c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"}]}]}]})).unwrap();
         let lock: Lock = serde_json::from_value(json!({"package":[{"name":"owned-binding","version":"1.0.0","source":"registry+https://github.com/rust-lang/crates.io-index","checksum":digest(archive)}]})).unwrap();
         let (files, inventory) =

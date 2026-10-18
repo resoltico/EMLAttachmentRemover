@@ -8,12 +8,14 @@ windows_rust_minimum = "10"
 [[targets]]
 platform = "macos-aarch64"
 target = "aarch64-apple-darwin"
-runner = "macos-15"
+runner = "macos-26"
+app_smoke_runner = "macos-15"
 
 [[targets]]
 platform = "macos-x86_64"
 target = "x86_64-apple-darwin"
-runner = "macos-15-intel"
+runner = "macos-26-intel"
+app_smoke_runner = "macos-15-intel"
 
 [[targets]]
 platform = "linux-x86_64"

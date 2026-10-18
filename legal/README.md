@@ -35,3 +35,25 @@ and feature graph, and compare current locked identities and exact known legal
 bytes with these observations. A changed package, binding or legal file requires
 renewed review; grouping equal text cannot supply another package's provenance.
 The generator must not manufacture a new review record from its own output.
+
+The material review distinguishes the standalone CLI, macOS GUI executable and
+private macOS worker by component/target scope. Common package facts are shared;
+GUI and worker membership is checked separately rather than inferred from CLI
+coverage. `xtask/app-notices.toml` selects the enabled GUI licenses. Both native
+macOS target graphs also receive explicit cargo-deny policy checks.
+
+Some published crates omit their repository's legal files. The retained inputs
+under upstream/ are exact files from the package-declared VCS revision, with
+per-package revision/path checks. Complete combined files retain notices such as
+libm's musl and CORE-MATH attributions. Slint helper source declarations retain
+actual copyright/SPDX lines; a standard MIT template is identified as a template,
+never filled with an invented year or owner. dispatch0.2.0 supplies an MIT package
+declaration and author metadata but no separate license file at its declared
+revision; its declaration accompanies the identified standard text.
+
+cargo-about0.9.2 omits the selected LicenseRef text groups for Slint1.18.1 despite
+including those packages in its graph. The generator requires an explicit
+reviewed supplement from every exact package's complete royalty-free license.
+An unreviewed omission fails. The app's top-level About screen displays AboutSlint.
+This supplements the selected source materials; generator success, checksums and
+license policy do not establish legal assurance or native product qualification.

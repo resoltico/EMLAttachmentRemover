@@ -114,6 +114,11 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Compile and validate one shared owner-icon asset set with pinned Xcode.
+    CompileMacosIcon {
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Build and ad hoc sign native GUI/worker executables; no app/archive verdict.
     BuildMacosSources {
         #[arg(long)]
@@ -268,6 +273,18 @@ fn main() -> ExitCode {
                     Err("Native macOS is required for icon observations".into())
                 }
             }
+            Task::CompileMacosIcon { out } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos_icon::compile(&root, &out)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = out;
+                    Err("Native macOS is required for owner-icon compilation".into())
+                }
+            }
             Task::BuildMacosSources { out } => {
                 #[cfg(target_os = "macos")]
                 {
@@ -277,7 +294,7 @@ fn main() -> ExitCode {
                 #[cfg(not(target_os = "macos"))]
                 {
                     let _ = out;
-                    Err("Native macOS is required for app assembly".into())
+                    Err("Native macOS is required for desktop executable builds".into())
                 }
             }
             Task::Distribution => distribution::run(&root),

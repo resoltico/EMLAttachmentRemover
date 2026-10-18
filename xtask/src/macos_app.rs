@@ -208,9 +208,17 @@ pub(crate) fn icon_command(
 
 pub(crate) fn icon_outputs(root: &Path, icons: &Path, build: &macos::MacBuild) -> Result<Value> {
     for file in ["Assets.car", "EML.icns", "icon-partial.plist"] {
-        if fs::metadata(icons.join(file))?.len() == 0 {
-            return Err("actool omitted a required icon output".into());
+        let metadata = fs::symlink_metadata(icons.join(file))?;
+        if !metadata.is_file() || metadata.len() == 0 || metadata.len() > 64 * 1024 * 1024 {
+            return Err("actool omitted a required bounded ordinary icon output".into());
         }
+    }
+    let icns = fs::read(icons.join("EML.icns"))?;
+    if icns.len() < 8
+        || &icns[..4] != b"icns"
+        || u32::from_be_bytes(icns[4..8].try_into()?) as usize != icns.len()
+    {
+        return Err("actool produced an invalid ICNS container".into());
     }
     let partial: Value = serde_json::from_slice(&capture(
         build
@@ -225,6 +233,9 @@ pub(crate) fn icon_outputs(root: &Path, icons: &Path, build: &macos::MacBuild) -
         !["CFBundleIconName", "CFBundleIconFile", "CFBundleIcons"].contains(&key.as_str())
     }) {
         return Err("Unexpected icon metadata key".into());
+    }
+    if partial["CFBundleIconName"] != "EML" || partial["CFBundleIconFile"] != "EML" {
+        return Err("Icon metadata does not identify the requested EML artwork".into());
     }
     Ok(partial)
 }

@@ -31,6 +31,7 @@ struct Target {
     platform: String,
     target: String,
     runner: String,
+    app_smoke_runner: Option<String>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Family {
@@ -59,6 +60,7 @@ struct NativeTarget {
     platform: String,
     target: String,
     runner: String,
+    app_smoke_runner: Option<String>,
     os: &'static str,
     architecture: String,
     app: bool,
@@ -164,15 +166,22 @@ impl Target {
         if self.target != format!("{architecture}-{}", family.target_suffix()) {
             return Err("Rust target does not match its native platform".into());
         }
-        if self.runner.is_empty()
-            || self.runner.len() > 64
-            || !self
-                .runner
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.'))
-            || !self.runner.as_bytes()[0].is_ascii_alphanumeric()
+        let valid_runner = |label: &str| {
+            !label.is_empty()
+                && label.len() <= 64
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.'))
+                && label.as_bytes()[0].is_ascii_alphanumeric()
+        };
+        if !valid_runner(&self.runner)
+            || self
+                .app_smoke_runner
+                .as_deref()
+                .is_some_and(|label| !valid_runner(label))
+            || (family == Family::Macos) != self.app_smoke_runner.is_some()
         {
-            return Err("Unsafe or invalid native runner label".into());
+            return Err("Invalid native build or macOS app smoke runner".into());
         }
         Ok((family, architecture))
     }
@@ -228,8 +237,12 @@ impl Distribution {
             let (family, architecture) = row.coordinates()?;
             let platform_text = match family {
                 Family::Macos => format!(
-                    "macOS {}+, {architecture}. Native qualification required on {}; a deployment minimum is not execution evidence for the original OS release.",
-                    self.policy.macos_minimum, row.runner
+                    "macOS {}+, {architecture}. Native build host {}; app archive smoke host {}. A deployment minimum is not execution evidence for the original OS release.",
+                    self.policy.macos_minimum,
+                    row.runner,
+                    row.app_smoke_runner
+                        .as_deref()
+                        .ok_or("Missing macOS app smoke host")?
                 ),
                 Family::Linux => format!(
                     "Ubuntu {}+, GNU/glibc {architecture}; required GLIBC symbols no newer than {}. Native qualification required on {}; other distributions are unqualified.",
@@ -244,6 +257,7 @@ impl Distribution {
                 platform: row.platform.clone(),
                 target: row.target.clone(),
                 runner: row.runner.clone(),
+                app_smoke_runner: row.app_smoke_runner.clone(),
                 os: family.name(),
                 architecture: architecture.into(),
                 app: family == Family::Macos,
@@ -474,8 +488,8 @@ mod tests {
         assert_eq!(
             actual,
             [
-                ("macos-aarch64", "aarch64-apple-darwin", "macos-15"),
-                ("macos-x86_64", "x86_64-apple-darwin", "macos-15-intel"),
+                ("macos-aarch64", "aarch64-apple-darwin", "macos-26"),
+                ("macos-x86_64", "x86_64-apple-darwin", "macos-26-intel"),
                 ("linux-x86_64", "x86_64-unknown-linux-gnu", "ubuntu-22.04"),
                 (
                     "linux-aarch64",
@@ -498,6 +512,14 @@ mod tests {
         assert_eq!(table.policy.linux_minimum_ubuntu, "22.04");
         assert_eq!(table.policy.linux_glibc_maximum, "2.35");
         assert_eq!(table.policy.windows_rust_minimum, "10");
+        assert_eq!(
+            table.targets[0].app_smoke_runner.as_deref(),
+            Some("macos-15")
+        );
+        assert_eq!(
+            table.targets[1].app_smoke_runner.as_deref(),
+            Some("macos-15-intel")
+        );
     }
 
     #[test]
@@ -583,14 +605,19 @@ mod tests {
             TABLE.replace("[policy]", "[policy]\nmacos_minimum = \"15.0\""),
             TABLE.replace("target = \"aarch64-apple-darwin\"\n", ""),
             TABLE.replace("macos_minimum = \"15.0\"\n", ""),
-            TABLE.replace("runner = \"macos-15\"", "runner = 1"),
+            TABLE.replace("runner = \"macos-26\"", "runner = 1"),
+            TABLE.replace("app_smoke_runner = \"macos-15\"\n", ""),
+            TABLE.replace(
+                "app_smoke_runner = \"macos-15\"",
+                "app_smoke_runner = \"../unsafe\"",
+            ),
             TABLE.replace("macos-aarch64", "macos-universal"),
             TABLE.replace("macos-aarch64", "other-aarch64"),
             TABLE.replace("aarch64-apple-darwin", "x86_64-apple-darwin"),
             TABLE.replace("unknown-linux-gnu", "unknown-linux-musl"),
-            TABLE.replace("runner = \"macos-15\"", "runner = \"../unsafe\""),
-            TABLE.replace("runner = \"macos-15\"", "runner = \"line\\nunsafe\""),
-            TABLE.replace("runner = \"macos-15\"", "runner = \"\""),
+            TABLE.replace("runner = \"macos-26\"", "runner = \"../unsafe\""),
+            TABLE.replace("runner = \"macos-26\"", "runner = \"line\\nunsafe\""),
+            TABLE.replace("runner = \"macos-26\"", "runner = \"\""),
             TABLE.replace("macos_minimum = \"15.0\"", "macos_minimum = \"15..0\""),
             TABLE.replace(
                 "linux_glibc_maximum = \"2.35\"",

@@ -4,6 +4,61 @@ use crate::{Result, controller, macos, macos_app};
 use serde_json::{Value, json};
 use std::{fs, os::unix::process::ExitStatusExt, path::Path, time::Duration};
 
+/// One production input set. A settled actool failure may select the approved
+/// alternate host; validation, timeout or uncertain cleanup never permits it.
+pub(crate) fn compile(root: &Path, out: &Path) -> Result<()> {
+    fs::create_dir(out)?;
+    let build = macos::load(root)?;
+    let host = crate::native_host::inspect(root, &build.host, "macos", &build.architecture)?;
+    let (command, icons) = macos_app::icon_command(root, out, &build)?;
+    let log = out.join("icon-build.log");
+    let process = controller()?.run(command, &log, Duration::from_secs(180))?;
+    let settled = !process.timed_out
+        && !process.cancelled
+        && process.cleanup_complete
+        && process.unexpected_survivors == 0
+        && controller()?.admits_work();
+    let validation = if process.success() {
+        Some(macos_app::icon_outputs(root, &icons, &build))
+    } else {
+        None
+    };
+    let passed = settled && validation.as_ref().is_some_and(|result| result.is_ok());
+    let materials = if passed {
+        ["Assets.car", "EML.icns", "icon-partial.plist"]
+            .into_iter()
+            .map(|name| {
+                Ok((
+                    name.to_owned(),
+                    serde_json::to_value(xtask::archive::ByteIdentity::of(&fs::read(
+                        icons.join(name),
+                    )?))?,
+                ))
+            })
+            .collect::<Result<serde_json::Map<String, Value>>>()?
+    } else {
+        serde_json::Map::new()
+    };
+    fs::write(
+        out.join("result.json"),
+        serde_json::to_vec_pretty(&json!({
+            "source":crate::git(root, &["rev-parse", "HEAD"])?,"host":host,"build":build,
+            "process":process.evidence(),"outputs_validated":passed,"materials":materials,
+            "retry_allowed":settled && !process.status.success(),
+            "validation_error":validation.as_ref().and_then(|result| result.as_ref().err()).map(ToString::to_string),
+            "scope":"one actual owner-icon compile; shared input identity, not app/GUI qualification"
+        }))?,
+    )?;
+    if !passed {
+        return Err(format!(
+            "Owner-icon compilation or output validation failed; retained {}",
+            out.display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
 fn fallback_classes(root: &Path, developer: &Path) -> Vec<&'static str> {
     std::env::var_os("DYLD_FALLBACK_LIBRARY_PATH")
         .map(|value| {
