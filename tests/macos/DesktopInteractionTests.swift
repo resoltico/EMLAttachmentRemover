@@ -220,7 +220,7 @@ final class DesktopInteractionTests: XCTestCase {
         snapshot(app, "eight-waiting-requests")
         let refused = try await NSWorkspace.shared.open([sources[0]], withApplicationAt: appURL, configuration: delivery)
         guard refused.processIdentifier == pid else { throw InteractionFailure.expectedPresentation }
-        try await requireText(app, containing: "Selection not started: Application admission: Full")
+        try await requireText(app, containing: "8 requests are already waiting. Remove a waiting run before adding another.")
         try await requireWaiting(app, count: 8)
         snapshot(app, "ninth-request-refused")
         app.buttons["Dismiss notice"].click()

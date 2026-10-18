@@ -25,6 +25,7 @@ mod mutants;
 mod native_host;
 mod notices;
 mod qualify;
+mod release_assets;
 mod release_check;
 mod smoke;
 mod tools;
@@ -91,6 +92,13 @@ enum Task {
         source: String,
         #[arg(long)]
         version: String,
+    },
+    /// Assemble exactly eight archive bytes and SHA256SUMS; no qualification or publication.
+    StageReleaseAssets {
+        #[arg(long)]
+        archives: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Check the actual macOS Slint profile and owned native child fixtures.
     CheckMacosDesktop {
@@ -278,6 +286,10 @@ fn main() -> ExitCode {
             Task::ReleaseCheck { source, version } => {
                 initialize_controller(&root)?;
                 release_check::run(&root, &source, &version)
+            }
+            Task::StageReleaseAssets { archives, out } => {
+                initialize_controller(&root)?;
+                release_assets::run(&root, &archives, &out)
             }
             Task::CheckMacosDesktop { out } => {
                 #[cfg(target_os = "macos")]

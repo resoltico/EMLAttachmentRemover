@@ -35,7 +35,13 @@ pub enum QueueError {
 }
 impl std::fmt::Display for QueueError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Application admission: {self:?}")
+        match self {
+            Self::Full => write!(
+                f,
+                "{MAX_WAITING_REQUESTS} requests are already waiting. Remove a waiting run before adding another."
+            ),
+            _ => write!(f, "Application admission: {self:?}"),
+        }
     }
 }
 impl std::error::Error for QueueError {}

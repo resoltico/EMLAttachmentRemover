@@ -255,6 +255,19 @@ upload, publish, merge or change settings. v6 remains under Unreleased, so its
 dated-release gate intentionally cannot pass now. The publication workflow and
 complete release qualification remain unfinished.
 
+`cargo xtask stage-release-assets --archives DIR --out NEW_DIR` assembles the
+exact eight archive names derived from Cargo/distribution policy and a sorted
+`SHA256SUMS`. It refuses missing/extra/nonordinary inputs and an existing output
+address. One bounded immutable input snapshot supplies each copied file and
+digest; readback checks the copy. The nine assets occupy a new private enclosure,
+and its path/identities are recorded in `NEW_DIR/result.json` outside that asset
+set. `assembly_source` identifies the assembling checkout, not archive build
+provenance. This command does not inspect package contents, establish native
+execution, attest or publish. A future release workflow must first require all
+same-source native qualification and bind downloaded assets to those results;
+assembly alone cannot admit a release. Its real-file unit cases use synthetic
+byte inputs and make no package-integration claim.
+
 The v6 workspace and product remain incomplete. `cargo xtask check` executes
 independent Rust, dependency and workflow sections and retains every
 failed section. Repository tools are exact-version local prerequisites; CI installs checksum-verified

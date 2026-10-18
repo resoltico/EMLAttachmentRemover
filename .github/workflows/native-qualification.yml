@@ -252,6 +252,15 @@ jobs:
           EML_GENERATED_LEGAL_MATERIALS: ${{ github.workspace }}/target/legal-input
         run: cargo xtask qualify --target '${{ matrix.target }}' --out target/native-cli-build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ runner.os != 'macOS' }}
+        with:
+          name: native-products-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/${{ runner.os == 'Windows' && 'windows-link-observation' || 'native-cli-build' }}/*.zip
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/${{ runner.os == 'Windows' && 'windows-link-observation' || 'native-cli-build' }}/*.tar.gz
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/${{ runner.os == 'Windows' && 'windows-link-observation' || 'native-cli-build' }}/qualification.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
           name: native-tests-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}

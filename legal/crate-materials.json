@@ -12676,8 +12676,8 @@
     {
       "path": "crates/eml-gui/Cargo.toml",
       "kind": "review_input",
-      "bytes": 2115,
-      "sha256": "cfbbf106f15c8f81ecf42e51921e7413804cdbca953529628378bc13801609da"
+      "bytes": 2155,
+      "sha256": "6a4e624817d398bd4b411eee779839e11b7830c1d54aafa2c9a1f582e360d709"
     },
     {
       "path": "crates/eml-worker/Cargo.toml",
@@ -12840,6 +12840,10 @@
     {
       "basis_head": "59f31dd3ff9bc15800e681d3ccdcabed64aff53c",
       "scope": "Reviewed the CLI native-fixtures-only optional Windows eml-windows path edge and separate console-observation helper. Normal product features do not enable it, and no registry package/version/checksum changed. Actual per-product notice generation verifies shipping normal closures and selected text bindings."
+    },
+    {
+      "basis_head": "045601617db8f052737b812de0b9d4c10f3c3f52",
+      "scope": "Reviewed the GUI manifest diff from 761ae41: NSRunLoop, NSObjCRuntime and block2 features were explicitly selected on the existing objc2-foundation 0.3.2 dependency for public main-run-loop panel scheduling. Its published manifest declares NSRunLoop with no added dependency, NSObjCRuntime with existing bitflags, and block2 with the existing optional block2 dependency. Independently captured locked Cargo metadata before/after for each Mac triple has identical normal/build dependency edges, package identities, license expressions and activated features (350 ARM, 351 Intel packages in that metadata closure). These features were already unified by the selected graph. No Cargo.lock, registry identity, license grant or retained material changed. Foundation remains an external system framework. This source/material review is separate from native scheduling execution; actual ten-profile notice generation still checks current package/material bindings."
     }
   ],
   "product_material_review": {

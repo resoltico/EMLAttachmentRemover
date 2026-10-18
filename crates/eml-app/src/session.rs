@@ -20,7 +20,10 @@ pub enum SessionError {
 }
 impl std::fmt::Display for SessionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Desktop session: {self:?}")
+        match self {
+            Self::Queue(error) => error.fmt(f),
+            _ => write!(f, "Desktop session: {self:?}"),
+        }
     }
 }
 impl std::error::Error for SessionError {}

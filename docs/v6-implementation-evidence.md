@@ -5,6 +5,28 @@ or release acceptance is claimed. Version6 stays under Unreleased.
 
 ## Current verification work
 
+H045601617db8f052737b812de0b9d4c10f3c3f52's run39143235741 failed
+notice generation on the changed GUI manifest's required source-review identity.
+The target-selected dependency/advisory/license checks passed; all native jobs
+were skipped and aggregate ci-ok correctly failed. No scheduling experiment
+execution occurred. A separate source review and independent QA compared locked
+before/after Mac metadata: normal/build dependency edges, package identities,
+license expressions and activated features match (350 ARM/351 Intel packages
+in that metadata closure). The three explicitly selected Foundation features
+were already unified. The renewed input fact records that review and its limits.
+Actual local notice generation then completed all ten CLI/GUI/worker profiles,
+retaining its working-tree identity; clean native generation still requires a
+rerun. Hashes and metadata equality do not establish native picker behavior.
+
+Release asset assembly now derives the exact eight names from the distribution
+plan, copies bounded frozen inputs into a new private enclosure and emits sorted
+SHA256SUMS plus a separate identity record. Four local real-file tests passed,
+including an independent known digest, missing/extra/empty-directory/nonordinary
+input rejection, existing-output refusal and actual changed-copy readback
+rejection. Clippy passed. These synthetic byte-assembly tests do not establish
+archive contents, source provenance, native execution or publication readiness;
+the complete future publication workflow remains unfinished.
+
 At H761ae41b7a88647c36b491e9401da7774cbbce8e, run39142156106's
 Apple Silicon app job passed all five Cocoa lifetime controls, preserving their
 actual failure reasons, reaping, original-byte observations and forced-cleanup
@@ -17,6 +39,14 @@ The repaired fixture uses XCTest's native JSON attachment, exported from the
 same actual xcresult and bound to the owned app/fixture. It does not require
 additional source-directory write access or changed system settings. A native
 rerun of this evidence path is still required; the failed job remains failed.
+The same source's Intel job also passed all five Cocoa lifetime controls and
+strict nonpicker preference comparison, then failed because the actual message
+picker did not appear and the app exited. Its owner observed termination without
+forcing it, runner reaping, four unchanged originals and pasteboard release.
+It does not prove normal worker settlement. The run was explicitly cancelled
+after the new head was pushed; Windows ARM was cancelled, while Windows x64,
+both Linux rows and both macOS native-test rows passed. Its aggregate outcome is
+cancelled, not a complete qualification success.
 
 The pending panel scheduling experiment is described in the
 [frontend design](desktop-frontend-design.md#native-panel-scheduling). Local
