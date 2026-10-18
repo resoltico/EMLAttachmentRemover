@@ -1,17 +1,6 @@
 name: Pinned macOS icon observations
 on:
-  push:
-    branches: [codex/v6-rust-swiftui]
-    paths:
-      - .github/workflows/macos-icon-diagnostic.yml
-      - xtask/src/macos_icon.rs
-      - xtask/src/macos_app.rs
-      - xtask/src/macos.rs
-      - tests/macos/MetalDeviceObservation.swift
-      - xtask/src/process/**
-      - xtask/tools.toml
-      - xtask/distribution.toml
-      - artwork/EML.icon/**
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

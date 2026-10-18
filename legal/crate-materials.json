@@ -5,7 +5,7 @@
     "name": "cargo-about",
     "version": "0.9.2"
   },
-  "inputs_basis": "Current working-file bytes are hashed below; the observed HEAD alone does not claim that every input is committed.",
+  "inputs_basis": "Active source/material input identities below are checked where applicable; earlier review bases and limitations remain in initial_review, independent_amendment and review_amendments. Hashes identify inputs and do not attest review quality or generator execution.",
   "limitations": [
     "QA source-material candidate only: not approval, legal assurance, native qualification, or attestation of a generator command execution.",
     "Raw reports do not embed selected-target provenance, resolved feature activation, invocation or configuration digests; adjacent about logs are empty. Target membership here comes from the six named report files.",
@@ -12594,10 +12594,10 @@
   "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
   "source_inputs": [
     {
-      "bytes": 148375,
+      "bytes": 148697,
       "kind": "review_input",
       "path": "Cargo.lock",
-      "sha256": "f556765659e02fb71fc65ce1338f3b87cca6f1963c5939fa75549e37909225a3"
+      "sha256": "101c58970d25c1834eeed63ba0d051467c49c700f790d5fdd1178b830595ea96"
     },
     {
       "bytes": 815,
@@ -12630,16 +12630,10 @@
       "sha256": "ad27bf09ec17beae9286784afe18faad47719efccd27cf1800494e03bf310523"
     },
     {
-      "bytes": 800,
+      "bytes": 866,
       "kind": "review_input",
       "path": "xtask/distribution.toml",
-      "sha256": "fc76259fd25cb3c2ea2d76e2fda0d88814e8123a8eafc0e0183ba770d151dc27"
-    },
-    {
-      "bytes": 234,
-      "kind": "review_input",
-      "path": "target/about-native.toml",
-      "sha256": "7c16c05ae632c2287bb41583f350aab99f04ed0e48105e3c2be1304bfe659248"
+      "sha256": "f181377e88039bbec469ca43a85d36377d872b741d1da30b0951590298d57854"
     },
     {
       "bytes": 19327,
@@ -12778,7 +12772,15 @@
       "retained_objc2_supplement_bindings": 4,
       "workspace_identities": 3,
       "workspace_mpl_bindings": 3
-    }
+    },
+    "historical_generator_configuration_inputs": [
+      {
+        "bytes": 234,
+        "kind": "review_input",
+        "path": "target/about-native.toml",
+        "sha256": "7c16c05ae632c2287bb41583f350aab99f04ed0e48105e3c2be1304bfe659248"
+      }
+    ]
   },
   "repository_head_observed": "2f281cba8b840858810ec4b1c2208b5fdf8b860b",
   "independent_amendment": {
@@ -12790,6 +12792,10 @@
     {
       "basis_head": "39f7ee34217742de377303deaab47f7ac8d91aac",
       "scope": "Reviewed the Core/FS manifest diff from b68680d79bd4ac4c3ee0e7269fdeadc8c6721250. Only an opt-in native-fixtures feature and its Windows SDK feature propagation were added; no default feature, dependency, version, license or CLI build dependency changed. Fixtures are not selected for shipping CLI materials. Current cargo-about target closures and package bindings remain separately checked during generation. Retained upstream files moved from xtask/licenses to legal without changing their bytes; corresponding source paths updated. This does not extend CLI legal review to GUI or worker."
+    },
+    {
+      "basis_head": "a33b106896d424c6369b71f78b67ab634ce869a6",
+      "scope": "Reviewed the Cargo.lock change: only xtask gains macOS-only eml-app/eml-macos dependencies for real archive smoke; no registry identity/version changes. The distribution diff separates macOS26 build hosts from matching macOS15 smoke hosts; target tuples and legal component closures remain unchanged. Active input identities updated; the original temporary generator configuration is retained as historical review metadata, not a clean-checkout prerequisite."
     }
   ],
   "product_material_review": {

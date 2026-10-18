@@ -12,9 +12,8 @@ identities and outcomes. The bounded campaign commands are below.
 
 `cargo xtask distribution` prints the native target policy and expected archive
 identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.
-It creates no product archive or qualification record. The existing Unix and
-Windows filesystem evidence workflows consume its target rows; their separate
-process-probe subset is unchanged. This metadata task does not initialize the
+It creates no product archive or qualification record. The consolidated CI
+consumes its six native build/test rows and separate macOS floor-smoke rows. This metadata task does not initialize the
 Unix campaign controller or signal handlers. Its fixed read-only Cargo metadata
 subprocess has ordinary Cargo lifecycle behavior, without a campaign cleanup or
 execution-deadline guarantee. Windows uses the workflow's explicit native GNU

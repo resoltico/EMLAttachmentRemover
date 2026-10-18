@@ -316,8 +316,8 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
         #[cfg(target_os = "macos")]
         {
             let app_stage = out.join("app-build");
-            crate::macos_app::run(root, &app_stage)?;
-            Err("CLI archive and native app assembly completed; required ditto extracted-app/complete GUI/volume qualification remains incomplete".into())
+            crate::macos_app::build_sources(root, &app_stage)?;
+            Err("CLI archive and native GUI/worker executable builds completed; complete app/GUI/volume qualification remains incomplete".into())
         }
         #[cfg(not(target_os="macos"))]
         Err("CLI archive completed; remaining native privilege/console/final-link and complete qualification gates remain incomplete".into())

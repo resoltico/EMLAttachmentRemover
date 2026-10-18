@@ -66,7 +66,7 @@ fn glibc_version(value: &str) -> Result<(u16, u16, u16)> {
     Ok((values[0], values[1], values.get(2).copied().unwrap_or(0)))
 }
 
-fn runtime(
+pub(crate) fn runtime(
     root: &Path,
     executable: &Path,
     os: &str,
@@ -117,7 +117,7 @@ fn runtime(
         }
         let signature = fs::read_to_string(signature_path)?;
         if !signature.lines().any(|line| line == "Signature=adhoc") {
-            return Err("Archive CLI signature is not the declared ad hoc form".into());
+            return Err("Archive executable signature is not the declared ad hoc form".into());
         }
         #[cfg(target_os = "macos")]
         let dependencies = crate::macos::inspect_system_dependencies(
@@ -254,8 +254,16 @@ fn verify(
         .find(|artifact| artifact["name"] == name && artifact["platform"] == platform)
         .ok_or("Archive basename/version/target does not match the declared artifact set")?;
     if artifact["role"] != "cli" {
+        #[cfg(target_os = "macos")]
+        {
+            let reference = archive.with_file_name(format!("{name}.reference.json"));
+            crate::macos_archive::smoke(root, archive, &reference)?;
+            return Ok(ArchiveSnapshot::read(archive)?.identity());
+        }
+        #[cfg(not(target_os = "macos"))]
         return Err(
-            "App ZIP readback requires the pending ditto/signature/actual GUI archive path".into(),
+            "App archive verification requires native macOS and its frozen producer reference"
+                .into(),
         );
     }
     let host = crate::native_host::inspect(root, target, os, architecture)?;

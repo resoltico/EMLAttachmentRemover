@@ -19,6 +19,13 @@ fn native_spawn_pipes_eof_exit_and_signal_revocation_are_actual() {
     assert!(result.issues.is_empty(), "{:?}", result.issues);
     let child = child.unwrap();
     assert!(!child.0.authority_revoked().unwrap());
+    assert!(
+        child
+            .0
+            .observation_pid()
+            .unwrap()
+            .is_some_and(|pid| pid > 0)
+    );
     let output = drain(result.pipes.output);
     let errors = drain(result.pipes.errors);
     let mut input = result.pipes.input;
@@ -41,6 +48,7 @@ fn native_spawn_pipes_eof_exit_and_signal_revocation_are_actual() {
     );
     assert!(!child.0.signal(StopSignal::Kill).unwrap());
     assert!(child.0.authority_revoked().unwrap());
+    assert_eq!(child.0.observation_pid().unwrap(), None);
     assert!(!child.0.signal(StopSignal::Interrupt).unwrap());
 }
 #[test]

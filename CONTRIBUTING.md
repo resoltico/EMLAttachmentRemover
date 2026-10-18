@@ -27,7 +27,7 @@ Install that host from the authoritative target table, select its
 `lib/rustlib/TARGET/bin/rust-lld.exe` as `CARGO_TARGET_TARGET_LINKER` (uppercase,
 hyphens replaced by underscores), and pass the explicit target to Cargo.
 `.cargo/config.toml` owns linking flags. MSVC and cross-compilation do not qualify
-this contract. The hosted Windows workflow shows the exact native invocation.
+this contract. The native Windows steps in .github/workflows/ci.yml show the exact invocation.
 
 macOS app checks require the Xcode version/build in xtask/tools.toml. Set
 DEVELOPER_DIR only for each invocation to that Xcode's Contents/Developer path;
@@ -37,6 +37,33 @@ evidence. Build the native GUI/worker executables with
 `cargo xtask build-macos-sources --out target/desktop-sources`, using a
 new output directory. Actual GUI automation is confined to owned hosted runners;
 local tests must not change Accessibility permissions or preference domains.
+
+Build complete app archives on the native macOS26 hosts and execute the same bytes
+on matching macOS15 hosts. The minimum remains 15.0. Compile the owner icon once
+with `cargo xtask compile-macos-icon --out target/icon-input`; pass that validated
+same-source directory to both native builders with
+`cargo xtask build-macos-app --icons target/icon-input --out target/app-build`.
+A settled actool failure may use the approved macOS15 Intel producer; timeout,
+uncertain cleanup, missing pinned Xcode or invalid outputs do not permit fallback.
+Keep each app ZIP's frozen `.reference.json` receipt for native floor smoke and
+`verify-archive`; it binds producer bytes, not review quality. Ad hoc signing is
+the only supported signing mode; no Apple developer account is required.
+
+One `ci.yml` handles branch heads, standard PR merge checkouts, main and merge
+queues. It retains actual checkout identities, six native test jobs, strict Slint
+fixtures, real different-UID controls, complete legal generation, native app/CLI
+archives and matching macOS15 smoke. `ci-ok` always runs and accepts only success
+for every required job/matrix. Icon diagnostics are manual only. Partial reruns
+that lack the exact current producer artifact fail; rerun the complete workflow.
+Actionlint uses its exact checksum-pinned upstream prebuilt because install-action
+does not provide it; supported tools use SHA-pinned install-action, checksums and
+`fallback:none`. No tool source-build path remains.
+
+If a native run disproves a premise relied on by product safety, stop that design
+work and obtain the owner decision after that run. Do not leave an impossible
+required assertion red while proceeding. Correct an invalid check when the
+established product contract does not rely on it, preserving meaningful controls
+and the original failure evidence.
 
 ## Checks and evidence
 
@@ -59,7 +86,7 @@ The complete check command retains independent failed sections under
 target/repository-checks. Required local Xcode absence remains explicit. Legal
 materials are generated into a new output directory at build time from the
 reviewed inputs in legal/; there is no tracked generated tree to refresh. The
-GUI/worker closure requires its own review. Native Intel macOS builds consume
+GUI/worker closures have separate component/target material bindings and enabled-feature policy checks. Native Intel macOS builds consume
 same-source Linux-generated legal inputs because cargo-about has no Intel macOS
 prebuilt download at the selected version; this does not establish native
 execution or legal review.

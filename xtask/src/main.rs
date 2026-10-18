@@ -3,7 +3,6 @@
 mod archive_verify;
 mod campaign;
 mod check;
-mod ci;
 mod cli_build;
 mod distribution;
 mod fuzz;
@@ -11,6 +10,8 @@ mod fuzz;
 mod macos;
 #[cfg(target_os = "macos")]
 mod macos_app;
+#[cfg(target_os = "macos")]
+mod macos_archive;
 #[cfg(target_os = "macos")]
 mod macos_icon;
 mod mutants;
@@ -46,31 +47,10 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Execute the exact PR M workspace/core integration on native Linux x64.
-    CiIntegration(ci::IntegrationArguments),
-    /// Bind event H/S/Q and the real PR merge checkout to live ref observations.
-    CiContext(ci::ContextArguments),
-    /// Recheck source/role and live refs before running or accepting CI work.
-    CiCheckout {
+    /// Discover and execute the locked native workspace selection without ignored/filtered cases.
+    NativeTests {
         #[arg(long)]
-        context: PathBuf,
-        #[arg(long)]
-        live: PathBuf,
-        #[arg(long)]
-        role: String,
-        #[arg(long)]
-        run_id: u64,
-        #[arg(long)]
-        attempt: u32,
-        #[arg(long)]
-        workflow_sha: String,
-    },
-    /// Reject failed/missing required GitHub jobs; no artifact qualification claim.
-    CiNeeds {
-        #[arg(long)]
-        event: String,
-        #[arg(long)]
-        needs: PathBuf,
+        target: String,
         #[arg(long)]
         out: PathBuf,
     },
@@ -123,6 +103,20 @@ enum Task {
     BuildMacosSources {
         #[arg(long)]
         out: PathBuf,
+    },
+    /// Assemble, ad hoc sign, read back and exercise one native app archive.
+    BuildMacosApp {
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long)]
+        icons: PathBuf,
+    },
+    /// Exercise the same frozen app archive on a matching native smoke host.
+    SmokeMacosApp {
+        #[arg(long)]
+        archive: PathBuf,
+        #[arg(long)]
+        reference: PathBuf,
     },
     /// Print native target policy and expected archive identities; build nothing.
     Distribution,
@@ -185,35 +179,14 @@ fn main() -> ExitCode {
                     Err("Native macOS is required for desktop profile checks".into())
                 }
             }
-            Task::CiIntegration(arguments) => {
+            Task::NativeTests { target, out } => {
                 initialize_controller(&root)?;
-                ci::integration(&root, arguments)
+                std::fs::create_dir(&out)?;
+                let out = out.canonicalize()?;
+                let result = qualify::checked_tests(&root, Some(&target), false, &out)?;
+                std::fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+                Ok(())
             }
-            Task::CiContext(arguments) => {
-                initialize_controller(&root)?;
-                ci::establish(&root, arguments)
-            }
-            Task::CiCheckout {
-                context,
-                live,
-                role,
-                run_id,
-                attempt,
-                workflow_sha,
-            } => {
-                initialize_controller(&root)?;
-                ci::recheck(
-                    &root,
-                    &context,
-                    &live,
-                    &role,
-                    run_id,
-                    attempt,
-                    &workflow_sha,
-                )
-                .map(|_| ())
-            }
-            Task::CiNeeds { event, needs, out } => ci::needs(&event, &needs, &out),
             Task::Check => {
                 initialize_controller(&root)?;
                 check::run(&root)
@@ -289,7 +262,7 @@ fn main() -> ExitCode {
                 #[cfg(target_os = "macos")]
                 {
                     initialize_controller(&root)?;
-                    macos_app::run(&root, &out)
+                    macos_app::build_sources(&root, &out)
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
@@ -298,6 +271,30 @@ fn main() -> ExitCode {
                 }
             }
             Task::Distribution => distribution::run(&root),
+            Task::BuildMacosApp { out, icons } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos_archive::build(&root, &out, &icons)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = (out, icons);
+                    Err("App assembly requires native macOS".into())
+                }
+            }
+            Task::SmokeMacosApp { archive, reference } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos_archive::smoke(&root, &archive, &reference)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = (archive, reference);
+                    Err("App archive smoke requires native macOS".into())
+                }
+            }
             Task::Fuzz { seconds } => {
                 initialize_controller(&root)?;
                 fuzz::run(&root, seconds)

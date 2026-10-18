@@ -25,6 +25,10 @@ zip = { version = "9.0.3", default-features = false, features = ["deflate-flate2
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1.5", features = ["process", "fs"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+eml-app = { path = "../crates/eml-app" }
+eml-macos = { path = "../crates/eml-macos", features = ["native-fixtures"] }
+
 [lints]
 workspace = true
 

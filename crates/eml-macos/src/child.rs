@@ -45,6 +45,15 @@ struct Authority {
 #[must_use]
 pub struct OwnedChild(Mutex<Authority>);
 impl OwnedChild {
+    /// Snapshot for a nonshipping OS observer, never wait/signal authority.
+    /// Callers must retain this owner and check its state after the observation.
+    #[cfg(feature = "native-fixtures")]
+    pub fn observation_pid(&self) -> io::Result<Option<i32>> {
+        self.0
+            .lock()
+            .map(|authority| authority.pid)
+            .map_err(|_| io::Error::other("Child authority lock poisoned"))
+    }
     /// Read whether this owner has explicitly revoked its positive-PID authority.
     /// A lock error leaves authority unresolved; callers must retain the owner.
     pub fn authority_revoked(&self) -> io::Result<bool> {

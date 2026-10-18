@@ -52,3 +52,14 @@ paths. `cargo xtask build-macos-sources` currently
 retains native Rust release executable/profile/ad-hoc-signature evidence and
 succeeds when those requested outputs validate. Complete bundle/legal/archive/GUI
 qualification remains a separate open gate.
+
+The complete builder is `cargo xtask build-macos-app --icons ICON_PRODUCER_DIR
+--out NEW_OUTPUT_DIR`. It consumes same-source validated icon and component legal
+inputs, preserves signed worker bytes when signing the outer app, verifies every
+Mach-O's CPU/minimum/system dependencies, and uses actual ditto creation/extraction.
+The frozen producer reference checks file identities and modes before extraction;
+actual extracted worker runs check Core outcomes against independent goldens and
+unchanged originals. Hosted startup smoke observes the exact owned GUI PID's real
+window and settles that process without sending requests. This is not full GUI,
+paint, accessibility or UI Quit acceptance. Native execution at the delivered head
+remains required before reporting these gates passed.

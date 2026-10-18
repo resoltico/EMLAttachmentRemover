@@ -42,7 +42,8 @@ pub(crate) fn compile(root: &Path, out: &Path) -> Result<()> {
     fs::write(
         out.join("result.json"),
         serde_json::to_vec_pretty(&json!({
-            "source":crate::git(root, &["rev-parse", "HEAD"])?,"host":host,"build":build,
+            "source":crate::git(root, &["rev-parse", "HEAD"])?,
+        "source_working_tree":crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?,"host":host,"build":build,
             "process":process.evidence(),"outputs_validated":passed,"materials":materials,
             "retry_allowed":settled && !process.status.success(),
             "validation_error":validation.as_ref().and_then(|result| result.as_ref().err()).map(ToString::to_string),

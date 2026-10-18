@@ -317,3 +317,47 @@ protection checks remain strict, and the real other-UID rmdir/replacement contro
 on the refused parent remains required. This corrects a probe assumption without
 relaxing product admission or cleanup. Corrected native execution remains pending;
 the original failure is retained rather than reported as passing.
+
+The corrected namespace probe and native desktop executable checks passed on
+both macOS26 CPUs at [a33b106](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39097429129),
+along with both native Linux archive checks and complete legal generation.
+The obsolete refused-parent assertion was not a product safety premise; all
+admitted-parent protections and real other-UID replacement controls remain.
+
+## Consolidated CI and complete bundle path
+
+`ci.yml` replaces native-boundaries.yml and filesystem-feasibility.yml while
+retaining their product/native controls. ci-identity.yml, ci-refs and the ci-*
+subcommands are removed; ordinary PR merge checkout and actual checkout recording
+replace that subsystem under WD5. macos-icon-diagnostic.yml is manual only. The
+new CI includes six native test rows, the enabled Slint/owned Darwin fixtures,
+POSIX different-UID controls and standalone filesystem probes, dependency policy,
+complete legal production, a shared icon with the approved alternate-host rule,
+two native macOS26 app/CLI producers and matching macOS15 extracted-byte smoke.
+`ci-ok` always runs and requires every direct required job/matrix to succeed.
+Local aggregate controls accepted the positive set and refused failure,
+cancellation, skip, missing job and missing result. These controls are decision-
+logic evidence only; actual GitHub ci-ok remains required.
+
+The complete app path now assembles an actual bundle, preserves the independently
+signed worker bytes when signing the outer app ad hoc, checks all native images
+with Mach-O parsing/vtool/system-dependency/signature inspection, and uses ditto
+creation/extraction. A frozen producer file/mode reference is checked before
+native extraction; hashes bind bytes rather than review quality. The extracted
+worker executes through the production supervisor/Core for Created and UpToDate
+with independent goldens and unchanged originals. Hosted GUI startup uses the
+real exact owned process and OS window metadata, then explicitly settles that
+quiescent process; it does not claim content, accessibility or UI Quit acceptance.
+Normal owner preferences are protected by refusing GUI startup outside owned
+hosted-runner context. The same archive/reference pair goes to matching floor
+hosts; missing current producer artifacts fail rather than selecting another run.
+
+Local checks passed native test discovery/execution, 44 xtask command tests,
+22 archive library tests, strict workspace Clippy, both Windows target
+Clippy checks, workflow lint and workspace/fuzz dependency policies. The new
+readonly window observer compiled with the local SDK27 as supplementary evidence.
+Pinned local complete app execution is unrun because Xcode26.3/17C529 is absent.
+Complete app production and actual macOS15 smoke in the new CI are pending; no
+build, checksum or synthetic archive-format fixture substitutes for those gates.
+The earlier 641aa1a enum/path-name collision failed compilation and is retained;
+26cdd70 fixed it and passed the affected command tests and three Clippy selections.

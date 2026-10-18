@@ -24,7 +24,8 @@ pub struct ArchiveSnapshot {
 }
 
 /// Byte identity of the immutable inspected input, not review/behavior quality.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ByteIdentity {
     /// Exact snapshot byte length.
     pub byte_length: usize,
@@ -155,12 +156,13 @@ impl ArchiveSnapshot {
     }
 
     /// Inspect the finite native ditto app profile, including every CRC, exact
-    /// expected file byte and mode. This does not extract or execute the app.
+    /// expected file identity and mode. References come from the frozen producer;
+    /// hashes prove identity, not review quality. This does not execute the app.
     /// Expected keys are paths relative to the one app root; modes are 0644/0755.
     pub fn inspect_ditto_app(
         &self,
         root_name: &str,
-        expected: &BTreeMap<String, (Vec<u8>, u32)>,
+        expected: &BTreeMap<String, (ByteIdentity, u32)>,
     ) -> io::Result<()> {
         validate_member_name(root_name)?;
         if root_name.contains('/')
@@ -171,12 +173,12 @@ impl ArchiveSnapshot {
         }
         let mut files = BTreeMap::new();
         let mut directories = BTreeSet::new();
-        for (relative, (bytes, mode)) in expected {
+        for (relative, (identity, mode)) in expected {
             let name = format!("{root_name}/{relative}");
             validate_member_name(&name)?;
             if relative.ends_with('/')
                 || !matches!(*mode, 0o644 | 0o755)
-                || bytes.len() as u64 > MAX_MEMBER_BYTES
+                || identity.byte_length as u64 > MAX_MEMBER_BYTES
             {
                 return Err(invalid("Invalid expected app file or mode"));
             }
@@ -185,7 +187,7 @@ impl ArchiveSnapshot {
                 directories.insert(format!("{parent}/"));
                 remaining = parent;
             }
-            files.insert(name, (bytes, mode));
+            files.insert(name, (identity, mode));
         }
         if files.len() + directories.len() > usize::from(MAX_ENTRIES) {
             return Err(invalid("App inventory exceeds its entry bound"));
@@ -217,12 +219,12 @@ impl ArchiveSnapshot {
                 let (expected, expected_mode) = files
                     .remove(&name)
                     .ok_or_else(|| invalid("Unexpected app file"))?;
-                if mode != *expected_mode || entry.size() != expected.len() as u64 {
+                if mode != *expected_mode || entry.size() != expected.byte_length as u64 {
                     return Err(invalid("App file size or permissions differ"));
                 }
                 let mut actual = Vec::new();
                 entry.take(MAX_MEMBER_BYTES + 1).read_to_end(&mut actual)?;
-                if actual != *expected {
+                if ByteIdentity::of(&actual) != *expected {
                     return Err(invalid("App file CRC/readback or expected bytes differ"));
                 }
             }
@@ -1211,7 +1213,7 @@ mod tests {
         let owned = tempfile::tempdir().unwrap();
         let root = "EML Attachment Remover.app";
         let app = owned.path().join(root);
-        let expected = BTreeMap::from([
+        let payloads: BTreeMap<String, (Vec<u8>, u32)> = BTreeMap::from([
             (
                 "Contents/MacOS/product".into(),
                 (
@@ -1228,7 +1230,7 @@ mod tests {
                 (b"second owned source material\n".to_vec(), 0o644),
             ),
         ]);
-        for (name, (bytes, mode)) in &expected {
+        for (name, (bytes, mode)) in &payloads {
             let path = app.join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(&path, bytes).unwrap();
@@ -1255,6 +1257,10 @@ mod tests {
                 .unwrap()
                 .success()
         );
+        let expected: BTreeMap<_, _> = payloads
+            .iter()
+            .map(|(name, (bytes, mode))| (name.clone(), (ByteIdentity::of(bytes), *mode)))
+            .collect();
         let snapshot = ArchiveSnapshot::read(&path).unwrap();
         snapshot.inspect_ditto_app(root, &expected).unwrap();
         assert!(
@@ -1320,7 +1326,8 @@ mod tests {
         wrong_material
             .get_mut("Contents/Resources/a.txt")
             .unwrap()
-            .0[0] ^= 1;
+            .0
+            .sha256 = ByteIdentity::of(b"different owned source material").sha256;
         assert!(
             snapshot
                 .inspect_ditto_app(root, &wrong_material)

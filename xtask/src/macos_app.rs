@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
+pub(crate) fn build_sources(root: &Path, out: &Path) -> Result<()> {
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let result = (|| -> Result<()> {
@@ -240,7 +240,7 @@ pub(crate) fn icon_outputs(root: &Path, icons: &Path, build: &macos::MacBuild) -
     Ok(partial)
 }
 
-fn app_metadata(version: &str, minimum: &str) -> Value {
+pub(crate) fn app_metadata(version: &str, minimum: &str) -> Value {
     json!({"CFBundleIdentifier":"io.github.resoltico.emlattachmentremover","CFBundleName":"EML Attachment Remover","CFBundleDisplayName":"EML Attachment Remover","CFBundleExecutable":"EMLAttachmentRemover","CFBundlePackageType":"APPL","CFBundleDevelopmentRegion":"en","LSApplicationCategoryType":"public.app-category.utilities","CFBundleShortVersionString":version,"CFBundleVersion":version,"LSMinimumSystemVersion":minimum,"NSHighResolutionCapable":true,"CFBundleIconName":"EML","NSServices":[{"NSMenuItem":{"default":"Create EML Copies Without Attachments"},"NSMessage":"createEMLCopies","NSPortName":"EMLAttachmentRemover","NSSendTypes":["public.file-url"],"NSSendFileTypes":["public.email-message","public.folder"],"NSRestricted":true,"NSRequiredContext":{}}],"CFBundleDocumentTypes":[{"CFBundleTypeName":"EML message","CFBundleTypeExtensions":["eml"],"LSItemContentTypes":["public.email-message"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"}]})
 }
 
