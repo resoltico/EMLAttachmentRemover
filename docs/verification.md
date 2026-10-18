@@ -75,6 +75,13 @@ stdout/stderr. Its Windows feature selection includes the real filesystem,
 Job and CLI console fixtures. The independent required-name/ignored-name
 discovery remains mandatory before execution. This gives a hung test an owned
 Job deadline and preserves its transcript before the overall hosted job expires.
+Native workspace execution now selects one libtest thread. The real process
+cases retain their own concurrent adversaries and every assertion/deadline;
+independent timing campaigns no longer compete with each other on a small host.
+This responds to M3e32026c's Intel singleton cleanup failure, where external ps
+inspection exhausted its two-second budget. It does not waive that failure or
+change the production process controller's budget. Separate GUI/startup inspector
+budget failures remain open.
 
 The first Windows console fixture no longer peeks at the synchronous read
 handle shared with the CLI. Microsoft documents that
