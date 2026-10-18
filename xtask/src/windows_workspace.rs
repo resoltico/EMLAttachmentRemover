@@ -22,21 +22,22 @@ pub(crate) fn prepare(root: &Path) -> Result<()> {
             .join("AppData/Local/Temp");
     let enclosure = xtask::archive::create_artifact_directory(&parent)?;
     let checkout = enclosure.path().join("source");
+    let tool_checkout = transport(&checkout)?;
     capture(
         Command::new("git")
             .current_dir(root)
             .args(["clone", "--no-local", "--quiet", "--no-checkout"])
             .arg(root)
-            .arg(&checkout),
+            .arg(&tool_checkout),
     )?;
     capture(
         Command::new("git")
-            .current_dir(&checkout)
+            .current_dir(&tool_checkout)
             .args(["checkout", "--quiet", "--detach", &source]),
     )?;
-    if git(&checkout, &["rev-parse", "HEAD"])? != source
+    if git(&tool_checkout, &["rev-parse", "HEAD"])? != source
         || !git(
-            &checkout,
+            &tool_checkout,
             &["status", "--porcelain=v1", "--untracked-files=all"],
         )?
         .is_empty()
@@ -46,7 +47,8 @@ pub(crate) fn prepare(root: &Path) -> Result<()> {
     let scratch = checkout.join("target/native-scratch");
     fs::create_dir_all(&scratch)?;
     // The fresh selected profile path is short. Remove only the native verbatim
-    // drive prefix for GitHub/.NET working-directory transport, preserving UTF16.
+    // drive prefix for Git/GitHub/.NET transport, preserving UTF16. Native
+    // filesystem admission retains the original canonical handles/address.
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
     fn transport(path: &Path) -> Result<PathBuf> {
         let units = path.as_os_str().encode_wide().collect::<Vec<_>>();

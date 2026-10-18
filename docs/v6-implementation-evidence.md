@@ -606,3 +606,10 @@ Both target Clippy checks pass. The hosted observation command returns only this
 scoped capture; it does not qualify selected static inputs or archives. Actual
 capture, member-by-member native-input review, runtime integration and complete
 Windows packages remain required.
+
+The first protected-checkout attempt at Hdcec8c5/run39112784210 admitted and
+created the user-profile enclosure on both Windows CPUs, then Git rejected its
+verbatim-prefix destination argument. The corrected transport removes only that
+prefix in the short native drive path supplied to Git/.NET; UTF16 units and the
+native canonical handles remain unchanged. This is not a relaxation of ACL
+admission. Actual clone/test/link observation after that correction is pending.
