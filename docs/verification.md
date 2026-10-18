@@ -1,5 +1,30 @@
 # Verification in progress
 
+Hosted native app readback now includes an XCTest interaction harness for the
+actual extracted app, with an NSWorkspace-returned owned instance and independent
+two-file golden checks. It remains an unrun gate until actual native results are
+recorded. The harness also exercises Quit cancellation/confirmation and compares
+the complete app persistent domain using separate fresh observer processes before
+and after the argument-domain-only run. It does not run on an owner desktop.
+
+The no-universal/no-lipo product policy remains absolute for every shipping CLI,
+app and worker. A reviewed test-infrastructure clarification permits Xcode itself
+to run only `lipo -extract` on Apple's supplied stock XCTRunner test agent for the
+current native CPU. Our test bundle is compiled with native ARCHS and
+ONLY_ACTIVE_ARCH=YES; no `lipo -create`, product transformation, or test
+runner/framework/bundle inclusion in shipping archives is permitted. Local SDK27
+test compilation is supplementary, not pinned-Xcode/native GUI evidence.
+
+`cargo xtask release-check --source FULL_SHA --version VERSION` is read-only
+admission for a later explicit owner release: exact clean source, fresh observed
+main ancestry, Cargo version, one nonempty calendar-dated release section, absent
+remote tag, and an absent release or matching unpublished draft. Authentication,
+transport and other API errors never establish absence. It derives exactly eight
+expected archive names, but does not qualify existing archives, attest, tag,
+upload, publish, merge or change settings. v6 remains under Unreleased, so its
+dated-release gate intentionally cannot pass now. The publication workflow and
+complete release qualification remain unfinished.
+
 The v6 workspace and product remain incomplete. `cargo xtask check` executes
 independent Rust, dependency and workflow sections and retains every
 failed section. Repository tools are exact-version local prerequisites; CI installs checksum-verified

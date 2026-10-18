@@ -443,11 +443,16 @@ fn verify_snapshot(
     } else {
         json!({"outcome":"not_run","reason":"requires an owned fresh hosted runner; saved owner preferences protected"})
     };
+    let interaction = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+        crate::macos_interaction::run(root, &app, build, &out.join("gui-interaction"))?
+    } else {
+        json!({"outcome":"not_run","reason":"requires a fresh hosted Mac; local source compilation is not GUI interaction evidence"})
+    };
     if tree(&app, false)? != reference.files {
         return Err("Native app/worker execution changed the extracted bundle".into());
     }
     Ok(
-        json!({"snapshot":snapshot.identity(),"images":images,"worker":worker,"gui_startup":gui,"scope":"bundle structure/signatures, actual extracted Core-backed worker and separately scoped GUI startup; full GUI acceptance remains separate"}),
+        json!({"snapshot":snapshot.identity(),"images":images,"worker":worker,"gui_startup":gui,"gui_interaction":interaction,"scope":"bundle structure/signatures, actual extracted Core-backed worker and scoped native GUI interaction; full GUI acceptance remains separate"}),
     )
 }
 pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {

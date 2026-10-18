@@ -15,11 +15,14 @@ mod macos_archive;
 #[cfg(target_os = "macos")]
 mod macos_icon;
 #[cfg(target_os = "macos")]
+mod macos_interaction;
+#[cfg(target_os = "macos")]
 mod macos_volume;
 mod mutants;
 mod native_host;
 mod notices;
 mod qualify;
+mod release_check;
 mod smoke;
 mod tools;
 use clap::{Parser, Subcommand};
@@ -44,6 +47,13 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
+    /// Read-only source, version, dated changelog and remote release admission.
+    ReleaseCheck {
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        version: String,
+    },
     /// Check the actual macOS Slint profile and owned native child fixtures.
     CheckMacosDesktop {
         #[arg(long)]
@@ -174,6 +184,10 @@ fn main() -> ExitCode {
         let args = Arguments::parse();
         let root = root()?;
         match args.task {
+            Task::ReleaseCheck { source, version } => {
+                initialize_controller(&root)?;
+                release_check::run(&root, &source, &version)
+            }
             Task::CheckMacosDesktop { out } => {
                 #[cfg(target_os = "macos")]
                 {

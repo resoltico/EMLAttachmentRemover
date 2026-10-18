@@ -463,3 +463,35 @@ WindowExtMacOS implementation; it was corrected before this checkpoint. Native
 drag delivery, GUI frame/interaction and final archive qualification remain open.
 Edit and Window commands use existing Slint APIs; technical detail expands in the
 same read-only report area, avoiding a competing text pane in compact layouts.
+
+## Hosted interaction and read-only release admission preparation
+
+The real XCTest harness and Swift6 fresh preference observer compile locally
+with SDK27; strict xtask Clippy passes. This is source/tooling evidence only.
+The first observer compile used the Command Line Tools without its required SDK
+and failed standard-library loading; the explicit Xcode SDK attempt then exposed
+an invalid CocoaError constant. Both diagnostics remain retained. The corrected
+observer compiles with the selected SDK and an explicit native ARM/minimum15
+target. The current xtask tests passed22 archive,47 command and19 process cases;
+Windows-target tooling Clippy and workflow lint also passed.
+The proposed hosted run uses the exact already-inspected extracted app while its
+private enclosure remains held, receives NSWorkspace's exact new instance,
+delivers two local URLs as one Open With batch and checks both original/golden
+bytes after rendered worker settlement. It retains Ready/Finished screenshots,
+checks Quit cancel/confirm and observes complete persistent-domain equality from
+fresh before/after processes. Native pinned-Xcode execution on both CPUs remains
+required. File/folder pickers, drag, Services, queue/retention, active Stop/Force
+Stop/Quit, other frames and accessibility/appearance checks remain open.
+
+The first ordinary-user exFAT create invocation at30faf41 was refused by the
+hosted ARM image service with Operation not permitted, before attach/Core work.
+It is a failed/unrun volume gate. The probe now uses sudo -n only for the owned
+image-service create/attach/info/detach operations on fresh hosted runners; Core
+and primitive observations still execute as the ordinary runner. Original
+failure evidence is retained and actual privileged-service results are pending.
+
+Read-only release admission has two passing negative-control tests covering
+Unreleased, empty/duplicate/invalid-date sections and API failures/published or
+wrong-source releases. An actual authenticated GitHub404 response established
+the parser's observed response format. This does not establish release readiness:
+v6 has no dated released section, and no tag/release/assets/settings were changed.

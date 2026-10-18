@@ -354,8 +354,11 @@ jobs:
             target/native-app-build/**/*.jsonl
             target/native-app-build/**/*.log
             target/native-app-build/**/*.stderr
+            target/native-app-build/**/gui-interaction/Results.xcresult/**
+            target/native-app-build/**/gui-interaction/preferences-*.plist
             target/native-app-build/*.zip
             !target/native-app-build/sources/cargo/**
+            !target/native-app-build/**/gui-interaction/build/**
             target/native-cli-build/*.json
             target/archive-verification/**
           if-no-files-found: error
@@ -410,6 +413,7 @@ jobs:
           name: floor-smoke-${{ github.sha }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: |
             target/app-archive-smoke/**
+            !target/app-archive-smoke/**/gui-interaction/build/**
             target/archive-verification/**
             target/native-host/**
           if-no-files-found: error

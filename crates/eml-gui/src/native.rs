@@ -180,6 +180,11 @@ pub(crate) fn paths_from_pasteboard(
     if items.is_empty() || items.len() > eml_core::MAX_INPUT_PATHS {
         return Err(NativeError::SelectionLimit);
     }
+    // Percent encoding needs at most three bytes per native byte; account for
+    // each file-URL prefix separately. Refuse the whole representation before
+    // asking the native reader to materialize every URL object.
+    let encoded_budget = 3 * eml_core::MAX_INPUT_PATH_BYTES + 16 * items.len();
+    let mut encoded_bytes = 0usize;
     for item in &*items {
         // SAFETY: immutable system file-URL type identifier. Check every item's
         // original representation before the native reader can filter a batch.
@@ -187,6 +192,10 @@ pub(crate) fn paths_from_pasteboard(
             .dataForType(unsafe { objc2_app_kit::NSPasteboardTypeFileURL })
             .ok_or(NativeError::LocalFilesRequired)?;
         check_url_data(&data)?;
+        encoded_bytes = encoded_bytes
+            .checked_add(data.len())
+            .filter(|total| *total <= encoded_budget)
+            .ok_or(NativeError::SelectionLimit)?;
     }
     // SAFETY: immutable system reading-option key; NSURL implements
     // NSPasteboardReading, and this option requires file URL objects only.
