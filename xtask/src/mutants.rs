@@ -383,7 +383,7 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
             "--test-workspace=false",
             "--cargo-arg=--locked",
             "--timeout",
-            "15",
+            "60",
             "--build-timeout",
             "120",
             "--no-times",
