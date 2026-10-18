@@ -122,6 +122,9 @@ and Windows have native release/archive qualification checkpoints; final accepta
 still requires the delivered source's complete matrix. TARGET and ARCHIVE must match actual native
 host and declared artifact identities. Reusing a populated output directory is
 refused. See [verification](docs/verification.md) for the exact implemented scope.
+Future owner release admission, qualification, attestations and draft recovery
+are described in the [release procedure](docs/release.md). Do not dispatch it
+as part of implementation verification; v6 remains Unreleased.
 
 From a clean committed source, run the bounded campaigns separately:
 

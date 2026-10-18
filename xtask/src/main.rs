@@ -102,6 +102,13 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Compare actual local asset bytes with a retained unpublished GitHub draft response.
+    CheckReleaseServer {
+        #[arg(long)]
+        assets: PathBuf,
+        #[arg(long)]
+        release: PathBuf,
+    },
     /// Strictly lint retained Swift bridge/test sources with selected Xcode defaults.
     CheckMacosSwift {
         #[arg(long)]
@@ -304,6 +311,10 @@ fn main() -> ExitCode {
                 initialize_controller(&root)?;
                 release_assets::run(&root, &archives, &out)
             }
+            Task::CheckReleaseServer { assets, release } => {
+                initialize_controller(&root)?;
+                release_assets::server(&root, &assets, &release)
+            }
             Task::CheckMacosSwift { out } => {
                 #[cfg(target_os = "macos")]
                 {
@@ -348,6 +359,14 @@ fn main() -> ExitCode {
             }
             Task::BuildCliArchive { target, out } => {
                 initialize_controller(&root)?;
+                if !git(
+                    &root,
+                    &["status", "--porcelain=v1", "--untracked-files=all"],
+                )?
+                .is_empty()
+                {
+                    return Err("CLI archives require a clean committed source checkout".into());
+                }
                 std::fs::create_dir(&out)?;
                 let out = out.canonicalize()?;
                 let cli = cli_build::build(&root, &target, &out.join("cli-build"))?;
@@ -356,7 +375,10 @@ fn main() -> ExitCode {
                 std::fs::write(
                     out.join("cli-result.json"),
                     serde_json::to_vec_pretty(
-                        &serde_json::json!({"archive":archive,"scope":"native CLI build and archive readback only; full qualification remains separate"}),
+                        &serde_json::json!({"source":git(&root, &["rev-parse", "HEAD"])?,
+                            "target":cli.target(),"platform":cli.platform(),"version":cli.version(),
+                            "host":cli.host(),"frozen_image":cli.identity(),"archive":archive,
+                            "scope":"native CLI build and archive readback only; full qualification remains separate"}),
                     )?,
                 )?;
                 Ok(())

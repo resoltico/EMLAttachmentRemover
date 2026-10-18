@@ -1,0 +1,156 @@
+name: Owner release
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Exact full commit on main to qualify and release
+        required: true
+        type: string
+      version:
+        description: Workspace version with a nonempty dated changelog section
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-release-${{ inputs.version }}
+  cancel-in-progress: false
+jobs:
+  admission:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Admit exact source and owner dispatch from main
+        env:
+          SOURCE: ${{ inputs.source }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read-only release admission
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: ${{ inputs.source }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p target
+          cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission.json
+          test "$(jq -er .release.state target/release-admission.json)" = absent
+  qualification:
+    needs: admission
+    uses: ./.github/workflows/native-qualification.yml
+    with:
+      source: ${{ inputs.source }}
+  publish:
+    needs: [admission, qualification]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+      attestations: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE: ${{ inputs.source }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: native-products-${{ inputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/qualified-products
+          merge-multiple: false
+          digest-mismatch: error
+      - name: Freeze the exact qualified product set and qualification identity
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission.json
+          cargo xtask distribution > target/release-distribution.json
+          mkdir target/release-input
+          mapfile -t files < <(find target/qualified-products -type f \( -name '*.zip' -o -name '*.tar.gz' \) | sort)
+          test "${#files[@]}" = 8
+          for file in "${files[@]}"; do
+            name="$(basename "$file")"
+            jq -e --arg name "$name" '[.expected_artifacts[]|select(.name==$name)]|length==1' target/release-distribution.json
+            platform=$(jq -er --arg name "$name" '.expected_artifacts[]|select(.name==$name)|.platform' target/release-distribution.json)
+            role=$(jq -er --arg name "$name" '.expected_artifacts[]|select(.name==$name)|.role' target/release-distribution.json)
+            target=$(jq -er --arg platform "$platform" '.native_targets[]|select(.platform==$platform)|.target' target/release-distribution.json)
+            directory="target/qualified-products/native-products-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
+            [[ "$file" == "$directory/"* ]]
+            digest=$(sha256sum "$file" | cut -d ' ' -f 1)
+            size=$(stat -c %s "$file")
+            if [ "$role" = app ]; then
+              mapfile -t records < <(find "$directory" -type f -name app-result.json)
+              test "${#records[@]}" = 1
+              jq -e --arg s "$SOURCE" --arg digest "$digest" --argjson size "$size" '.source==$s and .identity.sha256==$digest and .identity.byte_length==$size' "${records[0]}"
+              mapfile -t references < <(find "$directory" -type f -name "$name.reference.json")
+              test "${#references[@]}" = 1
+              jq -e --arg s "$SOURCE" --arg t "$target" --arg v "$VERSION" '.source==$s and .target==$t and .version==$v' "${references[0]}"
+            else
+              mapfile -t records < <(find "$directory" -type f \( -name cli-result.json -o -name qualification.json \))
+              test "${#records[@]}" = 1
+              jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" '.source==$s and .target==$t and .archive.identity.sha256==$digest and .archive.identity.byte_length==$size' "${records[0]}"
+            fi
+            cp --no-clobber -- "$file" "target/release-input/$name"
+          done
+          for platform in $(jq -er '.native_targets[].platform' target/release-distribution.json); do
+            directory="target/qualified-products/native-products-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
+            test -d "$directory"
+            mapfile -t records < <(find "$directory" -type f \( -name qualification.json -o -name cli-result.json -o -name app-result.json \))
+            test "${#records[@]}" -gt 0
+            for record in "${records[@]}"; do
+              jq -e --arg source "$SOURCE" '.source==$source' "$record"
+            done
+          done
+          cargo xtask stage-release-assets --archives target/release-input --out target/release-assembly > target/release-assembly.json
+          assets="$(jq -er .assets_directory target/release-assembly.json)"
+          printf 'RELEASE_ASSETS=%s\n' "$assets" >> "$GITHUB_ENV"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" > target/release-native-jobs.json
+          jq -n --arg source "$SOURCE" --arg dispatch "$DISPATCH_SHA" --arg workflow "$WORKFLOW_REF" --arg workflow_sha "$WORKFLOW_SHA" \
+            --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
+            --slurpfile policy target/release-distribution.json --slurpfile assembly target/release-assembly.json \
+            '{source:$source,dispatch_sha:$dispatch,workflow_ref:$workflow,workflow_sha:$workflow_sha,qualification_run:$run,policy:$policy[0],assembly:$assembly[0],scope:"native qualification and exact asset assembly; dispatch workflow identity and artifact source are distinct"}' > target/release-predicate.json
+          awk -v version="$VERSION" 'index($0,"## [" version "] - ")==1 {selected=1; next} selected && /^## / {exit} selected {print}' CHANGELOG.md > target/release-notes.md
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2; explicit qualification/source predicate
+        with:
+          subject-path: ${{ env.RELEASE_ASSETS }}/*
+          predicate-type: https://github.com/resoltico/EMLAttachmentRemover/attestations/native-qualification/v1
+          predicate-path: target/release-predicate.json
+          create-storage-record: false
+      - name: Create draft, verify actual server assets, then publish
+        run: |
+          tag="v$VERSION"
+          cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission-before-upload.json
+          test "$(jq -er .release.state target/release-admission-before-upload.json)" = absent
+          gh release create "$tag" --draft --target "$SOURCE" --title "$tag" --notes-file target/release-notes.md
+          gh release upload "$tag" "$RELEASE_ASSETS"/*
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > target/release-server-before-publish.json
+          cargo xtask check-release-server --assets "$RELEASE_ASSETS" --release target/release-server-before-publish.json > target/release-server-checked.json
+          gh release edit "$tag" --draft=false --latest
+      - name: Observe server state after success or failure without deleting anything
+        if: ${{ always() }}
+        run: |
+          gh api --include "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" > target/release-server-final-response.txt 2> target/release-server-final-error.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: release-observations-${{ inputs.source }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/release-*.json
+            target/release-*.txt
+            target/release-*.md
+            target/release-check/**
+          if-no-files-found: error

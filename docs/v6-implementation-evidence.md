@@ -997,3 +997,39 @@ checking were rejected. Linux-generated consumer inventory checking remains a
 separate mode and does not establish producer execution or native integration.
 Read-only independent QA found no concrete blocker in these two source gates;
 that review did not execute the native checks.
+
+## Source-bound release preparation and current GUI checkpoint
+
+At Hcf278564e74db72e2800b64248ca692ffda9b6aa/run39151560069, the
+Apple Silicon standalone AppKit diagnostic observed constructor return, visible
+sheet, owned cancellation/response0 and exit0, with complete cleanup and zero
+survivors. The actual product then passed pickers, Services and queue admission
+through8/refused9, but removal failed: XCTest searched an identifier while the
+retained AX snapshot exposes title `Remove waiting run`. The screenshot shows
+visible controls. The test now matches that title with bounded existence and
+hittability. Actual corrected execution is pending. The failed owner record
+retains forced app cleanup, four originals unchanged, runner65/reaped and worker
+settlement unverified. Intel remains a separate unresolved observation.
+
+A clean clone at Hcf27856 completed the legal consumer identity command with10
+profiles/603 entries and empty working-tree identity. An initial concurrent
+attempt observed the producer's not-yet-complete tree and failed before the
+successful check after generation finished. The producer ran on this ARM host;
+this does not establish Linux producer or Intel execution evidence.
+
+The future owner-only release workflow now calls the same native qualification,
+selects current-run/attempt archives with fatal digest mismatch, binds archive
+hash/size/target to producer records, assembles the exact eight plus SHA256SUMS,
+and uses an explicit custom source/qualification predicate for all nine assets.
+Dispatch and qualified-source identities are distinct. Its draft-server guard
+compares actual local snapshots and manifest with exact source/version/draft,
+nine unique names/positive IDs, uploaded state, size and digest. Synthetic guard
+unit controls reject published/different-source/changed/duplicate/extra/missing
+records and a changed manifest. Workflow lint and strict xtask Clippy pass.
+No release, tag, upload, attestation or publication was performed. Live release
+integration remains unrun and v6 stays under Unreleased.
+
+The missing-copy Finder test temporarily moves only an owned synthetic output,
+requires actionable missing-address feedback and restores its independent golden
+bytes, preserving any primary UI error if restoration also fails. SDK27 XCTest
+build-for-testing passes; actual native execution remains pending.

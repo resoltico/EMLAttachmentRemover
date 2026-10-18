@@ -284,7 +284,15 @@ final class DesktopInteractionTests: XCTestCase {
     snapshot(app, "ninth-request-refused")
     app.buttons["Dismiss notice"].click()
     for remaining in stride(from: 7, through: 0, by: -1) {
-      app.buttons.matching(identifier: "Remove waiting run").firstMatch.click()
+      // Slint exposes the dynamic button's AX title, not an AX identifier.
+      let remove = app.buttons.matching(
+        NSPredicate(format: "title == %@", "Remove waiting run")
+      ).firstMatch
+      guard remove.waitForExistence(timeout: 5), remove.isHittable else {
+        XCTFail("Visible waiting-run removal control is unavailable: \(app.debugDescription)")
+        throw InteractionFailure.expectedPresentation
+      }
+      remove.click()
       try await requireWaiting(app, count: remaining)
     }
     for source in allSources {
@@ -337,6 +345,36 @@ final class DesktopInteractionTests: XCTestCase {
     try await requireText(app, containing: "os error 17")
     XCTAssertEqual(try Data(contentsOf: collisionURL), sentinel)
     snapshot(app, "report-export-collision-refused")
+    app.buttons["Dismiss notice"].click()
+
+    // Move only this owned synthetic output. The earlier receipt remains valid
+    // historical evidence, while actual navigation must report its missing path.
+    let serviceCopy = serviceSource.deletingPathExtension().appendingPathExtension(
+      "no-attachments.eml")
+    let heldCopy = root.appendingPathComponent("held-service-copy.eml")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: heldCopy.path))
+    try FileManager.default.moveItem(at: serviceCopy, to: heldCopy)
+    do {
+      let reveal = app.buttons["Show in Finder"]
+      XCTAssertTrue(reveal.isEnabled, "Earlier usable-copy receipt should permit navigation")
+      reveal.click()
+      try await requireText(
+        app, containing: "The earlier reported copy is unavailable at that address.")
+      snapshot(app, "finder-missing-copy-reported")
+      XCTAssertEqual(try Data(contentsOf: heldCopy), golden)
+      XCTAssertEqual(try Data(contentsOf: serviceSource), original)
+      try FileManager.default.moveItem(at: heldCopy, to: serviceCopy)
+    } catch {
+      // Restore the owned output even when the UI assertion fails.
+      let primaryError = error
+      do {
+        try FileManager.default.moveItem(at: heldCopy, to: serviceCopy)
+      } catch {
+        XCTFail("Owned copy restoration failed: \(error); primary UI failure: \(primaryError)")
+      }
+      throw primaryError
+    }
+    XCTAssertEqual(try Data(contentsOf: serviceCopy), golden)
     app.buttons["Dismiss notice"].click()
     window.buttons["_XCUI:CloseWindow"].click()
     let hiddenForQuit = NSPredicate { _, _ in !window.exists }

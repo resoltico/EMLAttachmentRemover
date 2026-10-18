@@ -252,8 +252,11 @@ remote tag, and an absent release or matching unpublished draft. Authentication,
 transport and other API errors never establish absence. It derives exactly eight
 expected archive names, but does not qualify existing archives, attest, tag,
 upload, publish, merge or change settings. v6 remains under Unreleased, so its
-dated-release gate intentionally cannot pass now. The publication workflow and
-complete release qualification remain unfinished.
+dated-release gate intentionally cannot pass now. The future publication workflow
+is implemented in source with an explicit source/qualification attestation and
+draft asset guards; see [release procedure](release.md). It has not been
+dispatched. Complete native/GUI qualification remains unfinished; source tests
+do not establish live attestation or publication integration.
 
 `cargo xtask native-tests --release --target TARGET --out NEW_DIR` runs matched
 native release-profile discovery and execution. Native OS/CPU/compiler admission
