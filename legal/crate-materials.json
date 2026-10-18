@@ -11912,8 +11912,8 @@
     {
       "name": "winit",
       "version": "0.30.13",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "checksum": "a6755fa58a9f8350bd1e472d4c3fcc25f824ec358933bba33306d0b63df5978d",
+      "source": null,
+      "checksum": null,
       "license_expression": "Apache-2.0",
       "scopes": [
         "gui@aarch64-apple-darwin",
@@ -11928,27 +11928,35 @@
             "gui@aarch64-apple-darwin",
             "gui@x86_64-apple-darwin"
           ],
-          "mapping": "exact_per_package_legal_file",
+          "mapping": "complete_source_license_materials",
           "materials": [
             {
               "kind": "package_file",
               "path": "LICENSE",
               "bytes": 11323,
               "sha256": "6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197df69a"
+            },
+            {
+              "kind": "package_file",
+              "path": "EML-PATCH.md",
+              "bytes": 1718,
+              "sha256": "96f8c645bc3b39e7e8c8418c2df0d9feded2676cb7595412a8ed1d856ba214be"
             }
           ]
         }
       ],
       "provenance": {
-        "kind": "registry",
+        "kind": "vendored",
         "repository": "https://github.com/rust-windowing/winit",
-        "checksum_basis": "cached published archive SHA-256 independently checked; generator separately binds the current Cargo.lock",
+        "checksum_basis": "The retained published archive identity is historical upstream provenance. Current patched source is supplied in this checkout; Cargo.lock correctly has no registry checksum for it. LICENSE bytes and the two modified upstream source files were reviewed separately.",
         "declared_vcs": {
           "git": {
             "sha1": "e9809ef54b18499bb4f2cac945719ecc2a61061b"
           },
           "path_in_vcs": ""
-        }
+        },
+        "manifest_path": "vendor/winit/Cargo.toml",
+        "published_archive_sha256": "a6755fa58a9f8350bd1e472d4c3fcc25f824ec358933bba33306d0b63df5978d"
       }
     },
     {
@@ -12594,16 +12602,16 @@
   "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
   "source_inputs": [
     {
-      "bytes": 148710,
+      "bytes": 148567,
       "kind": "review_input",
       "path": "Cargo.lock",
-      "sha256": "6eb0736dc247456d946604fe6747dfebd6f0d5a7d83b1907993e705265fbde7e"
+      "sha256": "3a9fd7d84df6521ec85440ef208a213f585785a26db69b43d46442c3bc0f5926"
     },
     {
-      "bytes": 815,
+      "bytes": 884,
       "kind": "review_input",
       "path": "Cargo.toml",
-      "sha256": "b8a89c628e8a706318739a544be6a0507599ff75da65fef55d08407c14674351"
+      "sha256": "82939d2b5d599d087853598d8c80a2a9aad79e612cded362ca3f0a8d13c71617"
     },
     {
       "bytes": 537,
@@ -12688,6 +12696,18 @@
       "kind": "review_input",
       "bytes": 398,
       "sha256": "b229e7c73ca1b961606316d4f3510167984208022b3ba20cf4662319ee0808eb"
+    },
+    {
+      "path": "vendor/winit/Cargo.toml",
+      "kind": "review_input",
+      "bytes": 13724,
+      "sha256": "2aeb741d47b763ee198ca915c330a6bf0b1fc094dd69357e80278b7852289c61"
+    },
+    {
+      "path": "vendor/winit/EML-PATCH.md",
+      "kind": "review_input",
+      "bytes": 1718,
+      "sha256": "96f8c645bc3b39e7e8c8418c2df0d9feded2676cb7595412a8ed1d856ba214be"
     }
   ],
   "status": "independent_qa_candidate",
@@ -12804,6 +12824,10 @@
     {
       "basis_head": "2e4b00550863a16eb53924b3f8ebb73c424ba6c8",
       "scope": "Reviewed GUI manifest change: only NSPasteboard and NSPasteboardItem features on the existing objc2-app-kit0.3.2 dependency were enabled for required native Services/drop decoding. Independently captured reports for both Mac targets retain exactly the existing package identities, license expressions and selected per-package text bindings. No registry/version change or new legal grant is inferred."
+    },
+    {
+      "basis_head": "30ed4af",
+      "scope": "Reviewed the exact published winit0.30.13 archive: all217 regular members retained, only the two macOS source files named in vendor/winit/EML-PATCH.md changed, plus that explanatory notice. The Apache2.0 LICENSE is byte-identical. Cargo patch changes only winit from registry to retained source; no package/version/dependency edge or selected grant changes. Both native GUI generator graphs must be checked before delivery."
     }
   ],
   "product_material_review": {

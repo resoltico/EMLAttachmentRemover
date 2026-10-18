@@ -52,6 +52,12 @@ impl PendingIngress {
 }
 thread_local! { static INGRESS: RefCell<PendingIngress> = RefCell::new(PendingIngress::default()); }
 fn deliver(collect: impl FnOnce() -> Result<Vec<PathBuf>, NativeError>) -> Result<(), NativeError> {
+    collect_native(collect, true)
+}
+fn collect_native(
+    collect: impl FnOnce() -> Result<Vec<PathBuf>, NativeError>,
+    commit: bool,
+) -> Result<(), NativeError> {
     if MainThreadMarker::new().is_none() {
         EVENTS.fetch_or(BROKEN, Ordering::Release);
         return Err(NativeError::IngressUnavailable);
@@ -68,7 +74,11 @@ fn deliver(collect: impl FnOnce() -> Result<Vec<PathBuf>, NativeError>) -> Resul
             .try_borrow_mut()
             .map_err(|_| NativeError::IngressUnavailable)?;
         match collected {
-            Ok(batch) => pending.complete(batch),
+            Ok(batch) if commit => pending.complete(batch),
+            Ok(batch) => {
+                pending.collecting = false;
+                batch.map(|_| ())
+            }
             Err(_) => {
                 pending.collecting = false;
                 EVENTS.fetch_or(BROKEN, Ordering::Release);
@@ -76,6 +86,28 @@ fn deliver(collect: impl FnOnce() -> Result<Vec<PathBuf>, NativeError>) -> Resul
             }
         }
     })
+}
+
+pub(crate) fn receive_drop(board: *mut std::ffi::c_void, commit: bool) -> bool {
+    match std::panic::catch_unwind(|| {
+        collect_native(
+            || {
+                // SAFETY: the pinned Winit bridge retains this native pasteboard for
+                // this synchronous main-thread callback. No pointer escapes; native
+                // bytes are copied only after the common bounded-batch reservation.
+                let board = unsafe { board.cast::<NSPasteboard>().as_ref() }
+                    .ok_or(NativeError::LocalFilesRequired)?;
+                native::paths_from_pasteboard(board)
+            },
+            commit,
+        )
+    }) {
+        Ok(result) => result.is_ok(),
+        Err(_) => {
+            EVENTS.fetch_or(BROKEN, Ordering::Release);
+            false
+        }
+    }
 }
 
 extern "C" fn should_terminate(_: &AnyObject, _: Sel, _: &NSApplication) -> usize {

@@ -157,6 +157,8 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
                     if events.reopen || !events.selections.is_empty() {
                         if let Err(error) = window.show() {
                             controller.system_notice(&format!("Main window: {error}"));
+                        } else if let Err(error) = native::install_drop(window.window()) {
+                            controller.boundary_failure(&format!("Native drop receiver: {error}"));
                         } else if let Err(error) = native::restore(window.window()) {
                             controller.system_notice(&format!("Main window: {error}"));
                         }
@@ -180,6 +182,7 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
     window.show()?;
+    native::install_drop(window.window())?;
     slint::run_event_loop_until_quit()?;
     Ok(())
 }

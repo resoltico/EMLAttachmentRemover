@@ -6,8 +6,18 @@ export component AboutWindow inherits Window {
     title: "About EML Attachment Remover";
     preferred-width: 580px; preferred-height: 440px;
     in property <string> identity;
+    MenuBar {
+        Menu { title: "Edit";
+            MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: identity-text.has-focus; activated => { identity-text.copy(); } }
+            MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: identity-text.has-focus; activated => { identity-text.select-all(); } }
+        }
+        Menu { title: "Window";
+            MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimized = true; } }
+            MenuItem { title: "Bring All to Front"; activated => { Platform.macos-bring-all-windows-to-front(); } }
+        }
+    }
     VerticalBox {
-        TextEdit { text: root.identity; read-only: true; accessible-label: "Product identity and licensing"; }
+        identity-text := TextEdit { text: root.identity; read-only: true; accessible-label: "Product identity and licensing"; }
         AboutSlint {}
     }
 }
@@ -15,8 +25,18 @@ export component LicenseWindow inherits Window {
     title: "Software and Artwork Licenses";
     preferred-width: 720px; preferred-height: 560px;
     in property <string> licenses;
+    MenuBar {
+        Menu { title: "Edit";
+            MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: license-text.has-focus; activated => { license-text.copy(); } }
+            MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: license-text.has-focus; activated => { license-text.select-all(); } }
+        }
+        Menu { title: "Window";
+            MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimized = true; } }
+            MenuItem { title: "Bring All to Front"; activated => { Platform.macos-bring-all-windows-to-front(); } }
+        }
+    }
     VerticalBox {
-        TextEdit { text: root.licenses; read-only: true; accessible-label: "Complete software and owner artwork license terms"; }
+        license-text := TextEdit { text: root.licenses; read-only: true; accessible-label: "Complete software and owner artwork license terms"; }
         Text { text: "Additional component notices accompany this app in Contents/Resources/THIRD-PARTY-NOTICES.txt and licenses/."; wrap: word-wrap; }
     }
 }
@@ -79,6 +99,15 @@ export component MainWindow inherits Window {
         Menu { title: "File";
             MenuItem { title: "Create Copies…"; shortcut: @keys(Control + O); enabled: root.admission-ready; activated => { root.select_files(); } }
             MenuItem { title: "Quit EML Attachment Remover…"; activated => { root.quit_requested(); } }
+        }
+        Menu { title: "Edit";
+            MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: item-detail.has-focus; activated => { item-detail.copy(); } }
+            MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: item-detail.has-focus; activated => { item-detail.select-all(); } }
+        }
+        Menu { title: "Window";
+            MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimized = true; } }
+            MenuItem { title: "Zoom"; activated => { root.maximized = !root.maximized; } }
+            MenuItem { title: "Bring All to Front"; activated => { Platform.macos-bring-all-windows-to-front(); } }
         }
         Menu { title: "Help";
             MenuItem { title: "About EML Attachment Remover"; activated => { root.about_requested(); } }
@@ -146,14 +175,13 @@ export component MainWindow inherits Window {
                     height: root.items.length == 0 ? 0px : (root.short-layout ? 65px : 100px);
                     VerticalBox { padding: 0px; spacing: 4px; for item[index] in root.items: Button { text: item; height: 32px; clicked => { root.select_item(index); } } }
                 }
-                TextEdit { vertical-stretch: 1; text: root.item-text; read-only: true; accessible-label: "Selected message and removed parts"; }
+                item-detail := TextEdit { vertical-stretch: 1; text: root.item-text + (technical.checked ? "\nTechnical observations\n" + root.technical-text : ""); read-only: true; accessible-label: technical.checked ? "Selected message, removed parts and technical observations" : "Selected message and removed parts"; }
                 HorizontalBox {
                     Button { text: "Show in Finder"; enabled: root.reveal-available; clicked => {root.reveal_requested();} }
                     Button { text: "Previous parts"; enabled: root.previous_parts_available; clicked => { root.previous_parts(); } }
                     Button { text: "Next parts"; enabled: root.next_parts_available; clicked => { root.next_parts(); } }
                     technical := CheckBox { text: "Technical details"; }
                 }
-                if technical.checked: TextEdit { text: root.technical-text; read-only: true; accessible-label: "Technical observations"; }
                 HorizontalBox {
                     Button { text: "Previous items"; enabled: root.previous_items_available; clicked => { root.previous_page(); } }
                     Button { text: "Next items"; enabled: root.next_items_available; clicked => { root.next_page(); } }

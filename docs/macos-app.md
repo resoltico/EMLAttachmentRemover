@@ -40,6 +40,15 @@ The event loop remains running when windows are hidden. Minimal application
 hooks extend only absent lifecycle methods on Winit's verified delegate; native
 Quit is deferred to the controller and reopen restores the main window. Actual
 native GUI lifecycle acceptance remains required.
+
+The pinned Winit source is retained under vendor/winit. Its focused macOS patch
+passes one synchronous, borrowed native pasteboard to the common bounded
+file-URL reader. Inspection never queues work; a committed drop validates the
+current complete batch again. The old filename-string/per-file drop path is
+removed. See the retained [patch notice](../vendor/winit/EML-PATCH.md) for upstream
+identity, changed files and the separate native drag-delivery requirement.
+Read-only report text supports Edit/Copy and Select All through Slint; Window
+commands use Slint's minimize, maximize and macOS bring-to-front APIs.
 Required behavior includes file/folder selection, native URL batch ingress,
 Services/drop/Open With, destination preferences with session-only override,
 serial queued runs, two retained reports, Stop/Force Stop, close/hide/reopen,

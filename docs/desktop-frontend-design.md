@@ -49,8 +49,9 @@ specific source review, not an assumed drop-in guarantee.
 Choosing Slint does not establish that a Metal failure is resolved. Its GPU path
 can also use Metal. Renderer selection must account for filenames and diagnostic
 text, accessibility, owner artwork and actual native frames; a software-only
-startup cannot silently weaken those requirements. The current hosted icon
-compilation failure is independent of the screen framework.
+startup cannot silently weaken those requirements. The shared icon producer and
+separate native app archives have passed on the pinned hosted toolchain; that
+does not establish the screen interaction requirements.
 
 Native file paths must never be reconstructed from displayed strings. Destination
 changes affect later admissions only. A full report reservation pauses the next

@@ -437,3 +437,29 @@ control demonstrates that output refusal precedes launch. Nine actual supervised
 worker tests and the Core read-only/file-versus-directory/disappearance test
 passed locally, along with strict GUI Clippy. Blocking native I/O remains owned
 until actual settlement; this does not claim a hard deadline for filesystem calls.
+
+## Native drop source bridge
+
+The published winit0.30.13 archive was inspected before extraction:217 regular
+members, no link/path escape. A member-by-member byte comparison confirms all
+upstream files are retained; only src/platform/macos.rs and
+src/platform_impl/macos/window_delegate.rs are modified, plus a new explanatory
+EML-PATCH.md. Both modified files carry explicit change notices. LICENSE is
+unchanged. Cargo.lock changes only winit's registry source/checksum to a local
+path source. The patch exposes one synchronous native pasteboard callback on the
+existing delegate, corrects draggingEntered's NSDragOperation ABI, permits only
+Copy and removes the lossy per-file drop path. The application uses its existing
+bounded/reentrancy-aware ingress and native file-URL reader, with distinct
+non-enqueuing inspection and committing delivery. Reopen reinstalls the receiver
+on the actual current native window.
+
+Both actual generator graphs retain259/260 GUI package identities and the same
+license expressions, with winit explicitly recorded as reviewed retained source.
+Full legal generation passed all ten profiles and produced602 files, including
+the unchanged upstream license and shipped patch notice. Ten legal controls,
+strict GUI/tooling Clippy, GUI tests and both Windows Core/application target
+Clippy checks passed locally. The first patch compile exposed a missing second
+WindowExtMacOS implementation; it was corrected before this checkpoint. Native
+drag delivery, GUI frame/interaction and final archive qualification remain open.
+Edit and Window commands use existing Slint APIs; technical detail expands in the
+same read-only report area, avoiding a competing text pane in compact layouts.

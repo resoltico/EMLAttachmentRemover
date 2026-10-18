@@ -259,7 +259,9 @@ fn verify_package(
         let path = reviewed.provenance["manifest_path"]
             .as_str()
             .ok_or("Missing workspace material provenance")?;
-        if reviewed.provenance["kind"] != "workspace"
+        let kind = reviewed.provenance["kind"].as_str();
+        if !matches!(kind, Some("workspace" | "vendored"))
+            || (kind == Some("vendored") && !relative(path)?.starts_with("vendor"))
             || package.manifest_path.canonicalize()? != root.join(relative(path)?).canonicalize()?
         {
             return Err("Local notice package is outside its reviewed workspace source".into());
@@ -997,6 +999,8 @@ fn generated_materials(
                 | "crates/eml-gui/Cargo.toml"
                 | "crates/eml-worker/Cargo.toml"
                 | "crates/eml-macos/Cargo.toml"
+                | "vendor/winit/Cargo.toml"
+                | "vendor/winit/EML-PATCH.md"
                 | "LICENSE"
         ) {
             checked_file(&root, fact)?;
