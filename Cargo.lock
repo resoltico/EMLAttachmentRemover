@@ -1288,6 +1288,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "eml-windows"
+version = "6.0.0"
+dependencies = [
+ "tempfile",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "eml-worker"
 version = "6.0.0"
 dependencies = [
@@ -5744,6 +5752,7 @@ dependencies = [
  "eml-core",
  "eml-fs",
  "eml-macos",
+ "eml-windows",
  "flate2",
  "getrandom 0.4.3",
  "object",

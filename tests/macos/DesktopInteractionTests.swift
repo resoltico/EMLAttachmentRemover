@@ -25,9 +25,8 @@ final class DesktopInteractionTests: XCTestCase {
         configuration.arguments = ["-copyDestinationBytes", ""]
         let owned = try await NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
         let app = XCUIApplication(url: appURL)
-        var settled = false
-        defer {
-            if !settled {
+        addTeardownBlock { @MainActor in
+            if !owned.isTerminated {
                 // Request the actual app's owned shutdown path. A failed cleanup
                 // remains a failed test; no process-name kill or helper sweep.
                 _ = owned.terminate()
@@ -35,6 +34,7 @@ final class DesktopInteractionTests: XCTestCase {
                     app.buttons["Confirm"].click()
                 }
                 XCTAssertTrue(app.wait(for: .notRunning, timeout: 20), "Owned GUI settlement remains unverified")
+                XCTAssertTrue(owned.isTerminated)
             }
         }
         let window = app.windows["EML Attachment Remover"]
@@ -42,6 +42,7 @@ final class DesktopInteractionTests: XCTestCase {
         let instances = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
         XCTAssertEqual(instances.count, 1)
         XCTAssertEqual(instances.first?.processIdentifier, owned.processIdentifier)
+        app.activate()
         snapshot(app, "ready")
 
         let sources = ["one.eml", "two.eml"].map { root.appendingPathComponent($0) }
@@ -49,16 +50,23 @@ final class DesktopInteractionTests: XCTestCase {
         delivery.createsNewApplicationInstance = false
         let recipient = try await NSWorkspace.shared.open(sources, withApplicationAt: appURL, configuration: delivery)
         XCTAssertEqual(recipient.processIdentifier, owned.processIdentifier, "File batch reached another instance")
-        let finished = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "2 created")).firstMatch
-        XCTAssertTrue(finished.waitForExistence(timeout: 30), app.debugDescription)
-        let technical = app.checkBoxes["Technical details"]
-        XCTAssertTrue(technical.exists)
-        technical.click()
-        let detail = app.textViews.matching(NSPredicate(format: "label CONTAINS %@", "technical observations")).firstMatch
-        let completed = NSPredicate { _, _ in
-            (detail.value as? String)?.contains("settled true; reusable true") == true
+        let finished = app.staticTexts.matching(NSPredicate(format: "value CONTAINS %@", "2 created")).firstMatch
+        guard finished.waitForExistence(timeout: 30) else {
+            XCTFail("Native batch did not reach its two-created presentation: \(app.debugDescription)")
+            return
         }
-        await fulfillment(of: [XCTNSPredicateExpectation(predicate: completed, object: nil)], timeout: 20)
+        let technical = app.checkBoxes["Technical details"]
+        guard technical.exists else { XCTFail("Technical details control is unavailable"); return }
+        technical.click()
+        let detail = window.textViews.firstMatch
+        guard detail.waitForExistence(timeout: 5) else {
+            XCTFail("Main report text is unavailable")
+            return
+        }
+        let completed = NSPredicate(format: "value CONTAINS %@", "settled true; reusable true")
+        let observation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: completed, object: detail)], timeout: 20)
+        XCTAssertEqual(observation, .completed)
+        guard observation == .completed else { return }
         let golden = try Data(contentsOf: repository.appendingPathComponent("tests/contract/mime/golden/01-gmail-attachment.eml"))
         let original = try Data(contentsOf: repository.appendingPathComponent("tests/contract/mime/inputs/01-gmail-attachment.eml"))
         for source in sources {
@@ -76,7 +84,6 @@ final class DesktopInteractionTests: XCTestCase {
         app.buttons["Confirm"].click()
         XCTAssertTrue(app.wait(for: .notRunning, timeout: 20))
         XCTAssertTrue(owned.isTerminated)
-        settled = owned.isTerminated
         XCTAssertEqual(UserDefaults.standard.persistentDomain(forName: identifier)?["copyDestinationBytes"] as? String, previousDestination,
                        "Invocation override must not persist a destination")
     }

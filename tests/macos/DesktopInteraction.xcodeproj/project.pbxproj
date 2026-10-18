@@ -9,8 +9,8 @@
   A10000000000000000000003 = { isa = PBXGroup; children = (A10000000000000000000008, A10000000000000000000004); sourceTree = "<group>"; };
   A10000000000000000000004 = { isa = PBXGroup; children = (A10000000000000000000009); name = Products; sourceTree = "<group>"; };
   A10000000000000000000005 = { isa = PBXNativeTarget; buildConfigurationList = A1000000000000000000000A; buildPhases = (A1000000000000000000000B, A1000000000000000000000C, A1000000000000000000000D); buildRules = (); dependencies = (); name = DesktopInteraction; productName = DesktopInteraction; productReference = A10000000000000000000009; productType = "com.apple.product-type.bundle.ui-testing"; };
-  A10000000000000000000006 = { isa = XCBuildConfiguration; buildSettings = { SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 15.0; SWIFT_VERSION = 6.0; }; name = Debug; };
-  A10000000000000000000007 = { isa = XCBuildConfiguration; buildSettings = { SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 15.0; SWIFT_VERSION = 6.0; }; name = Release; };
+  A10000000000000000000006 = { isa = XCBuildConfiguration; buildSettings = { SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 15.0; SWIFT_VERSION = 6.0; ARCHS = "$(NATIVE_ARCH_ACTUAL)"; ONLY_ACTIVE_ARCH = YES; ALWAYS_SEARCH_USER_PATHS = NO; }; name = Debug; };
+  A10000000000000000000007 = { isa = XCBuildConfiguration; buildSettings = { SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 15.0; SWIFT_VERSION = 6.0; ARCHS = "$(NATIVE_ARCH_ACTUAL)"; ONLY_ACTIVE_ARCH = YES; ALWAYS_SEARCH_USER_PATHS = NO; }; name = Release; };
   A10000000000000000000008 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopInteractionTests.swift; sourceTree = "<group>"; };
   A10000000000000000000009 = { isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = DesktopInteraction.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
   A1000000000000000000000A = { isa = XCConfigurationList; buildConfigurations = (A1000000000000000000000E, A1000000000000000000000F); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };

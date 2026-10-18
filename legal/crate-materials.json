@@ -12602,16 +12602,16 @@
   "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
   "source_inputs": [
     {
-      "bytes": 148567,
+      "bytes": 148690,
       "kind": "review_input",
       "path": "Cargo.lock",
-      "sha256": "3a9fd7d84df6521ec85440ef208a213f585785a26db69b43d46442c3bc0f5926"
+      "sha256": "74ea37cb8ba3e752c019f7cb426477fa2612a1ab6cfee3b17899cabe778d7912"
     },
     {
-      "bytes": 884,
+      "bytes": 906,
       "kind": "review_input",
       "path": "Cargo.toml",
-      "sha256": "82939d2b5d599d087853598d8c80a2a9aad79e612cded362ca3f0a8d13c71617"
+      "sha256": "1de1cc15a9848725d19e0b7136dded00cbcca53bcd041f0d626d402601cf9897"
     },
     {
       "bytes": 537,
@@ -12828,6 +12828,10 @@
     {
       "basis_head": "30ed4af",
       "scope": "Reviewed the exact published winit0.30.13 archive: all217 regular members retained, only the two macOS source files named in vendor/winit/EML-PATCH.md changed, plus that explanatory notice. The Apache2.0 LICENSE is byte-identical. Cargo patch changes only winit from registry to retained source; no package/version/dependency edge or selected grant changes. Both native GUI generator graphs must be checked before delivery."
+    },
+    {
+      "basis_head": "e8fe1d4f6334dd6d072c2c5f3771597d3982ae1e",
+      "scope": "Reviewed the workspace addition of eml-windows and its Windows-only xtask edge: an owned native Job/process tooling boundary, not a shipping dependency or frontend. Cargo.lock changes only this local6.0.0 package and the xtask path dependency. Existing registry versions/checksums are unchanged. Product normal closures and per-package legal text bindings remain subject to actual ten-profile generation."
     }
   ],
   "product_material_review": {

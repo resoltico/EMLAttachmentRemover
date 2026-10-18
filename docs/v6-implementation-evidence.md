@@ -519,3 +519,36 @@ Unreleased, empty/duplicate/invalid-date sections and API failures/published or
 wrong-source releases. An actual authenticated GitHub404 response established
 the parser's observed response format. This does not establish release readiness:
 v6 has no dated released section, and no tag/release/assets/settings were changed.
+
+## Windows verification Job boundary
+
+eml-windows now supplies a narrow safe Job/process interface to xtask's Windows
+controller. Job-list launch attributes bind containment before the suspended
+primary can execute; only explicit standard handles are inherited. Native UTF16
+arguments and the complete Windows-ordinal-sorted environment are bounded.
+The controller records actual exit separately from live Job members, deadline,
+cancellation and checked cleanup. Original API failures remain failures after
+cleanup, sidecars refuse replacement, and failure resources remain retained.
+This separate native library keeps unsafe calls out of xtask/Core/CLI and avoids
+putting process responsibility in eml-fs. It adds no shipping dependency or GUI.
+
+Five Job tests and four controller tests are wired into both native Windows rows
+and mandatory-name discovery. They exercise real streams/exit, native argument
+bytes, invalid arguments/environment, descendants, owner death without Rust Drop,
+deadline cleanup and sidecar collision. Source Clippy passes both Windows targets;
+these new real tests have not yet executed on Windows. Unix regression tests
+still pass22 archive/47 command/19 process cases. Full ten-profile legal generation
+passed and retained602 files; only a local workspace package/xtask edge changed
+in Cargo.lock, with no registry version/checksum change. An initial broad offline
+lock update moved sha2/zip; both were restored before this reviewed state.
+Private console event delivery, protected Windows archive roots, final link/input
+provenance, native runtime checks and complete Windows packaging remain open.
+
+The first actual extracted GUI XCTest at H66f2865 reached a rendered two-created
+run, but failed because the test queried StaticText's label rather than the actual
+accessible value. Its subsequent absent-element query threw an XCTest exception;
+the process controller rejected the remaining owned survivor. This is failed GUI
+qualification, not a pass. Queries now use the actual observed accessibility
+properties, guard absent elements and register XCTest teardown independently of
+Swift defer. Native-CPU test compilation passes locally; corrected execution is
+still pending. Both hosted Mac exFAT rows at H66f2865 passed independently.

@@ -1,4 +1,4 @@
-//! Owned verification processes with a separate session, guarded groups and explicit cleanup evidence.
+//! Owned verification processes with native lifetime authority and explicit cleanup evidence.
 #[cfg(unix)]
 use serde::{Deserialize, Serialize};
 #[cfg(unix)]
@@ -16,6 +16,8 @@ use std::{
 };
 #[cfg(unix)]
 pub(crate) mod unix;
+#[cfg(windows)]
+mod windows;
 /// Tool-controller errors; no source mail is included.
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// A failed command retaining actual process facts through caller propagation.
@@ -93,7 +95,7 @@ impl ProcessResult {
             && self.cleanup_complete
     }
 }
-/// A developer-only controller using an immutable owned helper executable.
+/// Developer verification with platform-specific owned process lifetimes.
 pub struct Controller {
     #[cfg(unix)]
     pub(crate) helper: PathBuf,
@@ -173,7 +175,11 @@ impl Controller {
         {
             self.observe(unix::run(self, command, log, deadline, false))
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            self.observe(windows::run(self, command, log, deadline, false))
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = (command, log, deadline);
             self.observe(Err(
@@ -199,7 +205,11 @@ impl Controller {
         {
             self.observe(unix::run(self, command, log, deadline, true))
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            self.observe(windows::run(self, command, log, deadline, true))
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = (command, log, deadline);
             self.observe(Err(

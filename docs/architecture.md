@@ -28,6 +28,12 @@ The workspace separates message policy and native storage from frontends.
   reviewed Darwin ownership boundary into Rust, separate from business policy.
 - **xtask** owns repository checks, bounded campaigns, native build identity,
   complete target notices, archive creation/readback and qualification evidence.
+- **eml-windows** provides the owned Win32 Job/process boundary used by Windows
+  verification tooling. Its narrowly scoped native module keeps unsafe process
+  calls out of xtask and filesystem policy. It is not linked into the CLI or
+  macOS app and introduces no Windows frontend. See
+  [Windows process ownership](windows-process-ownership.md) for its actual scope
+  and outstanding native/console checks.
   Developer process supervision is separate from product helper ownership.
 
 A PreparedMessage retains source bytes and authorized deletion ranges. Production
