@@ -37,6 +37,13 @@ operation path; explicit report export contains accepted structured facts rather
 than raw protocol frames or message contents. Native child ownership is described
 in [process ownership](macos-process-ownership.md).
 
+After a stream ends without a valid summary, known discovered items without an
+accepted result are shown as having no reported result. Complete copies may
+exist at their destinations; the app does not label those missing observations
+as created or failed or invent a summary. An accepted Core summary remains
+authoritative, including its explicit not_processed count. Earlier accepted
+copy and publication receipts remain available when a later stream fails.
+
 The controller connects message/folder/destination sheets, immutable queued runs,
 retained reports, cooperative Stop, confirmed Force Stop and Quit, and explicit
 protected report export. Export captures the exact run's accepted facts and

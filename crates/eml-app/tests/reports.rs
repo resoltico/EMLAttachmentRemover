@@ -30,6 +30,49 @@ fn decode(bytes: &[u8], split: usize, exit: i32) -> Result<RunReport, Failure> {
     report.finish(Some(exit), tail).map_err(Failure::Protocol)?;
     Ok(report)
 }
+
+#[test]
+fn missing_results_remain_unknown_and_valid_interrupted_summary_stays_authoritative() {
+    let mut frames: Vec<serde_json::Value> = fixture("created-attachment")
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice(line).unwrap())
+        .collect();
+    frames[0]["total"] = 2.into();
+    let mut partial = RunReport::new("test-version");
+    assert_eq!(partial.unreported_item_count(), None);
+    for frame in frames.iter().take(2) {
+        partial
+            .accept_frame(&serde_json::to_vec(frame).unwrap())
+            .unwrap();
+    }
+    assert_eq!(partial.unreported_item_count(), None);
+    assert_eq!(
+        partial.finish(Some(130), false),
+        Err(ProtocolFailure::MissingSummary)
+    );
+    assert_eq!(partial.unreported_item_count(), Some(1));
+    assert_eq!(partial.items().len(), 1);
+    assert_eq!(partial.saved_bytes(0), Some(515));
+    assert_eq!(partial.items()[0].removed[0].bytes, 507);
+    assert!(partial.summary().is_none());
+
+    frames[2]["counts"]["not_processed"] = 1.into();
+    frames[2]["interrupted"] = true.into();
+    frames[2]["exit_code"] = 130.into();
+    let mut interrupted = RunReport::new("test-version");
+    for frame in &frames {
+        interrupted
+            .accept_frame(&serde_json::to_vec(frame).unwrap())
+            .unwrap();
+    }
+    interrupted.finish(Some(130), false).unwrap();
+    assert_eq!(interrupted.summary().unwrap().counts.not_processed, 1);
+    assert_eq!(interrupted.unreported_item_count(), None);
+    let mut no_start = RunReport::new("test-version");
+    assert!(no_start.finish(Some(130), false).is_err());
+    assert_eq!(no_start.unreported_item_count(), None);
+}
 #[test]
 fn all_shared_scenarios_pass_at_every_byte_boundary_with_explicit_exit_and_item_oracles() {
     let cases = [

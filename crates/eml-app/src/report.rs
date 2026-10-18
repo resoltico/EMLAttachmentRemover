@@ -92,6 +92,19 @@ impl RunReport {
     pub fn summary(&self) -> Option<&SummaryRecord> {
         self.summary.as_ref()
     }
+    /// Known discovered items lacking individual results after a stream ends
+    /// without an accepted summary. This is reporting incompleteness, never
+    /// evidence that native processing/publication did not happen. A valid
+    /// summary remains authoritative, including its not_processed count.
+    pub fn unreported_item_count(&self) -> Option<u32> {
+        if !self.finished || self.summary.is_some() {
+            return None;
+        }
+        self.start
+            .as_ref()?
+            .total
+            .checked_sub(u32::try_from(self.items.len()).ok()?)
+    }
     /// The first irreversible protocol failure.
     pub fn failure(&self) -> Option<ProtocolFailure> {
         self.failure

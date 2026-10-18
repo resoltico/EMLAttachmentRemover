@@ -1071,3 +1071,56 @@ used. Corrected execution and broader accessibility qualification remain open.
 A separate focused AppKit diagnostic workflow now compares the same pinned
 native test on hosted macOS15/26 Intel/ARM. This is supplemental diagnosis, not a
 change to the required distribution runners or macOS15 gates. It has not run yet.
+
+## Native publication observations and report completeness
+
+At Hff4abfbb8a6809839677c2598dd270b538742756, run39156359018 passed all six
+native CLI rows and exact-M Linux integration. The ARM app's four separately
+copied/ad hoc re-signed real-Core fixture scenarios each discovered/executed one
+test with zero failures/skips: cooperative Stop, confirmed Force Stop, active
+Quit escalation and Published/AddressChanged. Each preserved the entire saved
+preference domain, original/golden bytes, unchanged shipping bundle and actual
+supervisor settlement; no worker remained. Active Quit's first/second interrupts
+were 9.996737 seconds apart. The physical published-error screenshot showed the
+error artwork, complete-copy/error explanation and disabled Finder action.
+These fixture-backed observations do not substitute for the shipping workflow.
+
+The ARM shipping workflow passed actual queue removals from seven through zero,
+then failed because the test looked for the static “Save As:” label as a text
+field. The corrected selector uses the native saveAsNameTextField identifier.
+The broader workflow now also binds a new Finder window to the unique owned
+fixture folder, checks the exact selected copy, drags an actual original Finder
+entry into the product and checks Core's up-to-date result and independent bytes.
+Cleanup closes only that uniquely bound window and requires bounded disappearance.
+SDK27 build-for-testing and strict formatting passed for these source changes;
+export/collision, missing-copy feedback, Finder reveal/drop and the corrected
+shipping workflow still require pinned native execution. The Intel app row was
+still running when this checkpoint was written.
+
+Supplemental focused run39156359076 passed visible AppKit presentation, owned
+cancellation and callback on macOS15 Intel and macOS15/26 ARM. macOS26 Intel
+failed visibility/callback, settled with exit2. This does not establish an OS
+root cause or qualify the product picker. The diagnostic now also performs
+independent native-host admission and records the selected build/host identity;
+that additional admission has not yet executed on hosted runners.
+
+The bounded campaigns were renewed at Hff4abfb: fuzz60 seconds made1,146,364
+executions over12 fixtures and10 edge seeds, with4MiB input/5second case/1024MiB
+RSS limits and no finding/artifact. The two specified MIME guards discovered and
+executed15 mutants:14 caught,1 reviewed compiler-invalid, zero missed/timeouts.
+The clean source-material notices check passed all10 profiles/603 entries. No
+full mutation or scheduled900-second fuzz campaign was run.
+
+A finalized stream without an accepted summary now exposes how many discovered
+items lack individual results. The GUI explicitly warns that complete copies
+may exist and directs inspection of the destination. It does not invent item
+records, export fields or not-processed counts; a valid summary remains
+authoritative. All nine report-reducer tests and enabled GUI strict Clippy passed.
+The forced-stop physical wording assertion awaits native execution.
+
+Fourteen historical changelog links now point to their published-baseline files.
+Their targets exist at f7adf489734beff3ca94f829f8db1c110be316f4; comparison against
+that baseline verified all published text is otherwise unchanged. v6 remains
+Unreleased. Future live release/attestation integration is intentionally unrun,
+is not authorized by this PR task and is not a substitute for the still-required
+native/archive/GUI acceptance gates.

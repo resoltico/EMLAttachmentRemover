@@ -239,7 +239,8 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
             &build.host,
             "--message-format=json",
         ])
-        .env("CARGO_TARGET_DIR", out.join("cargo"));
+        .env("CARGO_TARGET_DIR", out.join("cargo"))
+        .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text);
     let log = out.join("worker-build.jsonl");
     controller()?
         .run_separate_output(compile, &log, Duration::from_secs(1200))?

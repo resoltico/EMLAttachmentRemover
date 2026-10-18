@@ -147,6 +147,11 @@ final class DesktopInteractionTests: XCTestCase {
             "Worker exit Some(130); signal None; failure None; settled true; reusable true")
         try await requireText(
           app, containing: "1 created · 0 up to date · 1 failed · 0 not processed")
+      } else {
+        try await requireText(
+          app,
+          containing:
+            "1 item has no reported result. Complete copies may exist; inspect the destination.")
       }
       XCTAssertEqual(
         try Data(
@@ -562,6 +567,74 @@ final class DesktopInteractionTests: XCTestCase {
     }
     XCTAssertEqual(try Data(contentsOf: serviceCopy), golden)
     app.buttons["Dismiss notice"].click()
+
+    // Use the first report's copy in the uniquely named owned fixture root.
+    // The Finder window can then be identified without touching another folder.
+    let firstRun = try XCTUnwrap(
+      window.buttons.allElementsBoundByIndex.first {
+        $0.title.hasPrefix("Run 1\n")
+      })
+    firstRun.click()
+    try await requireRun(app, counts: "2 created · 0 up to date", source: sources[0])
+    let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
+    let folderTitle = root.lastPathComponent
+    let finderWindowCount = finder.windows.count
+    guard finder.windows.allElementsBoundByIndex.allSatisfy({ $0.title != folderTitle }) else {
+      XCTFail("Owned fixture Finder window already exists; no ambiguous window will be closed")
+      throw InteractionFailure.expectedPresentation
+    }
+    app.buttons["Show in Finder"].click()
+    let found = NSPredicate { _, _ in
+      finder.windows.count == finderWindowCount + 1
+        && finder.windows.allElementsBoundByIndex.filter { $0.title == folderTitle }.count == 1
+    }
+    let revealed = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: found, object: nil)], timeout: 15)
+    guard revealed == .completed else {
+      XCTFail("Finder did not reveal the owned copy's unique folder: \(finder.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    let folder = try XCTUnwrap(
+      finder.windows.allElementsBoundByIndex.first { $0.title == folderTitle })
+    addTeardownBlock { @MainActor in
+      try await self.closeOwnedFinderWindow(finder, title: folderTitle)
+    }
+    let firstCopy = sources[0].deletingPathExtension().appendingPathExtension("no-attachments.eml")
+    _ = try finderEntry(folder, file: firstCopy, selected: true)
+    snapshot(finder, "native-finder-revealed-exact-copy")
+
+    // Free one full-report reservation before a real native file drag.
+    guard owned.activate(options: []) else { throw InteractionFailure.expectedPresentation }
+    app.buttons["Dismiss report"].click()
+    let room = NSPredicate { _, _ in
+      window.buttons.allElementsBoundByIndex.filter { $0.title.hasPrefix("Run ") }.count == 1
+    }
+    let freed = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: room, object: nil)], timeout: 10)
+    guard freed == .completed else { throw InteractionFailure.expectedPresentation }
+    finder.activate()
+    // Move only this newly opened fixture window so the drop target stays visible.
+    let titlebar = folder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+      .withOffset(CGVector(dx: 0, dy: 12))
+    let position = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+      .withOffset(CGVector(dx: 750, dy: 100))
+    titlebar.click(forDuration: 0.3, thenDragTo: position)
+    let originalEntry = try finderEntry(folder, file: sources[0], selected: nil)
+    originalEntry.click()
+    let drop = window.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.7))
+    guard originalEntry.isHittable, !folder.frame.contains(drop.screenPoint) else {
+      XCTFail(
+        "Owned source and product drop point are not both exposed: \(finder.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    originalEntry.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      .click(forDuration: 1, thenDragTo: drop)
+    try await requireRun(app, counts: "0 created · 1 up to date", source: sources[0])
+    XCTAssertEqual(try Data(contentsOf: firstCopy), golden)
+    XCTAssertEqual(try Data(contentsOf: sources[0]), original)
+    snapshot(app, "native-finder-file-drop-up-to-date")
+    try await closeOwnedFinderWindow(finder, title: folderTitle)
+    guard owned.activate(options: []) else { throw InteractionFailure.expectedPresentation }
     window.buttons["_XCUI:CloseWindow"].click()
     let hiddenForQuit = NSPredicate { _, _ in !window.exists }
     let hiddenForQuitObservation = await XCTWaiter.fulfillment(
@@ -590,6 +663,52 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
+  private func closeOwnedFinderWindow(_ finder: XCUIApplication, title: String) async throws {
+    let matches = finder.windows.allElementsBoundByIndex.filter { $0.title == title }
+    guard !matches.isEmpty else { return }
+    guard matches.count == 1, let ownedWindow = matches.first else {
+      XCTFail("Owned Finder window is ambiguous; refusing to close another window")
+      throw InteractionFailure.expectedPresentation
+    }
+    ownedWindow.buttons["_XCUI:CloseWindow"].click()
+    let closed = NSPredicate { _, _ in
+      finder.windows.allElementsBoundByIndex.allSatisfy { $0.title != title }
+    }
+    let result = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: closed, object: nil)], timeout: 10)
+    guard result == .completed else {
+      XCTFail("Owned Finder window did not close: \(finder.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+  }
+
+  @MainActor
+  private func finderEntry(_ window: XCUIElement, file: URL, selected: Bool?) throws -> XCUIElement
+  {
+    // Finder may hide a known extension. Both display names identify this one
+    // synthetic file inside the already-bound unique fixture directory.
+    let names = [file.lastPathComponent, file.deletingPathExtension().lastPathComponent]
+    let elements = window.descendants(matching: .any).allElementsBoundByIndex
+    guard elements.count <= 512 else { throw InteractionFailure.expectedPresentation }
+    let entryKinds: [XCUIElement.ElementType] = [.icon, .cell, .tableRow, .outlineRow]
+    let found = elements.first { element in
+      guard entryKinds.contains(element.elementType),
+        selected == nil || element.isSelected == selected
+      else { return false }
+      return [element.title, element.label, element.value as? String ?? ""].contains { value in
+        names.contains { value == $0 || value.hasPrefix($0 + ",") }
+      }
+    }
+    guard let found else {
+      XCTFail(
+        "Owned Finder entry/selection is unavailable for \(file.lastPathComponent): \(window.debugDescription)"
+      )
+      throw InteractionFailure.expectedPresentation
+    }
+    return found
+  }
+
+  @MainActor
   private func saveReport(_ app: XCUIApplication, to destination: URL, replacingOwnedSentinel: Bool)
     async throws
   {
@@ -602,7 +721,7 @@ final class DesktopInteractionTests: XCTestCase {
     app.typeKey("g", modifierFlags: [.command, .shift])
     app.typeText(destination.deletingLastPathComponent().path)
     app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
-    let filename = panel.textFields["Save As:"]
+    let filename = panel.textFields["saveAsNameTextField"]
     guard filename.waitForExistence(timeout: 5) else {
       XCTFail("Native Save As control is unavailable: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation

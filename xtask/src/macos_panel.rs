@@ -9,6 +9,7 @@ pub(crate) fn observe(root: &Path, build: &MacBuild, out: &Path) -> Result<Value
     {
         return Err("Native panel observation requires a fresh hosted Mac; owner desktop/preferences are protected".into());
     }
+    let host = crate::native_host::inspect_target(root, &build.host)?;
     fs::create_dir(out)?;
     let app = out.join("NativePanelDiagnostic.app");
     let contents = app.join("Contents");
@@ -66,7 +67,7 @@ pub(crate) fn observe(root: &Path, build: &MacBuild, out: &Path) -> Result<Value
         &log,
         Duration::from_secs(90),
     )?;
-    let result = json!({"scope":"non-product native AppKit boundary observation; does not qualify product picker", "entitlements":null,"process":process.evidence()});
+    let result = json!({"scope":"non-product native AppKit boundary observation; does not qualify product picker", "host":host,"build":build,"entitlements":null,"process":process.evidence()});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     if process.timed_out
         || process.cancelled

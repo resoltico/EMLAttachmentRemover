@@ -617,7 +617,15 @@ impl Controller {
             });
             let facts = match report.report().inspect(|facts| {
                 facts.summary().map_or_else(
-                    || format!("{} received", facts.items().len()),
+                    || {
+                        let mut text = format!("{} received", facts.items().len());
+                        if let Some(missing) =
+                            facts.unreported_item_count().filter(|count| *count > 0)
+                        {
+                            text.push_str(&format!("\n{missing} without reported result"));
+                        }
+                        text
+                    },
                     |summary| {
                         format!(
                             "{} created · {} up to date\n{} failed · {} not processed",
@@ -776,6 +784,9 @@ impl Controller {
                 }
                 if let Some(counts) = facts.summary().map(|summary| &summary.counts) {
                     summary.push_str(&format!("\n{} created · {} up to date · {} failed · {} not processed", counts.created, counts.up_to_date, counts.failed, counts.not_processed));
+                }
+                if let Some(missing) = facts.unreported_item_count().filter(|count| *count > 0) {
+                    summary.push_str(&format!("\n{missing} {} no reported result. Complete copies may exist; inspect the destination.", if missing == 1 {"item has"} else {"items have"}));
                 }
                 if let Some(completion) = completion {summary.push_str(&format!("\n{}", terminal_label(completion)));}
                 summary.push_str(&format!("\nItems page {} of {pages}", self.page + 1));
