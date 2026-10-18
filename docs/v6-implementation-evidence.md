@@ -5,6 +5,25 @@ or release acceptance is claimed. Version6 stays under Unreleased.
 
 ## Current verification work
 
+At H=`6790042f6294541f644076eef92be9dcfd2d98f3`, run39138182506's exact-M
+Linux integration and both Linux release qualification rows passed. The Windows
+ARM release qualification row also passed, including the corrected counterfeit
+controls and extracted archive behavior. Windows x64 was still running at this
+record. The ARM GUI case passed real message/folder import and report-space
+pause/dismiss/resume, then failed Services setup: the writing client had not
+cleared its owner-created named pasteboard, and the stock restricted-service
+confirmation remained open. The fixture now explicitly takes ownership of only
+that named board, requires a successful file-URL write, and accepts the actual
+Run Service prompt on the fresh hosted runner. The protection remains enabled.
+Its native rerun remains required.
+
+The failed ARM GUI run independently recorded runner status65/reaped, original
+app terminated through its retained native object, named pasteboard released,
+all four original byte sequences unchanged and no unexpected app instances.
+Forced app cleanup remained a failure and worker settlement remained explicitly
+unverified. This proves the observed ordinary test-failure cleanup path; it does
+not replace the still-required timeout/cancellation/crash/source-change controls.
+
 At source `0b20c5fd0c34b460309af7e4127a413909c2c2c9`, run39133969827's
 Windows ARM row passed377 discovered/executed debug cases, native input admission,
 the real successful-link/unknown-object rejection, archive extraction and the

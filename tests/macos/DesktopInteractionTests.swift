@@ -95,19 +95,23 @@ final class DesktopInteractionTests: XCTestCase {
         let hiddenObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 10)
         XCTAssertEqual(hiddenObservation, .completed)
         XCTAssertFalse(owned.isTerminated, "Closing the main window terminated the application")
+        guard !owned.isTerminated else { throw InteractionFailure.expectedPresentation }
         let reopen = NSWorkspace.OpenConfiguration()
         reopen.createsNewApplicationInstance = false
         reopen.addsToRecentItems = false
         let restored = try await NSWorkspace.shared.openApplication(at: appURL, configuration: reopen)
         XCTAssertEqual(restored.processIdentifier, owned.processIdentifier)
+        guard restored.processIdentifier == owned.processIdentifier else { throw InteractionFailure.expectedPresentation }
         XCTAssertTrue(window.waitForExistence(timeout: 10), app.debugDescription)
         snapshot(app, "reopened")
 
         let delivery = NSWorkspace.OpenConfiguration()
         delivery.createsNewApplicationInstance = false
         delivery.addsToRecentItems = false
+        guard !owned.isTerminated else { throw InteractionFailure.expectedPresentation }
         let recipient = try await NSWorkspace.shared.open(sources, withApplicationAt: appURL, configuration: delivery)
         XCTAssertEqual(recipient.processIdentifier, owned.processIdentifier, "File batch reached another instance")
+        guard recipient.processIdentifier == owned.processIdentifier else { throw InteractionFailure.expectedPresentation }
         let finished = NSPredicate { _, _ in
             app.buttons.allElementsBoundByIndex.contains { button in
                 let text = button.title + "\n" + button.label + "\n" + (button.value as? String ?? "")
@@ -169,19 +173,32 @@ final class DesktopInteractionTests: XCTestCase {
         let boardName = try XCTUnwrap(ownership["pasteboard"] as? String)
         guard !boardName.isEmpty, boardName != NSPasteboard.general.name.rawValue else { throw InteractionFailure.expectedPresentation }
         let serviceBoard = NSPasteboard(name: NSPasteboard.Name(boardName))
-        XCTAssertTrue(serviceBoard.writeObjects([serviceSource as NSURL]))
+        // Cocoa requires the writing client to take ownership first, including
+        // when a separate fixture process created this unique named board.
+        serviceBoard.clearContents()
+        guard serviceBoard.writeObjects([serviceSource as NSURL]) else {
+            XCTFail("Could not write the owned native file URL to its named pasteboard")
+            throw InteractionFailure.expectedPresentation
+        }
         NSUpdateDynamicServices()
+        guard !owned.isTerminated else { throw InteractionFailure.expectedPresentation }
         guard NSPerformService("Create EML Copies Without Attachments", serviceBoard) else {
             XCTFail("The registered native service did not accept the owned file URL")
             throw InteractionFailure.expectedPresentation
         }
+        // Preserve the stock restricted-service protection. Accept its real
+        // first-use prompt only inside this fresh hosted, owned-app fixture.
+        let runService = app.dialogs.buttons["Run Service"]
+        if runService.waitForExistence(timeout: 5) { runService.click() }
         try await requireText(app, containing: "Queue paused: dismiss a retained report to make room.")
         XCTAssertFalse(FileManager.default.fileExists(atPath: serviceSource.deletingPathExtension().appendingPathExtension("no-attachments.eml").path))
         app.buttons["Dismiss report"].click()
         try await requireRun(app, counts: "1 created · 0 up to date", source: serviceSource)
         try await requireText(app, containing: "日本語.eml")
         XCTAssertEqual(try Data(contentsOf: serviceSource.deletingPathExtension().appendingPathExtension("no-attachments.eml")), golden)
-        XCTAssertEqual(NSRunningApplication.runningApplications(withBundleIdentifier: identifier).map(\.processIdentifier), [owned.processIdentifier])
+        let serviceInstances = NSRunningApplication.runningApplications(withBundleIdentifier: identifier).map(\.processIdentifier)
+        XCTAssertEqual(serviceInstances, [owned.processIdentifier])
+        guard serviceInstances == [owned.processIdentifier] else { throw InteractionFailure.expectedPresentation }
         snapshot(app, "services-finished-CJK")
         window.buttons["_XCUI:CloseWindow"].click()
         let hiddenForQuit = NSPredicate { _, _ in !window.exists }
