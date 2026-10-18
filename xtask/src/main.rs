@@ -111,6 +111,8 @@ enum Task {
         target: String,
         #[arg(long)]
         out: PathBuf,
+        #[arg(long)]
+        release: bool,
     },
     /// Run independent repository checks, retaining every failed section.
     Check,
@@ -303,11 +305,17 @@ fn main() -> ExitCode {
                     Err("Native macOS is required for desktop profile checks".into())
                 }
             }
-            Task::NativeTests { target, out } => {
+            Task::NativeTests {
+                target,
+                out,
+                release,
+            } => {
                 initialize_controller(&root)?;
+                let host = native_host::inspect_target(&root, &target)?;
                 std::fs::create_dir(&out)?;
                 let out = out.canonicalize()?;
-                let result = qualify::checked_tests(&root, Some(&target), false, &out)?;
+                let mut result = qualify::checked_tests(&root, Some(&target), release, &out)?;
+                result["host"] = host;
                 std::fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
                 Ok(())
             }

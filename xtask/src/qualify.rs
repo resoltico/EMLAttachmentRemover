@@ -82,6 +82,10 @@ pub(crate) fn checked_tests(
         if let Some(target) = target {
             command.args(["--target", target]);
         }
+        #[cfg(target_os = "macos")]
+        if release {
+            command.args(["--features", "eml-gui/macos-gui,eml-gui/native-fixtures,eml-worker/native-fixtures,eml-macos/native-fixtures,eml-core/native-fixtures"]);
+        }
         #[cfg(windows)]
         {
             command.args([
@@ -316,23 +320,7 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
     if !changes.is_empty() {
         return Err("Native qualification requires a clean committed checkout; preserve/commit intended work first".into());
     }
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(root)
-            .arg("distribution"),
-    )?)?;
-    let row = plan["native_targets"]
-        .as_array()
-        .ok_or("Missing native target policy")?
-        .iter()
-        .find(|row| row["target"] == target)
-        .ok_or("Unsupported native target")?;
-    crate::native_host::inspect(
-        root,
-        target,
-        row["os"].as_str().ok_or("Missing native OS")?,
-        row["architecture"].as_str().ok_or("Missing native CPU")?,
-    )?;
+    crate::native_host::inspect_target(root, target)?;
     let source = String::from_utf8(capture(
         Command::new("git")
             .current_dir(root)

@@ -5,6 +5,62 @@ or release acceptance is claimed. Version6 stays under Unreleased.
 
 ## Current verification work
 
+All six native-test jobs at H2a36 passed, including both Linux and both Windows
+release qualification jobs. Both app producers failed as recorded below, so
+both macOS15 consumers and aggregate ci-ok failed; exact-M integration and
+freshness passed. This is not complete macOS or v6 qualification.
+
+The excluded native-filesystem probe now participates in the existing dependency
+policy, alongside the workspace/fuzz/GUI graphs. Its first check found missing
+license metadata; the manifest now declares the existing repository MPL software
+terms, and advisory/source/license checks passed. Both excluded Rust workspaces'
+format checks also passed. Ten-profile notice generation completed after the
+panel experiment was removed and its active manifest identity restored.
+
+H2a36's Intel diagnostics show that deferred construction reached a default-mode
+run-loop block but still failed with AppKit's60-second configuration semaphore
+assertion. Its owner observed app termination without forcing it, runner reaping,
+four unchanged originals and pasteboard release. The unsuccessful scheduling
+state machine and its two superseded tests were removed, restoring the prior
+owned synchronous panel bridge. A minimal Swift AppKit observation in the XCTest
+runner process is now wired before the product picker; it is an unrun diagnostic,
+not product qualification. Safe cleanup still precedes attempting the product
+picker, and the outer owner remains authoritative if native construction crashes.
+
+At H2a36e16ace994535d446cc648537591586211780, run39144548255's ARM
+GUI test passed real native pickers, report-space pause/resume and Services.
+Its JSON picker attachment is present in the actual xcresult with the expected
+test identifier, filename shape, owned PID and fixture fields. The scenario then
+failed while expecting three waiting-removal buttons: only the two visible ones
+were exposed in the native accessibility tree. This is not evidence that the
+third request was admitted. The app now displays the existing waiting model's
+length beside its activity, without a separate counter. The revised test requires
+exact totals after every admission/removal and still requires ninth-request
+refusal, queue pause and independent copy bytes. That corrected native gate is
+unrun. The failed run's owner reaped the runner, verified four unchanged originals
+and released its pasteboard; forced app cleanup left worker settlement unverified.
+
+The next native GUI scenario also exercises actual Save panels for explicit
+technical-report export. It binds the saved report's native source bytes to the
+selected Services input, checks item/removal/count/worker settlement facts, then
+chooses an owned existing report sentinel through the native replacement prompt.
+The failure case requires completed NotPublished/collision feedback and unchanged
+sentinel bytes. Screenshots are retained. These paths are implemented but unrun.
+The enclosing test-owner budget is1800 seconds plus a separate outer cleanup
+allowance for the longer queue/export sequence and observed Intel XCTest
+interruption-check overhead. Individual behavior/settlement and product
+Stop/Force/Quit deadlines are unchanged. The exact picker preference policy is
+unchanged; an additional system key still fails pending actual review.
+
+Native macOS release workspace discovery/execution is now wired as a required
+CI step, including GUI/worker/Darwin/Core fixtures in release mode. Debug checks
+remain required. The shared policy-derived native-host admission runs before
+test compilation and is retained with each native-test result. Local Clippy,
+actionlint and25 library/63 command/24 real Unix lifetime cases passed. A real
+command on the local ARM host requesting Intel was rejected before creating its
+test output or compiling Intel tests. These are wiring/admission checks; the new
+hosted Mac release-profile gate remains unrun.
+
 H045601617db8f052737b812de0b9d4c10f3c3f52's run39143235741 failed
 notice generation on the changed GUI manifest's required source-review identity.
 The target-selected dependency/advisory/license checks passed; all native jobs
@@ -48,7 +104,7 @@ after the new head was pushed; Windows ARM was cancelled, while Windows x64,
 both Linux rows and both macOS native-test rows passed. Its aggregate outcome is
 cancelled, not a complete qualification success.
 
-The pending panel scheduling experiment is described in the
+The subsequently removed panel scheduling experiment is described in the
 [frontend design](desktop-frontend-design.md#native-panel-scheduling). Local
 ARM SDK27 checks passed locked GUI compilation/Clippy and12 GUI unit cases,
 including pending-dialog Drop and consumed-terminal cancellation controls.
@@ -170,7 +226,7 @@ filename. A separate test-only Swift owner now retains the actual NSWorkspace
 application and named pasteboard outside XCTest, runs/reaps the runner, compares
 all four originals and records bounded cleanup without replacing the initial
 failure. Forced app exit never establishes worker settlement. This owner has a
-1200-second execution budget plus a separate outer cleanup allowance; product
+1800-second execution budget plus a separate outer cleanup allowance; product
 and behavior deadlines are unchanged. Local ARM SDK27 source builds pass. Native
 execution and timeout/cancellation/crash/failure controls for the new lifetime
 owner remain required; no full GUI acceptance is claimed.

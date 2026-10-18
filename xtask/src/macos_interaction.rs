@@ -289,6 +289,10 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
         fs::create_dir(&directory)?;
         fs::write(directory.join(name), original)?;
     }
+    fs::write(
+        fixture.path().join("report-collision.json"),
+        b"Owned report collision sentinel\n",
+    )?;
     // One native job owns this new input directory. The test derives its location
     // from its actual source path; there is no shipping automation mode or saved
     // preference transport. Refuse accidental reuse instead of replacing inputs.
@@ -414,7 +418,7 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     let process = controller()?.run_with_cooperative_stop(
         command,
         &out.join("xctest.log"),
-        Duration::from_secs(1260),
+        Duration::from_secs(1860),
         xtask::process::COOPERATIVE_STOP_LIMIT,
     )?;
     fs::write(
@@ -509,7 +513,7 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     }
     let preferences = crate::desktop_preferences::compare(&before, &after, true)?;
     let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"app":app,"process":process.evidence(),"lifetime_controls":lifetime_controls,"lifetime_owner":ownership,"summary":summary,"ownership_receipt":receipt,"picker_observation":picker,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"comparison":preferences,"argument_only_controls":control_preferences},
-        "scope":"actual extracted app: owned NSWorkspace launch, About/version, complete license value and keyboard Edit command, main close/reopen, two-file Open With, native message/folder import, report-space pause/dismiss/resume, real Services with CJK native filename, eight waiting requests/ninth refusal/UI removal, independent golden/original checks, settled worker presentation, screenshots, hidden-window Quit cancel/confirm and destination override non-persistence; remaining GUI paths require separate checks"});
+        "scope":"actual extracted app: owned NSWorkspace launch, About/version, complete license value and keyboard Edit command, main close/reopen, two-file Open With, native message/folder import, report-space pause/dismiss/resume, real Services with CJK native filename, eight waiting requests/ninth refusal/UI removal, native Save report export/readback and collision refusal, independent golden/original checks, settled worker presentation, screenshots, hidden-window Quit cancel/confirm and destination override non-persistence; remaining GUI paths require separate checks"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     Ok(result)
 }

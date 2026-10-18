@@ -7,6 +7,10 @@ import XCTest
 final class DesktopInteractionTests: XCTestCase {
     private enum InteractionFailure: Error { case expectedPresentation }
     @MainActor
+    private final class PanelCompletion {
+        var response: NSApplication.ModalResponse?
+    }
+    @MainActor
     func testOwnedDesktopWorkflowAndNativeIngress() async throws {
         let repository = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -153,6 +157,7 @@ final class DesktopInteractionTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: copy), golden)
         }
         snapshot(app, "finished")
+        try await observeAppKitPanelBoundary(in: root, product: owned)
 
         // The real message importer reruns one original. Two full reports then
         // reserve all report space; the subsequent folder must wait visibly.
@@ -232,6 +237,48 @@ final class DesktopInteractionTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: source.deletingPathExtension().appendingPathExtension("no-attachments.eml")), golden)
         }
         snapshot(app, "waiting-requests-removed")
+
+        let exportURL = root.appendingPathComponent("service-report.json")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: exportURL.path))
+        try await saveReport(app, to: exportURL, replacingOwnedSentinel: false)
+        try await requireText(app, containing: "Technical report saved and read back successfully.")
+        let exported = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: exportURL)) as? [String: Any])
+        let items = try XCTUnwrap(exported["items"] as? [[String: Any]])
+        XCTAssertEqual(items.count, 1)
+        let item = try XCTUnwrap(items.first)
+        XCTAssertEqual(item["status"] as? String, "created")
+        XCTAssertEqual((item["removed"] as? [[String: Any]])?.count, 1)
+        let source = try XCTUnwrap(item["source"] as? [String: Any])
+        let nativeSource = try XCTUnwrap(source["native"] as? [String: Any])
+        XCTAssertEqual(nativeSource["encoding"] as? String, "unix-bytes")
+        let sourceBytes = try XCTUnwrap(serviceSource.withUnsafeFileSystemRepresentation { pointer in
+            pointer.map { Data(bytes: $0, count: strlen($0)) }
+        })
+        XCTAssertEqual(nativeSource["base64"] as? String, sourceBytes.base64EncodedString())
+        let summary = try XCTUnwrap(exported["summary"] as? [String: Any])
+        let counts = try XCTUnwrap(summary["counts"] as? [String: Any])
+        XCTAssertEqual(counts["created"] as? Int, 1)
+        XCTAssertEqual(counts["failed"] as? Int, 0)
+        XCTAssertEqual(counts["not_processed"] as? Int, 0)
+        XCTAssertEqual(summary["exit_code"] as? Int, 0)
+        XCTAssertEqual(summary["interrupted"] as? Bool, false)
+        XCTAssertTrue(summary["run_error"] is NSNull)
+        XCTAssertTrue(exported["protocol_failure"] is NSNull)
+        let worker = try XCTUnwrap(exported["worker"] as? [String: Any])
+        XCTAssertEqual(worker["settled"] as? Bool, true)
+        XCTAssertEqual(worker["reusable"] as? Bool, true)
+        XCTAssertTrue(worker["failure"] is NSNull)
+        snapshot(app, "technical-report-exported")
+
+        let collisionURL = root.appendingPathComponent("report-collision.json")
+        let sentinel = Data("Owned report collision sentinel\n".utf8)
+        XCTAssertEqual(try Data(contentsOf: collisionURL), sentinel)
+        try await saveReport(app, to: collisionURL, replacingOwnedSentinel: true)
+        try await requireText(app, containing: "Report export: publication NotPublished")
+        try await requireText(app, containing: "os error 17")
+        XCTAssertEqual(try Data(contentsOf: collisionURL), sentinel)
+        snapshot(app, "report-export-collision-refused")
+        app.buttons["Dismiss notice"].click()
         window.buttons["_XCUI:CloseWindow"].click()
         let hiddenForQuit = NSPredicate { _, _ in !window.exists }
         let hiddenForQuitObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: hiddenForQuit, object: nil)], timeout: 10)
@@ -257,9 +304,100 @@ final class DesktopInteractionTests: XCTestCase {
     }
 
     @MainActor
+    private func observeAppKitPanelBoundary(in directory: URL, product: NSRunningApplication) async throws {
+        // Diagnostic in the XCTest runner's AppKit process, without Slint or
+        // Rust bindings. It cannot qualify the product's own picker behavior.
+        let parent = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        parent.isReleasedWhenClosed = false
+        parent.title = "Native panel boundary diagnostic"
+        parent.center()
+        parent.makeKeyAndOrderFront(nil)
+        defer { parent.close() }
+        print("Native AppKit runner panel boundary: starting constructor")
+        let panel = NSOpenPanel()
+        print("Native AppKit runner panel boundary: constructor returned")
+        defer { panel.cancel(nil) }
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.directoryURL = directory
+        let completion = PanelCompletion()
+        panel.beginSheetModal(for: parent) { [weak panel] response in
+            MainActor.assumeIsolated {
+                panel?.orderOut(nil)
+                completion.response = response
+            }
+        }
+        let presentationDeadline = ProcessInfo.processInfo.systemUptime + 10
+        while !panel.isVisible && ProcessInfo.processInfo.systemUptime < presentationDeadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let visible = panel.isVisible && panel.sheetParent === parent
+        if visible {
+            let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screenshot.name = "appkit-runner-panel-boundary"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+        }
+        panel.cancel(nil)
+        let completionDeadline = ProcessInfo.processInfo.systemUptime + 10
+        while (completion.response == nil || panel.isVisible) && ProcessInfo.processInfo.systemUptime < completionDeadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let facts: [String: Any] = ["scope": "AppKit-only diagnostic in XCTest runner; product picker and instrumentation remain separate",
+                                   "sheet_visible": visible, "completion": completion.response.map { $0.rawValue as Any } ?? NSNull()]
+        let observation = XCTAttachment(data: try JSONSerialization.data(withJSONObject: facts), uniformTypeIdentifier: "public.json")
+        observation.name = "appkit-runner-panel-observation"
+        observation.lifetime = .keepAlways
+        add(observation)
+        guard completion.response == .cancel, !panel.isVisible else {
+            XCTFail("Owned diagnostic panel cancellation did not settle")
+            throw InteractionFailure.expectedPresentation
+        }
+        guard !product.isTerminated, product.activate(options: []) else { throw InteractionFailure.expectedPresentation }
+    }
+
+    @MainActor
+    private func saveReport(_ app: XCUIApplication, to destination: URL, replacingOwnedSentinel: Bool) async throws {
+        app.buttons["Export Report…"].click()
+        let panel = app.sheets.firstMatch
+        guard panel.waitForExistence(timeout: 10) else {
+            XCTFail("Native report save panel did not appear: \(app.debugDescription)")
+            throw InteractionFailure.expectedPresentation
+        }
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        app.typeText(destination.deletingLastPathComponent().path)
+        app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+        let filename = panel.textFields["Save As:"]
+        guard filename.waitForExistence(timeout: 5) else {
+            XCTFail("Native Save As control is unavailable: \(app.debugDescription)")
+            throw InteractionFailure.expectedPresentation
+        }
+        filename.click()
+        app.typeKey("a", modifierFlags: .command)
+        app.typeText(destination.lastPathComponent)
+        panel.buttons["Save"].click()
+        if replacingOwnedSentinel {
+            let replace = app.buttons["Replace"]
+            guard replace.waitForExistence(timeout: 5) else {
+                XCTFail("Expected native replacement confirmation for owned report sentinel: \(app.debugDescription)")
+                throw InteractionFailure.expectedPresentation
+            }
+            replace.click()
+        }
+        let closed = NSPredicate { _, _ in !panel.exists }
+        let result = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: closed, object: nil)], timeout: 10)
+        XCTAssertEqual(result, .completed, "Native report save panel did not complete: \(app.debugDescription)")
+        guard result == .completed else { throw InteractionFailure.expectedPresentation }
+    }
+
+    @MainActor
     private func requireWaiting(_ app: XCUIApplication, count: Int) async throws {
+        let label = "Waiting requests: \(count)"
         let predicate = NSPredicate { _, _ in
-            app.buttons.matching(identifier: "Remove waiting run").count == count
+            app.staticTexts.matching(NSPredicate(format: "value == %@", label)).count == 1
         }
         let result = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 10)
         XCTAssertEqual(result, .completed, "Expected exactly \(count) waiting requests: \(app.debugDescription)")

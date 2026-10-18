@@ -255,6 +255,15 @@ upload, publish, merge or change settings. v6 remains under Unreleased, so its
 dated-release gate intentionally cannot pass now. The publication workflow and
 complete release qualification remain unfinished.
 
+`cargo xtask native-tests --release --target TARGET --out NEW_DIR` runs matched
+native release-profile discovery and execution. Native OS/CPU/compiler admission
+precedes test compilation and its observation is retained with the result.
+On macOS the release selection explicitly includes the current GUI, worker,
+Darwin and Core fixture features under the pinned Xcode/SDK/deployment policy.
+CI keeps the debug selections and adds this required release gate with separate
+evidence. Successful suites establish the tested profile on that host; complete
+macOS app/archive/GUI qualification remains separate.
+
 `cargo xtask stage-release-assets --archives DIR --out NEW_DIR` assembles the
 exact eight archive names derived from Cargo/distribution policy and a sorted
 `SHA256SUMS`. It refuses missing/extra/nonordinary inputs and an existing output

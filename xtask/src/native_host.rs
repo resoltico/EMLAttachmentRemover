@@ -6,9 +6,29 @@ use serde_json::json;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+pub(crate) fn inspect_target(root: &Path, target: &str) -> Result<Value> {
+    let plan: Value = serde_json::from_slice(&capture(
+        Command::new(std::env::current_exe()?)
+            .current_dir(root)
+            .arg("distribution"),
+    )?)?;
+    let row = plan["native_targets"]
+        .as_array()
+        .ok_or("Missing native target policy")?
+        .iter()
+        .find(|row| row["target"] == target)
+        .ok_or("Unsupported native target")?;
+    inspect(
+        root,
+        target,
+        row["os"].as_str().ok_or("Missing native OS")?,
+        row["architecture"].as_str().ok_or("Missing native CPU")?,
+    )
+}
+
 pub(crate) fn inspect(root: &Path, target: &str, os: &str, architecture: &str) -> Result<Value> {
     if std::env::consts::OS != os || std::env::consts::ARCH != architecture {
-        return Err("Archive execution requires its actual native OS/CPU; cross execution is not qualification".into());
+        return Err("Native verification requires the target's actual OS and CPU".into());
     }
     #[cfg(windows)]
     {

@@ -72,15 +72,15 @@ service started and checked in; the retained diagnostics do not establish why
 configuration failed. Its call stack entered AppKit inside Slint's timer callback
 from a CFRunLoop observer. The same scenario passed on Apple Silicon.
 
-The narrow scheduling experiment reserves a dialog synchronously, then constructs
-the native panel in a public main-run-loop block in default mode. Winit already
-uses this scheduling boundary for non-reentrant callbacks. The block owns the
-retained native parent and copied request; it captures no controller borrow or
-Slint window. Cancellation is terminal even if a nested native event consumes
-its result before construction returns. Dropping a pending dialog prevents its
-queued block from presenting later. Open and Save share this scheduling rule;
-their native completion/path checks remain authoritative.
+A default-mode main-run-loop experiment moved panel creation out of the observer
+and controller call. The actual Intel stack then entered through
+`__CFRUNLOOP_IS_CALLING_OUT_TO_A_BLOCK__`, yet AppKit retained the same60-second
+configuration assertion. This did not establish a fix. The deferred states and
+their extra feature declarations were removed; owned synchronous panels retain
+their weak completion references, parent checks, cancellation and native paths.
 
-This addresses the observed observer-context risk. It is not a demonstrated
-explanation or fix until actual native picker execution passes; hosted
-AppKit/XPC failure remains a competing explanation. Failed evidence is retained.
+A small test-only observation now exercises a native Swift AppKit panel in the
+XCTest runner process before the product's own picker. This helps distinguish a
+broader runner/AppKit failure from the product boundary. Its success would not
+clear product-process instrumentation or qualify the product picker. Actual
+product integration and failed diagnostic evidence remain separate.

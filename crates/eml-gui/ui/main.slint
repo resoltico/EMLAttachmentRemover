@@ -134,7 +134,11 @@ export component MainWindow inherits Window {
             Button { text: "Beside originals"; enabled: root.destination-editable; clicked => { root.beside_requested(); } }
         }
         Text { text: "Save copies: " + root.destination; overflow: elide; accessible-label: "Copy destination: " + root.destination; }
-        Text { text: root.activity; wrap: word-wrap; accessible-label: "Run status: " + root.activity; }
+        HorizontalBox {
+            padding: 0px;
+            Text { text: root.activity; wrap: word-wrap; horizontal-stretch: 1; accessible-label: "Run status: " + root.activity; }
+            Text { text: "Waiting requests: " + root.waiting-runs.length; accessible-label: self.text; }
+        }
         if root.notice-text != "": HorizontalBox {
             Text { text: root.notice-text; overflow: elide; accessible-label: root.notice-text; }
             Button { text: "Dismiss notice"; clicked => {root.dismiss_notice();} }

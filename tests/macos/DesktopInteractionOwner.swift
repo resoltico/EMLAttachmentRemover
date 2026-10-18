@@ -25,7 +25,7 @@ struct DesktopInteractionOwner {
         var timedOut = false
         var unexpected: [pid_t] = []
         let child = Process()
-        let executionDeadline = ProcessInfo.processInfo.systemUptime + 1200
+        let executionDeadline = ProcessInfo.processInfo.systemUptime + 1800
         let cancellation = Cancellation()
         let signals = [SIGINT, SIGTERM].map { number in
             Darwin.signal(number, SIG_IGN)

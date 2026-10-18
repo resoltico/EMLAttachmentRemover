@@ -72,6 +72,19 @@ pub(crate) fn run(root: &Path) -> Result<()> {
         Ok(json!({"rustc":actual}))
     });
     checks.command("rust-format", cargo(root, &["fmt", "--all", "--check"]), 60);
+    for (name, manifest) in [
+        ("fuzz", "fuzz/Cargo.toml"),
+        ("filesystem-probe", "tests/native-filesystem/Cargo.toml"),
+    ] {
+        checks.command(
+            &format!("rust-format-{name}"),
+            cargo(
+                root,
+                &["fmt", "--manifest-path", manifest, "--all", "--check"],
+            ),
+            60,
+        );
+    }
     checks.command(
         "rust-check",
         cargo(root, &["check", "--locked", "--workspace", "--all-targets"]),
@@ -104,6 +117,10 @@ pub(crate) fn run(root: &Path) -> Result<()> {
     for (name, manifest) in [
         ("workspace", root.join("Cargo.toml")),
         ("fuzz", root.join("fuzz/Cargo.toml")),
+        (
+            "filesystem-probe",
+            root.join("tests/native-filesystem/Cargo.toml"),
+        ),
     ] {
         let log = checks.directory.join(format!("dependencies-{name}.log"));
         checks.section(&format!("dependencies-{name}"), || {

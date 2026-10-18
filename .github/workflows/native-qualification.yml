@@ -77,6 +77,8 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: |
           cargo fmt --all --check
+          cargo fmt --manifest-path fuzz/Cargo.toml --all --check
+          cargo fmt --manifest-path tests/native-filesystem/Cargo.toml --all --check
           cargo clippy --locked --workspace --all-targets -- -D warnings
           cargo doc --locked --workspace --no-deps
           actionlint
@@ -101,6 +103,7 @@ jobs:
         run: |
           cargo deny --locked --config xtask/dependencies.toml check advisories sources licenses
           cargo deny --locked --manifest-path fuzz/Cargo.toml --config xtask/dependencies.toml check advisories sources licenses
+          cargo deny --locked --manifest-path tests/native-filesystem/Cargo.toml --config xtask/dependencies.toml check advisories sources licenses
           for target in aarch64-apple-darwin x86_64-apple-darwin; do
             cargo deny --locked --target "$target" --features eml-gui/macos-gui --config xtask/dependencies.toml check advisories sources licenses
           done
@@ -116,7 +119,7 @@ jobs:
     needs: [plan, legal]
     name: Native tests / ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.native) }}
@@ -228,6 +231,9 @@ jobs:
       - name: Qualified Slint profile and actual Darwin child/preference fixtures
         if: ${{ runner.os == 'macOS' }}
         run: cargo xtask check-macos-desktop --out target/native-desktop-checks
+      - name: Native macOS release workspace and enabled GUI/worker fixtures
+        if: ${{ runner.os == 'macOS' }}
+        run: cargo xtask native-tests --release --target '${{ matrix.target }}' --out target/native-release-tests
       - name: Unix real different-UID namespace controls and standalone filesystem primitive
         if: ${{ runner.os != 'Windows' }}
         env:
@@ -269,6 +275,10 @@ jobs:
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/**/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/**/*.stderr
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-tests/native-test-build/**
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-release-tests/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-release-tests/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-release-tests/**/*.stderr
+            !${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-release-tests/native-test-build/**
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.json
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.stderr
@@ -367,7 +377,7 @@ jobs:
     if: ${{ always() && needs.plan.result == 'success' && needs.legal.result == 'success' && ((needs.icon.result == 'success' && needs.icon.outputs.available == 'true') || needs.icon_fallback.result == 'success') }}
     name: Native app / ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 50
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.apps) }}
@@ -439,7 +449,7 @@ jobs:
     if: ${{ always() && needs.plan.result == 'success' && needs.legal.result == 'success' }}
     name: macOS15 extracted archives / ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.smoke) }}
