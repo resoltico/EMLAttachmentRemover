@@ -397,3 +397,31 @@ name-pattern sweep. Pure controls reject ambiguous/wrong-mount/device metadata;
 local source/Clippy checks pass. Actual disk-image execution remains required and
 unrun. This does not complete original WP3 or the remaining Windows packaging,
 GUI interaction/accessibility and release-identity/clean-delivery requirements.
+
+## Desktop ingress and presentation checkpoint
+
+Native file-open and Services callbacks now reserve a bounded batch before
+reading external payloads. Collection releases the broker borrow before native
+calls and refuses nested collectors. The actual delegate remains Winit's;
+installation adds only five absent, signature-checked methods. A uniquely owned
+native pasteboard test round-trips a file URL containing reserved characters,
+a newline and non-BMP text, and rejects a mixed file/text selection without
+silently filtering it. No global pasteboard is modified. Drop integration and
+actual Finder/Services batch delivery remain separate required checks.
+
+The view uses the application library's eight-waiting-request limit, retains
+native dialog callbacks through settlement, presents run-level failures as
+failure/attention artwork, and retains the first system notice until dismissed.
+Finder reveal uses only an earlier qualified native address, checks availability
+off the UI thread, and waits for its owned task during Quit. It makes no fresh
+identity/content claim. License text is available from Help. Item/part paging
+controls reflect the actual bounded report pages.
+
+Local strict GUI Clippy and the GUI test selection passed, including ten unit
+tests and the existing two real preference-domain integration tests. A private,
+ad-hoc-signed synthetic bundle started with the new hooks and real Ready window.
+Its marker-owned preference domain was removed only after both observed app
+instances exited; a fresh observer found zero keys. This supplementary SDK27
+observation did not select files through the native picker or prove processing,
+drop, Services, accessibility, close/reopen or final native archive acceptance.
+No owner destination preference was changed. Complete GUI acceptance remains open.

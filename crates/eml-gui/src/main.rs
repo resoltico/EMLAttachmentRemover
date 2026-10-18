@@ -9,13 +9,13 @@ mod view {
 use slint::ComponentHandle;
 #[allow(
     unsafe_code,
-    reason = "Necessary absent-only native application lifecycle methods"
+    reason = "Necessary absent-only native lifecycle, file-open and Services methods"
 )]
 mod application;
 mod controller;
 #[allow(
     unsafe_code,
-    reason = "Necessary typed AppKit system dialogs and native URL/raw-window boundary"
+    reason = "Necessary native file ingress, system dialogs and URL/raw-window boundary"
 )]
 mod native;
 #[allow(
@@ -43,13 +43,23 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
     let lifecycle = application::ApplicationHooks::install()?;
     let window = view::MainWindow::new()?;
     let about = view::AboutWindow::new()?;
-    about.set_identity(format!("EML Attachment Remover {}\nSoftware: MPL-2.0\nSlint: Royalty-free Desktop, Mobile, and Web Applications License 2.0\nLocal build; native product qualification is incomplete.",env!("CARGO_PKG_VERSION")).into());
+    about.set_identity(format!("EML Attachment Remover {}\nSoftware: MPL-2.0\nSlint: Royalty-free Desktop, Mobile, and Web Applications License 2.0",env!("CARGO_PKG_VERSION")).into());
     let weak = about.as_weak();
     window.on_about_requested(move || {
         if let Some(about) = weak.upgrade()
             && let Err(error) = about.show()
         {
             eprintln!("About window: {error}");
+        }
+    });
+    let licenses = view::LicenseWindow::new()?;
+    licenses.set_licenses(include_str!("../../../LICENSE").into());
+    let weak_licenses = licenses.as_weak();
+    window.on_licenses_requested(move || {
+        if let Some(licenses) = weak_licenses.upgrade()
+            && let Err(error) = licenses.show()
+        {
+            eprintln!("License window: {error}");
         }
     });
     let weak = window.as_weak();
@@ -77,6 +87,7 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
     action!(on_stop_requested, Action::Stop);
     action!(on_force_requested, Action::Force);
     action!(on_export_requested, Action::Export);
+    action!(on_reveal_requested, Action::Reveal);
     action!(on_cancel_export, Action::CancelExport);
     action!(on_dismiss_requested, Action::Dismiss);
     action!(on_previous_page, Action::Previous);
@@ -86,6 +97,7 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
     action!(on_quit_requested, Action::Quit);
     action!(on_confirm_action, Action::Confirm);
     action!(on_cancel_confirmation, Action::CancelConfirmation);
+    action!(on_dismiss_notice, Action::DismissNotice);
     let selected_commands = std::rc::Rc::clone(&commands);
     let selected_overflowed = std::rc::Rc::clone(&overflowed);
     window.on_select_run(move |index| {
@@ -142,15 +154,18 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
             }
             match lifecycle.take_events() {
                 Ok(events) => {
-                    if events.reopen {
+                    if events.reopen || !events.selections.is_empty() {
                         if let Err(error) = window.show() {
-                            eprintln!("Reopen: {error}");
+                            controller.system_notice(&format!("Main window: {error}"));
                         } else if let Err(error) = native::restore(window.window()) {
-                            window.set_activity(error.to_string().into());
+                            controller.system_notice(&format!("Main window: {error}"));
                         }
                     }
                     if events.quit {
                         controller.action(&window, Action::Quit);
+                    }
+                    for selection in events.selections {
+                        controller.ingress(selection);
                     }
                 }
                 Err(error) => {

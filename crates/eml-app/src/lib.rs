@@ -14,7 +14,7 @@ pub use control::{ControlError, WorkerControl, WorkerIntent};
 #[cfg(target_os = "macos")]
 pub use export::{ReportExportOutcome, TerminalReport, export_report};
 pub use framing::{FrameError, FrameSplitter};
-pub use queue::{QueueError, RequestSnapshot, RunId, RunQueue};
+pub use queue::{MAX_WAITING_REQUESTS, QueueError, RequestSnapshot, RunId, RunQueue};
 pub use report::{ProtocolFailure, RunReport};
 #[cfg(target_os = "macos")]
 pub use session::{DesktopSession, SessionError, SessionReport};

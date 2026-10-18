@@ -12668,8 +12668,8 @@
     {
       "path": "crates/eml-gui/Cargo.toml",
       "kind": "review_input",
-      "bytes": 2079,
-      "sha256": "91f6a078136f4e015d783b3e503fef68460e9378ab536d3306fdcd0c5c201449"
+      "bytes": 2115,
+      "sha256": "cfbbf106f15c8f81ecf42e51921e7413804cdbca953529628378bc13801609da"
     },
     {
       "path": "crates/eml-worker/Cargo.toml",
@@ -12800,6 +12800,10 @@
     {
       "basis_head": "7ee027d889f08cb9937dba2406e11dabb328a7df",
       "scope": "Reviewed the one Cargo.lock addition: xtask gains a macOS-only direct eml-core dependency for the real owned-volume probe. Registry identities and shipping CLI/GUI/worker component graphs remain unchanged."
+    },
+    {
+      "basis_head": "2e4b00550863a16eb53924b3f8ebb73c424ba6c8",
+      "scope": "Reviewed GUI manifest change: only NSPasteboard and NSPasteboardItem features on the existing objc2-app-kit0.3.2 dependency were enabled for required native Services/drop decoding. Independently captured reports for both Mac targets retain exactly the existing package identities, license expressions and selected per-package text bindings. No registry/version change or new legal grant is inferred."
     }
   ],
   "product_material_review": {

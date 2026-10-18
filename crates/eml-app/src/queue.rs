@@ -3,6 +3,8 @@ use eml_core::{OutputLocation, RunMode, RunRequest};
 use eml_protocol::{MAX_REQUEST_BYTES, NativePathValue};
 use serde::Serialize;
 use std::{collections::VecDeque, path::PathBuf};
+/// Maximum admitted waiting selections, excluding the one active run.
+pub const MAX_WAITING_REQUESTS: usize = 8;
 
 /// Session-local identity; never derived from a displayed filename or queue index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -114,7 +116,7 @@ pub struct RunQueue {
 impl RunQueue {
     /// Admit up to eight waiting immutable requests in selection order.
     pub fn enqueue(&mut self, request: RequestSnapshot) -> Result<RunId, QueueError> {
-        if self.waiting.len() >= 8 {
+        if self.waiting.len() >= MAX_WAITING_REQUESTS {
             return Err(QueueError::Full);
         }
         let next = self

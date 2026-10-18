@@ -41,15 +41,62 @@ fn terminal_label(completion: &eml_app::WorkerCompletion) -> &'static str {
 fn item_label(item: &eml_protocol::records::ItemRecord) -> String {
     use eml_protocol::records::{ItemStatus, Publication};
     match item.status {
-        ItemStatus::Created => format!("Created copy · Removed {} parts", item.removed.len()),
+        ItemStatus::Created => format!(
+            "Created copy · Removed {} {}",
+            item.removed.len(),
+            if item.removed.len() == 1 {
+                "part"
+            } else {
+                "parts"
+            }
+        ),
         ItemStatus::UpToDate => "Already up to date".into(),
         ItemStatus::Planned => "Planned".into(),
         ItemStatus::Failed => match item.publication.state {
             Publication::Published => "Copy published with an error".into(),
             Publication::Unknown => "Publication unconfirmed".into(),
+            Publication::NotPublished if item.existing_observation.value().is_some() => {
+                "Existing copy could not be verified".into()
+            }
             Publication::NotPublished => "Could not create copy".into(),
         },
     }
+}
+fn report_artwork(
+    facts: &eml_app::RunReport,
+    completion: Option<&eml_app::WorkerCompletion>,
+) -> crate::view::ArtworkState {
+    use crate::view::ArtworkState;
+    let Some(completion) = completion else {
+        return ArtworkState::Processing;
+    };
+    if facts.failure().is_some() || completion.failure.is_some() {
+        return ArtworkState::Failure;
+    }
+    if facts.summary().is_some_and(|summary| summary.interrupted)
+        || completion.signal.is_some()
+        || completion.exit_code == Some(130)
+        || completion.exit_code.is_none()
+    {
+        return ArtworkState::Stopped;
+    }
+    if completion.exit_code != Some(0)
+        || facts.summary().is_some_and(|summary| {
+            summary.counts.failed > 0
+                || summary.run_error.value().is_some()
+                || !summary.collection_complete
+        })
+    {
+        return if facts
+            .summary()
+            .is_some_and(|summary| summary.counts.created > 0 || summary.counts.up_to_date > 0)
+        {
+            ArtworkState::Attention
+        } else {
+            ArtworkState::Failure
+        };
+    }
+    ArtworkState::Success
 }
 pub(crate) enum Action {
     Files,
@@ -59,6 +106,7 @@ pub(crate) enum Action {
     Stop,
     Force,
     Export,
+    Reveal,
     CancelExport,
     Dismiss,
     Select(usize),
@@ -71,6 +119,7 @@ pub(crate) enum Action {
     Quit,
     Confirm,
     CancelConfirmation,
+    DismissNotice,
 }
 enum Confirmation {
     Force(RunId),
@@ -82,14 +131,18 @@ enum DialogPurpose {
     Export(TerminalReport),
 }
 struct Dialog {
-    nonce: u64,
+    accept_result: bool,
     purpose: DialogPurpose,
     native: NativeDialog,
 }
 struct ExportTask {
-    _reservation: TerminalReport,
+    reservation: TerminalReport,
     control: eml_core::RunControl,
     actor: JoinHandle<ReportExportOutcome>,
+}
+struct RevealTask {
+    path: PathBuf,
+    actor: JoinHandle<std::io::Result<bool>>,
 }
 pub(crate) struct Controller {
     session: DesktopSession,
@@ -103,12 +156,13 @@ pub(crate) struct Controller {
     view_key: Option<String>,
     run_rows: Vec<slint::SharedString>,
     waiting_rows: Vec<slint::SharedString>,
-    nonce: u64,
     dialog: Option<Dialog>,
     confirmation: Option<Confirmation>,
     export: Option<ExportTask>,
-    closing: bool,
-    boundary_failed: bool,
+    reveal: Option<RevealTask>,
+    closing_since: Option<Instant>,
+    admission_failure: Option<String>,
+    notice: Option<String>,
     status: String,
 }
 impl Controller {
@@ -135,34 +189,53 @@ impl Controller {
             view_key: None,
             run_rows: Vec::new(),
             waiting_rows: Vec::new(),
-            nonce: 0,
             dialog: None,
             confirmation: None,
             export: None,
-            closing: false,
-            boundary_failed: false,
+            reveal: None,
+            closing_since: None,
+            admission_failure: None,
+            notice: None,
             status: "Choose messages or folders to begin.".into(),
         })
     }
     pub(crate) fn boundary_failure(&mut self, error: &str) {
-        self.boundary_failed = true;
+        self.admission_failure
+            .get_or_insert_with(|| error.chars().take(1000).collect());
         self.status = error.into();
     }
+    pub(crate) fn system_notice(&mut self, message: &str) {
+        self.notice
+            .get_or_insert_with(|| message.chars().take(1000).collect());
+    }
+    pub(crate) fn ingress(&mut self, batch: Result<Vec<PathBuf>, crate::native::NativeError>) {
+        if self.closing_since.is_some()
+            || self.confirmation.is_some()
+            || self.admission_failure.is_some()
+        {
+            self.system_notice("Selection not started while confirmation, shutdown or a platform boundary failure closes admission. Retry from the main window when available.");
+            return;
+        }
+        match batch {
+            Ok(paths) => self.selection(paths),
+            Err(error) => self.system_notice(&format!("Selection not started: {error}")),
+        }
+    }
     fn invalidate_dialog(&mut self) {
-        self.nonce = self.nonce.saturating_add(1);
-        if let Some(dialog) = &self.dialog {
+        if let Some(dialog) = &mut self.dialog {
+            dialog.accept_result = false;
             dialog.native.cancel();
         }
     }
     fn open(&mut self, window: &MainWindow, kind: OpenKind, purpose: DialogPurpose) {
-        if self.dialog.is_some() || self.closing || self.confirmation.is_some() {
+        if self.dialog.is_some() || self.closing_since.is_some() || self.confirmation.is_some() {
             return;
         }
         let initial = self.preference.destination().ok().flatten();
         match NativeDialog::open(window.window(), kind, initial) {
             Ok(native) => {
                 self.dialog = Some(Dialog {
-                    nonce: self.nonce,
+                    accept_result: true,
                     purpose,
                     native,
                 })
@@ -171,7 +244,7 @@ impl Controller {
         }
     }
     pub(crate) fn action(&mut self, window: &MainWindow, action: Action) {
-        if self.closing {
+        if self.closing_since.is_some() {
             if matches!(action, Action::CancelExport)
                 && let Some(export) = &self.export
             {
@@ -188,16 +261,17 @@ impl Controller {
             return;
         }
         match action {
-            Action::Files if !self.boundary_failed => {
+            Action::DismissNotice => self.notice = None,
+            Action::Files if self.admission_failure.is_none() => {
                 self.open(window, OpenKind::Files, DialogPurpose::Selection)
             }
-            Action::Folders if !self.boundary_failed => {
+            Action::Folders if self.admission_failure.is_none() => {
                 self.open(window, OpenKind::Folders, DialogPurpose::Selection)
             }
-            Action::Destination if !self.boundary_failed => {
+            Action::Destination if self.admission_failure.is_none() => {
                 self.open(window, OpenKind::Destination, DialogPurpose::Destination)
             }
-            Action::Beside if self.dialog.is_none() && !self.boundary_failed => {
+            Action::Beside if self.dialog.is_none() && self.admission_failure.is_none() => {
                 match self.preference.choose(None) {
                     Ok(()) => {
                         self.status = "Later selections will save beside their originals.".into()
@@ -248,12 +322,13 @@ impl Controller {
                         }
                     }
                     Some(Confirmation::Quit) => {
-                        self.closing = true;
+                        let confirmed = Instant::now();
+                        self.closing_since = Some(confirmed);
                         self.invalidate_dialog();
                         if let Some(export) = &self.export {
                             export.control.request_stop();
                         }
-                        if let Err(error) = self.session.confirm_shutdown(Instant::now()) {
+                        if let Err(error) = self.session.confirm_shutdown(confirmed) {
                             self.boundary_failure(&error.to_string());
                         }
                         self.status = "Quitting: waiting for owned worker, dialog and report-export settlement.".into();
@@ -282,6 +357,32 @@ impl Controller {
                     self.page = 0;
                 }
             }
+            Action::Reveal if self.reveal.is_none() => {
+                let captured = self
+                    .session
+                    .reports()
+                    .iter()
+                    .find(|report| Some(report.id()) == self.selected)
+                    .and_then(|report| {
+                        report
+                            .report()
+                            .inspect(|facts| facts.reveal_path(self.item))
+                            .ok()
+                            .flatten()
+                            .flatten()
+                    });
+                if let Some(path) = captured {
+                    let check = path.clone();
+                    match thread::Builder::new()
+                        .name("finder-reveal".into())
+                        .spawn(move || check.try_exists())
+                    {
+                        Ok(actor) => self.reveal = Some(RevealTask { path, actor }),
+                        Err(error) => self
+                            .system_notice(&format!("Could not start Finder navigation: {error}")),
+                    }
+                }
+            }
             Action::Export if self.export.is_none() && self.dialog.is_none() => {
                 let captured = self
                     .session
@@ -293,7 +394,7 @@ impl Controller {
                     match NativeDialog::save(window.window()) {
                         Ok(native) => {
                             self.dialog = Some(Dialog {
-                                nonce: self.nonce,
+                                accept_result: true,
                                 purpose: DialogPurpose::Export(report),
                                 native,
                             })
@@ -334,7 +435,7 @@ impl Controller {
         let destination = match self.preference.destination() {
             Ok(path) => path.map(ToOwned::to_owned),
             Err(error) => {
-                self.status = error.to_string();
+                self.system_notice(&format!("Selection not started: {error}"));
                 return;
             }
         };
@@ -346,7 +447,7 @@ impl Controller {
                     .map_err(|error| error.to_string())
             }) {
             Ok(id) => self.status = format!("Run {id} queued with its captured copy destination."),
-            Err(error) => self.status = error,
+            Err(error) => self.system_notice(&format!("Selection not started: {error}")),
         }
     }
     fn start_export(&mut self, report: TerminalReport, destination: PathBuf) {
@@ -359,7 +460,7 @@ impl Controller {
         {
             Ok(actor) => {
                 self.export = Some(ExportTask {
-                    _reservation: report,
+                    reservation: report,
                     control,
                     actor,
                 });
@@ -372,13 +473,29 @@ impl Controller {
     /// Applies bounded view models before acknowledging a terminal run. This
     /// acknowledgement makes no claim about physical frame presentation.
     pub(crate) fn tick(&mut self, window: &MainWindow) -> bool {
+        if self
+            .reveal
+            .as_ref()
+            .is_some_and(|task| task.actor.is_finished())
+        {
+            let task = self.reveal.take().expect("finished owned Finder task");
+            match task.actor.join() {
+                Ok(Ok(true)) if self.closing_since.is_none()=>{
+                    if let Err(error)=crate::native::reveal(&task.path) {self.system_notice(&format!("Finder navigation: {error}"));}
+                }
+                Ok(Ok(true))=>{},
+                Ok(Ok(false))=>self.system_notice("The earlier reported copy is unavailable at that address. Its receipt remains unchanged; Finder navigation does not reverify it."),
+                Ok(Err(error))=>self.system_notice(&format!("Finder navigation is unavailable: {error}. The earlier receipt remains unchanged.")),
+                Err(_)=>self.boundary_failure("Finder navigation task failed; its owned I/O settlement could not be verified."),
+            }
+        }
         if let Some(result) = self
             .dialog
             .as_ref()
             .and_then(|dialog| dialog.native.take_result(window.window()))
         {
             let dialog = self.dialog.take().expect("observed owned dialog");
-            if dialog.nonce == self.nonce && !self.closing && self.confirmation.is_none() {
+            if dialog.accept_result && self.closing_since.is_none() && self.confirmation.is_none() {
                 match result {
                     DialogResult::Chosen(paths) => match dialog.purpose {
                         DialogPurpose::Selection => self.selection(paths),
@@ -415,12 +532,12 @@ impl Controller {
             let export = self.export.take().expect("finished owned export");
             match export.actor.join() {
                 Ok(outcome) if outcome.usable() => self.status = "Technical report saved and read back successfully.".into(),
-                Ok(outcome) => self.status = format!("Report export: publication {:?}; address {:?}; final verification {:?}; file sync {:?}; namespace sync {:?}; cleanup {:?}. {}", outcome.publication, outcome.address_verified, outcome.final_file_verified, outcome.file_sync, outcome.namespace_sync, outcome.cleanup, outcome.failures.join("; ")),
+                Ok(outcome) => self.system_notice(&format!("Report export: publication {:?}; address {:?}; final verification {:?}; file sync {:?}; namespace sync {:?}; cleanup {:?}. {}", outcome.publication, outcome.address_verified, outcome.final_file_verified, outcome.file_sync, outcome.namespace_sync, outcome.cleanup, outcome.failures.join("; "))),
                 Err(_) => self.boundary_failure("Report export panicked; its filesystem outcome is unverified. Inspect the chosen destination before trying again."),
             }
             // The extra reservation is released only after task join and after
             // the task's serialized buffer has been destroyed.
-            drop(export._reservation);
+            drop(export.reservation);
         }
         let completed = match self.session.poll() {
             Some(WorkerObservation::Settled(completion)) => {
@@ -442,7 +559,10 @@ impl Controller {
         {
             self.boundary_failure(&error.to_string());
         }
-        if !self.closing && !self.boundary_failed && !self.session.blocked() {
+        if self.closing_since.is_none()
+            && self.admission_failure.is_none()
+            && !self.session.blocked()
+        {
             match self.session.start_next() {
                 Ok(true) => {
                     self.selected = self.session.active();
@@ -458,10 +578,11 @@ impl Controller {
                 Err(error) => self.status = error.to_string(),
             }
         }
-        self.closing
+        self.closing_since.is_some()
             && self.session.worker_shutdown_settled()
             && self.dialog.is_none()
             && self.export.is_none()
+            && self.reveal.is_none()
     }
     fn render(&mut self, window: &MainWindow) -> bool {
         // Feed measured logical size into responsive layout. A Slint layout
@@ -516,10 +637,13 @@ impl Controller {
             .waiting_requests()
             .map(|(id, request)| {
                 self.waiting.push(id);
+                let destination = match &request.request().output {
+                    eml_core::OutputLocation::BesideSource => "Beside originals".into(),
+                    eml_core::OutputLocation::Directory(path) => path.to_string_lossy(),
+                };
                 format!(
-                    "Run {id}: Not started — {} selections; destination {:?}",
+                    "Run {id}: Not started\n{} selections\nSave copies: {destination}",
                     request.request().paths.len(),
-                    request.request().output
                 )
                 .into()
             })
@@ -540,14 +664,16 @@ impl Controller {
         );
         let idle_dialog = self.dialog.is_none() && self.confirmation.is_none();
         window.set_admission_ready(
-            !self.closing
-                && !self.boundary_failed
+            self.closing_since.is_none()
+                && self.admission_failure.is_none()
                 && !self.session.blocked()
                 && idle_dialog
-                && self.session.waiting() < 8
+                && self.session.waiting() < eml_app::MAX_WAITING_REQUESTS
                 && self.preference.destination().is_ok(),
         );
-        window.set_destination_editable(!self.closing && !self.boundary_failed && idle_dialog);
+        window.set_destination_editable(
+            self.closing_since.is_none() && self.admission_failure.is_none() && idle_dialog,
+        );
         let mut destination = self.preference.destination().map_or_else(
             |error| error.to_string(),
             |path| {
@@ -561,10 +687,29 @@ impl Controller {
             destination.push_str(" (this session only)");
         }
         window.set_destination(destination.into());
-        window.set_activity(self.status.clone().into());
-        window.set_running(self.session.active().is_some() && !self.closing);
+        let activity = if let Some(failure) = &self.admission_failure {
+            if failure == &self.status {
+                failure.clone()
+            } else {
+                format!("{failure}\n{}", self.status)
+            }
+        } else if self
+            .closing_since
+            .is_some_and(|start| start.elapsed() >= std::time::Duration::from_secs(2))
+        {
+            "Still waiting for owned worker, dialog or native I/O. The app will exit only after actual settlement.".into()
+        } else if self.session.blocked() {
+            format!(
+                "Further processing is closed because worker lifecycle could not be verified. Retained reports remain available.\n{}",
+                self.status
+            )
+        } else {
+            self.status.clone()
+        };
+        window.set_activity(activity.into());
+        window.set_notice_text(self.notice.as_deref().unwrap_or("").into());
         window.set_stop_available(
-            !self.closing
+            self.closing_since.is_none()
                 && self.session.control().is_some_and(|control| {
                     control
                         .intent(Instant::now())
@@ -572,7 +717,7 @@ impl Controller {
                 }),
         );
         window.set_force_available(
-            !self.closing
+            self.closing_since.is_none()
                 && self.session.control().is_some_and(|control| {
                     control
                         .intent(Instant::now())
@@ -585,8 +730,21 @@ impl Controller {
             .reports()
             .iter()
             .find(|report| Some(report.id()) == self.selected);
+        window.set_reveal_available(
+            self.closing_since.is_none()
+                && idle_dialog
+                && self.reveal.is_none()
+                && selected.is_some_and(|report| {
+                    report
+                        .report()
+                        .inspect(|facts| facts.reveal_path(self.item).is_some())
+                        .ok()
+                        .flatten()
+                        .unwrap_or(false)
+                }),
+        );
         window.set_report_selected(
-            !self.closing
+            self.closing_since.is_none()
                 && idle_dialog
                 && self.export.is_none()
                 && selected.is_some_and(|report| report.completion().is_some()),
@@ -633,11 +791,17 @@ impl Controller {
                     if !item.stripped_fields.is_empty() {detail.push_str(&format!("Removed stale fields: {}\n", item.stripped_fields.join(", ")));}
                     technical.push_str(&format!("Publication: {:#?}\nExisting copy: {:#?}\nItem error: {:#?}\n", item.publication, item.existing_observation.value(), item.error.value()));
                 }
-                let artwork = if completion.is_none() {1} else if facts.failure().is_some() || completion.is_some_and(|completion| completion.failure.is_some()) || facts.summary().is_some_and(|summary| summary.counts.failed > 0) {5} else if facts.summary().is_some_and(|summary| summary.interrupted) || completion.is_some_and(|completion| completion.signal.is_some() || completion.exit_code == Some(130)) {3} else {2};
-                Some((key, summary, rows, detail, technical, artwork))
+                let artwork = report_artwork(facts, completion);
+                let navigation = (
+                    self.page > 0,
+                    self.page + 1 < pages,
+                    self.part_page > 0,
+                    facts.items().get(self.item).is_some_and(|item| self.part_page + 1 < item.removed.len().div_ceil(64)),
+                );
+                Some((key, summary, rows, detail, technical, artwork, navigation))
             });
             match inspected {
-                Ok(Some(Some((key, summary, rows, detail, technical, artwork)))) => {
+                Ok(Some(Some((key, summary, rows, detail, technical, artwork, navigation)))) => {
                     // Native/UI calls occur only after releasing the model lock.
                     self.view_key = Some(key);
                     window.set_report_text(summary.into());
@@ -645,6 +809,10 @@ impl Controller {
                     window.set_item_text(detail.into());
                     window.set_technical_text(technical.into());
                     window.set_artwork_state(artwork);
+                    window.set_previous_items_available(navigation.0);
+                    window.set_next_items_available(navigation.1);
+                    window.set_previous_parts_available(navigation.2);
+                    window.set_next_parts_available(navigation.3);
                 }
                 Ok(Some(None)) => {}
                 _ => {
@@ -654,6 +822,10 @@ impl Controller {
                 }
             }
         } else {
+            window.set_previous_items_available(false);
+            window.set_next_items_available(false);
+            window.set_previous_parts_available(false);
+            window.set_next_parts_available(false);
             self.view_key = None;
             window.set_report_text("".into());
             window.set_item_text("".into());
@@ -661,7 +833,7 @@ impl Controller {
             window.set_items(ModelRc::new(VecModel::from(
                 Vec::<slint::SharedString>::new(),
             )));
-            window.set_artwork_state(0);
+            window.set_artwork_state(crate::view::ArtworkState::Identity);
         }
         window.set_confirm_visible(self.confirmation.is_some());
         window.set_confirm_text(match self.confirmation {
@@ -676,6 +848,47 @@ impl Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn run_errors_without_failed_items_are_not_presented_as_success() {
+        use crate::view::ArtworkState;
+        for (fixture, exit, expected) in [
+            ("created", 0, ArtworkState::Success),
+            ("no-inputs", 1, ArtworkState::Failure),
+            ("collection-limit", 1, ArtworkState::Failure),
+            ("started-preedge-cancellation", 130, ArtworkState::Stopped),
+        ] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../../tests/contract/protocol/{fixture}.jsonl"));
+            let bytes = std::fs::read_to_string(path)
+                .unwrap()
+                .replace("@VERSION@", "test-version")
+                .into_bytes();
+            let mut facts = eml_app::RunReport::new("test-version");
+            let mut splitter = eml_app::FrameSplitter::default();
+            splitter
+                .append(&bytes, |frame| facts.accept_frame(frame))
+                .unwrap();
+            facts.finish(Some(exit), splitter.finish()).unwrap();
+            let completion = eml_app::WorkerCompletion {
+                exit_code: Some(exit),
+                signal: None,
+                input_may_have_been_sent: true,
+                settled: true,
+                reusable: true,
+                failure: None,
+                faults: Vec::new(),
+                stderr: Vec::new(),
+                stderr_truncated: false,
+                interrupt_calls_succeeded: 0,
+                first_interrupt_observed: false,
+            };
+            assert_eq!(
+                report_artwork(&facts, Some(&completion)),
+                expected,
+                "{fixture}"
+            );
+        }
+    }
     #[test]
     fn published_failed_and_unknown_present_distinct_copy_knowledge() {
         use eml_protocol::records::{EventRecord, decode_record};

@@ -27,6 +27,7 @@ pub(crate) enum NativeError {
     SelectionLimit,
     InvalidNativePath,
     DialogAborted,
+    IngressUnavailable,
 }
 impl std::fmt::Display for NativeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -41,6 +42,9 @@ impl std::fmt::Display for NativeError {
             Self::SelectionLimit => "The native selection exceeds the supported path/count limits",
             Self::InvalidNativePath => "The native file URL cannot be represented losslessly",
             Self::DialogAborted => "The native file dialog could not complete",
+            Self::IngressUnavailable => {
+                "Native file delivery could not be retained. Retry from the main window."
+            }
         })
     }
 }
@@ -60,27 +64,10 @@ pub(crate) fn path_from_url(url: &NSURL) -> Result<PathBuf, NativeError> {
     // encoded representation for forbidden authority/NUL, without using it to
     // construct an operation path; only the checked native buffer below does so.
     let encoded = url.dataRepresentation();
-    if encoded.len() > 3 * eml_core::MAX_PATH_UNITS + 16 {
-        return Err(NativeError::SelectionLimit);
-    }
-    // SAFETY: NSURL supplies retained immutable NSData, not exposed or mutated
-    // while these bounded encoded bytes are inspected.
-    let encoded = unsafe { encoded.as_bytes_unchecked() };
-    let Some(scheme) = encoded.get(..5) else {
-        return Err(NativeError::LocalFilesRequired);
-    };
-    let rest = &encoded[5..];
-    if !scheme.eq_ignore_ascii_case(b"file:")
-        || !rest.starts_with(b"/")
-        || (rest.starts_with(b"//") && !rest.starts_with(b"///"))
-        || encoded.iter().any(|byte| [0, b'?', b'#'].contains(byte))
-        || encoded.windows(3).any(|bytes| bytes == b"%00")
-    {
-        return Err(NativeError::LocalFilesRequired);
-    }
-    let mut buffer = vec![0u8; eml_core::MAX_PATH_UNITS + 1];
+    check_url_data(&encoded)?;
+    let mut buffer = [0u8; eml_core::MAX_PATH_UNITS + 1];
     // SAFETY: writable owned buffer includes space for the required terminator.
-    // Check BOOL and original URL NUL separately; never scan an unbounded pointer.
+    // Check the native Boolean and original URL NUL separately.
     if !unsafe {
         url.getFileSystemRepresentation_maxLength(
             NonNull::new(buffer.as_mut_ptr().cast()).expect("nonempty buffer"),
@@ -96,8 +83,9 @@ pub(crate) fn path_from_url(url: &NSURL) -> Result<PathBuf, NativeError> {
     if length == 0 || length > eml_core::MAX_PATH_UNITS || buffer[0] != b'/' {
         return Err(NativeError::InvalidNativePath);
     }
-    buffer.truncate(length);
-    Ok(std::ffi::OsString::from_vec(buffer).into())
+    // Retain only the supplied native bytes, not one maximum-sized allocation
+    // for every short name in a multi-file selection.
+    Ok(std::ffi::OsString::from_vec(buffer[..length].to_vec()).into())
 }
 fn url_from_path(path: &Path) -> Result<Retained<NSURL>, NativeError> {
     let raw = path.as_os_str().as_bytes();
@@ -116,14 +104,24 @@ fn url_from_path(path: &Path) -> Result<Retained<NSURL>, NativeError> {
         )
     })
 }
-fn paths(urls: &NSArray<NSURL>) -> Result<Vec<PathBuf>, NativeError> {
-    if urls.is_empty() || urls.len() > eml_core::MAX_INPUT_PATHS {
+pub(crate) fn reveal(path: &Path) -> Result<(), NativeError> {
+    MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
+    let url = url_from_path(path)?;
+    objc2_app_kit::NSWorkspace::sharedWorkspace()
+        .activateFileViewerSelectingURLs(&NSArray::from_slice(&[&*url]));
+    Ok(())
+}
+fn collect_paths(
+    count: usize,
+    paths: impl IntoIterator<Item = Result<PathBuf, NativeError>>,
+) -> Result<Vec<PathBuf>, NativeError> {
+    if count == 0 || count > eml_core::MAX_INPUT_PATHS {
         return Err(NativeError::SelectionLimit);
     }
-    let mut result = Vec::with_capacity(urls.len());
+    let mut result = Vec::with_capacity(count);
     let mut bytes = 0usize;
-    for url in urls {
-        let path = path_from_url(&url)?;
+    for path in paths {
+        let path = path?;
         bytes = bytes
             .checked_add(path.as_os_str().as_bytes().len())
             .filter(|bytes| *bytes <= eml_core::MAX_INPUT_PATH_BYTES)
@@ -131,6 +129,82 @@ fn paths(urls: &NSArray<NSURL>) -> Result<Vec<PathBuf>, NativeError> {
         result.push(path);
     }
     Ok(result)
+}
+fn paths(urls: &NSArray<NSURL>) -> Result<Vec<PathBuf>, NativeError> {
+    collect_paths(urls.len(), urls.into_iter().map(|url| path_from_url(&url)))
+}
+pub(crate) fn paths_from_objects(
+    urls: &NSArray<objc2::runtime::AnyObject>,
+) -> Result<Vec<PathBuf>, NativeError> {
+    collect_paths(
+        urls.len(),
+        urls.into_iter().map(|object| {
+            let url = object
+                .downcast::<NSURL>()
+                .map_err(|_| NativeError::LocalFilesRequired)?;
+            path_from_url(&url)
+        }),
+    )
+}
+fn check_url_data(data: &objc2_foundation::NSData) -> Result<(), NativeError> {
+    if data.len() > 3 * eml_core::MAX_PATH_UNITS + 16 {
+        return Err(NativeError::SelectionLimit);
+    }
+    // SAFETY: bounded immutable Foundation data, retained by the caller during
+    // this inspection. No operation path is constructed from these bytes.
+    let encoded = unsafe { data.as_bytes_unchecked() };
+    let Some(scheme) = encoded.get(..5) else {
+        return Err(NativeError::LocalFilesRequired);
+    };
+    let rest = &encoded[5..];
+    if !scheme.eq_ignore_ascii_case(b"file:")
+        || !rest.starts_with(b"/")
+        || (rest.starts_with(b"//") && !rest.starts_with(b"///"))
+        || encoded.iter().any(|byte| [0, b'?', b'#'].contains(byte))
+        || encoded.windows(3).any(|bytes| bytes == b"%00")
+    {
+        return Err(NativeError::LocalFilesRequired);
+    }
+    Ok(())
+}
+pub(crate) fn paths_from_pasteboard(
+    board: &objc2_app_kit::NSPasteboard,
+) -> Result<Vec<PathBuf>, NativeError> {
+    use objc2::ClassType;
+    use objc2_foundation::{NSDictionary, NSNumber};
+    let before = board.changeCount();
+    let items = board
+        .pasteboardItems()
+        .ok_or(NativeError::LocalFilesRequired)?;
+    if items.is_empty() || items.len() > eml_core::MAX_INPUT_PATHS {
+        return Err(NativeError::SelectionLimit);
+    }
+    for item in &*items {
+        // SAFETY: immutable system file-URL type identifier. Check every item's
+        // original representation before the native reader can filter a batch.
+        let data = item
+            .dataForType(unsafe { objc2_app_kit::NSPasteboardTypeFileURL })
+            .ok_or(NativeError::LocalFilesRequired)?;
+        check_url_data(&data)?;
+    }
+    // SAFETY: immutable system reading-option key; NSURL implements
+    // NSPasteboardReading, and this option requires file URL objects only.
+    let key = unsafe { objc2_app_kit::NSPasteboardURLReadingFileURLsOnlyKey };
+    let yes = NSNumber::new_bool(true);
+    let value: &objc2::runtime::AnyObject = &yes;
+    let options = NSDictionary::from_slices(&[key], &[value]);
+    let objects = unsafe {
+        board.readObjectsForClasses_options(&NSArray::from_slice(&[NSURL::class()]), Some(&options))
+    }
+    .ok_or(NativeError::LocalFilesRequired)?;
+    if objects.len() != items.len() {
+        return Err(NativeError::LocalFilesRequired);
+    }
+    let paths = paths_from_objects(&objects)?;
+    if board.changeCount() != before {
+        return Err(NativeError::IngressUnavailable);
+    }
+    Ok(paths)
 }
 fn parent(window: &slint::Window) -> Result<Retained<NSWindow>, NativeError> {
     let _main = MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
@@ -260,6 +334,9 @@ impl NativeDialog {
         let panel = NSSavePanel::savePanel(main);
         panel.setCanCreateDirectories(false);
         panel.setNameFieldStringValue(&NSString::from_str("EML-report.json"));
+        panel.setMessage(Some(&NSString::from_str(
+            "Export metadata only. Existing files will not be replaced.",
+        )));
         let result = Rc::new(Cell::new(None));
         let completed = Rc::clone(&result);
         let weak = Weak::new(&*panel);
@@ -324,6 +401,54 @@ impl NativeDialog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn owned_native_pasteboard_keeps_file_objects_and_refuses_filtered_mixed_batches() {
+        use objc2::runtime::ProtocolObject;
+        use objc2_app_kit::{NSPasteboard, NSPasteboardWriting};
+        struct OwnedBoard(Retained<NSPasteboard>);
+        impl Drop for OwnedBoard {
+            fn drop(&mut self) {
+                self.0.clearContents();
+            }
+        }
+        let board = OwnedBoard(NSPasteboard::pasteboardWithUniqueName());
+        let path = Path::new("/owned-synthetic/a?b#c%\n\u{1f600}.eml");
+        let url = url_from_path(path).unwrap();
+        let writer: &ProtocolObject<dyn NSPasteboardWriting> = ProtocolObject::from_ref(&*url);
+        assert!(board.0.writeObjects(&NSArray::from_slice(&[writer])));
+        assert_eq!(paths_from_pasteboard(&board.0).unwrap(), [path]);
+        board.0.clearContents();
+        let text = NSString::from_str("not a file URL item");
+        let text_writer: &ProtocolObject<dyn NSPasteboardWriting> =
+            ProtocolObject::from_ref(&*text);
+        assert!(
+            board
+                .0
+                .writeObjects(&NSArray::from_slice(&[writer, text_writer]))
+        );
+        assert!(
+            paths_from_pasteboard(&board.0).is_err(),
+            "The native reader must not silently filter out the non-file item"
+        );
+    }
+    #[test]
+    fn file_open_objects_reject_a_mixed_batch_without_returning_partial_paths() {
+        use objc2::runtime::AnyObject;
+        let path_buf = PathBuf::from(std::ffi::OsString::from_vec(
+            b"/owned-synthetic/message-\xff.eml".to_vec(),
+        ));
+        let path = path_buf.as_path();
+        let url = url_from_path(path).unwrap();
+        let text = NSString::from_str("not a file URL object");
+        let url_object: &AnyObject = &url;
+        let text_object: &AnyObject = &text;
+        assert_eq!(
+            paths_from_objects(&NSArray::from_slice(&[url_object])).unwrap(),
+            [path]
+        );
+        assert!(paths_from_objects(&NSArray::from_slice(&[url_object, text_object])).is_err());
+        assert!(paths_from_objects(&NSArray::<AnyObject>::new()).is_err());
+    }
     #[test]
     fn local_file_urls_preserve_native_bytes_and_reject_ambiguous_authority() {
         let raw = b"/owned-synthetic/a\xff\n.eml".to_vec();
