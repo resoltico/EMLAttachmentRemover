@@ -16,6 +16,8 @@ use std::{
 };
 #[cfg(unix)]
 pub(crate) mod unix;
+#[cfg(unix)]
+pub use unix::CLEANUP_GRACE;
 #[cfg(windows)]
 mod windows;
 /// Tool-controller errors; no source mail is included.

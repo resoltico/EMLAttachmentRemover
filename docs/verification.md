@@ -130,6 +130,13 @@ one-case pass and one successful child summary. The outer discovery/case/suite/
 filtered checks are retained unchanged. Corrected aggregate execution is pending.
 At the same H, the ARM app producer and its same-archive macOS15 row pass the
 actual basic GUI scenario. Intel app failure and full GUI conditions remain open.
+That H's ARM process suite failed its parent-SIGKILL absence probe after two
+seconds with the worker stopped. The controller's existing cleanup contract is
+ten seconds; the probe now derives its bound from that same constant, checks the
+observation deadline before accepting absence/zombie state, and retains the
+no-marker-write assertion. The controller's grace, inspection deadlines and
+cleanup algorithm are unchanged. This corrects the test's stronger incidental
+timeout; actual native parent-death execution is still required.
 
 `cargo xtask release-check --source FULL_SHA --version VERSION` is read-only
 admission for a later explicit owner release: exact clean source, fresh observed

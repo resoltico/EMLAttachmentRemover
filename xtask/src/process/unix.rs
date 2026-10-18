@@ -14,7 +14,8 @@ use std::{
     time::Instant,
 };
 const FRAME_LIMIT: usize = 8 * 1024 * 1024;
-const CLEANUP_GRACE: Duration = Duration::from_secs(10);
+/// Maximum Unix tool-session cleanup grace, shared with real lifetime probes.
+pub const CLEANUP_GRACE: Duration = Duration::from_secs(10);
 fn number(pid: Pid) -> i32 {
     pid.as_raw_nonzero().get()
 }

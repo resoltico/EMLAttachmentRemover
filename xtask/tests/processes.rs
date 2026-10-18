@@ -143,14 +143,20 @@ fn worker_dead(root: &Path) {
             .args(["-p", &pid.to_string(), "-o", "state="])
             .output()
             .unwrap();
+        assert!(
+            output.stderr.is_empty()
+                && (output.status.success()
+                    || output.status.code() == Some(1) && output.stdout.is_empty()),
+            "Owned worker absence observer failed: {output:?}"
+        );
         let state = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            began.elapsed() < xtask::process::CLEANUP_GRACE,
+            "Owned nested worker {pid} absence was not confirmed within cleanup grace; observed state {state:?}"
+        );
         if state.trim().is_empty() || state.trim_start().starts_with('Z') {
             return;
         }
-        assert!(
-            began.elapsed() < Duration::from_secs(2),
-            "Owned nested worker {pid} still live: {state}"
-        );
         std::thread::sleep(Duration::from_millis(10));
     }
 }
