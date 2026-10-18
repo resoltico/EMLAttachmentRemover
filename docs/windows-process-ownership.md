@@ -36,3 +36,19 @@ program/arguments/captured cwd/named environment changes, with owned standard
 handles and NUL stdin; repository constructors do not use env_clear. Actual
 console-event delivery, protected archive roots and final-link/runtime checks
 remain open. Source checks are not Windows archive qualification.
+
+The private console test sender is a separate detached process inside the same
+owned Job. It inherits only an actual query/synchronization process handle,
+derives the console attachment ID from that still-held object, and sends the
+selected console event only within the target's private console. It never
+detaches an existing caller console and never inherits a Job handle which could
+prolong the Job after parent death. Sender acceptance is not proof of CLI handler
+completion; tests independently require actual process exit and zero members.
+
+The two real CLI cases use anonymous owned pipes. One observes actual consumption
+of an unfinished request before CTRL_C. The other observes a partial real report
+and independently golden-checked complete copy, then sends distinct CTRL_C and
+CTRL_BREAK deliveries through the same CLI handler while output is blocked.
+Both require actual130 status, preserved original/copy facts and complete owned
+settlement. They remain unrun until recorded on both native CPUs. The helper and
+pipe fixtures are nonshipping; ordinary CLI product features do not enable them.

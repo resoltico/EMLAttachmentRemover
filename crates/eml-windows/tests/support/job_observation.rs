@@ -6,6 +6,13 @@ fn main() {
 }
 #[cfg(windows)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(exit) = eml_windows::console_helper_entry() {
+        return if exit == std::process::ExitCode::SUCCESS {
+            Ok(())
+        } else {
+            Err("Private console sender failed".into())
+        };
+    }
     use std::{fs, path::PathBuf, process::Command, time::Duration};
     let mut args = std::env::args_os().skip(1);
     let mode = args.next().ok_or("Missing fixture mode")?;

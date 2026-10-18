@@ -165,7 +165,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           rustc -vV
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $arguments = @('test', '--workspace', '--locked', '--features', 'eml-core/native-fixtures,eml-windows/native-fixtures', '--target', '${{ matrix.target }}')
+          $arguments = @('test', '--workspace', '--locked', '--features', 'eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures', '--target', '${{ matrix.target }}')
           $listing = & cargo @arguments -- --list --color never 2>&1
           $code = $LASTEXITCODE
           $listing | ForEach-Object { Write-Output $_ }
@@ -179,7 +179,7 @@ jobs:
           cargo @arguments -- --color never
           $code = $LASTEXITCODE
           if ($code -ne 0) { exit $code }
-          cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures --target '${{ matrix.target }}' -- -D warnings
+          cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures --target '${{ matrix.target }}' -- -D warnings
           exit $LASTEXITCODE
       - name: Windows standalone real filesystem primitive
         if: ${{ runner.os == 'Windows' }}

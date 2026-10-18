@@ -15,4 +15,8 @@ mod process;
 #[cfg(windows)]
 pub use host::{HostInfo, host_info};
 #[cfg(windows)]
-pub use process::{Job, Process, ProcessSpec, environment_name_equal};
+pub use process::{
+    ConsoleEvent, Job, Process, ProcessSpec, console_helper_entry, environment_name_equal,
+};
+#[cfg(all(windows, feature = "native-fixtures"))]
+pub use process::{anonymous_pipe, pending_pipe_bytes};

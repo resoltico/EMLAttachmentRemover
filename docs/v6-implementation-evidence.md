@@ -657,3 +657,15 @@ Integrated local checks at H18ca0b2 passed416 tests across52 summaries, with no
 failed/ignored/filtered cases, and strict workspace Clippy passed. The actual
 read-only release-check command rejected6.0.0's Unreleased state before release
 admission. No tag, release, publication or settings mutation occurred.
+
+Windows real-console fixtures now launch the actual CLI in an owned private
+console and use a detached same-Job sender with a held inherited process
+capability. No Job handle is inherited and no owner console is detached. Actual
+anonymous-pipe reader consumption and partial-report output provide readiness,
+not sleeps or model state. Two mandatory cases exercise first cooperative CtrlC
+and distinct CtrlC/Break force delivery, with130/EOF/member settlement and
+independent original/golden checks. Both target Clippy checks pass; actual native
+execution remains pending. Complete legal generation still produces602 files
+across ten product profiles. The CLI's optional path edge/helper are enabled only
+by native-fixtures and introduce no registry identity or normal shipping closure
+change; ordinary product archives contain neither test helper nor fixture code.

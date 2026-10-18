@@ -3855,6 +3855,7 @@ dependencies = [
  "ctrlc",
  "eml-core",
  "eml-protocol",
+ "eml-windows",
  "rustix 1.1.5",
  "serde_json",
  "tempfile",

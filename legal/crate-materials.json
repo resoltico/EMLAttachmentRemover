@@ -12602,10 +12602,10 @@
   "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
   "source_inputs": [
     {
-      "bytes": 148690,
+      "bytes": 148706,
       "kind": "review_input",
       "path": "Cargo.lock",
-      "sha256": "74ea37cb8ba3e752c019f7cb426477fa2612a1ab6cfee3b17899cabe778d7912"
+      "sha256": "0f26bd0a7917a6e3aee1552c96fbc83bc381afd20b052a96a9fdefe9fd67d1cf"
     },
     {
       "bytes": 906,
@@ -12614,10 +12614,10 @@
       "sha256": "1de1cc15a9848725d19e0b7136dded00cbcca53bcd041f0d626d402601cf9897"
     },
     {
-      "bytes": 537,
+      "bytes": 839,
       "kind": "review_input",
       "path": "crates/eml-cli/Cargo.toml",
-      "sha256": "f1272667caa6d9efa2df55defe00806cdb7dcf8c287b1fa79b165ad75f03a751"
+      "sha256": "e811c9092d3f916449a6017a661500810134bcc6ead2521d4cad41b7f0a8b7a3"
     },
     {
       "bytes": 455,
@@ -12836,6 +12836,10 @@
     {
       "basis_head": "4d01b5c96850aff18ed62c58d0a200f225fb5d58",
       "scope": "Reviewed eml-fs manifest changes: existing windows-sys0.61.2 enables Authorization/SystemServices for native private artifact ACL handling and NetManagement only as a Windows dev dependency for the actual distinct-user test. Registry identities/checksums remain unchanged. Selected grants and complete product normal closures are checked by full notice generation."
+    },
+    {
+      "basis_head": "59f31dd3ff9bc15800e681d3ccdcabed64aff53c",
+      "scope": "Reviewed the CLI native-fixtures-only optional Windows eml-windows path edge and separate console-observation helper. Normal product features do not enable it, and no registry package/version/checksum changed. Actual per-product notice generation verifies shipping normal closures and selected text bindings."
     }
   ],
   "product_material_review": {

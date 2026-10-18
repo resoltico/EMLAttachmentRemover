@@ -14,11 +14,18 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{
-        DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_INSUFFICIENT_BUFFER, HANDLE, WAIT_OBJECT_0,
-        WAIT_TIMEOUT,
+        DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_INSUFFICIENT_BUFFER, GetHandleInformation,
+        HANDLE, HANDLE_FLAG_INHERIT, WAIT_OBJECT_0, WAIT_TIMEOUT,
     },
     Globalization::{CSTR_EQUAL, CSTR_GREATER_THAN, CSTR_LESS_THAN, CompareStringOrdinal},
-    System::{JobObjects::*, Threading::*},
+    System::{
+        Console::{
+            AttachConsole, CTRL_BREAK_EVENT, CTRL_C_EVENT, FreeConsole, GenerateConsoleCtrlEvent,
+            SetConsoleCtrlHandler,
+        },
+        JobObjects::*,
+        Threading::*,
+    },
 };
 
 /// Explicit native launch facts; no shell, inherited stdin or display-string path.
@@ -40,6 +47,14 @@ pub struct Job(OwnedHandle);
 pub struct Process<'a> {
     handle: OwnedHandle,
     _job: &'a Job,
+}
+/// Two actual Windows console deliveries used by the common CLI interrupt handler.
+#[derive(Clone, Copy)]
+pub enum ConsoleEvent {
+    /// Cooperative interrupt (CTRL_C_EVENT).
+    Interrupt,
+    /// Distinct break delivery, handled as another interrupt by ctrlc.
+    Break,
 }
 
 fn native(ok: i32) -> io::Result<()> {
@@ -287,6 +302,27 @@ impl Job {
         stdout: &File,
         stderr: &File,
     ) -> io::Result<Process<'a>> {
+        self.launch_owned(spec, None, stdout, stderr, &[], false)
+    }
+    /// Launch with one explicitly owned input file/pipe instead of NUL stdin.
+    pub fn launch_with_stdin<'a>(
+        &'a self,
+        spec: &ProcessSpec<'_>,
+        stdin: &File,
+        stdout: &File,
+        stderr: &File,
+    ) -> io::Result<Process<'a>> {
+        self.launch_owned(spec, Some(stdin), stdout, stderr, &[], false)
+    }
+    fn launch_owned<'a>(
+        &'a self,
+        spec: &ProcessSpec<'_>,
+        stdin: Option<&File>,
+        stdout: &File,
+        stderr: &File,
+        extra: &[HANDLE],
+        detached: bool,
+    ) -> io::Result<Process<'a>> {
         if !spec.executable.is_absolute() || !spec.directory.is_absolute() {
             return Err(invalid(
                 "Native executable and working directory must be absolute",
@@ -305,15 +341,23 @@ impl Job {
         }
         line.push(0);
         let environment = environment(spec.environment)?;
-        let stdin = File::open(r"\\.\NUL")?;
-        let input = inherited(&stdin)?;
+        let null;
+        let stdin = match stdin {
+            Some(input) => input,
+            None => {
+                null = File::open(r"\\.\NUL")?;
+                &null
+            }
+        };
+        let input = inherited(stdin)?;
         let output = inherited(stdout)?;
         let errors = inherited(stderr)?;
-        let handles = [
+        let mut handles = vec![
             input.as_raw_handle(),
             output.as_raw_handle(),
             errors.as_raw_handle(),
         ];
+        handles.extend_from_slice(extra);
         let jobs = [self.0.as_raw_handle()];
         // Declare the list after its value arrays so it is destroyed first.
         let mut attributes = Attributes::new()?;
@@ -339,7 +383,11 @@ impl Job {
                 ptr::null(),
                 1,
                 CREATE_SUSPENDED
-                    | CREATE_NEW_CONSOLE
+                    | if detached {
+                        DETACHED_PROCESS
+                    } else {
+                        CREATE_NEW_CONSOLE
+                    }
                     | CREATE_UNICODE_ENVIRONMENT
                     | EXTENDED_STARTUPINFO_PRESENT,
                 environment.as_ptr().cast(),
@@ -387,6 +435,66 @@ impl Job {
     }
 }
 impl Process<'_> {
+    /// Start a short detached sender in this same private Job. The helper must
+    /// dispatch console_helper_entry before ordinary argument parsing. Only the
+    /// actual held process handle is inherited; no Job handle can keep the Job
+    /// alive after parent death. Callers must observe sender and target exits.
+    pub fn start_interrupt<'a>(
+        &'a self,
+        helper: &Path,
+        event: ConsoleEvent,
+        stdout: &File,
+        stderr: &File,
+    ) -> io::Result<Process<'a>> {
+        if self.exit_code()?.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "Owned process has already terminated",
+            ));
+        }
+        let mut raw = ptr::null_mut();
+        // SAFETY: duplicate only the exact held process with query/synchronization
+        // rights, not termination or mutation rights, for explicit inheritance.
+        unsafe {
+            native(DuplicateHandle(
+                GetCurrentProcess(),
+                self.handle.as_raw_handle(),
+                GetCurrentProcess(),
+                &mut raw,
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+                1,
+                0,
+            ))?;
+        }
+        let inherited = unsafe { OwnedHandle::from_raw_handle(raw) };
+        let arguments = vec![
+            OsString::from("--eml-owned-console-interrupt"),
+            OsString::from((raw as usize).to_string()),
+            OsString::from(match event {
+                ConsoleEvent::Interrupt => "0",
+                ConsoleEvent::Break => "1",
+            }),
+        ];
+        let environment = std::env::vars_os().collect::<Vec<_>>();
+        let directory = helper
+            .parent()
+            .ok_or_else(|| invalid("Console helper has no parent"))?;
+        let result = self._job.launch_owned(
+            &ProcessSpec {
+                executable: helper,
+                arguments: &arguments,
+                directory,
+                environment: &environment,
+            },
+            None,
+            stdout,
+            stderr,
+            &[inherited.as_raw_handle()],
+            true,
+        );
+        drop(inherited);
+        result
+    }
     /// Observe actual termination and its unsigned native exit code. A numeric
     /// STILL_ACTIVE exit code is valid after a signaled process handle.
     pub fn exit_code(&self) -> io::Result<Option<u32>> {
@@ -403,4 +511,119 @@ impl Process<'_> {
             _ => Err(io::Error::last_os_error()),
         }
     }
+}
+
+/// Create an owned anonymous byte pipe for native integration fixtures.
+#[cfg(feature = "native-fixtures")]
+pub fn anonymous_pipe() -> io::Result<(File, File)> {
+    let mut reader = ptr::null_mut();
+    let mut writer = ptr::null_mut();
+    // SAFETY: two unique outputs; no inherited security attributes. Only explicit
+    // duplicates in launch_with_stdin/launch pass an end to a child.
+    unsafe {
+        native(windows_sys::Win32::System::Pipes::CreatePipe(
+            &mut reader,
+            &mut writer,
+            ptr::null(),
+            4096,
+        ))?;
+    }
+    Ok((
+        File::from(unsafe { OwnedHandle::from_raw_handle(reader) }),
+        File::from(unsafe { OwnedHandle::from_raw_handle(writer) }),
+    ))
+}
+/// Observe pending pipe bytes without consuming the real reader's handshake.
+#[cfg(feature = "native-fixtures")]
+pub fn pending_pipe_bytes(reader: &File) -> io::Result<u32> {
+    let mut available = 0;
+    // SAFETY: kernel validates the borrowed pipe handle; only a DWORD is written.
+    unsafe {
+        native(windows_sys::Win32::System::Pipes::PeekNamedPipe(
+            reader.as_raw_handle(),
+            ptr::null_mut(),
+            0,
+            ptr::null_mut(),
+            &mut available,
+            ptr::null_mut(),
+        ))?;
+    }
+    Ok(available)
+}
+
+/// Dispatch only the private owned-console sender role in a separate helper.
+/// This never detaches the caller's console; the role requires a detached process
+/// with an explicitly inherited actual target-process handle.
+pub fn console_helper_entry() -> Option<std::process::ExitCode> {
+    let mut args = std::env::args_os().skip(1);
+    if args.next()? != OsStr::new("--eml-owned-console-interrupt") {
+        return None;
+    }
+    let result = (|| -> io::Result<()> {
+        let value = args
+            .next()
+            .and_then(|v| v.to_str().and_then(|v| v.parse::<usize>().ok()))
+            .ok_or_else(|| invalid("Missing inherited target handle"))?;
+        let event = match args.next().as_deref() {
+            Some(v) if v == OsStr::new("0") => CTRL_C_EVENT,
+            Some(v) if v == OsStr::new("1") => CTRL_BREAK_EVENT,
+            _ => return Err(invalid("Unknown private console event")),
+        };
+        if value == 0 || value > isize::MAX as usize || args.next().is_some() {
+            return Err(invalid("Invalid inherited target handle"));
+        }
+        let raw = std::ptr::without_provenance_mut::<std::ffi::c_void>(value);
+        let mut flags = 0;
+        // SAFETY: kernel validates this process-local numeric handle before an
+        // owner is constructed. No guessed PID is accepted from the command line.
+        unsafe {
+            native(GetHandleInformation(raw, &mut flags))?;
+        }
+        if flags & HANDLE_FLAG_INHERIT == 0 {
+            return Err(invalid("Target handle was not inherited"));
+        }
+        let target = unsafe { OwnedHandle::from_raw_handle(raw) };
+        // SAFETY: GetProcessId validates process type; the still-held handle
+        // prevents object/ID reuse through the final console operation.
+        let pid = unsafe { GetProcessId(target.as_raw_handle()) };
+        if pid == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if unsafe { WaitForSingleObject(target.as_raw_handle(), 0) } != WAIT_TIMEOUT {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "Target already terminated",
+            ));
+        }
+        // Never FreeConsole before attach: an accidental call from an existing
+        // console fails without changing that console's association.
+        unsafe {
+            native(AttachConsole(pid))?;
+        }
+        let sent = (|| -> io::Result<()> {
+            unsafe {
+                native(SetConsoleCtrlHandler(Some(ignore_sender_event), 1))?;
+                native(GenerateConsoleCtrlEvent(event, 0))?;
+            }
+            Ok(())
+        })();
+        let detached = unsafe { native(FreeConsole()) };
+        match (sent, detached) {
+            (Ok(()), Ok(())) => Ok(()),
+            (a, b) => Err(io::Error::other(format!(
+                "Private console delivery: {a:?}; sender detach: {b:?}"
+            ))),
+        }
+    })();
+    Some(match result {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Owned console sender: {error}");
+            std::process::ExitCode::FAILURE
+        }
+    })
+}
+
+extern "system" fn ignore_sender_event(_: u32) -> i32 {
+    1
 }
