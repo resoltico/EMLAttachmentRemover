@@ -36,7 +36,7 @@ impl std::error::Error for ContainmentFailure {
     }
 }
 pub(super) fn changed() -> io::Error {
-    io::Error::other(ContainmentFailure::Changed)
+    io::Error::new(io::ErrorKind::InvalidData, ContainmentFailure::Changed)
 }
 fn unverified(error: io::Error) -> io::Error {
     io::Error::other(ContainmentFailure::Unverified(error))
