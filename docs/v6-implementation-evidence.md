@@ -5,6 +5,29 @@ or release acceptance is claimed. Version6 stays under Unreleased.
 
 ## Current verification work
 
+At H761ae41b7a88647c36b491e9401da7774cbbce8e, run39142156106's
+Apple Silicon app job passed all five Cocoa lifetime controls, preserving their
+actual failure reasons, reaping, original-byte observations and forced-cleanup
+limitations. The nonpicker preference-domain comparison also passed. The main
+XCTest then completed both real pickers, up-to-date rerun and report-space
+pause/dismiss/resume, but failed writing its picker observation into the source
+checkout with Cocoa513/POSIX1. All four originals remained unchanged; the
+runner was reaped, while forced app cleanup left worker settlement unverified.
+The repaired fixture uses XCTest's native JSON attachment, exported from the
+same actual xcresult and bound to the owned app/fixture. It does not require
+additional source-directory write access or changed system settings. A native
+rerun of this evidence path is still required; the failed job remains failed.
+
+The pending panel scheduling experiment is described in the
+[frontend design](desktop-frontend-design.md#native-panel-scheduling). Local
+ARM SDK27 checks passed locked GUI compilation/Clippy and12 GUI unit cases,
+including pending-dialog Drop and consumed-terminal cancellation controls.
+The expanded XCTest source builds for the local native architecture without
+launching the app; the first invocation found only Command Line Tools selected,
+and the successful build selected the installed Xcode explicitly per process.
+These are supplementary source/build checks. The real Intel picker, eight-slot
+waiting queue/refusal/removal scenario and pinned native reruns remain required.
+
 The Intel app job at H8dad48ca521c3caa47108264312744566e135c84 failed
 at the actual Command-O message picker. Retained xcresult diagnostics show
 NSSavePanel's native configuration-phase semaphore timing out after60 seconds
@@ -13,6 +36,10 @@ the owner reaped the runner, observed the original app terminated without
 forced termination, released its named pasteboard and verified all four
 originals unchanged. The panel failure remains unresolved. The Apple Silicon
 success below does not qualify Intel or explain the cause of its failure.
+All six native test jobs passed at that source, including both Linux and both
+Windows release qualification jobs. Both macOS15 archive-consumer jobs failed
+because the app producers had failed; aggregate ci-ok correctly failed. Exact-M
+Linux integration and PR head/base freshness passed.
 
 H8dad48ca521c3caa47108264312744566e135c84's ARM expanded XCTest completed
 with one passed test/zero failures, including Services/CJK and normal owned app,

@@ -272,11 +272,16 @@ enum Panel {
     Open(Retained<NSOpenPanel>),
     Save(Retained<NSSavePanel>),
 }
+enum DeferredState {
+    Pending,
+    Busy,
+    Ready(PresentedDialog),
+    Terminal(Option<DialogResult>),
+}
+/// Reserve a dialog immediately, but initialize AppKit's panel bridge outside
+/// Slint's CFRunLoop observer. The controller never crosses that native call.
 pub(crate) struct NativeDialog {
-    panel: Panel,
-    parent: Retained<NSWindow>,
-    result: Rc<Cell<Option<DialogResult>>>,
-    _block: RcBlock<dyn Fn(NSModalResponse)>,
+    state: Rc<Cell<DeferredState>>,
 }
 impl NativeDialog {
     pub(crate) fn open(
@@ -284,8 +289,128 @@ impl NativeDialog {
         kind: OpenKind,
         initial: Option<&Path>,
     ) -> Result<Self, NativeError> {
-        let main = MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
+        let initial = initial.map(Path::to_owned);
+        Self::schedule(window, move |parent| {
+            PresentedDialog::open(parent, kind, initial.as_deref())
+        })
+    }
+    pub(crate) fn save(window: &slint::Window) -> Result<Self, NativeError> {
+        Self::schedule(window, PresentedDialog::save)
+    }
+    fn schedule(
+        window: &slint::Window,
+        create: impl FnOnce(Retained<NSWindow>) -> Result<PresentedDialog, NativeError> + 'static,
+    ) -> Result<Self, NativeError> {
+        use objc2_foundation::{NSDefaultRunLoopMode, NSRunLoop};
+        MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
         let parent = parent(window)?;
+        let state = Rc::new(Cell::new(DeferredState::Pending));
+        let scheduled = Rc::clone(&state);
+        let create = Cell::new(Some((create, parent)));
+        let block = RcBlock::new(move || {
+            let Some((create, parent)) = create.take() else {
+                return;
+            };
+            match scheduled.replace(DeferredState::Busy) {
+                DeferredState::Pending => {}
+                previous => {
+                    scheduled.set(previous);
+                    return;
+                }
+            }
+            let result = create(parent);
+            match scheduled.replace(DeferredState::Busy) {
+                DeferredState::Busy => scheduled.set(match result {
+                    Ok(panel) => DeferredState::Ready(panel),
+                    Err(error) => DeferredState::Terminal(Some(DialogResult::Failed(error))),
+                }),
+                terminal => {
+                    // Cancellation remains sticky even if a nested event has
+                    // already consumed its result while construction was active.
+                    scheduled.set(terminal);
+                    if let Ok(panel) = result {
+                        panel.cancel();
+                    }
+                }
+            }
+        });
+        // SAFETY: immutable system mode. The receiver is specifically the main
+        // run loop; this 'static block and all its Rc/native captures execute
+        // only there. The local RcBlock is copied on this thread into that loop,
+        // and its scheduled copy is invoked/released by the same main loop; no
+        // other thread receives a capture or accesses its reference counts.
+        // Default mode avoids constructing a second panel inside modal or
+        // event-tracking loops.
+        // The existing 25ms lifecycle timer already bounds main-loop wakeups.
+        unsafe {
+            NSRunLoop::mainRunLoop()
+                .performInModes_block(&NSArray::from_slice(&[NSDefaultRunLoopMode]), &block);
+        }
+        Ok(Self { state })
+    }
+    pub(crate) fn take_result(&self, window: &slint::Window) -> Option<DialogResult> {
+        // Move state out before native calls, so a nested native event can
+        // request cancellation without holding or violating a Rust borrow.
+        match self.state.replace(DeferredState::Busy) {
+            DeferredState::Ready(panel) => {
+                let result = panel.take_result(window);
+                match self.state.replace(DeferredState::Busy) {
+                    DeferredState::Busy => {
+                        if result.is_some() {
+                            self.state.set(DeferredState::Terminal(None));
+                        } else {
+                            self.state.set(DeferredState::Ready(panel));
+                        }
+                        result
+                    }
+                    terminal => {
+                        self.state.set(terminal);
+                        panel.cancel();
+                        None
+                    }
+                }
+            }
+            DeferredState::Terminal(result) => {
+                self.state.set(DeferredState::Terminal(None));
+                result
+            }
+            previous => {
+                self.state.set(previous);
+                None
+            }
+        }
+    }
+    pub(crate) fn cancel(&self) {
+        match self
+            .state
+            .replace(DeferredState::Terminal(Some(DialogResult::Cancelled)))
+        {
+            DeferredState::Ready(panel) => {
+                panel.cancel();
+            }
+            terminal @ DeferredState::Terminal(_) => self.state.set(terminal),
+            _ => {}
+        }
+    }
+}
+impl Drop for NativeDialog {
+    fn drop(&mut self) {
+        self.cancel();
+    }
+}
+struct PresentedDialog {
+    panel: Panel,
+    parent: Retained<NSWindow>,
+    result: Rc<Cell<Option<DialogResult>>>,
+    _block: RcBlock<dyn Fn(NSModalResponse)>,
+}
+impl PresentedDialog {
+    fn open(
+        parent: Retained<NSWindow>,
+        kind: OpenKind,
+        initial: Option<&Path>,
+    ) -> Result<Self, NativeError> {
+        let main = MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
         let panel = NSOpenPanel::openPanel(main);
         panel.setCanChooseFiles(matches!(kind, OpenKind::Files));
         panel.setCanChooseDirectories(!matches!(kind, OpenKind::Files));
@@ -338,9 +463,8 @@ impl NativeDialog {
             _block: block,
         })
     }
-    pub(crate) fn save(window: &slint::Window) -> Result<Self, NativeError> {
+    fn save(parent: Retained<NSWindow>) -> Result<Self, NativeError> {
         let main = MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
-        let parent = parent(window)?;
         let panel = NSSavePanel::savePanel(main);
         panel.setCanCreateDirectories(false);
         panel.setNameFieldStringValue(&NSString::from_str("EML-report.json"));
@@ -411,6 +535,29 @@ impl NativeDialog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dropping_pending_dialog_revokes_its_scheduled_admission() {
+        let state = Rc::new(Cell::new(DeferredState::Pending));
+        let dialog = NativeDialog {
+            state: Rc::clone(&state),
+        };
+        drop(dialog);
+        assert!(matches!(
+            state.replace(DeferredState::Terminal(None)),
+            DeferredState::Terminal(Some(DialogResult::Cancelled))
+        ));
+    }
+    #[test]
+    fn cancellation_preserves_an_already_consumed_terminal_result() {
+        let dialog = NativeDialog {
+            state: Rc::new(Cell::new(DeferredState::Terminal(None))),
+        };
+        dialog.cancel();
+        assert!(matches!(
+            dialog.state.replace(DeferredState::Terminal(None)),
+            DeferredState::Terminal(None)
+        ));
+    }
     #[test]
     fn owned_native_pasteboard_keeps_file_objects_and_refuses_filtered_mixed_batches() {
         use objc2::runtime::ProtocolObject;

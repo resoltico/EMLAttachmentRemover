@@ -466,7 +466,23 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     {
         return Err("Actual desktop test discovery/execution is incomplete or failed".into());
     }
-    let picker_path = input.join("picker-observation.json");
+    // XCTest carries observations through its native result bundle. Its runner
+    // need not gain write authority over the source checkout to emit evidence.
+    let attachments = out.join("attachments");
+    let mut export = build.command(root, "/usr/bin/xcrun");
+    export
+        .args(["xcresulttool", "export", "attachments", "--path"])
+        .arg(&results)
+        .arg("--output-path")
+        .arg(&attachments);
+    crate::macos::checked_run(export, &out.join("attachment-export.log"), 120)?;
+    let manifest_path = attachments.join("manifest.json");
+    let metadata = fs::symlink_metadata(&manifest_path)?;
+    if !metadata.is_file() || metadata.len() > 1024 * 1024 {
+        return Err("XCTest attachment manifest is not an ordinary bounded document".into());
+    }
+    let manifest: Value = serde_json::from_slice(&fs::read(manifest_path)?)?;
+    let picker_path = attachments.join(picker_attachment_name(&manifest)?);
     let receipt_path = input.join("ownership.json");
     for path in [&picker_path, &receipt_path] {
         let metadata = fs::symlink_metadata(path)?;
@@ -493,7 +509,81 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     }
     let preferences = crate::desktop_preferences::compare(&before, &after, true)?;
     let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"app":app,"process":process.evidence(),"lifetime_controls":lifetime_controls,"lifetime_owner":ownership,"summary":summary,"ownership_receipt":receipt,"picker_observation":picker,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"comparison":preferences,"argument_only_controls":control_preferences},
-        "scope":"actual extracted app: owned NSWorkspace launch, About/version, complete license value and keyboard Edit command, main close/reopen, two-file Open With, native message/folder import, report-space pause/dismiss/resume, real Services with CJK native filename, independent golden/original checks, settled worker presentation, screenshots, hidden-window Quit cancel/confirm and destination override non-persistence; remaining GUI paths require separate checks"});
+        "scope":"actual extracted app: owned NSWorkspace launch, About/version, complete license value and keyboard Edit command, main close/reopen, two-file Open With, native message/folder import, report-space pause/dismiss/resume, real Services with CJK native filename, eight waiting requests/ninth refusal/UI removal, independent golden/original checks, settled worker presentation, screenshots, hidden-window Quit cancel/confirm and destination override non-persistence; remaining GUI paths require separate checks"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     Ok(result)
+}
+
+fn picker_attachment_name(manifest: &Value) -> Result<&str> {
+    let tests = manifest
+        .as_array()
+        .ok_or("Invalid XCTest attachment manifest")?;
+    let mut matches = Vec::new();
+    for test in tests {
+        if test["testIdentifier"]
+            != "DesktopInteractionTests/testOwnedDesktopWorkflowAndNativeIngress()"
+        {
+            continue;
+        }
+        for attachment in test["attachments"]
+            .as_array()
+            .ok_or("Missing XCTest attachment list")?
+        {
+            if attachment["suggestedHumanReadableName"]
+                .as_str()
+                .is_some_and(|name| {
+                    name.starts_with("native-picker-observation_") && name.ends_with(".json")
+                })
+            {
+                let name = attachment["exportedFileName"]
+                    .as_str()
+                    .ok_or("Missing exported picker attachment filename")?;
+                if name.is_empty()
+                    || !name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+                    || name == "."
+                    || name == ".."
+                {
+                    return Err("Picker attachment is not a plain exported basename".into());
+                }
+                matches.push(name);
+            }
+        }
+    }
+    if matches.len() != 1 {
+        return Err("Exactly one actual picker attachment is required".into());
+    }
+    Ok(matches[0])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn picker_attachment_requires_one_matching_test_and_a_plain_filename() {
+        let attachment = json!({"suggestedHumanReadableName":"native-picker-observation_0_OWNED.json","exportedFileName":"OWNED.json"});
+        let manifest = |attachments: Value| json!([{"testIdentifier":"DesktopInteractionTests/testOwnedDesktopWorkflowAndNativeIngress()","attachments":attachments}]);
+        assert_eq!(
+            picker_attachment_name(&manifest(json!([attachment]))).unwrap(),
+            "OWNED.json"
+        );
+        assert!(picker_attachment_name(&manifest(json!([]))).is_err());
+        assert!(picker_attachment_name(&manifest(json!([attachment, attachment]))).is_err());
+        let mut unrelated = manifest(json!([attachment]));
+        unrelated[0]["testIdentifier"] = json!("OtherTest/unrelated()");
+        assert!(picker_attachment_name(&unrelated).is_err());
+        for filename in [
+            "../outside.json",
+            "/absolute.json",
+            "nested/owned.json",
+            "..",
+            "",
+        ] {
+            let mut invalid = attachment.clone();
+            invalid["exportedFileName"] = json!(filename);
+            assert!(picker_attachment_name(&manifest(json!([invalid]))).is_err());
+        }
+    }
 }

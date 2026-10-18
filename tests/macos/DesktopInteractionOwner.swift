@@ -15,6 +15,7 @@ struct DesktopInteractionOwner {
     static func main() async {
         var failure: String?
         var app: NSRunningApplication?
+        var ownershipReceipt: [String: Any]?
         var board: NSPasteboard?
         var originals: [(URL, Data)] = []
         var originalsUnchanged = false
@@ -72,6 +73,7 @@ struct DesktopInteractionOwner {
             let pasteboard = NSPasteboard.withUniqueName()
             board = pasteboard
             let receipt: [String: Any] = ["pid": launched.processIdentifier, "launch_date": date.timeIntervalSince1970, "bundle_path": appPath, "pasteboard": pasteboard.name.rawValue]
+            ownershipReceipt = receipt
             try JSONSerialization.data(withJSONObject: receipt).write(to: receiptURL, options: .withoutOverwriting)
             guard launched.activate(options: []) else { throw Failure.launchIdentity }
             child.executableURL = URL(fileURLWithPath: arguments[4])
@@ -143,7 +145,9 @@ struct DesktopInteractionOwner {
             board = nil
             guard let resultURL else { throw Failure.invalidInput }
             let result: [String: Any] = ["failure": failure.map { $0 as Any } ?? NSNull(), "timed_out": timedOut, "cancelled": cancellation.requested, "runner_reaped": childReaped, "runner_status": childExit.map { $0 as Any } ?? NSNull(), "owned_app_terminated": appTerminated, "forced_app_cleanup": forcedApp, "worker_settlement": forcedApp ? "unverified after forced app exit" : "requires successful XCTest terminal report and normal Quit", "unexpected_application_pids": unexpected, "originals_captured": originals.count, "originals_unchanged": originalsUnchanged, "source_check_failure": originalsUnchanged ? NSNull() : "Owned original fixture bytes changed or could not be read", "owned_pasteboard_released": hadBoard]
-            try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: resultURL, options: .withoutOverwriting)
+            var observation = result
+            observation["ownership_receipt"] = ownershipReceipt.map { $0 as Any } ?? NSNull()
+            try JSONSerialization.data(withJSONObject: observation, options: [.prettyPrinted, .sortedKeys]).write(to: resultURL, options: .withoutOverwriting)
         } catch { failure = failure ?? String(describing: error) }
         for source in signals { source.cancel() }
         if let failure { try? FileHandle.standardError.write(contentsOf: Data("Desktop fixture owner: \(failure)\n".utf8)) }

@@ -169,7 +169,10 @@ final class DesktopInteractionTests: XCTestCase {
         snapshot(app, "folder-import-finished")
         let pickerObservation: [String: Any] = ["schema": 1, "owned_pid": pid, "message": sources[0].path,
                                                "folder": folderSource.deletingLastPathComponent().path]
-        try JSONSerialization.data(withJSONObject: pickerObservation).write(to: inputURL.deletingLastPathComponent().appendingPathComponent("picker-observation.json"), options: .withoutOverwriting)
+        let pickerAttachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: pickerObservation), uniformTypeIdentifier: "public.json")
+        pickerAttachment.name = "native-picker-observation"
+        pickerAttachment.lifetime = .keepAlways
+        add(pickerAttachment)
 
         // Use the actual system Services route and an owned named pasteboard;
         // never replace the user's general clipboard or call the provider directly.
@@ -203,6 +206,32 @@ final class DesktopInteractionTests: XCTestCase {
         XCTAssertEqual(serviceInstances, [owned.processIdentifier])
         guard serviceInstances == [owned.processIdentifier] else { throw InteractionFailure.expectedPresentation }
         snapshot(app, "services-finished-CJK")
+
+        // Two retained full reports keep these real file-open requests waiting.
+        // Observe each admission before sending the next, then exercise the
+        // ninth-request refusal and remove each retained request through the UI.
+        for expected in 1...8 {
+            guard !owned.isTerminated else { throw InteractionFailure.expectedPresentation }
+            let queued = try await NSWorkspace.shared.open([sources[0]], withApplicationAt: appURL, configuration: delivery)
+            guard queued.processIdentifier == pid else { throw InteractionFailure.expectedPresentation }
+            try await requireWaiting(app, count: expected)
+        }
+        try await requireText(app, containing: "Queue paused: dismiss a retained report to make room.")
+        snapshot(app, "eight-waiting-requests")
+        let refused = try await NSWorkspace.shared.open([sources[0]], withApplicationAt: appURL, configuration: delivery)
+        guard refused.processIdentifier == pid else { throw InteractionFailure.expectedPresentation }
+        try await requireText(app, containing: "Selection not started: Application admission: Full")
+        try await requireWaiting(app, count: 8)
+        snapshot(app, "ninth-request-refused")
+        app.buttons["Dismiss notice"].click()
+        for remaining in stride(from: 7, through: 0, by: -1) {
+            app.buttons.matching(identifier: "Remove waiting run").firstMatch.click()
+            try await requireWaiting(app, count: remaining)
+        }
+        for source in allSources {
+            XCTAssertEqual(try Data(contentsOf: source.deletingPathExtension().appendingPathExtension("no-attachments.eml")), golden)
+        }
+        snapshot(app, "waiting-requests-removed")
         window.buttons["_XCUI:CloseWindow"].click()
         let hiddenForQuit = NSPredicate { _, _ in !window.exists }
         let hiddenForQuitObservation = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: hiddenForQuit, object: nil)], timeout: 10)
@@ -225,6 +254,16 @@ final class DesktopInteractionTests: XCTestCase {
         XCTAssertTrue(owned.isTerminated)
         XCTAssertEqual(UserDefaults.standard.persistentDomain(forName: identifier)?["copyDestinationBytes"] as? String, previousDestination,
                        "Invocation override must not persist a destination")
+    }
+
+    @MainActor
+    private func requireWaiting(_ app: XCUIApplication, count: Int) async throws {
+        let predicate = NSPredicate { _, _ in
+            app.buttons.matching(identifier: "Remove waiting run").count == count
+        }
+        let result = await XCTWaiter.fulfillment(of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 10)
+        XCTAssertEqual(result, .completed, "Expected exactly \(count) waiting requests: \(app.debugDescription)")
+        guard result == .completed else { throw InteractionFailure.expectedPresentation }
     }
 
     @MainActor

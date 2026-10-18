@@ -63,3 +63,24 @@ Both actual native macOS CPUs still need ad hoc app/worker signature identity, a
 readback and extracted execution, file/Services/drop/picker ingress, queue/report
 limits, Stop/Force Stop/Quit, reveal/export failures and accessibility/appearance
 checks. Remove needless or superseded code before delivering v6.
+
+## Native panel scheduling
+
+An Intel native test reached Command-O but failed in NSOpenPanel construction:
+AppKit's panel configuration semaphore timed out after60 seconds. The panel
+service started and checked in; the retained diagnostics do not establish why
+configuration failed. Its call stack entered AppKit inside Slint's timer callback
+from a CFRunLoop observer. The same scenario passed on Apple Silicon.
+
+The narrow scheduling experiment reserves a dialog synchronously, then constructs
+the native panel in a public main-run-loop block in default mode. Winit already
+uses this scheduling boundary for non-reentrant callbacks. The block owns the
+retained native parent and copied request; it captures no controller borrow or
+Slint window. Cancellation is terminal even if a nested native event consumes
+its result before construction returns. Dropping a pending dialog prevents its
+queued block from presenting later. Open and Save share this scheduling rule;
+their native completion/path checks remain authoritative.
+
+This addresses the observed observer-context risk. It is not a demonstrated
+explanation or fix until actual native picker execution passes; hosted
+AppKit/XPC failure remains a competing explanation. Failed evidence is retained.
