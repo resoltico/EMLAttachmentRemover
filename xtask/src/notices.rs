@@ -7,7 +7,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     io::Read,
-    path::{Component, Path, PathBuf},
+    path::{Component as PathComponent, Path, PathBuf},
     process::Command,
 };
 
@@ -175,7 +175,7 @@ fn relative(path: &str) -> Result<&Path> {
             .any(|part| part.is_empty() || matches!(part, "." | ".."))
         || !value
             .components()
-            .all(|part| matches!(part, Component::Normal(_)))
+            .all(|part| matches!(part, PathComponent::Normal(_)))
     {
         return Err("Invalid legal-material relative path".into());
     }
@@ -619,12 +619,12 @@ fn bundle(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Component {
+pub(crate) enum NoticeComponent {
     Cli,
     Gui,
     Worker,
 }
-impl Component {
+impl NoticeComponent {
     fn name(self) -> &'static str {
         match self {
             Self::Cli => "cli",
@@ -666,7 +666,7 @@ struct NoticeTarget<'a> {
     target: &'a str,
     platform: &'a str,
     version: &'a str,
-    component: Component,
+    component: NoticeComponent,
 }
 
 fn target_materials(
@@ -697,7 +697,7 @@ fn target_materials(
         "json",
         "--fail",
     ];
-    if component == Component::Gui {
+    if component == NoticeComponent::Gui {
         arguments.extend(["--features", "macos-gui"]);
     }
     let bytes = capture(crate::tools::command(root, "about")?.args(&arguments[1..]))?;
@@ -723,7 +723,7 @@ fn target_materials(
         "--format",
         "{p}|{f}",
     ];
-    if component == Component::Gui {
+    if component == NoticeComponent::Gui {
         features_arguments.extend(["--features", "eml-gui/macos-gui"]);
     }
     let features = String::from_utf8(capture(
@@ -856,7 +856,7 @@ fn target_materials(
 fn native_relative(base: &Path, path: &Path) -> Result<String> {
     let mut pieces = Vec::new();
     for component in path.strip_prefix(base)?.components() {
-        let Component::Normal(piece) = component else {
+        let PathComponent::Normal(piece) = component else {
             return Err("Unexpected native material path component".into());
         };
         let piece = piece.to_str().ok_or("Non-UTF-8 material component")?;
@@ -973,7 +973,7 @@ fn write_new_tree(output: &Path, files: &Files) -> Result<()> {
 
 fn generated_materials(
     root: &Path,
-    selected: Option<(&str, Component)>,
+    selected: Option<(&str, NoticeComponent)>,
 ) -> Result<(PathBuf, Files)> {
     campaign::require_stock_topology(root)?;
     let tool = campaign::tool_version(root, "about", "cargo_about")?;
@@ -1042,7 +1042,11 @@ fn generated_materials(
             "scope": "generated legal materials; not native execution or legal review evidence"
         }))?,
     )?;
-    for component in [Component::Cli, Component::Gui, Component::Worker] {
+    for component in [
+        NoticeComponent::Cli,
+        NoticeComponent::Gui,
+        NoticeComponent::Worker,
+    ] {
         if selected.is_some_and(|(_, selected)| selected != component) {
             continue;
         }
@@ -1052,7 +1056,7 @@ fn generated_materials(
                 .as_str()
                 .ok_or("Missing platform identity")?;
             if selected.is_some_and(|(selected, _)| selected != platform)
-                || (component != Component::Cli && !platform.starts_with("macos-"))
+                || (component != NoticeComponent::Cli && !platform.starts_with("macos-"))
             {
                 continue;
             }
@@ -1117,13 +1121,13 @@ impl CheckedTargetMaterials {
 }
 
 pub(crate) fn checked_target(root: &Path, platform: &str) -> Result<CheckedTargetMaterials> {
-    checked_component(root, platform, Component::Cli)
+    checked_component(root, platform, NoticeComponent::Cli)
 }
 
 pub(crate) fn checked_component(
     root: &Path,
     platform: &str,
-    component: Component,
+    component: NoticeComponent,
 ) -> Result<CheckedTargetMaterials> {
     if relative(platform)?.components().count() != 1 {
         return Err("Invalid notice platform component".into());
