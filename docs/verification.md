@@ -314,9 +314,7 @@ and execution, the standalone real filesystem probe, native CLI build, complete
 materials, final-runtime review, extraction and behavioral smoke. Linux also runs
 the real different-UID namespace control; Windows release tests include the
 distinct-account, Job and console cases, followed by an actual extra-object
-rejection. macOS's `qualify` entry point remains incomplete while full GUI
-acceptance is open. Source compilation and scoped checks do not qualify these
-new orchestration paths; their native runs remain required.
+rejection. On macOS, `qualify --target <native-target> --icons <validated-icon-directory> --out <new-directory>` reuses the same release-suite discovery, owned exFAT observation and complete app archive builder. It requires a fresh hosted runner before native operations, preserves the validated same-source shared icon producer and emits one qualification record for the CLI and nested app archive. CI's app job owns these release/volume checks; the separate native matrix retains debug, desktop, formatting and namespace checks. macOS15 consumers still exercise exactly the producer archives. This orchestration is implemented but its new native execution remains pending; full GUI acceptance is still open. Source compilation and scoped checks do not qualify unexecuted paths.
 
 `cargo xtask distribution` prints the native target policy and expected archive
 identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.

@@ -7,12 +7,19 @@ use crate::{
 use eml_app::{
     DesktopSession, ReportExportOutcome, RequestSnapshot, RunId, TerminalReport, WorkerObservation,
 };
+use eml_protocol::DisplayText;
 use slint::{ComponentHandle, ModelRc, VecModel};
 use std::{
     path::PathBuf,
     thread::{self, JoinHandle},
     time::Instant,
 };
+fn display_lines(text: &str) -> String {
+    text.split('\n')
+        .map(|line| DisplayText::new(line).to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 fn terminal_label(completion: &eml_app::WorkerCompletion) -> &'static str {
     use eml_app::WorkerFailure;
     match completion.failure {
@@ -653,9 +660,11 @@ impl Controller {
             .waiting_requests()
             .map(|(id, request)| {
                 self.waiting.push(id);
-                let destination = match &request.request().output {
+                let destination: String = match &request.request().output {
                     eml_core::OutputLocation::BesideSource => "Beside originals".into(),
-                    eml_core::OutputLocation::Directory(path) => path.to_string_lossy(),
+                    eml_core::OutputLocation::Directory(path) => {
+                        DisplayText::new(&path.to_string_lossy()).to_string()
+                    }
                 };
                 format!(
                     "Run {id}: Not started\n{} selections\nSave copies: {destination}",
@@ -695,7 +704,7 @@ impl Controller {
             |path| {
                 path.map_or_else(
                     || "Beside each original".into(),
-                    |path| path.to_string_lossy().into_owned(),
+                    |path| DisplayText::new(&path.to_string_lossy()).to_string(),
                 )
             },
         );
@@ -722,8 +731,12 @@ impl Controller {
         } else {
             self.status.clone()
         };
-        window.set_activity(activity.into());
-        window.set_notice_text(self.notice.as_deref().unwrap_or("").into());
+        window.set_activity(display_lines(&activity).into());
+        window.set_notice_text(
+            DisplayText::new(self.notice.as_deref().unwrap_or(""))
+                .to_string()
+                .into(),
+        );
         window.set_stop_available(
             self.closing_since.is_none()
                 && self.session.control().is_some_and(|control| {
@@ -791,23 +804,23 @@ impl Controller {
                 if let Some(completion) = completion {summary.push_str(&format!("\n{}", terminal_label(completion)));}
                 summary.push_str(&format!("\nItems page {} of {pages}", self.page + 1));
                 let rows = facts.items().iter().skip(self.page * 64).take(64).map(|item| {
-                    let name: String = item.source.display.rsplit('/').next().unwrap_or("Message").chars().take(180).collect();
+                    let basename = item.source.display.rsplit('/').next().unwrap_or("Message"); let name: String = DisplayText::new(basename).to_string().chars().take(180).collect();
                     format!("{} · {}", name, item_label(item)).into()
                 }).collect::<Vec<slint::SharedString>>();
                 let mut detail = String::new();
                 let mut technical = format!("Protocol failure: {:?}\n", facts.failure());
-                if let Some(completion) = completion {technical.push_str(&format!("Worker exit {:?}; signal {:?}; failure {:?}; settled {}; reusable {}\nInterrupt calls {}; first interrupt observed {}\n{}\nStderr{}:\n{}\n", completion.exit_code, completion.signal, completion.failure, completion.settled, completion.reusable, completion.interrupt_calls_succeeded, completion.first_interrupt_observed, completion.faults.join("; "), if completion.stderr_truncated {" (truncated)"} else {""}, String::from_utf8_lossy(&completion.stderr)));}
+                if let Some(completion) = completion {technical.push_str(&format!("Worker exit {:?}; signal {:?}; failure {:?}; settled {}; reusable {}\nInterrupt calls {}; first interrupt observed {}\n{}\nStderr{}:\n{}\n", completion.exit_code, completion.signal, completion.failure, completion.settled, completion.reusable, completion.interrupt_calls_succeeded, completion.first_interrupt_observed, DisplayText::new(&completion.faults.join("; ")), if completion.stderr_truncated {" (truncated)"} else {""}, display_lines(&String::from_utf8_lossy(&completion.stderr))));}
                 if let Some(item) = facts.items().get(self.item) {
-                    detail.push_str(&format!("{}\nSource: {}\nCopy: {}\n", item_label(item), item.source.display, item.destination.value().map_or("—", |path| path.display.as_str())));
+                    detail.push_str(&format!("{}\nSource: {}\nCopy: {}\n", item_label(item), DisplayText::new(&item.source.display), item.destination.value().map_or_else(|| "—".into(), |path| DisplayText::new(&path.display).to_string())));
                     if let Some(saved) = facts.saved_bytes(self.item) {detail.push_str(&format!("Saved {saved} bytes\n"));}
-                    if let Some(error) = item.error.value() {detail.push_str(&format!("{}\nOriginal message unchanged.\n", error.detail));}
+                    if let Some(error) = item.error.value() {detail.push_str(&format!("{}\nOriginal message unchanged.\n", DisplayText::new(&error.detail)));}
                     let pages = item.removed.len().div_ceil(64).max(1);
                     self.part_page = self.part_page.min(pages - 1);
                     detail.push_str(&format!("Removed parts page {} of {pages}\n", self.part_page + 1));
                     for part in item.removed.iter().skip(self.part_page * 64).take(64) {
-                        detail.push_str(&format!("{} · {} · {} bytes · {:?} · section {}\n", part.filename.value().map_or("Unnamed part", String::as_str), part.content_type, part.bytes, part.reason, part.section));
+                        detail.push_str(&format!("{} · {} · {} bytes · {:?} · section {}\n", DisplayText::new(part.filename.value().map_or("Unnamed part", String::as_str)), DisplayText::new(&part.content_type), part.bytes, part.reason, DisplayText::new(&part.section)));
                     }
-                    if !item.stripped_fields.is_empty() {detail.push_str(&format!("Removed stale fields: {}\n", item.stripped_fields.join(", ")));}
+                    if !item.stripped_fields.is_empty() {detail.push_str(&format!("Removed stale fields: {}\n", DisplayText::new(&item.stripped_fields.join(", "))));}
                     technical.push_str(&format!("Publication: {:#?}\nExisting copy: {:#?}\nItem error: {:#?}\n", item.publication, item.existing_observation.value(), item.error.value()));
                 }
                 let artwork = report_artwork(facts, completion);

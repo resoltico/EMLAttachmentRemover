@@ -1124,3 +1124,42 @@ that baseline verified all published text is otherwise unchanged. v6 remains
 Unreleased. Future live release/attestation integration is intentionally unrun,
 is not authorized by this PR task and is not a substitute for the still-required
 native/archive/GUI acceptance gates.
+
+## Consolidated macOS orchestration and display-boundary checks
+
+The macOS qualify command now takes the already validated same-source icon input,
+executes strict native release-suite discovery, creates/verifies the CLI archive,
+runs the owned exFAT observation and calls the existing app archive builder. CI's
+app job owns those release/volume checks; debug/desktop/format/namespace jobs and
+macOS15 same-byte consumers remain independently required. The uploaded product
+has one root qualification record, one CLI archive and the nested app archive,
+reference and producer record. Its current native execution is pending. Missing
+icon input and attempts from the owner desktop both fail before creating their
+requested output directories; those actual negative command controls passed.
+Strict xtask Clippy, all68 command tests and actionlint passed.
+
+The separate focused panel workflow replaces the inline diagnostic preceding the
+shipping picker. This avoids making a supplemental AppKit program a prerequisite
+or warming its service before the product's ordinary first-use picker. Earlier
+failed diagnostics remain evidence; the actual shipping picker stays required.
+
+The GUI previously rendered raw protocol display strings, including bidi controls.
+A shared DisplayText formatter now supplies the existing explicit control/bidi
+escaping to UI field values while preserving printable international text. The
+CLI's native TerminalPath uses that same loop; operational paths and raw report
+export data are unchanged. Basenames are extracted before display formatting;
+selected details retain full escaped values. Filename/content-type/section/error
+and destination fields are covered. Stderr retains authored line separators with
+its individual lines escaped. Seven protocol path/text cases, including independent
+CJK/Arabic/bidi literals and exhaustive existing control checks, passed; enabled
+GUI strict Clippy passed with SDK27.
+
+The owned Services filename now combines CJK, Arabic and U+202E. The native test
+requires its explicit escaped accessible spelling and independently checks the
+exact original/output paths and golden bytes. The shipping workflow also resizes
+the actual window to its minimum constraints, requires the compact selector and
+accessible selected details, and verifies a Space-induced disclosure change.
+Forward/reverse Tab navigation must activate distinct real native picker/About
+presentations. SDK27 XCTest build-for-testing passed. These new interaction cases
+remain unrun on pinned hosted Macs; appearance and broader accessibility
+acceptance remain open. No local owner GUI operation or preference write occurred.

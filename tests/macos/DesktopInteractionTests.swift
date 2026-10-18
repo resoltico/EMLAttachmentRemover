@@ -52,7 +52,9 @@ final class DesktopInteractionTests: XCTestCase {
     let golden = try Data(
       contentsOf: repository.appendingPathComponent(
         "tests/contract/mime/golden/01-gmail-attachment.eml"))
-    let originals = ["one.eml", "two.eml", "folder-input/folder.eml", "service-input/日本語.eml"].map {
+    let originals = [
+      "one.eml", "two.eml", "folder-input/folder.eml", "service-input/日本語-مرحبا-\u{202e}report.eml",
+    ].map {
       fixture.appendingPathComponent($0)
     }
     addTeardownBlock { @MainActor in
@@ -198,7 +200,7 @@ final class DesktopInteractionTests: XCTestCase {
     let root = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
     let sources = ["one.eml", "two.eml"].map { root.appendingPathComponent($0) }
     let folderSource = root.appendingPathComponent("folder-input/folder.eml")
-    let serviceSource = root.appendingPathComponent("service-input/日本語.eml")
+    let serviceSource = root.appendingPathComponent("service-input/日本語-مرحبا-\u{202e}report.eml")
     let allSources = sources + [folderSource, serviceSource]
     let original = try Data(
       contentsOf: repository.appendingPathComponent(
@@ -261,6 +263,23 @@ final class DesktopInteractionTests: XCTestCase {
     XCTAssertTrue(
       (identity?.value as? String)?.contains("EML Attachment Remover \(version)") == true)
     snapshot(app, "about")
+    about.buttons["_XCUI:CloseWindow"].click()
+    // Keyboard traversal must cause distinct native effects, not merely send keys.
+    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
+    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
+    let keyboardPicker = app.sheets.firstMatch
+    guard keyboardPicker.waitForExistence(timeout: 10) else {
+      XCTFail("Tab/Space did not activate the native message importer: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    keyboardPicker.buttons["Cancel"].click()
+    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: .shift)
+    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
+    guard about.waitForExistence(timeout: 10) else {
+      XCTFail("Shift-Tab/Space did not return to About: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    snapshot(app, "keyboard-forward-and-reverse-native-actions")
     about.buttons["_XCUI:CloseWindow"].click()
 
     app.menuBars.menuBarItems["Help"].click()
@@ -367,6 +386,7 @@ final class DesktopInteractionTests: XCTestCase {
       XCTAssertEqual(try Data(contentsOf: copy), golden)
     }
     snapshot(app, "finished")
+    try await checkCompactReport(app, window: window, source: sources[0])
 
     // The real message importer reruns one original. Two full reports then
     // reserve all report space; the subsequent folder must wait visibly.
@@ -428,8 +448,10 @@ final class DesktopInteractionTests: XCTestCase {
         atPath: serviceSource.deletingPathExtension().appendingPathExtension("no-attachments.eml")
           .path))
     app.buttons["Dismiss report"].click()
-    try await requireRun(app, counts: "1 created · 0 up to date", source: serviceSource)
-    try await requireText(app, containing: "日本語.eml")
+    try await requireRun(
+      app, counts: "1 created · 0 up to date", source: serviceSource,
+      displayedName: "日本語-مرحبا-\\u{202e}report.eml")
+    try await requireText(app, containing: "日本語-مرحبا-\\u{202e}report.eml")
     XCTAssertEqual(
       try Data(
         contentsOf: serviceSource.deletingPathExtension().appendingPathExtension(
@@ -663,6 +685,55 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
+  private func checkCompactReport(_ app: XCUIApplication, window: XCUIElement, source: URL)
+    async throws
+  {
+    let previous = window.frame
+    let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
+      .withOffset(CGVector(dx: -2, dy: -2))
+    let compactCorner = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+      .withOffset(CGVector(dx: 758, dy: 518))
+    corner.click(forDuration: 0.3, thenDragTo: compactCorner)
+    let compact = NSPredicate { _, _ in
+      let frame = window.frame
+      return frame.width >= 760 && frame.width <= 780 && frame.height >= 520
+        && frame.height <= 560
+    }
+    let resized = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: compact, object: nil)], timeout: 10)
+    guard resized == .completed else {
+      XCTFail("Owned window did not reach its minimum compact size: \(window.frame)")
+      throw InteractionFailure.expectedPresentation
+    }
+    let selector = try XCTUnwrap(
+      window.descendants(matching: .any).allElementsBoundByIndex.first {
+        $0.title == "Select run" || $0.label == "Select run"
+      })
+    XCTAssertTrue(selector.isEnabled && selector.isHittable, app.debugDescription)
+    XCTAssertFalse(
+      window.buttons.allElementsBoundByIndex.contains { $0.title.hasPrefix("Run 1\n") })
+    try await requireText(app, containing: source.lastPathComponent)
+    let technical = app.checkBoxes["Technical details"]
+    XCTAssertTrue(technical.isEnabled && technical.isHittable)
+    technical.click()
+    let unchecked = String(describing: technical.value)
+    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
+    XCTAssertNotEqual(String(describing: technical.value), unchecked)
+    try await requireText(app, containing: "settled true; reusable true")
+    snapshot(app, "minimum-compact-keyboard-and-accessible-report")
+    let restore = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+      .withOffset(CGVector(dx: previous.width - 2, dy: previous.height - 2))
+    window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
+      .withOffset(CGVector(dx: -2, dy: -2)).click(forDuration: 0.3, thenDragTo: restore)
+    let restored = NSPredicate { _, _ in
+      abs(window.frame.width - previous.width) < 3 && abs(window.frame.height - previous.height) < 3
+    }
+    let result = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: restored, object: nil)], timeout: 10)
+    guard result == .completed else { throw InteractionFailure.expectedPresentation }
+  }
+
+  @MainActor
   private func closeOwnedFinderWindow(_ finder: XCUIApplication, title: String) async throws {
     let matches = finder.windows.allElementsBoundByIndex.filter { $0.title == title }
     guard !matches.isEmpty else { return }
@@ -793,7 +864,9 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
-  private func requireRun(_ app: XCUIApplication, counts: String, source: URL) async throws {
+  private func requireRun(
+    _ app: XCUIApplication, counts: String, source: URL, displayedName: String? = nil
+  ) async throws {
     let predicate = NSPredicate { _, _ in
       app.buttons.allElementsBoundByIndex.contains {
         let text = $0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")
@@ -809,7 +882,7 @@ final class DesktopInteractionTests: XCTestCase {
     let detail = NSPredicate { _, _ in
       app.descendants(matching: .any).allElementsBoundByIndex.contains {
         $0.title == "Selected message, removed parts and technical observations"
-          && ($0.value as? String)?.contains(source.lastPathComponent) == true
+          && ($0.value as? String)?.contains(displayedName ?? source.lastPathComponent) == true
           && ($0.value as? String)?.contains("settled true; reusable true") == true
       }
     }

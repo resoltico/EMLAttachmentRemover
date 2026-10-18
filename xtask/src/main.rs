@@ -157,6 +157,9 @@ enum Task {
         target: String,
         #[arg(long)]
         out: PathBuf,
+        /// Validated same-source icon producer directory, required on macOS.
+        #[arg(long)]
+        icons: Option<PathBuf>,
     },
     /// Inspect and exercise extracted native archive bytes; missing gates fail.
     VerifyArchive {
@@ -423,9 +426,9 @@ fn main() -> ExitCode {
                 std::fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
                 Ok(())
             }
-            Task::Qualify { target, out } => {
+            Task::Qualify { target, out, icons } => {
                 initialize_controller(&root)?;
-                qualify::run(&root, &target, &out)
+                qualify::run(&root, &target, &out, icons.as_deref())
             }
             Task::VerifyArchive { archive, target } => {
                 initialize_controller(&root)?;

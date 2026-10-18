@@ -172,7 +172,22 @@ impl<'a> TerminalPath<'a> {
 }
 impl fmt::Display for TerminalPath<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for character in self.0.to_string_lossy().chars() {
+        DisplayText::new(&self.0.to_string_lossy()).fmt(formatter)
+    }
+}
+
+/// Human text with control, line-separator and bidi-formatting characters made
+/// explicit. Printable international text is preserved. Never an operational value.
+pub struct DisplayText<'a>(&'a str);
+impl<'a> DisplayText<'a> {
+    /// Borrow untrusted text for human presentation.
+    pub fn new(text: &'a str) -> Self {
+        Self(text)
+    }
+}
+impl fmt::Display for DisplayText<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for character in self.0.chars() {
             if character.is_control()
                 || matches!(character,
                 '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2066}'..='\u{2069}')

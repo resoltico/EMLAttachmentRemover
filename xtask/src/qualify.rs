@@ -310,8 +310,21 @@ pub(crate) fn staged_cli(
     }
 }
 
-pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
+pub(crate) fn run(root: &Path, target: &str, out: &Path, icons: Option<&Path>) -> Result<()> {
     crate::campaign::require_stock_topology(root)?;
+    #[cfg(target_os = "macos")]
+    let icons = icons
+        .ok_or("macOS qualification requires --icons from the same-source validated producer")?;
+    #[cfg(target_os = "macos")]
+    if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+        || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
+    {
+        return Err("macOS qualification requires a fresh hosted runner; saved owner preferences and desktop are protected".into());
+    }
+    #[cfg(not(target_os = "macos"))]
+    if icons.is_some() {
+        return Err("Icon inputs apply only to native macOS app qualification".into());
+    }
     let changes = capture(Command::new("git").current_dir(root).args([
         "status",
         "--porcelain",
@@ -347,8 +360,19 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path) -> Result<()> {
         #[cfg(target_os = "macos")]
         {
             let app_stage = out.join("app-build");
-            crate::macos_app::build_sources(root, &app_stage)?;
-            Err("CLI archive and native GUI/worker executable builds completed; complete app/GUI/volume qualification remains incomplete".into())
+            let volume = out.join("owned-exfat-observation");
+            crate::macos_volume::run(root, &volume)?;
+            crate::macos_archive::build(root, &app_stage, icons)?;
+            let app: Value = serde_json::from_slice(&fs::read(app_stage.join("app-result.json"))?)?;
+            fs::write(
+                out.join("qualification.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "source":source.trim(),"target":target,"host":cli.host(),"release_tests":tests,
+                    "cli_image":cli.identity(),"archive":archive,"app":app,"volume_evidence":volume,
+                    "scope":"native release tests, owned exFAT observations, frozen CLI and app archive verification with actual extracted GUI checks; other-platform, floor-host and repository-wide gates remain separate"
+                }))?,
+            )?;
+            Ok(())
         }
         #[cfg(not(target_os = "macos"))]
         {

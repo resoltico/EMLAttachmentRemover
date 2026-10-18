@@ -63,7 +63,10 @@ struct DesktopInteractionOwner {
       guard NSRunningApplication.runningApplications(withBundleIdentifier: identifier).isEmpty
       else { throw Failure.existingApplication }
       let fixture = URL(fileURLWithPath: fixturePath)
-      for name in ["one.eml", "two.eml", "folder-input/folder.eml", "service-input/日本語.eml"] {
+      for name in [
+        "one.eml", "two.eml", "folder-input/folder.eml",
+        "service-input/日本語-مرحبا-\u{202e}report.eml",
+      ] {
         let url = fixture.appendingPathComponent(name)
         originals.append((url, try Data(contentsOf: url)))
       }

@@ -53,7 +53,7 @@ fn owner_controls(
             "one.eml",
             "two.eml",
             "folder-input/folder.eml",
-            "service-input/日本語.eml",
+            "service-input/日本語-مرحبا-\u{202e}report.eml",
         ] {
             let file = directory.join(name);
             if let Some(parent) = file.parent() {
@@ -317,16 +317,13 @@ pub(crate) fn run_case(
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let fixture = xtask::archive::create_artifact_directory(&out)?;
-    if case == DesktopCase::Workflow {
-        crate::macos_panel::observe(root, build, &out.join("native-panel-diagnostic"))?;
-    }
     let original = include_bytes!("../../tests/contract/mime/inputs/01-gmail-attachment.eml");
     for name in ["one.eml", "two.eml"] {
         fs::write(fixture.path().join(name), original)?;
     }
     for (directory, name) in [
         ("folder-input", "folder.eml"),
-        ("service-input", "日本語.eml"),
+        ("service-input", "日本語-مرحبا-\u{202e}report.eml"),
     ] {
         let directory = fixture.path().join(directory);
         fs::create_dir(&directory)?;

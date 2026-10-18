@@ -1,6 +1,6 @@
 //! Output transport oracles contain independently reviewed native bytes, not file I/O.
 #![cfg(any(unix, windows))]
-use eml_protocol::{PathValue, TerminalPath};
+use eml_protocol::{DisplayText, PathValue, TerminalPath};
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -86,6 +86,18 @@ fn terminal_path_matches_hand_authored_control_and_printable_oracles() {
     assert_eq!(
         TerminalPath::new(Path::new(printable)).to_string(),
         printable
+    );
+}
+
+#[test]
+fn human_text_preserves_readable_scripts_and_exposes_formatting_controls() {
+    let input = "日本語-مرحبا-\u{202e}report\n\u{2066}file\u{2069}.eml";
+    let expected = r"日本語-مرحبا-\u{202e}report\n\u{2066}file\u{2069}.eml";
+    assert_eq!(DisplayText::new(input).to_string(), expected);
+    assert_eq!(TerminalPath::new(Path::new(input)).to_string(), expected);
+    assert_eq!(
+        DisplayText::new("日本語 مرحبا 👩‍💻").to_string(),
+        "日本語 مرحبا 👩‍💻"
     );
 }
 
