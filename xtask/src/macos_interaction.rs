@@ -272,6 +272,7 @@ fn preference_snapshot(
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DesktopCase {
     Workflow,
+    Pagination,
     Appearance,
     Stop,
     ForceStop,
@@ -288,6 +289,7 @@ impl DesktopCase {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Workflow => "workflow",
+            Self::Pagination => "pagination",
             Self::Appearance => "appearance",
             Self::Stop => "stop",
             Self::ForceStop => "force-stop",
@@ -298,6 +300,7 @@ impl DesktopCase {
     fn method(self) -> &'static str {
         match self {
             Self::Workflow => "testOwnedDesktopWorkflowAndNativeIngress",
+            Self::Pagination => "testOwnedPagination",
             Self::Appearance => "testOwnedNativeAppearance",
             Self::Stop => "testOwnedCoreStop",
             Self::ForceStop => "testOwnedCoreForceStop",
@@ -338,6 +341,31 @@ pub(crate) fn run_case(
         fixture.path().join("report-collision.json"),
         b"Owned report collision sentinel\n",
     )?;
+    if case == DesktopCase::Pagination {
+        let directory = fixture.path().join("pagination-input");
+        fs::create_dir(&directory)?;
+        // This hand-authored MIME oracle is independent of Core serialization.
+        let prefix = "From: synthetic@example.test\r\nSubject: Pagination\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=pages\r\n\r\n--pages\r\nContent-Type: text/plain\r\n\r\nOwned pagination body.\r\n";
+        let mut message = prefix.to_owned();
+        for index in 0..65 {
+            message.push_str(&format!("--pages\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"part-{index:03}.bin\"\r\n\r\nOwned attachment {index}.\r\n"));
+        }
+        message.push_str("--pages--\r\n");
+        fs::write(
+            fixture.path().join("pagination-golden.eml"),
+            format!("{prefix}--pages--\r\n"),
+        )?;
+        for index in 0..65 {
+            fs::write(
+                directory.join(format!("{index:03}.eml")),
+                if index == 0 {
+                    message.as_bytes()
+                } else {
+                    original
+                },
+            )?;
+        }
+    }
     // One native job owns this new input directory. The test derives its location
     // from its actual source path; there is no shipping automation mode or saved
     // preference transport. Refuse accidental reuse instead of replacing inputs.
@@ -354,6 +382,9 @@ pub(crate) fn run_case(
     }
     if case == DesktopCase::Appearance {
         invocation["appearance_session"] = json!("true");
+    }
+    if case == DesktopCase::Pagination {
+        invocation["pagination_session"] = json!("true");
     }
     if case.is_publication() {
         use base64::Engine;
@@ -554,7 +585,12 @@ pub(crate) fn run_case(
         || ownership["owned_app_terminated"] != true
         || ownership["forced_app_cleanup"] != false
         || ownership["originals_unchanged"] != true
-        || ownership["originals_captured"] != 4
+        || ownership["originals_captured"]
+            != if case == DesktopCase::Pagination {
+                69
+            } else {
+                4
+            }
         || ownership.get("source_check_failure") != Some(&Value::Null)
         || ownership["owned_pasteboard_released"] != true
         || ownership["unexpected_application_pids"] != json!([])
@@ -607,6 +643,36 @@ pub(crate) fn run_case(
         return Err("XCTest attachment manifest is not an ordinary bounded document".into());
     }
     let manifest: Value = serde_json::from_slice(&fs::read(manifest_path)?)?;
+    if case == DesktopCase::Pagination {
+        let name = attachment_name(
+            &manifest,
+            "DesktopInteractionTests/testOwnedPagination()",
+            "native-pagination-observation_",
+        )?;
+        let path = attachments.join(name);
+        if !fs::symlink_metadata(&path)?.is_file() || fs::metadata(&path)?.len() > 4096 {
+            return Err("Pagination observation is not an ordinary bounded document".into());
+        }
+        let observation: Value = serde_json::from_slice(&fs::read(path)?)?;
+        if observation["owned_pid"] != ownership["ownership_receipt"]["pid"]
+            || observation["items"] != 65
+            || observation["removed_parts_in_first_item"] != 65
+            || observation["page_transitions"]
+                != json!([
+                    "parts-next",
+                    "parts-previous",
+                    "items-next",
+                    "items-previous"
+                ])
+            || observation["outputs_match_independent_goldens"] != true
+        {
+            return Err("Actual enabled pagination observations are incomplete".into());
+        }
+        let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
+        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"summary":summary,"lifetime_owner":ownership,"observation":observation,"persistent_preferences":{"before":before,"after":after,"comparison":preferences}});
+        fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+        return Ok(result);
+    }
     if case == DesktopCase::Appearance {
         let name = attachment_name(
             &manifest,

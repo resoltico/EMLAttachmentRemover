@@ -476,6 +476,13 @@ fn verify_snapshot(
             &out.join("gui-interaction"),
             DesktopCase::Workflow,
         )?;
+        let pagination = run_case(
+            root,
+            &app,
+            build,
+            &out.join("gui-interaction/pagination"),
+            DesktopCase::Pagination,
+        )?;
         let publication =
             crate::macos_publication_ui::run(root, &app, build, &out.join("gui-publication"))?;
         // Native Settings changes belong to the final phase on this disposable
@@ -487,7 +494,7 @@ fn verify_snapshot(
             &out.join("gui-interaction/appearance"),
             DesktopCase::Appearance,
         )?;
-        json!({"workflow":workflow,"publication":publication,"appearance":appearance})
+        json!({"workflow":workflow,"pagination":pagination,"publication":publication,"appearance":appearance})
     } else {
         json!({"outcome":"not_run","reason":"requires a fresh hosted Mac; local source compilation is not GUI interaction evidence"})
     };

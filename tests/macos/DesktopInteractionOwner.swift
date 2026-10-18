@@ -83,6 +83,13 @@ struct DesktopInteractionOwner {
         let url = fixture.appendingPathComponent(name)
         originals.append((url, try Data(contentsOf: url)))
       }
+      if input["pagination_session"] == "true" {
+        for index in 0..<65 {
+          let url = fixture.appendingPathComponent(
+            String(format: "pagination-input/%03d.eml", index))
+          originals.append((url, try Data(contentsOf: url)))
+        }
+      }
       let configuration = NSWorkspace.OpenConfiguration()
       if input["appearance_session"] == "true" {
         let settingsURL = URL(fileURLWithPath: "/System/Applications/System Settings.app")

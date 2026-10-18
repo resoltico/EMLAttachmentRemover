@@ -1300,3 +1300,29 @@ the new nonblocking relay and unbuffered fixed-line request emission must now
 establish timely hosted capture. This is not a root-cause claim about the picker,
 and changing test order provides no waiver for that failure. Both H69 app gates
 and the required downstream archive/aggregate gates remain failed.
+
+## Real shipping pagination scenario
+
+A separate fresh hosted-app case now submits an owned folder of65 synthetic
+messages through NSWorkspace. The first contains65 named attachment siblings;
+the other64 reuse the independent Gmail fixture. Its stripped golden is authored
+from the retained header/body and closing boundary, without Core serialization.
+The external owner captures all69 originals, including the four standard fixture
+inputs, and requires unchanged bytes and normal app/runner settlement. This case
+uses strict whole-domain preference comparison, with no picker-state allowance.
+
+At minimum window size, the test requires enabled next/previous item and part
+controls to be visible and hittable, clicks both directions, checks exact ordered
+attachment names on both pages, verifies item064 then item000 selection, and
+retains native screenshots. All65 actual outputs must match their independent
+goldens before the bounded native observation is emitted. Exact one-test native
+discovery/execution remains mandatory. The scenario runs on the unchanged
+shipping bundle after the basic workflow and before publication fixture copies.
+
+Supplemental local native ARM CLI execution passed the actual65-attachment Core
+publication, complete stripped-byte golden comparison and original-byte check.
+The owned experiment directory was removed by its scoped temporary-directory
+lifetime. Strict xtask Clippy,69 command tests with zero failures/skips, SDK27
+Swift6 warnings-as-errors owner compilation and XCTest build-for-testing passed.
+These establish source/fixture behavior; enabled GUI pagination and revised
+compact screenshots still require both pinned native hosted runs.
