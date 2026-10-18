@@ -83,6 +83,30 @@ impl OperationFailure {
         detail: &'static str,
         error: io::Error,
     ) -> Self {
+        #[cfg(windows)]
+        if error
+            .get_ref()
+            .is_some_and(|cause| cause.is::<eml_fs::ContainmentFailure>())
+        {
+            let cause = *error
+                .into_inner()
+                .expect("checked contained cause")
+                .downcast::<eml_fs::ContainmentFailure>()
+                .expect("checked containment type");
+            return match cause {
+                eml_fs::ContainmentFailure::Changed => Self::new(
+                    ErrorCode::AddressChanged,
+                    ErrorPhase::Address,
+                    "The created object's destination address changed",
+                ),
+                eml_fs::ContainmentFailure::Unverified(native) => Self {
+                    code: ErrorCode::AddressUnverified,
+                    phase: ErrorPhase::Address,
+                    detail: "The created object's destination address could not be verified",
+                    cause: Some(Arc::new(native)),
+                },
+            };
+        }
         Self {
             code,
             phase,
@@ -103,5 +127,35 @@ impl std::fmt::Display for OperationFailure {
 impl std::error::Error for OperationFailure {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.cause.as_deref().map(|error| error as _)
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    #[test]
+    fn creation_address_observations_keep_semantics_and_native_query_cause() {
+        let changed = OperationFailure::io(
+            ErrorCode::StageFailed,
+            ErrorPhase::Stage,
+            "fallback",
+            io::Error::other(eml_fs::ContainmentFailure::Changed),
+        );
+        assert_eq!(changed.code(), ErrorCode::AddressChanged);
+        assert_eq!(changed.phase(), ErrorPhase::Address);
+        let unverified = OperationFailure::io(
+            ErrorCode::StageFailed,
+            ErrorPhase::Stage,
+            "fallback",
+            io::Error::other(eml_fs::ContainmentFailure::Unverified(
+                io::Error::from_raw_os_error(5),
+            )),
+        );
+        assert_eq!(unverified.code(), ErrorCode::AddressUnverified);
+        assert_eq!(unverified.phase(), ErrorPhase::Address);
+        assert_eq!(
+            unverified.native_diagnostic(),
+            Some(NativeDiagnostic::OsCode(5))
+        );
     }
 }

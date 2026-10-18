@@ -4,14 +4,17 @@ use crate::{
     destination::ReadOnlyParent,
 };
 use eml_fs::{
-    CleanupReceipt, CleanupState, CreatedDirectory, EntryKind, Identity, SyncMethod, SyncReceipt,
-    SyncState,
+    CleanupReceipt, CleanupState, EntryKind, Identity, SyncMethod, SyncReceipt, SyncState,
 };
 use std::{
     ffi::{OsStr, OsString},
     io,
     path::Component,
 };
+#[cfg(unix)]
+type MirrorCreation = eml_fs::CreatedDirectory;
+#[cfg(windows)]
+type MirrorCreation = eml_fs::DirectoryCreation;
 #[cfg(unix)]
 type Directory = eml_fs::BoundDirectory;
 #[cfg(windows)]
@@ -82,13 +85,13 @@ impl PendingLayout {
 
 enum Mirror {
     Existing(Directory),
-    Created(CreatedDirectory),
+    Added(MirrorCreation),
 }
 impl Mirror {
     fn directory(&self) -> &Directory {
         match self {
             Self::Existing(directory) => directory,
-            Self::Created(created) => created.directory(),
+            Self::Added(created) => created.directory(),
         }
     }
 }
@@ -229,7 +232,7 @@ fn open_existing(parent: &Directory, name: &OsStr, expected: Identity) -> io::Re
         parent.open_existing_child(name, expected)
     }
 }
-fn create(parent: &Directory, name: &OsStr) -> Result<CreatedDirectory, eml_fs::CreationFailure> {
+fn create(parent: &Directory, name: &OsStr) -> Result<MirrorCreation, eml_fs::CreationFailure> {
     #[cfg(unix)]
     {
         parent.create_private_child(name)
@@ -308,7 +311,7 @@ impl DestinationBinding {
                     None => match create(binding.directory(), name) {
                         Ok(created) => {
                             pending.created(parent_identity, created.directory().identity());
-                            (Mirror::Created(created), true)
+                            (Mirror::Added(created), true)
                         }
                         Err(error) if error.is_name_collision() => {
                             let entry = binding
@@ -339,7 +342,10 @@ impl DestinationBinding {
                         Err(error) => {
                             pending.failed_creation(parent_identity, name, &error.cleanup);
                             uncertain_cleanup = error.cleanup;
-                            return Err(native("Owned mirror creation failed", error.error));
+                            return Err(native(
+                                "Mirror creation could not be admitted",
+                                error.error,
+                            ));
                         }
                     },
                 };
@@ -474,9 +480,12 @@ impl DestinationBinding {
     ) -> CleanupReceipt {
         let mut aggregate = candidate;
         while let Some(mirror) = self.mirrors.pop() {
-            if let Mirror::Created(created) = mirror {
+            if let Mirror::Added(created) = mirror {
                 let identity = created.directory().identity();
+                #[cfg(unix)]
                 let layout = created.remove_empty();
+                #[cfg(windows)]
+                let layout = created.release_unverified();
                 if layout.state == CleanupState::Complete {
                     pending.removed(identity);
                 }

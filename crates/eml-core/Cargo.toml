@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+native-fixtures = ["eml-fs/native-fixtures"]
+
 [dependencies]
 eml-fs = { path = "../eml-fs" }
 memchr.workspace = true

@@ -1,8 +1,9 @@
-//! Fixed creation ownership and cleanup; directory and candidate storage stay distinct.
-use super::{child, handle, path::validate_component, status};
+//! Contained file creation and unowned mirror binding; cleanup authority stays explicit.
+use super::{child, containment, handle};
 use crate::{
-    BoundDirectory, CleanupReceipt, CleanupState, CreationFailure, Identity, NtStatusError,
-    SyncMethod, SyncReceipt, SyncState,
+    BoundDirectory, CleanupReceipt, CleanupState, CreationFailure, EntryKind, Identity,
+    NtStatusError, SyncMethod, SyncReceipt, SyncState,
+    staging::{NAME_ATTEMPTS, random_name},
 };
 use std::{
     ffi::{OsStr, OsString},
@@ -10,46 +11,32 @@ use std::{
     io,
     mem::size_of,
     os::windows::{
-        ffi::OsStrExt,
+        ffi::OsStringExt,
         io::{AsRawHandle, FromRawHandle, OwnedHandle},
     },
     path::Path,
 };
-use windows_sys::{
-    Wdk::{
-        Foundation::OBJECT_ATTRIBUTES,
-        Storage::FileSystem::{
-            FILE_CREATE, FILE_DIRECTORY_FILE, FILE_NON_DIRECTORY_FILE,
-            FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
-        },
-    },
-    Win32::{
-        Foundation::{
-            GENERIC_WRITE, INVALID_HANDLE_VALUE, OBJ_DONT_REPARSE, STATUS_OBJECT_NAME_COLLISION,
-            STATUS_OBJECT_NAME_NOT_FOUND, UNICODE_STRING,
-        },
-        Storage::FileSystem::*,
-        System::{IO::IO_STATUS_BLOCK, WindowsProgramming::FILE_CREATED},
-    },
+use windows_sys::Win32::{
+    Foundation::{GENERIC_WRITE, INVALID_HANDLE_VALUE, STATUS_OBJECT_NAME_NOT_FOUND},
+    Storage::FileSystem::*,
 };
 
-/// A selected ordinary directory with explicit creation and flush access.
-/// Physical binding does not itself qualify a requested address or publication.
+/// A held ordinary directory with creation/flush access, but no address qualification by itself.
 pub struct WritableDirectory(BoundDirectory);
 const ROOT_WRITE_ACCESS: u32 =
     GENERIC_WRITE | FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_TRAVERSE | SYNCHRONIZE;
-const ROOT_WRITE_SHARING: u32 = FILE_SHARE_READ;
+const ROOT_WRITE_SHARING: u32 = FILE_SHARE_READ | FILE_SHARE_WRITE;
 const ROOT_WRITE_FLAGS: u32 = FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT;
 struct ParentBinding {
     file: File,
     identity: Identity,
 }
-/// A positively created directory retained for explicit empty cleanup or persistence.
-/// Drop closes handles and never recursively removes a pathname.
-pub struct CreatedDirectory {
+/// Ordinary mirror bound after a successful Boolean directory-creation call.
+/// The later open does not prove ownership, so this value grants no deletion authority.
+pub struct DirectoryCreation {
     directory: WritableDirectory,
     parent: ParentBinding,
-    name: OsString,
+    guard_cleanup: CleanupReceipt,
 }
 fn receipt(
     state: CleanupState,
@@ -77,8 +64,7 @@ fn native_code(error: &io::Error) -> Option<i64> {
     })
 }
 pub(super) fn flush(file: &File) -> SyncReceipt {
-    // SAFETY: live borrowed file handle; the native operation checks required
-    // access and reports its actual result. No buffer or ownership is transferred.
+    // SAFETY: live borrowed handle. No buffer/ownership is transferred.
     if unsafe { FlushFileBuffers(file.as_raw_handle()) } != 0 {
         return SyncReceipt {
             method: SyncMethod::FlushFileBuffers,
@@ -104,10 +90,8 @@ fn remove(
     expected: Option<Identity>,
 ) -> CleanupReceipt {
     let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
-    // SAFETY: positively created owned file/directory handle with DELETE access;
-    // generated fixed buffer remains live through the synchronous call. Native
-    // directory deletion enforces emptiness; a file caller may remove its owned
-    // nonempty file. Neither operation recursively removes directory contents.
+    // SAFETY: only a known owned file (or an explicitly owned test fixture) with
+    // DELETE access. The aligned generated buffer lives through the call.
     let marked = if unsafe {
         SetFileInformationByHandle(
             file.as_raw_handle(),
@@ -121,8 +105,6 @@ fn remove(
     } else {
         Ok(())
     };
-    // Once disposition was requested, query no further child metadata through
-    // this handle. Close explicitly, then observe only through its held parent.
     let closed = handle::close(file);
     let first = marked.as_ref().err().or_else(|| closed.as_ref().err());
     match handle::directory_identity(&parent.file) {
@@ -148,7 +130,7 @@ fn remove(
         {
             receipt(CleanupState::Complete, None, None)
         }
-        Ok(identity) if expected.is_some_and(|owned| owned == identity) => receipt(
+        Ok(identity) if expected == Some(identity) => receipt(
             CleanupState::Residual,
             Some(name),
             first.and_then(native_code),
@@ -162,26 +144,22 @@ fn remove(
     }
 }
 impl WritableDirectory {
-    /// Actual component limit for this held volume; no fallback on query failure.
+    /// Actual native component limit; no fallback on query failure.
     pub fn name_limit(&self) -> io::Result<usize> {
         self.0.name_limit()
     }
-    /// No-follow child metadata through this held parent; only the native missing
-    /// name status becomes None. This is not an existence promise for later I/O.
+    /// No-follow metadata only; a missing name is not permission to create.
     pub fn observe_child_if_present(
         &self,
         name: &OsStr,
     ) -> io::Result<Option<crate::EntryObservation>> {
         self.0.observe_child_if_present(name)
     }
-    /// Retain existing child identity across release of a strict candidate.
-    /// This metadata-only handle grants no data or namespace mutation rights.
+    /// Retain exact object lifetime across candidate release without data access.
     pub fn pin_child(&self, name: &OsStr) -> io::Result<super::EntryPin> {
         self.0.pin_child(name)
     }
-    /// Open one existing ordinary writable child relative to this held parent.
-    /// Refuse a different earlier observed full identity; never creates or follows
-    /// a reparse point, changes metadata, or supplies ancestry/address qualification.
+    /// Open an existing ordinary writable child with its earlier full identity.
     pub fn open_existing_child(&self, name: &OsStr, expected: Identity) -> io::Result<Self> {
         Self::open_under(&self.0, name, expected)
     }
@@ -191,36 +169,24 @@ impl WritableDirectory {
         expected: Identity,
     ) -> io::Result<Self> {
         if handle::directory_identity(&parent.file)? != parent.identity {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Held parent identity changed before child binding",
-            ));
+            return Err(containment::changed());
         }
         let file = child::writable_directory(&parent.file, name)?;
         let identity = handle::directory_identity(&file)?;
         if identity != expected {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Writable child differs from its observed identity",
-            ));
+            return Err(containment::changed());
         }
         Ok(Self(BoundDirectory { file, identity }))
     }
-    /// Reobserve this exact held ordinary directory's full identity. This is not
-    /// an original requested-address receipt or a metadata-immutability promise.
+    /// Reobserve the held ordinary/full-ID fact; not continuous metadata immutability.
     pub fn check_held(&self) -> io::Result<()> {
         if handle::directory_identity(&self.0.file)? == self.0.identity {
             Ok(())
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Held writable directory identity changed",
-            ))
+            Err(containment::changed())
         }
     }
-    /// Bind the caller's already-resolved ordinary root expression for modification.
-    /// This does not resolve links, certify ancestry or qualify the requested address.
-    /// The earlier admitted full identity must match before any child creation.
+    /// Bind an already-resolved no-follow directory for mutation; ancestry is separate.
     pub fn bind_resolved(path: &Path, expected: Identity) -> io::Result<Self> {
         let file = handle::open(
             path,
@@ -230,228 +196,240 @@ impl WritableDirectory {
         )?;
         let identity = handle::directory_identity(&file)?;
         if identity != expected {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Writable directory differs from the admitted root",
-            ));
+            return Err(containment::changed());
         }
         Ok(Self(BoundDirectory { file, identity }))
     }
-    /// Usable full native identity of this held directory.
+    /// Full identity of the held directory.
     pub fn identity(&self) -> Identity {
         self.0.identity()
     }
-    /// Request actual namespace synchronization through the write-capable handle.
+    /// Actual namespace synchronization through the held writable handle.
     pub fn sync_namespace(&self) -> SyncReceipt {
         flush(&self.0.file)
     }
-    /// Exclusively create one empty inherited-ACL directory under this held parent.
-    /// This primitive does not qualify hostile-parent confinement or publication.
-    pub fn create_child(&self, name: &OsStr) -> Result<CreatedDirectory, CreationFailure> {
-        let owned = self.create_entry(name, CreateKind::Directory)?;
-        let identity = match handle::directory_identity(&owned.file) {
-            Ok(identity) => identity,
-            Err(error) => {
-                return Err(CreationFailure {
-                    error,
-                    cleanup: owned.cleanup(None),
-                });
+    /// Create/bind one mirror while an owned zero-byte entry protects its parent.
+    /// This operation observes creation, but cannot prove opened-mirror ownership.
+    pub fn create_child(&self, name: &OsStr) -> Result<DirectoryCreation, CreationFailure> {
+        super::path::validate_component(name, u16::MAX as usize / 2).map_err(no_creation)?;
+        let mut last = None;
+        let mut guard = None;
+        for _ in 0..NAME_ATTEMPTS {
+            let guard_name = random_name().map_err(no_creation)?;
+            match self.create_file(&guard_name) {
+                Ok(value) => {
+                    guard = Some(value);
+                    break;
+                }
+                Err(error) if error.is_name_collision() => last = Some(error),
+                Err(error) => return Err(error),
             }
+        }
+        let (guard, guard_identity) = match guard {
+            Some(value) => value,
+            None => return Err(last.expect("positive bounded guard attempts record a collision")),
         };
-        Ok(CreatedDirectory {
-            directory: Self(BoundDirectory {
-                file: owned.file,
-                identity,
+        let mut may_have_created = false;
+        let result = (|| -> io::Result<(Self, ParentBinding)> {
+            let captured = containment::capture_parent(&self.0.file, self.identity())?;
+            let mut units = containment::append(&captured, name)?;
+            units.push(0);
+            let parent = ParentBinding {
+                file: self.0.file.try_clone()?,
+                identity: self.identity(),
+            };
+            #[cfg(any(test, feature = "native-fixtures"))]
+            super::creation_observer::notify(
+                super::creation_observer::CreationBoundary::BeforeMirrorCreate,
+                &self.0.file,
+                name,
+                None,
+            );
+            // SAFETY: terminated bounded native path. Null security attributes
+            // select inheritance. The contained guard remains alive throughout
+            // create/open/qualification, keeping this pinned parent nonempty.
+            may_have_created = true;
+            if unsafe { CreateDirectoryW(units.as_ptr(), std::ptr::null()) } == 0 {
+                let error = io::Error::last_os_error();
+                if crate::name_collision(&error) {
+                    may_have_created = false;
+                }
+                return Err(error);
+            }
+            #[cfg(any(test, feature = "native-fixtures"))]
+            super::creation_observer::notify(
+                super::creation_observer::CreationBoundary::MirrorCreated,
+                &self.0.file,
+                name,
+                None,
+            );
+            let path = std::path::PathBuf::from(OsString::from_wide(&units[..units.len() - 1]));
+            let file = handle::open(
+                &path,
+                ROOT_WRITE_ACCESS,
+                ROOT_WRITE_SHARING,
+                ROOT_WRITE_FLAGS,
+            )?;
+            #[cfg(any(test, feature = "native-fixtures"))]
+            super::creation_observer::notify(
+                super::creation_observer::CreationBoundary::MirrorOpened,
+                &self.0.file,
+                name,
+                Some(&file),
+            );
+            containment::verify(
+                &self.0.file,
+                self.identity(),
+                &captured,
+                &file,
+                name,
+                EntryKind::Directory,
+            )?;
+            let identity = handle::directory_identity(&file)?;
+            Ok((Self(BoundDirectory { file, identity }), parent))
+        })();
+        let cleanup = guard.cleanup(Some(guard_identity));
+        let guard_complete =
+            cleanup.state == CleanupState::Complete && cleanup.native_code.is_none();
+        match result {
+            Ok((directory, parent)) if guard_complete => Ok(DirectoryCreation {
+                directory,
+                parent,
+                guard_cleanup: cleanup,
             }),
-            parent: owned.parent,
-            name: owned.name,
-        })
+            Ok((directory, _parent)) => {
+                let close = handle::close(directory.0.file).err();
+                Err(CreationFailure {
+                    error: io::Error::other("Owned occupancy guard cleanup is unverified"),
+                    cleanup: receipt(
+                        CleanupState::Unknown,
+                        None,
+                        cleanup
+                            .native_code
+                            .or_else(|| close.as_ref().and_then(native_code)),
+                    ),
+                })
+            }
+            Err(error) => Err(CreationFailure {
+                error,
+                cleanup: if may_have_created {
+                    receipt(CleanupState::Unknown, None, cleanup.native_code)
+                } else {
+                    cleanup
+                },
+            }),
+        }
     }
     pub(super) fn create_file(
         &self,
         name: &OsStr,
     ) -> Result<(Creation, Identity), CreationFailure> {
-        let owned = self.create_entry(name, CreateKind::File)?;
-        let initial = handle::signature(&owned.file).map_err(crate::BoundFileError::into_io_error);
-        let identity = match initial {
-            Ok(signature) if signature.size == 0 => signature.identity,
-            Ok(signature) => {
-                return Err(CreationFailure {
-                    error: io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "New candidate is not initially empty",
-                    ),
-                    cleanup: owned.cleanup(Some(signature.identity)),
-                });
-            }
-            Err(error) => {
-                return Err(CreationFailure {
-                    error,
-                    cleanup: owned.cleanup(None),
-                });
-            }
-        };
-        if let Err(error) = owned.validate_file(identity, 0) {
-            return Err(CreationFailure {
-                error,
-                cleanup: owned.cleanup(Some(identity)),
-            });
-        }
-        Ok((owned, identity))
-    }
-    fn create_entry(&self, name: &OsStr, kind: CreateKind) -> Result<Creation, CreationFailure> {
-        validate_component(name, u16::MAX as usize / 2).map_err(no_creation)?;
-        let mut units: Vec<u16> = name.encode_wide().collect();
-        let length = u16::try_from(units.len() * 2).map_err(|_| {
-            no_creation(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Native staging component is too long",
-            ))
-        })?;
-        if handle::directory_identity(&self.0.file).map_err(no_creation)? != self.identity() {
-            return Err(no_creation(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Creation parent identity changed",
-            )));
-        }
-        // This duplicate is retained only for metadata/flush/cleanup. There is
-        // no enumeration API claiming a second independent file-object cursor.
+        super::path::validate_component(name, u16::MAX as usize / 2).map_err(no_creation)?;
+        let captured =
+            containment::capture_parent(&self.0.file, self.identity()).map_err(no_creation)?;
+        let mut units = containment::append(&captured, name).map_err(no_creation)?;
+        units.push(0);
         let parent = ParentBinding {
             file: self.0.file.try_clone().map_err(no_creation)?,
             identity: self.identity(),
         };
-        let native_name = UNICODE_STRING {
-            Length: length,
-            MaximumLength: length,
-            Buffer: units.as_mut_ptr(),
-        };
-        let attributes = OBJECT_ATTRIBUTES {
-            Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
-            RootDirectory: self.0.file.as_raw_handle(),
-            ObjectName: &native_name,
-            Attributes: OBJ_DONT_REPARSE,
-            ..Default::default()
-        };
-        let mut raw = std::ptr::null_mut();
-        let mut iosb = IO_STATUS_BLOCK::default();
-        // SAFETY: one bounded validated relative component and live held parent;
-        // generated aligned buffers/name remain live through synchronous
-        // IRP_MJ_CREATE completion. Fixed CREATE/type/NONALERT options,
-        // null descriptor for native inheritance, no caller-controlled flags.
-        let (access, file_attributes, sharing, options) = match kind {
-            CreateKind::Directory => (
-                FILE_GENERIC_WRITE
-                    | FILE_LIST_DIRECTORY
-                    | FILE_READ_ATTRIBUTES
-                    | FILE_TRAVERSE
-                    | SYNCHRONIZE
-                    | DELETE,
-                FILE_ATTRIBUTE_DIRECTORY,
-                FILE_SHARE_READ,
-                FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
-            ),
-            CreateKind::File => (
+        #[cfg(any(test, feature = "native-fixtures"))]
+        super::creation_observer::notify(
+            super::creation_observer::CreationBoundary::BeforeFileCreate,
+            &self.0.file,
+            name,
+            None,
+        );
+        // SAFETY: one bounded terminated native path, fixed CREATE_NEW, no
+        // sharing/inherited handle. Success returns the exact newly created file.
+        let raw = unsafe {
+            CreateFileW(
+                units.as_ptr(),
                 FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE,
-                FILE_ATTRIBUTE_NORMAL,
                 0,
-                FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
-            ),
-        };
-        let result = unsafe {
-            NtCreateFile(
-                &mut raw,
-                access,
-                &attributes,
-                &mut iosb,
                 std::ptr::null(),
-                file_attributes,
-                sharing,
-                FILE_CREATE,
-                options,
-                std::ptr::null(),
-                0,
+                CREATE_NEW,
+                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+                std::ptr::null_mut(),
             )
         };
-        if result < 0 {
-            return Err(CreationFailure {
-                error: status::error(result),
-                cleanup: receipt(
-                    if result == STATUS_OBJECT_NAME_COLLISION {
-                        CleanupState::NotNeeded
-                    } else {
-                        CleanupState::Unknown
-                    },
-                    None,
-                    None,
-                ),
-            });
+        if raw == INVALID_HANDLE_VALUE {
+            return Err(no_creation(io::Error::last_os_error()));
         }
-        if raw.is_null() || raw == INVALID_HANDLE_VALUE {
+        if raw.is_null() {
             return Err(CreationFailure {
-                error: io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Successful create supplied no handle",
-                ),
+                error: io::Error::other("Successful exclusive create supplied no handle"),
                 cleanup: receipt(CleanupState::Unknown, None, None),
             });
         }
-        // SAFETY: NT_SUCCESS transfers exactly one valid handle. This alone does
-        // not establish authority to delete a newly created namespace object.
+        // SAFETY: successful exclusive CreateFileW transferred one valid handle.
         let file = File::from(unsafe { OwnedHandle::from_raw_handle(raw) });
-        if iosb.Information != FILE_CREATED as usize {
-            let cleanup_code = handle::close(file).err().as_ref().and_then(native_code);
-            return Err(CreationFailure {
-                error: io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Native disposition did not prove new object ownership",
-                ),
-                cleanup: receipt(CleanupState::Unknown, None, cleanup_code),
-            });
-        }
-        Ok(Creation {
+        let mut owned = Creation {
             file,
             parent,
             name: name.to_owned(),
-        })
+            contained: false,
+        };
+        #[cfg(any(test, feature = "native-fixtures"))]
+        owned.observe(super::creation_observer::CreationBoundary::FileOpened);
+        let mut identity = None;
+        let result = (|| {
+            let signature =
+                handle::signature(&owned.file).map_err(crate::BoundFileError::into_io_error)?;
+            identity = Some(signature.identity);
+            if signature.size != 0 {
+                return Err(io::Error::other("New candidate is not initially empty"));
+            }
+            containment::verify(
+                &self.0.file,
+                self.identity(),
+                &captured,
+                &owned.file,
+                name,
+                EntryKind::File,
+            )?;
+            owned.contained = true;
+            Ok(signature.identity)
+        })();
+        match result {
+            Ok(identity) => Ok((owned, identity)),
+            Err(error) => Err(CreationFailure {
+                error,
+                cleanup: owned.cleanup(identity),
+            }),
+        }
     }
 }
-enum CreateKind {
-    Directory,
-    File,
-}
-/// Private creation owner, issued only after native FILE_CREATED proof.
+/// An exact CREATE_NEW owner. Only this type grants staged-file deletion authority.
 pub(super) struct Creation {
     pub(super) file: File,
     parent: ParentBinding,
     name: OsString,
+    contained: bool,
 }
 impl Creation {
+    #[cfg(any(test, feature = "native-fixtures"))]
+    pub(super) fn observe(&self, boundary: super::creation_observer::CreationBoundary) {
+        super::creation_observer::notify(boundary, &self.parent.file, &self.name, Some(&self.file));
+    }
     pub(super) fn component_limit(&self) -> io::Result<usize> {
         handle::component_limit(&self.parent.file)
     }
-    /// Release without disposition. This never removes a possibly published file.
+    pub(super) fn parent_path(&self) -> io::Result<Vec<u16>> {
+        containment::capture_parent(&self.parent.file, self.parent.identity)
+    }
     pub(super) fn release(self) -> io::Result<()> {
         handle::close(self.file)
     }
     pub(super) fn validate_file(&self, identity: Identity, length: u64) -> io::Result<()> {
         if handle::directory_identity(&self.parent.file)? != self.parent.identity {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Candidate parent identity changed",
-            ));
+            return Err(containment::changed());
         }
         let current =
             handle::signature(&self.file).map_err(crate::BoundFileError::into_io_error)?;
-        let named = child::observe(&self.parent.file, &self.name)?;
-        let named = handle::signature(&named).map_err(crate::BoundFileError::into_io_error)?;
-        if current.identity != identity
-            || current.size != length
-            || named.identity != identity
-            || named.size != length
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Owned candidate identity, entry or length changed",
+        if current.identity != identity || current.size != length {
+            return Err(io::Error::other(
+                "Owned candidate identity, type or length changed",
             ));
         }
         Ok(())
@@ -461,34 +439,49 @@ impl Creation {
         &self.name
     }
     pub(super) fn cleanup(self, identity: Option<Identity>) -> CleanupReceipt {
-        remove(self.file, self.parent, self.name, identity)
+        let mut cleanup = remove(self.file, self.parent, self.name, identity);
+        if !self.contained {
+            // Absence in the intended parent does not prove removal of an
+            // owned file whose actual containment was never established.
+            cleanup.state = CleanupState::Unknown;
+            cleanup.residual_name = None;
+        }
+        cleanup
     }
 }
-impl CreatedDirectory {
-    /// Borrow the created directory's existing write capability; do not reopen it.
+impl DirectoryCreation {
+    /// Borrow the ordinary writable binding; this grants no deletion authority.
     pub fn directory(&self) -> &WritableDirectory {
         &self.directory
     }
-    /// Synchronize the containing directory independently of child synchronization.
+    /// Actual owned guard removal/release observation before this binding returned.
+    pub fn guard_cleanup(&self) -> &CleanupReceipt {
+        &self.guard_cleanup
+    }
+    /// Synchronize the containing parent, independently of the child and ownership.
     pub fn sync_parent_namespace(&self) -> SyncReceipt {
         flush(&self.parent.file)
     }
-    /// Keep an intended output directory, closing only the retained parent handle.
+    /// Keep the intended output directory, closing the retained observation parent.
     pub fn persist(self) -> WritableDirectory {
         self.directory
     }
-    /// Attempt only owned empty-handle removal, retaining observed cleanup truth.
-    pub fn remove_empty(self) -> CleanupReceipt {
-        let identity = self.directory.identity();
-        remove(
-            self.directory.0.file,
-            self.parent,
-            self.name,
-            Some(identity),
+    /// Release without deletion. Creation/open did not establish directory ownership.
+    /// No location, emptiness or residual component is guessed.
+    pub fn release_unverified(self) -> CleanupReceipt {
+        let child = handle::close(self.directory.0.file);
+        let parent = handle::close(self.parent.file);
+        receipt(
+            CleanupState::Unknown,
+            None,
+            child
+                .err()
+                .or_else(|| parent.err())
+                .as_ref()
+                .and_then(native_code),
         )
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::super::{
@@ -496,9 +489,51 @@ mod tests {
         test_fixture::{directory as fixture, operation},
     };
     use super::*;
+    #[test]
+    fn owned_fixture_nonempty_disposition_reports_actual_error_without_recursing() {
+        let fixture = fixture();
+        let actor = RestrictedToken::enter().unwrap();
+        let name = OsStr::new("owned-directory");
+        std::fs::create_dir(fixture.path().join(name)).unwrap();
+        std::fs::write(
+            fixture.path().join(name).join("marker"),
+            b"keep this owned fixture subtree",
+        )
+        .unwrap();
+        let parent = BoundDirectory::open(&operation(fixture.path())).unwrap();
+        let file = handle::open(
+            &operation(&fixture.path().join(name)),
+            ROOT_WRITE_ACCESS | DELETE,
+            ROOT_WRITE_SHARING,
+            ROOT_WRITE_FLAGS,
+        )
+        .unwrap();
+        let identity = handle::identity(&file).unwrap();
+        // The harness owns this entire private fixture and runs no namespace
+        // competitor. This tests the native primitive, not mirror ownership.
+        let cleanup = remove(
+            file,
+            ParentBinding {
+                file: parent.file.try_clone().unwrap(),
+                identity: parent.identity(),
+            },
+            name.to_owned(),
+            Some(identity),
+        );
+        assert_eq!(cleanup.state, CleanupState::Residual);
+        assert_eq!(cleanup.native_code, Some(145));
+        assert_eq!(cleanup.residual_name.as_deref(), Some(name));
+        assert_eq!(
+            std::fs::read(fixture.path().join(name).join("marker")).unwrap(),
+            b"keep this owned fixture subtree"
+        );
+        drop(parent);
+        drop(actor);
+        fixture.close().unwrap();
+    }
 
     #[test]
-    fn native_empty_directory_create_flush_cleanup_requires_current_root_and_earlier_identity() {
+    fn native_mirror_binding_flushes_and_releases_without_unproved_deletion() {
         let fixture = fixture();
         let selected = fixture.path().join("selected");
         let moved = fixture.path().join("moved");
@@ -527,10 +562,11 @@ mod tests {
         assert_eq!(child_sync.state, SyncState::Succeeded, "{child_sync:?}");
         assert_eq!(parent_sync.state, SyncState::Succeeded, "{parent_sync:?}");
         assert_eq!(child_sync.method, SyncMethod::FlushFileBuffers);
-        let cleanup = created.remove_empty();
-        assert_eq!(cleanup.state, CleanupState::Complete, "{cleanup:?}");
+        assert_eq!(created.guard_cleanup().state, CleanupState::Complete);
+        let cleanup = created.release_unverified();
+        assert_eq!(cleanup.state, CleanupState::Unknown, "{cleanup:?}");
         assert!(cleanup.residual_name.is_none());
-        assert!(!moved.join("created").try_exists().unwrap());
+        assert!(moved.join("created").try_exists().unwrap());
         assert_eq!(writer.sync_namespace().state, SyncState::Succeeded);
         drop(writer);
         drop(read);
@@ -573,7 +609,7 @@ mod tests {
         let linked = resolved
             .create_child(OsStr::new("from-resolved-target"))
             .unwrap();
-        assert_eq!(linked.remove_empty().state, CleanupState::Complete);
+        assert_eq!(linked.release_unverified().state, CleanupState::Unknown);
         drop(resolved);
         drop(selected_link);
         let writer =
@@ -584,7 +620,7 @@ mod tests {
             .err()
             .expect("collision accepted");
         assert_eq!(conflict.error.kind(), io::ErrorKind::AlreadyExists);
-        assert_eq!(conflict.cleanup.state, CleanupState::NotNeeded);
+        assert_eq!(conflict.cleanup.state, CleanupState::Complete);
         assert_eq!(
             read.observe_child(OsStr::new("collision")).unwrap(),
             existing
@@ -620,7 +656,7 @@ mod tests {
         fixture.close().unwrap();
     }
     #[test]
-    fn native_nonempty_directory_cleanup_retains_the_owned_entry_and_never_recurses() {
+    fn unowned_nonempty_mirror_release_preserves_entries_without_deletion() {
         let fixture = fixture();
         let actor = RestrictedToken::enter().unwrap();
         let read = BoundDirectory::open(&operation(fixture.path())).unwrap();
@@ -630,17 +666,10 @@ mod tests {
         let expected = parent.directory().identity();
         let leaf = parent.directory().create_child(OsStr::new("leaf")).unwrap();
         let leaf_id = leaf.directory().identity();
-        let residual = parent.remove_empty();
-        assert_eq!(residual.state, CleanupState::Residual, "{residual:?}");
-        assert_eq!(
-            residual.residual_name.as_deref(),
-            Some(OsStr::new("parent"))
-        );
-        assert_eq!(
-            residual.native_code,
-            Some(145),
-            "nonempty refusal must not be an unrelated permission failure"
-        );
+        let residual = parent.release_unverified();
+        assert_eq!(residual.state, CleanupState::Unknown, "{residual:?}");
+        assert!(residual.residual_name.is_none());
+        assert!(residual.native_code.is_none());
         assert_eq!(
             read.observe_child(OsStr::new("parent")).unwrap().identity,
             expected
@@ -651,8 +680,8 @@ mod tests {
             leaf_id
         );
         drop(retained);
-        assert_eq!(leaf.remove_empty().state, CleanupState::Complete);
-        // Product cleanup deliberately retained parent. Harness teardown later
+        assert_eq!(leaf.release_unverified().state, CleanupState::Unknown);
+        // Unowned binding release deliberately retained these entries. Harness teardown later
         // removes its entire synthetic fixture after every handle/actor stops.
         assert!(fixture.path().join("parent").try_exists().unwrap());
         drop(writer);

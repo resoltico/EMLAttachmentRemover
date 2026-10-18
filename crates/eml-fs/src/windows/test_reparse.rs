@@ -10,7 +10,6 @@ use std::{
 use windows_sys::{
     Wdk::Storage::FileSystem::{REPARSE_DATA_BUFFER, REPARSE_DATA_BUFFER_0_1},
     Win32::{
-        Foundation::GENERIC_WRITE,
         Storage::FileSystem::{
             FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE,
             FILE_SHARE_READ, FILE_SHARE_WRITE,
@@ -19,8 +18,9 @@ use windows_sys::{
     },
 };
 
+#[cfg(test)]
 pub(crate) fn writer(path: &Path) -> io::Result<File> {
-    writer_with_access(path, GENERIC_WRITE)
+    writer_with_access(path, windows_sys::Win32::Foundation::GENERIC_WRITE)
 }
 
 pub(crate) fn writer_with_access(path: &Path, access: u32) -> io::Result<File> {
@@ -140,138 +140,90 @@ mod tests {
         windows::{handle, test_actor::RestrictedToken},
     };
     use windows_sys::Win32::{
-        Foundation::{GENERIC_READ, GENERIC_WRITE},
+        Foundation::{ERROR_DIR_NOT_EMPTY, GENERIC_READ, GENERIC_WRITE},
         Storage::FileSystem::{FILE_ATTRIBUTE_REPARSE_POINT, FILE_WRITE_ATTRIBUTES},
     };
     #[test]
-    fn attribute_only_writer_must_not_convert_strictly_pinned_directory() {
-        let _actor = RestrictedToken::enter().unwrap();
+    fn platform_assumption_nonempty_directory_cannot_become_junction() {
+        let actor = RestrictedToken::enter().unwrap();
         let root = tempfile::tempdir().unwrap();
         let context = PathContext::capture(&std::env::current_dir().unwrap()).unwrap();
         let target = root.path().join("target");
-        let baseline = root.path().join("baseline");
-        let pinned = root.path().join("pinned");
-        for path in [&target, &baseline, &pinned] {
+        let empty = root.path().join("empty");
+        let nonempty = root.path().join("nonempty");
+        for path in [&target, &empty, &nonempty] {
             std::fs::create_dir(path).unwrap();
         }
-        std::fs::write(
-            target.join("sentinel"),
-            b"owned attribute-only reparse target",
-        )
-        .unwrap();
-        assert_eq!(std::fs::read_dir(&baseline).unwrap().count(), 0);
-        let prepared = MountPointBuffer::prepare(&target)
-            .expect("Owned reparse buffer preparation failed before either side");
-        let base_operation = context.resolve(&baseline).unwrap();
-        let share_all = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+        std::fs::write(target.join("sentinel"), b"owned platform-fact target").unwrap();
+        let prepared = MountPointBuffer::prepare(&target).unwrap();
         let flags = FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT;
-        let view = handle::open(
-            &base_operation,
-            windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES,
-            share_all,
-            flags,
-        )
-        .unwrap();
-        let before = handle::identity(&view).unwrap();
-        drop(view);
-        let writer = writer_with_access(&baseline, FILE_WRITE_ATTRIBUTES)
-            .expect("Same restricted actor's attribute-only baseline open failed");
-        prepared.apply(&writer).expect("Same restricted actor's attribute-only baseline FSCTL failed; this proves no exclusion");
-        let view = handle::open(
-            &base_operation,
-            windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES,
-            share_all,
-            flags,
-        )
-        .unwrap();
-        let observed = handle::attributes(&view).unwrap();
-        assert_ne!(observed.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT, 0);
-        assert_eq!(
-            observed.ReparseTag,
-            windows_sys::Win32::System::SystemServices::IO_REPARSE_TAG_MOUNT_POINT
-        );
-        assert_eq!(handle::identity(&view).unwrap(), before);
-        assert_eq!(
-            std::fs::read(baseline.join("sentinel")).unwrap(),
-            b"owned attribute-only reparse target"
-        );
-        drop(view);
-        drop(writer);
-        std::fs::remove_dir(&baseline).unwrap();
-        println!(
-            "Baseline: restricted actor attribute-only FSCTL created real mount point, ID unchanged, target sentinel read"
-        );
-        assert_eq!(std::fs::read_dir(&pinned).unwrap().count(), 0);
-        let operation = context.resolve(&pinned).unwrap();
+        let sharing = FILE_SHARE_READ | FILE_SHARE_WRITE;
         let pin = handle::open(
-            &operation,
+            &context.resolve(&empty).unwrap(),
             GENERIC_READ | GENERIC_WRITE,
-            FILE_SHARE_READ,
-            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            sharing,
+            flags,
         )
         .unwrap();
         let original = handle::identity(&pin).unwrap();
-        let mut unexpected = None;
-        let converted = match writer_with_access(&pinned, FILE_WRITE_ATTRIBUTES) {
-            Ok(writer) => {
-                let result = prepared.apply(&writer);
-                println!("Pinned attribute-only open succeeded; actual FSCTL result={result:?}");
-                match result {
-                    Ok(()) => true,
-                    Err(error) => {
-                        if !matches!(error.raw_os_error(), Some(5 | 32)) {
-                            unexpected = Some(("FSCTL", error));
-                        }
-                        false
-                    }
-                }
-            }
-            Err(error) => {
-                println!("Pinned attribute-only open refused: {error}");
-                if !matches!(error.raw_os_error(), Some(5 | 32)) {
-                    unexpected = Some(("open", error));
-                }
-                false
-            }
-        };
-        let actual = handle::attributes(&pin).unwrap();
-        let current = handle::identity(&pin).unwrap();
-        let entry = handle::open(
-            &operation,
-            windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES,
-            share_all,
+        let attributes = writer_with_access(&empty, FILE_WRITE_ATTRIBUTES).unwrap();
+        prepared
+            .apply(&attributes)
+            .expect("Attribute-only conversion of the empty control must actually succeed");
+        assert_eq!(handle::identity(&pin).unwrap(), original);
+        assert_ne!(
+            handle::attributes(&pin).unwrap().FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT,
+            0
+        );
+        assert_eq!(
+            std::fs::read(empty.join("sentinel")).unwrap(),
+            b"owned platform-fact target"
+        );
+        handle::close(attributes).unwrap();
+        handle::close(pin).unwrap();
+        std::fs::remove_dir(&empty).unwrap();
+        let pin = handle::open(
+            &context.resolve(&nonempty).unwrap(),
+            GENERIC_READ | GENERIC_WRITE,
+            sharing,
             flags,
         )
         .unwrap();
-        assert_eq!(handle::identity(&entry).unwrap(), original);
-        drop(entry);
-        println!(
-            "Pinned native identity before={original:?} after={current:?}; attributes={:#x} tag={:#x}",
-            actual.FileAttributes, actual.ReparseTag
+        let original = handle::identity(&pin).unwrap();
+        let guard = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .share_mode(0)
+            .open(nonempty.join("occupant"))
+            .unwrap();
+        assert_eq!(
+            guard.metadata().unwrap().len(),
+            0,
+            "The relied-on fact must cover a ZERO-byte entry"
         );
-        assert_eq!(current, original);
-        let redirected = if converted {
-            Some(std::fs::read(pinned.join("sentinel")).unwrap())
-        } else {
-            None
-        };
-        drop(pin);
-        std::fs::remove_dir(&pinned).unwrap();
+        let attributes = writer_with_access(&nonempty, FILE_WRITE_ATTRIBUTES).unwrap();
+        let refusal = prepared
+            .apply(&attributes)
+            .expect_err("The occupied directory must refuse conversion");
+        assert_eq!(
+            refusal.raw_os_error(),
+            Some(ERROR_DIR_NOT_EMPTY as i32),
+            "An unrelated setup/permission error is not proof: {refusal}"
+        );
+        assert_eq!(handle::identity(&pin).unwrap(), original);
+        assert_eq!(
+            handle::attributes(&pin).unwrap().FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT,
+            0
+        );
         assert_eq!(
             std::fs::read(target.join("sentinel")).unwrap(),
-            b"owned attribute-only reparse target"
+            b"owned platform-fact target"
         );
+        handle::close(attributes).unwrap();
+        handle::close(guard).unwrap();
+        handle::close(pin).unwrap();
+        drop(actor);
         root.close().unwrap();
-        if let Some(bytes) = redirected {
-            assert_eq!(bytes, b"owned attribute-only reparse target");
-        }
-        assert!(
-            unexpected.is_none(),
-            "Unexpected native result does not prove exclusion: {unexpected:?}"
-        );
-        assert!(
-            !converted && actual.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT == 0,
-            "SAFETY GATE FAILED: attribute-only actor converted a strict pinned directory; pathname creation is not confined"
-        );
     }
 }

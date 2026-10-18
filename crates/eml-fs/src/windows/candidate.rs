@@ -100,11 +100,15 @@ impl WritableDirectory {
         };
         let mut operation = StageOperation::Write;
         let mut sync = None;
+        let mut written = 0u64;
         let result = (|| -> io::Result<()> {
             for chunk in bytes.chunks(64 * 1024) {
                 let mut remaining = chunk;
                 while !remaining.is_empty() {
                     checkpoint()?;
+                    #[cfg(any(test, feature = "native-fixtures"))]
+                    owned.observe(super::creation_observer::CreationBoundary::BeforeWrite);
+                    owned.validate_file(identity, written)?;
                     match owned.file.write(remaining) {
                         Ok(0) => {
                             return Err(io::Error::new(
@@ -112,7 +116,12 @@ impl WritableDirectory {
                                 "Candidate write made no progress",
                             ));
                         }
-                        Ok(count) => remaining = &remaining[count..],
+                        Ok(count) => {
+                            written += count as u64;
+                            remaining = &remaining[count..];
+                            #[cfg(any(test, feature = "native-fixtures"))]
+                            owned.observe(super::creation_observer::CreationBoundary::AfterWrite);
+                        }
                         Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                         Err(error) => return Err(error),
                     }
@@ -230,7 +239,6 @@ mod tests {
     use super::*;
     use crate::{BoundDirectory, NtStatusError, SyncMethod};
     use std::{cell::Cell, os::windows::fs::FileExt};
-    use windows_sys::Win32::Foundation::STATUS_OBJECT_NAME_COLLISION;
 
     fn writer(root: &std::path::Path) -> (BoundDirectory, WritableDirectory) {
         let read = BoundDirectory::open(&operation(root)).unwrap();
@@ -398,18 +406,8 @@ mod tests {
         assert_eq!(failure.operation, StageOperation::Create);
         assert_eq!(failure.cleanup.state, CleanupState::NotNeeded);
         assert_eq!(
-            failure
-                .error
-                .get_ref()
-                .unwrap()
-                .downcast_ref::<NtStatusError>()
-                .unwrap()
-                .nt_status(),
-            STATUS_OBJECT_NAME_COLLISION
-        );
-        assert!(
-            failure.error.to_string().contains("NTSTATUS"),
-            "retain the actual native collision"
+            failure.error.raw_os_error(),
+            Some(windows_sys::Win32::Foundation::ERROR_FILE_EXISTS as i32)
         );
         assert_eq!(
             std::fs::read(fixture.path().join(&marker)).unwrap(),

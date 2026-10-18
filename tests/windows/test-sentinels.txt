@@ -1,0 +1,8 @@
+# Required native boundaries; test additions do not change this policy list.
+windows::file::tests::native_file_identity_hardlinks_and_excluded_writer_are_observed
+windows::root::tests::native_root_pins_ordinary_ancestors_and_supports_endpoint_storage_and_flush
+windows::publication::tests::native_no_replace_edge_keeps_complete_same_object_and_release_retains_final_file
+windows::test_reparse::tests::platform_assumption_nonempty_directory_cannot_become_junction
+redirected_destination_receives_no_bytes
+empty_tagged_candidate_is_refused_before_message_bytes
+mirror_replacement_and_cancellation_preserve_unowned_entries

@@ -262,6 +262,7 @@ pub(crate) fn staged_cli(
     }
     #[cfg(not(unix))]
     {
+        let _ = (verified, output);
         Err("Native no-replace archive publication remains unavailable on Windows".into())
     }
 }

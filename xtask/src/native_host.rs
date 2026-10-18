@@ -15,7 +15,7 @@ pub(crate) fn inspect(root: &Path, target: &str, os: &str, architecture: &str) -
     #[cfg(not(unix))]
     {
         let _ = (root, target);
-        return Err("Windows archive verification awaits its owned process/private extraction and final-link boundaries".into());
+        Err("Windows archive verification awaits its owned process/private extraction and final-link boundaries".into())
     }
     #[cfg(unix)]
     {

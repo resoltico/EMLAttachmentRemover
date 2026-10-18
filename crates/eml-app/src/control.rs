@@ -97,6 +97,7 @@ impl WorkerControl {
         self.state.lock().map_err(|_| ControlError)?.reaped = true;
         Ok(())
     }
+    #[cfg(target_os = "macos")]
     pub(crate) fn abort_transport(&self) -> Result<(), ControlError> {
         self.state.lock().map_err(|_| ControlError)?.aborted = true;
         Ok(())

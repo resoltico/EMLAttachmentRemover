@@ -75,7 +75,7 @@ fn open(parent: &File, name: &OsStr, kind: Kind) -> io::Result<File> {
             ANCESTOR_PIN_ACCESS,
             FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE,
             OBJ_DONT_REPARSE,
-            FILE_SHARE_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
         ),
         Kind::WritableDirectory => (
             FILE_GENERIC_WRITE
@@ -85,7 +85,7 @@ fn open(parent: &File, name: &OsStr, kind: Kind) -> io::Result<File> {
                 | SYNCHRONIZE,
             FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE,
             OBJ_DONT_REPARSE,
-            FILE_SHARE_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
         ),
     };
     let attributes = OBJECT_ATTRIBUTES {

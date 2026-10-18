@@ -7,7 +7,7 @@ use std::{
     path::{Component, Path, PathBuf, Prefix},
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
 
 /// Resolved ancestry binding stopped or encountered a genuine native failure.
@@ -51,7 +51,7 @@ pub struct PinnedRoot {
 }
 impl PinnedRoot {
     /// Bind an already resolved absolute extended DOS/UNC root top-down. Every
-    /// ancestor is metadata/traverse-only, no-follow and shareREAD; the endpoint
+    /// ancestor is metadata/traverse-only, no-follow, read/write sharing and no delete sharing; the endpoint
     /// opens directly with its fixed writable profile and earlier full identity.
     ///
     /// The validated native representation bounds the chain, including expansion
@@ -77,7 +77,7 @@ impl PinnedRoot {
         let file = handle::open(
             &root,
             child::ANCESTOR_PIN_ACCESS,
-            FILE_SHARE_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
         )?;
         let identity = handle::directory_identity(&file)?;
@@ -181,13 +181,13 @@ mod tests {
     };
     use std::{fs, os::windows::ffi::OsStrExt};
     use windows_sys::Win32::{
-        Foundation::GENERIC_WRITE,
+        Storage::FileSystem::DELETE,
         Storage::FileSystem::{FILE_SHARE_DELETE, FILE_SHARE_WRITE},
     };
-    fn write_access(path: &Path) -> io::Result<std::fs::File> {
+    fn delete_access(path: &Path) -> io::Result<std::fs::File> {
         handle::open(
             path,
-            GENERIC_WRITE,
+            DELETE,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
         )
@@ -235,14 +235,14 @@ mod tests {
         let actor = RestrictedToken::enter().unwrap();
         let read = BoundDirectory::open(&operation(&selected)).unwrap();
         let upper_operand = operation(&upper);
-        handle::close(write_access(&upper_operand).unwrap()).unwrap();
+        handle::close(delete_access(&upper_operand).unwrap()).unwrap();
         let bound =
             PinnedRoot::bind_resolved(&read.resolved_path().unwrap(), read.identity(), || false)
                 .unwrap();
         assert_eq!(bound.directory().identity(), read.identity());
         assert!(!bound.ancestors.is_empty());
         bound.check_held(|| false).unwrap();
-        let denied = write_access(&upper_operand).unwrap_err();
+        let denied = delete_access(&upper_operand).unwrap_err();
         assert_eq!(denied.raw_os_error(), Some(32));
         let receipt = bound.directory().sync_namespace();
         assert_eq!(receipt.state, crate::SyncState::Succeeded, "{receipt:?}");
@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(candidate.cleanup().state, crate::CleanupState::Complete);
         assert_eq!(fs::read_dir(&selected).unwrap().count(), 0);
         drop(bound);
-        handle::close(write_access(&upper_operand).unwrap()).unwrap();
+        handle::close(delete_access(&upper_operand).unwrap()).unwrap();
         drop(read);
         drop(actor);
         fixture.close().unwrap();
@@ -337,7 +337,7 @@ mod tests {
             panic!("Wrong root identity must be refused");
         };
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-        handle::close(write_access(&operation(&upper)).unwrap()).unwrap();
+        handle::close(delete_access(&operation(&upper)).unwrap()).unwrap();
         assert_eq!(fs::read_dir(&selected).unwrap().count(), 0);
         drop(read);
         drop(other);
@@ -357,12 +357,12 @@ mod tests {
             PinnedRoot::bind_resolved(&resolved, read.identity(), || true),
             Err(RootBindingError::Interrupted)
         ));
-        handle::close(write_access(&operation(&upper)).unwrap()).unwrap();
+        handle::close(delete_access(&operation(&upper)).unwrap()).unwrap();
         let upper_operand = operation(&upper);
         let mut observed_pin = false;
         let stopped =
             PinnedRoot::bind_resolved(&resolved, read.identity(), || {
-                match write_access(&upper_operand) {
+                match delete_access(&upper_operand) {
                     Ok(file) => {
                         handle::close(file).unwrap();
                         false
@@ -376,7 +376,7 @@ mod tests {
             });
         assert!(matches!(stopped, Err(RootBindingError::Interrupted)));
         assert!(observed_pin);
-        handle::close(write_access(&operation(&upper)).unwrap()).unwrap();
+        handle::close(delete_access(&operation(&upper)).unwrap()).unwrap();
         assert_eq!(fs::read_dir(&selected).unwrap().count(), 0);
         drop(read);
         drop(actor);

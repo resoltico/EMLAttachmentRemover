@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+native-fixtures = ["windows-sys/Win32_System_Ioctl", "windows-sys/Win32_System_SystemServices", "windows-sys/Win32_Security_Authorization"]
+
 [dependencies]
 getrandom = "0.4.3"
 

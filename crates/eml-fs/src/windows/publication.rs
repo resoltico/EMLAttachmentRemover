@@ -1,18 +1,15 @@
 //! One physical no-replace edge; final-copy/address qualification is separate.
-use super::{path::validate_component, status, writable::Creation};
+use super::{containment, path::validate_component, writable::Creation};
 use crate::{CleanupReceipt, CleanupState, Identity, PublicationState, SyncReceipt};
 use std::{
     ffi::{OsStr, OsString},
     io,
     mem::{offset_of, size_of},
-    os::windows::{ffi::OsStrExt, io::AsRawHandle},
+    os::windows::io::AsRawHandle,
     ptr,
 };
-use windows_sys::{
-    Wdk::Storage::FileSystem::{
-        FILE_RENAME_INFORMATION, FileRenameInformation, NtSetInformationFile,
-    },
-    Win32::{Foundation::STATUS_OBJECT_NAME_COLLISION, System::IO::IO_STATUS_BLOCK},
+use windows_sys::Win32::Storage::FileSystem::{
+    FILE_RENAME_INFO, FileRenameInfo, SetFileInformationByHandle,
 };
 
 /// Consumed staging owner after one publication attempt. It cannot publish again.
@@ -45,7 +42,7 @@ impl PublishAttempt {
     pub fn state(&self) -> PublicationState {
         self.candidate.state()
     }
-    /// Original pre-edge or native rename cause, including raw NTSTATUS.
+    /// Original pre-edge or native rename cause, including the actual Win32 cause.
     pub fn error(&self) -> Option<&io::Error> {
         self.error.as_ref()
     }
@@ -73,28 +70,25 @@ impl PublicationCandidate {
         let preparation = (|| {
             candidate.owned.validate_file(identity, length)?;
             let maximum = candidate.owned.component_limit()?;
-            RenameBuffer::new(name, maximum)
+            RenameBuffer::new(name, maximum, &candidate.owned.parent_path()?)
         })();
         let error = match preparation {
             Err(error) => Some(error),
             Ok(mut buffer) => {
-                let mut iosb = IO_STATUS_BLOCK::default();
-                // SAFETY: generated aligned storage contains one validated basename,
-                // NULL RootDirectory and zero replace flags. The same exclusive,
-                // DELETE/SYNCHRONIZE-capable synchronous file and held parent remain
-                // alive through this always-synchronous SetInformationFile operation.
-                // Returned NTSTATUS is authoritative; the IOSB is not a success oracle.
-                let result = unsafe {
-                    NtSetInformationFile(
+                // SAFETY: generated aligned buffer holds an absolute validated
+                // native path, null RootDirectory and replace=false. The exact
+                // exclusive DELETE-capable candidate remains held throughout.
+                let succeeded = unsafe {
+                    SetFileInformationByHandle(
                         candidate.owned.file.as_raw_handle(),
-                        &mut iosb,
+                        FileRenameInfo,
                         buffer.storage.as_mut_ptr().cast(),
                         buffer.bytes,
-                        FileRenameInformation,
                     )
                 };
-                candidate.state = effect(result);
-                (result < 0).then(|| status::error(result))
+                let error = (succeeded == 0).then(io::Error::last_os_error);
+                candidate.state = effect(error.as_ref());
+                error
             }
         };
         PublishAttempt { candidate, error }
@@ -142,13 +136,11 @@ impl PublicationCandidate {
         (self.state, cleanup)
     }
 }
-fn effect(status: i32) -> PublicationState {
-    if status >= 0 {
-        PublicationState::Published
-    } else if status == STATUS_OBJECT_NAME_COLLISION {
-        PublicationState::NotPublished
-    } else {
-        PublicationState::Unknown
+fn effect(error: Option<&io::Error>) -> PublicationState {
+    match error {
+        None => PublicationState::Published,
+        Some(error) if crate::name_collision(error) => PublicationState::NotPublished,
+        Some(_) => PublicationState::Unknown,
     }
 }
 struct RenameBuffer {
@@ -156,36 +148,38 @@ struct RenameBuffer {
     bytes: u32,
 }
 impl RenameBuffer {
-    fn new(name: &OsStr, maximum: usize) -> io::Result<Self> {
-        let units = name.encode_wide().count();
+    fn new(name: &OsStr, maximum: usize, parent: &[u16]) -> io::Result<Self> {
+        validate_component(name, maximum)?;
+        let full_path = containment::append(parent, name)?;
+        let units = full_path.len();
         let overflow =
             || io::Error::new(io::ErrorKind::InvalidInput, "Rename component is too long");
         let name_bytes = units.checked_mul(2).ok_or_else(overflow)?;
         let name_bytes = u32::try_from(name_bytes).map_err(|_| overflow())?;
-        validate_component(name, maximum)?;
-        let bytes = size_of::<FILE_RENAME_INFORMATION>()
+        let bytes = offset_of!(FILE_RENAME_INFO, FileName)
             .checked_add(name_bytes as usize)
             .and_then(|value| value.checked_add(2))
             .ok_or_else(overflow)?;
-        let bytes = u32::try_from(bytes).map_err(|_| overflow())?;
+        let bytes =
+            u32::try_from(bytes.max(size_of::<FILE_RENAME_INFO>())).map_err(|_| overflow())?;
         let words = (bytes as usize).div_ceil(size_of::<usize>());
         let mut storage = Vec::<usize>::new();
         storage.try_reserve_exact(words).map_err(io::Error::other)?;
         storage.resize(words, 0);
-        let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFORMATION>();
+        let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFO>();
         // SAFETY: usize alignment meets the generated structure on both CPUs;
         // checked storage covers its size, full UTF-16 tail and zero padding.
-        // All fields use the generated ABI; basename has no terminator/separator.
+        // All fields use the generated ABI; the complete absolute native tail is terminated by zero padding.
         unsafe {
-            ptr::addr_of_mut!((*info).Anonymous.Flags).write(0);
+            ptr::addr_of_mut!((*info).Anonymous.ReplaceIfExists).write(false);
             ptr::addr_of_mut!((*info).RootDirectory).write(ptr::null_mut());
             ptr::addr_of_mut!((*info).FileNameLength).write(name_bytes);
             let tail = storage
                 .as_mut_ptr()
                 .cast::<u8>()
-                .add(offset_of!(FILE_RENAME_INFORMATION, FileName))
+                .add(offset_of!(FILE_RENAME_INFO, FileName))
                 .cast::<u16>();
-            for (index, unit) in name.encode_wide().enumerate() {
+            for (index, unit) in full_path.into_iter().enumerate() {
                 tail.add(index).write(unit);
             }
         }
@@ -200,7 +194,7 @@ mod tests {
         test_fixture::{directory, operation},
     };
     use super::*;
-    use crate::{BoundDirectory, NtStatusError, SyncState, WritableDirectory};
+    use crate::{BoundDirectory, SyncState, WritableDirectory};
     use std::os::windows::fs::FileExt;
 
     fn writer(path: &std::path::Path) -> (BoundDirectory, WritableDirectory) {
@@ -309,15 +303,8 @@ mod tests {
             .publish(OsStr::new("winner.eml"));
         assert_eq!(attempt.state(), PublicationState::NotPublished);
         assert_eq!(
-            attempt
-                .error()
-                .unwrap()
-                .get_ref()
-                .unwrap()
-                .downcast_ref::<NtStatusError>()
-                .unwrap()
-                .nt_status(),
-            STATUS_OBJECT_NAME_COLLISION
+            attempt.error().unwrap().raw_os_error(),
+            Some(windows_sys::Win32::Foundation::ERROR_ALREADY_EXISTS as i32)
         );
         let (loser, error) = attempt.into_parts();
         assert!(error.is_some());
@@ -382,14 +369,20 @@ mod tests {
 
     #[test]
     fn scripted_unknown_effect_releases_real_owned_storage_without_disposition_or_residual_guess() {
-        use windows_sys::Win32::Foundation::STATUS_ACCESS_DENIED;
-        assert_eq!(effect(0), PublicationState::Published);
-        assert_eq!(effect(1), PublicationState::Published);
+        use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS};
+        assert_eq!(effect(None), PublicationState::Published);
         assert_eq!(
-            effect(STATUS_OBJECT_NAME_COLLISION),
+            effect(Some(&io::Error::from_raw_os_error(
+                ERROR_ALREADY_EXISTS as i32
+            ))),
             PublicationState::NotPublished
         );
-        assert_eq!(effect(STATUS_ACCESS_DENIED), PublicationState::Unknown);
+        assert_eq!(
+            effect(Some(&io::Error::from_raw_os_error(
+                ERROR_ACCESS_DENIED as i32
+            ))),
+            PublicationState::Unknown
+        );
         let fixture = directory();
         let actor = RestrictedToken::enter().unwrap();
         let (read, write) = writer(fixture.path());
@@ -399,7 +392,9 @@ mod tests {
         let (mut candidate, _) = ready.publish(OsStr::new("")).into_parts();
         // Mapping/control only: no claim that a native rename returned an
         // ambiguous status. Real owned storage must survive the Unknown branch.
-        candidate.state = effect(STATUS_ACCESS_DENIED);
+        candidate.state = effect(Some(&io::Error::from_raw_os_error(
+            ERROR_ACCESS_DENIED as i32,
+        )));
         let (effect, cleanup) = candidate.cleanup();
         assert_eq!(effect, PublicationState::Unknown);
         assert_eq!(cleanup.state, CleanupState::Unknown);

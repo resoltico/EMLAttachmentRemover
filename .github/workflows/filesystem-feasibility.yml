@@ -26,7 +26,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     env:
-      CREATION_GATE_TEST: windows::test_reparse::tests::attribute_only_writer_must_not_convert_strictly_pinned_directory
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
+      EML_WINDOWS_EVIDENCE_DIR: ${{ github.workspace }}/target/windows-creation-evidence
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.distribution.outputs.matrix) }}
@@ -54,123 +55,42 @@ jobs:
           New-Item -ItemType Directory -Force $scratch | Out-Null
           'TEMP=' + $scratch >> $env:GITHUB_ENV
           'TMP=' + $scratch >> $env:GITHUB_ENV
-      - name: Native core request resource admission
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
+      - name: Required Windows test discovery and native workspace execution
         run: |
-          rustc +1.99.0-${{ matrix.target }} -vV
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $requestOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --test request --target ${{ matrix.target }} -- --color never 2>&1
-          $requestExit = $LASTEXITCODE
-          $requestOutput | ForEach-Object { Write-Output $_ }
-          if ($requestExit -ne 0) { exit $requestExit }
-          if (@($requestOutput | Where-Object { $_.ToString() -match '^running [1-9][0-9]* tests?$' }).Count -ne 1) { throw 'Expected nonempty native request tests' }
-          if (@($requestOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 1) { throw 'Request tests require nonzero passes and zero failures, ignores or filters' }
-      - name: Native core diagnostic vocabulary
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
-        run: |
-          $diagnosticOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --test diagnostic --target ${{ matrix.target }} -- --color never 2>&1
-          $diagnosticExit = $LASTEXITCODE
-          $diagnosticOutput | ForEach-Object { Write-Output $_ }
-          if ($diagnosticExit -ne 0) { exit $diagnosticExit }
-          if (@($diagnosticOutput | Where-Object { $_.ToString() -match '^running [1-9][0-9]* tests?$' }).Count -ne 1) { throw 'Expected nonempty native diagnostic tests' }
-          if (@($diagnosticOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 1) { throw 'Diagnostic tests require nonzero passes and zero failures, ignores or filters' }
-      - name: Native protocol path transport
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
-        run: |
-          $transportOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-protocol --package remove-eml-attachments --lib --bins --tests --target ${{ matrix.target }} -- --color never 2>&1
-          $transportExit = $LASTEXITCODE
-          $transportOutput | ForEach-Object { Write-Output $_ }
-          if ($transportExit -ne 0) { exit $transportExit }
-          if (@($transportOutput | Where-Object { $_.ToString() -match '^running [1-9][0-9]* tests?$' }).Count -ne 7) { throw 'Expected nonempty native JSON-unit, executable-unit, process, event, request, record and path suites' }
-          if (@($transportOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 8) { throw 'Protocol and executable suites require positive passes and zero failures, ignores or filters' }
-      - name: Native collection, destination planning and held-source preparation
-        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
-        run: |
-          $sourceOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --lib --test collection --test destination --test dry_run --test execution --test existing --test source --target ${{ matrix.target }} -- --color never 2>&1
-          $sourceExit = $LASTEXITCODE
-          $sourceOutput | ForEach-Object { Write-Output $_ }
-          if ($sourceExit -ne 0) { exit $sourceExit }
-          if (@($sourceOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 7) { throw 'Expected positive unfiltered core unit, collection, destination, dry-run, execution, existing comparison and source integration suites' }
-      - name: Rust desktop model and direct-core worker integration
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
-        run: |
-          $desktopOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-app --package eml-worker --target ${{ matrix.target }} -- --color never 2>&1
-          $desktopExit = $LASTEXITCODE
-          $desktopOutput | ForEach-Object { Write-Output $_ }
-          if ($desktopExit -ne 0) { exit $desktopExit }
-          if (@($desktopOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 6) { throw 'Expected positive desktop admission, control, framing, reports, diagnostic cancellation and actual worker process suites' }
+          $PSNativeCommandUseErrorActionPreference = $false
+          $arguments = @('test', '--workspace', '--locked', '--features', 'eml-core/native-fixtures', '--target', '${{ matrix.target }}')
+          $listing = & cargo +1.99.0-${{ matrix.target }} @arguments -- --list --color never 2>&1
+          $listingExit = $LASTEXITCODE
+          $listing | ForEach-Object { Write-Output $_ }
+          if ($listingExit -ne 0) { exit $listingExit }
+          $listing | Set-Content -Encoding utf8 target/native-feasibility/tests.list
+          $ignored = & cargo +1.99.0-${{ matrix.target }} @arguments -- --list --ignored --color never 2>&1
+          $ignoredExit = $LASTEXITCODE
+          $ignored | ForEach-Object { Write-Output $_ }
+          if ($ignoredExit -ne 0) { exit $ignoredExit }
+          $ignored | Set-Content -Encoding utf8 target/native-feasibility/tests-ignored.list
+          & ./tests/windows/assert-test-sentinels.ps1 -Listing target/native-feasibility/tests.list -IgnoredListing target/native-feasibility/tests-ignored.list
+          & cargo +1.99.0-${{ matrix.target }} @arguments -- --color never
+          $testExit = $LASTEXITCODE
+          if ($testExit -ne 0) { exit $testExit }
       - name: Native distribution planner
-        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
         run: |
           cargo +1.99.0-${{ matrix.target }} run --locked --package xtask --bin xtask --target ${{ matrix.target }} -- distribution
           exit $LASTEXITCODE
-      - name: Native repository tool unit tests
-        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
-        run: |
-          $toolOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package xtask --bin xtask --target ${{ matrix.target }} -- --color never 2>&1
-          $toolExit = $LASTEXITCODE
-          $toolOutput | ForEach-Object { Write-Output $_ }
-          if ($toolExit -ne 0) { exit $toolExit }
-          if (@($toolOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 1) { throw 'Repository tool tests require positive passes and zero failures, ignores or filters' }
-      - name: Native repository archive library tests
-        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
-        run: |
-          $archiveOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package xtask --lib --target ${{ matrix.target }} -- --color never 2>&1
-          $archiveExit = $LASTEXITCODE
-          $archiveOutput | ForEach-Object { Write-Output $_ }
-          if ($archiveExit -ne 0) { exit $archiveExit }
-          if (@($archiveOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;' }).Count -ne 1) { throw 'Archive library tests require positive passes and zero failures, ignores or filters' }
-      - name: Native filesystem primitive
-        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
+      - name: Standalone native filesystem primitive
         env:
           EXPECTED_TARGET: ${{ matrix.target }}
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
         run: |
           rustc +1.99.0-${{ matrix.target }} -vV
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +1.99.0-${{ matrix.target }} run --locked --manifest-path tests/native-filesystem/Cargo.toml --target ${{ matrix.target }}
           exit $LASTEXITCODE
-      - name: Native core naming
-        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
-        run: |
-          cargo +1.99.0-${{ matrix.target }} test --locked --package eml-core --lib naming --target ${{ matrix.target }}
-          exit $LASTEXITCODE
-      - name: Native file metadata and path tests
-        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
-        run: |
-          $libraryOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-fs --lib --target ${{ matrix.target }} -- --skip $env:CREATION_GATE_TEST --nocapture --color never 2>&1
-          $libraryExit = $LASTEXITCODE
-          $libraryOutput | ForEach-Object { Write-Output $_ }
-          if ($libraryExit -ne 0) { exit $libraryExit }
-          if (@($libraryOutput | Where-Object { $_.ToString() -match '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored; 0 measured; 1 filtered out;' }).Count -ne 1) { throw 'Expected positive non-gate library tests with only the separately executed creation gate filtered' }
-      - name: Required bound-destination creation gate
-        if: ${{ !cancelled() && steps.native_toolchain.outcome == 'success' && steps.filesystem_scratch.outcome == 'success' }}
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target/native-feasibility
-        run: |
-          $probeName = $env:CREATION_GATE_TEST
-          $testListing = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-fs --lib --target ${{ matrix.target }} -- --list
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (@($testListing | Where-Object { $_ -eq ($probeName + ': test') }).Count -ne 1) { throw 'Expected exactly one discovered attribute-only safety test' }
-          $probeOutput = cargo +1.99.0-${{ matrix.target }} test --locked --package eml-fs --lib --target ${{ matrix.target }} -- --exact $probeName --nocapture --color never 2>&1
-          $probeExit = $LASTEXITCODE
-          $probeOutput | ForEach-Object { Write-Output $_ }
-          if ($probeExit -ne 0) { exit $probeExit }
-          if (@($probeOutput | Where-Object { $_.ToString().Trim() -eq 'running 1 test' }).Count -ne 1) { throw 'Expected exactly one executed attribute-only safety test' }
-          if (@($probeOutput | Where-Object { $_.ToString() -match '^test result: ok\. 1 passed; 0 failed; 0 ignored;' }).Count -ne 1) { throw 'Attribute-only safety test did not pass with zero ignored cases' }
+      - name: Retain native Windows boundary observations
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-boundary-${{ github.sha }}-${{ matrix.target }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/windows-creation-evidence/*.json
+            target/native-feasibility/*.list
+          if-no-files-found: error
