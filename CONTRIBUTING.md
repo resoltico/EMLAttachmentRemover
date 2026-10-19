@@ -1,9 +1,9 @@
 # Contributing
 
-Use a separate checkout and read [AGENTS.md](AGENTS.md). The v6 implementation is
-Unreleased and its complete acceptance gates remain open; consult the
-[implementation evidence](docs/v6-implementation-evidence.md) before interpreting
-a local pass as native platform qualification.
+Use a separate checkout and read [AGENTS.md](AGENTS.md). Version6 is Unreleased.
+Consult the source-bound [implementation evidence](docs/v6-implementation-evidence.md)
+before interpreting a local pass as native platform qualification. Acceptance
+requires the complete native, archive and GUI gates for the delivered source.
 
 ## Start with Rust
 
@@ -66,7 +66,8 @@ real different-UID controls, complete legal generation, native archives and
 matching macOS15 desktop qualification and macOS26 Intel picker compatibility.
 `ci-ok` always runs and rejects failed, missing and
 unexpectedly skipped jobs; only non-PR events omit merge integration/freshness.
-Full product acceptance remains separately open as recorded above. Icon diagnostics
+Full product acceptance requires every registered native role and its matching
+archive/desktop consumers. Icon diagnostics
 are manual only. Partial reruns
 that lack the exact current producer artifact fail; rerun the complete workflow.
 Actionlint uses its exact checksum-pinned upstream prebuilt because install-action

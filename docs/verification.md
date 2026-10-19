@@ -1,4 +1,11 @@
-# Verification in progress
+# Verification
+
+Acceptance requires the registered native, archive and GUI checks at the delivered
+source, plus current merge integration. Commit/run-specific paragraphs below are
+historical checkpoints, including earlier implementations and failed assumptions;
+they do not qualify another source. Consult the
+[implementation evidence](v6-implementation-evidence.md) and the PR's exact-source
+CI records for passed, failed and unrun gates.
 
 ## Native picker preference observations
 

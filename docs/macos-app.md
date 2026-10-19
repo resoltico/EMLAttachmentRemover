@@ -72,15 +72,10 @@ confirmed bounded Quit, exact Finder reveal and export/failure handling.
 The bundle declares both EML messages and folders for native URL delivery;
 both declarations retain `LSHandlerRank=None`. It does not set default file or
 folder associations. The separate Services declaration accepts the same types.
-Local
-development-window observations cover message selection, a real core-backed run
-with independent golden/original checks, explicit report save, metadata and
-technical disclosure, supplied SVG artwork, and idle Quit confirmation/cancel.
-Those observations do not qualify pinned/native2 or the remaining system/GUI
-paths. `cargo xtask build-macos-sources` currently
-retains native Rust release executable/profile/ad-hoc-signature evidence and
-succeeds when those requested outputs validate. Complete bundle/legal/archive/GUI
-qualification remains a separate open gate.
+`cargo xtask build-macos-sources` retains native Rust executable/profile and
+ad-hoc-signature evidence. Complete bundle/legal/archive/GUI acceptance requires
+the builder and separate consumers below; a source build or startup-window
+observation cannot qualify those integrations.
 
 The complete builder is `cargo xtask build-macos-app --icons ICON_PRODUCER_DIR
 --out NEW_OUTPUT_DIR`. It consumes same-source validated icon and component legal

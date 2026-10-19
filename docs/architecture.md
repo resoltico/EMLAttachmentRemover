@@ -56,9 +56,9 @@ This is packaging publication, separate from the product's message-copy edge.
 The native target table and tool pins have single authorities under xtask/;
 Cargo metadata supplies the workspace version. Generated target legal trees have
 reviewed source bindings and deterministic freshness checks. Cargo notices do not
-replace native runtime input review. Windows final-link provenance and private
-archive extraction/process supervision have passing native checkpoints; complete
-macOS app/archive/GUI and final-head product qualification remain open. See the
+replace native runtime input review. Windows final-link provenance, private
+archive extraction/process supervision and macOS app/GUI behavior require their
+distinct source-bound native observations. See the
 [implementation evidence](v6-implementation-evidence.md) for identities and limits.
 
 Other-platform GUIs can call the reusable library contracts when an actual

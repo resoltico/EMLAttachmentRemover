@@ -1,7 +1,10 @@
 # v6 implementation evidence
 
-Implementation remains in progress. No complete v6 product/archive qualification
-or release acceptance is claimed. Version6 stays under Unreleased.
+Version6 stays under Unreleased. This log records source-bound checkpoints;
+complete product/archive or release acceptance cannot be inferred from an
+individual source check or candidate receipt. The PR's exact-source required
+checks and retained native artifacts determine acceptance, including any failed
+or unrun gates.
 
 ## Current verification work
 
