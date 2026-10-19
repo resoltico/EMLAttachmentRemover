@@ -1702,3 +1702,34 @@ Intel logs show an iconservicesagent Metal assertion/abort matching upstream
 and the product's panel service subsequently connects to IconServices without
 ARM's later initialization progress. This supports further investigation, not
 proven causation, an OS-service modification or qualification.
+
+## Disposable-host IconServices experiment
+
+Command central explicitly authorized one diagnostic environment intervention
+on fresh GitHub-hosted Intel macOS26, distinct from cleanup of processes the
+controller created. It does not amend support or qualification scope. The
+standalone probe retains its original failed result, then requires the exact
+invisible-panel/cancellation-deadline failure and verified process settlement.
+A same-VM unchanged repeat must reproduce that failure before intervention.
+Source/run/image/host, signed probe bytes and signature identity are retained;
+the same bundle at the same path is checked before and after each eligible run.
+
+Only the current non-root GUI user's exact iconservicesagent service label may
+receive bounded `launchctl bootout`. Native UID and console-owner observations,
+actual retained Intel26 host data and healthy controller admission gate it.
+Failure, cancellation or unknown settlement stops the sequence without resetting
+admission or replacing the original baseline verdict. No persistent disable,
+restart, privileged fallback, other service, local host or product qualification
+is included. Targeted service-state fields and process facts are recorded;
+raw inherited service environments are excluded from uploaded evidence.
+The controller owns the launchctl invocation, not the OS service.
+
+Baseline and intervention artifacts are uploaded separately. A successful
+second probe would support only a weak, retry/time/state-confounded hypothesis;
+it cannot qualify the product or prove the specific Metal assertion caused its
+wait. A failure would not refute the upstream report, which also used persistent
+disable. Service restoration or continuous absence is not claimed; VM disposal
+ends the diagnostic environment. Two admission controls reject arbitrary exit2,
+unexpected phases and unsettled/cancelled baselines. All121 tooling tests passed
+(25 library,72 command,24 Unix lifetime), plus strict Clippy, Rust formatting and
+actionlint. Actual intervention execution remains unrun at this checkpoint.

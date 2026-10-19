@@ -47,4 +47,11 @@ jobs:
           path: |
             target/panel-*.txt
             target/panel-observation/**
+            !target/panel-observation/icon-service-experiment/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() && matrix.runner == 'macos-26-intel' && hashFiles('target/panel-observation/icon-service-experiment/result.json') != '' }}
+        with:
+          name: panel-intervention-${{ inputs.source || github.event.pull_request.head.sha }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/panel-observation/icon-service-experiment/**
           if-no-files-found: error
