@@ -1746,3 +1746,50 @@ unrelated roles, rescan after success, parse a debug description or extend the
 ten-second wait. Current artwork is natively exposed as Image; its Processing
 and Completed labels keep the direct title/label path. Strict Swift formatting
 and SDK27 XCTest compilation passed; native execution remains required.
+
+## Passing native Workflows and exact picker-policy clarification
+
+H257/run39187374991/a1 passed the complete shipping Workflow XCTest on both
+macOS15.7.9 CPUs: ARM342.490seconds and Intel407.255seconds, each1 passed,
+0 failed/skipped. Direct Image/StaticText getter observations establish the text
+oracle correction. Both runs reached real Finder reveal, exact-copy selection,
+window movement, file drag/up-to-date processing, queued destination snapshots
+and hidden-window Quit cancel/confirmed normal Quit. Owner records show runner0,
+reaping, no forced app cleanup, no replacement instances and four unchanged
+originals. Ready, compact report and Finder-drop pixels were reviewed on ARM;
+the compact view was intentionally scrolled with footer controls exposed.
+
+Both overall consumers correctly failed afterward at the preference guard.
+Before and after-owner-controls domains were empty. After actual bound picker
+use, both contained the previously approved three keys plus exactly
+NSNavLastUserSetHideExtensionButtonState (native Boolean false) and
+NSWindow Frame NSNavPanelAutosaveName (native String frame). The ARM attachment
+bound PID7201 and concrete message/folder fixtures to the retained app receipt.
+Command central explicitly authorized only these two additional names/types in
+the successful real-picker scope. The comparison now checks typed values without
+Boolean/number/String coercion, rejects malformed prior/new types and deletions,
+and continues exact comparison of every other key and copyDestinationBytes.
+Each allowed name has a nonpicker rejection control. The failed H257 comparisons
+remain retained; the corrected guard and downstream Pagination, four publication
+cases and final appearance checks require fresh native execution.
+
+The same head's six native rows were independently audited: Linux/Windows each
+392 default plus392 release cases, Macs432 default plus67 Darwin fixtures, with
+zero failed/ignored and settled process records. Both Mac candidates passed456
+release cases, thin ad hoc main/worker, minimum15 and worker/CLI extraction
+checks. All eight downloaded archives matched source-bound identities. The
+initial audit reader assumed Unix raw_status on Windows; actual Windows
+native_exit_code and null observation/cleanup/termination errors were inspected
+and the reader corrected. No native failure was hidden by that reader repair.
+
+The authorized diagnostic run39187374724/a1 retained original Intel26 probe
+exit2 at69.040seconds and unchanged-repeat exit2 at68.050seconds. Targeted
+service state recorded20 successive crashes/last ABRT. Exact GUI501 bootout
+completed0; one subsequent print exited113 without observing the entry. The
+same signed probe then passed visible cancellation in3.844seconds; all five
+recorded byte/signature identities matched and all processes settled. Original
+job failure stayed authoritative and baseline/intervention uploads are separate.
+No product acceptance ran on that VM. This supports IconServices availability
+as a contributor, with retry/time/state confounds; it establishes neither the
+specific Metal cause, continuous absence/nonrestart nor product qualification.
+No service restoration is claimed. Normal-host Intel26 compatibility remains open.

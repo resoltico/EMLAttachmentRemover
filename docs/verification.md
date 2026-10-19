@@ -16,9 +16,18 @@ picker observations may change these exact Cocoa state keys:
 | NSNavPanelExpandedSizeForOpenMode | String |
 | NSOSPLastRootDirectory | Data |
 | NSWindow Frame GoToSheet | String |
+| NSNavLastUserSetHideExtensionButtonState | Boolean |
+| NSWindow Frame NSNavPanelAutosaveName | String |
 
-This narrow policy follows actual H8dad before/after observations, real picker
-interaction and the product's sole explicit setter for copyDestinationBytes;
+The final two entries were explicitly authorized after the H257 macOS15
+Workflow passed but its raw preference comparison failed. Their absence before
+picker use, native types and exact owned-instance/fixture binding were reviewed;
+the failed H257 gate remains retained. Numeric or string substitutes for a
+Boolean, missing values and deletions are rejected. This authorizes comparison
+only; the app does not gain Cocoa-state setters or readers.
+
+This narrow policy follows actual H8dad and H257 before/after observations,
+real picker interaction and the product's sole explicit setter for copyDestinationBytes;
 attributing those changes to Cocoa is a bounded inference, not proof from an
 NS-prefixed name. No other OS key is added automatically. Wrong native types,
 unexpected changes, destination changes/type changes and these same changes in
