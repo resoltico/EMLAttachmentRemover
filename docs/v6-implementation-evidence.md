@@ -1872,8 +1872,8 @@ locally; these are unavailable checks, not complete native qualification.
 
 At H3556/run39196658498, all six native rows and both app candidates passed;
 independent audit confirmed the exact eight archives and both packaged folder
-declarations. The ARM15 Workflow and five-key preference guard passed again.
-Pagination now delivers the native folder and reaches65-created terminal UI,
+declarations. Both15 CPU Workflows and five-key preference guards passed again.
+Both pagination cases now deliver the native folder and reach65-created terminal UI,
 establishing the folder declaration correction. It then fails the settled-detail
 assertion: the retained native checkbox is0, the nontechnical detail title is
 present and item064 is selected. A single earlier checkbox click during report
