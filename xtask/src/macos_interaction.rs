@@ -713,8 +713,7 @@ pub(crate) fn run_case(
                 observation["original_selector"].as_str(),
                 Some("Light" | "Dark" | "Auto")
             )
-            || !observation["original_contrast"].is_boolean()
-            || !observation["original_reduce_transparency"].is_boolean()
+            || !native_display_settings_match(&observation)
             || ownership["owned_settings_terminated"] != true
             || ownership["unexpected_settings_application_pids"] != json!([])
         {
@@ -823,6 +822,17 @@ fn attachment_name<'a>(
     Ok(matches[0])
 }
 
+fn native_display_settings_match(observation: &Value) -> bool {
+    let states = &observation["native_settings_observations"];
+    observation["original_contrast"].is_boolean()
+        && observation["original_reduce_transparency"].is_boolean()
+        && states["before"]["increase_contrast"] == observation["original_contrast"]
+        && states["before"]["reduce_transparency"] == observation["original_reduce_transparency"]
+        && states["increased_contrast"]["increase_contrast"] == true
+        && states["increased_contrast"]["reduce_transparency"].is_boolean()
+        && states["restored"] == states["before"]
+}
+
 #[cfg(test)]
 mod tests {
     fn picker_attachment_name(manifest: &serde_json::Value) -> crate::Result<&str> {
@@ -833,6 +843,37 @@ mod tests {
         )
     }
     use super::*;
+
+    #[test]
+    fn native_display_receipt_requires_actual_states_and_exact_restoration() {
+        let valid = json!({
+            "original_contrast":false,
+            "original_reduce_transparency":true,
+            "native_settings_observations": {
+                "before":{"increase_contrast":false,"reduce_transparency":true},
+                "increased_contrast":{"increase_contrast":true,"reduce_transparency":true},
+                "restored":{"increase_contrast":false,"reduce_transparency":true}
+            }
+        });
+        assert!(native_display_settings_match(&valid));
+        let mut missing = valid.clone();
+        missing
+            .as_object_mut()
+            .unwrap()
+            .remove("native_settings_observations");
+        assert!(!native_display_settings_match(&missing));
+        let mut unchanged = valid.clone();
+        unchanged["native_settings_observations"]["increased_contrast"]["increase_contrast"] =
+            json!(false);
+        assert!(!native_display_settings_match(&unchanged));
+        let mut unrestored = valid.clone();
+        unrestored["native_settings_observations"]["restored"]["reduce_transparency"] =
+            json!(false);
+        assert!(!native_display_settings_match(&unrestored));
+        let mut coerced = valid;
+        coerced["original_contrast"] = json!("false");
+        assert!(!native_display_settings_match(&coerced));
+    }
 
     #[test]
     fn native_observation_requires_the_requested_case_and_attachment_kind() {

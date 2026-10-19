@@ -80,11 +80,12 @@ extension DesktopInteractionTests {
         try await setting(settings, name: "Increase contrast"), name: "Increase contrast"),
       transparency: try settingSelected(
         try await setting(settings, name: "Reduce transparency"), name: "Reduce transparency"))
-    try await nativeDisplayState(contrast: before.contrast, transparency: before.transparency)
+    let beforeSettings = try await nativeDisplaySettings(
+      settings, owner: settingsOwner, contrast: before.contrast, transparency: before.transparency)
     let restoration = Restoration()
     addTeardownBlock { @MainActor in
       if !restoration.completed {
-        try await self.restoreAppearance(
+        _ = try await self.restoreAppearance(
           before, settings: settings, owner: settingsOwner, product: app, productOwner: productOwner
         )
       }
@@ -107,13 +108,14 @@ extension DesktopInteractionTests {
       settingsOwner,
       url: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display")
     try await setSetting(settings, name: "Increase contrast", selected: true)
+    let contrastSettings = try await nativeDisplaySettings(
+      settings, owner: settingsOwner, contrast: true)
     try await switchAppearanceApplication(productOwner, from: settingsOwner)
     let contrast = "Interface native appearance: dark; increased contrast: true"
     try await requireText(app, containing: contrast)
-    try await nativeDisplayState(contrast: true)
     observations.append(contrast)
     snapshot(app, "native-appearance-increased-contrast")
-    try await restoreAppearance(
+    let restoredSettings = try await restoreAppearance(
       before, settings: settings, owner: settingsOwner, product: app, productOwner: productOwner)
     restoration.completed = true
     XCTAssertEqual(try Data(contentsOf: source), original)
@@ -127,6 +129,10 @@ extension DesktopInteractionTests {
       "original_selector": before.selection, "original_contrast": before.contrast,
       "original_reduce_transparency": before.transparency,
       "native_product_observations": observations,
+      "native_settings_observations": [
+        "before": beforeSettings, "increased_contrast": contrastSettings,
+        "restored": restoredSettings,
+      ],
     ]
     let attachment = XCTAttachment(
       data: try JSONSerialization.data(withJSONObject: observation),
@@ -270,26 +276,31 @@ extension DesktopInteractionTests {
   }
 
   @MainActor
-  private func nativeDisplayState(contrast: Bool, transparency: Bool? = nil) async throws {
-    let predicate = NSPredicate { _, _ in
-      NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast == contrast
-        && transparency.map {
-          NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency == $0
-        } != false
-    }
-    let result = await XCTWaiter.fulfillment(
-      of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 10)
-    guard result == .completed else {
-      XCTFail("Native display state did not match restored/requested selectors")
+  private func nativeDisplaySettings(
+    _ settings: XCUIApplication, owner: NSRunningApplication,
+    contrast: Bool, transparency: Bool? = nil
+  ) async throws -> [String: Bool] {
+    try await settingsPane(
+      owner, url: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display")
+    let actualContrast = try settingSelected(
+      try await setting(settings, name: "Increase contrast"), name: "Increase contrast")
+    let actualTransparency = try settingSelected(
+      try await setting(settings, name: "Reduce transparency"), name: "Reduce transparency")
+    print(
+      "Native Settings display readback: contrast=\(actualContrast), transparency=\(actualTransparency)"
+    )
+    guard actualContrast == contrast, transparency.map({ actualTransparency == $0 }) != false else {
+      XCTFail("Native Settings display values differ from the requested/restored selectors")
       throw InteractionFailure.expectedPresentation
     }
+    return ["increase_contrast": actualContrast, "reduce_transparency": actualTransparency]
   }
 
   @MainActor
   private func restoreAppearance(
     _ state: AppearanceState, settings: XCUIApplication, owner: NSRunningApplication,
     product: XCUIApplication, productOwner: NSRunningApplication
-  ) async throws {
+  ) async throws -> [String: Bool] {
     try await settingsPane(
       owner, url: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display")
     try await setSetting(settings, name: "Increase contrast", selected: state.contrast)
@@ -297,7 +308,8 @@ extension DesktopInteractionTests {
     try await settingsPane(
       owner, url: "x-apple.systempreferences:com.apple.Appearance-Settings.extension")
     try await setSetting(settings, name: state.selection, selected: true)
-    try await nativeDisplayState(contrast: state.contrast, transparency: state.transparency)
+    let display = try await nativeDisplaySettings(
+      settings, owner: owner, contrast: state.contrast, transparency: state.transparency)
     try await switchAppearanceApplication(productOwner, from: owner)
     if state.selection != "Auto" {
       try await requireText(
@@ -309,5 +321,6 @@ extension DesktopInteractionTests {
       try await requireText(product, containing: "increased contrast: \(state.contrast)")
     }
     snapshot(product, "native-appearance-restored")
+    return display
   }
 }

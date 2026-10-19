@@ -356,7 +356,16 @@ CPU/minimum policy, actual Core-backed worker and unchanged-bundle checks; its
 `native_candidate` receipt contains no successful/default GUI fields.
 `smoke-macos-app` on each macOS15 consumer requires the full workflow, pagination,
 real-Core publication/lifecycle cases and final appearance checks before emitting
-`desktop_qualification`. The macOS26 Intel `check-macos-picker` consumer separately
+`desktop_qualification`. Appearance changes use the owned native Settings controls,
+with explicit contrast/transparency values before, during and after the scenario.
+The actual product must independently report its unoverridden NSAppearance/
+NSWorkspace observations for Light, Dark and Increase Contrast; physical frames
+and exact restoration remain required. A test-runner-local NSWorkspace getter is
+not used as an additional system-wide oracle: an actual run showed it disagreeing
+with the native Settings value and the product's same-API observation. The cause
+of that process-local disagreement is not established. Missing, contradictory or
+unrestored native Settings records fail receipt admission.
+The macOS26 Intel `check-macos-picker` consumer separately
 executes `testOwnedNativePickerCompatibility`, the dedicated `picker` case. It
 shares the full workflow's original About/license/reopen/Open With prelude and
 actual message/folder/keyboard picker interactions, then verifies independent

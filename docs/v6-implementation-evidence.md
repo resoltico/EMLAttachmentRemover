@@ -2035,3 +2035,46 @@ report-byte, independent golden and normal-settlement checks remain. This fixes
 the unverified navigation assumption without inventing an offscreen Go-button
 interaction or proving the original input-loss cause. Native verification is pending;
 no modified-host aggregate/release alternative is implemented from this failure.
+
+He4's ARM15 Appearance run establishes the retained-process activation correction:
+all direct requests were accepted and exact foreground observations passed through
+the Light, Dark and Increase Contrast steps. Actual Light/Dark frames were exported
+and physically reviewed. The product's technical view reached dark/contrast=true,
+derived directly from its NSWorkspace getter, after the actual native Switch was
+verified on. The next, test-runner-local NSWorkspace contrast assertion disagreed
+and failed. Its cause is unestablished; no complete Appearance receipt exists.
+Teardown restored the selectors and the product's light/contrast=false view, but
+overall failure required forced product cleanup and leaves settlement unqualified.
+
+The appearance check now pairs actual native Settings value readback with the
+product's separate unoverridden NSAppearance/NSWorkspace observations and physical
+frames. The extra test-runner-local getter is removed: it does not establish an
+additional product property and disagreed with both existing native boundaries.
+Before/increased-contrast/restored Settings values are recorded; admission requires
+typed original values, an actual contrast=true condition and exact restoration.
+Negative controls reject missing states, unchanged contrast, wrong restoration
+and string-coerced booleans. No native UI condition, screenshot, original/copy check,
+foreground identity, preference comparison or normal settlement gate is waived.
+Local compilation, strict formatting, Clippy and tooling tests passed; native
+execution of this corrected observer remains pending.
+
+He4's Intel15 case reached the same observer disagreement after successful direct
+activation, Light/Dark checks and the product's native contrast=true observation.
+Both CPUs passed all six preceding cases with normal owners and unchanged
+originals; both final desktop gates remain failed. The revised receipt guard's
+positive/negative checks passed within122 tooling cases (25 library,73 command,
+24 Unix lifetime), with strict Clippy and supplementary SDK27 XCTest compilation.
+
+He4/run39213943711's dedicated Intel26 picker case PASSED on an unmodified host:
+the exact method/case/scenario executed one test with zero failed/skipped; owner
+and controller settled normally, no forced cleanup or survivors, and all four
+originals were unchanged. Independent readback of the downloaded fixture verified
+all three copies against the committed golden. Only three previously approved
+Cocoa keys changed with their proper native types; all application/other preferences
+were unchanged. The receipt binds the same frozen app ZIP and native Intel26 host.
+No service intervention ran in that consumer. Earlier normal and modified-host
+failures remain counterevidence to uniform host behavior; their causes are not
+resolved by this pass. No modified-host acceptance mechanism is needed to count
+this normal result. Final-source execution remains required after the pending
+observer/navigation corrections. Exact-M integration and freshness passed at He4;
+aggregate ci-ok failed because both final Appearance phases failed.
