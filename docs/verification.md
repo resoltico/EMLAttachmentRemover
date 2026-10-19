@@ -480,7 +480,8 @@ selects whole changed guards, not a first-N subset; unchanged guard selection is
 explicitly not applicable and does not cover other changed parser/workflow code.
 
 The driver uses profile mutants, baseline run, one job, copy-target=false,
-test-workspace=false, cap-lints=true, --locked Cargo arguments, 60-second complete Core test commands,
+test-workspace=false, cap-lints=true, --locked/--lib Cargo arguments and15-second
+Core library test commands,
 120-second per-mutant builds and a 45-minute execution deadline. Baseline
 build time is not capped by cargo-mutants' per-mutant option; it is bounded by
 that outer execution deadline. Additional bounded cleanup grace is recorded
@@ -576,8 +577,11 @@ name filter. Both discovery and execution also select the two real guard files;
 function metadata must still match exactly the requested complete guard set.
 The first escaped selection was refused before any mutation execution. A later
 unmutated baseline exceeded the former 15-second whole-Core command allowance;
-no mutant was tested or called caught. The bounded command allowance is now 60
-seconds, with the 120-second build and 45-minute campaign bounds retained. Baseline
+no mutant was tested or called caught. That historical run used a60-second whole-Core test allowance. Current mutation
+execution restores the required15-second timeout and selects all Core library
+tests with --lib, including both real guards and their rejection controls. The
+full filesystem-heavy Core integration suites remain required in ordinary/native
+verification. The120-second build and45-minute campaign bounds are retained. Baseline
 execution, complete selection, strict result classification and timeout failures
 remain required. The subsequent full 15-case run passed 14 caught plus one reviewed
 compiler-invalid case, with none missed or timed out. Fuzz at 9ebcdee passed

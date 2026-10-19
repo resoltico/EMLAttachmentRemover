@@ -2153,3 +2153,16 @@ invalid inputs from leaving a qualification result. All tracked scripts and
 workflows pass strict lint; the50 predicate controls and seven real-file selection
 controls pass, including absent/symlink archive rejection and absence of a final
 record after rejected selection. These remain tooling evidence, not GUI execution.
+
+The final contract review found that the historical mutation command widened the
+required15-second test timeout to60 seconds because its unmutated whole-Core
+baseline took21.985s (collection11.08s and destination4.55s). All14 caught mutants
+failed the library test phase in under0.5s; none relied on those later integration
+suites. The corrected campaign retains the complete5+10 guard selection, baseline
+run,120-second build/45-minute outer limits and strict outcome classification,
+but runs all Core library tests with --lib under the required15-second timeout.
+Full Core integration suites remain unchanged in ordinary/native verification.
+This narrows mutation test execution to the guards' actual rejection suite without
+reducing the admitted mutant set or the required native suite. The renewed exact-
+source campaign must complete before acceptance; prior60-second configuration is
+retained as historical evidence rather than claimed compliant enforcement.
