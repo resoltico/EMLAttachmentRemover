@@ -150,9 +150,12 @@ struct ExportTask {
     control: eml_core::RunControl,
     actor: JoinHandle<ReportExportOutcome>,
 }
-struct RevealTask {
-    path: PathBuf,
-    actor: JoinHandle<std::io::Result<bool>>,
+enum RevealTask {
+    Inspect {
+        path: PathBuf,
+        actor: JoinHandle<std::io::Result<bool>>,
+    },
+    Native(crate::native::NativeReveal),
 }
 pub(crate) struct Controller {
     session: DesktopSession,
@@ -392,7 +395,7 @@ impl Controller {
                         .name("finder-reveal".into())
                         .spawn(move || check.try_exists())
                     {
-                        Ok(actor) => self.reveal = Some(RevealTask { path, actor }),
+                        Ok(actor) => self.reveal = Some(RevealTask::Inspect { path, actor }),
                         Err(error) => self
                             .system_notice(&format!("Could not start Finder navigation: {error}")),
                     }
@@ -488,20 +491,30 @@ impl Controller {
     /// Applies bounded view models before acknowledging a terminal run. This
     /// acknowledgement makes no claim about physical frame presentation.
     pub(crate) fn tick(&mut self, window: &MainWindow) -> bool {
-        if self
-            .reveal
-            .as_ref()
-            .is_some_and(|task| task.actor.is_finished())
-        {
+        let reveal_ready = self.reveal.as_ref().is_some_and(|task| match task {
+            RevealTask::Inspect { actor, .. } => actor.is_finished(),
+            RevealTask::Native(task) => task.result().is_some(),
+        });
+        if reveal_ready {
             let task = self.reveal.take().expect("finished owned Finder task");
-            match task.actor.join() {
-                Ok(Ok(true)) if self.closing_since.is_none()=>{
-                    if let Err(error)=crate::native::reveal(&task.path) {self.system_notice(&format!("Finder navigation: {error}"));}
+            match task {
+                RevealTask::Inspect { path, actor } => match actor.join() {
+                    Ok(Ok(true)) if self.closing_since.is_none() => {
+                        match crate::native::reveal(path) {
+                            Ok(task) => self.reveal = Some(RevealTask::Native(task)),
+                            Err(error) => self.system_notice(&format!("Finder navigation: {error}")),
+                        }
+                    }
+                    Ok(Ok(true)) => {}
+                    Ok(Ok(false)) => self.system_notice("The earlier reported copy is unavailable at that address. Its receipt remains unchanged; Finder navigation does not reverify it."),
+                    Ok(Err(error)) => self.system_notice(&format!("Finder navigation is unavailable: {error}. The earlier receipt remains unchanged.")),
+                    Err(_) => self.boundary_failure("Finder navigation task failed; its owned I/O settlement could not be verified."),
+                },
+                RevealTask::Native(task) => {
+                    if let Err(error) = task.result().expect("observed native Finder completion") {
+                        self.system_notice(&format!("Finder navigation: {error}"));
+                    }
                 }
-                Ok(Ok(true))=>{},
-                Ok(Ok(false))=>self.system_notice("The earlier reported copy is unavailable at that address. Its receipt remains unchanged; Finder navigation does not reverify it."),
-                Ok(Err(error))=>self.system_notice(&format!("Finder navigation is unavailable: {error}. The earlier receipt remains unchanged.")),
-                Err(_)=>self.boundary_failure("Finder navigation task failed; its owned I/O settlement could not be verified."),
             }
         }
         if let Some(result) = self

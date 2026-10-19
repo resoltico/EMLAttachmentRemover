@@ -1136,12 +1136,13 @@ final class DesktopInteractionTests: XCTestCase {
 
   @MainActor
   private func requireAccessibleText(_ app: XCUIApplication, prefix: String) async throws {
-    let matches: (XCUIElement) -> Bool = {
-      $0.title.hasPrefix(prefix) || $0.label.hasPrefix(prefix)
-        || ($0.elementType == .staticText && ($0.value as? String)?.hasPrefix(prefix) == true)
-    }
+    let text = app.staticTexts.matching(NSPredicate(format: "value BEGINSWITH %@", prefix))
+      .firstMatch
+    let named = app.descendants(matching: .any).matching(
+      NSPredicate(format: "title BEGINSWITH %@ OR label BEGINSWITH %@", prefix, prefix)
+    ).firstMatch
     let predicate = NSPredicate { _, _ in
-      app.descendants(matching: .any).allElementsBoundByIndex.contains(where: matches)
+      text.exists || named.exists
     }
     guard
       await XCTWaiter.fulfillment(
@@ -1158,8 +1159,12 @@ final class DesktopInteractionTests: XCTestCase {
       }
       throw InteractionFailure.expectedPresentation
     }
-    let observed = try XCTUnwrap(
-      app.descendants(matching: .any).allElementsBoundByIndex.first(where: matches))
+    let observed = text.exists ? text : named
+    XCTAssertTrue(
+      observed.title.hasPrefix(prefix) || observed.label.hasPrefix(prefix)
+        || (observed.elementType == .staticText
+          && (observed.value as? String)?.hasPrefix(prefix) == true)
+    )
     print(
       "Native accessibility observation: kind=\(observed.elementType), title=\(observed.title.debugDescription), label=\(observed.label.debugDescription), value=\(String(describing: observed.value).prefix(4096))"
     )

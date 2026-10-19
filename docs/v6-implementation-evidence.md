@@ -1663,3 +1663,42 @@ owned apps and verify the exact target foreground PID. Restoration of native
 settings precedes dependence on product focus. Local SDK27 XCTest compilation,
 strict Swift formatting, Rust GUI check/link and strict Clippy passed; no owner
 desktop GUI was launched. Hosted integration remains required.
+
+## Finder timer recursion and native query cost
+
+At Hb81c1eedbc481a39513873794f98ec647990ab19/run39183075419/a1,
+all six native test jobs, both candidates, exact-merge integration, legal, lint,
+icon and freshness passed; both15 desktop consumers,26 Intel compatibility and
+aggregates failed. The fresh local checkout passed14 sections and430 discovered
+tests (36 positive/15 explicitly empty summaries, no ignored cases). Two sections
+failed because pinned Xcode26.3 is absent locally; SDK27 compilation is separate.
+
+ARM15 reached actual Finder reveal. Its retained offline archive binds PID9105
+to the owned candidate and records Finder dispatch entry at01:20:16.731 UTC,
+then a panic at01:20:16.757 in i-slint-core1.18.1/timers.rs350:9. The pinned
+source assertion rejects recursive timer activation. No dispatch-return event
+was recorded. Native Finder selection now runs as a queued event-loop callback,
+outside the lifecycle timer. The existing reveal reservation tracks inspection,
+then native completion through an Arc/OnceLock. It captures only the owned path
+and completion, reports enqueue failure directly, and remains reserved during
+nested events until the native call returns. Confirmed Quit still waits for it.
+
+Both Intel GUI consumers failed earlier at the ready-text assertion. Their raw
+StaticText getter contains the complete required String. The helper reached
+that node only after its10-second wait expired while serially reading several
+attributes on every application descendant. Native filtered StaticText-value
+and title/label queries replace that scan. The same accepted attributes are
+checked on the resulting element; the timeout and text requirement are unchanged.
+The title/label path remains necessary for artwork on other native roles.
+
+Strict Clippy, GUI link, Rust/Swift formatting and SDK27 XCTest compilation
+passed for these corrections; hosted execution is still required. The Intel26
+picker remains a separate blocker. The standalone AppKit probe passed15 on both
+CPUs and26 ARM, but26 Intel observed an invisible panel and no cancellation
+callback within its bound. Its records lack phase timestamps, so the extra
+roughly60seconds cannot be assigned to a specific native call. Earlier retained
+Intel logs show an iconservicesagent Metal assertion/abort matching upstream
+[runner-images14751](https://github.com/actions/runner-images/issues/14751),
+and the product's panel service subsequently connects to IconServices without
+ARM's later initialization progress. This supports further investigation, not
+proven causation, an OS-service modification or qualification.

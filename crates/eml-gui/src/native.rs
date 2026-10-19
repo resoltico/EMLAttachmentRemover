@@ -18,6 +18,7 @@ use std::{
     path::{Path, PathBuf},
     ptr::NonNull,
     rc::Rc,
+    sync::{Arc, OnceLock},
 };
 
 unsafe extern "C" {
@@ -80,11 +81,12 @@ pub(crate) enum NativeError {
     InvalidNativePath,
     DialogAborted,
     IngressUnavailable,
+    EventLoopUnavailable,
 }
 impl std::fmt::Display for NativeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::MainThreadRequired => "A native dialog needs the main application thread",
+            Self::MainThreadRequired => "A native operation needs the main application thread",
             Self::ParentUnavailable => {
                 "The parent window is unavailable; open the main window and try again"
             }
@@ -96,6 +98,9 @@ impl std::fmt::Display for NativeError {
             Self::DialogAborted => "The native file dialog could not complete",
             Self::IngressUnavailable => {
                 "Native file delivery could not be retained. Retry from the main window."
+            }
+            Self::EventLoopUnavailable => {
+                "The application event loop cannot accept Finder navigation"
             }
         })
     }
@@ -156,7 +161,28 @@ fn url_from_path(path: &Path) -> Result<Retained<NSURL>, NativeError> {
         )
     })
 }
-pub(crate) fn reveal(path: &Path) -> Result<(), NativeError> {
+pub(crate) struct NativeReveal {
+    completed: Arc<OnceLock<Result<(), NativeError>>>,
+}
+impl NativeReveal {
+    pub(crate) fn result(&self) -> Option<Result<(), NativeError>> {
+        self.completed.get().copied()
+    }
+}
+pub(crate) fn reveal(path: PathBuf) -> Result<NativeReveal, NativeError> {
+    MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
+    let completed = Arc::new(OnceLock::new());
+    let observation = Arc::clone(&completed);
+    // NSWorkspace can pump native events. Run outside the Slint timer callback,
+    // retaining completion until the native call has actually returned. Nested
+    // events can observe the reservation without borrowing the controller here.
+    slint::invoke_from_event_loop(move || {
+        let _ = observation.set(reveal_now(&path));
+    })
+    .map_err(|_| NativeError::EventLoopUnavailable)?;
+    Ok(NativeReveal { completed })
+}
+fn reveal_now(path: &Path) -> Result<(), NativeError> {
     MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
     let url = url_from_path(path)?;
     lifecycle_observation("Finder selection dispatch entered");
