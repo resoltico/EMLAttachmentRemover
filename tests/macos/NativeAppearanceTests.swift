@@ -4,6 +4,8 @@ import AppKit
 import XCTest
 
 extension DesktopInteractionTests {
+  private enum NativeSettingsPane { case appearance, display }
+
   private struct AppearanceState {
     let selection: String
     let contrast: Bool
@@ -59,8 +61,7 @@ extension DesktopInteractionTests {
     technical.click()
     try await requireRun(app, counts: "1 created · 0 up to date", source: source)
 
-    try await settingsPane(
-      settingsOwner, url: "x-apple.systempreferences:com.apple.Appearance-Settings.extension")
+    try await settingsPane(settings, owner: settingsOwner, pane: .appearance)
     var selected = [String]()
     for name in ["Light", "Dark", "Auto"] {
       if try settingSelected(try await setting(settings, name: name), name: name) {
@@ -71,9 +72,7 @@ extension DesktopInteractionTests {
       XCTFail("Original native appearance selector is unavailable: \(settings.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
-    try await settingsPane(
-      settingsOwner,
-      url: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display")
+    try await settingsPane(settings, owner: settingsOwner, pane: .display)
     let before = AppearanceState(
       selection: selected[0],
       contrast: try settingSelected(
@@ -91,8 +90,7 @@ extension DesktopInteractionTests {
       }
     }
     try await setSetting(settings, name: "Increase contrast", selected: false)
-    try await settingsPane(
-      settingsOwner, url: "x-apple.systempreferences:com.apple.Appearance-Settings.extension")
+    try await settingsPane(settings, owner: settingsOwner, pane: .appearance)
     var observations = [String]()
     for (name, dark) in [("Light", false), ("Dark", true)] {
       try await setSetting(settings, name: name, selected: true)
@@ -104,9 +102,7 @@ extension DesktopInteractionTests {
       snapshot(app, "native-appearance-\(name.lowercased())")
       try await switchAppearanceApplication(settingsOwner, from: productOwner)
     }
-    try await settingsPane(
-      settingsOwner,
-      url: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display")
+    try await settingsPane(settings, owner: settingsOwner, pane: .display)
     try await setSetting(settings, name: "Increase contrast", selected: true)
     let contrastSettings = try await nativeDisplaySettings(
       settings, owner: settingsOwner, contrast: true)
@@ -164,18 +160,66 @@ extension DesktopInteractionTests {
   }
 
   @MainActor
-  private func settingsPane(_ owner: NSRunningApplication, url: String) async throws {
-    guard !owner.isTerminated, let bundleURL = owner.bundleURL,
-      let destination = URL(string: url)
-    else { throw InteractionFailure.expectedPresentation }
-    let configuration = NSWorkspace.OpenConfiguration()
-    configuration.createsNewApplicationInstance = false
-    configuration.addsToRecentItems = false
-    let recipient = try await NSWorkspace.shared.open(
-      [destination], withApplicationAt: bundleURL, configuration: configuration)
-    guard recipient.processIdentifier == owner.processIdentifier
-    else { throw InteractionFailure.expectedPresentation }
+  private func settingsPane(
+    _ settings: XCUIApplication, owner: NSRunningApplication, pane: NativeSettingsPane
+  ) async throws {
+    guard !owner.isTerminated else { throw InteractionFailure.expectedPresentation }
+    let requested = owner.activate(options: [])
+    print("Retained Settings activation request: PID \(owner.processIdentifier), sent=\(requested)")
     try await requireOwnedForeground(owner)
+    // A LaunchServices URL acknowledgment does not establish pane navigation.
+    // Use the owned application's native View command, then observe its controls.
+    let section = pane == .appearance ? "Appearance" : "Accessibility"
+    let view = settings.menuBars.menuBarItems["View"]
+    guard view.waitForExistence(timeout: 15), view.isEnabled, view.isHittable else {
+      throw InteractionFailure.expectedPresentation
+    }
+    view.click()
+    let commands = view.menus.menuItems.matching(
+      NSPredicate(format: "title == %@ OR label == %@", section, section))
+    let command = commands.firstMatch
+    guard command.waitForExistence(timeout: 5), commands.count == 1,
+      command.isEnabled, command.isHittable
+    else {
+      throw InteractionFailure.expectedPresentation
+    }
+    command.click()
+    if pane == .display {
+      let main = settings.windows["main"]
+      let named = NSPredicate(format: "title == %@ OR label == %@", "Display", "Display")
+      var link: XCUIElement?
+      let available = NSPredicate { _, _ in
+        link = nil
+        let buttons = main.buttons.matching(named)
+        let labels = main.staticTexts.matching(named)
+        let element: XCUIElement
+        let buttonCount = buttons.count
+        if buttonCount == 1 {
+          element = buttons.firstMatch
+        } else if buttonCount == 0, labels.count == 1 {
+          element = labels.firstMatch
+        } else {
+          return false
+        }
+        guard element.exists, element.isEnabled, element.isHittable else { return false }
+        link = element
+        return true
+      }
+      guard
+        await XCTWaiter.fulfillment(
+          of: [XCTNSPredicateExpectation(predicate: available, object: nil)], timeout: 15)
+          == .completed,
+        let link
+      else {
+        XCTFail("Native Accessibility Display link is unavailable: \(settings.debugDescription)")
+        throw InteractionFailure.expectedPresentation
+      }
+      link.click()
+      _ = try await setting(settings, name: "Increase contrast")
+    } else {
+      _ = try await setting(settings, name: "Light")
+    }
+    print("Native Settings pane observed through controls: \(pane), PID \(owner.processIdentifier)")
   }
 
   @MainActor
@@ -280,8 +324,7 @@ extension DesktopInteractionTests {
     _ settings: XCUIApplication, owner: NSRunningApplication,
     contrast: Bool, transparency: Bool? = nil
   ) async throws -> [String: Bool] {
-    try await settingsPane(
-      owner, url: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display")
+    try await settingsPane(settings, owner: owner, pane: .display)
     let actualContrast = try settingSelected(
       try await setting(settings, name: "Increase contrast"), name: "Increase contrast")
     let actualTransparency = try settingSelected(
@@ -301,12 +344,10 @@ extension DesktopInteractionTests {
     _ state: AppearanceState, settings: XCUIApplication, owner: NSRunningApplication,
     product: XCUIApplication, productOwner: NSRunningApplication
   ) async throws -> [String: Bool] {
-    try await settingsPane(
-      owner, url: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display")
+    try await settingsPane(settings, owner: owner, pane: .display)
     try await setSetting(settings, name: "Increase contrast", selected: state.contrast)
     try await setSetting(settings, name: "Reduce transparency", selected: state.transparency)
-    try await settingsPane(
-      owner, url: "x-apple.systempreferences:com.apple.Appearance-Settings.extension")
+    try await settingsPane(settings, owner: owner, pane: .appearance)
     try await setSetting(settings, name: state.selection, selected: true)
     let display = try await nativeDisplaySettings(
       settings, owner: owner, contrast: state.contrast, transparency: state.transparency)

@@ -358,6 +358,12 @@ CPU/minimum policy, actual Core-backed worker and unchanged-bundle checks; its
 real-Core publication/lifecycle cases and final appearance checks before emitting
 `desktop_qualification`. Appearance changes use the owned native Settings controls,
 with explicit contrast/transparency values before, during and after the scenario.
+The retained Settings process is navigated through its native View commands and
+Accessibility Display link, with actual target controls acknowledging each pane.
+A successful LaunchServices URL delivery alone does not establish navigation; an
+Intel15 run retained the old Appearance pane after such delivery. No defaults
+setter or preference-file edit substitutes for native interaction. The flow
+follows [Apple's macOS15 Display navigation](https://support.apple.com/guide/mac-help/change-display-settings-for-accessibility-unac089/15.0/mac/15.0).
 The actual product must independently report its unoverridden NSAppearance/
 NSWorkspace observations for Light, Dark and Increase Contrast; physical frames
 and exact restoration remain required. A test-runner-local NSWorkspace getter is

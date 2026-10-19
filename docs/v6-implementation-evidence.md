@@ -2177,3 +2177,35 @@ The harness now sets -print_funcs=0 to remove that unnecessary progress-name
 symbolization. Sanitizer failure diagnostics, coverage feedback, final statistics,
 all input/time/RSS bounds and unexpected-child rejection remain unchanged. Actual
 post-change execution is required; neither failed run is counted as passing fuzz.
+
+H7b429/run39239072876 passed native6, both app candidates, the complete ARM15
+consumer and the first automatic controlled Intel26 preparation/product/required
+acceptance chain. Its retained normal case failed with original exit1/runner65,
+clean settlement and unchanged originals; the measurement did not qualify it.
+The controlled product passed the actual dedicated case in the same run/attempt.
+The Intel15 consumer passed Workflow, Pagination and all four real-Core cases,
+then FAILED Appearance before initial contrast capture. Its exact Settings PID
+still showed the Appearance window after LaunchServices accepted the Display URL;
+no contrast switch was present. Final global restoration and worker settlement
+were unverified after forced app cleanup, so no Intel desktop receipt qualified.
+
+The revised harness uses the retained Settings process's observed native View
+menu commands, then the unique enabled/hittable Accessibility Display link. Target
+controls acknowledge navigation before reading/toggling values. This removes URL
+request-delivery as the navigation mechanism; it neither widens wait limits nor
+weakens original-value, real-product appearance, restoration or lifetime checks.
+The menu structure is retained in the failed native AX tree; Apple's macOS15
+guide confirms Accessibility-to-Display navigation. Native execution remains
+required. Local SDK27 build-for-testing compiled this source on ARM only; an
+initial direct typecheck omitted Xcode's Swift XCTest overlay and is retained as
+an invalid compiler invocation, not a source or GUI result. Owner xcode-select
+and preferences remain unchanged; no product GUI runs locally.
+
+The separate fuzz diagnostic correction passed526,240 actual executions in65,469ms
+at clean197bb, with12+10 seeds, unchanged60s/4MiB/5s/1024MiB bounds, positive new
+coverage feedback, no artifacts, zero unexpected children and normal cleanup.
+Its renewed15-case mutation campaign passed14 caught plus one reviewed compiler-
+invalid result in80,514ms, no misses/timeouts, under the required15-second tests.
+Both earlier atos failures remain failed records; no name-based lifetime waiver
+was added. Changes after197bb concern this Swift harness and documentation, not
+those Rust campaign inputs.
