@@ -9,9 +9,9 @@ CI records for passed, failed and unrun gates.
 
 The separate panel diagnostic is dispatched manually from a pushed branch with
 `gh workflow run macos-panel-diagnostic.yml --ref BRANCH -f source=SOURCE`, where
-SOURCE is its full commit SHA. Its optional product experiment also requires the
-exact completed failed CI `product_run` and `product_attempt`. Ordinary native
-qualification still runs its actual product picker check. The diagnostic's
+SOURCE is its full commit SHA. Product qualification uses the required native
+workflow's normal/controlled/acceptance roles below; the former optional cross-run
+product experiment was removed after the actual controlled case passed. The diagnostic's
 historical PR runs remain evidence; automatic comparative probes are not a
 required product gate.
 
@@ -375,13 +375,42 @@ and normal owner/runner/resource settlement. Its own XCTest attachment identity
 cannot be supplied by the full `workflow` case. Full Services, Finder reveal/
 selection/movement/drag, queue/export/destination and every other broader case
 remain required on both macOS15 consumers against the same archive bytes.
-Both stages enforce their actual OS major and native CPU/target. Its known
-picker failure remains a required completion blocker. All consumer receipts bind
+Both stages enforce their actual OS major and native CPU/target. All consumer receipts bind
 the same source/target/archive snapshot and actual host. CI and future release
 preparation require these distinct stages; candidate success cannot promote
 itself to desktop qualification. The prior combined orchestration reached real
 GUI failures; the new split still requires native execution. See the
 implementation evidence for actual passed, failed and unrun checkpoints.
+
+Intel26 picker admission first records the ordinary dedicated product run in
+`app_picker_normal`. A normal success qualifies through `app_picker`; no service
+action runs. Only the exact dedicated-method native-panel/configuration-timeout
+failure with clean controller/owner evidence and identical retained ZIP can emit
+`known_panel_failure`. Other failures remain failed jobs. The measurement retains
+the original exit code and raw owned evidence; it is not compatibility success.
+
+For that admitted failure only, `app_picker_modified` starts on a separate fresh
+Intel26 VM. `prepare-macos-picker-host` admits only the exact CI/owner-release
+workflow file and job, actual native Intel26, same source/run/attempt/archive and
+reference, non-root console user and healthy controller. It reuses the existing
+failed-baseline/unchanged-failed-repeat/exact GUI-user icon-agent bootout/successful
+unchanged-probe sequence, retaining all identities and process results. A normal
+probe/repeat success does not authorize unloading. It then runs the same frozen
+dedicated product case and requires final preferences, original/golden bytes,
+normal Quit and complete settlement. Probe recovery alone cannot qualify it.
+
+`app_picker` admits only normal success with the controlled role skipped, or a
+known normal failure plus the complete controlled product pass. Its
+`picker_qualification` envelope states `mode: normal` or `mode: modified_host` and
+retains the failed normal/probe evidence and actual product result. Modified-host
+success establishes no healthy-unmodified-host or wider compatibility claim.
+The shared [.github/scripts/picker-evidence.jq](../.github/scripts/picker-evidence.jq)
+predicates also govern release, rejecting missing/mixed source, workflow, run,
+attempt, reference, bytes, method, host, preference or settlement evidence.
+The workflow file SHA is recorded separately from tested source S, as required for
+owner release dispatch W. [GitHub's reusable-workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context)
+belongs to the caller. No default GitHub context is overridden. All six native
+rows and both full macOS15 desktop suites remain required in either mode.
 
 `cargo xtask distribution` prints the native target policy and expected archive
 identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.

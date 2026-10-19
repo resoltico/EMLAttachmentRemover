@@ -18,12 +18,18 @@ must pass. Products are selected only from this run/attempt's six
 platform artifacts, downloaded into separate directories with digest mismatch
 treated as an error. Their source records must bind to S. Consumer evidence is downloaded separately from
 products. Preparation requires each candidate's `native_candidate` stage plus
-matching `desktop_qualification` and, for Intel, `picker_compatibility` receipts
-from the same run/attempt, source, target and archive bytes. The focused receipt's
-inner case must be `picker` and test method `testOwnedNativePickerCompatibility`;
+matching `desktop_qualification` and, for Intel, `picker_qualification` envelopes
+from the same run/attempt, source, target and archive bytes. The selected product
+must have case `picker` and method `testOwnedNativePickerCompatibility`;
 it cannot substitute for either full macOS15 desktop consumer. Failed, skipped,
-missing or mismatched case receipts cannot admit an app. A known compatibility
-failure continues to block the reusable aggregate and release preparation.
+missing or mismatched case receipts cannot admit an app. Intel envelopes admit
+normal success or the explicitly owner-authorized controlled-host product pass
+after a retained known normal failure. Modified-host mode retains the same-run
+normal failure, complete preparation and actual product; it makes no healthy
+unmodified-host claim. The shared picker predicates independently bind S, workflow
+W, current run/attempt, archive/reference bytes, native host, method, preferences
+and normal settlement. Unknown failures and incomplete controlled attempts block
+both the reusable aggregate and release. Both full macOS15 consumers remain required.
 The policy derives exactly eight archive names. `stage-release-assets` freezes their actual bytes,
 checks copy readback and writes the sorted SHA256SUMS as the ninth asset.
 Existing native checks establish behavior; artifact digests preserve the tested

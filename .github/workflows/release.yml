@@ -79,8 +79,8 @@ jobs:
           digest-mismatch: error
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: picker-compatibility-${{ inputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: target/picker-compatibility
+          pattern: picker-qualification-${{ inputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/picker-qualification
           merge-multiple: false
           digest-mismatch: error
       - name: Freeze the exact qualified product set and qualification identity
@@ -118,11 +118,14 @@ jobs:
               jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" 'def on_host($major): .host.target==$t and .host.process_os=="macos" and .host.process_architecture==(if $t=="x86_64-apple-darwin" then "x86_64" else "aarch64" end) and .host.kernel_machine==(if $t=="x86_64-apple-darwin" then "x86_64" else "arm64" end) and (.host.product_version|split(".")[0])==$major; def passed: .totalTestCount==1 and .passedTests==1 and .failedTests==0 and .skippedTests==0; .stage=="desktop_qualification" and .source==$s and .target==$t and .verification.stage=="desktop_qualification" and .verification.snapshot.sha256==$digest and .verification.snapshot.byte_length==$size and (.verification.gui_interaction.workflow.summary|passed) and (.verification.gui_interaction.pagination.summary|passed) and (.verification.gui_interaction.appearance.summary|passed) and all(.verification.gui_interaction.publication.cases[]; .summary|passed) and ([.verification.gui_interaction.publication.cases[].case]|sort)==["active-quit","force-stop","published-error","stop"] and on_host("15")' "${desktop_records[0]}"
               jq -c --arg artifact "$floor" '{stage,source,target,host,archive:.verification.snapshot,artifact:$artifact,workflow:.verification.gui_interaction.workflow.summary,pagination:.verification.gui_interaction.pagination.summary,appearance:.verification.gui_interaction.appearance.summary,publication_cases:[.verification.gui_interaction.publication.cases[]|{case,summary}]}' "${desktop_records[0]}" >> target/release-desktop-records.jsonl
               if [ "$platform" = macos-x86_64 ]; then
-                picker="target/picker-compatibility/picker-compatibility-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT/app-picker-compatibility"
-                mapfile -t picker_records < <(find "$picker" -mindepth 2 -maxdepth 2 -type f -name result.json)
-                test "${#picker_records[@]}" = 1
-                jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" 'def on_host($major): .host.target==$t and .host.process_os=="macos" and .host.process_architecture==(if $t=="x86_64-apple-darwin" then "x86_64" else "aarch64" end) and .host.kernel_machine==(if $t=="x86_64-apple-darwin" then "x86_64" else "arm64" end) and (.host.product_version|split(".")[0])==$major; def passed: .totalTestCount==1 and .passedTests==1 and .failedTests==0 and .skippedTests==0; .stage=="picker_compatibility" and .source==$s and .target==$t and .verification.stage=="picker_compatibility" and .verification.snapshot.sha256==$digest and .verification.snapshot.byte_length==$size and .verification.picker.case=="picker" and .verification.picker.test_method=="testOwnedNativePickerCompatibility" and .verification.picker.picker_observation.scenario=="picker" and (.verification.picker.summary|passed) and on_host("26")' "${picker_records[0]}"
-                jq -c --arg artifact "$picker" '{stage,source,target,host,archive:.verification.snapshot,artifact:$artifact,picker:.verification.picker.summary}' "${picker_records[0]}" >> target/release-desktop-records.jsonl
+                picker="target/picker-qualification/picker-qualification-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
+                test -f "$picker/result.json"
+                test "$(stat -c %s "$picker/result.json")" -le 16777216
+                ref_digest=$(sha256sum "${references[0]}" | cut -d ' ' -f 1)
+                ref_size=$(stat -c %s "${references[0]}")
+                jq -n --arg s "$SOURCE" --arg t "$target" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg digest "$digest" --argjson size "$size" --arg rd "$ref_digest" --argjson rs "$ref_size" --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '{source:$s,target:$t,run:$run,attempt:$attempt,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,archive:{sha256:$digest,byte_length:$size},reference:{sha256:$rd,byte_length:$rs}}' > target/release-picker-expected.json
+                jq -e -L .github/scripts --slurpfile e target/release-picker-expected.json 'include "picker-evidence"; qualification($e[0])' "$picker/result.json"
+                jq -c --arg artifact "$picker" '.+{artifact:$artifact}' "$picker/result.json" >> target/release-desktop-records.jsonl
               fi
             else
               mapfile -t records < <(find "$directory" -type f \( -name cli-result.json -o -name qualification.json \))

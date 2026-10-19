@@ -6,117 +6,29 @@ on:
         description: Exact source commit for the isolated panel observation
         required: true
         type: string
-      product_run:
-        description: Optional completed CI run containing the same-source Intel app candidate for the authorized modified-host experiment
-        required: false
-        type: string
-      product_attempt:
-        description: Exact candidate CI attempt (used only with product_run)
-        default: '1'
-        required: false
-        type: string
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: panel-observation-${{ github.event.pull_request.number || github.ref }}
+  group: panel-observation-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   panel:
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ inputs.product_run != '' && 45 || 15 }}
-    env:
-      EML_GENERATED_LEGAL_MATERIALS: ${{ github.workspace }}/target/legal-input
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        runner: ${{ fromJSON(inputs.product_run != '' && '["macos-26-intel"]' || '["macos-15-intel","macos-26-intel","macos-15","macos-26"]') }}
+        runner: [macos-15-intel, macos-26-intel, macos-15, macos-26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.source || github.event.pull_request.head.sha }}
+          ref: ${{ inputs.source }}
           persist-credentials: false
-      - name: Select the exact frozen product and legal artifacts
-        id: candidate
-        if: ${{ inputs.product_run != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE: ${{ inputs.source }}
-          PRODUCT_RUN: ${{ inputs.product_run }}
-          PRODUCT_ATTEMPT: ${{ inputs.product_attempt }}
-        run: |
-          [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$PRODUCT_RUN" =~ ^[1-9][0-9]*$ ]]
-          [[ "$PRODUCT_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
-          test "$(git rev-parse HEAD)" = "$SOURCE"
-          mkdir -p target/modified-product
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PRODUCT_RUN" > target/modified-product/candidate-run.json
-          jq -e --arg source "$SOURCE" --argjson attempt "$PRODUCT_ATTEMPT" '.head_sha==$source and .status=="completed" and .conclusion=="failure" and .path==".github/workflows/ci.yml" and .run_attempt==$attempt' target/modified-product/candidate-run.json
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$PRODUCT_RUN/artifacts" > target/modified-product/candidate-artifacts.json
-          for role in product legal normal; do
-            if [ "$role" = product ]; then
-              name="native-products-$SOURCE-macos-x86_64-r$PRODUCT_RUN-a$PRODUCT_ATTEMPT"
-            elif [ "$role" = legal ]; then
-              name="legal-$SOURCE-r$PRODUCT_RUN-a$PRODUCT_ATTEMPT"
-            else
-              name="picker-compatibility-$SOURCE-macos-x86_64-r$PRODUCT_RUN-a$PRODUCT_ATTEMPT"
-            fi
-            id=$(jq -er --arg name "$name" '[.[]|.artifacts[]|select(.name==$name and .expired==false)]|if length==1 then .[0].id else error("missing or ambiguous exact candidate input") end' target/modified-product/candidate-artifacts.json)
-            printf '%s=%s\n' "$role" "$id" >> "$GITHUB_OUTPUT"
-          done
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: ${{ inputs.product_run != '' }}
-        with:
-          artifact-ids: ${{ steps.candidate.outputs.product }}
-          run-id: ${{ inputs.product_run }}
-          github-token: ${{ github.token }}
-          path: target/products
-          digest-mismatch: error
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: ${{ inputs.product_run != '' }}
-        with:
-          artifact-ids: ${{ steps.candidate.outputs.legal }}
-          run-id: ${{ inputs.product_run }}
-          github-token: ${{ github.token }}
-          path: target/legal-input
-          digest-mismatch: error
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: ${{ inputs.product_run != '' }}
-        with:
-          artifact-ids: ${{ steps.candidate.outputs.normal }}
-          run-id: ${{ inputs.product_run }}
-          github-token: ${{ github.token }}
-          path: target/normal-picker-evidence
-          digest-mismatch: error
-      - name: Freeze the selected candidate identities before intervention
-        id: frozen
-        if: ${{ inputs.product_run != '' }}
-        env:
-          SOURCE: ${{ inputs.source }}
-          PRODUCT_RUN: ${{ inputs.product_run }}
-          PRODUCT_ATTEMPT: ${{ inputs.product_attempt }}
-          NORMAL_ARTIFACT: ${{ steps.candidate.outputs.normal }}
-        run: |
-          cargo xtask distribution > target/experiment-distribution.json
-          app=$(jq -er '.expected_artifacts[]|select(.platform=="macos-x86_64" and .role=="app")|.name' target/experiment-distribution.json)
-          jq -e --arg s "$SOURCE" '.source==$s and .target=="x86_64-apple-darwin" and .architecture=="x86_64"' "target/products/app-build/$app.reference.json"
-          normal=(target/normal-picker-evidence/app-picker-compatibility/native-*/gui-picker)
-          test "${#normal[@]}" = 1
-          jq -e '.exit_code==1 and .signal==null and .timed_out==false and .cancelled==false and .cleanup_complete==true and .unexpected_survivors==0' "${normal[0]}/process.json"
-          jq -e '.runner_reaped==true and .runner_status==65 and .owned_app_terminated==true and .forced_app_cleanup==false and .timed_out==false and .cancelled==false and .originals_captured==4 and .originals_unchanged==true and .owned_pasteboard_released==true and .native_picker_diagnostic_settled==true and .unexpected_application_pids==[]' "${normal[0]}/owner-result.json"
-          /usr/bin/grep -Fq 'error: -[DesktopInteraction.DesktopInteractionTests testOwnedNativePickerCompatibility] : failed - Native input panel did not appear' "${normal[0]}/xctest.log"
-          /usr/bin/grep -Fq 'Advance to configuration phase semaphore timed out' "${normal[0]}/native-picker-owned-process.log"
-          retained=(target/normal-picker-evidence/app-picker-compatibility/native-*/artifact-*/inspected-input.zip)
-          test "${#retained[@]}" = 1
-          cmp "${retained[0]}" "target/products/app-build/$app"
-          jq -n --arg source "$SOURCE" --arg run "$PRODUCT_RUN" --arg attempt "$PRODUCT_ATTEMPT" --arg artifact "$NORMAL_ARTIFACT" --slurpfile owner "${normal[0]}/owner-result.json" --slurpfile process "${normal[0]}/process.json" '{stage:"retained_normal_input_panel_failure",case:"picker",test_method:"testOwnedNativePickerCompatibility",source:$source,run:$run,attempt:$attempt,artifact:$artifact,owner:$owner[0],process:$process[0],scope:"normal failed GUI evidence; worker settlement after unexpected app exit remains unverified; fresh VM contains the modified-host experiment"}' > target/modified-product/normal-failure.json
-          shasum -a 256 "target/products/app-build/$app" "target/products/app-build/$app.reference.json" > target/modified-product/candidate-input-before.sha256
-          printf 'app=%s\n' "$app" >> "$GITHUB_OUTPUT"
       - name: Observe exact-source native system boundary
         id: probe
-        continue-on-error: ${{ inputs.product_run != '' }}
         env:
-          SOURCE: ${{ inputs.source || github.event.pull_request.head.sha }}
+          SOURCE: ${{ inputs.source }}
         run: |
           [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$SOURCE"
@@ -128,7 +40,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
-          name: panel-${{ inputs.source || github.event.pull_request.head.sha }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          name: panel-${{ inputs.source }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: |
             target/panel-*.txt
             target/panel-observation/**
@@ -137,44 +49,6 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() && matrix.runner == 'macos-26-intel' && hashFiles('target/panel-observation/icon-service-experiment/result.json') != '' }}
         with:
-          name: panel-intervention-${{ inputs.source || github.event.pull_request.head.sha }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          name: panel-intervention-${{ inputs.source }}-${{ matrix.runner }}-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: target/panel-observation/icon-service-experiment/**
           if-no-files-found: error
-      - name: Require the admitted intervention and run the same frozen product
-        if: ${{ !cancelled() && inputs.product_run != '' && steps.frozen.outcome == 'success' && (steps.probe.outcome == 'success' || steps.probe.outcome == 'failure') }}
-        env:
-          APP: ${{ steps.frozen.outputs.app }}
-          SOURCE: ${{ inputs.source }}
-        run: |
-          receipt=target/panel-observation/icon-service-experiment/result.json
-          jq -e --arg s "$SOURCE" 'def settled: .timed_out==false and .cancelled==false and .cleanup_complete==true and .unexpected_survivors==0; .stage=="observed" and .original_failure_remains_authoritative==true and .baseline.source==$s and .baseline.host.target=="x86_64-apple-darwin" and (.baseline.process|settled) and .baseline.process.exit_code==2 and (.unchanged_repeat.process|settled) and .unchanged_repeat.process.exit_code==2 and (.bootout.process|settled) and .bootout.process.exit_code==0 and (.intervention_probe.process|settled) and .intervention_probe.process.exit_code==0 and .baseline.identity==.unchanged_repeat.identity and .baseline.identity==.unchanged_repeat.identity_after and .baseline.identity==.intervention_probe.identity and .baseline.identity==.intervention_probe.identity_after' "$receipt"
-          shasum -a 256 "target/products/app-build/$APP" "target/products/app-build/$APP.reference.json" > target/modified-product/candidate-input-after.sha256
-          cmp target/modified-product/candidate-input-before.sha256 target/modified-product/candidate-input-after.sha256
-          jq -n --arg source "$SOURCE" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" --slurpfile normal target/modified-product/normal-failure.json --slurpfile preparation "$receipt" '{stage:"picker_compatibility_modified_host_attempt",state:"prepared_for_product_execution",source:$source,run:$run,attempt:$attempt,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,normal_failure:$normal[0],preparation:$preparation[0],scope:"modified-host attempt; missing final result or interrupted execution is incomplete, not acceptance",underlying_picker_receipt_stage_is_environment_unaware:true}' > target/modified-product/attempt.json
-          if cargo xtask check-macos-picker --archive "target/products/app-build/$APP" --reference "target/products/app-build/$APP.reference.json"; then
-            product_status=0
-          else
-            product_status=$?
-          fi
-          jq --argjson status "$product_status" '.product_exit_code=$status | .state=(if $status==0 then "consumer_succeeded_pending_receipt_verification" else "consumer_failed" end)' target/modified-product/attempt.json > target/modified-product/attempt-updated.json
-          mv target/modified-product/attempt-updated.json target/modified-product/attempt.json
-          test "$product_status" = 0
-          records=(target/app-picker-compatibility/native-*/result.json)
-          test "${#records[@]}" = 1
-          jq -e --arg s "$SOURCE" '.stage=="picker_compatibility" and .source==$s and .target=="x86_64-apple-darwin" and .verification.picker.case=="picker" and .verification.picker.test_method=="testOwnedNativePickerCompatibility" and .verification.picker.picker_observation.scenario=="picker" and .verification.picker.summary.totalTestCount==1 and .verification.picker.summary.passedTests==1 and .verification.picker.summary.failedTests==0 and .verification.picker.summary.skippedTests==0' "${records[0]}"
-          jq -n --arg source "$SOURCE" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" --slurpfile normal target/modified-product/normal-failure.json --slurpfile preparation "$receipt" --slurpfile product "${records[0]}" '{stage:"picker_compatibility_modified_host_observation",source:$source,run:$run,attempt:$attempt,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,normal_failure:$normal[0],preparation:$preparation[0],product:$product[0],scope:"authorized modified-host actual frozen product experiment; original probe failure remains authoritative; not normal-host compatibility or aggregate qualification",underlying_picker_receipt_stage_is_environment_unaware:true}' > target/modified-product/result.json
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ always() && inputs.product_run != '' }}
-        with:
-          name: modified-product-${{ inputs.source }}-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: |
-            target/modified-product/**
-            target/app-picker-compatibility/**
-            !target/app-picker-compatibility/**/gui-picker/build/**
-            target/native-host/**
-          if-no-files-found: error
-      - name: Preserve the original diagnostic outcome
-        if: ${{ always() && inputs.product_run != '' }}
-        env:
-          ORIGINAL: ${{ steps.probe.outcome }}
-        run: test "$ORIGINAL" = success

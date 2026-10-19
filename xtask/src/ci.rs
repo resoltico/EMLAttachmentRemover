@@ -11,6 +11,14 @@ pub(crate) fn validate(event: &str, native: bool, needs: &Value) -> Result<()> {
         if event != "workflow_call" {
             return Err("Native CI admission requires the reusable-workflow event policy".into());
         }
+        let modified = match results
+            .get("app_picker_normal")
+            .and_then(|job| job["outputs"]["outcome"].as_str())
+        {
+            Some("normal_pass") => "skipped",
+            Some("known_panel_failure") => "success",
+            _ => return Err("Native picker observation has no admitted outcome".into()),
+        };
         vec![
             ("plan", "success"),
             ("lint", "success"),
@@ -18,6 +26,8 @@ pub(crate) fn validate(event: &str, native: bool, needs: &Value) -> Result<()> {
             ("test", "success"),
             ("app", "success"),
             ("app_smoke", "success"),
+            ("app_picker_normal", "success"),
+            ("app_picker_modified", modified),
             ("app_picker", "success"),
         ]
     } else {
@@ -77,7 +87,7 @@ mod tests {
             (
                 true,
                 "workflow_call",
-                json!({"plan":{"result":"success"},"lint":{"result":"success"},"legal":{"result":"success"},"test":{"result":"success"},"app":{"result":"success"},"app_smoke":{"result":"success"},"app_picker":{"result":"success"}}),
+                json!({"plan":{"result":"success"},"lint":{"result":"success"},"legal":{"result":"success"},"test":{"result":"success"},"app":{"result":"success"},"app_smoke":{"result":"success"},"app_picker_normal":{"result":"success","outputs":{"outcome":"normal_pass"}},"app_picker_modified":{"result":"skipped"},"app_picker":{"result":"success"}}),
             ),
         ] {
             validate(event, native, &good).unwrap();
@@ -90,6 +100,9 @@ mod tests {
                     "",
                     "neutral",
                 ] {
+                    if good[job]["result"] == result {
+                        continue;
+                    }
                     let mut changed = good.clone();
                     changed[job]["result"] = result.into();
                     assert!(validate(event, native, &changed).is_err(), "{job} {result}");
@@ -99,6 +112,22 @@ mod tests {
                 assert!(validate(event, native, &changed).is_err());
             }
         }
+    }
+    #[test]
+    fn controlled_picker_is_required_only_after_a_known_normal_failure() {
+        let mut needs = json!({"plan":{"result":"success"},"lint":{"result":"success"},"legal":{"result":"success"},"test":{"result":"success"},"app":{"result":"success"},"app_smoke":{"result":"success"},"app_picker_normal":{"result":"success","outputs":{"outcome":"known_panel_failure"}},"app_picker_modified":{"result":"success"},"app_picker":{"result":"success"}});
+        validate("workflow_call", true, &needs).unwrap();
+        for result in ["skipped", "failure", "cancelled"] {
+            needs["app_picker_modified"]["result"] = json!(result);
+            assert!(validate("workflow_call", true, &needs).is_err());
+        }
+        needs["app_picker_modified"]["result"] = json!("success");
+        needs["app_picker_normal"]["outputs"]["outcome"] = json!("normal_pass");
+        assert!(validate("workflow_call", true, &needs).is_err());
+        needs["app_picker_modified"]["result"] = json!("skipped");
+        validate("workflow_call", true, &needs).unwrap();
+        needs["app_picker_normal"]["outputs"]["outcome"] = json!("unknown_failure");
+        assert!(validate("workflow_call", true, &needs).is_err());
     }
     #[test]
     fn only_non_pr_events_allow_their_inapplicable_merge_roles_to_be_absent() {

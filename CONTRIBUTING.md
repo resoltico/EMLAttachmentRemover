@@ -7,7 +7,9 @@ requires the complete native, archive and GUI gates for the delivered source.
 
 ## Start with Rust
 
-Install rustup, then run from a clean checkout:
+Install rustup. On Unix, the CI evidence-admission tests also require jq 1.6 or
+later on PATH; it is tooling only, not an app/CLI runtime dependency. Then run
+from a clean checkout:
 
 ```sh
 rustup show
@@ -66,10 +68,17 @@ checks its ordered base/H parents. A final API observation rejects stale head/ba
 pairings. Native jobs retain compiler/host identities, strict Slint fixtures,
 real different-UID controls, complete legal generation, native archives and
 matching macOS15 desktop qualification and macOS26 Intel picker compatibility.
+Intel26 first records the normal dedicated case. Only a validated native-panel
+failure may start the separate controlled-host role; final acceptance requires
+the actual same frozen product to pass with normal cleanup and preferences.
+Receipts explicitly distinguish normal and modified-host evidence. See
+[picker admission](docs/verification.md) for exact guards and limits. The private
+`prepare-macos-picker-host` command is confined to that hosted job; it refuses
+owner-desktop execution. The standalone panel diagnostic remains manual only.
 `ci-ok` always runs and rejects failed, missing and
 unexpectedly skipped jobs; only non-PR events omit merge integration/freshness.
 Full product acceptance requires every registered native role and its matching
-archive/desktop consumers. Icon and panel diagnostics
+archive/desktop consumers. Icon and standalone panel diagnostics
 are manual only. Partial reruns
 that lack the exact current producer artifact fail; rerun the complete workflow.
 Actionlint uses its exact checksum-pinned upstream prebuilt because install-action

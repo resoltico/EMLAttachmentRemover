@@ -2078,3 +2078,68 @@ resolved by this pass. No modified-host acceptance mechanism is needed to count
 this normal result. Final-source execution remains required after the pending
 observer/navigation corrections. Exact-M integration and freshness passed at He4;
 aggregate ci-ok failed because both final Appearance phases failed.
+
+Hb698/run39221321177 completed with all six native rows, both app candidates and
+both complete macOS15 desktop consumers passing. Each Mac source row executed433
+default tests plus67 Darwin cases; each app candidate executed457 release tests.
+Linux/Windows each executed392 default and392 release tests. Independent audits
+confirmed real extracted behavior, counterfeit rejection, normal settlement and
+the exact eight-archive inventory/source bindings. Actual asset assembly and
+independent byte/manifest readback passed from the clean Hb698 checkout.
+
+Both15 CPUs passed all seven GUI cases, each1/0/0, with normal owners, unchanged
+originals and the proper picker or strict nonpicker preference guard. Appearance
+records before/contrast/restored native Settings values and all three product
+native observations; original settings values are restored in both cases and both
+Settings processes exit.
+All eight Light/Dark/Increase Contrast/restored frames were physically reviewed.
+The revised Go To helper passed the full workflows, including Save/collision and
+destination selection. Both same-byte outer desktop_qualification receipts exist.
+The unmodified Intel26 dedicated case failed its first input panel with the known
+configuration semaphore timeout; current-M integration/freshness passed and ci-ok
+failed. No current-source normal picker acceptance was claimed.
+
+Controlled experiment39226983209 used that exact frozen Hb698 candidate. Baseline
+71.221s and unchanged repeat68.403s failed exit2; the exact current-user GUI icon-agent
+bootout completed exit0/1.292s; the identical probe passed4.325s afterward. All five
+identities matched and all processes settled cleanly. The actual dedicated product
+case then PASSED1/0/0. Independent readback verified three golden copies and four
+unchanged originals; final preferences allowed only three approved native-typed
+Cocoa changes. App, runner and controller settled normally with no forced cleanup
+or survivors. Frozen ZIP/reference before/after identities matched. The outer
+receipt explicitly labels modified-host observation, while the original normal
+and probe failures remain failed evidence. This establishes only the authorized
+controlled-host criterion, not healthy unmodified-host compatibility.
+
+The required workflow now separates normal measurement, conditional fresh-host
+qualification and final picker acceptance. One shared JQ predicate module governs
+normal failure admission, actual product completion, preparation and CI/release
+selection. Its source/run/attempt/archive/reference and separate workflow identity
+bindings prevent old or mixed evidence promotion. The preparation entry point is
+restricted to the exact CI/owner-release workflow file and controlled job, actual
+native Intel26 and the existing non-root GUI-user/controller/identity guards. It
+reuses the same probe/intervention engine; no broader command or production
+workaround is introduced. Unknown assertions, cancellation, cleanup uncertainty,
+missing evidence and unrelated errors remain failures. A normal pass requires the
+controlled role to be skipped; an admitted normal failure requires its actual
+controlled product pass. Both full15 suites and all other native gates remain
+required. The obsolete cross-run manual product wrapper was removed; standalone
+manual diagnostics and historical failures remain available.
+
+Fifty shared-predicate controls used retained real native results plus explicitly
+synthetic envelope/negative metadata; five real-file selection controls exercised
+normal/modified schema selection and rejection. These are admission tests, not
+new native execution. Committed data-only Unix tests and exact purpose/job/file
+tests cover missing/contradictory metadata, probe-only claims, wrong identities,
+unrestored state and unauthorized contexts. Local tooling/format/lint validation
+passes after correcting a missing-job panic detected by the aggregate negative
+control. New automatic CI/release admission still requires final-source native
+execution before completion.
+
+The local final admission batch passed126 tooling cases:25 library,75 command,
+two Unix JQ-admission cases and24 real Unix lifetime cases, plus strict Clippy,
+ShellCheck, actionlint and all50 predicate/five file-selection controls. The actual
+default-context preparation command refused the owner desktop with exit1 before
+creating outputs or taking any GUI/service action. These checks establish guard
+behavior and local refusal; automatic native qualification remains unrun until
+the subsequent exact-source CI completes.

@@ -11,6 +11,7 @@ Notable changes to this project are documented in this file. The format is based
 - **Breaking MIME policy:** copies retain supported plain-text and HTML body representations rather than only pruning explicitly marked attachments and related resources. Other non-body parts, including inline images outside related containers and calendar payloads, are removed without requiring attachment disposition. Empty containers collapse, and a message with no supported retained body is refused. Protected content reached in body context remains refused. See the [MIME policy](docs/mime.md); retained HTML is not sanitized or certified safe to open.
 - **Breaking copy naming and layout:** copies use `.no-attachments.eml`; selected directory trees mirror under root labels in an output folder. Name shortening follows native component limits without digest or numeric collision probing. Conflicting reservations, differing existing files, source aliases and overlapping output trees are refused. Use reported destinations rather than deriving former names.
 - **Breaking for macOS app users:** one main window retains serial queued runs and bounded reports instead of independent report windows. Fresh destination preferences have no old reader or migration; choose the destination again. The former standalone app build counter is retired; app and worker versions derive from the workspace version. Builds use Apple ad hoc signatures only, with no Developer ID or notarization.
+- Contributor verification on Unix additionally requires jq on PATH; see [contributor setup](CONTRIBUTING.md) for its supported range and the pinned build/check tools.
 
 ### Added
 
@@ -20,6 +21,7 @@ Notable changes to this project are documented in this file. The format is based
 ### Internal
 
 - Rust repository tooling retains scoped native build/archive evidence, complete target-specific crate/standard-library legal materials and bounded fuzz/mutation results. Install the exact developer-tool versions declared in xtask/tools.toml; CI uses checksum-verified prebuilt tools with source-build fallback disabled. Complete notices and accompanying license files are generated during distribution builds instead of tracked in the source tree. Required upstream tool advisory findings, native boundary failures and unavailable checks remain visible; no v6 tag, release or asset has been published.
+- Intel macOS26 picker qualification records normal or explicitly controlled-host acceptance. A retained known native-panel failure can admit only the narrow fresh-host preparation and an actual same-frozen-product pass with complete preferences and cleanup; probe recovery alone cannot qualify an app. Both complete macOS15 desktop suites and all other native/archive gates remain required.
 
 ## [5.0.0] - 2026-10-15
 

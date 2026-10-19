@@ -121,6 +121,17 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Prepare one controlled Intel26 picker host after a validated same-run normal failure.
+    PrepareMacosPickerHost {
+        #[arg(long)]
+        archive: PathBuf,
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long)]
+        normal_failure: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Check the actual macOS Slint profile and owned native child fixtures.
     CheckMacosDesktop {
         #[arg(long)]
@@ -359,6 +370,32 @@ fn main() -> ExitCode {
                 {
                     let _ = out;
                     Err("Native AppKit panel observation requires macOS".into())
+                }
+            }
+            Task::PrepareMacosPickerHost {
+                archive,
+                reference,
+                normal_failure,
+                out,
+            } => {
+                #[cfg(target_os = "macos")]
+                {
+                    macos_panel::require_picker_preparation_context()?;
+                    initialize_controller(&root)?;
+                    let build = macos::load(&root)?;
+                    macos_panel::prepare_picker_host(
+                        &root,
+                        &build,
+                        &archive,
+                        &reference,
+                        &normal_failure,
+                        &out,
+                    )
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = (archive, reference, normal_failure, out);
+                    Err("Controlled picker preparation requires native Intel macOS26".into())
                 }
             }
             Task::CheckMacosDesktop { out } => {

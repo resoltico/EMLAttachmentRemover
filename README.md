@@ -105,6 +105,10 @@ Privacy & Security. No Gatekeeper configuration change is part of this project.
 The desktop workflow has one main window with queued runs, source/destination
 selection, per-file results and technical reports. [App details](docs/macos-app.md)
 and the evidence log distinguish implemented behavior from native qualification.
+The hosted Intel macOS26 image has shown intermittent native-dialog failures.
+[Qualification records](docs/verification.md) distinguish ordinary runs from the
+narrowly controlled-host route; controlled-host success does not establish
+healthy unmodified-host compatibility.
 
 Linux targets Ubuntu 22.04+ with GNU/glibc, with required GLIBC symbols capped at
 2.35. Other distributions are unqualified. Windows targets system UCRT; native
