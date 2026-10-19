@@ -38,8 +38,8 @@ extension DesktopInteractionTests {
     let settingsOwner = try boundApplication(settingsReceipt, url: settingsURL)
     let app = XCUIApplication(url: appURL)
     let settings = XCUIApplication(url: settingsURL)
-    guard productOwner.activate(options: []),
-      app.windows["EML Attachment Remover"].waitForExistence(timeout: 20)
+    try await requireOwnedForeground(productOwner)
+    guard app.windows["EML Attachment Remover"].waitForExistence(timeout: 20)
     else { throw InteractionFailure.expectedPresentation }
     let source = fixture.appendingPathComponent("one.eml")
     let original = try Data(contentsOf: source)
@@ -91,23 +91,19 @@ extension DesktopInteractionTests {
     var observations = [String]()
     for (name, dark) in [("Light", false), ("Dark", true)] {
       try await setSetting(settings, name: name, selected: true)
-      guard productOwner.activate(options: []) else {
-        throw InteractionFailure.expectedPresentation
-      }
+      try await switchAppearanceApplication(productOwner, from: settingsOwner, sender: settings)
       let expected =
         "Interface native appearance: \(dark ? "dark" : "light"); increased contrast: false"
       try await requireText(app, containing: expected)
       observations.append(expected)
       snapshot(app, "native-appearance-\(name.lowercased())")
-      guard settingsOwner.activate(options: []) else {
-        throw InteractionFailure.expectedPresentation
-      }
+      try await switchAppearanceApplication(settingsOwner, from: productOwner, sender: app)
     }
     try await settingsPane(
       settingsOwner,
       url: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display")
     try await setSetting(settings, name: "Increase contrast", selected: true)
-    guard productOwner.activate(options: []) else { throw InteractionFailure.expectedPresentation }
+    try await switchAppearanceApplication(productOwner, from: settingsOwner, sender: settings)
     let contrast = "Interface native appearance: dark; increased contrast: true"
     try await requireText(app, containing: contrast)
     try await nativeDisplayState(contrast: true)
@@ -167,9 +163,26 @@ extension DesktopInteractionTests {
     configuration.addsToRecentItems = false
     let recipient = try await NSWorkspace.shared.open(
       [destination], withApplicationAt: bundleURL, configuration: configuration)
-    guard recipient.processIdentifier == owner.processIdentifier,
-      owner.activate(options: [])
+    guard recipient.processIdentifier == owner.processIdentifier
     else { throw InteractionFailure.expectedPresentation }
+    try await requireOwnedForeground(owner)
+  }
+
+  @MainActor
+  private func switchAppearanceApplication(
+    _ target: NSRunningApplication, from source: NSRunningApplication, sender: XCUIApplication
+  ) async throws {
+    if NSWorkspace.shared.frontmostApplication?.processIdentifier == target.processIdentifier {
+      try await requireOwnedForeground(target)
+      return
+    }
+    guard !target.isTerminated, !source.isTerminated, source.isActive,
+      NSWorkspace.shared.frontmostApplication?.processIdentifier == source.processIdentifier
+    else { throw InteractionFailure.expectedPresentation }
+    // These are the two retained, last-used apps in this scenario. Send one
+    // real switch only; unexpected MRU order fails the exact-PID observation.
+    sender.typeKey(XCUIKeyboardKey.tab, modifierFlags: .command)
+    try await requireOwnedForeground(target)
   }
 
   @MainActor
@@ -248,8 +261,8 @@ extension DesktopInteractionTests {
     try await settingsPane(
       owner, url: "x-apple.systempreferences:com.apple.Appearance-Settings.extension")
     try await setSetting(settings, name: state.selection, selected: true)
-    guard productOwner.activate(options: []) else { throw InteractionFailure.expectedPresentation }
     try await nativeDisplayState(contrast: state.contrast, transparency: state.transparency)
+    try await switchAppearanceApplication(productOwner, from: owner, sender: settings)
     if state.selection != "Auto" {
       try await requireText(
         product,

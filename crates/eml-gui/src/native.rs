@@ -20,6 +20,21 @@ use std::{
     rc::Rc,
 };
 
+/// Records lifecycle boundaries without selections, paths or preference values.
+pub(crate) fn lifecycle_observation(event: &'static str) {
+    unsafe extern "C" {
+        fn NSLog(format: &NSString, ...);
+    }
+    // SAFETY: Foundation's variadic format has exactly one Objective-C object
+    // argument. The format and retained message remain alive throughout the call.
+    unsafe {
+        NSLog(
+            objc2_foundation::ns_string!("EML lifecycle: %@"),
+            &*NSString::from_str(event),
+        );
+    }
+}
+
 pub(crate) enum EditAction {
     Copy,
     SelectAll,
@@ -127,8 +142,10 @@ fn url_from_path(path: &Path) -> Result<Retained<NSURL>, NativeError> {
 pub(crate) fn reveal(path: &Path) -> Result<(), NativeError> {
     MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
     let url = url_from_path(path)?;
+    lifecycle_observation("Finder selection dispatch entered");
     objc2_app_kit::NSWorkspace::sharedWorkspace()
         .activateFileViewerSelectingURLs(&NSArray::from_slice(&[&*url]));
+    lifecycle_observation("Finder selection dispatch returned");
     Ok(())
 }
 fn collect_paths(

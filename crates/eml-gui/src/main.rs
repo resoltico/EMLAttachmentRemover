@@ -196,14 +196,18 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
                     controller.boundary_failure(error);
                 }
             }
-            if controller.tick(&window)
-                && let Err(error) = slint::quit_event_loop()
-            {
-                controller.boundary_failure(&format!("Quit: {error}"));
+            if controller.tick(&window) {
+                native::lifecycle_observation(
+                    "Confirmed Quit resources settled; requesting loop exit",
+                );
+                if let Err(error) = slint::quit_event_loop() {
+                    controller.boundary_failure(&format!("Quit: {error}"));
+                }
             }
         },
     );
     window.show()?;
     slint::run_event_loop_until_quit()?;
+    native::lifecycle_observation("Main event loop returned successfully");
     Ok(())
 }

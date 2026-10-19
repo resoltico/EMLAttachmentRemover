@@ -1405,7 +1405,7 @@ A suspended HIE thread's name mentions a swallowed exception, but its timestamp
 predates the picker by nearly ten minutes; neither the exception reason nor a
 causal connection is known. No product workaround or runner-policy change is
 justified by that stack alone. Owner records retain clean relay EOF, reaped
-runner, normal app termination and four unchanged originals. Both app gates,
+runner, app termination and four unchanged originals. Both app gates,
 required floor consumers and root CI aggregate failed; all six native test rows
 and exact-M integration passed. Later GUI stages remain unrun at that head.
 
@@ -1508,7 +1508,7 @@ thread is already present. Its successful after-request sample shows2686
 observations inside NSOpenPanel construction and the AppKit bridge semaphore
 wait. This distinguishes the observed transition but does not identify the
 cause. The unfiltered owned-process log also truncated at1529392bytes. The owner
-reaped the runner, observed normal app termination and verified all four
+reaped the runner, observed app termination and verified all four
 originals unchanged; no forced app cleanup was needed. Both app gates, floor
 consumers and the root aggregate therefore remain failed at this checkpoint.
 
@@ -1534,7 +1534,7 @@ interruption exception during teardown; neither failure is discarded. The
 capture now targets the already identified owned folder window, using the same
 screenshot attachment helper generalized to XCUIElement. Actual drag and later
 GUI phases remain unrun at that head. The owner reaped the runner, observed
-normal app termination and verified all four originals unchanged.
+app termination and verified all four originals unchanged.
 
 The attempted narrow log query still stopped at1744855bytes and included
 messages that do not satisfy its context predicate. A separate owned native
@@ -1570,7 +1570,7 @@ archives. The minimum does not require duplicating every desktop case on every
 later OS, but the observed macOS26 Intel picker failure remains a completion
 blocker. No producer reversion, unsupported-OS exception or GUI waiver was
 approved. H23b's Intel test subsequently failed897.344seconds into the same
-workflow at the first native input panel; its owner observed normal termination,
+workflow at the first native input panel; its owner observed termination,
 reaped the runner and verified four unchanged originals. The faulty separate
 log options still truncated at1439491bytes. Its failure is retained.
 
@@ -1615,7 +1615,7 @@ At H6e69965b6610e546dc6f85a483c14efb98ccff7a/run39177129235 the ARM
 test passed exact Finder selection and the corrected owned-window screenshot,
 then failed245.792seconds into the test when NSRunningApplication.activate
 returned false before report dismissal or drag. The reason for refusal is not
-established. The owner again observed normal app termination and unchanged
+established. The owner again observed app termination and unchanged
 originals. The single-conjunction log query completed0 without timeout or
 truncation, retaining23404bytes and its applied predicate; service-process logs
 remain outside scope. Intel's run is still in progress at this checkpoint.
@@ -1631,3 +1631,32 @@ background activation request must succeed with the actual user interaction.
 SDK27 Swift6 XCTest compilation and strict formatting passed. Actual focus return
 and subsequent file drag remain unrun; no product activation correction or GUI
 qualification is claimed from compilation.
+
+## Hosted desktop failures and lifecycle diagnosis
+
+At H574fde058062987d3ae3a690a5e30c2b1072a2ad, run39179981007/a1
+completed with failure. All six native test jobs, both macOS26 candidate
+producers, legal/lint/icon, exact-merge integration and freshness passed. Both
+macOS15 desktop consumers failed at the same Finder-window move: the owned
+product had already exited. On ARM, the retained XCTest system-log archive
+binds PID4422 to the extracted candidate image and reports exitStatus=0 at
+00:35:55.795 UTC, immediately after Show in Finder. Window close and owner
+termination observations establish neither confirmed Quit nor worker settlement.
+The live macOS15 log query timed out; the offline archive supplies this evidence.
+
+The Intel26 compatibility consumer failed earlier, at the initial accessible
+static-text assertion. Its native tree contained the authored text; actual
+getter/runtime-value diagnostics and retained-PID foreground observation are
+added without relaxing the text assertion. The known Intel26 picker failure
+is still unresolved, not cleared by this earlier failure. Independent service
+log comparison found the suspected LaunchServices/SQLite/task-port messages in
+both failed Intel and successful ARM runs; they are not a demonstrated cause.
+
+Path-free native lifecycle events now bracket Finder dispatch, native Quit,
+confirmed settled Quit and successful event-loop return. These distinguish
+native execution from backend return on the next actual run; they do not fix or
+explain the exit yet. Appearance switches use one real Cmd-Tab between retained
+owned apps and verify the exact target foreground PID. Restoration of native
+settings precedes dependence on product focus. Local SDK27 XCTest compilation,
+strict Swift formatting, Rust GUI check/link and strict Clippy passed; no owner
+desktop GUI was launched. Hosted integration remains required.

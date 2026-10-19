@@ -125,6 +125,7 @@ pub(crate) fn receive_drop(board: *mut std::ffi::c_void, commit: bool) -> bool {
 }
 
 extern "C" fn should_terminate(_: &AnyObject, _: Sel, _: &NSApplication) -> usize {
+    native::lifecycle_observation("Native termination requested; awaiting confirmation");
     EVENTS.fetch_or(QUIT, Ordering::Release);
     wake_event_loop();
     // Native termination is cancelled until the Slint controller confirms

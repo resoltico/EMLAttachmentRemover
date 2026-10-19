@@ -29,7 +29,7 @@ final class DesktopInteractionTests: XCTestCase {
     guard owned.bundleURL?.standardizedFileURL == appURL.standardizedFileURL,
       owned.bundleIdentifier == Bundle(url: appURL)?.bundleIdentifier,
       owned.launchDate?.timeIntervalSince1970 == (receipt["launch_date"] as? NSNumber)?.doubleValue,
-      !owned.isTerminated, owned.activate(options: [])
+      !owned.isTerminated
     else { throw InteractionFailure.expectedPresentation }
     let directory = fixture.appendingPathComponent("pagination-input")
     let sources = (0..<65).map { directory.appendingPathComponent(String(format: "%03d.eml", $0)) }
@@ -44,6 +44,8 @@ final class DesktopInteractionTests: XCTestCase {
     guard window.waitForExistence(timeout: 20) else {
       throw InteractionFailure.expectedPresentation
     }
+    _ = owned.activate(options: [])
+    try await requireOwnedForeground(owned)
     let delivery = NSWorkspace.OpenConfiguration()
     delivery.createsNewApplicationInstance = false
     delivery.addsToRecentItems = false
@@ -138,8 +140,9 @@ final class DesktopInteractionTests: XCTestCase {
       for source in originals { XCTAssertEqual(try Data(contentsOf: source), original) }
     }
     let app = XCUIApplication(url: appURL)
-    guard owned.activate(options: []) else { throw InteractionFailure.expectedPresentation }
+    _ = owned.activate(options: [])
     XCTAssertTrue(app.windows["EML Attachment Remover"].waitForExistence(timeout: 20))
+    try await requireOwnedForeground(owned)
     let delivery = NSWorkspace.OpenConfiguration()
     delivery.createsNewApplicationInstance = false
     delivery.addsToRecentItems = false
@@ -349,9 +352,10 @@ final class DesktopInteractionTests: XCTestCase {
       XCTFail("Owned application did not finish native launch")
       return
     }
-    guard owned.activate(options: []) else { throw InteractionFailure.expectedPresentation }
+    _ = owned.activate(options: [])
     let window = app.windows["EML Attachment Remover"]
     XCTAssertTrue(window.waitForExistence(timeout: 20), app.debugDescription)
+    try await requireOwnedForeground(owned)
     let instances = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
     XCTAssertEqual(instances.count, 1)
     XCTAssertEqual(instances.first?.processIdentifier, owned.processIdentifier)
@@ -1145,6 +1149,13 @@ final class DesktopInteractionTests: XCTestCase {
         == .completed
     else {
       XCTFail("Required native accessible text is absent: \(prefix); \(app.debugDescription)")
+      for element in app.staticTexts.allElementsBoundByIndex.prefix(16) {
+        let value = element.value
+        let kind = value.map { String(reflecting: Swift.type(of: $0)) } ?? "nil"
+        print(
+          "Native StaticText value type=\(kind), value=\(String(describing: value).prefix(1024).debugDescription)"
+        )
+      }
       throw InteractionFailure.expectedPresentation
     }
     let observed = try XCTUnwrap(
@@ -1249,6 +1260,12 @@ final class DesktopInteractionTests: XCTestCase {
       throw InteractionFailure.expectedPresentation
     }
     titlebar.click()
+    try await requireOwnedForeground(owned)
+  }
+
+  @MainActor
+  func requireOwnedForeground(_ owned: NSRunningApplication) async throws {
+    guard !owned.isTerminated else { throw InteractionFailure.expectedPresentation }
     let active = NSPredicate { _, _ in
       !owned.isTerminated && owned.isActive
         && NSWorkspace.shared.frontmostApplication?.processIdentifier == owned.processIdentifier
@@ -1257,7 +1274,8 @@ final class DesktopInteractionTests: XCTestCase {
       await XCTWaiter.fulfillment(
         of: [XCTNSPredicateExpectation(predicate: active, object: nil)], timeout: 10) == .completed
     else {
-      XCTFail("Owned product did not become frontmost after its exposed titlebar was clicked")
+      XCTFail(
+        "Retained native application did not become frontmost: PID \(owned.processIdentifier)")
       throw InteractionFailure.expectedPresentation
     }
   }
