@@ -1806,5 +1806,29 @@ source paths, not demonstrated causes. No binding workaround is justified yet.
 A static startup marker and Open-panel constructor/presentation entry/return
 markers now test log-channel visibility and localize missing progress without
 altering construction or completion. Strict Clippy and GUI link passed.
-The human's qualification-environment choice is pending in command central;
-no changed completion predicate or altered-VM product test is authorized yet.
+The human answered the explicit qualification-environment question with
+“proceed per your best judgment.” Command central selected a conditional route:
+first finish the current normal-host product run. Only if its Intel26 gate still
+fails, a separately recorded disposable-VM product test may use the reviewed
+exact non-root GUI icon-service bootout, after settled baseline/repeat and byte
+identity checks. Actual frozen-product acceptance must pass; the standalone
+probe cannot qualify it. Normal failure remains visible, modified-host evidence
+must be explicit, and all other gates remain required. This route has not been
+implemented or applied; no normal-host compatibility success is claimed.
+
+H92ea/run39191314472 adds contrary diagnostic evidence: Intel26's standalone
+baseline failed with exit2 in68.154seconds, but its unchanged signed repeat
+passed without intervention in62.407seconds. Both processes settled. Admission
+correctly stopped before any service command. Thus the advertised image does
+not uniformly fail, and retry/time/state remain material confounds.
+
+At H92ea/run39191314575, ARM15 passed the shipping Workflow (1 passed,
+0 failed/skipped) and the corrected preference guard. Pagination then failed
+before processing: Launch Services rejected the folder Open With batch with
+kLSAppDoesNotClaimTypeErr (-10820). The bundle declared EML documents but
+omitted folders, despite the common ingress supporting directory collection.
+The correction adds a separate public.folder Viewer declaration with
+LSHandlerRank None, retaining the existing EML declaration and avoiding default
+handler priority. The real native rerun remains required. The failed pagination
+owner reaped its runner and preserved all69 originals; forced app cleanup leaves
+normal worker settlement unverified. Publication and appearance remain unrun.

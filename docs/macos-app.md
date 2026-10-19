@@ -68,7 +68,11 @@ commands use Slint's minimize, maximize and macOS bring-to-front APIs.
 Required behavior includes file/folder selection, native URL batch ingress,
 Services/drop/Open With, destination preferences with session-only override,
 serial queued runs, two retained reports, Stop/Force Stop, close/hide/reopen,
-confirmed bounded Quit, exact Finder reveal and export/failure handling. Local
+confirmed bounded Quit, exact Finder reveal and export/failure handling.
+The bundle declares both EML messages and folders for native URL delivery;
+both declarations retain `LSHandlerRank=None`. It does not set default file or
+folder associations. The separate Services declaration accepts the same types.
+Local
 development-window observations cover message selection, a real core-backed run
 with independent golden/original checks, explicit report save, metadata and
 technical disclosure, supplied SVG artwork, and idle Quit confirmation/cancel.
