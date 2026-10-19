@@ -1855,6 +1855,13 @@ lint and27 actual-expression guard observations passed, including rejecting
 the H92 natural repeat success and mutated ownership/settlement/identity facts.
 Actual modified-host product execution remains unrun.
 
+Manual run39196261462 failed before probe execution because the hosted Intel
+image lacks rg. Source/attempt and initial JSON guards passed; no service action
+or product execution occurred. The two fixed-string reads now use macOS's
+existing /usr/bin/grep -Fq. Product execution also requires successful frozen
+admission and an actually executed probe; missing downstream receipts from a
+preflight failure must not produce misleading secondary product failures.
+
 A fresh clean clone of7ad50a4201e996c8ce27fced1ff362a544c15a7c passed432
 discovered/executed tests (36 positive and15 explicit empty summaries) and14
 repository sections. The two pinned-Xcode sections failed because26.3 is absent

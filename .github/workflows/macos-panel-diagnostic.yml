@@ -109,8 +109,8 @@ jobs:
           test "${#normal[@]}" = 1
           jq -e '.exit_code==1 and .signal==null and .timed_out==false and .cancelled==false and .cleanup_complete==true and .unexpected_survivors==0' "${normal[0]}/process.json"
           jq -e '.runner_reaped==true and .runner_status==65 and .owned_app_terminated==true and .forced_app_cleanup==false and .timed_out==false and .cancelled==false and .originals_captured==4 and .originals_unchanged==true and .owned_pasteboard_released==true and .native_picker_diagnostic_settled==true and .unexpected_application_pids==[]' "${normal[0]}/owner-result.json"
-          rg -q 'Native input panel did not appear' "${normal[0]}/xctest.log"
-          rg -q 'Advance to configuration phase semaphore timed out' "${normal[0]}/native-picker-owned-process.log"
+          /usr/bin/grep -Fq 'Native input panel did not appear' "${normal[0]}/xctest.log"
+          /usr/bin/grep -Fq 'Advance to configuration phase semaphore timed out' "${normal[0]}/native-picker-owned-process.log"
           retained=(target/normal-picker-evidence/app-picker-compatibility/native-*/artifact-*/inspected-input.zip)
           test "${#retained[@]}" = 1
           cmp "${retained[0]}" "target/products/app-build/$app"
@@ -146,7 +146,7 @@ jobs:
           path: target/panel-observation/icon-service-experiment/**
           if-no-files-found: error
       - name: Require the admitted intervention and run the same frozen product
-        if: ${{ !cancelled() && inputs.product_run != '' }}
+        if: ${{ !cancelled() && inputs.product_run != '' && steps.frozen.outcome == 'success' && (steps.probe.outcome == 'success' || steps.probe.outcome == 'failure') }}
         env:
           APP: ${{ steps.frozen.outputs.app }}
           SOURCE: ${{ inputs.source }}
