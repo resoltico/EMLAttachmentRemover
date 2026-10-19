@@ -2143,3 +2143,13 @@ default-context preparation command refused the owner desktop with exit1 before
 creating outputs or taking any GUI/service action. These checks establish guard
 behavior and local refusal; automatic native qualification remains unrun until
 the subsequent exact-source CI completes.
+
+The H8f27 fresh-checkout review executed437 tests and passed13 sections; ShellCheck
+failed on genuine script findings exposed by an unrelated ancestor configuration,
+and the two pinned-Xcode26.3 sections remained unavailable locally. Repository-local
+ShellCheck policy now makes that check independent of ancestor settings. Explicit
+file/command failure propagation and candidate-before-validation output prevent
+invalid inputs from leaving a qualification result. All tracked scripts and
+workflows pass strict lint; the50 predicate controls and seven real-file selection
+controls pass, including absent/symlink archive rejection and absence of a final
+record after rejected selection. These remain tooling evidence, not GUI execution.

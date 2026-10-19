@@ -1,0 +1,4 @@
+# Keep clean-checkout script checks independent of unrelated ancestor config.
+external-sources=true
+enable=all
+severity=style
