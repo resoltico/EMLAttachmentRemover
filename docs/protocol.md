@@ -1,15 +1,16 @@
-# Protocol1 implementation contract corrections
+# Protocol1
 
 The Rust CLI implements protocol1 request decoding, checked event rendering and
 process-local cancellation. Qualification is recorded by capability and exact
-source in v6-implementation-evidence.md; complete shipping/app qualification is
-still unfinished. The supplied archive and checksum remain unchanged.
+source in [implementation evidence](v6-implementation-evidence.md) and the PR.
+Historical commit observations below qualify only their stated checkpoint.
+The supplied design archive and checksum remain unchanged.
 
 Cleanup residual names use platform-native component validation. POSIX rejects
 slash and NUL; backslash is a valid filename byte. Windows rejects both separators
 and NUL, preserving its UTF-16 native units. Do not suppress a legitimate POSIX
 residual component to satisfy the archive's blanket backslash restriction.
-The mapper must test both preservation and rejection when implemented.
+Mapper tests cover both preservation and rejection.
 
 An internal Windows native rename error retains exact NTSTATUS as primary and
 translated Win32 error as secondary. Its bounded authored Error.detail may explain
@@ -22,8 +23,8 @@ unprovable memory lifetime must not fabricate an unpublished receipt.
 
 ## Implemented request decoding
 
-The `remove-eml-attachments` package provides a thin executable and a transport
-library. `decode_request` accepts a complete byte buffer plus the captured
+The `remove-eml-attachments` executable delegates shared transport to
+`eml-protocol`. Its `decode_request` accepts a complete byte buffer plus the captured
 absolute working directory. It checks the 8 MiB limit, strict protocol-1 JSON,
 required fields (including explicit null for absent output directory), duplicate
 and unknown keys, native encoding and canonical padded Base64. Native bytes are
@@ -63,7 +64,7 @@ now requires both facts explicitly; same-path callers pass the same path twice.
 Its hand-authored split-fact golden rejects using display for native encoding.
 The read-only collector now supplies these facts; bounded native collector and
 Windows literal-versus-trimmed path integration passed at dfc3c76. Full run/event
-and maximal-size qualification remain pending.
+and maximal-size checks are separate from that historical collector checkpoint.
 
 For each source/known destination let d be complete display-expression native
 bytes and n complete reported-native bytes; charge b=max(d,n) once to the8MiB
@@ -73,7 +74,7 @@ still bounds both representations; the fixed margin covers Base64 rounding.
 Expanded reported cwd counts, while transient unreported operands are not charged
 a second time. This is a report-retention bound, not an8MiB peak-allocation
 promise for two independent buffers. Maximal event/run and exact/one-over tests
-must use independent display/native facts when those capabilities are built.
+use independent display/native facts.
 
 `TerminalPath` separately formats a borrowed path for human terminal text. It
 escapes C0/C1 controls, Unicode line/paragraph separators and Unicode bidi-control
@@ -82,6 +83,36 @@ and joiners remain readable. It is lossy display, not shell quoting, an
 operational expression or a guarantee against every Unicode visual ambiguity.
 Formatting errors propagate to the caller. HumanSink and the executable use this
 formatter for event paths and diagnostics, with checked writes and flushes.
+
+## Request and event shapes
+
+A Unix request for the relative path `message.eml` is:
+
+```json
+{"protocol":1,"paths":[{"encoding":"unix-bytes","base64":"bWVzc2FnZS5lbWw="}],"output_directory":null,"dry_run":true}
+```
+
+All four top-level fields are required. `output_directory:null` selects beside-source
+output; a native-path object selects an existing output root. Windows uses
+`windows-utf16le` with canonical Base64 of the actual little-endian UTF-16 units.
+A request path object has exactly `encoding` and `base64`; display text is output
+only. Request objects reject unknown and duplicate fields.
+
+Each event has a `type` discriminator and the following fields:
+
+| Type | Fields |
+|---|---|
+| `start` | `protocol`, `program`, `version`, `dry_run`, `total`, `collection_complete` |
+| `item` | `index`, `source`, `status`, `destination`, `source_bytes`, `copy_bytes`, `removed`, `stripped_fields`, `plan`, `publication`, `existing_observation`, `error` |
+| `summary` | `counts`, `interrupted`, `collection_complete`, `run_error`, `exit_code` |
+
+Counts contain `created`, `up_to_date`, `planned`, `failed` and `not_processed`.
+Nullable fields are present with explicit JSON null when unobserved. Nested path,
+publication, synchronization, existing-copy and error records are defined by the
+[typed wire records](../crates/eml-protocol/src/records.rs) and independent
+[contract scenarios](../tests/contract). Event consumers may ignore additive object
+fields, but reject unknown types, wrong value shapes, missing required fields and
+inconsistent state/count/receipt/exit observations. There is no older decoder.
 
 ## Collection-admission event indices
 
@@ -94,17 +125,17 @@ admission stream has total3/incomplete collection, one failed item at index1
 with no publication, then failed1/not_processed2 and INPUT_ADMISSION_FAILED/exit1.
 Do not reindex that failure to0 or fabricate the unexpanded contents of folders.
 Collection limit and collection stop remain the separately specified no-item
-cases. Future shared protocol/reducer fixtures must accept this gap and reject
+cases. Shared protocol/reducer fixtures accept this gap and reject
 repeated, decreasing and out-of-range indices.
 
 ## Core diagnostic vocabulary
 
 The core enum owns these stable codes and permitted phases. A source test checks
 this contract table against every code/phase pair. This is a vocabulary and pure
-preparation classification, not evidence that all runner scenarios are implemented.
+preparation classification, not independent runtime evidence for every scenario.
 Pre-stream `InvalidRequest` remains separate. An allowed INTERRUPTED/publish pair
-does not establish that interruption happened before the edge; the runner must
-later enforce that condition and preserve all observed publication effects.
+does not establish that interruption happened before the edge; the runner
+enforces that condition and preserves all observed publication effects.
 
 <!-- error-vocabulary:start -->
 | Code | Allowed phases |
@@ -188,9 +219,9 @@ recorded as an oracle or exact peak-memory promises.
 Current tests include hand-authored native planned-create golden lines, actual
 Created/UpToDate projection, raw Unicode separators, human escaping, exact/+1
 line storage, run storage and actual partial-write/flush progress with permanent
-failure. The complete required shared scenario set, shipping smoke and Rust frontend
-consumer remain unfinished. Native adapter runtime passed at0a20591; that library
-slice alone does not qualify the process protocol.
+failure. Shared scenarios, extracted shipping smoke and the Rust frontend reducer
+exercise their separate boundaries. Native adapter runtime at0a20591 was an
+earlier library checkpoint; it alone does not qualify the process protocol.
 
 ## Executable transport and termination
 
@@ -207,7 +238,7 @@ callback requests Core stop; the second exits130, accepting incomplete reporting
 and the documented crash residue. Standard Unix signals can coalesce. Windows
 console close/logoff/shutdown may terminate the process under the OS deadline
 before its queued Rust callback runs; graceful completion is not promised for
-those events. Ctrl-C/Break native lifecycle qualification remains required.
+those events. Both native Windows rows execute the Ctrl-C/Break lifecycle cases.
 
 Usage/request/core-prerequisite errors have no event stream and exit2. Transport
 thread/handler setup failure exits1. Whole untrusted diagnostic strings are

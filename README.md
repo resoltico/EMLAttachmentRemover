@@ -120,7 +120,7 @@ are different evidence.
 
 See [CONTRIBUTING](CONTRIBUTING.md) for setup and checks, the
 [architecture](docs/architecture.md) for library boundaries and
-[verification](docs/verification.md) for bounded campaigns and remaining gates.
+[verification](docs/verification.md) for bounded campaigns and required gates.
 The repository uses Rust tooling; it contains no Python product or build system.
 The editable owner artwork and its historical construction records remain under
 [artwork](artwork).

@@ -25,7 +25,7 @@ The workspace separates message policy and native storage from frontends.
 - **eml-gui** contains the Slint macOS screens under the explicit macos-gui
   Cargo feature. It renders queue, progress, reports and confirmation state and
   routes native ingress and user actions to the shared application contracts.
-  Full native GUI qualification remains incomplete. **eml-macos** carries the
+  Exact-source GUI qualification is recorded separately. **eml-macos** carries the
   reviewed Darwin ownership boundary into Rust, separate from business policy.
 - **xtask** owns repository checks, bounded campaigns, native build identity,
   complete target notices, archive creation/readback and qualification evidence.

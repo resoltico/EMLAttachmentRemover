@@ -35,7 +35,7 @@ are create-new and never overwrite an existing file. The command subset uses
 program/arguments/captured cwd/named environment changes, with owned standard
 handles and NUL stdin; repository constructors do not use env_clear. Actual
 console-event delivery, protected archive roots and final-link/runtime checks
-remain open. Source checks are not Windows archive qualification.
+have separate native gates. Source checks are not Windows archive qualification.
 
 The private console test sender is a separate detached process inside the same
 owned Job. It inherits only an actual query/synchronization process handle,
@@ -48,8 +48,8 @@ The sender retains its ignore handler until normal process exit. It does not
 call FreeConsole after generation: Microsoft documents that this
 [resets the control-handler table](https://learn.microsoft.com/en-us/windows/console/setconsolectrlhandler),
 which can race the sender's own queued Ctrl-C into default termination. The
-actual native 0xC000013A sender failures are retained; corrected execution is
-still required on both CPUs.
+historical native 0xC000013A sender failures are retained. Subsequent corrected
+execution passed on both CPUs; delivered-source receipts remain authoritative.
 
 The two real CLI cases use anonymous owned pipes. One observes actual consumption
 of an unfinished request before CTRL_C. The other observes a partial real report

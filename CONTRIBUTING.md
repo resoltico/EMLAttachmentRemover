@@ -141,9 +141,9 @@ bridge/test source using the selected Xcode's default formatter configuration.
 are captured from the pinned tool and passed explicitly, so ancestor/owner
 formatter settings are not inputs. A newer local formatter is supplementary.
 
-macOS `qualify` remains incomplete while its full app/GUI gates are open. Linux
-and Windows have native release/archive qualification checkpoints; final acceptance
-still requires the delivered source's complete matrix. TARGET and ARCHIVE must match actual native
+macOS `qualify` produces a native app candidate; separate same-byte desktop and
+picker consumers establish GUI qualification. Final acceptance on every platform
+requires the delivered source's complete native/archive/GUI matrix. TARGET and ARCHIVE must match actual native
 host and declared artifact identities. Reusing a populated output directory is
 refused. See [verification](docs/verification.md) for the exact implemented scope.
 Future owner release admission, qualification, attestations and draft recovery

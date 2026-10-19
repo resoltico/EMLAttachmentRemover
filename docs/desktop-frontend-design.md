@@ -59,7 +59,7 @@ request without discarding prior outcomes. A malformed frame, summary/count/exit
 disagreement or incomplete EOF tail must remain explicit while retaining earlier
 accepted outcomes. A successful process or checksum cannot replace those checks.
 
-Both actual native macOS CPUs still need ad hoc app/worker signature identity, archive
+Both actual native macOS CPUs require ad hoc app/worker signature identity, archive
 readback and extracted execution, file/Services/drop/picker ingress, queue/report
 limits, Stop/Force Stop/Quit, reveal/export failures and accessibility/appearance
 checks. Remove needless or superseded code before delivering v6.
@@ -121,4 +121,5 @@ supervisor settlement. A read-only worker-PID absence observation supplements
 settlement; it grants no signal authority and is not sufficient by itself.
 Uncertain ownership stops further cases. These observations establish fixture
 lifecycle/presentation boundaries only when executed; the baseline workflow and
-unmodified shipping archive checks remain mandatory. Native execution is pending.
+unmodified shipping archive checks remain mandatory. Exact-source native outcomes
+are recorded in the PR and [implementation evidence](v6-implementation-evidence.md).

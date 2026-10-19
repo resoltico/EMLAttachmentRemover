@@ -1,8 +1,11 @@
-# Filesystem implementation contract corrections
+# Filesystem contracts and reviewed design corrections
 
-The native filesystem business workflow is still being implemented. These
-reviewed corrections preserve the safety requirements; they are not product
-qualification evidence. The original design archive and checksum remain intact.
+The native filesystem business workflow implements the contracts below. Reviewed
+corrections preserve the safety requirements; source descriptions are not product
+qualification evidence. Commit-specific observations are historical checkpoints;
+current exact-source outcomes are recorded in the PR and
+[implementation evidence](v6-implementation-evidence.md). The original design
+archive and checksum remain intact.
 
 ## Typed ordinary-file observations
 
@@ -41,8 +44,8 @@ A successful `PreparedSource` retains the original read-only file and immutable
 `PreparedMessage`; raw input bytes are released after preparation. Its source
 length derives from the initial signature qualified against actual EOF/read count.
 The constructor checks source again after MIME preparation. Exposed revalidation
-returns native facts without assigning a later publication phase. The future run
-workflow must still perform every required source check before/after its edge.
+returns native facts without assigning a later publication phase. The run
+workflow performs the required source checks before/after its edge.
 This capability creates no output, syncs no file, applies no run metadata budget,
 emits no events and supplies no snapshot or permanent-stability guarantee.
 
@@ -254,7 +257,7 @@ Expanded cwd prefixes count when actually reported, rather than remaining
 transient operational material. Exact/one-over
 source-accounting tests now exercise the read-only collector, including max of
 independent display/native lengths. Planned-destination and maximal event/run
-admission remain unfinished and are not established by those source tests.
+admission have separate checks; these source tests alone do not establish them.
 
 On Windows, every successfully admitted source reports its admitted extended
 SELECTED expression plus literal walked suffix as the native value. Preserve
@@ -306,7 +309,7 @@ reported before ordinary signature lookup; a traversal open refuses reparse
 processing. The collector must compare its earlier observed full ID before
 descending through the returned directory. Physical ancestry/overlap admission
 remain separate from full writable integration. The read-only core collector
-below now consumes the inventory primitives; native qualification is pending.
+below consumes the inventory primitives; native qualification has separate gates.
 
 The Windows free `observe_selected` function now supplies selected-root metadata
 from an already admitted absolute extended DOS/UNC expression. Its fixed
@@ -403,7 +406,7 @@ Cancellation during metadata-only root observations does not convert those
 observations into known work items.
 Root-admission failure separately retains collection_complete=false and emits
 only explicit-root failures, leaving other known work not_processed. Physical
-negative-overlap native qualification and writable integration remain unfinished; neither a
+negative-overlap native qualification and writable integration have separate checks; neither a
 filtered walk nor a plain upward inode no-match establishes disjointness.
 
 The reviewed physical-overlap predicate is ordinary-directory reachability from
@@ -439,7 +442,7 @@ then observes explicit roots before logical request-order/native-name DFS.
 Source-directory links follow at selection; children use no-follow observations
 and compare the earlier full identity before descent. Windows source-directory
 name resolution checks the reopened normalized endpoint against the held target;
-full pinned writable ancestry/address qualification remains unfinished.
+writable ancestry/address qualification is a separate native gate.
 
 The pure error is now `RequestPathError`, used by `validate_path_limits` and the
 transport decoder. Outer `InvalidRequest` preserves genuine working/output-root
@@ -480,9 +483,8 @@ directory-removal boundaries while the filesystem remains real. It does not
 qualify another-user interference, mount setup or a signal adapter. Windows
 literal-parent/source-native and static junction cases passed on both native CPUs.
 Source and bounded six-platform native review closed at dfc3c76. Structural
-planning and read-only comparison qualified in subsequent checkpoints below;
-serial dry-run execution is now being verified. Writable execution remains
-unfinished.
+planning, read-only comparison and serial dry-run execution qualified in subsequent
+checkpoints below. Writable execution is implemented separately.
 
 Complete Windows literal operands use the existing extended validation branch
 after append; ordinary normalization is not repeated on literal names. The one
@@ -543,8 +545,8 @@ precedence because no complete successful stream is claimed.
 
 This operation never creates missing parents, stages, publishes or synchronizes.
 Dry-run native qualification closed at ac8e193. The common writable consumers
-and private success constructors are now implemented in source below, with
-native qualification still pending; no overall product acceptance follows.
+and private success constructors are implemented below. Their native qualification
+is separate; a read-only operation alone establishes no overall product acceptance.
 
 The common run operation now implements both Create and DryRun in source. It
 shares the same admission, preparation, initial read-only destination inspection,
@@ -585,7 +587,8 @@ checkpoint that stopped, not a contemporaneous flag or native ErrorKind.
 These are implemented source contracts under native verification, not full
 product acceptance. The replacement Windows product and platform-fact gates passed on both native
 CPUs at [39f7ee3](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39091719923). Full boundary
-qualification, CLI/JSON, Slint, archive and required GUI gates remain unfinished.
+qualification, CLI/JSON, Slint, archive and GUI checks have distinct exact-source
+receipts; that earlier Windows checkpoint alone does not qualify them.
 
 ## Supersession of design-pack §6 and §10 item7
 
