@@ -1822,7 +1822,7 @@ passed without intervention in62.407seconds. Both processes settled. Admission
 correctly stopped before any service command. Thus the advertised image does
 not uniformly fail, and retry/time/state remain material confounds.
 
-At H92ea/run39191314575, ARM15 passed the shipping Workflow (1 passed,
+At H92ea/run39191314575, both15 CPUs passed the shipping Workflow (each1 passed,
 0 failed/skipped) and the corrected preference guard. Pagination then failed
 before processing: Launch Services rejected the folder Open With batch with
 kLSAppDoesNotClaimTypeErr (-10820). The bundle declared EML documents but
@@ -1832,3 +1832,30 @@ LSHandlerRank None, retaining the existing EML declaration and avoiding default
 handler priority. The real native rerun remains required. The failed pagination
 owner reaped its runner and preserved all69 originals; forced app cleanup leaves
 normal worker settlement unverified. Publication and appearance remain unrun.
+
+The same run's normal Intel26 product check failed its first native input panel.
+The owned AppKit log records another configuration-semaphore timeout. Its runner
+was reaped, four originals were unchanged and app termination needed no forced
+cleanup. Full offline prefix and all-owned-PID queries still contain no lifecycle
+or panic markers, so their channel remains unestablished. Inspection also found
+that the narrower owner query excluded those exact prefixes; it now includes
+them inside the existing PID-and-executable-path conjunction. Strict SDK27 Swift
+formatting and owner compilation pass. This observer correction does not explain
+the product exit or invalidate the separately empty full-archive query.
+
+A manual-only extension to the panel workflow can now select the exact failed
+CI run/attempt's Intel candidate, legal input and normal picker evidence. It
+requires the retained clean input-panel failure and identical normal-run ZIP,
+then freezes candidate/reference identities before the existing probe experiment.
+Only an admitted, successful intervention probe permits the actual unchanged
+product Workflow. An outer modified-host observation explicitly distinguishes
+the older consumer's environment-unaware receipt. Original diagnostic failure
+remains the job verdict; no aggregate or release acceptance changed. Workflow
+lint and27 actual-expression guard observations passed, including rejecting
+the H92 natural repeat success and mutated ownership/settlement/identity facts.
+Actual modified-host product execution remains unrun.
+
+A fresh clean clone of7ad50a4201e996c8ce27fced1ff362a544c15a7c passed432
+discovered/executed tests (36 positive and15 explicit empty summaries) and14
+repository sections. The two pinned-Xcode sections failed because26.3 is absent
+locally; these are unavailable checks, not complete native qualification.

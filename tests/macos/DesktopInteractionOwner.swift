@@ -339,10 +339,10 @@ struct DesktopInteractionOwner {
         // negative control confirmed that unrelated message text is excluded.
         let predicate = NSPredicate(
           format:
-            "processIdentifier == %d AND processImagePath == %@ AND (logType == %@ OR logType == %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR subsystem CONTAINS[c] %@)",
+            "processIdentifier == %d AND processImagePath == %@ AND (logType == %@ OR logType == %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR composedMessage CONTAINS[c] %@ OR subsystem CONTAINS[c] %@ OR composedMessage BEGINSWITH %@ OR composedMessage BEGINSWITH %@)",
           launched.processIdentifier, image.path, "error", "fault", "exception", "ViewBridge",
           "NSOpenPanel", "NSSavePanel",
-          "openAndSavePanel", "ViewBridge"
+          "openAndSavePanel", "ViewBridge", "EML lifecycle: ", "EML panic source: "
         ).predicateFormat
         log.arguments = [
           "show", "--start",
@@ -383,7 +383,7 @@ struct DesktopInteractionOwner {
           "start": date.timeIntervalSince1970, "end": end,
           "status": log.terminationStatus, "reason": log.terminationReason.rawValue,
           "timed_out": timedOut, "output_limit_reached": outputLimitReached,
-          "filter": "fault/error or exception/panel/ViewBridge context; not all product logs",
+          "filter": "fault/error, panel/ViewBridge or exact lifecycle/panic prefixes; partial logs",
           "predicate": predicate,
           "bytes":
             (try FileManager.default.attributesOfItem(atPath: logURL.path)[.size] as? NSNumber)?
