@@ -1733,3 +1733,16 @@ ends the diagnostic environment. Two admission controls reject arbitrary exit2,
 unexpected phases and unsettled/cancelled baselines. All121 tooling tests passed
 (25 library,72 command,24 Unix lifetime), plus strict Clippy, Rust formatting and
 actionlint. Actual intervention execution remains unrun at this checkpoint.
+
+At H1fcd828fc33428a15522d29702831caeba5a97b6/run39185359743, ARM15
+and Intel26 failed at the ready-text check before Finder. The native filtered
+queries repeatedly returned no match, while direct StaticText getters still
+returned the exact required full String. That disproves the server-predicate
+assumption; the Finder timer correction remains unverified by this run.
+The helper now reads only Image title/label and StaticText value attributes,
+captures the matching element/property during the successful wait evaluation,
+and rechecks that same actual getter before acceptance. It does not enumerate
+unrelated roles, rescan after success, parse a debug description or extend the
+ten-second wait. Current artwork is natively exposed as Image; its Processing
+and Completed labels keep the direct title/label path. Strict Swift formatting
+and SDK27 XCTest compilation passed; native execution remains required.

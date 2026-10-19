@@ -1136,13 +1136,26 @@ final class DesktopInteractionTests: XCTestCase {
 
   @MainActor
   private func requireAccessibleText(_ app: XCUIApplication, prefix: String) async throws {
-    let text = app.staticTexts.matching(NSPredicate(format: "value BEGINSWITH %@", prefix))
-      .firstMatch
-    let named = app.descendants(matching: .any).matching(
-      NSPredicate(format: "title BEGINSWITH %@ OR label BEGINSWITH %@", prefix, prefix)
-    ).firstMatch
+    enum Attribute { case title, label, value }
+    var match: (element: XCUIElement, attribute: Attribute)?
     let predicate = NSPredicate { _, _ in
-      text.exists || named.exists
+      for image in app.images.allElementsBoundByIndex {
+        if image.title.hasPrefix(prefix) {
+          match = (image, .title)
+          return true
+        }
+        if image.label.hasPrefix(prefix) {
+          match = (image, .label)
+          return true
+        }
+      }
+      for text in app.staticTexts.allElementsBoundByIndex {
+        if (text.value as? String)?.hasPrefix(prefix) == true {
+          match = (text, .value)
+          return true
+        }
+      }
+      return false
     }
     guard
       await XCTWaiter.fulfillment(
@@ -1159,14 +1172,19 @@ final class DesktopInteractionTests: XCTestCase {
       }
       throw InteractionFailure.expectedPresentation
     }
-    let observed = text.exists ? text : named
-    XCTAssertTrue(
-      observed.title.hasPrefix(prefix) || observed.label.hasPrefix(prefix)
-        || (observed.elementType == .staticText
-          && (observed.value as? String)?.hasPrefix(prefix) == true)
-    )
+    let observed = try XCTUnwrap(match)
+    let value: String?
+    switch observed.attribute {
+    case .title: value = observed.element.title
+    case .label: value = observed.element.label
+    case .value: value = observed.element.value as? String
+    }
+    guard value?.hasPrefix(prefix) == true else {
+      XCTFail("Native accessible attribute changed before acceptance: \(prefix)")
+      throw InteractionFailure.expectedPresentation
+    }
     print(
-      "Native accessibility observation: kind=\(observed.elementType), title=\(observed.title.debugDescription), label=\(observed.label.debugDescription), value=\(String(describing: observed.value).prefix(4096))"
+      "Native accessibility observation: kind=\(observed.element.elementType), attribute=\(observed.attribute), value=\(String(describing: value).prefix(4096))"
     )
   }
 
