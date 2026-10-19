@@ -95,19 +95,19 @@ extension DesktopInteractionTests {
     var observations = [String]()
     for (name, dark) in [("Light", false), ("Dark", true)] {
       try await setSetting(settings, name: name, selected: true)
-      try await switchAppearanceApplication(productOwner, from: settingsOwner, sender: settings)
+      try await switchAppearanceApplication(productOwner, from: settingsOwner)
       let expected =
         "Interface native appearance: \(dark ? "dark" : "light"); increased contrast: false"
       try await requireText(app, containing: expected)
       observations.append(expected)
       snapshot(app, "native-appearance-\(name.lowercased())")
-      try await switchAppearanceApplication(settingsOwner, from: productOwner, sender: app)
+      try await switchAppearanceApplication(settingsOwner, from: productOwner)
     }
     try await settingsPane(
       settingsOwner,
       url: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display")
     try await setSetting(settings, name: "Increase contrast", selected: true)
-    try await switchAppearanceApplication(productOwner, from: settingsOwner, sender: settings)
+    try await switchAppearanceApplication(productOwner, from: settingsOwner)
     let contrast = "Interface native appearance: dark; increased contrast: true"
     try await requireText(app, containing: contrast)
     try await nativeDisplayState(contrast: true)
@@ -174,7 +174,7 @@ extension DesktopInteractionTests {
 
   @MainActor
   private func switchAppearanceApplication(
-    _ target: NSRunningApplication, from source: NSRunningApplication, sender: XCUIApplication
+    _ target: NSRunningApplication, from source: NSRunningApplication
   ) async throws {
     if NSWorkspace.shared.frontmostApplication?.processIdentifier == target.processIdentifier {
       try await requireOwnedForeground(target)
@@ -183,9 +183,12 @@ extension DesktopInteractionTests {
     guard !target.isTerminated, !source.isTerminated, source.isActive,
       NSWorkspace.shared.frontmostApplication?.processIdentifier == source.processIdentifier
     else { throw InteractionFailure.expectedPresentation }
-    // These are the two retained, last-used apps in this scenario. Send one
-    // real switch only; unexpected MRU order fails the exact-PID observation.
-    sender.typeKey(XCUIKeyboardKey.tab, modifierFlags: .command)
+    // Request this retained process directly; the system app switcher's MRU
+    // order is not an identity binding. The acknowledgment is not a focus oracle.
+    let requested = target.activate(options: [])
+    print(
+      "Retained native activation request: source=\(source.processIdentifier), target=\(target.processIdentifier), sent=\(requested)"
+    )
     try await requireOwnedForeground(target)
   }
 
@@ -295,7 +298,7 @@ extension DesktopInteractionTests {
       owner, url: "x-apple.systempreferences:com.apple.Appearance-Settings.extension")
     try await setSetting(settings, name: state.selection, selected: true)
     try await nativeDisplayState(contrast: state.contrast, transparency: state.transparency)
-    try await switchAppearanceApplication(productOwner, from: owner, sender: settings)
+    try await switchAppearanceApplication(productOwner, from: owner)
     if state.selection != "Auto" {
       try await requireText(
         product,

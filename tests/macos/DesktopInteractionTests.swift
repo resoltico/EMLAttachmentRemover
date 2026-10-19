@@ -1411,8 +1411,10 @@ final class DesktopInteractionTests: XCTestCase {
       await XCTWaiter.fulfillment(
         of: [XCTNSPredicateExpectation(predicate: active, object: nil)], timeout: 10) == .completed
     else {
+      let front = NSWorkspace.shared.frontmostApplication
       XCTFail(
-        "Retained native application did not become frontmost: PID \(owned.processIdentifier)")
+        "Retained native application did not become frontmost: PID \(owned.processIdentifier), alive=\(!owned.isTerminated), active=\(owned.isActive), actual front PID=\(String(describing: front?.processIdentifier)), bundle=\(String(describing: front?.bundleIdentifier))"
+      )
       throw InteractionFailure.expectedPresentation
     }
   }

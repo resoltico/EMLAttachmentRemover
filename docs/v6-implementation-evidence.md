@@ -1990,3 +1990,25 @@ native-panel failure line. Two native attachment unit cases, strict Clippy and
 workflow lint passed; nine actual release-JQ positive/negative controls passed.
 Supplementary SDK27 XCTest compilation passed after an extracted bare return was
 corrected. All new native picker and Switch interactions remain unrun.
+
+At Hfd2/run39209354206, all six native source rows and both app candidates passed;
+independent review confirmed their test counts, clean settlement, extracted CLI/
+worker behavior and exact eight-archive producer identities. Local assembly of
+those actual eight archives and independent copy/manifest readback passed.
+The dedicated normal Intel26 case executed its own method and failed its first
+message picker with the retained native configuration semaphore timeout. Owner/
+controller cleanup completed without forced product cleanup or survivors, four
+originals were unchanged, and the actual dedicated-method failure and identical
+frozen ZIP satisfy the existing narrow normal-failure guards. This is not picker
+acceptance; no final preference/qualification receipt was produced.
+
+The ARM15 Appearance case now reads both exact Switch controls successfully.
+Its first Settings-to-product Command-Tab failed the retained product's exact
+foreground observation; a later teardown Command-Tab succeeded and retained a
+restored-light screenshot. No three-condition acceptance receipt exists. The
+fixture's MRU-order assumption is removed: one activation request targets the
+retained NSRunningApplication object, followed by the same bounded alive/PID/
+isActive observation. Request acknowledgment is logged rather than used as an
+oracle. No force option, reopen, replacement launch or arbitrary click is added.
+Source/target live identity guards remain. Supplementary SDK27 compilation and
+strict formatting passed; this corrected activation path remains unrun natively.
