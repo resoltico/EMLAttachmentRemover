@@ -1144,9 +1144,7 @@ final class DesktopInteractionTests: XCTestCase {
       XCTFail("Native report save panel did not appear: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
-    app.typeKey("g", modifierFlags: [.command, .shift])
-    app.typeText(destination.deletingLastPathComponent().path)
-    app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+    try await navigateNativePanel(app, panel: panel, to: destination.deletingLastPathComponent())
     let filename = panel.textFields["saveAsNameTextField"]
     guard filename.waitForExistence(timeout: 5) else {
       XCTFail("Native Save As control is unavailable: \(app.debugDescription)")
@@ -1183,6 +1181,40 @@ final class DesktopInteractionTests: XCTestCase {
     XCTAssertEqual(
       result, .completed, "Native report save panel did not complete: \(app.debugDescription)")
     guard result == .completed else { throw InteractionFailure.expectedPresentation }
+  }
+
+  @MainActor
+  private func navigateNativePanel(_ app: XCUIApplication, panel: XCUIElement, to path: URL)
+    async throws
+  {
+    app.typeKey("g", modifierFlags: [.command, .shift])
+    let goTo = panel.sheets["GoToWindow"]
+    let field = goTo.textFields["PathTextField"]
+    guard goTo.waitForExistence(timeout: 10),
+      panel.sheets.matching(identifier: "GoToWindow").count == 1,
+      field.waitForExistence(timeout: 5), field.isEnabled && field.isHittable
+    else {
+      XCTFail("Owned native Go To path control is unavailable: \(panel.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    field.click()
+    field.typeKey("a", modifierFlags: .command)
+    field.typeText(path.path)
+    let entered = field.value as? String
+    print("Owned native Go To path readback: \(String(describing: entered))")
+    guard entered == path.path else {
+      XCTFail(
+        "Native Go To path differs: expected \(path.path), actual \(String(describing: entered))")
+      throw InteractionFailure.expectedPresentation
+    }
+    field.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+    let closed = NSPredicate { _, _ in !goTo.exists }
+    let result = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: closed, object: nil)], timeout: 10)
+    guard result == .completed else {
+      XCTFail("Owned native Go To sheet did not finish navigation: \(panel.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
   }
 
   @MainActor
@@ -1225,9 +1257,7 @@ final class DesktopInteractionTests: XCTestCase {
       XCTFail("Native input panel did not appear: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
-    app.typeKey("g", modifierFlags: [.command, .shift])
-    app.typeText(path.path)
-    app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+    try await navigateNativePanel(app, panel: panel, to: path)
     if panel.exists {
       let open = panel.buttons["Open"]
       guard open.waitForExistence(timeout: 5), open.isEnabled else {

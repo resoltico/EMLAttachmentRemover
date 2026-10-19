@@ -2012,3 +2012,26 @@ isActive observation. Request acknowledgment is logged rather than used as an
 oracle. No force option, reopen, replacement launch or arbitrary click is added.
 Source/target live identity guards remain. Supplementary SDK27 compilation and
 strict formatting passed; this corrected activation path remains unrun natively.
+
+Controlled dedicated experiment39213595846 retained the exact admitted preparation
+on Intel26: unchanged baseline/repeat failures, settled exact user-scoped icon-agent
+unload, matching signed probe identities and successful unchanged probe afterward.
+The actual frozen Hfd2 product still failed. Its message-picker up-to-date import
+passed; the folder panel opened, but its GoToWindow remained present after Return
+and the underlying Open button stayed disabled. The synthesized path matched the
+owned fixture; the native text-field value was truncated in retained observations,
+so dropped or altered input is not established. No usable nested Go button exists
+in that tree. Folder processing, keyboard-picker verification, normal Quit and the
+final preference guard were not reached. The owner reaped the runner, forced
+product cleanup and preserved four originals; worker settlement remains unverified.
+The separately bounded owned-log query timed out and is retained as such. Exact
+candidate/reference identities were preserved, and no success receipt was emitted.
+
+The input and Save helpers shared an unchecked Go To navigation sequence. Their
+common helper now waits for the owned GoToWindow/PathTextField, replaces and reads
+back the exact native path, sends one Return to that field, and requires the sheet
+to disappear before accessing underlying controls. Existing filename, collision,
+report-byte, independent golden and normal-settlement checks remain. This fixes
+the unverified navigation assumption without inventing an offscreen Go-button
+interaction or proving the original input-loss cause. Native verification is pending;
+no modified-host aggregate/release alternative is implemented from this failure.
