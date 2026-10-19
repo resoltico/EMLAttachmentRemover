@@ -357,10 +357,15 @@ CPU/minimum policy, actual Core-backed worker and unchanged-bundle checks; its
 `smoke-macos-app` on each macOS15 consumer requires the full workflow, pagination,
 real-Core publication/lifecycle cases and final appearance checks before emitting
 `desktop_qualification`. The macOS26 Intel `check-macos-picker` consumer separately
-repeats the startup observation and shipping workflow with the original
-About/license/reopen/Open With prelude, native pickers, independent golden bytes
-and normal Quit before emitting `picker_compatibility`. It retains the existing
-bound picker observation before allowing the narrow Cocoa preference changes.
+executes `testOwnedNativePickerCompatibility`, the dedicated `picker` case. It
+shares the full workflow's original About/license/reopen/Open With prelude and
+actual message/folder/keyboard picker interactions, then verifies independent
+golden bytes, settled worker presentation and normal hidden-window Quit. It emits
+`picker_compatibility` only after the exact scenario-bound preference comparison
+and normal owner/runner/resource settlement. Its own XCTest attachment identity
+cannot be supplied by the full `workflow` case. Full Services, Finder reveal/
+selection/movement/drag, queue/export/destination and every other broader case
+remain required on both macOS15 consumers against the same archive bytes.
 Both stages enforce their actual OS major and native CPU/target. Its known
 picker failure remains a required completion blocker. All consumer receipts bind
 the same source/target/archive snapshot and actual host. CI and future release

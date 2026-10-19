@@ -49,8 +49,10 @@ minimum-OS and actual extracted-worker checks. On each matching macOS15 host,
 `cargo xtask smoke-macos-app --archive ARCHIVE --reference REFERENCE` requires the
 complete desktop case set against those frozen bytes. On macOS26 Intel,
 `cargo xtask check-macos-picker --archive ARCHIVE --reference REFERENCE` separately
-requires the known picker workflow with its original startup and interaction
-prelude. Neither consumer rebuilds the
+requires the dedicated picker case with the original startup/interaction
+prelude, actual message/folder/keyboard pickers, independent copy checks,
+scenario-bound preferences and normal Quit. Full Finder and broader desktop
+integration remain required on both macOS15 consumers. Neither consumer rebuilds the
 shipping app, and candidate success alone does not qualify the desktop product.
 A settled actool failure may use the approved macOS15 Intel producer; timeout,
 uncertain cleanup, missing pinned Xcode or invalid outputs do not permit fallback.

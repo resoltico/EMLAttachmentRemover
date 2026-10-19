@@ -192,10 +192,21 @@ extension DesktopInteractionTests {
   @MainActor
   private func setting(_ settings: XCUIApplication, name: String) async throws -> XCUIElement {
     var found: XCUIElement?
-    let named = NSPredicate(format: "title == %@ OR label == %@", name, name)
+    let roles: [XCUIElementQuery]
+    let named: NSPredicate
+    switch name {
+    case "Increase contrast":
+      roles = [settings.switches]
+      named = NSPredicate(format: "identifier == %@", "AX_INCREASE_CONTRAST")
+    case "Reduce transparency":
+      roles = [settings.switches]
+      named = NSPredicate(format: "identifier == %@", "AX_REDUCE_TRANSPARENCY")
+    default:
+      roles = [settings.radioButtons, settings.checkBoxes, settings.buttons]
+      named = NSPredicate(format: "title == %@ OR label == %@", name, name)
+    }
     let predicate = NSPredicate { _, _ in
       found = nil
-      let roles = [settings.radioButtons, settings.checkBoxes, settings.buttons]
       var count = 0
       for role in roles {
         let current = role.count

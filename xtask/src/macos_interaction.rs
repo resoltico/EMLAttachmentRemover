@@ -272,6 +272,7 @@ fn preference_snapshot(
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DesktopCase {
     Workflow,
+    Picker,
     Pagination,
     Appearance,
     Stop,
@@ -280,6 +281,9 @@ pub(crate) enum DesktopCase {
     PublishedError,
 }
 impl DesktopCase {
+    fn uses_native_pickers(self) -> bool {
+        matches!(self, Self::Workflow | Self::Picker)
+    }
     pub(crate) fn is_publication(self) -> bool {
         matches!(
             self,
@@ -289,6 +293,7 @@ impl DesktopCase {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Workflow => "workflow",
+            Self::Picker => "picker",
             Self::Pagination => "pagination",
             Self::Appearance => "appearance",
             Self::Stop => "stop",
@@ -300,6 +305,7 @@ impl DesktopCase {
     fn method(self) -> &'static str {
         match self {
             Self::Workflow => "testOwnedDesktopWorkflowAndNativeIngress",
+            Self::Picker => "testOwnedNativePickerCompatibility",
             Self::Pagination => "testOwnedPagination",
             Self::Appearance => "testOwnedNativeAppearance",
             Self::Stop => "testOwnedCoreStop",
@@ -380,8 +386,9 @@ pub(crate) fn run_case(
     fs::create_dir(&input)?;
     let mut invocation =
         json!({"app":app,"fixture":fixture.path(),"host_scope":"fresh-github-hosted-runner"});
-    if case == DesktopCase::Workflow {
+    if case.uses_native_pickers() {
         invocation["fixture_output"] = json!("true");
+        invocation["scenario"] = json!(case.name());
     }
     if case == DesktopCase::Appearance {
         invocation["appearance_session"] = json!("true");
@@ -462,7 +469,7 @@ pub(crate) fn run_case(
         30,
     )?;
     let owner = out.join("DesktopInteractionOwner");
-    if case == DesktopCase::Workflow {
+    if case.uses_native_pickers() {
         let tests = out.join("DesktopFixtureTests");
         let mut compile = build.command(root, &build.swiftc);
         compile
@@ -505,7 +512,7 @@ pub(crate) fn run_case(
         .arg(&owner);
     crate::macos::checked_run(compile, &out.join("interaction-owner-build.log"), 120)?;
     let before = preference_snapshot(root, app, build, &observer, &out, "before")?;
-    let (lifetime_controls, control_preferences) = if case == DesktopCase::Workflow {
+    let (lifetime_controls, control_preferences) = if case.uses_native_pickers() {
         let controls = owner_controls(root, app, build, &owner, &out)?;
         let after_controls =
             preference_snapshot(root, app, build, &observer, &out, "after-owner-controls")?;
@@ -722,7 +729,7 @@ pub(crate) fn run_case(
     }
     let picker_path = attachments.join(attachment_name(
         &manifest,
-        "DesktopInteractionTests/testOwnedDesktopWorkflowAndNativeIngress()",
+        &format!("DesktopInteractionTests/{}()", case.method()),
         "native-picker-observation_",
     )?);
     let receipt_path = input.join("ownership.json");
@@ -737,6 +744,7 @@ pub(crate) fn run_case(
     let picker: Value = serde_json::from_slice(&fs::read(picker_path)?)?;
     let receipt: Value = serde_json::from_slice(&fs::read(receipt_path)?)?;
     if picker["schema"] != 1
+        || picker["scenario"] != case.name()
         || !picker["owned_pid"].as_i64().is_some_and(|pid| pid > 0)
         || picker["owned_pid"] != receipt["pid"]
         || picker["message"] != fixture.path().join("one.eml").to_string_lossy().as_ref()
@@ -750,17 +758,22 @@ pub(crate) fn run_case(
         return Err("Native picker evidence is missing or belongs to another app/fixture".into());
     }
     let preferences = crate::desktop_preferences::compare(&before, &after, true)?;
-    if ownership["missing_copy_observation"]["held"] != true
-        || ownership["missing_copy_observation"]["restored_by_request"] != true
-        || ownership["missing_copy_observation"]["copy_left_held"] != false
-        || ownership["missing_copy_observation"]["restoration_failure"] != Value::Null
+    if case == DesktopCase::Workflow
+        && (ownership["missing_copy_observation"]["held"] != true
+            || ownership["missing_copy_observation"]["restored_by_request"] != true
+            || ownership["missing_copy_observation"]["copy_left_held"] != false
+            || ownership["missing_copy_observation"]["restoration_failure"] != Value::Null)
     {
         return Err(
             "The owned missing-copy navigation control did not complete and restore".into(),
         );
     }
-    let result = json!({"case":case.name(),"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"app":app,"process":process.evidence(),"lifetime_controls":lifetime_controls,"lifetime_owner":ownership,"summary":summary,"ownership_receipt":receipt,"picker_observation":picker,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"comparison":preferences,"argument_only_controls":control_preferences},
-        "scope":"actual extracted app: owned NSWorkspace launch, About/version, complete license value and keyboard Edit command, main close/reopen, two-file Open With, native message/folder import, report-space pause/dismiss/resume, real Services with CJK native filename, eight waiting requests/ninth refusal/UI removal, native Save report export/readback and collision refusal, independent golden/original checks, settled worker presentation, screenshots, hidden-window Quit cancel/confirm and destination override non-persistence; remaining GUI paths require separate checks"});
+    let scope = if case == DesktopCase::Picker {
+        "actual extracted app focused picker scenario: original About/license/close/reopen/Open With prelude, native message/folder and keyboard pickers, independent golden/original bytes, settled worker presentation, exact preference guard and hidden-window normal Quit; full Finder and broader integration are required separately on both macOS15 consumers"
+    } else {
+        "actual extracted app full workflow: owned launch, About/license/close/reopen/Open With prelude, native pickers, Services, queue8/refusal9/removal, Save/readback/collision, missing-copy restoration, Finder reveal/selection/move/drag, queued destination, independent golden/original checks, settled worker presentation, screenshots, exact preference guard and hidden-window normal Quit"
+    };
+    let result = json!({"case":case.name(),"test_method":case.method(),"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"host_intervention":"not_requested_by_consumer","app":app,"process":process.evidence(),"lifetime_controls":lifetime_controls,"lifetime_owner":ownership,"summary":summary,"ownership_receipt":receipt,"picker_observation":picker,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"comparison":preferences,"argument_only_controls":control_preferences},"scope":scope});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     Ok(result)
 }
@@ -823,7 +836,7 @@ mod tests {
 
     #[test]
     fn native_observation_requires_the_requested_case_and_attachment_kind() {
-        let manifest = json!([
+        let mut manifest = json!([
             {"testIdentifier":"DesktopInteractionTests/testOwnedNativeAppearance()", "attachments":[
                 {"suggestedHumanReadableName":"native-appearance-observation_0.json","exportedFileName":"appearance.json"}
             ]},
@@ -831,6 +844,20 @@ mod tests {
                 {"suggestedHumanReadableName":"native-picker-observation_0.json","exportedFileName":"picker.json"}
             ]}
         ]);
+        let focused_identifier =
+            format!("DesktopInteractionTests/{}()", DesktopCase::Picker.method());
+        assert!(
+            attachment_name(&manifest, &focused_identifier, "native-picker-observation_").is_err()
+        );
+        manifest.as_array_mut().unwrap().push(json!({
+            "testIdentifier": focused_identifier,
+            "attachments": [{"suggestedHumanReadableName":"native-picker-observation_1.json","exportedFileName":"focused-picker.json"}]
+        }));
+        assert_eq!(
+            attachment_name(&manifest, &focused_identifier, "native-picker-observation_").unwrap(),
+            "focused-picker.json"
+        );
+        assert_eq!(picker_attachment_name(&manifest).unwrap(), "picker.json");
         assert_eq!(
             attachment_name(
                 &manifest,

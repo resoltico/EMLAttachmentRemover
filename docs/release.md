@@ -19,7 +19,9 @@ platform artifacts, downloaded into separate directories with digest mismatch
 treated as an error. Their source records must bind to S. Consumer evidence is downloaded separately from
 products. Preparation requires each candidate's `native_candidate` stage plus
 matching `desktop_qualification` and, for Intel, `picker_compatibility` receipts
-from the same run/attempt, source, target and archive bytes. Failed, skipped,
+from the same run/attempt, source, target and archive bytes. The focused receipt's
+inner case must be `picker` and test method `testOwnedNativePickerCompatibility`;
+it cannot substitute for either full macOS15 desktop consumer. Failed, skipped,
 missing or mismatched case receipts cannot admit an app. A known compatibility
 failure continues to block the reusable aggregate and release preparation.
 The policy derives exactly eight archive names. `stage-release-assets` freezes their actual bytes,

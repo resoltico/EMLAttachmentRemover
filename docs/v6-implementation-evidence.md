@@ -1946,3 +1946,47 @@ the forwarding control without establishing the cause of H7ca's failure. Local
 SDK27 compilation/strict formatting and100 complete ordinary-file fixture runs
 passed;1000 isolated null-sink rounds also passed locally, so the earlier failure
 was not reproduced. Hosted verification remains required.
+
+H7ca's ARM15 consumer again passed Workflow, Pagination and the four real-Core
+cases with normal owner settlement, independent outputs and exact preference
+guards. Its Appearance lookup now correctly observed Light=true, Dark=false and
+Auto=false. Reading the original contrast state then failed: the retained native
+tree exposes Switch identifiers AX_INCREASE_CONTRAST and AX_REDUCE_TRANSPARENCY,
+with separate static labels. Both known settings now use those exact role/
+identifier queries, preserving uniqueness, bounded lookup, value observation,
+actual clicking and restoration checks. The failure preceded appearance-changing
+clicks; no three-condition or restoration success is claimed. Normal Intel26
+again failed its first message picker with the NSSavePanel configuration semaphore
+timeout. The cause of unexpected product termination remains unestablished.
+
+Modified-host experiment39204733554 failed the actual frozen H1dea full Workflow
+at Finder accessibility again, despite the narrower role query. The busy snapshot
+target was Finder PID411; this does not establish absence of a product defect.
+The owner reaped the runner at its deadline and forcibly terminated the product;
+four originals were unchanged and the held copy was restored, but worker
+settlement and final preference verification remain unqualified. Candidate and
+reference identities stayed exact; no modified-host acceptance was produced.
+
+Command central, acting under the human's explicit “proceed per your best judgment”
+delegation, approved a dedicated Intel26 picker criterion. It must execute anew
+with the original About/license/reopen/Open With prelude, real message/folder/
+keyboard pickers, independent copies/originals, settled worker, exact scenario-
+bound preferences, hidden-window normal Quit and resource settlement. Full
+Services/Finder/queue/export/destination integration and all other desktop cases
+remain required on both15 CPUs using the same archive bytes. Failed prefixes
+cannot qualify the dedicated case. Normal execution runs first; only its actual
+known picker failure may admit the already authorized controlled modified-host
+route. Unrelated fixture, preference, output or lifetime failures admit no service
+action. No aggregate/release modified-host alternative is implemented yet.
+
+The dedicated XCTest method testOwnedNativePickerCompatibility shares a typed
+retained session/prelude and normal Quit helper with the full Workflow, which
+continues its complete Services/Finder/destination assertions. Explicit fixture
+arguments bind picker baseline acknowledgments to each scenario. DesktopCase
+owns the case/method selection; attachments require that exact method and scenario.
+Release and manual-experiment admission now reject the broad Workflow identity;
+manual normal-failure admission also requires the dedicated method on the actual
+native-panel failure line. Two native attachment unit cases, strict Clippy and
+workflow lint passed; nine actual release-JQ positive/negative controls passed.
+Supplementary SDK27 XCTest compilation passed after an extracted bare return was
+corrected. All new native picker and Switch interactions remain unrun.

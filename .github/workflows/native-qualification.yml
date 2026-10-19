@@ -539,7 +539,7 @@ jobs:
         with:
           artifact-ids: ${{ steps.artifact.outputs.id }}
           path: target/products
-      - name: Require the observed native picker workflow and its original prelude
+      - name: Require the dedicated native picker case and original prelude
         env:
           PLATFORM: ${{ matrix.platform }}
         run: |

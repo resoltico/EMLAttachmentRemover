@@ -559,7 +559,7 @@ fn verify_snapshot(
             &app,
             build,
             &out.join("gui-picker"),
-            crate::macos_interaction::DesktopCase::Workflow,
+            crate::macos_interaction::DesktopCase::Picker,
         )?;
     }
     if tree(&app, false)? != reference.files {

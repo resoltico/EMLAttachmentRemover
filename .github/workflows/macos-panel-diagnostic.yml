@@ -104,12 +104,12 @@ jobs:
           test "${#normal[@]}" = 1
           jq -e '.exit_code==1 and .signal==null and .timed_out==false and .cancelled==false and .cleanup_complete==true and .unexpected_survivors==0' "${normal[0]}/process.json"
           jq -e '.runner_reaped==true and .runner_status==65 and .owned_app_terminated==true and .forced_app_cleanup==false and .timed_out==false and .cancelled==false and .originals_captured==4 and .originals_unchanged==true and .owned_pasteboard_released==true and .native_picker_diagnostic_settled==true and .unexpected_application_pids==[]' "${normal[0]}/owner-result.json"
-          /usr/bin/grep -Fq 'Native input panel did not appear' "${normal[0]}/xctest.log"
+          /usr/bin/grep -Fq 'error: -[DesktopInteraction.DesktopInteractionTests testOwnedNativePickerCompatibility] : failed - Native input panel did not appear' "${normal[0]}/xctest.log"
           /usr/bin/grep -Fq 'Advance to configuration phase semaphore timed out' "${normal[0]}/native-picker-owned-process.log"
           retained=(target/normal-picker-evidence/app-picker-compatibility/native-*/artifact-*/inspected-input.zip)
           test "${#retained[@]}" = 1
           cmp "${retained[0]}" "target/products/app-build/$app"
-          jq -n --arg source "$SOURCE" --arg run "$PRODUCT_RUN" --arg attempt "$PRODUCT_ATTEMPT" --arg artifact "$NORMAL_ARTIFACT" --slurpfile owner "${normal[0]}/owner-result.json" --slurpfile process "${normal[0]}/process.json" '{stage:"retained_normal_input_panel_failure",source:$source,run:$run,attempt:$attempt,artifact:$artifact,owner:$owner[0],process:$process[0],scope:"normal failed GUI evidence; worker settlement after unexpected app exit remains unverified; fresh VM contains the modified-host experiment"}' > target/modified-product/normal-failure.json
+          jq -n --arg source "$SOURCE" --arg run "$PRODUCT_RUN" --arg attempt "$PRODUCT_ATTEMPT" --arg artifact "$NORMAL_ARTIFACT" --slurpfile owner "${normal[0]}/owner-result.json" --slurpfile process "${normal[0]}/process.json" '{stage:"retained_normal_input_panel_failure",case:"picker",test_method:"testOwnedNativePickerCompatibility",source:$source,run:$run,attempt:$attempt,artifact:$artifact,owner:$owner[0],process:$process[0],scope:"normal failed GUI evidence; worker settlement after unexpected app exit remains unverified; fresh VM contains the modified-host experiment"}' > target/modified-product/normal-failure.json
           shasum -a 256 "target/products/app-build/$app" "target/products/app-build/$app.reference.json" > target/modified-product/candidate-input-before.sha256
           printf 'app=%s\n' "$app" >> "$GITHUB_OUTPUT"
       - name: Observe exact-source native system boundary
@@ -161,7 +161,7 @@ jobs:
           test "$product_status" = 0
           records=(target/app-picker-compatibility/native-*/result.json)
           test "${#records[@]}" = 1
-          jq -e --arg s "$SOURCE" '.stage=="picker_compatibility" and .source==$s and .target=="x86_64-apple-darwin" and .verification.picker.summary.totalTestCount==1 and .verification.picker.summary.passedTests==1 and .verification.picker.summary.failedTests==0 and .verification.picker.summary.skippedTests==0' "${records[0]}"
+          jq -e --arg s "$SOURCE" '.stage=="picker_compatibility" and .source==$s and .target=="x86_64-apple-darwin" and .verification.picker.case=="picker" and .verification.picker.test_method=="testOwnedNativePickerCompatibility" and .verification.picker.picker_observation.scenario=="picker" and .verification.picker.summary.totalTestCount==1 and .verification.picker.summary.passedTests==1 and .verification.picker.summary.failedTests==0 and .verification.picker.summary.skippedTests==0' "${records[0]}"
           jq -n --arg source "$SOURCE" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" --slurpfile normal target/modified-product/normal-failure.json --slurpfile preparation "$receipt" --slurpfile product "${records[0]}" '{stage:"picker_compatibility_modified_host_observation",source:$source,run:$run,attempt:$attempt,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,normal_failure:$normal[0],preparation:$preparation[0],product:$product[0],scope:"authorized modified-host actual frozen product experiment; original probe failure remains authoritative; not normal-host compatibility or aggregate qualification",underlying_picker_receipt_stage_is_environment_unaware:true}' > target/modified-product/result.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() && inputs.product_run != '' }}

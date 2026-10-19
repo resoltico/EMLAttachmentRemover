@@ -323,254 +323,43 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
+  private struct NativePickerSession {
+    let root: URL
+    let appURL: URL
+    let sources: [URL]
+    let allSources: [URL]
+    let serviceSource: URL
+    let serviceDisplayName: String
+    let original: Data
+    let golden: Data
+    let identifier: String
+    let ownership: [String: Any]
+    let owned: NSRunningApplication
+    let app: XCUIApplication
+    let window: XCUIElement
+    let delivery: NSWorkspace.OpenConfiguration
+    let previousDestination: String?
+  }
+
+  @MainActor
   func testOwnedDesktopWorkflowAndNativeIngress() async throws {
-    let repository = URL(fileURLWithPath: #filePath)
-      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let inputURL = repository.appendingPathComponent("target/desktop-interaction/input.json")
-    let input = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: Data(contentsOf: inputURL)) as? [String: String])
-    let appURL = URL(fileURLWithPath: try XCTUnwrap(input["app"]))
-    let root = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
-    let sources = ["one.eml", "two.eml"].map { root.appendingPathComponent($0) }
-    let folderSource = root.appendingPathComponent("folder-input/folder.eml")
-    let serviceSource = root.appendingPathComponent("service-input/日本語-مرحبا-\u{202e}report.eml")
-    let serviceDisplayName = #"日本語-مرحبا-\u{202e}report.eml"#
-    let allSources = sources + [folderSource, serviceSource]
-    let original = try Data(
-      contentsOf: repository.appendingPathComponent(
-        "tests/contract/mime/inputs/01-gmail-attachment.eml"))
-    for source in allSources { observeSource(source, phase: "before GUI interactions") }
-    addTeardownBlock { @MainActor in
-      for source in allSources {
-        self.observeSource(source, phase: "after GUI interactions")
-        XCTAssertEqual(try Data(contentsOf: source), original)
-      }
-    }
-    let bundle = try XCTUnwrap(Bundle(url: appURL))
-    let identifier = try XCTUnwrap(bundle.bundleIdentifier)
-    XCTAssertEqual(input["host_scope"], "fresh-github-hosted-runner")
-    // The separate fixture owner retains launch/cleanup authority even if
-    // XCTest dies. These fields only admit attachment to that actual instance.
-    let ownershipURL = inputURL.deletingLastPathComponent().appendingPathComponent("ownership.json")
-    let ownership = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: Data(contentsOf: ownershipURL)) as? [String: Any])
-    let pid = try XCTUnwrap(ownership["pid"] as? NSNumber).int32Value
-    let launchDate = try XCTUnwrap(ownership["launch_date"] as? NSNumber).doubleValue
-    let owned = try XCTUnwrap(NSRunningApplication(processIdentifier: pid))
-    XCTAssertEqual(owned.bundleIdentifier, identifier)
-    XCTAssertEqual(owned.bundleURL?.standardizedFileURL, appURL.standardizedFileURL)
-    XCTAssertEqual(ownership["bundle_path"] as? String, appURL.path)
-    XCTAssertEqual(owned.launchDate?.timeIntervalSince1970, launchDate)
-    guard !owned.isTerminated,
-      owned.bundleURL?.standardizedFileURL == appURL.standardizedFileURL,
-      owned.launchDate?.timeIntervalSince1970 == launchDate
-    else { throw InteractionFailure.expectedPresentation }
-    let admitted = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
-    guard admitted.count == 1, admitted[0].processIdentifier == pid else {
-      throw InteractionFailure.expectedPresentation
-    }
-    let defaults = UserDefaults.standard.persistentDomain(forName: identifier) ?? [:]
-    let previousDestination = defaults["copyDestinationBytes"] as? String
-    let app = XCUIApplication(url: appURL)
-    let launched = NSPredicate { _, _ in owned.isFinishedLaunching && !owned.isTerminated }
-    let launchObservation = await XCTWaiter.fulfillment(
-      of: [XCTNSPredicateExpectation(predicate: launched, object: nil)], timeout: 20)
-    guard launchObservation == .completed else {
-      XCTFail("Owned application did not finish native launch")
-      return
-    }
-    _ = owned.activate(options: [])
-    let window = app.windows["EML Attachment Remover"]
-    XCTAssertTrue(window.waitForExistence(timeout: 20), app.debugDescription)
-    try await requireOwnedForeground(owned)
-    let instances = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
-    XCTAssertEqual(instances.count, 1)
-    XCTAssertEqual(instances.first?.processIdentifier, owned.processIdentifier)
-    snapshot(app, "ready")
-    try await requireAccessibleText(
-      app, prefix: "Drop local EML files or folders to create copies.")
-    try await requireAccessibleText(app, prefix: "Copy destination: ")
-    try await requireAccessibleText(app, prefix: "Run status: ")
-    app.buttons["About"].click()
-    let about = app.windows["About EML Attachment Remover"]
-    XCTAssertTrue(about.waitForExistence(timeout: 10), app.debugDescription)
-    let version = try XCTUnwrap(
-      bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
-    let identity = app.descendants(matching: .any).allElementsBoundByIndex.first {
-      $0.title == "Product identity and licensing"
-    }
-    XCTAssertTrue(
-      (identity?.value as? String)?.contains("EML Attachment Remover \(version)") == true)
-    snapshot(app, "about")
-    about.buttons["_XCUI:CloseWindow"].click()
-    let aboutClosed = NSPredicate { _, _ in !about.exists }
-    let aboutCloseResult = await XCTWaiter.fulfillment(
-      of: [XCTNSPredicateExpectation(predicate: aboutClosed, object: nil)], timeout: 10)
-    guard aboutCloseResult == .completed else {
-      XCTFail("About did not close before keyboard navigation: \(app.debugDescription)")
-      throw InteractionFailure.expectedPresentation
-    }
-    app.menuBars.menuBarItems["Help"].click()
-    app.menuItems["Software and Artwork Licenses…"].click()
-    let licenses = app.windows["Software and Artwork Licenses"]
-    XCTAssertTrue(licenses.waitForExistence(timeout: 10), app.debugDescription)
-    let licenseText = try XCTUnwrap(
-      app.descendants(matching: .any).allElementsBoundByIndex.first {
-        $0.title == "Complete software and owner artwork license terms"
-      })
-    let expectedLicense = try XCTUnwrap(
-      String(data: Data(contentsOf: repository.appendingPathComponent("LICENSE")), encoding: .utf8))
-    XCTAssertEqual(licenseText.value as? String, expectedLicense)
-    licenseText.click()
-    app.typeKey("a", modifierFlags: .command)
-    let edit = app.menuBars.menuBarItems["Edit"]
-    edit.click()
-    XCTAssertTrue(edit.menus.menuItems["Copy"].isEnabled)
-    app.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
-    snapshot(app, "licenses")
-    licenses.buttons["_XCUI:CloseWindow"].click()
-
-    window.buttons["_XCUI:CloseWindow"].click()
-    let hidden = NSPredicate { _, _ in !window.exists }
-    let hiddenObservation = await XCTWaiter.fulfillment(
-      of: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 10)
-    XCTAssertEqual(hiddenObservation, .completed)
-    XCTAssertFalse(owned.isTerminated, "Closing the main window terminated the application")
-    guard !owned.isTerminated else { throw InteractionFailure.expectedPresentation }
-    let reopen = NSWorkspace.OpenConfiguration()
-    reopen.createsNewApplicationInstance = false
-    reopen.addsToRecentItems = false
-    let restored = try await NSWorkspace.shared.openApplication(at: appURL, configuration: reopen)
-    XCTAssertEqual(restored.processIdentifier, owned.processIdentifier)
-    guard restored.processIdentifier == owned.processIdentifier else {
-      throw InteractionFailure.expectedPresentation
-    }
-    XCTAssertTrue(window.waitForExistence(timeout: 10), app.debugDescription)
-    snapshot(app, "reopened")
-
-    let delivery = NSWorkspace.OpenConfiguration()
-    delivery.createsNewApplicationInstance = false
-    delivery.addsToRecentItems = false
-    guard !owned.isTerminated else { throw InteractionFailure.expectedPresentation }
-    let recipient = try await NSWorkspace.shared.open(
-      sources, withApplicationAt: appURL, configuration: delivery)
-    XCTAssertEqual(
-      recipient.processIdentifier, owned.processIdentifier, "File batch reached another instance")
-    guard recipient.processIdentifier == owned.processIdentifier else {
-      throw InteractionFailure.expectedPresentation
-    }
-    let finished = NSPredicate { _, _ in
-      app.buttons.allElementsBoundByIndex.contains { button in
-        let text = button.title + "\n" + button.label + "\n" + (button.value as? String ?? "")
-        return text.contains("2 created") && text.contains("Finished")
-      }
-    }
-    let finishedObservation = await XCTWaiter.fulfillment(
-      of: [XCTNSPredicateExpectation(predicate: finished, object: nil)], timeout: 30)
-    guard finishedObservation == .completed else {
-      for button in app.buttons.allElementsBoundByIndex {
-        print(
-          "Observed button title=\(button.title.debugDescription), label=\(button.label.debugDescription), value=\(String(describing: button.value).prefix(2048))"
-        )
-      }
-      for element in app.descendants(matching: .any).allElementsBoundByIndex {
-        if element.title.hasPrefix("Selected message") {
-          print("Observed failed-batch detail: \(String(describing: element.value).prefix(16384))")
-        }
-      }
-      XCTFail("Native batch did not reach its two-created presentation: \(app.debugDescription)")
-      return
-    }
-    for text in window.staticTexts.allElementsBoundByIndex {
-      print(
-        "Observed static text label=\(text.label.debugDescription), value=\(String(describing: text.value).prefix(2048))"
-      )
-    }
-    let technical = app.checkBoxes["Technical details"]
-    guard technical.exists else {
-      XCTFail("Technical details control is unavailable")
-      return
-    }
-    technical.click()
-    print(
-      "Observed technical disclosure title=\(technical.title.debugDescription), value=\(String(describing: technical.value))"
-    )
-    let completed = NSPredicate { _, _ in
-      app.descendants(matching: .any).allElementsBoundByIndex.contains {
-        $0.title == "Selected message, removed parts and technical observations"
-          && ($0.value as? String)?.contains("settled true; reusable true") == true
-      }
-    }
-    let observation = await XCTWaiter.fulfillment(
-      of: [XCTNSPredicateExpectation(predicate: completed, object: nil)], timeout: 20)
-    XCTAssertEqual(
-      observation, .completed, "Settled native report is unavailable: \(app.debugDescription)")
-    guard observation == .completed else { return }
-    let golden = try Data(
-      contentsOf: repository.appendingPathComponent(
-        "tests/contract/mime/golden/01-gmail-attachment.eml"))
-    for source in sources {
-      let copy = source.deletingPathExtension().appendingPathExtension("no-attachments.eml")
-      XCTAssertEqual(try Data(contentsOf: copy), golden)
-    }
-    snapshot(app, "finished")
-    try await requireAccessibleText(app, prefix: "Completed")
-    try await requireAccessibleText(app, prefix: "Run summary: ")
-    try await checkCompactReport(app, window: window, source: sources[0])
-
-    // The real message importer reruns one original. Two full reports then
-    // reserve all report space; the subsequent folder must wait visibly.
-    try await choose(app, path: sources[0], folder: false)
-    try await requireRun(app, counts: "0 created · 1 up to date", source: sources[0])
-    snapshot(app, "message-import-up-to-date")
-    try await choose(app, path: folderSource.deletingLastPathComponent(), folder: true)
-    try await requireText(app, containing: "Queue paused: dismiss a retained report to make room.")
-    XCTAssertFalse(
-      FileManager.default.fileExists(
-        atPath: folderSource.deletingPathExtension().appendingPathExtension("no-attachments.eml")
-          .path))
-    snapshot(app, "report-space-paused")
-    app.buttons["Dismiss report"].click()
-    try await requireRun(app, counts: "1 created · 0 up to date", source: folderSource)
-    XCTAssertEqual(
-      try Data(
-        contentsOf: folderSource.deletingPathExtension().appendingPathExtension(
-          "no-attachments.eml")), golden)
-    snapshot(app, "folder-import-finished")
-
-    // Keyboard traversal must cause distinct native effects, not merely send keys.
-    // Cupertino mouse activation does not establish logical keyboard focus:
-    // the first Tab reaches About, and the second reaches Choose messages.
-    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
-    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
-    try DesktopFixtureRequest.picker.send()
-    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
-    let keyboardPicker = app.sheets.firstMatch
-    guard keyboardPicker.waitForExistence(timeout: 10) else {
-      XCTFail("Tab/Space did not activate the native message importer: \(app.debugDescription)")
-      throw InteractionFailure.expectedPresentation
-    }
-    keyboardPicker.buttons["Cancel"].click()
-    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: .shift)
-    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
-    guard about.waitForExistence(timeout: 10) else {
-      XCTFail("Shift-Tab/Space did not return to About: \(app.debugDescription)")
-      throw InteractionFailure.expectedPresentation
-    }
-    snapshot(app, "keyboard-forward-and-reverse-native-actions")
-    about.buttons["_XCUI:CloseWindow"].click()
-
-    let pickerObservation: [String: Any] = [
-      "schema": 1, "owned_pid": pid, "message": sources[0].path,
-      "folder": folderSource.deletingLastPathComponent().path,
-    ]
-    let pickerAttachment = XCTAttachment(
-      data: try JSONSerialization.data(withJSONObject: pickerObservation),
-      uniformTypeIdentifier: "public.json")
-    pickerAttachment.name = "native-picker-observation"
-    pickerAttachment.lifetime = .keepAlways
-    add(pickerAttachment)
-
+    let session = try await nativePickerPrelude(
+      inputDirectory: "desktop-interaction", scenario: "workflow")
+    let root = session.root
+    let appURL = session.appURL
+    let sources = session.sources
+    let allSources = session.allSources
+    let serviceSource = session.serviceSource
+    let serviceDisplayName = session.serviceDisplayName
+    let original = session.original
+    let golden = session.golden
+    let identifier = session.identifier
+    let ownership = session.ownership
+    let owned = session.owned
+    let app = session.app
+    let window = session.window
+    let delivery = session.delivery
+    let pid = owned.processIdentifier
     // Use the actual system Services route and an owned named pasteboard;
     // never replace the user's general clipboard or call the provider directly.
     let boardName = try XCTUnwrap(ownership["pasteboard"] as? String)
@@ -827,7 +616,7 @@ final class DesktopInteractionTests: XCTestCase {
     // Both report reservations are occupied. Capture a changed destination in
     // a queued request, then change the current choice before freeing its slot.
     let chosenDestination = root.appendingPathComponent("chosen-destination")
-    try await choose(app, path: chosenDestination, folder: true, destination: true)
+    try await choose(app, fixture: root, path: chosenDestination, folder: true, destination: true)
     try await requireAccessibleText(app, prefix: "Copy destination: " + chosenDestination.path)
     let queuedDestination = try await NSWorkspace.shared.open(
       [sources[0]], withApplicationAt: appURL, configuration: delivery)
@@ -846,6 +635,304 @@ final class DesktopInteractionTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: firstCopy), golden)
     try await requireWaiting(app, count: 0)
     snapshot(app, "queued-run-retains-chosen-destination")
+    try await finishNativePickerSession(session)
+  }
+
+  @MainActor
+  func testOwnedNativePickerCompatibility() async throws {
+    let session = try await nativePickerPrelude(
+      inputDirectory: "desktop-interaction-picker", scenario: "picker")
+    let folderSource = session.root.appendingPathComponent("folder-input/folder.eml")
+    try await requireRun(session.app, counts: "1 created · 0 up to date", source: folderSource)
+    try await requireWaiting(session.app, count: 0)
+    for source in session.sources + [folderSource] {
+      XCTAssertEqual(
+        try Data(
+          contentsOf: source.deletingPathExtension().appendingPathExtension("no-attachments.eml")),
+        session.golden)
+    }
+    snapshot(session.app, "native-picker-compatibility-complete")
+    try await finishNativePickerSession(session)
+  }
+
+  @MainActor
+  private func nativePickerPrelude(inputDirectory: String, scenario: String) async throws
+    -> NativePickerSession
+  {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let inputURL = repository.appendingPathComponent("target/\(inputDirectory)/input.json")
+    let input = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(contentsOf: inputURL)) as? [String: String])
+    XCTAssertEqual(input["scenario"], scenario)
+    let appURL = URL(fileURLWithPath: try XCTUnwrap(input["app"]))
+    let root = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
+    let sources = ["one.eml", "two.eml"].map { root.appendingPathComponent($0) }
+    let folderSource = root.appendingPathComponent("folder-input/folder.eml")
+    let serviceSource = root.appendingPathComponent("service-input/日本語-مرحبا-\u{202e}report.eml")
+    let serviceDisplayName = #"日本語-مرحبا-\u{202e}report.eml"#
+    let allSources = sources + [folderSource, serviceSource]
+    let original = try Data(
+      contentsOf: repository.appendingPathComponent(
+        "tests/contract/mime/inputs/01-gmail-attachment.eml"))
+    for source in allSources { observeSource(source, phase: "before GUI interactions") }
+    addTeardownBlock { @MainActor in
+      for source in allSources {
+        self.observeSource(source, phase: "after GUI interactions")
+        XCTAssertEqual(try Data(contentsOf: source), original)
+      }
+    }
+    let bundle = try XCTUnwrap(Bundle(url: appURL))
+    let identifier = try XCTUnwrap(bundle.bundleIdentifier)
+    XCTAssertEqual(input["host_scope"], "fresh-github-hosted-runner")
+    // The separate fixture owner retains launch/cleanup authority even if
+    // XCTest dies. These fields only admit attachment to that actual instance.
+    let ownershipURL = inputURL.deletingLastPathComponent().appendingPathComponent("ownership.json")
+    let ownership = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(contentsOf: ownershipURL)) as? [String: Any])
+    let pid = try XCTUnwrap(ownership["pid"] as? NSNumber).int32Value
+    let launchDate = try XCTUnwrap(ownership["launch_date"] as? NSNumber).doubleValue
+    let owned = try XCTUnwrap(NSRunningApplication(processIdentifier: pid))
+    XCTAssertEqual(owned.bundleIdentifier, identifier)
+    XCTAssertEqual(owned.bundleURL?.standardizedFileURL, appURL.standardizedFileURL)
+    XCTAssertEqual(ownership["bundle_path"] as? String, appURL.path)
+    XCTAssertEqual(owned.launchDate?.timeIntervalSince1970, launchDate)
+    guard !owned.isTerminated,
+      owned.bundleURL?.standardizedFileURL == appURL.standardizedFileURL,
+      owned.launchDate?.timeIntervalSince1970 == launchDate
+    else { throw InteractionFailure.expectedPresentation }
+    let admitted = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
+    guard admitted.count == 1, admitted[0].processIdentifier == pid else {
+      throw InteractionFailure.expectedPresentation
+    }
+    let defaults = UserDefaults.standard.persistentDomain(forName: identifier) ?? [:]
+    let previousDestination = defaults["copyDestinationBytes"] as? String
+    let app = XCUIApplication(url: appURL)
+    let launched = NSPredicate { _, _ in owned.isFinishedLaunching && !owned.isTerminated }
+    let launchObservation = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: launched, object: nil)], timeout: 20)
+    guard launchObservation == .completed else {
+      XCTFail("Owned application did not finish native launch")
+      throw InteractionFailure.expectedPresentation
+    }
+    _ = owned.activate(options: [])
+    let window = app.windows["EML Attachment Remover"]
+    XCTAssertTrue(window.waitForExistence(timeout: 20), app.debugDescription)
+    try await requireOwnedForeground(owned)
+    let instances = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
+    XCTAssertEqual(instances.count, 1)
+    XCTAssertEqual(instances.first?.processIdentifier, owned.processIdentifier)
+    snapshot(app, "ready")
+    try await requireAccessibleText(
+      app, prefix: "Drop local EML files or folders to create copies.")
+    try await requireAccessibleText(app, prefix: "Copy destination: ")
+    try await requireAccessibleText(app, prefix: "Run status: ")
+    app.buttons["About"].click()
+    let about = app.windows["About EML Attachment Remover"]
+    XCTAssertTrue(about.waitForExistence(timeout: 10), app.debugDescription)
+    let version = try XCTUnwrap(
+      bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+    let identity = app.descendants(matching: .any).allElementsBoundByIndex.first {
+      $0.title == "Product identity and licensing"
+    }
+    XCTAssertTrue(
+      (identity?.value as? String)?.contains("EML Attachment Remover \(version)") == true)
+    snapshot(app, "about")
+    about.buttons["_XCUI:CloseWindow"].click()
+    let aboutClosed = NSPredicate { _, _ in !about.exists }
+    let aboutCloseResult = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: aboutClosed, object: nil)], timeout: 10)
+    guard aboutCloseResult == .completed else {
+      XCTFail("About did not close before keyboard navigation: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    app.menuBars.menuBarItems["Help"].click()
+    app.menuItems["Software and Artwork Licenses…"].click()
+    let licenses = app.windows["Software and Artwork Licenses"]
+    XCTAssertTrue(licenses.waitForExistence(timeout: 10), app.debugDescription)
+    let licenseText = try XCTUnwrap(
+      app.descendants(matching: .any).allElementsBoundByIndex.first {
+        $0.title == "Complete software and owner artwork license terms"
+      })
+    let expectedLicense = try XCTUnwrap(
+      String(data: Data(contentsOf: repository.appendingPathComponent("LICENSE")), encoding: .utf8))
+    XCTAssertEqual(licenseText.value as? String, expectedLicense)
+    licenseText.click()
+    app.typeKey("a", modifierFlags: .command)
+    let edit = app.menuBars.menuBarItems["Edit"]
+    edit.click()
+    XCTAssertTrue(edit.menus.menuItems["Copy"].isEnabled)
+    app.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+    snapshot(app, "licenses")
+    licenses.buttons["_XCUI:CloseWindow"].click()
+
+    window.buttons["_XCUI:CloseWindow"].click()
+    let hidden = NSPredicate { _, _ in !window.exists }
+    let hiddenObservation = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: hidden, object: nil)], timeout: 10)
+    XCTAssertEqual(hiddenObservation, .completed)
+    XCTAssertFalse(owned.isTerminated, "Closing the main window terminated the application")
+    guard !owned.isTerminated else { throw InteractionFailure.expectedPresentation }
+    let reopen = NSWorkspace.OpenConfiguration()
+    reopen.createsNewApplicationInstance = false
+    reopen.addsToRecentItems = false
+    let restored = try await NSWorkspace.shared.openApplication(at: appURL, configuration: reopen)
+    XCTAssertEqual(restored.processIdentifier, owned.processIdentifier)
+    guard restored.processIdentifier == owned.processIdentifier else {
+      throw InteractionFailure.expectedPresentation
+    }
+    XCTAssertTrue(window.waitForExistence(timeout: 10), app.debugDescription)
+    snapshot(app, "reopened")
+
+    let delivery = NSWorkspace.OpenConfiguration()
+    delivery.createsNewApplicationInstance = false
+    delivery.addsToRecentItems = false
+    guard !owned.isTerminated else { throw InteractionFailure.expectedPresentation }
+    let recipient = try await NSWorkspace.shared.open(
+      sources, withApplicationAt: appURL, configuration: delivery)
+    XCTAssertEqual(
+      recipient.processIdentifier, owned.processIdentifier, "File batch reached another instance")
+    guard recipient.processIdentifier == owned.processIdentifier else {
+      throw InteractionFailure.expectedPresentation
+    }
+    let finished = NSPredicate { _, _ in
+      app.buttons.allElementsBoundByIndex.contains { button in
+        let text = button.title + "\n" + button.label + "\n" + (button.value as? String ?? "")
+        return text.contains("2 created") && text.contains("Finished")
+      }
+    }
+    let finishedObservation = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: finished, object: nil)], timeout: 30)
+    guard finishedObservation == .completed else {
+      for button in app.buttons.allElementsBoundByIndex {
+        print(
+          "Observed button title=\(button.title.debugDescription), label=\(button.label.debugDescription), value=\(String(describing: button.value).prefix(2048))"
+        )
+      }
+      for element in app.descendants(matching: .any).allElementsBoundByIndex {
+        if element.title.hasPrefix("Selected message") {
+          print("Observed failed-batch detail: \(String(describing: element.value).prefix(16384))")
+        }
+      }
+      XCTFail("Native batch did not reach its two-created presentation: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    for text in window.staticTexts.allElementsBoundByIndex {
+      print(
+        "Observed static text label=\(text.label.debugDescription), value=\(String(describing: text.value).prefix(2048))"
+      )
+    }
+    let technical = app.checkBoxes["Technical details"]
+    guard technical.exists else {
+      XCTFail("Technical details control is unavailable")
+      throw InteractionFailure.expectedPresentation
+    }
+    technical.click()
+    print(
+      "Observed technical disclosure title=\(technical.title.debugDescription), value=\(String(describing: technical.value))"
+    )
+    let completed = NSPredicate { _, _ in
+      app.descendants(matching: .any).allElementsBoundByIndex.contains {
+        $0.title == "Selected message, removed parts and technical observations"
+          && ($0.value as? String)?.contains("settled true; reusable true") == true
+      }
+    }
+    let observation = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: completed, object: nil)], timeout: 20)
+    XCTAssertEqual(
+      observation, .completed, "Settled native report is unavailable: \(app.debugDescription)")
+    guard observation == .completed else { throw InteractionFailure.expectedPresentation }
+    let golden = try Data(
+      contentsOf: repository.appendingPathComponent(
+        "tests/contract/mime/golden/01-gmail-attachment.eml"))
+    for source in sources {
+      let copy = source.deletingPathExtension().appendingPathExtension("no-attachments.eml")
+      XCTAssertEqual(try Data(contentsOf: copy), golden)
+    }
+    snapshot(app, "finished")
+    try await requireAccessibleText(app, prefix: "Completed")
+    try await requireAccessibleText(app, prefix: "Run summary: ")
+    try await checkCompactReport(app, window: window, source: sources[0])
+
+    // The real message importer reruns one original. Two full reports then
+    // reserve all report space; the subsequent folder must wait visibly.
+    try await choose(app, fixture: root, path: sources[0], folder: false)
+    try await requireRun(app, counts: "0 created · 1 up to date", source: sources[0])
+    snapshot(app, "message-import-up-to-date")
+    try await choose(
+      app, fixture: root, path: folderSource.deletingLastPathComponent(), folder: true)
+    try await requireText(app, containing: "Queue paused: dismiss a retained report to make room.")
+    XCTAssertFalse(
+      FileManager.default.fileExists(
+        atPath: folderSource.deletingPathExtension().appendingPathExtension("no-attachments.eml")
+          .path))
+    snapshot(app, "report-space-paused")
+    app.buttons["Dismiss report"].click()
+    try await requireRun(app, counts: "1 created · 0 up to date", source: folderSource)
+    XCTAssertEqual(
+      try Data(
+        contentsOf: folderSource.deletingPathExtension().appendingPathExtension(
+          "no-attachments.eml")), golden)
+    snapshot(app, "folder-import-finished")
+
+    // Keyboard traversal must cause distinct native effects, not merely send keys.
+    // Cupertino mouse activation does not establish logical keyboard focus:
+    // the first Tab reaches About, and the second reaches Choose messages.
+    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
+    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
+    try DesktopFixtureRequest.picker.send()
+    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
+    let keyboardPicker = app.sheets.firstMatch
+    guard keyboardPicker.waitForExistence(timeout: 10) else {
+      XCTFail("Tab/Space did not activate the native message importer: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    keyboardPicker.buttons["Cancel"].click()
+    app.typeKey(XCUIKeyboardKey.tab, modifierFlags: .shift)
+    app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
+    guard about.waitForExistence(timeout: 10) else {
+      XCTFail("Shift-Tab/Space did not return to About: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    snapshot(app, "keyboard-forward-and-reverse-native-actions")
+    about.buttons["_XCUI:CloseWindow"].click()
+
+    let pickerObservation: [String: Any] = [
+      "schema": 1, "scenario": scenario, "owned_pid": pid, "message": sources[0].path,
+      "folder": folderSource.deletingLastPathComponent().path,
+    ]
+    let pickerAttachment = XCTAttachment(
+      data: try JSONSerialization.data(withJSONObject: pickerObservation),
+      uniformTypeIdentifier: "public.json")
+    pickerAttachment.name = "native-picker-observation"
+    pickerAttachment.lifetime = .keepAlways
+    add(pickerAttachment)
+
+    return NativePickerSession(
+      root: root,
+      appURL: appURL,
+      sources: sources,
+      allSources: allSources,
+      serviceSource: serviceSource,
+      serviceDisplayName: serviceDisplayName,
+      original: original,
+      golden: golden,
+      identifier: identifier,
+      ownership: ownership,
+      owned: owned,
+      app: app,
+      window: window,
+      delivery: delivery,
+      previousDestination: previousDestination)
+  }
+
+  @MainActor
+  private func finishNativePickerSession(_ session: NativePickerSession) async throws {
+    let window = session.window
+    let app = session.app
+    let owned = session.owned
+    let identifier = session.identifier
+    let previousDestination = session.previousDestination
     window.buttons["_XCUI:CloseWindow"].click()
     let hiddenForQuit = NSPredicate { _, _ in !window.exists }
     let hiddenForQuitObservation = await XCTWaiter.fulfillment(
@@ -856,7 +943,7 @@ final class DesktopInteractionTests: XCTestCase {
     app.menuItems["Quit EML Attachment Remover"].click()
     guard app.buttons["Cancel"].waitForExistence(timeout: 5) else {
       XCTFail("Hidden-window Quit did not expose its Cancel control: \(app.debugDescription)")
-      return
+      throw InteractionFailure.expectedPresentation
     }
     XCTAssertTrue(window.exists, "Quit confirmation did not restore the main window")
     try await requireAccessibleText(app, prefix: "Confirmation: ")
@@ -1112,19 +1199,13 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
-  private func choose(_ app: XCUIApplication, path: URL, folder: Bool, destination: Bool = false)
+  private func choose(
+    _ app: XCUIApplication, fixture: URL, path: URL, folder: Bool, destination: Bool = false
+  )
     async throws
   {
     if !pickerBaselineSettled {
-      let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        .deletingLastPathComponent().deletingLastPathComponent()
-      let input = try XCTUnwrap(
-        JSONSerialization.jsonObject(
-          with: Data(
-            contentsOf: repository.appendingPathComponent("target/desktop-interaction/input.json")))
-          as? [String: String])
-      let acknowledgment = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
-        .appendingPathComponent("picker-baseline-settled")
+      let acknowledgment = fixture.appendingPathComponent("picker-baseline-settled")
       try DesktopFixtureRequest.pickerBaseline.send()
       try await requireObservation(acknowledgment, prefix: "owned picker baseline settled\n")
       XCTAssertEqual(
