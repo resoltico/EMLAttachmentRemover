@@ -2209,3 +2209,15 @@ invalid result in80,514ms, no misses/timeouts, under the required15-second tests
 Both earlier atos failures remain failed records; no name-based lifetime waiver
 was added. Changes after197bb concern this Swift harness and documentation, not
 those Rust campaign inputs.
+
+H2355 ARM15 passed the first six GUI cases, then FAILED Appearance on repeated
+Display navigation. The native log proves View/Accessibility and AX_FEATURE_DISPLAY
+opened Display successfully and both actual switches were read. A second request
+selected the already-active category, retained the Display page, then incorrectly
+required its absent parent-page Display link. The failure tree contains the exact
+Display window and both AX_INCREASE_CONTRAST/AX_REDUCE_TRANSPARENCY switches.
+The helper now acknowledges an existing target window plus its real identifying
+control, and accepts that same observed target if the category resumes it during
+navigation. It still requires the target control before returning; no setting,
+restoration, product observation, cleanup or timeout assertion is weakened. The
+SDK27 ARM test build succeeds; corrected native GUI execution is still required.

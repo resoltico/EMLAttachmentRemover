@@ -167,9 +167,16 @@ extension DesktopInteractionTests {
     let requested = owner.activate(options: [])
     print("Retained Settings activation request: PID \(owner.processIdentifier), sent=\(requested)")
     try await requireOwnedForeground(owner)
+    let paneTitle = pane == .appearance ? "Appearance" : "Display"
+    let readinessControl = pane == .appearance ? "Light" : "Increase contrast"
+    if settings.windows[paneTitle].exists {
+      _ = try await setting(settings, name: readinessControl)
+      print("Native Settings pane already observed: \(paneTitle), PID \(owner.processIdentifier)")
+      return
+    }
     // A LaunchServices URL acknowledgment does not establish pane navigation.
     // Use the owned application's native View command, then observe its controls.
-    let section = pane == .appearance ? "Appearance" : "Accessibility"
+    let section = pane == .appearance ? paneTitle : "Accessibility"
     let view = settings.menuBars.menuBarItems["View"]
     guard view.waitForExistence(timeout: 15), view.isEnabled, view.isHittable else {
       throw InteractionFailure.expectedPresentation
@@ -190,6 +197,7 @@ extension DesktopInteractionTests {
       var link: XCUIElement?
       let available = NSPredicate { _, _ in
         link = nil
+        if settings.windows[paneTitle].exists { return true }
         let buttons = main.buttons.matching(named)
         let labels = main.staticTexts.matching(named)
         let element: XCUIElement
@@ -208,17 +216,14 @@ extension DesktopInteractionTests {
       guard
         await XCTWaiter.fulfillment(
           of: [XCTNSPredicateExpectation(predicate: available, object: nil)], timeout: 15)
-          == .completed,
-        let link
+          == .completed
       else {
         XCTFail("Native Accessibility Display link is unavailable: \(settings.debugDescription)")
         throw InteractionFailure.expectedPresentation
       }
-      link.click()
-      _ = try await setting(settings, name: "Increase contrast")
-    } else {
-      _ = try await setting(settings, name: "Light")
+      if let link { link.click() }
     }
+    _ = try await setting(settings, name: readinessControl)
     print("Native Settings pane observed through controls: \(pane), PID \(owner.processIdentifier)")
   }
 

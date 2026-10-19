@@ -360,6 +360,9 @@ real-Core publication/lifecycle cases and final appearance checks before emittin
 with explicit contrast/transparency values before, during and after the scenario.
 The retained Settings process is navigated through its native View commands and
 Accessibility Display link, with actual target controls acknowledging each pane.
+Navigation first acknowledges an already visible target pane through its native
+window and identifying control. Repeated readback does not require rediscovering
+a parent-page link after the target page is open.
 A successful LaunchServices URL delivery alone does not establish navigation; an
 Intel15 run retained the old Appearance pane after such delivery. No defaults
 setter or preference-file edit substitutes for native interaction. The flow
