@@ -20,11 +20,12 @@ use std::{
     rc::Rc,
 };
 
+unsafe extern "C" {
+    fn NSLog(format: &NSString, ...);
+}
+
 /// Records lifecycle boundaries without selections, paths or preference values.
 pub(crate) fn lifecycle_observation(event: &'static str) {
-    unsafe extern "C" {
-        fn NSLog(format: &NSString, ...);
-    }
     // SAFETY: Foundation's variadic format has exactly one Objective-C object
     // argument. The format and retained message remain alive throughout the call.
     unsafe {
@@ -32,6 +33,22 @@ pub(crate) fn lifecycle_observation(event: &'static str) {
             objc2_foundation::ns_string!("EML lifecycle: %@"),
             &*NSString::from_str(event),
         );
+    }
+}
+
+/// Persists only the source location; panic payloads may contain user input.
+pub(crate) fn panic_observation(info: &std::panic::PanicHookInfo<'_>) {
+    if let Some(location) = info.location() {
+        // SAFETY: the fixed format receives one live NSString and two C unsigned
+        // integers. Foundation logging is safe from background threads as well.
+        unsafe {
+            NSLog(
+                objc2_foundation::ns_string!("EML panic source: %@:%u:%u"),
+                &*NSString::from_str(location.file()),
+                location.line(),
+                location.column(),
+            );
+        }
     }
 }
 

@@ -25,6 +25,11 @@ mod native;
 )]
 mod preferences;
 fn main() -> std::process::ExitCode {
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        native::panic_observation(info);
+        previous_hook(info);
+    }));
     match start() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {

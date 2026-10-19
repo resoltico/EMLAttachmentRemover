@@ -1638,9 +1638,12 @@ At H574fde058062987d3ae3a690a5e30c2b1072a2ad, run39179981007/a1
 completed with failure. All six native test jobs, both macOS26 candidate
 producers, legal/lint/icon, exact-merge integration and freshness passed. Both
 macOS15 desktop consumers failed at the same Finder-window move: the owned
-product had already exited. On ARM, the retained XCTest system-log archive
-binds PID4422 to the extracted candidate image and reports exitStatus=0 at
-00:35:55.795 UTC, immediately after Show in Finder. Window close and owner
+product had already exited. Both retained XCTest system-log archives record
+LSExitStatus=101 immediately after Show in Finder (ARM PID4422, Intel PID7437).
+The later unregister message reports0; reading that message alone initially
+misidentified the actual exit record. Source-location-only panic logging is
+added while preserving the prior panic hook; no panic payload is copied to the
+system log. Window close and owner
 termination observations establish neither confirmed Quit nor worker settlement.
 The live macOS15 log query timed out; the offline archive supplies this evidence.
 
