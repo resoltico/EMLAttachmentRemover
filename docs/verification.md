@@ -447,6 +447,13 @@ byte/structure checks run within every preparation. The harness rejects Internal
 refusals, checks source subsequence/metadata bounds and independently invokes a
 second preparation for fixed-point checks. Crash/timeout/RSS/abnormal exit,
 artifacts, missing/zero final execution summary or changed admitted inputs fail.
+The harness sets -print_funcs=0 to omit newly covered function-name progress
+printing. In pinned libfuzzer-sys0.4.13 this skips only the PrintPC diagnostic loop;
+coverage accounting, corpus feedback, sanitizer failure diagnostics and final
+execution statistics remain enabled. Two observed Darwin symbolizer failures left
+owned atos children at cleanup; both complete-but-unsettled runs remain failed.
+Unknown or unexpected children still fail; there is no symbolizer-name exemption.
+
 No finite campaign establishes correctness for all byte sequences.
 
 ## Pinned cargo-fuzz build limitation

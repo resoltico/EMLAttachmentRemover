@@ -210,6 +210,9 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
             "-max_len=4194304".into(),
             "-timeout=5".into(),
             "-rss_limit_mb=1024".into(),
+            // Avoid external symbolization solely for new-function progress names.
+            // Coverage accounting and sanitizer failure diagnostics remain enabled.
+            "-print_funcs=0".into(),
             "-print_final_stats=1".into(),
             format!("-artifact_prefix={}/", artifacts.display()),
         ])

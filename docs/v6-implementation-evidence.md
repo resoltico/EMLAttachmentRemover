@@ -2166,3 +2166,14 @@ This narrows mutation test execution to the guards' actual rejection suite witho
 reducing the admitted mutant set or the required native suite. The renewed exact-
 source campaign must complete before acceptance; prior60-second configuration is
 retained as historical evidence rather than claimed compliant enforcement.
+
+Two renewed60-second fuzz runs at H7b429 completed678,561/318,144 executions,
+no crash artifacts and exit0, but FAILED controller qualification. Each retained
+a stopped owned atos child at cleanup (unexpected_survivors1; cleanup_complete
+true), alongside NEW_FUNC symbolization warnings. The second unchanged run
+reproduced this tooling failure. Pinned libfuzzer-sys0.4.13's FuzzerTracePC.cpp
+keeps PC/function accounting independent of the optional PrintPC name loop.
+The harness now sets -print_funcs=0 to remove that unnecessary progress-name
+symbolization. Sanitizer failure diagnostics, coverage feedback, final statistics,
+all input/time/RSS bounds and unexpected-child rejection remain unchanged. Actual
+post-change execution is required; neither failed run is counted as passing fuzz.
