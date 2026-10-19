@@ -7,6 +7,14 @@ they do not qualify another source. Consult the
 [implementation evidence](v6-implementation-evidence.md) and the PR's exact-source
 CI records for passed, failed and unrun gates.
 
+The separate panel diagnostic is dispatched manually from a pushed branch with
+`gh workflow run macos-panel-diagnostic.yml --ref BRANCH -f source=SOURCE`, where
+SOURCE is its full commit SHA. Its optional product experiment also requires the
+exact completed failed CI `product_run` and `product_attempt`. Ordinary native
+qualification still runs its actual product picker check. The diagnostic's
+historical PR runs remain evidence; automatic comparative probes are not a
+required product gate.
+
 ## Native picker preference observations
 
 The owner-authorized QA scope distinguishes native picker actions from

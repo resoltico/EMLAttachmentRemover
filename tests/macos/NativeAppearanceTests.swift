@@ -63,7 +63,9 @@ extension DesktopInteractionTests {
       settingsOwner, url: "x-apple.systempreferences:com.apple.Appearance-Settings.extension")
     var selected = [String]()
     for name in ["Light", "Dark", "Auto"] {
-      if try settingSelected(try await setting(settings, name: name)) { selected.append(name) }
+      if try settingSelected(try await setting(settings, name: name), name: name) {
+        selected.append(name)
+      }
     }
     guard selected.count == 1 else {
       XCTFail("Original native appearance selector is unavailable: \(settings.debugDescription)")
@@ -74,8 +76,10 @@ extension DesktopInteractionTests {
       url: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display")
     let before = AppearanceState(
       selection: selected[0],
-      contrast: try settingSelected(try await setting(settings, name: "Increase contrast")),
-      transparency: try settingSelected(try await setting(settings, name: "Reduce transparency")))
+      contrast: try settingSelected(
+        try await setting(settings, name: "Increase contrast"), name: "Increase contrast"),
+      transparency: try settingSelected(
+        try await setting(settings, name: "Reduce transparency"), name: "Reduce transparency"))
     try await nativeDisplayState(contrast: before.contrast, transparency: before.transparency)
     let restoration = Restoration()
     addTeardownBlock { @MainActor in
@@ -188,14 +192,23 @@ extension DesktopInteractionTests {
   @MainActor
   private func setting(_ settings: XCUIApplication, name: String) async throws -> XCUIElement {
     var found: XCUIElement?
+    let named = NSPredicate(format: "title == %@ OR label == %@", name, name)
     let predicate = NSPredicate { _, _ in
-      let candidates =
-        settings.radioButtons.allElementsBoundByIndex
-        + settings.checkBoxes.allElementsBoundByIndex + settings.buttons.allElementsBoundByIndex
-      guard candidates.count <= 2048 else { return false }
-      let matching = candidates.filter { $0.title == name || $0.label == name }
-      found = matching.count == 1 ? matching.first : nil
-      return found != nil
+      found = nil
+      let roles = [settings.radioButtons, settings.checkBoxes, settings.buttons]
+      var count = 0
+      for role in roles {
+        let current = role.count
+        guard current <= 2048 - count else { return false }
+        count += current
+      }
+      let matching = roles.map { $0.matching(named) }
+      let matches = matching.map { $0.count }
+      guard matches.reduce(0, +) == 1, let index = matches.firstIndex(of: 1) else { return false }
+      let element = matching[index].firstMatch
+      guard element.exists else { return false }
+      found = element
+      return true
     }
     let result = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 15)
@@ -207,7 +220,14 @@ extension DesktopInteractionTests {
   }
 
   @MainActor
-  private func settingSelected(_ element: XCUIElement) throws -> Bool {
+  private func settingSelected(_ element: XCUIElement, name: String) throws -> Bool {
+    if ["Light", "Dark", "Auto"].contains(name), element.elementType == .button {
+      let selected = element.isSelected
+      print(
+        "Native appearance selector \(name): selected=\(selected), value=\(String(describing: element.value))"
+      )
+      return selected
+    }
     if let value = element.value as? NSNumber { return value.boolValue }
     if let value = element.value as? String {
       if ["1", "true"].contains(value) { return true }
@@ -221,13 +241,15 @@ extension DesktopInteractionTests {
   @MainActor
   private func setSetting(_ settings: XCUIApplication, name: String, selected: Bool) async throws {
     let element = try await setting(settings, name: name)
-    if try settingSelected(element) != selected {
+    if try settingSelected(element, name: name) != selected {
       guard element.isEnabled && element.isHittable else {
         throw InteractionFailure.expectedPresentation
       }
       element.click()
     }
-    let predicate = NSPredicate { _, _ in (try? self.settingSelected(element)) == selected }
+    let predicate = NSPredicate { _, _ in
+      (try? self.settingSelected(element, name: name)) == selected
+    }
     let result = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 10)
     guard result == .completed else { throw InteractionFailure.expectedPresentation }

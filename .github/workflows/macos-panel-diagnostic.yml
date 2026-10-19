@@ -1,10 +1,5 @@
 name: Native AppKit panel observation
 on:
-  pull_request:
-    paths:
-      - .github/workflows/macos-panel-diagnostic.yml
-      - tests/macos/NativePanelDiagnostic.swift
-      - xtask/src/macos_panel.rs
   workflow_dispatch:
     inputs:
       source:

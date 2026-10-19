@@ -1902,3 +1902,28 @@ are unchanged. This reduces unnecessary remote snapshots but does not establish
 or repair the cause of Finder's busy thread. Real selected-copy, subsequent drag
 and normal settlement verification remain required. No service restoration,
 extra intervention or GUI-scope exception was introduced.
+
+At H1dea/run39200628248, both macOS15 CPUs passed the complete Workflow,
+65-item/65-part Pagination and all four real-Core UI cases, each1 passed with
+zero failed/skipped. Owners settled normally without forced cleanup; originals
+were unchanged (69 in Pagination, four in each other case), and nonpicker
+preferences stayed exact. The ARM ready/running/stopped/published-error and three
+compact pagination screenshots were visually reviewed; navigation and disclosure
+controls are physically visible after the intentional outer scroll.
+
+Both desktop consumers then failed Appearance before any appearance-changing
+click. System Settings contained the Light/Dark/Auto Buttons, but the test held
+unfiltered indexed elements while the pane changed, producing stale-index
+snapshot failures. The lookup now retains live exact title-or-label role queries,
+requires one match within the same cumulative2048 bound, and observes isSelected
+for the three known Button choices. Checkbox value handling,15-second lookup,
+ownership, actual display-state checks and restoration requirements are unchanged.
+Strict formatting and supplementary SDK27 XCTest compilation passed; the new
+appearance path remains unrun natively.
+
+The optional panel diagnostic now uses manual dispatch only. Its cumulative PR
+path filter had restarted four non-required comparative probes for every source
+update. Required native and actual-product CI roles are unchanged; historical
+diagnostic results and manual dispatch remain available. Actual-product
+experiment39204733554 is running against the frozen H1dea candidate; no modified
+host acceptance is inferred from its probe or earlier partial Workflow progress.

@@ -67,7 +67,7 @@ matching macOS15 desktop qualification and macOS26 Intel picker compatibility.
 `ci-ok` always runs and rejects failed, missing and
 unexpectedly skipped jobs; only non-PR events omit merge integration/freshness.
 Full product acceptance requires every registered native role and its matching
-archive/desktop consumers. Icon diagnostics
+archive/desktop consumers. Icon and panel diagnostics
 are manual only. Partial reruns
 that lack the exact current producer artifact fail; rerun the complete workflow.
 Actionlint uses its exact checksum-pinned upstream prebuilt because install-action
