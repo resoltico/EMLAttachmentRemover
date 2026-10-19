@@ -1025,24 +1025,26 @@ final class DesktopInteractionTests: XCTestCase {
     // Finder may hide a known extension. Both display names identify this one
     // synthetic file inside the already-bound unique fixture directory.
     let names = [file.lastPathComponent, file.deletingPathExtension().lastPathComponent]
-    let elements = window.descendants(matching: .any).allElementsBoundByIndex
-    guard elements.count <= 512 else { throw InteractionFailure.expectedPresentation }
     let entryKinds: [XCUIElement.ElementType] = [.image, .icon, .cell, .tableRow, .outlineRow]
-    let found = elements.first { element in
-      guard entryKinds.contains(element.elementType),
-        selected == nil || element.isSelected == selected
-      else { return false }
-      return [element.title, element.label, element.value as? String ?? ""].contains { value in
-        names.contains { value == $0 || value.hasPrefix($0 + ",") }
+    var examined = 0
+    func matchesName(_ value: String) -> Bool {
+      names.contains { value == $0 || value.hasPrefix($0 + ",") }
+    }
+    for kind in entryKinds {
+      let elements = window.descendants(matching: kind).allElementsBoundByIndex
+      examined += elements.count
+      guard examined <= 512 else { throw InteractionFailure.expectedPresentation }
+      for element in elements {
+        let matches =
+          matchesName(element.title) || matchesName(element.label)
+          || matchesName(element.value as? String ?? "")
+        if matches && (selected == nil || element.isSelected == selected) { return element }
       }
     }
-    guard let found else {
-      XCTFail(
-        "Owned Finder entry/selection is unavailable for \(file.lastPathComponent): \(window.debugDescription)"
-      )
-      throw InteractionFailure.expectedPresentation
-    }
-    return found
+    XCTFail(
+      "Owned Finder entry/selection is unavailable for \(file.lastPathComponent): \(window.debugDescription)"
+    )
+    throw InteractionFailure.expectedPresentation
   }
 
   @MainActor

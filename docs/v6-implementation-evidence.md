@@ -1881,3 +1881,21 @@ and requires1 before details. The existing settled/source assertion uses the
 exact TextView role/title and direct value, retaining its20-second bound.
 Independent65-output golden checks and all pagination transitions remain required;
 the failed run did not reach them. No product selection behavior was changed.
+
+Manual39196659829 passed its admitted baseline/repeat/bootout/probe preparation
+and ran the unchanged H92 product. Real message/folder/keyboard pickers, Services,
+queue removal, report export/readback/collision and missing-copy handling
+progressed. Finder lookup then stalled: the busy-main-thread snapshot errors
+identify Finder PID431, not the product PID. The1800-second owner deadline
+reaped the runner and required forced product cleanup. Four originals remained
+unchanged and the held copy was restored; worker settlement is unverified.
+The attempt wrapper records consumer_failed/exit1 and has no success result.
+This is not conditional-route acceptance or normal-host compatibility.
+
+Finder lookup now queries only its existing five permitted entry roles, uses
+short-circuit name getters and reads selection only for a name match. The512
+candidate bound remains cumulative; owned-window/name/selection requirements
+are unchanged. This reduces unnecessary remote snapshots but does not establish
+or repair the cause of Finder's busy thread. Real selected-copy, subsequent drag
+and normal settlement verification remain required. No service restoration,
+extra intervention or GUI-scope exception was introduced.
