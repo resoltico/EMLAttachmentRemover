@@ -52,7 +52,34 @@ final class DesktopInteractionTests: XCTestCase {
     let recipient = try await NSWorkspace.shared.open(
       [directory], withApplicationAt: appURL, configuration: delivery)
     guard recipient.processIdentifier == pid else { throw InteractionFailure.expectedPresentation }
-    app.checkBoxes["Technical details"].click()
+    try await requireRunCounts(app, counts: "65 created · 0 up to date")
+    let previousItems = app.buttons["Previous items"]
+    if previousItems.isEnabled { previousItems.click() }
+    var observedFirstItem: XCUIElement?
+    let firstPage = NSPredicate { _, _ in
+      observedFirstItem = window.buttons.allElementsBoundByIndex.first {
+        $0.title.hasPrefix("000.eml · ")
+      }
+      return observedFirstItem != nil
+    }
+    let selectedPage = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: firstPage, object: nil)], timeout: 10)
+    guard selectedPage == .completed, let firstItem = observedFirstItem else {
+      XCTFail("The first pagination item did not become available after bounded navigation")
+      throw InteractionFailure.expectedPresentation
+    }
+    firstItem.click()
+    let technical = app.checkBoxes["Technical details"]
+    let technicalValue = try XCTUnwrap(technical.value as? NSNumber)
+    XCTAssertTrue(technicalValue == 0 || technicalValue == 1)
+    if technicalValue == 0 { technical.click() }
+    let disclosed = NSPredicate { _, _ in (technical.value as? NSNumber) == 1 }
+    let disclosure = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: disclosed, object: nil)], timeout: 10)
+    guard disclosure == .completed else {
+      XCTFail("Pagination technical disclosure did not become enabled: \(technical.value as Any)")
+      throw InteractionFailure.expectedPresentation
+    }
     try await requireRun(app, counts: "65 created · 0 up to date", source: sources[0])
     let specialGolden = try Data(
       contentsOf: fixture.appendingPathComponent("pagination-golden.eml"))
@@ -1192,6 +1219,23 @@ final class DesktopInteractionTests: XCTestCase {
   func requireRun(
     _ app: XCUIApplication, counts: String, source: URL, displayedName: String? = nil
   ) async throws {
+    try await requireRunCounts(app, counts: counts)
+    let detail = app.textViews["Selected message, removed parts and technical observations"]
+    let predicate = NSPredicate { _, _ in
+      guard detail.exists, let value = detail.value as? String else { return false }
+      return value.contains(displayedName ?? source.lastPathComponent)
+        && value.contains("settled true; reusable true")
+    }
+    let selected = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 20)
+    XCTAssertEqual(
+      selected, .completed,
+      "Expected settled details for \(source.lastPathComponent): \(app.debugDescription)")
+    guard selected == .completed else { throw InteractionFailure.expectedPresentation }
+  }
+
+  @MainActor
+  private func requireRunCounts(_ app: XCUIApplication, counts: String) async throws {
     let predicate = NSPredicate { _, _ in
       app.buttons.allElementsBoundByIndex.contains {
         let text = $0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")
@@ -1204,19 +1248,6 @@ final class DesktopInteractionTests: XCTestCase {
     XCTAssertEqual(
       result, .completed, "Expected terminal run counts \(counts): \(app.debugDescription)")
     guard result == .completed else { throw InteractionFailure.expectedPresentation }
-    let detail = NSPredicate { _, _ in
-      app.descendants(matching: .any).allElementsBoundByIndex.contains {
-        $0.title == "Selected message, removed parts and technical observations"
-          && ($0.value as? String)?.contains(displayedName ?? source.lastPathComponent) == true
-          && ($0.value as? String)?.contains("settled true; reusable true") == true
-      }
-    }
-    let selected = await XCTWaiter.fulfillment(
-      of: [XCTNSPredicateExpectation(predicate: detail, object: nil)], timeout: 20)
-    XCTAssertEqual(
-      selected, .completed,
-      "Expected settled details for \(source.lastPathComponent): \(app.debugDescription)")
-    guard selected == .completed else { throw InteractionFailure.expectedPresentation }
   }
 
   @MainActor

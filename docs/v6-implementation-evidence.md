@@ -1866,3 +1866,18 @@ A fresh clean clone of7ad50a4201e996c8ce27fced1ff362a544c15a7c passed432
 discovered/executed tests (36 positive and15 explicit empty summaries) and14
 repository sections. The two pinned-Xcode sections failed because26.3 is absent
 locally; these are unavailable checks, not complete native qualification.
+
+At H3556/run39196658498, all six native rows and both app candidates passed;
+independent audit confirmed the exact eight archives and both packaged folder
+declarations. The ARM15 Workflow and five-key preference guard passed again.
+Pagination now delivers the native folder and reaches65-created terminal UI,
+establishing the folder declaration correction. It then fails the settled-detail
+assertion: the retained native checkbox is0, the nontechnical detail title is
+present and item064 is selected. A single earlier checkbox click during report
+population did not establish the required state; a layout race is possible but
+not proven. The revised test waits for terminal counts, performs bounded native
+navigation/explicit item000 selection, observes checkbox0/1, clicks only if off
+and requires1 before details. The existing settled/source assertion uses the
+exact TextView role/title and direct value, retaining its20-second bound.
+Independent65-output golden checks and all pagination transitions remain required;
+the failed run did not reach them. No product selection behavior was changed.
