@@ -212,6 +212,7 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
     window.show()?;
+    native::lifecycle_observation("Main window shown; source-location panic hook installed");
     slint::run_event_loop_until_quit()?;
     native::lifecycle_observation("Main event loop returned successfully");
     Ok(())

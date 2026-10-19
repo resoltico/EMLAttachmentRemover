@@ -366,7 +366,9 @@ impl NativeDialog {
     ) -> Result<Self, NativeError> {
         let main = MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
         let parent = parent(window)?;
+        lifecycle_observation("Open panel constructor entered");
         let panel = NSOpenPanel::openPanel(main);
+        lifecycle_observation("Open panel constructor returned");
         panel.setCanChooseFiles(matches!(kind, OpenKind::Files));
         panel.setCanChooseDirectories(!matches!(kind, OpenKind::Files));
         panel.setAllowsMultipleSelection(!matches!(kind, OpenKind::Destination));
@@ -410,7 +412,9 @@ impl NativeDialog {
             .unwrap_or(DialogResult::Failed(NativeError::DialogAborted));
             completed.set(Some(outcome));
         });
+        lifecycle_observation("Open panel presentation entered");
         panel.beginSheetModalForWindow_completionHandler(&parent, &block);
+        lifecycle_observation("Open panel presentation returned");
         Ok(Self {
             panel: Panel::Open(panel),
             parent,

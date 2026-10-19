@@ -1793,3 +1793,18 @@ No product acceptance ran on that VM. This supports IconServices availability
 as a contributor, with retry/time/state confounds; it establishes neither the
 specific Metal cause, continuous absence/nonrestart nor product qualification.
 No service restoration is claimed. Normal-host Intel26 compatibility remains open.
+
+The normal H257 Intel26 picker Workflow failed864.269seconds into its first
+native input panel after native labels/prelude and Core creation had passed.
+Its retained log records the AppKit configuration semaphore timeout, followed
+by LSExitStatus101; later unregister0 does not establish successful exit.
+Process death precedes XCTest teardown. The signed executable contains the
+installed panic-hook strings, but the retained owned-PID lifecycle query found
+no hook messages; Rust panic, native fatal return and other exit paths remain
+unresolved. The nullable-constructor conversion and timer reentry are possible
+source paths, not demonstrated causes. No binding workaround is justified yet.
+A static startup marker and Open-panel constructor/presentation entry/return
+markers now test log-channel visibility and localize missing progress without
+altering construction or completion. Strict Clippy and GUI link passed.
+The human's qualification-environment choice is pending in command central;
+no changed completion predicate or altered-VM product test is authorized yet.
