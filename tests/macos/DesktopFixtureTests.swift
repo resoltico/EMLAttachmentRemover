@@ -49,30 +49,44 @@ struct DesktopFixtureTests {
     let overflow = DesktopFixtureOutput()
     overflow.observe(Data(String(repeating: "EML_OWNED_COPY_HOLD\n", count: 9).utf8))
     precondition(overflow.observedRelayFailure() == "Owned fixture request queue overflow")
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eml-fixture-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: root) }
     // The real pipe must deliver a complete request while its writer remains
-    // open; waiting for EOF here would deadlock an acknowledgment round trip.
+    // open and forward the exact bytes to an ordinary output handle. Waiting
+    // for EOF here would deadlock an acknowledgment round trip.
     let pipe = Pipe()
     let relayed = DesktopFixtureOutput()
-    try relayed.relay(from: pipe.fileHandleForReading, to: FileHandle.nullDevice)
-    try pipe.fileHandleForWriting.write(contentsOf: Data("EML_OWNED_COPY_HOLD\n".utf8))
+    let forwarded = root.appendingPathComponent("forwarded-output")
+    try Data().write(to: forwarded, options: .withoutOverwriting)
+    let destinationHandle = try FileHandle(forWritingTo: forwarded)
+    defer { try? destinationHandle.close() }
+    let requestBytes = Data("EML_OWNED_COPY_HOLD\n".utf8)
+    try relayed.relay(from: pipe.fileHandleForReading, to: destinationHandle)
+    try pipe.fileHandleForWriting.write(contentsOf: requestBytes)
     var received: DesktopFixtureRequest?
     let requestDeadline = Date().addingTimeInterval(2)
     while received == nil && Date() < requestDeadline {
       received = relayed.take()
       Thread.sleep(forTimeInterval: 0.01)
     }
-    precondition(received == .holdCopy && !relayed.hasEnded())
+    precondition(
+      received == .holdCopy && !relayed.hasEnded(),
+      "Open pipe request: received=\(String(describing: received)), ended=\(relayed.hasEnded()), relay failure=\(String(describing: relayed.observedRelayFailure()))"
+    )
     try pipe.fileHandleForWriting.close()
     let eofDeadline = Date().addingTimeInterval(2)
     while !relayed.hasEnded() && Date() < eofDeadline { Thread.sleep(forTimeInterval: 0.01) }
-    precondition(relayed.hasEnded() && relayed.observedRelayFailure() == nil)
+    precondition(
+      relayed.hasEnded() && relayed.observedRelayFailure() == nil,
+      "Closed pipe EOF: ended=\(relayed.hasEnded()), relay failure=\(String(describing: relayed.observedRelayFailure()))"
+    )
+    try requireBytes(forwarded, requestBytes)
+    try destinationHandle.close()
     try pipe.fileHandleForReading.close()
     // Exercise the real Darwin no-replace edge and acknowledgment publication
     // using only a freshly minted temporary directory, without launching an app.
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "eml-fixture-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
-    defer { try? FileManager.default.removeItem(at: root) }
     let source = root.appendingPathComponent("source")
     let destination = root.appendingPathComponent("held")
     let complete = Data("complete synthetic copy\n".utf8)

@@ -1927,3 +1927,22 @@ update. Required native and actual-product CI roles are unchanged; historical
 diagnostic results and manual dispatch remain available. Actual-product
 experiment39204733554 is running against the frozen H1dea candidate; no modified
 host acceptance is inferred from its probe or earlier partial Workflow progress.
+
+At H7ca/run39205692112, all six native source rows and both app candidate
+producers passed. Each candidate executed456 release tests, verified thin matching
+main/worker images and ad hoc signatures, and exercised the extracted worker's
+Created/UpToDate outcomes. The Intel15 consumer failed before GUI execution in
+the real-pipe fixture's combined EOF/no-error assertion. Its controller recorded
+121ms execution, signal4, no timeout and clean settlement. The assertion omitted
+the relay error, so neither the read nor forwarding-write cause is established.
+Appearance was not reached on that host. The original evidence remains retained.
+
+The fixture now forwards to a freshly owned ordinary file and independently checks
+the exact forwarded request bytes. The former special null handle discarded all
+output and is not a product boundary. Request delivery while the writer remains
+open, both two-second bounds and EOF/no-error requirements are unchanged; failures
+now include the observed request, EOF state and first relay error. This strengthens
+the forwarding control without establishing the cause of H7ca's failure. Local
+SDK27 compilation/strict formatting and100 complete ordinary-file fixture runs
+passed;1000 isolated null-sink rounds also passed locally, so the earlier failure
+was not reproduced. Hosted verification remains required.
