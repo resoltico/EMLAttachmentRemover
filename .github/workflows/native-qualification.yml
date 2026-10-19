@@ -16,6 +16,7 @@ jobs:
       native: ${{ steps.plan.outputs.native }}
       apps: ${{ steps.plan.outputs.apps }}
       smoke: ${{ steps.plan.outputs.smoke }}
+      picker: ${{ steps.plan.outputs.picker }}
       about: ${{ steps.plan.outputs.about }}
       deny: ${{ steps.plan.outputs.deny }}
       actionlint: ${{ steps.plan.outputs.actionlint }}
@@ -39,6 +40,7 @@ jobs:
             jq -ce '{include:[.native_targets[]|{platform,target,runner,os}]}' target/distribution.json | sed 's/^/native=/'
             jq -ce '{include:[.native_targets[]|select(.app)|{platform,target,runner}]}' target/distribution.json | sed 's/^/apps=/'
             jq -ce '{include:[.native_targets[]|select(.app)|{platform,target,runner:.app_smoke_runner}]}' target/distribution.json | sed 's/^/smoke=/'
+            jq -ce '{include:[.native_targets[]|select(.platform=="macos-x86_64")|{platform,target,runner}]}' target/distribution.json | sed 's/^/picker=/'
             for name in about deny actionlint shellcheck; do
               key="$name"
               if [ "$name" = about ] || [ "$name" = deny ]; then key="cargo_$name"; fi
@@ -367,7 +369,7 @@ jobs:
   app:
     needs: [plan, legal, icon, icon_fallback]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' && ((needs.icon.result == 'success' && needs.icon.outputs.available == 'true') || needs.icon_fallback.result == 'success') }}
-    name: Native app / ${{ matrix.platform }}
+    name: Native app candidate / ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
@@ -399,7 +401,7 @@ jobs:
           key: macos-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}-${{ inputs.source }}
           restore-keys: |
             macos-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
-      - name: Qualify native release tests, exFAT, CLI and complete ad hoc app archives
+      - name: Verify native release tests, exFAT, CLI and ad hoc app candidates
         run: cargo xtask qualify --target '${{ matrix.target }}' --icons target/icon-input --out target/native-app-build
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: ${{ !cancelled() && steps.cargo_cache.outputs.cache-hit != 'true' }}
@@ -447,7 +449,7 @@ jobs:
   app_smoke:
     needs: [plan, legal, app]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' }}
-    name: macOS15 extracted archives / ${{ matrix.platform }}
+    name: macOS15 desktop qualification / ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
@@ -502,9 +504,60 @@ jobs:
             target/archive-verification/**
             target/native-host/**
           if-no-files-found: error
+  app_picker:
+    needs: [plan, legal, app]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' }}
+    name: macOS26 native picker / ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.picker) }}
+    env:
+      EML_GENERATED_LEGAL_MATERIALS: ${{ github.workspace }}/target/legal-input
+      MACOSX_DEPLOYMENT_TARGET: ${{ needs.plan.outputs.minimum }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.legal.outputs.artifact_id }}
+          path: target/legal-input
+      - name: Select the exact current candidate artifact ID
+        id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          ARTIFACT_NAME: native-products-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+        run: |
+          id=$(gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts" | jq -er --arg name "$ARTIFACT_NAME" '[.[]|.artifacts[]|select(.name==$name and .expired==false)] | if length==1 then .[0].id else error("missing or ambiguous exact candidate artifact") end')
+          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ steps.artifact.outputs.id }}
+          path: target/products
+      - name: Require the observed native picker workflow and its original prelude
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          cargo xtask distribution > target/distribution.json
+          app=$(jq -er --arg platform "$PLATFORM" '.expected_artifacts[]|select(.platform==$platform and .role=="app")|.name' target/distribution.json)
+          cargo xtask check-macos-picker --archive "target/products/app-build/$app" --reference "target/products/app-build/$app.reference.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: picker-compatibility-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/app-picker-compatibility/**
+            !target/app-picker-compatibility/**/gui-picker/build/**
+            target/native-host/**
+          if-no-files-found: error
   ci-ok:
     if: ${{ always() }}
-    needs: [plan, lint, legal, test, app, app_smoke]
+    needs: [plan, lint, legal, test, app, app_smoke, app_picker]
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:

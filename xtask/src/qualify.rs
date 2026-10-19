@@ -384,9 +384,9 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path, icons: Option<&Path>) -
             fs::write(
                 out.join("qualification.json"),
                 serde_json::to_vec_pretty(&json!({
-                    "source":source.trim(),"target":target,"host":cli.host(),"release_tests":tests,
+                    "stage":"native_candidate","source":source.trim(),"target":target,"host":cli.host(),"release_tests":tests,
                     "cli_image":cli.identity(),"archive":archive,"app":app,"volume_evidence":volume,
-                    "scope":"native release tests, owned exFAT observations, frozen CLI and app archive verification with actual extracted GUI checks; other-platform, floor-host and repository-wide gates remain separate"
+                    "scope":"native release tests, owned exFAT observations, frozen CLI and native app candidate structure/signature/worker verification; desktop and picker compatibility are separate required consumers"
                 }))?,
             )?;
             Ok(())

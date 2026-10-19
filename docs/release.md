@@ -12,11 +12,17 @@ the exact clean checkout, current remote main ancestry, version, notes, tag and
 actual API release state. An API failure is never treated as absence.
 
 The same reusable native qualification workflow runs on S. All six native test
-jobs, both app producers, both minimum-OS archive consumers and the strict
-aggregate must pass. Products are selected only from this run/attempt's six
+jobs, both native app candidate producers, both complete minimum-OS desktop
+consumers, the macOS26 Intel picker compatibility check and the strict aggregate
+must pass. Products are selected only from this run/attempt's six
 platform artifacts, downloaded into separate directories with digest mismatch
-treated as an error. Their source records must bind to S. The policy derives
-exactly eight archive names. `stage-release-assets` freezes their actual bytes,
+treated as an error. Their source records must bind to S. Consumer evidence is downloaded separately from
+products. Preparation requires each candidate's `native_candidate` stage plus
+matching `desktop_qualification` and, for Intel, `picker_compatibility` receipts
+from the same run/attempt, source, target and archive bytes. Failed, skipped,
+missing or mismatched case receipts cannot admit an app. A known compatibility
+failure continues to block the reusable aggregate and release preparation.
+The policy derives exactly eight archive names. `stage-release-assets` freezes their actual bytes,
 checks copy readback and writes the sorted SHA256SUMS as the ninth asset.
 Existing native checks establish behavior; artifact digests preserve the tested
 bytes through transport. Assembly alone establishes neither property.
@@ -24,7 +30,8 @@ bytes through transport. Assembly alone establishes neither property.
 The pinned `actions/attest` action uses an explicit qualification predicate at
 `https://github.com/resoltico/EMLAttachmentRemover/attestations/native-qualification/v1`.
 It records S, the distinct dispatch commit and workflow ref/SHA, native run and
-attempt, policy and assembly identities. All eight archives and SHA256SUMS are
+attempt, policy and assembly identities, and compact actual-host/desktop/picker
+case observations from the validated consumer records. All eight archives and SHA256SUMS are
 subjects. This is a qualification/assembly statement, not default SLSA build
 provenance pretending that a checkout override changes the dispatch identity.
 Full native job observations and build/test records remain in run artifacts.

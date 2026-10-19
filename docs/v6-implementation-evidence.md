@@ -1561,3 +1561,73 @@ or skipped required roles remain rejected by the existing CI admission controls.
 Actionlint and both targeted CI admission tests passed. Actual GitHub cancellation/settlement remains an execution
 observation, not established by source lint or admission unit tests. See
 [GitHub's cancellation reference](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
+
+## Native candidate production and independent desktop consumers
+
+Command central confirmed the approved WD-6 policy: native macOS26 producers
+remain required, with complete macOS15 qualification against those exact frozen
+archives. The minimum does not require duplicating every desktop case on every
+later OS, but the observed macOS26 Intel picker failure remains a completion
+blocker. No producer reversion, unsupported-OS exception or GUI waiver was
+approved. H23b's Intel test subsequently failed897.344seconds into the same
+workflow at the first native input panel; its owner observed normal termination,
+reaped the runner and verified four unchanged originals. The faulty separate
+log options still truncated at1439491bytes. Its failure is retained.
+
+The producer now ends at the existing structure/extraction/Mach-O/signature/
+minimum/worker boundary and publishes a `native_candidate` receipt without GUI
+success/default fields. Actual native host/CPU inspection and one observed
+ProductVersion enforce macOS26 for accepted candidates. Both macOS15 consumers
+still require the complete shipping workflow,65-item/65-part pagination, four
+real-Core lifecycle/publication cases and final Light/Dark/Increase Contrast
+phase, then the unchanged-bundle inventory check. They emit
+`desktop_qualification` only after success, bound to actual OS/CPU, source,
+target and the exact candidate archive snapshot. Their OS major is required to
+match the deployment-floor major.
+
+The separate required macOS26 Intel `picker_compatibility` consumer repeats the
+same startup observation, owner controls and original shipping Workflow prelude;
+opening a picker immediately in a fresh app would not reproduce the observed
+failure conditions. Its existing exact picker attachment must bind the owned
+PID and fixture before the narrow Cocoa preference comparison is permitted.
+An exploratory fresh-picker scenario was discarded before delivery. The
+compatibility role is required by both reusable CI admission and future release
+qualification, so successful candidates/floor checks cannot hide its failure.
+Floor consumers do not wait for compatibility to finish. Missing artifacts fail
+their own current-run/attempt lookup rather than selecting earlier bytes.
+
+Release preparation separately downloads the exact consumer evidence, requires
+stage/source/target/archive/OS/CPU bindings, passing case summaries and all four
+publication cases, and retains compact actual-host/case observations in its
+qualification predicate. Consumer evidence cannot contaminate the exact-eight
+product inventory. Forty-one synthetic controls executed the actual workflow
+predicates and passed, including rejection of candidate-as-desktop/picker,
+wrong host/CPU/source/target/archive, missing cases and failed/skipped summaries.
+The first exploratory extractor selected a later CLI predicate for the candidate
+positive control; that invalid extraction was corrected, with the initial
+failure retained. These controls do not establish native GUI or publication
+integration. Strict Clippy, actionlint and119 tooling tests passed:25 library,
+70 command and24 real Unix lifetime cases, with no failed/ignored tests.
+Cross-stage OS rejection is included. The new split still requires committed,
+clean-source native execution; complete v6 qualification remains open.
+
+At H6e69965b6610e546dc6f85a483c14efb98ccff7a/run39177129235 the ARM
+test passed exact Finder selection and the corrected owned-window screenshot,
+then failed245.792seconds into the test when NSRunningApplication.activate
+returned false before report dismissal or drag. The reason for refusal is not
+established. The owner again observed normal app termination and unchanged
+originals. The single-conjunction log query completed0 without timeout or
+truncation, retaining23404bytes and its applied predicate; service-process logs
+remain outside scope. Intel's run is still in progress at this checkpoint.
+
+The fixture now moves only its newly opened Finder window using the already
+required native drag, then clicks the exposed owned product titlebar. It refuses
+to click a point outside that product frame or under the known Finder window,
+rejects an unrelated foreground app, and requires the retained app's active state
+and exact frontmost PID before continuing. The same focus helper is used after
+the guarded Finder window is closed. It does not launch a replacement instance
+or force deprecated activation options. This replaces the assumption that a
+background activation request must succeed with the actual user interaction.
+SDK27 Swift6 XCTest compilation and strict formatting passed. Actual focus return
+and subsequent file drag remain unrun; no product activation correction or GUI
+qualification is claimed from compilation.

@@ -44,10 +44,18 @@ on matching macOS15 hosts. The minimum remains 15.0. Compile the owner icon once
 with `cargo xtask compile-macos-icon --out target/icon-input`; pass that validated
 same-source directory to both native builders with
 `cargo xtask build-macos-app --icons target/icon-input --out target/app-build`.
+This produces a `native_candidate` receipt after structure, signature, CPU,
+minimum-OS and actual extracted-worker checks. On each matching macOS15 host,
+`cargo xtask smoke-macos-app --archive ARCHIVE --reference REFERENCE` requires the
+complete desktop case set against those frozen bytes. On macOS26 Intel,
+`cargo xtask check-macos-picker --archive ARCHIVE --reference REFERENCE` separately
+requires the known picker workflow with its original startup and interaction
+prelude. Neither consumer rebuilds the
+shipping app, and candidate success alone does not qualify the desktop product.
 A settled actool failure may use the approved macOS15 Intel producer; timeout,
 uncertain cleanup, missing pinned Xcode or invalid outputs do not permit fallback.
-Keep each app ZIP's frozen `.reference.json` receipt for native floor smoke and
-`verify-archive`; it binds producer bytes, not review quality. Ad hoc signing is
+Keep each app ZIP's frozen `.reference.json` receipt for `smoke-macos-app` and
+`check-macos-picker`; it binds producer bytes, not review quality. Ad hoc signing is
 the only supported signing mode; no Apple developer account is required.
 
 `ci.yml` sends exact PR head H, main source S or merge-queue source Q through
@@ -55,7 +63,8 @@ the reusable native workflow. PR Linux integration uses the exact merge M and
 checks its ordered base/H parents. A final API observation rejects stale head/base
 pairings. Native jobs retain compiler/host identities, strict Slint fixtures,
 real different-UID controls, complete legal generation, native archives and
-matching macOS15 smoke. `ci-ok` always runs and rejects failed, missing and
+matching macOS15 desktop qualification and macOS26 Intel picker compatibility.
+`ci-ok` always runs and rejects failed, missing and
 unexpectedly skipped jobs; only non-PR events omit merge integration/freshness.
 Full product acceptance remains separately open as recorded above. Icon diagnostics
 are manual only. Partial reruns

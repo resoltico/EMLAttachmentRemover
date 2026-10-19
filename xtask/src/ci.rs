@@ -18,6 +18,7 @@ pub(crate) fn validate(event: &str, native: bool, needs: &Value) -> Result<()> {
             ("test", "success"),
             ("app", "success"),
             ("app_smoke", "success"),
+            ("app_picker", "success"),
         ]
     } else {
         let pr = match event {
@@ -76,7 +77,7 @@ mod tests {
             (
                 true,
                 "workflow_call",
-                json!({"plan":{"result":"success"},"lint":{"result":"success"},"legal":{"result":"success"},"test":{"result":"success"},"app":{"result":"success"},"app_smoke":{"result":"success"}}),
+                json!({"plan":{"result":"success"},"lint":{"result":"success"},"legal":{"result":"success"},"test":{"result":"success"},"app":{"result":"success"},"app_smoke":{"result":"success"},"app_picker":{"result":"success"}}),
             ),
         ] {
             validate(event, native, &good).unwrap();

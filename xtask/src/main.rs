@@ -151,7 +151,7 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Run native release/build/archive checks; unfinished required gates fail.
+    /// Run native release/filesystem/archive checks; desktop consumers are separate.
     Qualify {
         #[arg(long)]
         target: String,
@@ -161,7 +161,7 @@ enum Task {
         #[arg(long)]
         icons: Option<PathBuf>,
     },
-    /// Inspect and exercise extracted native archive bytes; missing gates fail.
+    /// Inspect and exercise extracted native CLI archive bytes; missing gates fail.
     VerifyArchive {
         #[arg(long)]
         archive: PathBuf,
@@ -197,15 +197,22 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Assemble, ad hoc sign, read back and exercise one native app archive.
+    /// Assemble and verify a native app candidate; desktop qualification is separate.
     BuildMacosApp {
         #[arg(long)]
         out: PathBuf,
         #[arg(long)]
         icons: PathBuf,
     },
-    /// Exercise the same frozen app archive on a matching native smoke host.
+    /// Qualify the complete desktop case set against a frozen native app archive.
     SmokeMacosApp {
+        #[arg(long)]
+        archive: PathBuf,
+        #[arg(long)]
+        reference: PathBuf,
+    },
+    /// Test actual native picker compatibility against a frozen app candidate.
+    CheckMacosPicker {
         #[arg(long)]
         archive: PathBuf,
         #[arg(long)]
@@ -518,6 +525,18 @@ fn main() -> ExitCode {
                 {
                     let _ = (archive, reference);
                     Err("App archive smoke requires native macOS".into())
+                }
+            }
+            Task::CheckMacosPicker { archive, reference } => {
+                #[cfg(target_os = "macos")]
+                {
+                    initialize_controller(&root)?;
+                    macos_archive::picker(&root, &archive, &reference)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = (archive, reference);
+                    Err("Native picker compatibility requires native macOS".into())
                 }
             }
             Task::Fuzz { seconds } => {

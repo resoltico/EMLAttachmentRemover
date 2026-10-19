@@ -760,8 +760,14 @@ final class DesktopInteractionTests: XCTestCase {
     _ = try finderEntry(folder, file: firstCopy, selected: true)
     snapshot(folder, "native-finder-revealed-exact-copy")
 
+    // Move only this newly opened fixture window so the titlebar and drop target stay visible.
+    let titlebar = folder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+      .withOffset(CGVector(dx: 0, dy: 12))
+    let position = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+      .withOffset(CGVector(dx: 750, dy: 100))
+    titlebar.click(forDuration: 0.3, thenDragTo: position)
     // Free one full-report reservation before a real native file drag.
-    guard owned.activate(options: []) else { throw InteractionFailure.expectedPresentation }
+    try await focusOwnedWindow(owned, window: window, avoiding: folder)
     app.buttons["Dismiss report"].click()
     let room = NSPredicate { _, _ in
       window.buttons.allElementsBoundByIndex.filter { $0.title.hasPrefix("Run ") }.count == 1
@@ -770,12 +776,6 @@ final class DesktopInteractionTests: XCTestCase {
       of: [XCTNSPredicateExpectation(predicate: room, object: nil)], timeout: 10)
     guard freed == .completed else { throw InteractionFailure.expectedPresentation }
     finder.activate()
-    // Move only this newly opened fixture window so the drop target stays visible.
-    let titlebar = folder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
-      .withOffset(CGVector(dx: 0, dy: 12))
-    let position = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-      .withOffset(CGVector(dx: 750, dy: 100))
-    titlebar.click(forDuration: 0.3, thenDragTo: position)
     let originalEntry = try finderEntry(folder, file: sources[0], selected: nil)
     originalEntry.click()
     let drop = window.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.7))
@@ -791,7 +791,7 @@ final class DesktopInteractionTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: sources[0]), original)
     snapshot(app, "native-finder-file-drop-up-to-date")
     try await closeOwnedFinderWindow(finder, title: folderTitle)
-    guard owned.activate(options: []) else { throw InteractionFailure.expectedPresentation }
+    try await focusOwnedWindow(owned, window: window)
 
     // Both report reservations are occupied. Capture a changed destination in
     // a queued request, then change the current choice before freeing its slot.
@@ -1227,6 +1227,38 @@ final class DesktopInteractionTests: XCTestCase {
         String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self)
       }
       print("Owned source xattr names \(phase): \(labels.debugDescription)")
+    }
+  }
+
+  @MainActor
+  private func focusOwnedWindow(
+    _ owned: NSRunningApplication, window: XCUIElement, avoiding other: XCUIElement? = nil
+  ) async throws {
+    guard !owned.isTerminated, window.exists, !window.frame.isEmpty,
+      let front = NSWorkspace.shared.frontmostApplication,
+      front.processIdentifier == owned.processIdentifier
+        || front.bundleIdentifier == "com.apple.finder"
+    else { throw InteractionFailure.expectedPresentation }
+    let titlebar = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+      .withOffset(CGVector(dx: 0, dy: 12))
+    let covered = other.map { $0.exists && $0.frame.contains(titlebar.screenPoint) } ?? false
+    guard window.frame.contains(titlebar.screenPoint),
+      !covered
+    else {
+      XCTFail("Owned product titlebar is covered; no focus click sent")
+      throw InteractionFailure.expectedPresentation
+    }
+    titlebar.click()
+    let active = NSPredicate { _, _ in
+      !owned.isTerminated && owned.isActive
+        && NSWorkspace.shared.frontmostApplication?.processIdentifier == owned.processIdentifier
+    }
+    guard
+      await XCTWaiter.fulfillment(
+        of: [XCTNSPredicateExpectation(predicate: active, object: nil)], timeout: 10) == .completed
+    else {
+      XCTFail("Owned product did not become frontmost after its exposed titlebar was clicked")
+      throw InteractionFailure.expectedPresentation
     }
   }
 

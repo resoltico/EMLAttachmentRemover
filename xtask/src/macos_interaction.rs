@@ -759,7 +759,7 @@ pub(crate) fn run_case(
             "The owned missing-copy navigation control did not complete and restore".into(),
         );
     }
-    let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"app":app,"process":process.evidence(),"lifetime_controls":lifetime_controls,"lifetime_owner":ownership,"summary":summary,"ownership_receipt":receipt,"picker_observation":picker,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"comparison":preferences,"argument_only_controls":control_preferences},
+    let result = json!({"case":case.name(),"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"app":app,"process":process.evidence(),"lifetime_controls":lifetime_controls,"lifetime_owner":ownership,"summary":summary,"ownership_receipt":receipt,"picker_observation":picker,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"comparison":preferences,"argument_only_controls":control_preferences},
         "scope":"actual extracted app: owned NSWorkspace launch, About/version, complete license value and keyboard Edit command, main close/reopen, two-file Open With, native message/folder import, report-space pause/dismiss/resume, real Services with CJK native filename, eight waiting requests/ninth refusal/UI removal, native Save report export/readback and collision refusal, independent golden/original checks, settled worker presentation, screenshots, hidden-window Quit cancel/confirm and destination override non-persistence; remaining GUI paths require separate checks"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     Ok(result)

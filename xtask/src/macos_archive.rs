@@ -421,13 +421,72 @@ fn gui_startup(root: &Path, app: &Path, build: &macos::MacBuild, out: &Path) -> 
     stderr?;
     Ok(json!({"window":window,"cleanup":cleanup}))
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AppChecks {
+    Candidate,
+    Desktop,
+    Picker,
+}
+impl AppChecks {
+    fn stage(self) -> &'static str {
+        match self {
+            Self::Candidate => "native_candidate",
+            Self::Desktop => "desktop_qualification",
+            Self::Picker => "picker_compatibility",
+        }
+    }
+}
+fn require_host_version(version: &str, checks: AppChecks, minimum: u32) -> Result<()> {
+    let major: u32 = version
+        .split('.')
+        .next()
+        .ok_or("Missing host OS version")?
+        .parse()?;
+    let expected = if checks == AppChecks::Desktop {
+        minimum >> 16
+    } else {
+        26
+    };
+    if major != expected {
+        return Err(format!(
+            "{} requires macOS{expected}; observed {version}",
+            checks.stage()
+        )
+        .into());
+    }
+    Ok(())
+}
+fn app_host(root: &Path, build: &macos::MacBuild, checks: AppChecks) -> Result<Value> {
+    let mut host = crate::native_host::inspect(root, &build.host, "macos", &build.architecture)?;
+    let versions: Vec<_> = host["actual_os"]
+        .as_str()
+        .ok_or("Missing actual macOS observation")?
+        .lines()
+        .filter_map(|line| line.strip_prefix("ProductVersion:").map(str::trim))
+        .collect();
+    let [version] = versions.as_slice() else {
+        return Err("Ambiguous actual macOS version".into());
+    };
+    require_host_version(version, checks, build.minimum)?;
+    let version = (*version).to_owned();
+    host["product_version"] = json!(version);
+    Ok(host)
+}
+
 fn verify_snapshot(
     root: &Path,
     snapshot: &ArchiveSnapshot,
     reference: &Reference,
     build: &macos::MacBuild,
     out: &Path,
+    checks: AppChecks,
 ) -> Result<Value> {
+    if checks != AppChecks::Candidate
+        && (std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+            || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted"))
+    {
+        return Err("Desktop qualification requires a fresh hosted Mac; owner desktop/preferences are protected".into());
+    }
     let (_, _, app_root) = artifact(root, &build.host)?;
     if reference.schema != 1
         || reference.source != crate::git(root, &["rev-parse", "HEAD"])?
@@ -460,12 +519,9 @@ fn verify_snapshot(
         &build.version,
         &enclosure.path().join("worker-fixture"),
     )?;
-    let gui = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
-        gui_startup(root, &app, build, &out.join("gui-startup"))?
-    } else {
-        json!({"outcome":"not_run","reason":"requires an owned fresh hosted runner; saved owner preferences protected"})
-    };
-    let interaction = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+    let mut verification = json!({"stage":checks.stage(),"snapshot":snapshot.identity(),"images":images,"worker":worker});
+    if checks == AppChecks::Desktop {
+        let gui = gui_startup(root, &app, build, &out.join("gui-startup"))?;
         use crate::macos_interaction::{DesktopCase, run_case};
         // Exercise the shipping bundle before registering copied fixture bundles.
         // The earlier startup observation remains a separate launch.
@@ -494,21 +550,28 @@ fn verify_snapshot(
             &out.join("gui-interaction/appearance"),
             DesktopCase::Appearance,
         )?;
-        json!({"workflow":workflow,"pagination":pagination,"publication":publication,"appearance":appearance})
-    } else {
-        json!({"outcome":"not_run","reason":"requires a fresh hosted Mac; local source compilation is not GUI interaction evidence"})
-    };
+        verification["gui_startup"] = gui;
+        verification["gui_interaction"] = json!({"workflow":workflow,"pagination":pagination,"publication":publication,"appearance":appearance});
+    } else if checks == AppChecks::Picker {
+        verification["gui_startup"] = gui_startup(root, &app, build, &out.join("gui-startup"))?;
+        verification["picker"] = crate::macos_interaction::run_case(
+            root,
+            &app,
+            build,
+            &out.join("gui-picker"),
+            crate::macos_interaction::DesktopCase::Workflow,
+        )?;
+    }
     if tree(&app, false)? != reference.files {
         return Err("Native app/worker execution changed the extracted bundle".into());
     }
-    Ok(
-        json!({"snapshot":snapshot.identity(),"images":images,"worker":worker,"gui_startup":gui,"gui_interaction":interaction,"scope":"bundle structure/signatures, actual extracted Core-backed worker and scoped native GUI interaction; full GUI acceptance remains separate"}),
-    )
+    Ok(verification)
 }
 pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let build = macos::load(root)?;
+    let host = app_host(root, &build, AppChecks::Candidate)?;
     if !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty() {
         return Err("App artifacts require a clean committed source checkout".into());
     }
@@ -618,7 +681,14 @@ pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {
     .arg(&staged);
     macos::checked_run(pack, &out.join("ditto-create.log"), 120)?;
     let snapshot = ArchiveSnapshot::read(&staged)?;
-    let verification = verify_snapshot(root, &snapshot, &reference, &build, &out)?;
+    let verification = verify_snapshot(
+        root,
+        &snapshot,
+        &reference,
+        &build,
+        &out,
+        AppChecks::Candidate,
+    )?;
     let destination = out.join(&name);
     rustix::fs::renameat_with(
         rustix::fs::CWD,
@@ -638,32 +708,64 @@ pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {
     fs::write(
         out.join("app-result.json"),
         serde_json::to_vec_pretty(
-            &json!({"archive":destination,"identity":snapshot.identity(),"producer_images":images,"verification":verification,"source":reference.source,"scope":"native app bundle/archive and actual extracted checks; full GUI/source/platform qualification remains separate"}),
+            &json!({"stage":"native_candidate","host":host,"archive":destination,"identity":snapshot.identity(),"producer_images":images,"verification":verification,"source":reference.source,"target":reference.target,"scope":"native candidate structure/signatures/CPU/minimum and actual extracted Core-backed worker; desktop and picker compatibility qualification are separate required consumers"}),
         )?,
     )?;
     Ok(())
 }
 pub(crate) fn smoke(root: &Path, archive: &Path, reference_path: &Path) -> Result<()> {
+    consume(root, archive, reference_path, AppChecks::Desktop)
+}
+pub(crate) fn picker(root: &Path, archive: &Path, reference_path: &Path) -> Result<()> {
+    consume(root, archive, reference_path, AppChecks::Picker)
+}
+fn consume(root: &Path, archive: &Path, reference_path: &Path, checks: AppChecks) -> Result<()> {
     let build = macos::load(root)?;
     let (_, name, _) = artifact(root, &build.host)?;
     if archive.file_name() != Some(std::ffi::OsStr::new(&name)) {
         return Err("App archive basename does not match its native target/version".into());
     }
     let reference: Reference = serde_json::from_slice(&read(reference_path, 4 * 1024 * 1024)?)?;
-    let parent = root.join("target/app-archive-smoke");
+    let parent = root.join(match checks {
+        AppChecks::Desktop => "target/app-archive-smoke",
+        AppChecks::Picker => "target/app-picker-compatibility",
+        AppChecks::Candidate => {
+            return Err("Candidate verification belongs to its native producer".into());
+        }
+    });
     fs::create_dir_all(&parent)?;
     let out = tempfile::Builder::new()
         .prefix("native-")
         .tempdir_in(parent)?
         .keep();
-    let host = crate::native_host::inspect(root, &build.host, "macos", &build.architecture)?;
+    let host = app_host(root, &build, checks)?;
     let snapshot = ArchiveSnapshot::read(archive)?;
-    let verification = verify_snapshot(root, &snapshot, &reference, &build, &out)?;
+    let verification = verify_snapshot(root, &snapshot, &reference, &build, &out, checks)?;
     fs::write(
         out.join("result.json"),
         serde_json::to_vec_pretty(
-            &json!({"host":host,"source":reference.source,"verification":verification}),
+            &json!({"stage":checks.stage(),"host":host,"source":reference.source,"target":reference.target,"verification":verification}),
         )?,
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn desktop_and_compatibility_receipts_require_their_actual_os_generation() {
+        let minimum = 15 << 16;
+        for version in ["15.0", "15.7.1"] {
+            assert!(require_host_version(version, AppChecks::Desktop, minimum).is_ok());
+            assert!(require_host_version(version, AppChecks::Candidate, minimum).is_err());
+            assert!(require_host_version(version, AppChecks::Picker, minimum).is_err());
+        }
+        for checks in [AppChecks::Candidate, AppChecks::Picker] {
+            assert!(require_host_version("26.6.1", checks, minimum).is_ok());
+            assert!(require_host_version("27.0", checks, minimum).is_err());
+        }
+        assert!(require_host_version("26.6.1", AppChecks::Desktop, minimum).is_err());
+        assert!(require_host_version("", AppChecks::Desktop, minimum).is_err());
+    }
 }

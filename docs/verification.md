@@ -324,14 +324,26 @@ rejection. On macOS,
 reuses the same release-suite discovery, owned exFAT observation and complete app
 archive builder. It requires a fresh hosted runner before native operations,
 preserves the validated same-source shared icon producer and emits one
-qualification record for the CLI and nested app archive. CI's app job owns these
+native-candidate record for the CLI and nested app archive. CI's app job owns these
 release/volume checks; the separate native matrix retains debug, desktop,
 formatting and namespace checks. macOS15 consumers exercise exactly the producer
-archives. This orchestration has executed release tests, volume/build checks and
-actual extracted-app interactions, then failed at the GUI gates documented in
-the implementation evidence. Later GUI paths and current-source floor acceptance
-remain unqualified. Source compilation and scoped checks do not qualify those
-unexecuted paths.
+archives. Producer verification ends after extraction, structure, signature,
+CPU/minimum policy, actual Core-backed worker and unchanged-bundle checks; its
+`native_candidate` receipt contains no successful/default GUI fields.
+`smoke-macos-app` on each macOS15 consumer requires the full workflow, pagination,
+real-Core publication/lifecycle cases and final appearance checks before emitting
+`desktop_qualification`. The macOS26 Intel `check-macos-picker` consumer separately
+repeats the startup observation and shipping workflow with the original
+About/license/reopen/Open With prelude, native pickers, independent golden bytes
+and normal Quit before emitting `picker_compatibility`. It retains the existing
+bound picker observation before allowing the narrow Cocoa preference changes.
+Both stages enforce their actual OS major and native CPU/target. Its known
+picker failure remains a required completion blocker. All consumer receipts bind
+the same source/target/archive snapshot and actual host. CI and future release
+preparation require these distinct stages; candidate success cannot promote
+itself to desktop qualification. The prior combined orchestration reached real
+GUI failures; the new split still requires native execution. See the
+implementation evidence for actual passed, failed and unrun checkpoints.
 
 `cargo xtask distribution` prints the native target policy and expected archive
 identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.
