@@ -198,17 +198,17 @@ extension DesktopInteractionTests {
     _ app: XCUIApplication, window: XCUIElement, source: URL, detail: XCUIElement
   ) async throws {
     try await requireText(app, containing: "Items page 1 of 2")
-    try await requireText(app, containing: "Removed parts page 1 of 2")
+    try await requireText(app, containing: "Removed parts · page 1 of 2")
     XCTAssertFalse(app.buttons["Previous items"].isEnabled)
     XCTAssertFalse(app.buttons["Previous parts"].isEnabled)
     guard app.buttons["Next parts"].isEnabled, app.buttons["Next items"].isEnabled else {
       throw InteractionFailure.expectedPresentation
     }
     app.buttons["Next parts"].click()
-    try await requireText(app, containing: "Removed parts page 2 of 2")
+    try await requireText(app, containing: "Removed parts · page 2 of 2")
     let lastPart = detail.value as? String ?? ""
     func observedParts(_ value: String, page: String) throws -> [String] {
-      let range = try XCTUnwrap(value.range(of: "Removed parts page " + page + "\n"))
+      let range = try XCTUnwrap(value.range(of: "Removed parts · page " + page + "\n"))
       return value[range.upperBound...].components(separatedBy: "\n")
         .prefix { $0 != "Technical observations" }.filter { !$0.isEmpty }
         .map { $0.components(separatedBy: " · ")[0] }
@@ -220,7 +220,7 @@ extension DesktopInteractionTests {
     }
     snapshot(app, "compact-removed-parts-second-page")
     app.buttons["Previous parts"].click()
-    try await requireText(app, containing: "Removed parts page 1 of 2")
+    try await requireText(app, containing: "Removed parts · page 1 of 2")
     let firstParts = detail.value as? String ?? ""
     XCTAssertEqual(
       try observedParts(firstParts, page: "1 of 2"),
@@ -239,7 +239,7 @@ extension DesktopInteractionTests {
     app.buttons["Previous items"].click()
     try await requireText(app, containing: "Items page 1 of 2")
     try await requireText(app, containing: "Source: " + source.path)
-    try await requireText(app, containing: "Removed parts page 1 of 2")
+    try await requireText(app, containing: "Removed parts · page 1 of 2")
   }
 
 }

@@ -152,7 +152,7 @@ extension DesktopInteractionTests {
     let exportURL = root.appendingPathComponent("service-report.json")
     XCTAssertFalse(FileManager.default.fileExists(atPath: exportURL.path))
     try await saveReport(app, to: exportURL, expectNameCollision: false)
-    try await requireText(app, containing: "Technical report saved and read back successfully.")
+    try await requireText(app, containing: "Run 4 report: Saved and read back successfully.")
     let exported = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(contentsOf: exportURL)) as? [String: Any])
     let items = try XCTUnwrap(exported["items"] as? [[String: Any]])
@@ -194,7 +194,7 @@ extension DesktopInteractionTests {
     let retryURL = root.appendingPathComponent("service-report-after-cancel.json")
     XCTAssertFalse(FileManager.default.fileExists(atPath: retryURL.path))
     try await saveReport(app, to: retryURL, expectNameCollision: false)
-    try await requireText(app, containing: "Technical report saved and read back successfully.")
+    try await requireText(app, containing: "Run 4 report: Saved and read back successfully.")
     let retry = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(contentsOf: retryURL)) as? [String: Any])
     let retryItems = try XCTUnwrap(retry["items"] as? [[String: Any]])
