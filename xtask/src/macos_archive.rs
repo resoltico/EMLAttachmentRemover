@@ -750,7 +750,7 @@ fn write_bundle_resources(
         }
     }
     write(&resources.join("THIRD-PARTY-NOTICES.txt"),b"Complete macOS app interface legal materials: licenses/gui/THIRD-PARTY-NOTICES.txt and its accompanying licenses/.\nComplete private Core-backed worker legal materials: licenses/worker/THIRD-PARTY-NOTICES.txt and its accompanying licenses/.\nEach component's paths are relative to its own directory. Software and owner artwork terms: LICENSE.\n",0o644)?;
-    write(&resources.join("README.txt"),format!("EML Attachment Remover {}\nmacOS {}+, native {}.\nGUI and CLI are separate products using the same Rust business libraries. This app uses its private same-CPU worker.\nAd hoc signed only; no Developer ID or notarization. First launch may require macOS app-specific Open Anyway approval.\nSource: https://github.com/resoltico/EMLAttachmentRemover/tree/{}\nNo v6 release/tag/publication is claimed.\n",build.version,build.minimum_text,build.architecture,source).as_bytes(),0o644)?;
+    write(&resources.join("README.txt"),format!("EML Attachment Remover {}\nmacOS {}+, native {}.\nGUI and CLI are separate products using the same Rust business libraries. This app uses its private same-CPU worker.\nAd hoc signed only; no Developer ID or notarization. First launch may require macOS app-specific Open Anyway approval.\nSource: https://github.com/resoltico/EMLAttachmentRemover/tree/{}\n",build.version,build.minimum_text,build.architecture,source).as_bytes(),0o644)?;
     Ok(())
 }
 

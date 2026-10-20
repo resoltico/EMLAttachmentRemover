@@ -11,8 +11,8 @@ struct AppWindowObservation {
     else {
       throw NSError(domain: "OwnedAppObservation", code: 1)
     }
-    let diagnosticURL = CommandLine.arguments.count == 3
-      ? URL(fileURLWithPath: CommandLine.arguments[2]) : nil
+    let diagnosticURL =
+      CommandLine.arguments.count == 3 ? URL(fileURLWithPath: CommandLine.arguments[2]) : nil
     let started = ProcessInfo.processInfo.systemUptime
     var polls = 0
     var lastOwnedOnScreen: [[String: Any]] = []
