@@ -530,13 +530,36 @@ impl Drop for NativeDialog {
     }
 }
 
-/// Read the actual bundle icon through AppKit, with no duplicate artwork asset.
+/// Decode the bundled icon without an IconServices lookup on the UI thread.
 pub(crate) fn application_icon() -> Result<slint::Image, &'static str> {
-    use objc2_app_kit::{NSApplication, NSBitmapImageRep, NSColorSpace};
-    let main = MainThreadMarker::new().ok_or("Application icon requires the main thread")?;
-    let image = NSApplication::sharedApplication(main)
-        .applicationIconImage()
-        .ok_or("Application icon is unavailable")?;
+    use objc2::AnyThread;
+    use objc2_app_kit::{NSBitmapImageRep, NSColorSpace, NSImage};
+    use objc2_foundation::NSData;
+    use std::io::Read;
+    MainThreadMarker::new().ok_or("Application icon requires the main thread")?;
+    let executable = std::env::current_exe().map_err(|_| "Application bundle is unavailable")?;
+    let contents = executable
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("Application bundle is unavailable")?;
+    let file = std::fs::File::open(contents.join("Resources/EML.icns"))
+        .map_err(|_| "Bundled application icon is unavailable")?;
+    if !file
+        .metadata()
+        .map_err(|_| "Bundled application icon metadata is unavailable")?
+        .is_file()
+    {
+        return Err("Bundled application icon is not a regular file");
+    }
+    let mut bytes = Vec::new();
+    file.take(64 * 1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "Bundled application icon could not be read")?;
+    if bytes.len() > 64 * 1024 * 1024 {
+        return Err("Bundled application icon exceeds the byte limit");
+    }
+    let image = NSImage::initWithData(NSImage::alloc(), &NSData::from_vec(bytes))
+        .ok_or("Bundled application icon could not be decoded")?;
     let data = image
         .TIFFRepresentation()
         .ok_or("Application icon has no bitmap representation")?;
