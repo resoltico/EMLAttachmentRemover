@@ -1,8 +1,31 @@
 # Owner release procedure
 
-v6 remains Unreleased. Implementing this workflow does not authorize dispatch,
-tagging or publication. The current implementation has not run publication or
-attestation against GitHub; parser tests and workflow lint are source evidence.
+Publication requires an explicit owner release decision. Local tests and
+workflow lint do not establish live attestation or publication integration.
+
+## Prepare and dispatch
+
+Authenticate `gh` for this repository. Select a full commit on main containing the
+workspace version and release notes, fetch main, and verify read-only admission
+from a clean checkout of that commit:
+
+```sh
+git fetch origin main
+cargo xtask release-check --source FULL_SHA --version 6.0.0
+```
+
+Resolve every admission failure before dispatch. After the owner authorizes
+publication, start the workflow from main with the same source and version:
+
+```sh
+gh workflow run release.yml --ref main -f source=FULL_SHA -f version=6.0.0
+```
+
+Follow the resulting run through qualification and publication; a successful
+dispatch only acknowledges scheduling. Inspect failed-run server observations
+before attempting recovery.
+
+## Admission and qualification
 
 After owner review and a separate release decision, the `Owner release` workflow
 accepts a full source commit S on main and the matching Cargo version. S must
@@ -63,3 +86,16 @@ but automatic publication still refuses it: inspect its actual assets and tag
 state and obtain an owner recovery decision. A failed action does not prove the
 server did nothing. Retaining the draft makes recovery possible without silently
 retargeting or replacing anything already published.
+
+## Version and build identity
+
+`workspace.package.version` in the root `Cargo.toml` is the sole release-version
+source. `BUILD_NUMBER` in `crates/eml-protocol/src/product.rs` is the sole product
+build-number source, shared by CLI display, GUI About and `CFBundleVersion`.
+Increase that positive integer (1–9999) before distributing changed binaries;
+never reset it on a release-version change. Private dirty builds, both CPU
+variants, CI reruns and source rebuilds reuse the committed value; compilation
+never increments it. The build number identifies a distributed product revision,
+not exact bytes or qualification. Checksums identify delivered bytes. Machine
+protocol version fields remain the release version, independently of the display
+build number.

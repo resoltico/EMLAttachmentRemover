@@ -438,7 +438,11 @@ fn parent_sigint_cancels_and_reaps_its_nested_worker() {
 
 // Include the exact controller source to exercise its crate-private kernel pin
 // boundary with the real built helper, rather than an unrelated stand-in.
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    unreachable_pub,
+    reason = "quality:shared-controller-fixture"
+)]
 #[path = "../src/process/mod.rs"]
 mod controller_source;
 use std::{

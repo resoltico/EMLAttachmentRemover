@@ -81,6 +81,74 @@ pub(crate) struct Capture<'a> {
 
 #[cfg(windows)]
 pub(crate) fn capture(root: &Path, observed: Capture<'_>) -> Result<Vec<u8>> {
+    let NormalizedInputs {
+        inputs,
+        paths: input_paths,
+    } = normalized_inputs(&observed)?;
+    let replacements = [
+        (observed.runtime_directory, "$RUST_LIB"),
+        (observed.cargo_directory, "$CARGO_TARGET"),
+        (observed.link_directory, "$LINK_CAPTURE"),
+    ]
+    .into_iter()
+    .map(|(path, symbol)| {
+        let path = path.canonicalize()?;
+        let text = path
+            .to_str()
+            .ok_or("Normalization requires a Unicode tooling path")?
+            .replace('\\', "/");
+        Ok((
+            text.strip_prefix("//?/").unwrap_or(&text).to_owned(),
+            symbol,
+        ))
+    })
+    .collect::<Result<Vec<_>>>()?;
+    let normalize = |text: &str| {
+        let mut text = text.replace('\\', "/");
+        for (path, name) in &input_paths {
+            text = text
+                .replace(&format!("//?/{path}"), name)
+                .replace(path, name);
+        }
+        for (path, symbol) in &replacements {
+            text = text
+                .replace(&format!("//?/{path}"), symbol)
+                .replace(path, symbol);
+        }
+        Text::new(text)
+    };
+    let evidence = Evidence {
+        schema: 1,
+        source: observed.source.into(),
+        target: observed.target.into(),
+        compiler: observed.compiler.into(),
+        linker_version: observed.linker_version.into(),
+        executable: ByteIdentity::of(observed.executable),
+        linked_basename: observed.linked_basename.into(),
+        references: reference_identity(root)?,
+        inputs,
+        map: normalize(observed.map),
+        trace: normalize(observed.trace),
+    };
+    let bytes = serde_json::to_vec_pretty(&evidence)?;
+    verify(
+        root,
+        observed.target,
+        observed.source,
+        observed.executable,
+        &bytes,
+    )?;
+    Ok(bytes)
+}
+
+/// Wire identities and text substitutions derived from the same admitted input origins.
+#[cfg(windows)]
+struct NormalizedInputs {
+    inputs: Vec<Input>,
+    paths: Vec<(String, String)>,
+}
+#[cfg(windows)]
+fn normalized_inputs(observed: &Capture<'_>) -> Result<NormalizedInputs> {
     let mut names = BTreeMap::new();
     for input in observed.official {
         names.insert(
@@ -140,62 +208,11 @@ pub(crate) fn capture(root: &Path, observed: Capture<'_>) -> Result<Vec<u8>> {
         return Err("Admitted input is missing from the actual final link".into());
     }
     input_paths.sort_by_key(|(path, _)| std::cmp::Reverse(path.len()));
-    let replacements = [
-        (observed.runtime_directory, "$RUST_LIB"),
-        (observed.cargo_directory, "$CARGO_TARGET"),
-        (observed.link_directory, "$LINK_CAPTURE"),
-    ]
-    .into_iter()
-    .map(|(path, symbol)| {
-        let path = path.canonicalize()?;
-        let text = path
-            .to_str()
-            .ok_or("Normalization requires a Unicode tooling path")?
-            .replace('\\', "/");
-        Ok((
-            text.strip_prefix("//?/").unwrap_or(&text).to_owned(),
-            symbol,
-        ))
-    })
-    .collect::<Result<Vec<_>>>()?;
-    let normalize = |text: &str| {
-        let mut text = text.replace('\\', "/");
-        for (path, name) in &input_paths {
-            text = text
-                .replace(&format!("//?/{path}"), name)
-                .replace(path, name);
-        }
-        for (path, symbol) in &replacements {
-            text = text
-                .replace(&format!("//?/{path}"), symbol)
-                .replace(path, symbol);
-        }
-        Text::new(text)
-    };
-    let evidence = Evidence {
-        schema: 1,
-        source: observed.source.into(),
-        target: observed.target.into(),
-        compiler: observed.compiler.into(),
-        linker_version: observed.linker_version.into(),
-        executable: ByteIdentity::of(observed.executable),
-        linked_basename: observed.linked_basename.into(),
-        references: reference_identity(root)?,
+    Ok(NormalizedInputs {
         inputs,
-        map: normalize(observed.map),
-        trace: normalize(observed.trace),
-    };
-    let bytes = serde_json::to_vec_pretty(&evidence)?;
-    verify(
-        root,
-        observed.target,
-        observed.source,
-        observed.executable,
-        &bytes,
-    )?;
-    Ok(bytes)
+        paths: input_paths,
+    })
 }
-
 fn reconcile_inputs(inputs: &[Input], trace: &str) -> Result<()> {
     let expected = inputs
         .iter()
@@ -314,28 +331,7 @@ pub(crate) fn verify(
     {
         return Err("Missing, changed or stale Windows final-link evidence".into());
     }
-    let authority: toml::Value =
-        toml::from_str(&fs::read_to_string(root.join("rust-toolchain.toml"))?)?;
-    let release = authority["toolchain"]["channel"]
-        .as_str()
-        .ok_or("Missing Rust authority")?;
-    let lines = evidence.compiler.lines().collect::<BTreeSet<_>>();
-    let llvm = evidence
-        .compiler
-        .lines()
-        .find_map(|line| line.strip_prefix("LLVM version: "))
-        .ok_or("Missing compiler LLVM version")?;
-    if !lines.contains(format!("release: {release}").as_str())
-        || !lines.contains(format!("host: {target}").as_str())
-        || evidence
-            .linker_version
-            .split_ascii_whitespace()
-            .collect::<Vec<_>>()
-            .get(..2)
-            != Some(["LLD", llvm].as_slice())
-    {
-        return Err("Final-link compiler/linker identity differs from the native toolchain".into());
-    }
+    verify_compiler_identity(root, target, &evidence)?;
     let stem = policy::application_stem(&evidence.linked_basename)?;
     let map = evidence.map.checked()?;
     let trace = evidence.trace.checked()?;
@@ -419,6 +415,32 @@ pub(crate) fn verify(
         return Err("Normalized final link omits required input classes/startup".into());
     }
     policy::selected_members(target, &official, trace, map)?;
+    Ok(())
+}
+
+fn verify_compiler_identity(root: &Path, target: &str, evidence: &Evidence) -> Result<()> {
+    let authority: toml::Value =
+        toml::from_str(&fs::read_to_string(root.join("rust-toolchain.toml"))?)?;
+    let release = authority["toolchain"]["channel"]
+        .as_str()
+        .ok_or("Missing Rust authority")?;
+    let lines = evidence.compiler.lines().collect::<BTreeSet<_>>();
+    let llvm = evidence
+        .compiler
+        .lines()
+        .find_map(|line| line.strip_prefix("LLVM version: "))
+        .ok_or("Missing compiler LLVM version")?;
+    if !lines.contains(format!("release: {release}").as_str())
+        || !lines.contains(format!("host: {target}").as_str())
+        || evidence
+            .linker_version
+            .split_ascii_whitespace()
+            .collect::<Vec<_>>()
+            .get(..2)
+            != Some(["LLD", llvm].as_slice())
+    {
+        return Err("Final-link compiler/linker identity differs from the native toolchain".into());
+    }
     Ok(())
 }
 

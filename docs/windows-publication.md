@@ -1,10 +1,8 @@
 # Windows destination boundary
 
-The owner-approved Windows/CI correction selects WD1a: documented Win32 creation
-and no-replace rename, with detection before message bytes. This boundary is
-implemented and passed the complete product gate on both native gnullvm CPUs at
-[39f7ee3](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39091719923).
-This filesystem evidence does not qualify Windows archives or process supervision.
+Windows uses documented Win32 creation and no-replace rename, with containment
+detection before message bytes. Filesystem, archive and process-supervision
+qualification are separate [verification gates](verification.md).
 
 The required property, P-W, is that this app never stages or publishes message
 bytes outside the bound destination, and never reports Created without final
@@ -12,7 +10,7 @@ copy/address qualification. It does not promise metadata immutability or prevent
 other writers from changing final entries after qualification. Windows copies
 inherit the destination ACL; owner-only Windows access is not promised.
 
-## Approved design
+## Creation and publication
 
 Use generated windows-sys0.61.2 bindings. Hold the resolved ordinary ancestor
 chain top-down with read/write sharing and no delete sharing. Upper ancestors
@@ -85,18 +83,10 @@ pathname. Keep true-owned file/guard cleanup and its exact native-error controls
 There is no recursive sweep. After Published or Unknown publication, keep layout;
 a later error does not roll it back.
 
-This ownership refinement and the narrow dependent test revisions were approved
-by command central under the owner's WD1a/best-judgment authorization, in chat
-01a1418d-b7a1-7830-936d-c9b5826b4388. It preserves P-W and the existing rule that
-cleanup may delete only owned resources. It does not select WD1b/WD1c or change
-the Windows floor. CreateDirectory2W returns a handle but requires Windows11
-24H2/Server2025, so it is not the solution at the current floor.
-
 ## Design challenge and required evidence
 
-- The sharing premise is withdrawn. Both native CPUs already demonstrated that
-  an attribute-only handle can convert an empty directory despite write-sharing
-  exclusion. Check the actual relied-on replacement fact with a zero-byte entry:
+- Attribute-only access can convert an empty directory despite data-sharing
+  restrictions. Check the relied-on nonempty-directory rule with a zero-byte entry:
   conversion succeeds when empty and refuses with the documented nonempty error
   while that entry is held.
 - GetFinalPathNameByHandleW documentation does not prove the original-parent
@@ -125,8 +115,7 @@ the Windows floor. CreateDirectory2W returns a handle but requires Windows11
 
 ## Existing-only native child-open contract
 
-The creation and publication paths no longer use `NtCreateFile` or
-`NtSetInformationFile`. The separate existing-only child primitive retains
+The separate existing-only child primitive uses
 `NtOpenFile` with one validated relative UTF-16 component under the held parent.
 It cannot create an entry. Observation opens the reparse leaf for attributes;
 traversal and mutation pins use `OBJ_DONT_REPARSE`, directory-only and synchronous
@@ -139,25 +128,7 @@ This completion basis follows the I/O manager's synchronous IRP_MJ_CREATE
 contract, including lower-driver pending completion described by Microsoft's
 [Breaking Oplocks](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/breaking-oplocks).
 The [`NtOpenFile` contract](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntopenfile)
-and fixed options remain distinct from Win32 creation. Do not describe the
-removal of the two mutation calls as removal of every NT API.
-
-## Native acceptance
-
-Both CPUs passed the unfiltered workspace tests, exact-name sentinels and
-standalone native primitive at the source linked above. The product scenarios
-exercise redirected candidate creation, redirected mirror/guard creation,
-ordinary Created with hand-authored golden bytes, unchanged originals, actual
-file/namespace synchronization, no-replace conflicts, tagged-candidate refusal
-and unowned mirror replacement/cancellation without deletion.
-
-The one-off compiled-out and ignored sentinel experiments were refused by name
-on both CPUs. With only the containment predicate disabled in an owned clone,
-the same byte-effect oracle observed 513 bytes at the redirect target and the
-native test exited101. The protected run observed zero. Target placement was
-independently established with the exact returned full file ID before restoring
-the parent's reparse state; live file-handle size avoids stale directory-entry
-metadata. These experiments are detection evidence, not qualifying artifacts.
+and fixed options remain distinct from Win32 creation.
 
 ## Primary contracts
 
@@ -166,13 +137,3 @@ metadata. These experiments are detection evidence, not qualifying artifacts.
 - [CreateDirectoryW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createdirectoryw): separate creation result and later open; no atomic handle ownership proof.
 - [GetFinalPathNameByHandleW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew): normalized DOS/UNC path observations and their failure conditions.
 - [CreateDirectory2W](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createdirectory2w): newer runtime floor; not used here.
-
-## Earlier observations
-
-At [b68680d Windows run39082273887](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39082273887), both native CPUs passed the metadata-pin/no-replace/readback case and49 library cases with the old assertion separately filtered. That assertion failed on both CPUs because empty-directory conversion succeeded. The earlier generic-write sharing denial did not establish attribute-only exclusion. These observations are retained as evidence; the disproved assertion is replaced by a passing platform-fact test, not retained as an intentional required failure or waived as passing.
-
-Earlier relative-root FileRenameInfo returned error87; the absolute-name attempt
-returned error32 under write-sharing exclusion. The selected absolute-name route
-under read/write/no-delete pins passed natively on both CPUs, including normal
-Created and conflict controls. No success is inferred
-from the draft sketch's MSVC type check, generated layout checks or hashes.

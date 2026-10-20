@@ -48,79 +48,15 @@ pub(crate) fn build_sources(root: &Path, out: &Path) -> Result<()> {
             ("eml-gui", "EMLAttachmentRemover"),
             ("eml-worker", "eml-worker"),
         ] {
-            let artifact = crate::cli_build::named_artifact(
+            artifacts.push(checked_source_artifact(
                 root,
+                &build,
+                &out,
+                &target_directory,
                 &output,
-                &format!("crates/{package}/Cargo.toml"),
-                &format!("crates/{package}/src/main.rs"),
+                package,
                 name,
-            )?
-            .canonicalize()?;
-            if !artifact.starts_with(target_directory.canonicalize()?)
-                || !fs::symlink_metadata(&artifact)?.is_file()
-                || fs::metadata(&artifact)?.len() > 256 * 1024 * 1024
-            {
-                return Err("Native desktop executable escaped its bounded owned build".into());
-            }
-            let profile: Vec<_> = serde_json::Deserializer::from_slice(&output)
-                .into_iter::<Value>()
-                .collect::<std::result::Result<Vec<_>, _>>()?
-                .into_iter()
-                .filter(|value| {
-                    value["reason"] == "compiler-artifact"
-                        && value["executable"]
-                            .as_str()
-                            .is_some_and(|path| Path::new(path) == artifact)
-                })
-                .map(|value| -> Result<Value> {
-                    let features = value["features"]
-                        .as_array()
-                        .ok_or("Missing executable feature selection")?;
-                    if features.iter().any(|feature| feature == "native-fixtures") {
-                        return Err(
-                            "Shipping desktop artifacts must exclude native-fixtures".into()
-                        );
-                    }
-                    Ok(value["profile"].clone())
-                })
-                .collect::<Result<Vec<_>>>()?;
-            if profile.len() != 1
-                || profile[0]["test"] != false
-                || profile[0]["overflow_checks"] != true
-                || profile[0]["opt_level"] != "3"
-            {
-                return Err("Desktop release artifact profile differs from required overflow-checked release".into());
-            }
-            let bytes = fs::read(&artifact)?;
-            fixture_identity(&bytes, &build.architecture, build.minimum)?;
-            let owned = out.join(name);
-            let mut file = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&owned)?;
-            file.write_all(&bytes)?;
-            file.flush()?;
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(fs::Permissions::from_mode(0o755))?;
-            file.sync_all()?;
-            drop(file);
-            let mut sign = build.command(root, "/usr/bin/codesign");
-            sign.args(["--force", "--sign", "-", "--timestamp=none"])
-                .arg(&owned);
-            checked_run(sign, &out.join(format!("{package}-adhoc-sign.log")), 60)?;
-            let mut verify = build.command(root, "/usr/bin/codesign");
-            verify
-                .args(["--verify", "--strict", "--verbose=2"])
-                .arg(&owned);
-            checked_run(verify, &out.join(format!("{package}-adhoc-verify.log")), 60)?;
-            let signed = fs::read(&owned)?;
-            let image = fixture_identity(&signed, &build.architecture, build.minimum)?;
-            macos::inspect_system_dependencies(
-                build.command(root, "/usr/bin/otool"),
-                &owned,
-                &out.join(format!("{package}-dependencies.log")),
-            )?;
-            artifacts.push(json!({"package":package,"name":name,"profile":profile[0],"image":image,"main_image_uuid":macos::main_image_uuid(&signed)?,"owned_bytes":xtask::archive::ByteIdentity::of(&signed),"signature":"ad_hoc","notarized":false}));
+            )?);
         }
         fs::write(
             out.join("desktop-sources.json"),
@@ -136,6 +72,93 @@ pub(crate) fn build_sources(root: &Path, out: &Path) -> Result<()> {
         eprintln!("Could not retain desktop build failure: {record}");
     }
     result
+}
+
+fn checked_source_artifact(
+    root: &Path,
+    build: &macos::MacBuild,
+    out: &Path,
+    target_directory: &Path,
+    output: &[u8],
+    package: &str,
+    name: &str,
+) -> Result<Value> {
+    let artifact = crate::cli_build::named_artifact(
+        root,
+        output,
+        &format!("crates/{package}/Cargo.toml"),
+        &format!("crates/{package}/src/main.rs"),
+        name,
+    )?
+    .canonicalize()?;
+    if !artifact.starts_with(target_directory.canonicalize()?)
+        || !fs::symlink_metadata(&artifact)?.is_file()
+        || fs::metadata(&artifact)?.len() > 256 * 1024 * 1024
+    {
+        return Err("Native desktop executable escaped its bounded owned build".into());
+    }
+    let profile: Vec<_> = serde_json::Deserializer::from_slice(output)
+        .into_iter::<Value>()
+        .collect::<std::result::Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|value| {
+            value["reason"] == "compiler-artifact"
+                && value["executable"]
+                    .as_str()
+                    .is_some_and(|path| Path::new(path) == artifact)
+        })
+        .map(|value| -> Result<Value> {
+            let features = value["features"]
+                .as_array()
+                .ok_or("Missing executable feature selection")?;
+            if features.iter().any(|feature| feature == "native-fixtures") {
+                return Err("Shipping desktop artifacts must exclude native-fixtures".into());
+            }
+            Ok(value["profile"].clone())
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if profile.len() != 1
+        || profile[0]["test"] != false
+        || profile[0]["overflow_checks"] != true
+        || profile[0]["opt_level"] != "3"
+    {
+        return Err(
+            "Desktop release artifact profile differs from required overflow-checked release"
+                .into(),
+        );
+    }
+    let bytes = fs::read(&artifact)?;
+    fixture_identity(&bytes, &build.architecture, build.minimum)?;
+    let owned = out.join(name);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&owned)?;
+    file.write_all(&bytes)?;
+    file.flush()?;
+    use std::os::unix::fs::PermissionsExt;
+    file.set_permissions(fs::Permissions::from_mode(0o755))?;
+    file.sync_all()?;
+    drop(file);
+    let mut sign = build.command(root, "/usr/bin/codesign");
+    sign.args(["--force", "--sign", "-", "--timestamp=none"])
+        .arg(&owned);
+    checked_run(sign, &out.join(format!("{package}-adhoc-sign.log")), 60)?;
+    let mut verify = build.command(root, "/usr/bin/codesign");
+    verify
+        .args(["--verify", "--strict", "--verbose=2"])
+        .arg(&owned);
+    checked_run(verify, &out.join(format!("{package}-adhoc-verify.log")), 60)?;
+    let signed = fs::read(&owned)?;
+    let image = fixture_identity(&signed, &build.architecture, build.minimum)?;
+    macos::inspect_system_dependencies(
+        build.command(root, "/usr/bin/otool"),
+        &owned,
+        &out.join(format!("{package}-dependencies.log")),
+    )?;
+    Ok(
+        json!({"package":package,"name":name,"profile":profile[0],"image":image,"main_image_uuid":macos::main_image_uuid(&signed)?,"owned_bytes":xtask::archive::ByteIdentity::of(&signed),"signature":"ad_hoc","notarized":false}),
+    )
 }
 
 pub(crate) fn icon_command(
@@ -251,7 +274,7 @@ pub(crate) fn icon_outputs(root: &Path, icons: &Path, build: &macos::MacBuild) -
 }
 
 pub(crate) fn app_metadata(version: &str, minimum: &str) -> Value {
-    json!({"CFBundleIdentifier":"io.github.resoltico.emlattachmentremover","CFBundleName":"EML Attachment Remover","CFBundleDisplayName":"EML Attachment Remover","CFBundleExecutable":"EMLAttachmentRemover","CFBundlePackageType":"APPL","CFBundleDevelopmentRegion":"en","LSApplicationCategoryType":"public.app-category.utilities","CFBundleShortVersionString":version,"CFBundleVersion":version,"LSMinimumSystemVersion":minimum,"NSHighResolutionCapable":true,"CFBundleIconName":"EML","NSServices":[{"NSMenuItem":{"default":"Create EML Copies Without Attachments"},"NSMessage":"createEMLCopies","NSPortName":"EMLAttachmentRemover","NSSendTypes":["public.file-url"],"NSSendFileTypes":["public.email-message","public.folder"],"NSRestricted":true,"NSRequiredContext":{}}],"CFBundleDocumentTypes":[{"CFBundleTypeName":"EML message","CFBundleTypeExtensions":["eml"],"LSItemContentTypes":["public.email-message"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"},{"CFBundleTypeName":"Folder containing EML messages","LSItemContentTypes":["public.folder"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"}]})
+    json!({"CFBundleIdentifier":"io.github.resoltico.emlattachmentremover","CFBundleName":"EML Attachment Remover","CFBundleDisplayName":"EML Attachment Remover","CFBundleExecutable":"EMLAttachmentRemover","CFBundlePackageType":"APPL","CFBundleDevelopmentRegion":"en","LSApplicationCategoryType":"public.app-category.utilities","CFBundleShortVersionString":version,"CFBundleVersion":eml_protocol::product::BUILD_NUMBER.to_string(),"LSMinimumSystemVersion":minimum,"NSHighResolutionCapable":true,"CFBundleIconName":"EML","NSServices":[{"NSMenuItem":{"default":"Create EML Copies Without Attachments"},"NSMessage":"createEMLCopies","NSPortName":"EMLAttachmentRemover","NSSendTypes":["public.file-url"],"NSSendFileTypes":["public.email-message","public.folder"],"NSRestricted":true,"NSRequiredContext":{}}],"CFBundleDocumentTypes":[{"CFBundleTypeName":"EML message","CFBundleTypeExtensions":["eml"],"LSItemContentTypes":["public.email-message"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"},{"CFBundleTypeName":"Folder containing EML messages","LSItemContentTypes":["public.folder"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"}]})
 }
 
 #[cfg(test)]
@@ -265,7 +288,11 @@ mod tests {
             "io.github.resoltico.emlattachmentremover"
         );
         assert_eq!(value["CFBundleShortVersionString"], "7.2.1");
-        assert_eq!(value["CFBundleVersion"], "7.2.1");
+        assert_eq!(
+            value["CFBundleVersion"],
+            eml_protocol::product::BUILD_NUMBER.to_string()
+        );
+        assert!((1..=9999).contains(&eml_protocol::product::BUILD_NUMBER));
         assert_eq!(value["LSMinimumSystemVersion"], "15.0");
         assert_eq!(value["NSServices"][0]["NSMessage"], "createEMLCopies");
         assert_eq!(

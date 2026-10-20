@@ -197,7 +197,21 @@ fn run_helper() -> Result<()> {
     if trace.is_empty() || map.is_empty() {
         return Err("Native final-link map/verbose trace is empty".into());
     }
-    let outputs = fs::read_dir(&control.output_directory)?
+    let output = linked_executable(&control.output_directory)?;
+    let image = bounded(&output, 256 * 1024 * 1024)?;
+    let basename = output
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("Linked CLI lacks a Unicode basename")?;
+    crate::windows_input_review::application_stem(basename)?;
+    record["linked_basename"] = serde_json::to_value(basename)?;
+    record["map"] = serde_json::to_value(ByteIdentity::of(&map))?;
+    record["linked_image"] = serde_json::to_value(ByteIdentity::of(&image))?;
+    write_new(&control.receipt, &serde_json::to_vec_pretty(&record)?)?;
+    Ok(())
+}
+fn linked_executable(directory: &Path) -> Result<PathBuf> {
+    let mut outputs = fs::read_dir(directory)?
         .map(|entry| entry.map(|entry| entry.path()))
         .collect::<std::io::Result<Vec<_>>>()?
         .into_iter()
@@ -211,17 +225,7 @@ fn run_helper() -> Result<()> {
             "Fresh selected CLI link did not produce exactly one target-deps executable".into(),
         );
     }
-    let image = bounded(&outputs[0], 256 * 1024 * 1024)?;
-    let basename = outputs[0]
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or("Linked CLI lacks a Unicode basename")?;
-    crate::windows_input_review::application_stem(basename)?;
-    record["linked_basename"] = serde_json::to_value(basename)?;
-    record["map"] = serde_json::to_value(ByteIdentity::of(&map))?;
-    record["linked_image"] = serde_json::to_value(ByteIdentity::of(&image))?;
-    write_new(&control.receipt, &serde_json::to_vec_pretty(&record)?)?;
-    Ok(())
+    Ok(outputs.remove(0))
 }
 pub(crate) fn helper_entry() -> Option<ExitCode> {
     if std::env::current_exe().ok()?.file_name()

@@ -12,11 +12,16 @@ mod session;
 mod supervisor;
 pub use control::{ControlError, WorkerControl, WorkerIntent};
 #[cfg(target_os = "macos")]
-pub use export::{ReportExportOutcome, TerminalReport, export_report};
+pub use eml_fs::PublicationState;
+#[cfg(target_os = "macos")]
+pub use export::{
+    ReportExportFailure, ReportExportOutcome, ReportExportStage, ReportNameAvailability,
+    TerminalReport, export_report, inspect_report_destination,
+};
 pub use framing::{FrameError, FrameSplitter};
 pub use queue::{MAX_WAITING_REQUESTS, QueueError, RequestSnapshot, RunId, RunQueue};
 pub use report::{ProtocolFailure, RunReport};
 #[cfg(target_os = "macos")]
-pub use session::{DesktopSession, SessionError, SessionReport};
+pub use session::{DesktopSession, SessionActivity, SessionError, SessionReport};
 #[cfg(target_os = "macos")]
 pub use supervisor::{ReportHandle, WorkerCompletion, WorkerFailure, WorkerObservation, WorkerRun};

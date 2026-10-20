@@ -2,10 +2,7 @@
 #[cfg(not(target_os = "macos"))]
 compile_error!("Native macOS child fixtures require a macOS host");
 #[cfg(target_os = "macos")]
-#[allow(
-    unsafe_code,
-    reason = "Read only this fixture's own process signal mask"
-)]
+#[allow(unsafe_code, reason = "quality:fixture-signal-mask-observation")]
 fn main() {
     use std::io::{Read, Write};
     let argument = std::env::args_os().nth(1).unwrap_or_default();
@@ -73,10 +70,7 @@ fn main() {
 }
 
 #[cfg(target_os = "macos")]
-#[allow(
-    unsafe_code,
-    reason = "Set SIGPIPE default only in this isolated nonshipping fixture process"
-)]
+#[allow(unsafe_code, reason = "quality:fixture-sigpipe-default")]
 fn default_sigpipe() {
     // SAFETY: this single-threaded fixture owns its entire process; no parent
     // or test-runner signal disposition changes. Remove Rust startup's ignored
@@ -91,13 +85,10 @@ fn default_sigpipe() {
 #[path = "../../../../tests/support/native_child.rs"]
 mod native_child;
 #[cfg(target_os = "macos")]
-#[allow(
-    unsafe_code,
-    reason = "Close only this nonshipping owned fixture's own standard descriptors"
-)]
+#[allow(unsafe_code, reason = "quality:fixture-close-stdio")]
 mod closed_stdio {
     use std::{ffi::OsStr, io::Write, os::fd::FromRawFd, time::Duration};
-    pub fn run() {
+    pub(crate) fn run() {
         let executable = std::env::current_exe().unwrap();
         // SAFETY: duplicate this fixture's stdout to a fresh CLOEXEC descriptor
         // above the collision range, transferring that unique copy to File.

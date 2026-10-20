@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/eml-core", "crates/eml-fs", "crates/eml-protocol", "crates/eml-cli", "crates/eml-app", "crates/eml-worker", "crates/eml-gui", "crates/eml-macos", "crates/eml-windows", "xtask"]
-exclude = ["tests/native-filesystem", "fuzz", "vendor/winit"]
+exclude = ["tests/native-filesystem", "fuzz", "vendor/winit", "vendor/i-slint-core", "vendor/parley"]
 resolver = "3"
 
 [workspace.package]
@@ -21,8 +21,22 @@ clap = { version = "4.6.7", features = ["derive"] }
 ctrlc = { version = "3.5.2", features = ["termination"] }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
-missing_docs = "warn"
+warnings = "deny"
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "deny"
+unreachable_pub = "deny"
+unused_lifetimes = "deny"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+allow_attributes_without_reason = "deny"
+too_many_lines = "deny"
+cognitive_complexity = "deny"
 
 [profile.release]
 overflow-checks = true
@@ -33,3 +47,5 @@ debug = false
 
 [patch.crates-io]
 winit = { path = "vendor/winit" }
+i-slint-core = { path = "vendor/i-slint-core" }
+parley = { path = "vendor/parley" }

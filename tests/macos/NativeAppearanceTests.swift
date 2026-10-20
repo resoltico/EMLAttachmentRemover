@@ -16,51 +16,12 @@ extension DesktopInteractionTests {
 
   @MainActor
   func testOwnedNativeAppearance() async throws {
-    let repository = URL(fileURLWithPath: #filePath)
-      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let inputURL = repository.appendingPathComponent(
-      "target/desktop-interaction-appearance/input.json")
-    let input = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: Data(contentsOf: inputURL)) as? [String: String])
-    guard input["host_scope"] == "fresh-github-hosted-runner",
-      input["appearance_session"] == "true"
-    else { throw InteractionFailure.expectedPresentation }
-    let appURL = URL(fileURLWithPath: try XCTUnwrap(input["app"]))
-    let fixture = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
-    let receipt = try XCTUnwrap(
-      JSONSerialization.jsonObject(
-        with: Data(
-          contentsOf: inputURL.deletingLastPathComponent().appendingPathComponent("ownership.json"))
-      )
-        as? [String: Any])
-    let pid = try XCTUnwrap(receipt["pid"] as? NSNumber).int32Value
-    let productOwner = try boundApplication(receipt, url: appURL)
-    let settingsReceipt = try XCTUnwrap(receipt["settings"] as? [String: Any])
-    let settingsURL = URL(fileURLWithPath: "/System/Applications/System Settings.app")
-    let settingsOwner = try boundApplication(settingsReceipt, url: settingsURL)
-    let app = XCUIApplication(url: appURL)
-    let settings = XCUIApplication(url: settingsURL)
-    try await requireOwnedForeground(productOwner)
-    guard app.windows["EML Attachment Remover"].waitForExistence(timeout: 20)
-    else { throw InteractionFailure.expectedPresentation }
-    let source = fixture.appendingPathComponent("one.eml")
-    let original = try Data(contentsOf: source)
-    let golden = try Data(
-      contentsOf: repository.appendingPathComponent(
-        "tests/contract/mime/golden/01-gmail-attachment.eml"))
-    let configuration = NSWorkspace.OpenConfiguration()
-    configuration.createsNewApplicationInstance = false
-    configuration.addsToRecentItems = false
-    let recipient = try await NSWorkspace.shared.open(
-      [source], withApplicationAt: appURL, configuration: configuration)
-    XCTAssertEqual(recipient.processIdentifier, pid)
-    let technical = app.checkBoxes["Technical details"]
-    guard technical.waitForExistence(timeout: 10) else {
-      throw InteractionFailure.expectedPresentation
-    }
-    technical.click()
-    try await requireRun(app, counts: "1 created · 0 up to date", source: source)
-
+    let session = try await prepareAppearanceProduct()
+    let (app, settings, productOwner, settingsOwner) = (
+      session.app, session.settings, session.productOwner, session.settingsOwner
+    )
+    let (source, original, golden) = (session.source, session.original, session.golden)
+    let pid = productOwner.processIdentifier
     try await settingsPane(settings, owner: settingsOwner, pane: .appearance)
     var selected = [String]()
     for name in ["Light", "Dark", "Auto"] {
@@ -137,12 +98,75 @@ extension DesktopInteractionTests {
     attachment.lifetime = .keepAlways
     add(attachment)
     app.typeKey("q", modifierFlags: .command)
-    guard app.buttons["Confirm"].waitForExistence(timeout: 5) else {
+    guard app.buttons["Quit"].waitForExistence(timeout: 5) else {
       throw InteractionFailure.expectedPresentation
     }
-    app.buttons["Confirm"].click()
+    app.buttons["Quit"].click()
     XCTAssertTrue(app.wait(for: .notRunning, timeout: 20))
     XCTAssertTrue(productOwner.isTerminated)
+  }
+
+  @MainActor
+  private struct AppearanceSession {
+    let app: XCUIApplication
+    let settings: XCUIApplication
+    let productOwner: NSRunningApplication
+    let settingsOwner: NSRunningApplication
+    let source: URL
+    let original: Data
+    let golden: Data
+  }
+
+  @MainActor
+  private func prepareAppearanceProduct() async throws -> AppearanceSession {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let inputURL = repository.appendingPathComponent(
+      "target/desktop-interaction-appearance/input.json")
+    let input = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(contentsOf: inputURL)) as? [String: String])
+    guard input["host_scope"] == "fresh-github-hosted-runner",
+      input["appearance_session"] == "true"
+    else { throw InteractionFailure.expectedPresentation }
+    let appURL = URL(fileURLWithPath: try XCTUnwrap(input["app"]))
+    let fixture = URL(fileURLWithPath: try XCTUnwrap(input["fixture"]))
+    let receipt = try XCTUnwrap(
+      JSONSerialization.jsonObject(
+        with: Data(
+          contentsOf: inputURL.deletingLastPathComponent().appendingPathComponent("ownership.json"))
+      )
+        as? [String: Any])
+    let pid = try XCTUnwrap(receipt["pid"] as? NSNumber).int32Value
+    let productOwner = try boundApplication(receipt, url: appURL)
+    let settingsReceipt = try XCTUnwrap(receipt["settings"] as? [String: Any])
+    let settingsURL = URL(fileURLWithPath: "/System/Applications/System Settings.app")
+    let settingsOwner = try boundApplication(settingsReceipt, url: settingsURL)
+    let app = XCUIApplication(url: appURL)
+    let settings = XCUIApplication(url: settingsURL)
+    try await requireOwnedForeground(productOwner)
+    guard app.windows["EML Attachment Remover"].waitForExistence(timeout: 20)
+    else { throw InteractionFailure.expectedPresentation }
+    let source = fixture.appendingPathComponent("one.eml")
+    let original = try Data(contentsOf: source)
+    let golden = try Data(
+      contentsOf: repository.appendingPathComponent(
+        "tests/contract/mime/golden/01-gmail-attachment.eml"))
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.createsNewApplicationInstance = false
+    configuration.addsToRecentItems = false
+    let recipient = try await NSWorkspace.shared.open(
+      [source], withApplicationAt: appURL, configuration: configuration)
+    XCTAssertEqual(recipient.processIdentifier, pid)
+    let technical = app.checkBoxes["Technical details"]
+    guard technical.waitForExistence(timeout: 10) else {
+      throw InteractionFailure.expectedPresentation
+    }
+    technical.click()
+    try await requireRun(app, counts: "1 created · 0 up to date", source: source)
+
+    return AppearanceSession(
+      app: app, settings: settings, productOwner: productOwner, settingsOwner: settingsOwner,
+      source: source, original: original, golden: golden)
   }
 
   @MainActor

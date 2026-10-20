@@ -9,7 +9,7 @@ autobins = false
 
 [features]
 native-fixtures = []
-macos-gui = ["dep:slint", "dep:slint-build", "dep:eml-core", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation", "dep:block2", "dep:raw-window-handle", "dep:base64"]
+macos-gui = ["dep:slint", "dep:slint-build", "dep:fontique", "dep:eml-core", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation", "dep:block2", "dep:raw-window-handle", "dep:base64"]
 
 [dependencies]
 eml-app = { path = "../eml-app" }
@@ -19,8 +19,9 @@ eml-core = { path = "../eml-core", optional = true }
 base64 = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+fontique = { version = "=0.11.1", optional = true, default-features = false, features = ["system"] }
 objc2 = { version = "0.6.5", optional = true }
-objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "block2", "NSApplication", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSView", "NSResponder", "NSAppearance", "NSWorkspace", "NSAccessibility", "NSPasteboard", "NSPasteboardItem"] }
+objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "block2", "NSApplication", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSView", "NSResponder", "NSAppearance", "NSFont", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSColor", "NSColorSpace", "NSWorkspace", "NSAccessibility", "NSPasteboard", "NSPasteboardItem"] }
 objc2-foundation = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSArray", "NSData", "NSString", "NSURL", "NSValue", "NSObject", "NSUserDefaults", "NSDictionary"] }
 block2 = { version = "0.6.2", optional = true }
 raw-window-handle = { version = "0.6.2", optional = true }
@@ -41,8 +42,7 @@ required-features = ["macos-gui", "native-fixtures"]
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 eml-macos = { path = "../eml-macos" }
 tempfile.workspace = true
+serde_json.workspace = true
 
-[lints.rust]
-# Unsafe is scoped to generated Slint vtables and necessary native system bridges.
-unsafe_code = "deny"
-missing_docs = "warn"
+[lints]
+workspace = true

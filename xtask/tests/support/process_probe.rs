@@ -31,30 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(23);
     }
     if mode == "cooperative-resource" {
-        use std::sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-        };
-        let stopped = Arc::new(AtomicBool::new(false));
-        let signal = Arc::clone(&stopped);
-        ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
-        std::fs::write(
-            root.join("external-resource"),
-            b"owned resource requiring cleanup",
-        )?;
-        std::fs::write(root.join("worker-ready"), b"handler installed")?;
-        let began = std::time::Instant::now();
-        while !stopped.load(Ordering::Relaxed) && !root.join("control-release").exists() {
-            if began.elapsed() > Duration::from_secs(10) {
-                return Err("Cooperative stop was not delivered".into());
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        std::fs::remove_file(root.join("external-resource"))?;
-        std::fs::write(
-            root.join("cooperative-stop-observed"),
-            b"owned resource cleanup completed",
-        )?;
+        cooperative_resource(&root)?;
     } else if mode == "marker" {
         #[cfg(unix)]
         std::fs::write(
@@ -72,23 +49,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .arg(&root)
             .spawn()?;
     } else if mode == "nested-leader-exit" {
-        let mut child = Command::new(std::env::current_exe()?);
-        child.arg("background").arg(&root);
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            child.process_group(0);
-        }
-        let _ = child.spawn()?.wait()?;
+        let _ = spawn_group("background", &root)?.wait()?;
     } else if mode == "nested-race" {
-        let mut child = Command::new(std::env::current_exe()?);
-        child.arg("wait-fork").arg(&root);
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            child.process_group(0);
-        }
-        let _ = child.spawn()?.wait()?;
+        let _ = spawn_group("wait-fork", &root)?.wait()?;
     } else if mode == "wait-fork" {
         std::fs::write(root.join("first-ready"), b"waiting")?;
         let began = std::time::Instant::now();
@@ -98,23 +61,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             std::thread::sleep(Duration::from_millis(1));
         }
-        let mut child = Command::new(std::env::current_exe()?);
-        child.arg("ignore-term").arg(&root);
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            child.process_group(0);
-        }
-        let _ = child.spawn()?.wait()?;
+        let _ = spawn_group("ignore-term", &root)?.wait()?;
     } else if mode == "nested" || mode == "nested-wait" {
-        let mut child = Command::new(std::env::current_exe()?);
-        child.arg("ignore-term").arg(&root);
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            child.process_group(0);
-        }
-        let mut child = child.spawn()?;
+        let mut child = spawn_group("ignore-term", &root)?;
         if mode == "nested-wait" {
             let _ = child.wait()?;
         }
@@ -149,4 +98,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("unknown mode".into());
     }
     Ok(())
+}
+
+fn cooperative_resource(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let stopped = Arc::new(AtomicBool::new(false));
+    let signal = Arc::clone(&stopped);
+    ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
+    std::fs::write(
+        root.join("external-resource"),
+        b"owned resource requiring cleanup",
+    )?;
+    std::fs::write(root.join("worker-ready"), b"handler installed")?;
+    let began = std::time::Instant::now();
+    while !stopped.load(Ordering::Relaxed) && !root.join("control-release").exists() {
+        if began.elapsed() > Duration::from_secs(10) {
+            return Err("Cooperative stop was not delivered".into());
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    std::fs::remove_file(root.join("external-resource"))?;
+    std::fs::write(
+        root.join("cooperative-stop-observed"),
+        b"owned resource cleanup completed",
+    )?;
+    Ok(())
+}
+
+fn spawn_group(
+    mode: &str,
+    root: &std::path::Path,
+) -> Result<std::process::Child, Box<dyn std::error::Error>> {
+    let mut child = Command::new(std::env::current_exe()?);
+    child.arg(mode).arg(root);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        child.process_group(0);
+    }
+    Ok(child.spawn()?)
 }

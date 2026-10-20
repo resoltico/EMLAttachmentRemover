@@ -123,24 +123,7 @@ pub(super) fn run(
     );
     let process = match launch {
         Ok(process) => process,
-        Err(primary) => {
-            let termination = job.terminate(125);
-            let began = Instant::now();
-            let cleanup = (|| -> io::Result<bool> {
-                loop {
-                    if job.active_processes()? == 0 {
-                        return Ok(true);
-                    }
-                    if began.elapsed() >= Duration::from_secs(5) {
-                        return Ok(false);
-                    }
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-            })();
-            let facts = serde_json::json!({"stage":"launch","primary_error":primary.to_string(),"native_code":primary.raw_os_error(),"termination_error":termination.as_ref().err().map(ToString::to_string),"zero_active_members":cleanup.as_ref().ok(),"cleanup_error":cleanup.as_ref().err().map(ToString::to_string),"scope":"failed launch; no successful execution claim"});
-            record(log, &facts)?;
-            return Err(format!("Native process launch failed: {facts}").into());
-        }
+        Err(primary) => return Err(settle_failed_launch(&job, log, primary)),
     };
     let mut cancelled = false;
     let mut timed_out = false;
@@ -174,19 +157,7 @@ pub(super) fn run(
     } else {
         Ok(())
     };
-    let cleanup = (|| -> io::Result<(Option<u32>, bool)> {
-        loop {
-            let code = process.exit_code()?;
-            let empty = job.active_processes()? == 0;
-            if code.is_some() && empty {
-                return Ok((code, true));
-            }
-            if cleanup_started.elapsed() >= Duration::from_secs(5) {
-                return Ok((code, false));
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    })();
+    let cleanup = observe_cleanup(&job, &process, cleanup_started);
     let code = cleanup.as_ref().ok().and_then(|(code, _)| *code);
     let complete = cleanup.as_ref().is_ok_and(|(_, complete)| *complete) && termination.is_ok();
     let record = serde_json::json!({"native_exit_code":code,"cancelled":cancelled,"timed_out":timed_out,"unexpected_survivors":unexpected,"cleanup_complete":complete,
@@ -219,4 +190,44 @@ pub(super) fn run(
         elapsed: started.elapsed(),
         cleanup_elapsed: cleanup_started.elapsed(),
     })
+}
+
+/// Preserve a failed admission after independently observing Job cleanup and recording its facts.
+fn settle_failed_launch(job: &Job, log: &Path, primary: io::Error) -> Box<dyn std::error::Error> {
+    let termination = job.terminate(125);
+    let began = Instant::now();
+    let cleanup = (|| -> io::Result<bool> {
+        loop {
+            if job.active_processes()? == 0 {
+                return Ok(true);
+            }
+            if began.elapsed() >= Duration::from_secs(5) {
+                return Ok(false);
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    })();
+    let facts = serde_json::json!({"stage":"launch","primary_error":primary.to_string(),"native_code":primary.raw_os_error(),"termination_error":termination.as_ref().err().map(ToString::to_string),"zero_active_members":cleanup.as_ref().ok(),"cleanup_error":cleanup.as_ref().err().map(ToString::to_string),"scope":"failed launch; no successful execution claim"});
+    match record(log, &facts) {
+        Ok(()) => format!("Native process launch failed: {facts}").into(),
+        Err(error) => error,
+    }
+}
+
+fn observe_cleanup(
+    job: &Job,
+    process: &eml_windows::Process<'_>,
+    cleanup_started: Instant,
+) -> io::Result<(Option<u32>, bool)> {
+    loop {
+        let code = process.exit_code()?;
+        let empty = job.active_processes()? == 0;
+        if code.is_some() && empty {
+            return Ok((code, true));
+        }
+        if cleanup_started.elapsed() >= Duration::from_secs(5) {
+            return Ok((code, false));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }

@@ -24,10 +24,12 @@ pub use outcome::{
     ItemResult, MessageMetadata, NamespaceObservation, PlanAction, PlannedCopy, PublishedCopy,
     ReportPath, RunOutcome, RunStart, UnknownPublication,
 };
+#[cfg(any(test, feature = "native-fixtures"))]
+pub use run::PublicationObservation;
+#[cfg(feature = "native-fixtures")]
+pub use run::run_observed;
 #[cfg(any(unix, windows))]
 pub use run::{MAX_REMOVAL_ENTRIES, dry_run, run};
-#[cfg(feature = "native-fixtures")]
-pub use run::{PublicationObservation, run_observed};
 #[cfg(any(unix, windows))]
 mod failure;
 #[cfg(any(unix, windows))]

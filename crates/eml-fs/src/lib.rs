@@ -27,10 +27,10 @@ mod unix;
 #[cfg(unix)]
 pub use unix::{BoundDirectory, CreatedDirectory};
 #[cfg(target_os = "macos")]
-#[allow(unsafe_code)] // Only the documented Darwin opaque ACL ABI, ownership and descriptor calls.
+#[allow(unsafe_code, reason = "quality:darwin-acl-boundary")]
 mod darwin_acl;
 #[cfg(windows)]
-#[allow(unsafe_code)] // Generated Windows ABI only; native buffers/handles remain owned.
+#[allow(unsafe_code, reason = "quality:windows-filesystem-boundary")]
 mod windows;
 #[cfg(all(windows, any(test, feature = "native-fixtures")))]
 pub use windows::creation_observer;

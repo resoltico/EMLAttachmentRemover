@@ -3,13 +3,12 @@
 The reusable `eml_core::prepare_message` capability prepares immutable bytes,
 authorizes removal independently, and verifies exact expected bytes and retained
 structure. Retained text/plain and text/html payloads are never decoded or
-regenerated. Native execution and release acceptance are recorded separately in
-the [implementation evidence](v6-implementation-evidence.md).
+regenerated. Native execution and release acceptance require the separate
+[verification gates](verification.md).
 
 ## Retained body and removal policy
 
-V6 creates body-only copies. This changes v5's policy of removing only explicit
-attachments and direct non-root related resources. All retained text/plain and
+Preparation creates body-only copies. All retained text/plain and
 text/html representations remain in source order, including empty bodies and
 their original encoded payload bytes. A filename does not decide whether a part
 is body content.
@@ -59,8 +58,7 @@ parentheses. These rules preserve the deliberate unquoted-space/8-bit lenience
 without allowing a comment to join two token fragments. They affect interpreted
 controls and display metadata; no source body bytes are rewritten.
 
-This clarifies the supplied pack's CFWS rule following independent QA. The
-underlying structured-field convention is described by
+The structured-field convention is described by
 [RFC 2045 §5.1](https://www.rfc-editor.org/rfc/rfc2045#section-5.1).
 
 ## Display encoded-word tolerance

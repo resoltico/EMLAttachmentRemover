@@ -5,6 +5,7 @@ mod campaign;
 mod check;
 mod ci;
 mod cli_build;
+mod commands;
 #[cfg(any(target_os = "macos", test))]
 mod desktop_preferences;
 mod distribution;
@@ -29,6 +30,7 @@ mod mutants;
 mod native_host;
 mod notices;
 mod qualify;
+mod quality;
 mod release_assets;
 mod release_check;
 mod smoke;
@@ -148,6 +150,10 @@ enum Task {
     },
     /// Run independent repository checks, retaining every failed section.
     Check,
+    /// Validate authored-source structure and centrally justified lint exceptions.
+    CheckQuality,
+    /// Strictly check all discovered authored shell scripts, including shebang files.
+    CheckShell,
     /// Build and verify one native CLI archive; remaining qualification is separate.
     BuildCliArchive {
         #[arg(long)]
@@ -281,310 +287,7 @@ fn main() -> ExitCode {
     let result = (|| {
         let args = Arguments::parse();
         let root = root()?;
-        match args.task {
-            Task::CiResult {
-                event,
-                native,
-                needs,
-            } => ci::run(&event, native, &needs),
-            Task::WindowsRuntimeReferences { archives, out } => {
-                initialize_controller(&root)?;
-                windows_references::generate(&root, &archives, &out)
-            }
-            Task::ObserveWindowsLink { target, out } => {
-                #[cfg(windows)]
-                {
-                    initialize_controller(&root)?;
-                    std::fs::create_dir(&out)?;
-                    let out = out.canonicalize()?;
-                    let cli = cli_build::build(&root, &target, &out.join("cli-build"))?;
-                    let unknown_input = cli_build::unknown_input_control(
-                        &root,
-                        &target,
-                        &cli,
-                        &out.join("unknown-input-control"),
-                    )?;
-                    let materials = notices::checked_target(&root, cli.platform())?;
-                    let archive = qualify::staged_cli(&root, &cli, &materials, &out)?;
-                    std::fs::write(
-                        out.join("result.json"),
-                        serde_json::to_vec_pretty(
-                            &serde_json::json!({"target":cli.target(),"host":cli.host(),"image":cli.identity(),"unknown_input_control":unknown_input,"archive":archive,"scope":"native compiler/final-link/PE/input admission, actual unknown-object rejection and extracted CLI archive behavior; full qualification remains separate"}),
-                        )?,
-                    )?;
-                    Ok(())
-                }
-                #[cfg(not(windows))]
-                {
-                    let _ = (target, out);
-                    Err("Final Windows link observation requires native Windows".into())
-                }
-            }
-            Task::PrepareWindowsWorkspace => {
-                #[cfg(windows)]
-                {
-                    initialize_controller(&root)?;
-                    windows_workspace::prepare(&root)
-                }
-                #[cfg(not(windows))]
-                {
-                    Err("Protected Windows checkout preparation requires native Windows".into())
-                }
-            }
-            Task::ReleaseCheck { source, version } => {
-                initialize_controller(&root)?;
-                release_check::run(&root, &source, &version)
-            }
-            Task::StageReleaseAssets { archives, out } => {
-                initialize_controller(&root)?;
-                release_assets::run(&root, &archives, &out)
-            }
-            Task::CheckReleaseServer { assets, release } => {
-                initialize_controller(&root)?;
-                release_assets::server(&root, &assets, &release)
-            }
-            Task::CheckMacosSwift { out } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos::check_swift_sources(&root, &out).map(|_| ())
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = out;
-                    Err("Selected Xcode is required for Swift bridge/test formatting".into())
-                }
-            }
-            Task::ObserveMacosPanel { out } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    let build = macos::load(&root)?;
-                    let observed = macos_panel::observe(&root, &build, &out)?;
-                    if observed["process"]["exit_code"] != 0 {
-                        return Err("Native AppKit panel did not complete visible owned cancellation; inspect retained diagnostic evidence".into());
-                    }
-                    Ok(())
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = out;
-                    Err("Native AppKit panel observation requires macOS".into())
-                }
-            }
-            Task::PrepareMacosPickerHost {
-                archive,
-                reference,
-                normal_failure,
-                out,
-            } => {
-                #[cfg(target_os = "macos")]
-                {
-                    macos_panel::require_picker_preparation_context()?;
-                    initialize_controller(&root)?;
-                    let build = macos::load(&root)?;
-                    macos_panel::prepare_picker_host(
-                        &root,
-                        &build,
-                        &archive,
-                        &reference,
-                        &normal_failure,
-                        &out,
-                    )
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = (archive, reference, normal_failure, out);
-                    Err("Controlled picker preparation requires native Intel macOS26".into())
-                }
-            }
-            Task::CheckMacosDesktop { out } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos::check_desktop(&root, &out)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = out;
-                    Err("Native macOS is required for desktop profile checks".into())
-                }
-            }
-            Task::NativeTests {
-                target,
-                out,
-                release,
-            } => {
-                initialize_controller(&root)?;
-                let host = native_host::inspect_target(&root, &target)?;
-                std::fs::create_dir(&out)?;
-                let out = out.canonicalize()?;
-                let mut result = qualify::checked_tests(&root, Some(&target), release, &out)?;
-                result["host"] = host;
-                std::fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
-                Ok(())
-            }
-            Task::Check => {
-                initialize_controller(&root)?;
-                check::run(&root)
-            }
-            Task::BuildCliArchive { target, out } => {
-                initialize_controller(&root)?;
-                if !git(
-                    &root,
-                    &["status", "--porcelain=v1", "--untracked-files=all"],
-                )?
-                .is_empty()
-                {
-                    return Err("CLI archives require a clean committed source checkout".into());
-                }
-                std::fs::create_dir(&out)?;
-                let out = out.canonicalize()?;
-                let cli = cli_build::build(&root, &target, &out.join("cli-build"))?;
-                let materials = notices::checked_target(&root, cli.platform())?;
-                let archive = qualify::staged_cli(&root, &cli, &materials, &out)?;
-                std::fs::write(
-                    out.join("cli-result.json"),
-                    serde_json::to_vec_pretty(
-                        &serde_json::json!({"source":git(&root, &["rev-parse", "HEAD"])?,
-                            "target":cli.target(),"platform":cli.platform(),"version":cli.version(),
-                            "host":cli.host(),"frozen_image":cli.identity(),"archive":archive,
-                            "scope":"native CLI build and archive readback only; full qualification remains separate"}),
-                    )?,
-                )?;
-                Ok(())
-            }
-            Task::CliSmokeTests { executable, out } => {
-                initialize_controller(&root)?;
-                std::fs::create_dir(&out)?;
-                let out = out.canonicalize()?;
-                let owned = xtask::archive::create_artifact_directory(&out)?;
-                let result = smoke::run(
-                    &root,
-                    &executable.canonicalize()?,
-                    "remove-eml-attachments",
-                    env!("CARGO_PKG_VERSION"),
-                    owned.path(),
-                    &out.join("behavior"),
-                )?;
-                std::fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
-                Ok(())
-            }
-            Task::Qualify { target, out, icons } => {
-                initialize_controller(&root)?;
-                qualify::run(&root, &target, &out, icons.as_deref())
-            }
-            Task::VerifyArchive { archive, target } => {
-                initialize_controller(&root)?;
-                archive_verify::run(&root, &archive, &target)
-            }
-            Task::Notices { out, check, .. } => {
-                initialize_controller(&root)?;
-                if check {
-                    let result = notices::check(&root, out.as_deref())?;
-                    println!("{}", serde_json::to_string_pretty(&result)?);
-                    Ok(())
-                } else {
-                    notices::run(
-                        &root,
-                        &out.unwrap_or_else(|| root.join("target/generated-legal-materials")),
-                    )
-                }
-            }
-            Task::MacosIconDiagnostic { out } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos_icon::run(&root, &out)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = out;
-                    Err("Native macOS is required for icon observations".into())
-                }
-            }
-            Task::CompileMacosIcon { out } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos_icon::compile(&root, &out)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = out;
-                    Err("Native macOS is required for owner-icon compilation".into())
-                }
-            }
-            Task::BuildMacosSources { out } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos_app::build_sources(&root, &out)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = out;
-                    Err("Native macOS is required for desktop executable builds".into())
-                }
-            }
-            Task::Distribution => distribution::run(&root),
-            Task::CheckMacosVolume { out } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos_volume::run(&root, &out)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = out;
-                    Err("Owned exFAT image checks require native macOS".into())
-                }
-            }
-            Task::BuildMacosApp { out, icons } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos_archive::build(&root, &out, &icons)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = (out, icons);
-                    Err("App assembly requires native macOS".into())
-                }
-            }
-            Task::SmokeMacosApp { archive, reference } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos_archive::smoke(&root, &archive, &reference)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = (archive, reference);
-                    Err("App archive smoke requires native macOS".into())
-                }
-            }
-            Task::CheckMacosPicker { archive, reference } => {
-                #[cfg(target_os = "macos")]
-                {
-                    initialize_controller(&root)?;
-                    macos_archive::picker(&root, &archive, &reference)
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = (archive, reference);
-                    Err("Native picker compatibility requires native macOS".into())
-                }
-            }
-            Task::Fuzz { seconds } => {
-                initialize_controller(&root)?;
-                fuzz::run(&root, seconds)
-            }
-            Task::Mutants { initial, diff } => {
-                initialize_controller(&root)?;
-                mutants::run(&root, initial, diff.as_deref())
-            }
-        }
+        commands::run(&root, args.task)
     })();
     match result {
         Ok(()) => ExitCode::SUCCESS,

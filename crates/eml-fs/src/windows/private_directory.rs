@@ -209,6 +209,23 @@ fn inspect(file: &File, trusted: &[Sid], private: bool) -> io::Result<()> {
     {
         return Err(invalid("Directory ACL exceeds its allocation"));
     }
+    // SAFETY: the complete ACL extent was checked within the still-live Local
+    // descriptor allocation; the copied header describes exactly that extent.
+    unsafe {
+        inspect_aces(acl, header, trusted, private)?;
+    }
+    drop(allocation);
+    Ok(())
+}
+
+// SAFETY contract: acl/header must describe a complete live descriptor-owned ACL
+// for this call. Every ACE and SID is still independently range/type checked.
+unsafe fn inspect_aces(
+    acl: *mut ACL,
+    header: ACL,
+    trusted: &[Sid],
+    private: bool,
+) -> io::Result<()> {
     let forbidden = DELETE
         | WRITE_DAC
         | WRITE_OWNER
@@ -282,7 +299,6 @@ fn inspect(file: &File, trusted: &[Sid], private: bool) -> io::Result<()> {
             ));
         }
     }
-    drop(allocation);
     Ok(())
 }
 
@@ -328,30 +344,8 @@ pub fn create_private_directory(parent: &Path) -> io::Result<PrivateDirectory> {
         })?;
         ancestors.push(BoundDirectory { file, identity });
     }
-    // New children grant only this actual user, SYSTEM and administrators;
-    // TrustedInstaller is admitted on OS ancestors, not added to private output.
-    let bytes = size_of::<ACL>()
-        + trusted[..3]
-            .iter()
-            .map(|sid| offset_of!(ACCESS_ALLOWED_ACE, SidStart) + sid.0.len() * 4)
-            .sum::<usize>();
-    let mut words = vec![0u32; bytes.div_ceil(4)];
+    let mut words = private_acl(&trusted[..3])?;
     let acl = words.as_mut_ptr().cast::<ACL>();
-    // SAFETY: aligned owned allocation covers the explicit ACL and SID extents.
-    unsafe {
-        checked(InitializeAcl(acl, (words.len() * 4) as u32, ACL_REVISION))?;
-    }
-    for sid in &trusted[..3] {
-        unsafe {
-            checked(AddAccessAllowedAceEx(
-                acl,
-                ACL_REVISION,
-                OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE,
-                FILE_ALL_ACCESS,
-                sid.pointer(),
-            ))?;
-        }
-    }
     let mut descriptor = SECURITY_DESCRIPTOR::default();
     let descriptor = (&mut descriptor as *mut SECURITY_DESCRIPTOR).cast();
     // SAFETY: typed absolute descriptor and all pointed-to owned buffers live
@@ -414,6 +408,34 @@ pub fn create_private_directory(parent: &Path) -> io::Result<PrivateDirectory> {
     Err(io::Error::other(
         "Exclusive private directory allocation exhausted",
     ))
+}
+
+fn private_acl(trusted: &[Sid]) -> io::Result<Vec<u32>> {
+    // New children grant only this actual user, SYSTEM and administrators;
+    // TrustedInstaller is admitted on OS ancestors, not added to private output.
+    let bytes = size_of::<ACL>()
+        + trusted
+            .iter()
+            .map(|sid| offset_of!(ACCESS_ALLOWED_ACE, SidStart) + sid.0.len() * 4)
+            .sum::<usize>();
+    let mut words = vec![0u32; bytes.div_ceil(4)];
+    let acl = words.as_mut_ptr().cast::<ACL>();
+    // SAFETY: aligned owned allocation covers the explicit ACL and SID extents.
+    unsafe {
+        checked(InitializeAcl(acl, (words.len() * 4) as u32, ACL_REVISION))?;
+    }
+    for sid in trusted {
+        unsafe {
+            checked(AddAccessAllowedAceEx(
+                acl,
+                ACL_REVISION,
+                OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE,
+                FILE_ALL_ACCESS,
+                sid.pointer(),
+            ))?;
+        }
+    }
+    Ok(words)
 }
 
 #[cfg(all(test, feature = "native-fixtures"))]

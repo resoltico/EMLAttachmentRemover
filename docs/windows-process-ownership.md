@@ -48,14 +48,12 @@ The sender retains its ignore handler until normal process exit. It does not
 call FreeConsole after generation: Microsoft documents that this
 [resets the control-handler table](https://learn.microsoft.com/en-us/windows/console/setconsolectrlhandler),
 which can race the sender's own queued Ctrl-C into default termination. The
-historical native 0xC000013A sender failures are retained. Subsequent corrected
-execution passed on both CPUs; delivered-source receipts remain authoritative.
+sender must complete normally; delivered-source receipts remain authoritative.
 
 The two real CLI cases use anonymous owned pipes. One observes actual consumption
 of an unfinished request before CTRL_C. The other observes a partial real report
 and independently golden-checked complete copy, then sends distinct CTRL_C and
 CTRL_BREAK deliveries through the same CLI handler while output is blocked.
 Both require actual130 status, preserved original/copy facts and complete owned
-settlement. Both reached actual sender failure on ARM at source 3e32026c; the
-request handshake itself now completes. The helper and
-pipe fixtures are nonshipping; ordinary CLI product features do not enable them.
+settlement. The helper and pipe fixtures are nonshipping; ordinary CLI product
+features do not enable them.

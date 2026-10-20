@@ -138,6 +138,100 @@ struct Observation {
     unexpected_occupied_conversion: bool,
 }
 impl Observation {
+    fn observe_creation(
+        &mut self,
+        profile: Profile,
+        event: eml_fs::creation_observer::CreationObservation<'_>,
+    ) {
+        let parent_id = full_identity(event.parent).unwrap();
+        if event.boundary == CreationBoundary::MirrorOpened && self.mirror.is_none() {
+            self.mirror = Some((
+                full_identity(event.object.unwrap()).unwrap(),
+                self.destination.join(event.name),
+            ));
+        }
+        if event.boundary == CreationBoundary::BeforeMirrorCreate
+            && profile == Profile::OccupiedMirror
+            && self.occupied_refusals == 0
+        {
+            match make_junction(&self.destination, &self.target) {
+                Err(error) => {
+                    assert_eq!(
+                        error.raw_os_error(),
+                        Some(145),
+                        "Unrelated refusal is not a nonempty-directory proof: {error}"
+                    );
+                    self.occupied_refusals += 1;
+                }
+                Ok(file) => {
+                    self.unexpected_occupied_conversion = true;
+                    restore_directory(&file).unwrap();
+                }
+            }
+        }
+        if event.boundary == CreationBoundary::BeforeFileCreate && !self.redirected {
+            let subject = match profile {
+                Profile::FileRedirect | Profile::MirrorGuardRedirect
+                    if parent_id == self.parent_id =>
+                {
+                    Some(self.destination.clone())
+                }
+                Profile::MirrorRedirect => self
+                    .mirror
+                    .as_ref()
+                    .filter(|(id, _)| *id == parent_id)
+                    .map(|(_, path)| path.clone()),
+                _ => None,
+            };
+            if let Some(subject) = subject {
+                self.mutation=Some(make_junction(&subject,&self.target).expect("The attribute-only controlled conversion must actually occur AFTER the last validation"));
+                self.redirected = true;
+            }
+        }
+        if event.boundary == CreationBoundary::FileOpened && self.mutation.is_some() {
+            // Independent placement oracle: exact returned object ID versus target
+            // lookup; original directory is restored through its retained mutation
+            // handle before looking up its contents. No creation/path comparator reused.
+            let target_view = BoundDirectory::open(&operation(&self.target)).unwrap();
+            let placed = target_view
+                .observe_child(event.name)
+                .expect("The native call must actually have created at the redirect target");
+            assert_eq!(
+                placed.identity,
+                full_identity(event.object.unwrap()).unwrap()
+            );
+            assert_eq!(placed.file.unwrap().size, 0);
+            self.outside_object = Some(placed.identity);
+            self.saw_outside_empty = true;
+            self.restore();
+            let original = if profile == Profile::MirrorRedirect {
+                self.mirror.as_ref().unwrap().1.clone()
+            } else {
+                self.destination.clone()
+            };
+            let original_view = BoundDirectory::open(&operation(&original)).unwrap();
+            assert_eq!(original_view.identity(), parent_id);
+            self.original_had_no_candidate = original_view
+                .observe_child_if_present(event.name)
+                .unwrap()
+                .is_none();
+            assert!(self.original_had_no_candidate);
+            self.sample();
+        }
+        if event.boundary == CreationBoundary::AfterWrite {
+            self.write_samples += 1;
+            self.sample();
+            let object = event
+                .object
+                .expect("A completed write retains its exact native file");
+            if self.outside_object == Some(full_identity(object).unwrap()) {
+                // Windows directory enumeration can retain the size from before an
+                // exclusive writer closes. Query the exact object already independently
+                // located at the redirect target, while the write is still observable.
+                self.max_outside = self.max_outside.max(object.metadata().unwrap().len());
+            }
+        }
+    }
     fn sample(&mut self) {
         self.max_outside = self.max_outside.max(
             outside_bytes(&self.target)
@@ -183,190 +277,107 @@ fn redirected_destination_receives_no_bytes() {
         Profile::MirrorGuardRedirect,
         Profile::OccupiedMirror,
     ] {
-        let parent =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/windows-creation-gate");
-        fs::create_dir_all(&parent).unwrap();
-        let root = tempfile::tempdir_in(parent).unwrap();
-        let scope = RestrictedToken::enter().unwrap();
-        let input = root.path().join("input");
-        let destination = root.path().join("destination");
-        let target = root.path().join("redirect-target");
-        for path in [&input, &destination, &target] {
-            fs::create_dir(path).unwrap();
-        }
-        let source = input.join("message.eml");
-        fs::write(&source, INPUT).unwrap();
-        let view = BoundDirectory::open(&operation(&destination)).unwrap();
-        let parent_id = view.identity();
-        drop(view);
-        let state = Rc::new(RefCell::new(Observation {
-            destination: destination.clone(),
-            target: target.clone(),
-            parent_id,
-            mirror: None,
-            mutation: None,
-            redirected: false,
-            restored: false,
-            saw_outside_empty: false,
-            outside_object: None,
-            original_had_no_candidate: false,
-            write_samples: 0,
-            max_outside: 0,
-            occupied_refusals: 0,
-            unexpected_occupied_conversion: false,
-        }));
-        let observed = Rc::clone(&state);
-        let observer=observe_creations(move |event| {
-   let mut state=observed.borrow_mut();
-   let parent_id=full_identity(event.parent).unwrap();
-   if event.boundary==CreationBoundary::MirrorOpened && state.mirror.is_none() {
-    state.mirror=Some((full_identity(event.object.unwrap()).unwrap(),state.destination.join(event.name)));
-   }
-   if event.boundary==CreationBoundary::BeforeMirrorCreate && profile==Profile::OccupiedMirror && state.occupied_refusals==0 {
-    match make_junction(&state.destination,&state.target) {
-     Err(error)=>{assert_eq!(error.raw_os_error(),Some(145),"Unrelated refusal is not a nonempty-directory proof: {error}");state.occupied_refusals+=1;},
-     Ok(file)=>{state.unexpected_occupied_conversion=true;restore_directory(&file).unwrap();},
+        run_redirect_profile(profile);
     }
-   }
-   if event.boundary==CreationBoundary::BeforeFileCreate && !state.redirected {
-    let subject=match profile {
-     Profile::FileRedirect|Profile::MirrorGuardRedirect if parent_id==state.parent_id=>Some(state.destination.clone()),
-     Profile::MirrorRedirect=>state.mirror.as_ref().filter(|(id,_)|*id==parent_id).map(|(_,path)|path.clone()),
-     _=>None,
+}
+
+fn run_redirect_profile(profile: Profile) {
+    let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/windows-creation-gate");
+    fs::create_dir_all(&parent).unwrap();
+    let root = tempfile::tempdir_in(parent).unwrap();
+    let scope = RestrictedToken::enter().unwrap();
+    let input = root.path().join("input");
+    let destination = root.path().join("destination");
+    let target = root.path().join("redirect-target");
+    for path in [&input, &destination, &target] {
+        fs::create_dir(path).unwrap();
+    }
+    let source = input.join("message.eml");
+    fs::write(&source, INPUT).unwrap();
+    let view = BoundDirectory::open(&operation(&destination)).unwrap();
+    let parent_id = view.identity();
+    drop(view);
+    let state = Rc::new(RefCell::new(Observation {
+        destination: destination.clone(),
+        target: target.clone(),
+        parent_id,
+        mirror: None,
+        mutation: None,
+        redirected: false,
+        restored: false,
+        saw_outside_empty: false,
+        outside_object: None,
+        original_had_no_candidate: false,
+        write_samples: 0,
+        max_outside: 0,
+        occupied_refusals: 0,
+        unexpected_occupied_conversion: false,
+    }));
+    let observed = Rc::clone(&state);
+    let observer =
+        observe_creations(move |event| observed.borrow_mut().observe_creation(profile, event))
+            .unwrap();
+
+    let tree = matches!(
+        profile,
+        Profile::MirrorRedirect | Profile::MirrorGuardRedirect | Profile::OccupiedMirror
+    );
+    let request = RunRequest {
+        paths: vec![if tree { input.clone() } else { source.clone() }],
+        working_directory: root.path().to_owned(),
+        output: OutputLocation::Directory(destination.clone()),
+        mode: RunMode::Create,
     };
-    if let Some(subject)=subject {state.mutation=Some(make_junction(&subject,&state.target).expect("The attribute-only controlled conversion must actually occur AFTER the last validation"));state.redirected=true;}
-   }
-   if event.boundary==CreationBoundary::FileOpened && state.mutation.is_some() {
-    // Independent placement oracle: exact returned object ID versus target
-    // lookup; original directory is restored through its retained mutation
-    // handle before looking up its contents. No creation/path comparator reused.
-    let target_view=BoundDirectory::open(&operation(&state.target)).unwrap();
-    let placed=target_view.observe_child(event.name).expect("The native call must actually have created at the redirect target");
-    assert_eq!(placed.identity,full_identity(event.object.unwrap()).unwrap());
-    assert_eq!(placed.file.unwrap().size,0);
-    state.outside_object=Some(placed.identity);
-    state.saw_outside_empty=true;
-    state.restore();
-    let original=if profile==Profile::MirrorRedirect {state.mirror.as_ref().unwrap().1.clone()} else {state.destination.clone()};
-    let original_view=BoundDirectory::open(&operation(&original)).unwrap();
-    assert_eq!(original_view.identity(),parent_id);
-    state.original_had_no_candidate=original_view.observe_child_if_present(event.name).unwrap().is_none();
-    assert!(state.original_had_no_candidate);
-    state.sample();
-   }
-   if event.boundary==CreationBoundary::AfterWrite {
-    state.write_samples+=1;
-    state.sample();
-    let object=event.object.expect("A completed write retains its exact native file");
-    if state.outside_object==Some(full_identity(object).unwrap()) {
-     // Windows directory enumeration can retain the size from before an
-     // exclusive writer closes. Query the exact object already independently
-     // located at the redirect target, while the write is still observable.
-     state.max_outside=state.max_outside.max(object.metadata().unwrap().len());
-    }
-   }
-  }).unwrap();
-        let tree = matches!(
-            profile,
-            Profile::MirrorRedirect | Profile::MirrorGuardRedirect | Profile::OccupiedMirror
-        );
-        let request = RunRequest {
-            paths: vec![if tree { input.clone() } else { source.clone() }],
-            working_directory: root.path().to_owned(),
-            output: OutputLocation::Directory(destination.clone()),
-            mode: RunMode::Create,
-        };
-        let mut sink = Sink::default();
-        let outcome = run(&request, &RunControl::default(), &mut sink).unwrap();
-        drop(observer);
-        let mut observed = state.borrow_mut();
-        observed.restore();
-        observed.sample();
-        let original_ok = fs::read(&source).unwrap() == INPUT;
-        record(profile, &observed, original_ok);
-        assert!(original_ok, "Original message changed");
+    let mut sink = Sink::default();
+    let outcome = run(&request, &RunControl::default(), &mut sink).unwrap();
+    drop(observer);
+    let mut observed = state.borrow_mut();
+    observed.restore();
+    observed.sample();
+    let original_ok = fs::read(&source).unwrap() == INPUT;
+    record(profile, &observed, original_ok);
+    assert!(original_ok, "Original message changed");
+    assert_eq!(
+        observed.max_outside, 0,
+        "P-W violated: actual message bytes reached the redirect target before cleanup/publication"
+    );
+    assert!(
+        !observed.unexpected_occupied_conversion,
+        "The relied-on nonempty-directory premise was disproved"
+    );
+    assert_eq!(
+        sink.items.len(),
+        1,
+        "The one known message must have a terminal observation"
+    );
+    if matches!(profile, Profile::Normal | Profile::OccupiedMirror) {
         assert_eq!(
-            observed.max_outside, 0,
-            "P-W violated: actual message bytes reached the redirect target before cleanup/publication"
-        );
-        assert!(
-            !observed.unexpected_occupied_conversion,
-            "The relied-on nonempty-directory premise was disproved"
-        );
-        assert_eq!(
-            sink.items.len(),
+            outcome.counts().created(),
             1,
-            "The one known message must have a terminal observation"
+            "Normal qualified Created must work: {:?}",
+            sink.items
         );
-        if matches!(profile, Profile::Normal | Profile::OccupiedMirror) {
-            assert_eq!(
-                outcome.counts().created(),
-                1,
-                "Normal qualified Created must work: {:?}",
-                sink.items
-            );
-            assert!(sink.items[0].created);
-            let copy = if tree {
-                destination.join("input/message.no-attachments.eml")
-            } else {
-                destination.join("message.no-attachments.eml")
-            };
-            assert_eq!(fs::read(&copy).unwrap(), GOLDEN);
-            if profile == Profile::OccupiedMirror {
-                assert_eq!(observed.occupied_refusals, 1);
-            }
-            drop(observed);
-            if profile == Profile::Normal {
-                let mut again = Sink::default();
-                assert_eq!(
-                    run(&request, &RunControl::default(), &mut again)
-                        .unwrap()
-                        .counts()
-                        .up_to_date(),
-                    1
-                );
-                fs::write(&copy, b"owned collision winner").unwrap();
-                let mut conflict = Sink::default();
-                assert_eq!(
-                    run(&request, &RunControl::default(), &mut conflict)
-                        .unwrap()
-                        .counts()
-                        .created(),
-                    0
-                );
-                assert_eq!(fs::read(copy).unwrap(), b"owned collision winner");
-                assert_eq!(fs::read(&source).unwrap(), INPUT);
-            }
+        assert!(sink.items[0].created);
+        let copy = if tree {
+            destination.join("input/message.no-attachments.eml")
         } else {
-            assert!(
-                observed.redirected
-                    && observed.restored
-                    && observed.saw_outside_empty
-                    && observed.original_had_no_candidate,
-                "The precise native interleaving was not exercised"
-            );
-            assert_eq!(
-                observed.write_samples, 0,
-                "A contained-refusal case must not write message bytes"
-            );
-            assert_eq!(outcome.counts().created(), 0);
-            assert_eq!(sink.items[0].code, Some(ErrorCode::AddressChanged));
-            assert_eq!(sink.items[0].publication, PublicationState::NotPublished);
-            assert!(matches!(
-                sink.items[0].cleanup.as_ref().unwrap().state,
-                CleanupState::Complete | CleanupState::Unknown
-            ));
-            assert_eq!(
-                fs::read_dir(&target).unwrap().count(),
-                0,
-                "Only known-owned empty file cleanup may remove these entries"
-            );
-            drop(observed);
+            destination.join("message.no-attachments.eml")
+        };
+        assert_eq!(fs::read(&copy).unwrap(), GOLDEN);
+        if profile == Profile::OccupiedMirror {
+            assert_eq!(observed.occupied_refusals, 1);
         }
-        drop(state);
-        drop(scope);
-        root.close().unwrap();
+        drop(observed);
+        if profile == Profile::Normal {
+            assert_existing_reuse(&request, &copy, &source);
+        }
+    } else {
+        assert_redirect_refusal(&observed, &sink, &outcome, &target);
+        drop(observed);
     }
+    drop(state);
+    drop(scope);
+    root.close().unwrap();
 }
 
 #[test]
@@ -486,4 +497,57 @@ fn mirror_replacement_and_cancellation_preserve_unowned_entries() {
     assert_eq!(names, ["input"]);
     drop(scope);
     root.close().unwrap();
+}
+
+fn assert_existing_reuse(request: &RunRequest, copy: &Path, source: &Path) {
+    let mut again = Sink::default();
+    assert_eq!(
+        run(request, &RunControl::default(), &mut again)
+            .unwrap()
+            .counts()
+            .up_to_date(),
+        1
+    );
+    fs::write(copy, b"owned collision winner").unwrap();
+    let mut conflict = Sink::default();
+    assert_eq!(
+        run(request, &RunControl::default(), &mut conflict)
+            .unwrap()
+            .counts()
+            .created(),
+        0
+    );
+    assert_eq!(fs::read(copy).unwrap(), b"owned collision winner");
+    assert_eq!(fs::read(source).unwrap(), INPUT);
+}
+
+fn assert_redirect_refusal(
+    observed: &Observation,
+    sink: &Sink,
+    outcome: &eml_core::RunOutcome,
+    target: &Path,
+) {
+    assert!(
+        observed.redirected
+            && observed.restored
+            && observed.saw_outside_empty
+            && observed.original_had_no_candidate,
+        "The precise native interleaving was not exercised"
+    );
+    assert_eq!(
+        observed.write_samples, 0,
+        "A contained-refusal case must not write message bytes"
+    );
+    assert_eq!(outcome.counts().created(), 0);
+    assert_eq!(sink.items[0].code, Some(ErrorCode::AddressChanged));
+    assert_eq!(sink.items[0].publication, PublicationState::NotPublished);
+    assert!(matches!(
+        sink.items[0].cleanup.as_ref().unwrap().state,
+        CleanupState::Complete | CleanupState::Unknown
+    ));
+    assert_eq!(
+        fs::read_dir(target).unwrap().count(),
+        0,
+        "Only known-owned empty file cleanup may remove these entries"
+    );
 }

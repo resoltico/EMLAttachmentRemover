@@ -1,14 +1,14 @@
 //! Retain synthetic native-test resources when a failed boundary is unsettled.
 use std::{io, path::Path};
-pub struct OwnedScratch(Option<tempfile::TempDir>);
+pub(crate) struct OwnedScratch(Option<tempfile::TempDir>);
 impl OwnedScratch {
-    pub fn new(parent: &Path) -> io::Result<Self> {
+    pub(crate) fn new(parent: &Path) -> io::Result<Self> {
         Ok(Self(Some(tempfile::tempdir_in(parent)?)))
     }
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         self.0.as_ref().expect("live owned scratch").path()
     }
-    pub fn close(mut self) -> io::Result<()> {
+    pub(crate) fn close(mut self) -> io::Result<()> {
         self.0.take().expect("live owned scratch").close()
     }
 }

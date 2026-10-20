@@ -18,25 +18,25 @@ pub(crate) struct FrozenCli {
     windows_evidence: Option<Vec<u8>>,
 }
 impl FrozenCli {
-    pub fn target(&self) -> &str {
+    pub(crate) fn target(&self) -> &str {
         &self.target
     }
-    pub fn platform(&self) -> &str {
+    pub(crate) fn platform(&self) -> &str {
         &self.platform
     }
-    pub fn version(&self) -> &str {
+    pub(crate) fn version(&self) -> &str {
         &self.version
     }
-    pub fn host(&self) -> &Value {
+    pub(crate) fn host(&self) -> &Value {
         &self.host
     }
-    pub fn bytes(&self) -> &[u8] {
+    pub(crate) fn bytes(&self) -> &[u8] {
         &self.bytes
     }
-    pub fn identity(&self) -> &xtask::archive::ByteIdentity {
+    pub(crate) fn identity(&self) -> &xtask::archive::ByteIdentity {
         &self.identity
     }
-    pub fn windows_evidence(&self) -> Option<&[u8]> {
+    pub(crate) fn windows_evidence(&self) -> Option<&[u8]> {
         self.windows_evidence.as_deref()
     }
 }
@@ -72,19 +72,7 @@ fn build_inner(
     let host = crate::native_host::inspect(root, target, os, architecture)?;
     #[cfg(target_os = "macos")]
     let mac = crate::macos::load(root)?;
-    let authority: toml::Value =
-        toml::from_str(&fs::read_to_string(root.join("rust-toolchain.toml"))?)?;
-    let required = authority["toolchain"]["channel"]
-        .as_str()
-        .ok_or("Missing Rust compiler authority")?;
-    if !host["compiler"]
-        .as_str()
-        .ok_or("Missing compiler observation")?
-        .lines()
-        .any(|line| line == format!("release: {required}"))
-    {
-        return Err("Native CLI compiler differs from pinned Rust".into());
-    }
+    check_compiler_identity(root, &host)?;
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     #[cfg(windows)]
@@ -105,243 +93,63 @@ fn build_inner(
             .as_str()
             .ok_or("Missing observed compiler")?,
     )?;
-    #[cfg(target_os = "macos")]
-    let mut command = mac.command(root, "cargo");
-    #[cfg(not(target_os = "macos"))]
-    let mut command = {
-        let mut command = Command::new("cargo");
-        command.current_dir(root);
-        command
-    };
-    command
-        .args([
-            if cfg!(windows) { "rustc" } else { "build" },
-            "--locked",
-            "--release",
-            "--package",
-            "remove-eml-attachments",
-            "--target",
-            target,
-            "--message-format=json",
-        ])
-        .env("CARGO_TARGET_DIR", &cargo);
-    #[cfg(windows)]
-    command
-        .args(["--bin", "remove-eml-attachments", "--", "-C"])
-        .arg(format!(
-            "linker={}",
-            wrapper
-                .to_str()
-                .ok_or("Native wrapper needs a Unicode tooling path")?
-        ));
-    #[cfg(windows)]
-    if let Some(input) = additional_input {
-        command.arg("-C").arg(format!(
-            "link-arg={}",
-            input
-                .to_str()
-                .ok_or("Native control input needs a Unicode tooling path")?
-        ));
-    }
-    #[cfg(target_os = "macos")]
-    command.env("MACOSX_DEPLOYMENT_TARGET", &mac.minimum_text);
-    let log = out.join("cargo.jsonl");
-    let process = crate::controller()?.run_separate_output(
-        command,
-        &log,
-        std::time::Duration::from_secs(1200),
+    let (output, compiled, profile) = compile_cli(
+        root,
+        target,
+        &cargo,
+        &out,
+        #[cfg(windows)]
+        additional_input,
+        #[cfg(target_os = "macos")]
+        &mac,
+        #[cfg(windows)]
+        &wrapper,
     )?;
-    let mut output = Vec::new();
-    fs::File::open(&log)?
-        .take(16 * 1024 * 1024 + 1)
-        .read_to_end(&mut output)?;
-    if output.len() > 16 * 1024 * 1024 {
-        return Err(
-            "Cargo build output exceeds its bounded document size; retained native output".into(),
-        );
-    }
-    if !process.success() {
-        for value in serde_json::Deserializer::from_slice(&output)
-            .into_iter::<Value>()
-            .flatten()
-        {
-            if value["reason"] == "compiler-message"
-                && let Some(rendered) = value["message"]["rendered"].as_str()
-            {
-                eprintln!("{}", rendered.chars().take(65536).collect::<String>());
-            }
-        }
-    }
-    process.require_success(&log)?;
-    let compiled = artifact(root, &output)?;
-    let compiled_metadata = fs::symlink_metadata(&compiled)?;
-    if !compiled_metadata.is_file() || compiled_metadata.len() > 256 * 1024 * 1024 {
-        return Err("Native CLI artifact is not an ordinary bounded executable".into());
-    }
-    let mut profiles = Vec::new();
-    for value in serde_json::Deserializer::from_slice(&output).into_iter::<Value>() {
-        let value = value?;
-        if value["reason"] == "compiler-artifact"
-            && value["executable"]
-                .as_str()
-                .is_some_and(|path| Path::new(path) == compiled)
-        {
-            profiles.push(value["profile"].clone());
-        }
-    }
-    if profiles.len() != 1 || profiles[0]["test"] != false || profiles[0]["overflow_checks"] != true
-    {
-        return Err(
-            "Actual native release CLI must be a normal executable with overflow checks".into(),
-        );
-    }
-    let destination = out.join(if os == "windows" {
-        "remove-eml-attachments.exe"
-    } else {
-        "remove-eml-attachments"
-    });
-    let mut source = fs::File::open(&compiled)?;
-    let mut owned = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&destination)?;
-    std::io::copy(&mut source, &mut owned)?;
-    owned.flush()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        owned.set_permissions(fs::Permissions::from_mode(0o755))?;
-    }
-    owned.sync_all()?;
-    drop(owned);
-    #[cfg(target_os = "macos")]
-    {
-        crate::macos::fixture_identity(&fs::read(&destination)?, &mac.architecture, mac.minimum)?;
-        let mut sign = mac.command(root, "/usr/bin/codesign");
-        sign.args(["--force", "--sign", "-", "--timestamp=none"])
-            .arg(&destination);
-        crate::macos::checked_run(sign, &out.join("cli-sign.log"), 60)?;
-        let mut verify = mac.command(root, "/usr/bin/codesign");
-        verify
-            .args(["--verify", "--strict", "--verbose=2"])
-            .arg(&destination);
-        crate::macos::checked_run(verify, &out.join("cli-signature.log"), 60)?;
-    }
-    let mut bytes = Vec::new();
-    fs::File::open(&destination)?
-        .take(256 * 1024 * 1024 + 1)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() > 256 * 1024 * 1024 {
-        return Err("Native CLI exceeds package executable bound".into());
-    }
+    let bytes = freeze_cli_bytes(
+        root,
+        &compiled,
+        &out,
+        os,
+        #[cfg(target_os = "macos")]
+        &mac,
+    )?;
     let identity = xtask::archive::ByteIdentity::of(&bytes);
-    #[cfg(windows)]
-    let windows_evidence = {
-        let captured = crate::windows_link::captured(
-            &work.path().join("native-link"),
-            &bytes,
-            &crate::git(root, &["rev-parse", "HEAD"])?,
-            target,
-            host["compiler"]
-                .as_str()
-                .ok_or("Missing observed compiler")?,
-        )?;
-        let imports = crate::windows_runtime::inspect(&bytes, architecture)?;
-        let input_manifest: Value =
-            serde_json::from_slice(&fs::read(work.path().join("native-link/inputs.json"))?)?;
-        let input_files: Vec<xtask::linker_reproducer::InputObservation> =
-            serde_json::from_value(input_manifest["inputs"].clone())?;
-        let official = crate::windows_input_review::official_inputs(
-            root,
-            target,
-            &input_files,
-            &crate::windows_link::runtime_directory(&work.path().join("native-link"), target)?,
-        )?;
-        let selected = crate::windows_input_review::selected_members(
-            target,
-            &official,
-            &fs::read_to_string(work.path().join("native-link/linker.log"))?,
-            &fs::read_to_string(work.path().join("native-link/application.map"))?,
-        )?;
-        let rust_inputs = crate::windows_input_review::rust_inputs(
-            root,
-            target,
-            &input_files,
-            &official,
-            &output,
-            &cargo.join(target).join("release/deps"),
-            captured["linked_basename"]
-                .as_str()
-                .ok_or("Missing actual linked executable basename")?,
-        )?;
-        let evidence = crate::windows_evidence::capture(
-            root,
-            crate::windows_evidence::Capture {
-                source: &crate::git(root, &["rev-parse", "HEAD"])?,
-                target,
-                compiler: host["compiler"]
-                    .as_str()
-                    .ok_or("Missing observed compiler")?,
-                linker_version: captured["actual_linker_version"]
-                    .as_str()
-                    .ok_or("Missing actual linker version")?,
-                executable: &bytes,
-                linked_basename: captured["linked_basename"]
-                    .as_str()
-                    .ok_or("Missing linked executable basename")?,
-                runtime_directory: &crate::windows_link::runtime_directory(
-                    &work.path().join("native-link"),
-                    target,
-                )?,
-                cargo_directory: &cargo,
-                link_directory: &work.path().join("native-link"),
-                inputs: &input_files,
-                official: &official,
-                rust: &rust_inputs,
-                map: &fs::read_to_string(work.path().join("native-link/application.map"))?,
-                trace: &fs::read_to_string(work.path().join("native-link/linker.log"))?,
-            },
-        )?;
-        fs::write(out.join("link-evidence.json"), &evidence)?;
-        fs::write(
-            out.join("official-input-identities.json"),
-            serde_json::to_vec_pretty(&json!({
-            "source":crate::git(root,&["rev-parse","HEAD"])?,"target":target,"inputs":official,"selected_native_members":selected,"rust_inputs":rust_inputs,
-            "scope":"official component identities, selected runtime member/source bindings and Cargo/compiler Rust input classes; complete archive-bound admission and real native rejection control remain separate"
-            }))?,
-        )?;
-        fs::write(
-            out.join("native-link-capture.json"),
-            serde_json::to_vec_pretty(&captured)?,
-        )?;
-        fs::write(
-            out.join("pe-imports.json"),
-            serde_json::to_vec_pretty(&imports)?,
-        )?;
-        Some(evidence)
-    };
-    #[cfg(not(windows))]
-    let windows_evidence = None;
     let version = plan["version"]
         .as_str()
         .ok_or("Missing Cargo-derived version")?
         .to_owned();
-    fs::write(
-        out.join("artifact.json"),
-        serde_json::to_vec_pretty(
-            &json!({"target":target,"platform":platform,"version":version,"host":host,"profile":profiles[0],
-        "owned_bytes":identity,"signing":{"mode":if cfg!(target_os="macos") {"adhoc"} else {"not_applicable"},"verified":cfg!(target_os="macos")},"scope":"native release CLI build/conditional signature identity; archive and full platform gates are separate"}),
-        )?,
-    )?;
-    Ok(FrozenCli {
+    let artifact = FrozenCli {
         bytes,
         identity,
         target: target.to_owned(),
         platform: platform.to_owned(),
         version,
         host,
-        windows_evidence,
-    })
+        windows_evidence: None,
+    };
+    #[cfg(windows)]
+    let artifact = {
+        let mut artifact = artifact;
+        artifact.windows_evidence = Some(artifact.capture_windows_evidence(
+            root,
+            &out,
+            work.path(),
+            &cargo,
+            &output,
+            architecture,
+        )?);
+        artifact
+    };
+    #[cfg(not(windows))]
+    drop(output);
+    fs::write(
+        out.join("artifact.json"),
+        serde_json::to_vec_pretty(
+            &json!({"target":target,"platform":platform,"version":artifact.version,"host":artifact.host,"profile":profile,
+        "owned_bytes":artifact.identity,"signing":{"mode":if cfg!(target_os="macos") {"adhoc"} else {"not_applicable"},"verified":cfg!(target_os="macos")},"scope":"native release CLI build/conditional signature identity; archive and full platform gates are separate"}),
+        )?,
+    )?;
+    Ok(artifact)
 }
 
 #[cfg(windows)]
@@ -506,6 +314,278 @@ pub(crate) fn named_artifact(
         );
     }
     Ok(candidates.remove(0))
+}
+
+fn admitted_profile(root: &Path, output: &[u8]) -> Result<(PathBuf, Value)> {
+    let compiled = artifact(root, output)?;
+    let compiled_metadata = fs::symlink_metadata(&compiled)?;
+    if !compiled_metadata.is_file() || compiled_metadata.len() > 256 * 1024 * 1024 {
+        return Err("Native CLI artifact is not an ordinary bounded executable".into());
+    }
+    let mut profiles = Vec::new();
+    for value in serde_json::Deserializer::from_slice(output).into_iter::<Value>() {
+        let value = value?;
+        if value["reason"] == "compiler-artifact"
+            && value["executable"]
+                .as_str()
+                .is_some_and(|path| Path::new(path) == compiled)
+        {
+            profiles.push(value["profile"].clone());
+        }
+    }
+    if profiles.len() != 1 || profiles[0]["test"] != false || profiles[0]["overflow_checks"] != true
+    {
+        return Err(
+            "Actual native release CLI must be a normal executable with overflow checks".into(),
+        );
+    }
+    Ok((compiled, profiles.remove(0)))
+}
+
+fn compile_cli(
+    root: &Path,
+    target: &str,
+    cargo: &Path,
+    out: &Path,
+    #[cfg(windows)] additional_input: Option<&Path>,
+    #[cfg(target_os = "macos")] mac: &crate::macos::MacBuild,
+    #[cfg(windows)] wrapper: &Path,
+) -> Result<(Vec<u8>, PathBuf, Value)> {
+    #[cfg(target_os = "macos")]
+    let mut command = mac.command(root, "cargo");
+    #[cfg(not(target_os = "macos"))]
+    let mut command = {
+        let mut command = Command::new("cargo");
+        command.current_dir(root);
+        command
+    };
+    command
+        .args([
+            if cfg!(windows) { "rustc" } else { "build" },
+            "--locked",
+            "--release",
+            "--package",
+            "remove-eml-attachments",
+            "--target",
+            target,
+            "--message-format=json",
+        ])
+        .env("CARGO_TARGET_DIR", cargo);
+    #[cfg(windows)]
+    command
+        .args(["--bin", "remove-eml-attachments", "--", "-C"])
+        .arg(format!(
+            "linker={}",
+            wrapper
+                .to_str()
+                .ok_or("Native wrapper needs a Unicode tooling path")?
+        ));
+    #[cfg(windows)]
+    if let Some(input) = additional_input {
+        command.arg("-C").arg(format!(
+            "link-arg={}",
+            input
+                .to_str()
+                .ok_or("Native control input needs a Unicode tooling path")?
+        ));
+    }
+    #[cfg(target_os = "macos")]
+    command.env("MACOSX_DEPLOYMENT_TARGET", &mac.minimum_text);
+    let log = out.join("cargo.jsonl");
+    let process = crate::controller()?.run_separate_output(
+        command,
+        &log,
+        std::time::Duration::from_secs(1200),
+    )?;
+    let mut output = Vec::new();
+    fs::File::open(&log)?
+        .take(16 * 1024 * 1024 + 1)
+        .read_to_end(&mut output)?;
+    if output.len() > 16 * 1024 * 1024 {
+        return Err(
+            "Cargo build output exceeds its bounded document size; retained native output".into(),
+        );
+    }
+    if !process.success() {
+        for value in serde_json::Deserializer::from_slice(&output)
+            .into_iter::<Value>()
+            .flatten()
+        {
+            if value["reason"] == "compiler-message"
+                && let Some(rendered) = value["message"]["rendered"].as_str()
+            {
+                eprintln!("{}", rendered.chars().take(65536).collect::<String>());
+            }
+        }
+    }
+    process.require_success(&log)?;
+    let (compiled, profile) = admitted_profile(root, &output)?;
+    Ok((output, compiled, profile))
+}
+
+fn freeze_cli_bytes(
+    root: &Path,
+    compiled: &Path,
+    out: &Path,
+    os: &str,
+    #[cfg(target_os = "macos")] mac: &crate::macos::MacBuild,
+) -> Result<Vec<u8>> {
+    #[cfg(not(target_os = "macos"))]
+    let _ = root;
+    let destination = out.join(if os == "windows" {
+        "remove-eml-attachments.exe"
+    } else {
+        "remove-eml-attachments"
+    });
+    let mut source = fs::File::open(compiled)?;
+    let mut owned = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&destination)?;
+    std::io::copy(&mut source, &mut owned)?;
+    owned.flush()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        owned.set_permissions(fs::Permissions::from_mode(0o755))?;
+    }
+    owned.sync_all()?;
+    drop(owned);
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::fixture_identity(&fs::read(&destination)?, &mac.architecture, mac.minimum)?;
+        let mut sign = mac.command(root, "/usr/bin/codesign");
+        sign.args(["--force", "--sign", "-", "--timestamp=none"])
+            .arg(&destination);
+        crate::macos::checked_run(sign, &out.join("cli-sign.log"), 60)?;
+        let mut verify = mac.command(root, "/usr/bin/codesign");
+        verify
+            .args(["--verify", "--strict", "--verbose=2"])
+            .arg(&destination);
+        crate::macos::checked_run(verify, &out.join("cli-signature.log"), 60)?;
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(&destination)?
+        .take(256 * 1024 * 1024 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > 256 * 1024 * 1024 {
+        return Err("Native CLI exceeds package executable bound".into());
+    }
+    Ok(bytes)
+}
+
+#[cfg(windows)]
+impl FrozenCli {
+    fn capture_windows_evidence(
+        &self,
+        root: &Path,
+        out: &Path,
+        work: &Path,
+        cargo: &Path,
+        output: &[u8],
+        architecture: &str,
+    ) -> Result<Vec<u8>> {
+        let target = &self.target;
+        let captured = crate::windows_link::captured(
+            &work.join("native-link"),
+            &self.bytes,
+            &crate::git(root, &["rev-parse", "HEAD"])?,
+            target,
+            self.host["compiler"]
+                .as_str()
+                .ok_or("Missing observed compiler")?,
+        )?;
+        let imports = crate::windows_runtime::inspect(&self.bytes, architecture)?;
+        let input_manifest: Value =
+            serde_json::from_slice(&fs::read(work.join("native-link/inputs.json"))?)?;
+        let input_files: Vec<xtask::linker_reproducer::InputObservation> =
+            serde_json::from_value(input_manifest["inputs"].clone())?;
+        let official = crate::windows_input_review::official_inputs(
+            root,
+            target,
+            &input_files,
+            &crate::windows_link::runtime_directory(&work.join("native-link"), target)?,
+        )?;
+        let selected = crate::windows_input_review::selected_members(
+            target,
+            &official,
+            &fs::read_to_string(work.join("native-link/linker.log"))?,
+            &fs::read_to_string(work.join("native-link/application.map"))?,
+        )?;
+        let rust_inputs = crate::windows_input_review::rust_inputs(
+            root,
+            target,
+            &input_files,
+            &official,
+            output,
+            &cargo.join(target).join("release/deps"),
+            captured["linked_basename"]
+                .as_str()
+                .ok_or("Missing actual linked executable basename")?,
+        )?;
+        let evidence = crate::windows_evidence::capture(
+            root,
+            crate::windows_evidence::Capture {
+                source: &crate::git(root, &["rev-parse", "HEAD"])?,
+                target,
+                compiler: self.host["compiler"]
+                    .as_str()
+                    .ok_or("Missing observed compiler")?,
+                linker_version: captured["actual_linker_version"]
+                    .as_str()
+                    .ok_or("Missing actual linker version")?,
+                executable: &self.bytes,
+                linked_basename: captured["linked_basename"]
+                    .as_str()
+                    .ok_or("Missing linked executable basename")?,
+                runtime_directory: &crate::windows_link::runtime_directory(
+                    &work.join("native-link"),
+                    target,
+                )?,
+                cargo_directory: cargo,
+                link_directory: &work.join("native-link"),
+                inputs: &input_files,
+                official: &official,
+                rust: &rust_inputs,
+                map: &fs::read_to_string(work.join("native-link/application.map"))?,
+                trace: &fs::read_to_string(work.join("native-link/linker.log"))?,
+            },
+        )?;
+        fs::write(out.join("link-evidence.json"), &evidence)?;
+        fs::write(
+            out.join("official-input-identities.json"),
+            serde_json::to_vec_pretty(&json!({
+            "source":crate::git(root,&["rev-parse","HEAD"])?,"target":target,"inputs":official,"selected_native_members":selected,"rust_inputs":rust_inputs,
+            "scope":"official component identities, selected runtime member/source bindings and Cargo/compiler Rust input classes; complete archive-bound admission and real native rejection control remain separate"
+            }))?,
+        )?;
+        fs::write(
+            out.join("native-link-capture.json"),
+            serde_json::to_vec_pretty(&captured)?,
+        )?;
+        fs::write(
+            out.join("pe-imports.json"),
+            serde_json::to_vec_pretty(&imports)?,
+        )?;
+        Ok(evidence)
+    }
+}
+
+fn check_compiler_identity(root: &Path, host: &Value) -> Result<()> {
+    let authority: toml::Value =
+        toml::from_str(&fs::read_to_string(root.join("rust-toolchain.toml"))?)?;
+    let required = authority["toolchain"]["channel"]
+        .as_str()
+        .ok_or("Missing Rust compiler authority")?;
+    if !host["compiler"]
+        .as_str()
+        .ok_or("Missing compiler observation")?
+        .lines()
+        .any(|line| line == format!("release: {required}"))
+    {
+        return Err("Native CLI compiler differs from pinned Rust".into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]

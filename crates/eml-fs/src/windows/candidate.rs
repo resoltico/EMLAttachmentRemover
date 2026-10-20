@@ -127,51 +127,7 @@ impl WritableDirectory {
                     }
                 }
             }
-            loop {
-                checkpoint()?;
-                match owned.file.seek(SeekFrom::Start(0)) {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        return Err(io::Error::other(
-                            "Candidate rewind returned another position",
-                        ));
-                    }
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                    Err(error) => return Err(error),
-                }
-            }
-            let mut buffer = [0; 64 * 1024];
-            for expected in bytes.chunks(buffer.len()) {
-                let mut read = 0;
-                while read < expected.len() {
-                    checkpoint()?;
-                    match owned.file.read(&mut buffer[read..expected.len()]) {
-                        Ok(0) => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::UnexpectedEof,
-                                "Candidate reread ended early",
-                            ));
-                        }
-                        Ok(count) => read += count,
-                        Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                        Err(error) => return Err(error),
-                    }
-                }
-                if &buffer[..expected.len()] != expected {
-                    return Err(io::Error::other(
-                        "Candidate reread differs from verified bytes",
-                    ));
-                }
-            }
-            loop {
-                checkpoint()?;
-                match owned.file.read(&mut buffer[..1]) {
-                    Ok(0) => break,
-                    Ok(_) => return Err(io::Error::other("Candidate storage has trailing bytes")),
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                    Err(error) => return Err(error),
-                }
-            }
+            reread_verified_bytes(&mut owned.file, bytes, &mut checkpoint)?;
             owned.validate_file(identity, bytes.len() as u64)?;
             operation = StageOperation::Sync;
             checkpoint()?;
@@ -201,6 +157,59 @@ impl WritableDirectory {
         }
     }
 }
+fn reread_verified_bytes(
+    file: &mut std::fs::File,
+    bytes: &[u8],
+    checkpoint: &mut impl FnMut() -> io::Result<()>,
+) -> io::Result<()> {
+    loop {
+        checkpoint()?;
+        match file.seek(SeekFrom::Start(0)) {
+            Ok(0) => break,
+            Ok(_) => {
+                return Err(io::Error::other(
+                    "Candidate rewind returned another position",
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let mut buffer = [0; 64 * 1024];
+    for expected in bytes.chunks(buffer.len()) {
+        let mut read = 0;
+        while read < expected.len() {
+            checkpoint()?;
+            match file.read(&mut buffer[read..expected.len()]) {
+                Ok(0) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "Candidate reread ended early",
+                    ));
+                }
+                Ok(count) => read += count,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(error),
+            }
+        }
+        if &buffer[..expected.len()] != expected {
+            return Err(io::Error::other(
+                "Candidate reread differs from verified bytes",
+            ));
+        }
+    }
+    loop {
+        checkpoint()?;
+        match file.read(&mut buffer[..1]) {
+            Ok(0) => break,
+            Ok(_) => return Err(io::Error::other("Candidate storage has trailing bytes")),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
 fn finish_after_flush(
     owned: Creation,
     identity: Identity,

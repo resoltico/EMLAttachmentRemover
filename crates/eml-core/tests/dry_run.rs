@@ -58,64 +58,7 @@ impl EventSink for Sink {
                 DeliveryPhase::Start
             }
             Event::Item(item) => {
-                assert!(self.start.is_some());
-                assert!(self.summary.is_none());
-                assert!(self.items.last().is_none_or(|last| last.index < item.index));
-                let (action, error, metadata, existing) = match &item.result {
-                    ItemResult::Planned(plan) => (
-                        Some(plan.action()),
-                        None,
-                        Some(plan.metadata()),
-                        plan.existing(),
-                    ),
-                    ItemResult::Failed(failure) => {
-                        assert!(failure.error().code().allows_phase(failure.error().phase()));
-                        match failure.effect() {
-                            FailureEffect::NotPublished {
-                                candidate_identity,
-                                address,
-                                file_sync,
-                                namespace_sync,
-                                cleanup,
-                            } => {
-                                assert!(candidate_identity.is_none());
-                                assert!(matches!(
-                                    address,
-                                    eml_core::AddressState::NotChecked
-                                        | eml_core::AddressState::Changed
-                                        | eml_core::AddressState::Unknown
-                                ));
-                                assert!(file_sync.is_none());
-                                assert_eq!(namespace_sync.required_edges, 0);
-                                assert!(namespace_sync.receipt.is_none());
-                                assert_eq!(cleanup.state, eml_fs::CleanupState::NotNeeded);
-                            }
-                            _ => panic!("Dry run cannot publish"),
-                        }
-                        (
-                            None,
-                            Some((failure.error().code(), failure.error().phase())),
-                            failure.metadata(),
-                            failure.existing(),
-                        )
-                    }
-                    _ => panic!("Dry run cannot create or resynchronize a copy"),
-                };
-                if let Some(observed) = existing {
-                    assert!(observed.file_sync.is_none());
-                    assert!(observed.namespace_sync.receipt.is_none());
-                    assert_eq!(observed.namespace_sync.required_edges, 0);
-                }
-                self.items.push(ObservedItem {
-                    index: item.index,
-                    source_native: item.source.native.to_owned(),
-                    destination_native: item.destination.map(|path| path.native.to_owned()),
-                    destination: item.destination.map(|path| path.display.to_owned()),
-                    action,
-                    error,
-                    removals: metadata.map(|data| data.removed.len()),
-                    existing: existing.map(|data| (data.bytes_equal, data.stable)),
-                });
+                self.observe_item(item);
                 DeliveryPhase::Item
             }
             Event::Summary(outcome) => {
@@ -150,6 +93,68 @@ impl EventSink for Sink {
             return Err(io::Error::from(io::ErrorKind::BrokenPipe));
         }
         Ok(())
+    }
+}
+impl Sink {
+    fn observe_item(&mut self, item: &eml_core::ItemEvent<'_>) {
+        assert!(self.start.is_some());
+        assert!(self.summary.is_none());
+        assert!(self.items.last().is_none_or(|last| last.index < item.index));
+        let (action, error, metadata, existing) = match &item.result {
+            ItemResult::Planned(plan) => (
+                Some(plan.action()),
+                None,
+                Some(plan.metadata()),
+                plan.existing(),
+            ),
+            ItemResult::Failed(failure) => {
+                assert!(failure.error().code().allows_phase(failure.error().phase()));
+                match failure.effect() {
+                    FailureEffect::NotPublished {
+                        candidate_identity,
+                        address,
+                        file_sync,
+                        namespace_sync,
+                        cleanup,
+                    } => {
+                        assert!(candidate_identity.is_none());
+                        assert!(matches!(
+                            address,
+                            eml_core::AddressState::NotChecked
+                                | eml_core::AddressState::Changed
+                                | eml_core::AddressState::Unknown
+                        ));
+                        assert!(file_sync.is_none());
+                        assert_eq!(namespace_sync.required_edges, 0);
+                        assert!(namespace_sync.receipt.is_none());
+                        assert_eq!(cleanup.state, eml_fs::CleanupState::NotNeeded);
+                    }
+                    _ => panic!("Dry run cannot publish"),
+                }
+                (
+                    None,
+                    Some((failure.error().code(), failure.error().phase())),
+                    failure.metadata(),
+                    failure.existing(),
+                )
+            }
+            _ => panic!("Dry run cannot create or resynchronize a copy"),
+        };
+        if let Some(observed) = existing {
+            assert!(observed.file_sync.is_none());
+            assert!(observed.namespace_sync.receipt.is_none());
+            assert_eq!(observed.namespace_sync.required_edges, 0);
+        }
+        self.items.push(ObservedItem {
+            index: item.index,
+            source_native: item.source.native.to_owned(),
+            destination_native: item.destination.map(|path| path.native.to_owned()),
+            destination: item.destination.map(|path| path.display.to_owned()),
+            action,
+            error,
+            removals: metadata.map(|data| data.removed.len()),
+            existing: existing.map(|data| (data.bytes_equal, data.stable)),
+        });
     }
 }
 #[test]

@@ -84,71 +84,7 @@ pub(crate) fn rust_inputs(
     let directory = directory.canonicalize()?;
     let stem = application_stem(linked_basename)?;
     let root = root.canonicalize()?;
-    let mut libraries = BTreeMap::new();
-    for document in
-        serde_json::Deserializer::from_slice(cargo_output).into_iter::<serde_json::Value>()
-    {
-        let value = document?;
-        if value["reason"] == "build-script-executed" {
-            for key in ["linked_libs", "linked_paths"] {
-                if value[key]
-                    .as_array()
-                    .is_some_and(|values| !values.is_empty())
-                {
-                    return Err(
-                        "Cargo build script introduced an unreviewed native dependency".into(),
-                    );
-                }
-            }
-        }
-        if value["reason"] != "compiler-artifact" || value["profile"]["test"] != false {
-            continue;
-        }
-        for filename in value["filenames"]
-            .as_array()
-            .ok_or("Missing Cargo artifact filenames")?
-        {
-            let path = Path::new(filename.as_str().ok_or("Invalid Cargo artifact filename")?);
-            if path.extension().is_none_or(|extension| extension != "rlib") {
-                continue;
-            }
-            let actual = path.canonicalize()?;
-            if actual.parent() != Some(directory.as_path()) {
-                continue;
-            } // host proc-macro inputs are not the target runtime
-            let package = value["package_id"]
-                .as_str()
-                .ok_or("Missing Cargo package identity")?;
-            let origin = if package.starts_with("path+") {
-                let manifest = Path::new(
-                    value["manifest_path"]
-                        .as_str()
-                        .ok_or("Missing Cargo manifest identity")?,
-                )
-                .canonicalize()?;
-                format!(
-                    "workspace:{}",
-                    manifest
-                        .strip_prefix(&root)
-                        .map_err(|_| "Cargo path dependency lies outside the reviewed source")?
-                        .to_string_lossy()
-                        .replace('\\', "/")
-                )
-            } else if package.starts_with("registry+") {
-                package.to_owned()
-            } else {
-                return Err("Unreviewed Cargo dependency source kind".into());
-            };
-            for name in reproducer_names(&actual)? {
-                if libraries
-                    .insert(name, (origin.clone(), actual.clone()))
-                    .is_some()
-                {
-                    return Err("Cargo runtime artifact identity is duplicated".into());
-                }
-            }
-        }
-    }
+    let libraries = cargo_runtime_libraries(&root, &directory, cargo_output)?;
     let prefixes = reproducer_names(&directory)?;
     let mut result = Vec::new();
     let mut application_objects = 0;
@@ -225,6 +161,79 @@ pub(crate) fn rust_inputs(
     Ok(result)
 }
 
+#[cfg(windows)]
+fn cargo_runtime_libraries(
+    root: &Path,
+    directory: &Path,
+    cargo_output: &[u8],
+) -> Result<BTreeMap<String, (String, std::path::PathBuf)>> {
+    let mut libraries = BTreeMap::new();
+    for document in
+        serde_json::Deserializer::from_slice(cargo_output).into_iter::<serde_json::Value>()
+    {
+        let value = document?;
+        if value["reason"] == "build-script-executed" {
+            for key in ["linked_libs", "linked_paths"] {
+                if value[key]
+                    .as_array()
+                    .is_some_and(|values| !values.is_empty())
+                {
+                    return Err(
+                        "Cargo build script introduced an unreviewed native dependency".into(),
+                    );
+                }
+            }
+        }
+        if value["reason"] != "compiler-artifact" || value["profile"]["test"] != false {
+            continue;
+        }
+        for filename in value["filenames"]
+            .as_array()
+            .ok_or("Missing Cargo artifact filenames")?
+        {
+            let path = Path::new(filename.as_str().ok_or("Invalid Cargo artifact filename")?);
+            if path.extension().is_none_or(|extension| extension != "rlib") {
+                continue;
+            }
+            let actual = path.canonicalize()?;
+            if actual.parent() != Some(directory) {
+                continue;
+            } // host proc-macro inputs are not the target runtime
+            let package = value["package_id"]
+                .as_str()
+                .ok_or("Missing Cargo package identity")?;
+            let origin = if package.starts_with("path+") {
+                let manifest = Path::new(
+                    value["manifest_path"]
+                        .as_str()
+                        .ok_or("Missing Cargo manifest identity")?,
+                )
+                .canonicalize()?;
+                format!(
+                    "workspace:{}",
+                    manifest
+                        .strip_prefix(root)
+                        .map_err(|_| "Cargo path dependency lies outside the reviewed source")?
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                )
+            } else if package.starts_with("registry+") {
+                package.to_owned()
+            } else {
+                return Err("Unreviewed Cargo dependency source kind".into());
+            };
+            for name in reproducer_names(&actual)? {
+                if libraries
+                    .insert(name, (origin.clone(), actual.clone()))
+                    .is_some()
+                {
+                    return Err("Cargo runtime artifact identity is duplicated".into());
+                }
+            }
+        }
+    }
+    Ok(libraries)
+}
 pub(crate) fn application_stem(basename: &str) -> Result<&str> {
     let stem = basename
         .strip_suffix(".exe")

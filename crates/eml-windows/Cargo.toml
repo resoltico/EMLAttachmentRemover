@@ -20,7 +20,5 @@ name = "job-observation"
 path = "tests/support/job_observation.rs"
 required-features = ["native-fixtures"]
 
-[lints.rust]
-unsafe_code = "deny"
-unsafe_op_in_unsafe_fn = "deny"
-missing_docs = "warn"
+[lints]
+workspace = true

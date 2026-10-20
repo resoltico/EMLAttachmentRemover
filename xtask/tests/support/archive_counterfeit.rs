@@ -9,7 +9,10 @@ const INPUT: &[u8] = include_bytes!("../../../tests/contract/mime/inputs/01-gmai
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args == ["--version"] {
-        println!("remove-eml-attachments {}", env!("CARGO_PKG_VERSION"));
+        println!(
+            "remove-eml-attachments {}",
+            eml_protocol::product::VERSION_WITH_BUILD.as_str()
+        );
         return Ok(());
     }
     if args != ["--format", "json", "--", "a.eml"] {

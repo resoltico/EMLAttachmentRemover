@@ -212,23 +212,7 @@ impl WritableDirectory {
     /// This operation observes creation, but cannot prove opened-mirror ownership.
     pub fn create_child(&self, name: &OsStr) -> Result<DirectoryCreation, CreationFailure> {
         super::path::validate_component(name, u16::MAX as usize / 2).map_err(no_creation)?;
-        let mut last = None;
-        let mut guard = None;
-        for _ in 0..NAME_ATTEMPTS {
-            let guard_name = random_name().map_err(no_creation)?;
-            match self.create_file(&guard_name) {
-                Ok(value) => {
-                    guard = Some(value);
-                    break;
-                }
-                Err(error) if error.is_name_collision() => last = Some(error),
-                Err(error) => return Err(error),
-            }
-        }
-        let (guard, guard_identity) = match guard {
-            Some(value) => value,
-            None => return Err(last.expect("positive bounded guard attempts record a collision")),
-        };
+        let (guard, guard_identity) = self.occupancy_guard()?;
         let mut may_have_created = false;
         let result = (|| -> io::Result<(Self, ParentBinding)> {
             let captured = containment::capture_parent(&self.0.file, self.identity())?;
@@ -319,6 +303,18 @@ impl WritableDirectory {
                 },
             }),
         }
+    }
+    fn occupancy_guard(&self) -> Result<(Creation, Identity), CreationFailure> {
+        let mut last = None;
+        for _ in 0..NAME_ATTEMPTS {
+            let guard_name = random_name().map_err(no_creation)?;
+            match self.create_file(&guard_name) {
+                Ok(value) => return Ok(value),
+                Err(error) if error.is_name_collision() => last = Some(error),
+                Err(error) => return Err(error),
+            }
+        }
+        Err(last.expect("positive bounded guard attempts record a collision"))
     }
     pub(super) fn create_file(
         &self,

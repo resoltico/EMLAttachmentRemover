@@ -1,7 +1,7 @@
 //! Static owned alias setup through the ordinary native provider.
 use std::path::Path;
 
-pub fn create(target: &Path, alias: &Path) {
+pub(crate) fn create(target: &Path, alias: &Path) {
     #[cfg(unix)]
     std::os::unix::fs::symlink(target, alias).unwrap();
     #[cfg(windows)]

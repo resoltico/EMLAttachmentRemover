@@ -7,6 +7,9 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+syn = { version = "=2.0.119", features = ["full", "visit"] }
+proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
+quote = "=1.0.47"
 getrandom = "0.4.3"
 ctrlc.workspace = true
 clap.workspace = true
@@ -14,6 +17,7 @@ serde.workspace = true
 serde_json.workspace = true
 base64.workspace = true
 eml-fs = { path = "../crates/eml-fs" }
+eml-protocol = { path = "../crates/eml-protocol" }
 toml = "1.1.8"
 tempfile.workspace = true
 object = { version = "0.39.1", default-features = false, features = ["read", "std"] }

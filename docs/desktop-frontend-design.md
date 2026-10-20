@@ -1,93 +1,40 @@
-# macOS desktop frontend
+# macOS frontend boundaries
 
-The v6 macOS frontend uses Slint over reusable Rust libraries. Windows and Linux
-GUI implementations remain outside scope; six native CLI targets and two native
-macOS app targets remain required.
+The macOS frontend uses Slint over reusable Rust libraries. Windows and Linux
+GUIs are outside scope. The CLI and GUI use one business engine and protocol 1.
 
-The reusable Rust engine, CLI protocol, immutable MIME edits and filesystem
-publication contracts remain authoritative. The frontend replacement must carry
-forward queued requests with captured destinations, bounded retained reports,
-native path authority, exact reveal/export behavior, cooperative Stop, confirmed
-Force Stop, active-run Quit settlement and file/Services/drop ingress.
+eml-app owns immutable native request/destination snapshots, serial queue and
+report reservations, LF framing and checked protocol reduction. It has no native
+window dependency. Shared hand-authored protocol scenarios test acceptance,
+rejection and every-byte-boundary framing. Request/path limits come from the
+business library.
 
-## Chosen boundaries
+eml-gui owns display, controls and native integration: file ingress/choosers,
+Services, exact Finder reveal, destination persistence and Quit/reopen. It never
+reconstructs an operational path from display text or implements MIME/publication
+policy. Destination changes affect later admissions only. Full report reservations
+pause the next request without discarding prior results. Malformed frames,
+summary/count/exit disagreement and incomplete EOF remain explicit while earlier
+accepted observations are retained.
 
-An application model owns immutable queued request snapshots, admission and
-report reservations, LF framing, strict protocol-1 reduction and presentation
-facts. It is ordinary Rust without Slint or native window dependencies. The
-existing shared hand-authored protocol scenarios remain independent inputs;
-port their acceptance, rejection and every-byte-boundary checks to this model.
-Reuse the business library's request/path limits instead of copying policy.
+A dedicated same-CPU worker calls eml-core directly. Its process boundary allows
+Force Stop during a stalled native operation. One supervisor retains child
+authority through terminal reaping; it revokes signals before PID reuse. Bounded
+readers and backpressure preserve completed observations without blocking the UI.
+Unknown child/reader lifetime stops later admission. EOF or process exit alone
+does not establish settlement. See [worker ownership](macos-process-ownership.md).
 
-The Slint frontend owns controls, selection and display, not message processing,
-publication decisions or output naming. Native macOS bridges are limited to
-actual system needs: native file ingress/choosers, Services, exact Finder reveal,
-saved destination preferences and ordinary Quit/reopen behavior.
+Slint and its compiler use one pinned version with explicit Winit/software/font/
+accessibility features. The vendored Winit patch provides synchronous borrowed
+native pasteboard batches; see its [source contract](../vendor/winit/EML-PATCH.md).
+Native panels retain weak completion references, parent checks, cancellation and
+native paths. Renderer selection still requires actual native frames, text,
+artwork, accessibility and appearance checks.
 
-The GUI uses the core through a dedicated minimal same-CPU worker as a
-separately owned child, calling the same reusable core. The CLI remains a
-separate thin command-line adapter; the app does not need its executable.
-Shared native-path/protocol transport belongs in eml-protocol, independently of
-both executable adapters. There is one business engine and one current protocol.
-An in-process worker
-cannot preserve Force Stop for a stalled native operation without terminating
-the app or violating Rust thread safety. One supervisor owns each child through
-terminal reaping; signals are revoked before its numeric PID can be reused.
-Bounded stdout/stderr handling and backpressure must retain completed observations
-and avoid UI-thread blocking. An unknown child or reader lifetime stops later
-admission; neither an early EOF nor a helper exit alone establishes settlement.
-
-Slint and its UI compiler must resolve at one pinned version. Select only needed
-backend/rendering features and review the actual dependency and legal inputs.
-AuditoryLab is a source reference, not an implementation template: its sound
-workers, Python tooling, Windows import preparer and Linux font patch do not
-belong in this macOS frontend. Its ordinary macOS Quit patch is a candidate for
-specific source review, not an assumed drop-in guarantee.
-
-## Challenge and qualification
-
-Choosing Slint does not establish that a Metal failure is resolved. Its GPU path
-can also use Metal. Renderer selection must account for filenames and diagnostic
-text, accessibility, owner artwork and actual native frames; a software-only
-startup cannot silently weaken those requirements. The shared icon producer and
-separate native app archives have passed on the pinned hosted toolchain; that
-does not establish the screen interaction requirements.
-
-Native file paths must never be reconstructed from displayed strings. Destination
-changes affect later admissions only. A full report reservation pauses the next
-request without discarding prior outcomes. A malformed frame, summary/count/exit
-disagreement or incomplete EOF tail must remain explicit while retaining earlier
-accepted outcomes. A successful process or checksum cannot replace those checks.
-
-Both actual native macOS CPUs require ad hoc app/worker signature identity, archive
-readback and extracted execution, file/Services/drop/picker ingress, queue/report
-limits, Stop/Force Stop/Quit, reveal/export failures and accessibility/appearance
-checks. Remove needless or superseded code before delivering v6.
-
-## Native panel scheduling
-
-An Intel native test reached Command-O but failed in NSOpenPanel construction:
-AppKit's panel configuration semaphore timed out after60 seconds. The panel
-service started and checked in; the retained diagnostics do not establish why
-configuration failed. Its call stack entered AppKit inside Slint's timer callback
-from a CFRunLoop observer. The same scenario passed on Apple Silicon.
-
-A default-mode main-run-loop experiment moved panel creation out of the observer
-and controller call. The actual Intel stack then entered through
-`__CFRUNLOOP_IS_CALLING_OUT_TO_A_BLOCK__`, yet AppKit retained the same60-second
-configuration assertion. This did not establish a fix. The deferred states and
-their extra feature declarations were removed; owned synchronous panels retain
-their weak completion references, parent checks, cancellation and native paths.
-
-An XCTest-process AppKit observation proved unsuitable: its sandbox rejected
-the panel for lack of a user-selected-file entitlement, unlike the product.
-That observation has been removed. A separate, ad hoc signed Swift AppKit test
-app now records construction, presentation and cancellation through an ordinary
-application lifecycle. Its executable runs as a directly owned controller child
-on fresh hosted runners only, with actual empty entitlements checked. A settled
-diagnostic failure is retained while product interaction still runs; uncertain
-cleanup closes admission. Either outcome only narrows the investigation and
-does not qualify the product picker or establish an operating-system defect.
+Both native CPUs require app/worker signatures, archive readback and extracted
+execution, file/Services/drop/picker ingress, queue/report limits,
+Stop/Force Stop/Quit, reveal/export failures and accessibility/appearance checks.
+See [verification](verification.md) for candidate, desktop and picker admission.
 
 ## Real publication synchronization fixtures
 
@@ -121,5 +68,4 @@ supervisor settlement. A read-only worker-PID absence observation supplements
 settlement; it grants no signal authority and is not sufficient by itself.
 Uncertain ownership stops further cases. These observations establish fixture
 lifecycle/presentation boundaries only when executed; the baseline workflow and
-unmodified shipping archive checks remain mandatory. Exact-source native outcomes
-are recorded in the PR and [implementation evidence](v6-implementation-evidence.md).
+unmodified shipping archive checks remain mandatory. Exact-source native outcomes are recorded in the CI run and its retained artifacts.

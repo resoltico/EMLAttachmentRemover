@@ -131,56 +131,8 @@ fn observe_for(
     }
     let host = crate::native_host::inspect_target(root, &build.host)?;
     fs::create_dir(out)?;
-    let app = out.join("NativePanelDiagnostic.app");
-    let contents = app.join("Contents");
-    let executable = contents.join("MacOS/NativePanelDiagnostic");
-    fs::create_dir_all(
-        executable
-            .parent()
-            .ok_or("Diagnostic executable has no parent")?,
-    )?;
-    let info = contents.join("Info.plist");
-    fs::write(&info, br#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>org.emlattachmentremover.tests.NativePanelDiagnostic</string>
-<key>CFBundleExecutable</key><string>NativePanelDiagnostic</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>LSMinimumSystemVersion</key><string>15.0</string>
-</dict></plist>
-"#)?;
-    let mut compile = build.command(root, &build.swiftc);
-    compile
-        .args([
-            "-parse-as-library",
-            "-swift-version",
-            "6",
-            "-warnings-as-errors",
-            "-target",
-            &build.swift_target(),
-            "-sdk",
-        ])
-        .arg(&build.sdk)
-        .arg(root.join("tests/macos/NativePanelDiagnostic.swift"))
-        .arg("-o")
-        .arg(&executable);
-    crate::macos::checked_run(compile, &out.join("build.log"), 120)?;
-    let mut sign = build.command(root, "/usr/bin/codesign");
-    sign.args(["--sign", "-", "--timestamp=none"]).arg(&app);
-    crate::macos::checked_run(sign, &out.join("sign.log"), 30)?;
-    let mut inspect = build.command(root, "/usr/bin/codesign");
-    inspect
-        .args(["--display", "--entitlements", "-", "--xml"])
-        .arg(&executable);
-    let entitlements = out.join("entitlements.plist");
-    controller()?
-        .run_separate_output(inspect, &entitlements, Duration::from_secs(30))?
-        .require_success(&entitlements)?;
-    if !fs::read(&entitlements)?.is_empty() {
-        return Err(
-            "Native diagnostic unexpectedly contains entitlements; retained for inspection".into(),
-        );
-    }
+    let app = build_panel_diagnostic(root, build, out)?;
+    let executable = app.join("Contents/MacOS/NativePanelDiagnostic");
     let source = crate::git(root, &["rev-parse", "HEAD"])?;
     let identity = probe_identity(root, build, out, &app, "baseline")?;
     let log = out.join("panel.log");
@@ -252,6 +204,60 @@ fn observe_for(
     }
     // A settled diagnostic failure is evidence, not a reason to skip the product.
     Ok(result)
+}
+
+fn build_panel_diagnostic(root: &Path, build: &MacBuild, out: &Path) -> Result<std::path::PathBuf> {
+    let app = out.join("NativePanelDiagnostic.app");
+    let contents = app.join("Contents");
+    let executable = contents.join("MacOS/NativePanelDiagnostic");
+    fs::create_dir_all(
+        executable
+            .parent()
+            .ok_or("Diagnostic executable has no parent")?,
+    )?;
+    let info = contents.join("Info.plist");
+    fs::write(&info, br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>org.emlattachmentremover.tests.NativePanelDiagnostic</string>
+<key>CFBundleExecutable</key><string>NativePanelDiagnostic</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
+</dict></plist>
+"#)?;
+    let mut compile = build.command(root, &build.swiftc);
+    compile
+        .args([
+            "-parse-as-library",
+            "-swift-version",
+            "6",
+            "-warnings-as-errors",
+            "-target",
+            &build.swift_target(),
+            "-sdk",
+        ])
+        .arg(&build.sdk)
+        .arg(root.join("tests/macos/NativePanelDiagnostic.swift"))
+        .arg("-o")
+        .arg(&executable);
+    crate::macos::checked_run(compile, &out.join("build.log"), 120)?;
+    let mut sign = build.command(root, "/usr/bin/codesign");
+    sign.args(["--sign", "-", "--timestamp=none"]).arg(&app);
+    crate::macos::checked_run(sign, &out.join("sign.log"), 30)?;
+    let mut inspect = build.command(root, "/usr/bin/codesign");
+    inspect
+        .args(["--display", "--entitlements", "-", "--xml"])
+        .arg(&executable);
+    let entitlements = out.join("entitlements.plist");
+    controller()?
+        .run_separate_output(inspect, &entitlements, Duration::from_secs(30))?
+        .require_success(&entitlements)?;
+    if !fs::read(&entitlements)?.is_empty() {
+        return Err(
+            "Native diagnostic unexpectedly contains entitlements; retained for inspection".into(),
+        );
+    }
+    Ok(app)
 }
 
 fn expected_panel_failure(process: &ProcessResult, log: &str) -> bool {
@@ -406,33 +412,8 @@ fn icon_service_experiment(
     );
     receipt["target"] = json!(target);
     receipt["gui_uid"] = json!(uid.as_raw());
-    receipt["stage"] = json!("unchanged-repeat");
-    let before_repeat = probe_identity(root, build, out, app, "repeat-before")?;
-    if before_repeat != *identity {
-        return Err("Probe identity changed before unchanged repeat".into());
-    }
+    unchanged_probe_repeat(root, build, app, identity, out, receipt)?;
     let executable = app.join("Contents/MacOS/NativePanelDiagnostic");
-    let repeat = controller()?.run(
-        build.command(root, &executable),
-        &out.join("unchanged-repeat.log"),
-        Duration::from_secs(90),
-    )?;
-    receipt["unchanged_repeat"] = json!({"identity":before_repeat,"process":repeat.evidence()});
-    if !expected_panel_failure(
-        &repeat,
-        &fs::read_to_string(out.join("unchanged-repeat.log"))?,
-    ) || !controller()?.admits_work()
-    {
-        return Err(
-            "Unchanged repeat did not retain the settled known panel failure; no further command admitted"
-                .into(),
-        );
-    }
-    let after_repeat = probe_identity(root, build, out, app, "repeat-after")?;
-    receipt["unchanged_repeat"]["identity_after"] = after_repeat.clone();
-    if after_repeat != *identity || !controller()?.admits_work() {
-        return Err("Unchanged repeat did not retain the same settled panel failure; no intervention admitted".into());
-    }
     receipt["stage"] = json!("service-before");
     receipt["service_before"] = service_observation(root, build, &target)?;
     if receipt["service_before"]["entry_observed"] != true || !controller()?.admits_work() {
@@ -474,6 +455,44 @@ fn icon_service_experiment(
         return Err("Probe identity changed during intervention run".into());
     }
     receipt["stage"] = json!("observed");
+    Ok(())
+}
+
+fn unchanged_probe_repeat(
+    root: &Path,
+    build: &MacBuild,
+    app: &Path,
+    identity: &Value,
+    out: &Path,
+    receipt: &mut Value,
+) -> Result<()> {
+    receipt["stage"] = json!("unchanged-repeat");
+    let before_repeat = probe_identity(root, build, out, app, "repeat-before")?;
+    if before_repeat != *identity {
+        return Err("Probe identity changed before unchanged repeat".into());
+    }
+    let executable = app.join("Contents/MacOS/NativePanelDiagnostic");
+    let repeat = controller()?.run(
+        build.command(root, &executable),
+        &out.join("unchanged-repeat.log"),
+        Duration::from_secs(90),
+    )?;
+    receipt["unchanged_repeat"] = json!({"identity":before_repeat,"process":repeat.evidence()});
+    if !expected_panel_failure(
+        &repeat,
+        &fs::read_to_string(out.join("unchanged-repeat.log"))?,
+    ) || !controller()?.admits_work()
+    {
+        return Err(
+            "Unchanged repeat did not retain the settled known panel failure; no further command admitted"
+                .into(),
+        );
+    }
+    let after_repeat = probe_identity(root, build, out, app, "repeat-after")?;
+    receipt["unchanged_repeat"]["identity_after"] = after_repeat.clone();
+    if after_repeat != *identity || !controller()?.admits_work() {
+        return Err("Unchanged repeat did not retain the same settled panel failure; no intervention admitted".into());
+    }
     Ok(())
 }
 

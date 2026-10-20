@@ -20,28 +20,11 @@ The editable SVG drawings in `artwork-svg/` supply the desktop artwork. Slint mu
 
 ### Geometry
 
-The supplied SVGs encode the required coordinates and transforms; consumers must preserve their geometry and aspect ratio.
-
-| Element | Geometry |
-|---|---|
-| Envelope | `#636366` 5.07 / — | `#AEAEB2` 5.80 / — | `#3A3A3C` 9.61 / — | `#E5E5EA` 10.21 / — |
-| Envelope cut-out | Circle of radius 25 at (72, 30), leaving a constant 7-unit gap around the badge |
-| Badge | Solid circle of radius 18 at (72, 30), the same footprint in every state. The processing ring's outer edge matches it. |
-| Identity mark | Two collinear diagonal segments: (63.5, 21.5) → (68.5, 26.5) and (75.5, 33.5) → (80.5, 38.5) |
-| Check | (63, 30) → (69, 24) → (81, 37) |
-| Exclamation | Bar centred on x 72 from y 28 to 42; dot of radius 3 at (72, 22) |
-| Stop | Rounded square at (65, 23), 14 × 14, radius 3 |
-| Progress ring | Faint full track, plus an arc from the top running clockwise through 229° |
-
-### Stroke weights
-
-| Condition | Envelope | Marks | Ring | Exclamation (width / dot) |
-|---|---|---|---|---|
-| Regular, 24 pt and up | 8 | 5.5 | 7 | 5 / 3 |
-| Compact, below 24 pt | 9 | 6.5 | 7 | 6.5 / 3.6 |
-| Increase Contrast | +1.5 | +1 | +0.5 | — |
-
-The compact weights keep strokes about one device pixel wide or more at 18 pt on 1x displays.
+The [SVG inputs](artwork-svg/) are authoritative for coordinates, transforms,
+stroke widths and fills. Their coordinate system has y increasing downward.
+Preserve their view boxes and aspect ratio. Regular, compact and Increase
+Contrast variants carry their own drawing weights; do not duplicate those
+values in frontend code or derive one variant by scaling another's strokes.
 
 ### Accessibility
 
@@ -68,11 +51,11 @@ How the ratios were measured:
 
 **Motion.** Nothing animates; the progress ring is static. Reduce Motion therefore needs no special handling. Any future animation must stop when `accessibilityDisplayShouldReduceMotion` is set.
 
-**Decorative role.** The state graphics are deliberately decorative. The adjacent text owns status meaning and accessibility, and `ArtworkView` is hidden from accessibility.
+**Decorative role.** The state graphics are deliberately decorative. The adjacent text owns status meaning and accessibility, and the Slint image exposes a state-specific accessibility label.
 
 ### Interface artwork provenance
 
-The envelope-and-badge set was designed on 5 October 2026 with AI assistance (Claude, Anthropic), under the project owner's art direction:
+The envelope-and-badge set is custom artwork with AI assistance (Claude, Anthropic), under the project owner's art direction:
 - **How it was drawn:** every shape was defined from explicit coordinates written for this project, as listed above.
 - **Sources:** the supplied originality statement says no icon library, system symbol or third-party artwork was used, adapted or consulted as a drawing source. This is the supplying agent’s account, not an independently certified ownership record.
 - **Generic marks:** the envelope, check, exclamation mark, stop square and ring are conventional generic forms, drawn independently. Like any such forms, they resemble many others. AI assistance and generic geometry limit any claim of exclusive copyright.
@@ -94,8 +77,8 @@ The application still uses native macOS controls, menus, file selection, drawing
 
 ## Split-paperclip icon provenance
 
-The replacement icon was supplied by the project owner on 5 October 2026 with an AI-assisted construction script defining four parallel wires and three semicircular turns from explicit measurements. `ICON-GEOMETRY.md` preserves that script; the SVG files preserve the editable drawing. The supplied account says this geometry was drawn independently, replacing an earlier Feather-derived exploration. That exploration is excluded from this repository and its deliverables. File hashes establish identity, not originality or ownership; AI assistance and generic geometry limit any claim of exclusive copyright.
+The owner-supplied icon uses AI-assisted coordinate construction defining four parallel wires and three semicircular turns. `ICON-GEOMETRY.md` documents the geometry; the SVG files are the editable drawing. The supplied account states that this geometry is independently drawn. File hashes establish identity, not originality or ownership; AI assistance and generic geometry limit any claim of exclusive copyright.
 
-The production palette is Royal blue with white and yellow halves, a darker navy background for dark appearance, and reduced yellow-layer opacity in tinted appearance. The supplied JSON needed repair for the installed Apple tools: background colours use `extended-srgb`, and the unsupported untagged-SVG colour-space setting is omitted. Actual compilation, not an unofficial schema, is the integration gate.
+The production palette is Royal blue with white and yellow halves, a darker navy background for dark appearance, and reduced yellow-layer opacity in tinted appearance. Background colours use `extended-srgb`; SVG assets use their explicit fills without an untagged colour-space setting. Actual compilation, not an unofficial schema, is the integration gate.
 
 Apple permits system-provided symbols inside applications for the corresponding Apple platforms, subject to symbol-specific restrictions, and prohibits their use or confusingly similar images in app icons, logos and other trademark uses. See sections 2.4 and 2.10 of the [Xcode and Apple SDKs Agreement](https://www.apple.com/legal/sla/docs/xcode.pdf) and [SF Symbols guidance](https://developer.apple.com/design/human-interface-guidelines/sf-symbols). This application retains custom interface artwork and does not copy or reference SF Symbols.

@@ -60,6 +60,29 @@ struct ActiveRun {
     id: RunId,
     worker: Option<WorkerRun>,
 }
+/// Current application activity, independent of which retained report is selected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SessionActivity {
+    /// No active or capacity-blocked request.
+    Idle,
+    /// A worker is owned and has no accepted terminal completion yet.
+    Running(RunId),
+    /// A user stop request is pending; this does not assert signal delivery.
+    StopRequested {
+        /// Exact currently owned run.
+        id: RunId,
+        /// More than one stop request was made.
+        repeated: bool,
+    },
+    /// Terminal facts await the view's explicit acknowledgement.
+    Settled(RunId),
+    /// Waiting requests need an explicitly dismissed report reservation.
+    WaitingForReportSpace,
+    /// Confirmed shutdown has closed admission.
+    Closing,
+    /// Earlier lifecycle evidence prevents further processing.
+    Blocked,
+}
 /// Serial desktop runs using the reusable core-backed worker. Native sheets,
 /// preferences, selection and rendering remain the frontend's responsibility.
 pub struct DesktopSession {
@@ -217,6 +240,44 @@ impl DesktopSession {
     /// Waiting requests, excluding the active run.
     pub fn waiting(&self) -> usize {
         self.queue.waiting()
+    }
+    /// Derive activity from current ownership and reservation facts. A terminal
+    /// completion outranks the still-active acknowledgement reservation.
+    pub fn activity(&self) -> SessionActivity {
+        if self.closing {
+            return SessionActivity::Closing;
+        }
+        if let Some(active) = &self.active {
+            if self
+                .reports
+                .iter()
+                .any(|r| r.id == active.id && r.completion.is_some())
+            {
+                return SessionActivity::Settled(active.id);
+            }
+            if !self.blocked
+                && let Some(control) = self.control_for(active.id)
+                && let Ok(intent) = control.intent(Instant::now())
+                && intent.interrupts > 0
+            {
+                return SessionActivity::StopRequested {
+                    id: active.id,
+                    repeated: intent.interrupts > 1,
+                };
+            }
+            return if self.blocked {
+                SessionActivity::Blocked
+            } else {
+                SessionActivity::Running(active.id)
+            };
+        }
+        if self.blocked {
+            SessionActivity::Blocked
+        } else if self.queue.is_paused_for_report_space() {
+            SessionActivity::WaitingForReportSpace
+        } else {
+            SessionActivity::Idle
+        }
     }
     /// Immutable Not started selections; no separate mutable frontend queue.
     pub fn waiting_requests(

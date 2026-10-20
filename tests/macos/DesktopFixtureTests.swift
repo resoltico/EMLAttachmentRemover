@@ -10,6 +10,21 @@ struct DesktopFixtureTests {
   }
   @MainActor
   static func main() throws {
+    checkRequestDecoding()
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eml-fixture-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try checkOpenPipeRelay(root)
+    try checkNoReplaceAndAcknowledgment(root)
+    try FileManager.default.removeItem(at: root)
+    precondition(!FileManager.default.fileExists(atPath: root.path))
+    try FileHandle.standardOutput.write(
+      contentsOf: Data(
+        "All request splits/order/rejection/EOF/error/overflow and native no-replace/acknowledgment checks passed\n"
+          .utf8))
+  }
+  private static func checkRequestDecoding() {
     for request in DesktopFixtureRequest.allCases {
       let bytes = Data("\(request.rawValue)\n".utf8)
       for split in 0...bytes.count {
@@ -49,10 +64,8 @@ struct DesktopFixtureTests {
     let overflow = DesktopFixtureOutput()
     overflow.observe(Data(String(repeating: "EML_OWNED_COPY_HOLD\n", count: 9).utf8))
     precondition(overflow.observedRelayFailure() == "Owned fixture request queue overflow")
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "eml-fixture-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
-    defer { try? FileManager.default.removeItem(at: root) }
+  }
+  private static func checkOpenPipeRelay(_ root: URL) throws {
     // The real pipe must deliver a complete request while its writer remains
     // open and forward the exact bytes to an ordinary output handle. Waiting
     // for EOF here would deadlock an acknowledgment round trip.
@@ -85,6 +98,9 @@ struct DesktopFixtureTests {
     try requireBytes(forwarded, requestBytes)
     try destinationHandle.close()
     try pipe.fileHandleForReading.close()
+  }
+  @MainActor
+  private static func checkNoReplaceAndAcknowledgment(_ root: URL) throws {
     // Exercise the real Darwin no-replace edge and acknowledgment publication
     // using only a freshly minted temporary directory, without launching an app.
     let source = root.appendingPathComponent("source")
@@ -113,11 +129,6 @@ struct DesktopFixtureTests {
     }
     precondition(refused)
     try requireBytes(acknowledgment, Data("complete acknowledgment\n".utf8))
-    try FileManager.default.removeItem(at: root)
-    precondition(!FileManager.default.fileExists(atPath: root.path))
-    try FileHandle.standardOutput.write(
-      contentsOf: Data(
-        "All request splits/order/rejection/EOF/error/overflow and native no-replace/acknowledgment checks passed\n"
-          .utf8))
   }
+
 }

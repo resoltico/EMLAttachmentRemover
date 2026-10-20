@@ -1,0 +1,228 @@
+# Compiler levels and structural thresholds live in Cargo.toml and clippy.toml.
+schema = 1
+max_source_lines = 1000
+vendor = ["vendor/winit", "vendor/i-slint-core", "vendor/parley"]
+
+[[exceptions]]
+id = "native-oracle-device-width"
+file = "crates/eml-fs/examples/namespace-credentials.rs"
+scope = "crate/mod:probe/fn:run_shared_replacement/let:retained_id"
+lints = ["clippy::unnecessary_cast"]
+rationale = "The independent filesystem identity oracle retains Darwin signed32 and Linux unsigned64 device IDs in the common unsigned64 representation."
+
+[[exceptions]]
+id = "darwin-acl-boundary"
+file = "crates/eml-fs/src/lib.rs"
+scope = "crate/mod:darwin_acl"
+lints = ["unsafe_code"]
+rationale = "Only the Darwin opaque ACL ABI, ownership and descriptor operations are unsafe in this module."
+
+[[exceptions]]
+id = "windows-filesystem-boundary"
+file = "crates/eml-fs/src/lib.rs"
+scope = "crate/mod:windows"
+lints = ["unsafe_code"]
+rationale = "Generated Windows ABI calls are confined to the filesystem adapter; native buffers and handles remain owned."
+
+[[exceptions]]
+id = "native-device-width"
+file = "crates/eml-fs/src/unix.rs"
+scope = "crate/fn:identity"
+lints = ["clippy::unnecessary_cast"]
+rationale = "Darwin dev_t is signed32 and Linux dev_t is unsigned64; preserving the established identity conversion requires a cast on Darwin and makes that same cast redundant on Linux."
+
+[[exceptions]]
+id = "slint-generated-view"
+file = "crates/eml-gui/src/main.rs"
+scope = "crate/mod:view"
+lints = ["unsafe_code", "unreachable_pub", "clippy::cognitive_complexity"]
+rationale = "Only this private module expands Slint-generated component ABI, public generated members and vtable/embedding hooks. Public generated members cannot be made private, and exporting the internal view module would expose generated implementation as product API. The upstream generator's accessible-string property dispatch exceeds the authored cognitive-complexity limit; its generated branching does not represent authored application responsibilities. Authored GUI controller and presentation code do not receive these exceptions."
+
+[[exceptions]]
+id = "native-application-boundary"
+file = "crates/eml-gui/src/main.rs"
+scope = "crate/mod:application"
+lints = ["unsafe_code"]
+rationale = "Necessary native About routing and absent-only lifecycle, file-open and Services methods"
+
+[[exceptions]]
+id = "native-desktop-boundary"
+file = "crates/eml-gui/src/main.rs"
+scope = "crate/mod:native"
+lints = ["unsafe_code"]
+rationale = "Necessary native file ingress, dialogs, responder editing and URL/raw-window boundary"
+
+[[exceptions]]
+id = "native-preferences-boundary"
+file = "crates/eml-gui/src/main.rs"
+scope = "crate/mod:preferences"
+lints = ["unsafe_code"]
+rationale = "Typed Foundation String preference and immutable argument-domain constant"
+
+[[exceptions]]
+id = "slint-generated-font-fixture"
+file = "crates/eml-gui/tests/native_typography.rs"
+scope = "crate/mod:view"
+lints = ["unsafe_code"]
+rationale = "Slint-generated component vtables"
+
+[[exceptions]]
+id = "native-preference-fixture"
+file = "crates/eml-gui/tests/support/preference_observation.rs"
+scope = "crate"
+lints = ["unsafe_code"]
+rationale = "Typed property-list fixture values and the shared Foundation preference boundary"
+
+[[exceptions]]
+id = "shared-preference-fixture"
+file = "crates/eml-gui/tests/support/preference_observation.rs"
+scope = "crate/mod:preferences"
+lints = ["dead_code"]
+rationale = "The probe uses an owned suite; production load uses the standard application domain"
+
+[[exceptions]]
+id = "native-child-boundary"
+file = "crates/eml-macos/src/lib.rs"
+scope = "crate/mod:child"
+lints = ["unsafe_code"]
+rationale = "Reviewed Darwin spawn/signal/reap ABI boundary"
+
+[[exceptions]]
+id = "native-control-pipe-boundary"
+file = "crates/eml-macos/src/lib.rs"
+scope = "crate/mod:control_pipe"
+lints = ["unsafe_code"]
+rationale = "Checked duplication and bounded nonblocking IO on inherited private control pipe"
+
+[[exceptions]]
+id = "fixture-thread-signal-mask"
+file = "crates/eml-macos/tests/child_owner.rs"
+scope = "crate/mod:spawning_thread_mask"
+lints = ["unsafe_code"]
+rationale = "Block/restore only this owned test thread's signal mask"
+
+[[exceptions]]
+id = "fixture-signal-mask-observation"
+file = "crates/eml-macos/tests/support/child_observation.rs"
+scope = "crate/fn:main"
+lints = ["unsafe_code"]
+rationale = "Read only this fixture's own process signal mask"
+
+[[exceptions]]
+id = "fixture-sigpipe-default"
+file = "crates/eml-macos/tests/support/child_observation.rs"
+scope = "crate/fn:default_sigpipe"
+lints = ["unsafe_code"]
+rationale = "Set SIGPIPE default only in this isolated nonshipping fixture process"
+
+[[exceptions]]
+id = "fixture-close-stdio"
+file = "crates/eml-macos/tests/support/child_observation.rs"
+scope = "crate/mod:closed_stdio"
+lints = ["unsafe_code"]
+rationale = "Close only this nonshipping owned fixture's own standard descriptors"
+
+[[exceptions]]
+id = "native-windows-host-boundary"
+file = "crates/eml-windows/src/lib.rs"
+scope = "crate/mod:host"
+lints = ["unsafe_code"]
+rationale = "Read-only generated native process-machine and kernel-version calls"
+
+[[exceptions]]
+id = "native-windows-process-boundary"
+file = "crates/eml-windows/src/lib.rs"
+scope = "crate/mod:process"
+lints = ["unsafe_code"]
+rationale = "Generated Win32 process/job ABI behind uniquely owned handles"
+
+[[exceptions]]
+id = "shared-child-cleanup"
+file = "tests/support/native_child.rs"
+scope = "crate/struct:Settle"
+lints = ["dead_code"]
+rationale = "Shared test support: ordinary harnesses use stderr; the closed-stdio fixture uses its preserved log"
+
+[[exceptions]]
+id = "shared-child-cleanup-log"
+file = "tests/support/native_child.rs"
+scope = "crate/struct:SettleWithLog"
+lints = ["dead_code"]
+rationale = "Only the separate closed-stdio fixture target needs a preserved diagnostic descriptor"
+
+[[exceptions]]
+id = "shared-controller-fixture"
+file = "xtask/tests/processes.rs"
+scope = "crate/mod:controller_source"
+lints = ["dead_code", "unreachable_pub"]
+rationale = "The private fixture module includes the exact production controller source to exercise its crate-private kernel pin boundary with the real built helper; public production entry points become unreachable and unrelated entry points are unused in this compilation unit. Exposing private kernel hooks as shipping API or copying their logic would weaken that boundary."
+
+[[command_exceptions]]
+id = "mutation-warning-cap"
+file = "xtask/src/mutants.rs"
+scope = "crate/fn:run"
+argument = "--cap-lints=true"
+rationale = "Only mutation experiments suppress warnings introduced by intentionally invalid candidate programs. Their clean baseline remains required; normal compilation, linting and product qualification do not use this option."
+
+[[exceptions]]
+id = "filesystem-probe-darwin-acl"
+file = "tests/native-filesystem/src/main.rs"
+scope = "crate/fn:clear_acl"
+lints = ["unsafe_code"]
+rationale = "The independent native filesystem probe calls the Darwin opaque ACL ABI only in this borrowed-descriptor adapter and frees every allocated ACL. Reusing product ACL code would remove its independence as a native boundary oracle."
+
+[[exceptions]]
+id = "filesystem-probe-restricted-token"
+file = "tests/native-filesystem/src/windows.rs"
+scope = "crate/mod:actor"
+lints = ["unsafe_code"]
+rationale = "The isolated Windows primitive probe includes the shared owned-token ABI adapter to establish real restricted credentials; only the private token adapter, not the probe scenarios, permits unsafe calls."
+
+[[exceptions]]
+id = "filesystem-probe-windows-directory"
+file = "tests/native-filesystem/src/windows.rs"
+scope = "crate/fn:directory"
+lints = ["unsafe_code"]
+rationale = "Only this independent probe adapter opens and validates ordinary Win32 directory handles; all buffers are initialized and successful handles become uniquely owned."
+
+[[exceptions]]
+id = "filesystem-probe-windows-identity"
+file = "tests/native-filesystem/src/windows.rs"
+scope = "crate/fn:identity"
+lints = ["unsafe_code"]
+rationale = "Only this independent probe adapter reads native file identity through a borrowed live handle into a fixed-size initialized output."
+
+[[exceptions]]
+id = "filesystem-probe-windows-rename"
+file = "tests/native-filesystem/src/windows.rs"
+scope = "crate/fn:rename_absolute_no_replace"
+lints = ["unsafe_code"]
+rationale = "Only this independent native rename adapter constructs the validated Win32 rename buffer and calls the kernel API on a borrowed live candidate handle."
+
+[[exceptions]]
+id = "filesystem-probe-windows-flush"
+file = "tests/native-filesystem/src/windows.rs"
+scope = "crate/fn:flush"
+lints = ["unsafe_code"]
+rationale = "Only this borrowed-handle adapter calls the native file synchronization ABI and retains its OS error."
+
+[[exceptions]]
+id = "filesystem-probe-windows-delete-check"
+file = "tests/native-filesystem/src/windows.rs"
+scope = "crate/fn:delete_excluded"
+lints = ["unsafe_code"]
+rationale = "Only this independent probe adapter tests DELETE sharing with a native open, closes successful handles and retains the actual sharing error."
+
+[[exceptions]]
+id = "filesystem-probe-windows-machine"
+file = "tests/native-filesystem/src/windows.rs"
+scope = "crate/fn:require_native_machine"
+lints = ["unsafe_code"]
+rationale = "Only this process-machine observation calls the native ABI with the current process pseudo-handle and initialized outputs; emulation is explicitly refused."
+
+[[exceptions]]
+id = "filesystem-probe-windows-volume"
+file = "tests/native-filesystem/src/windows.rs"
+scope = "crate/fn:require_ntfs_volume"
+lints = ["unsafe_code"]
+rationale = "Only this volume observation calls the native ABI on a borrowed directory handle with initialized capacity-bounded outputs; the actual volume must be NTFS."

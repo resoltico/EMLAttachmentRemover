@@ -131,41 +131,8 @@ pub(crate) fn run(root: &Path, source: &str, version: &str) -> Result<()> {
     let changelog = fs::read_to_string(root.join("CHANGELOG.md"))?;
     let date = release_section(&changelog, version)?;
     let remote = git(root, &["remote", "get-url", "origin"])?;
-    let repository = remote
-        .strip_prefix("https://github.com/")
-        .or_else(|| remote.strip_prefix("git@github.com:"))
-        .ok_or("Release origin is not a supported GitHub repository URL")?
-        .trim_end_matches(".git");
-    let parts: Vec<_> = repository.split('/').collect();
-    if parts.len() != 2
-        || parts.iter().any(|part| {
-            part.is_empty()
-                || !part
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
-        })
-    {
-        return Err("Ambiguous GitHub repository identity".into());
-    }
-    let current_main = git(
-        root,
-        &["ls-remote", "--exit-code", "origin", "refs/heads/main"],
-    )?;
-    let local_main = git(
-        root,
-        &["rev-parse", "--verify", "refs/remotes/origin/main^{commit}"],
-    )?;
-    if current_main.split_ascii_whitespace().collect::<Vec<_>>()
-        != [local_main.as_str(), "refs/heads/main"]
-    {
-        return Err("Local main is stale; fetch main before checking release ancestry".into());
-    }
-    capture(Command::new("git").current_dir(root).args([
-        "merge-base",
-        "--is-ancestor",
-        source,
-        &local_main,
-    ]))?;
+    let repository = repository_identity(&remote)?;
+    let local_main = verify_main_ancestry(root, source)?;
     let tag = format!("v{version}");
     if !git(root, &["tag", "--list", &tag])?.is_empty() {
         return Err(
@@ -233,6 +200,49 @@ pub(crate) fn run(root: &Path, source: &str, version: &str) -> Result<()> {
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
+}
+
+fn repository_identity(remote: &str) -> Result<&str> {
+    let repository = remote
+        .strip_prefix("https://github.com/")
+        .or_else(|| remote.strip_prefix("git@github.com:"))
+        .ok_or("Release origin is not a supported GitHub repository URL")?
+        .trim_end_matches(".git");
+    let parts: Vec<_> = repository.split('/').collect();
+    if parts.len() != 2
+        || parts.iter().any(|part| {
+            part.is_empty()
+                || !part
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+        })
+    {
+        return Err("Ambiguous GitHub repository identity".into());
+    }
+    Ok(repository)
+}
+
+fn verify_main_ancestry(root: &Path, source: &str) -> Result<String> {
+    let current_main = git(
+        root,
+        &["ls-remote", "--exit-code", "origin", "refs/heads/main"],
+    )?;
+    let local_main = git(
+        root,
+        &["rev-parse", "--verify", "refs/remotes/origin/main^{commit}"],
+    )?;
+    if current_main.split_ascii_whitespace().collect::<Vec<_>>()
+        != [local_main.as_str(), "refs/heads/main"]
+    {
+        return Err("Local main is stale; fetch main before checking release ancestry".into());
+    }
+    capture(Command::new("git").current_dir(root).args([
+        "merge-base",
+        "--is-ancestor",
+        source,
+        &local_main,
+    ]))?;
+    Ok(local_main)
 }
 
 #[cfg(test)]

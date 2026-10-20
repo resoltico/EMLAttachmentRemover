@@ -1,16 +1,18 @@
 # EML Attachment Remover
 
 Create attachment-stripped EML copies while leaving original messages untouched.
-The v6 source uses reusable Rust libraries, a native CLI and a Slint macOS
-frontend following the [owner's scope decision](docs/desktop-frontend-design.md).
-Version 6 remains **Unreleased**. Required native, archive and GUI qualification
-outcomes, including failures and unrun gates, are recorded in the
-[implementation evidence](docs/v6-implementation-evidence.md). Published v5
-releases and their source history remain unchanged.
+The application uses reusable Rust libraries, a native CLI and a Slint macOS
+frontend. Download the separate macOS, Linux or Windows CLI archive, or the
+macOS app for your CPU, from [Releases](https://github.com/resoltico/EMLAttachmentRemover/releases).
+See the [platform policy](#native-platform-policy) before installing. Public
+release requires complete [native, archive and GUI qualification](docs/verification.md)
+for the selected source and the [release procedure](docs/release.md). Check the
+source-specific [CI runs](https://github.com/resoltico/EMLAttachmentRemover/actions/workflows/ci.yml)
+for execution results.
 
 ## Run the CLI
 
-Build from a checkout with Rust 1.99.0:
+Install rustup, then build from a checkout. `rust-toolchain.toml` selects Rust:
 
 ```sh
 cargo build --locked --release -p remove-eml-attachments
@@ -96,16 +98,17 @@ The authoritative [distribution table](xtask/distribution.toml) declares six
 separate CLI builds: macOS Intel/Apple Silicon, Linux x64/ARM64 and Windows
 x64/ARM64. Two separate macOS apps use their same-CPU private core-backed worker. No
 universal binary or other-platform GUI is provided. These are target policies;
-actual completed and failed gates are recorded separately in the evidence log.
+execution results are recorded in the source-specific CI run.
 
-macOS requires 15.0 or later. Qualification selects Xcode 26.3 build 17C529, not the
-machine's default Xcode. Builds are ad hoc signed, without Developer ID or
+macOS requires 15.0 or later. Qualification selects the Xcode version/build in
+`xtask/tools.toml`. Builds are ad hoc signed, without Developer ID or
 notarization; first launch may require app-specific **Open Anyway** in macOS
 Privacy & Security. No Gatekeeper configuration change is part of this project.
 The desktop workflow has one main window with queued runs, source/destination
 selection, per-file results and technical reports. [App details](docs/macos-app.md)
-and the evidence log distinguish implemented behavior from native qualification.
-The hosted Intel macOS26 image has shown intermittent native-dialog failures.
+describe the interface and its native qualification requirements.
+Intel macOS26 qualification includes a controlled-host route for a narrowly
+identified native-dialog failure.
 [Qualification records](docs/verification.md) distinguish ordinary runs from the
 narrowly controlled-host route; controlled-host success does not establish
 healthy unmodified-host compatibility.
@@ -121,13 +124,11 @@ are different evidence.
 See [CONTRIBUTING](CONTRIBUTING.md) for setup and checks, the
 [architecture](docs/architecture.md) for library boundaries and
 [verification](docs/verification.md) for bounded campaigns and required gates.
-The repository uses Rust tooling; it contains no Python product or build system.
-The editable owner artwork and its historical construction records remain under
-[artwork](artwork).
+Editable artwork, geometry and licensing information live under [artwork](artwork).
 
 Software uses MPL 2.0; owner artwork has separate terms in [LICENSE](LICENSE).
 Reviewed upstream third-party materials live under [legal](legal). Builds generate
 target-specific complete notices and accompanying license files inside each archive. Corresponding source must
 be made available when distributing MPL-covered binaries; use the matching source
-commit/tag and preserve all applicable notices. No v6 download, tag or published
-source archive is claimed here.
+commit/tag and preserve all applicable notices. Each release identifies its
+source revision and includes checksums for its downloadable archives.

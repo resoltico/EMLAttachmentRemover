@@ -368,116 +368,8 @@ fn verify(
         "copy_bytes":if prepared { json!(513) } else { Value::Null },"removed":removals,
         "plan":if matches!(case,Case::DryRun) { json!("create") } else { Value::Null }}),
     )?;
-    let expected_names: BTreeSet<_> =
-        if matches!(case, Case::Created | Case::UpToDate | Case::Conflict) {
-            ["a.eml", "a.no-attachments.eml"]
-                .into_iter()
-                .map(str::to_owned)
-                .collect()
-        } else {
-            BTreeSet::from(["a.eml".to_owned()])
-        };
-    let actual_names: BTreeSet<_> = fs::read_dir(directory)?
-        .map(|entry| {
-            entry.and_then(|entry| {
-                entry
-                    .file_name()
-                    .into_string()
-                    .map_err(|_| std::io::Error::other("Non-UTF-8 unexpected fixture entry"))
-            })
-        })
-        .collect::<std::io::Result<_>>()?;
-    if actual_names != expected_names {
-        return Err(failure(
-            FailureKind::Inventory,
-            "extra/missing output or staging resource",
-        ));
-    }
-    let copy = if matches!(case, Case::Created | Case::UpToDate | Case::Conflict) {
-        Some(observe(&directory.join("a.no-attachments.eml"))?)
-    } else {
-        None
-    };
-    if let Some(copy) = &copy {
-        let expected = if matches!(case, Case::Conflict) {
-            &copy_before.ok_or("Missing conflict pre-observation")?.bytes[..]
-        } else {
-            GOLDEN
-        };
-        if copy.bytes != expected {
-            return Err(failure(
-                FailureKind::GoldenCopy,
-                "actual copy differs from the independent golden/unchanged conflict bytes",
-            ));
-        }
-        if let Some(before) = copy_before
-            && copy.signature != before.signature
-        {
-            return Err(failure(
-                FailureKind::SourceChanged,
-                "preexisting output identity/signature changed",
-            ));
-        }
-    }
-    let publication = field(item, "publication")?;
-    if matches!(case, Case::Created) {
-        let copy = copy.as_ref().ok_or("Missing created observation")?;
-        required(
-            publication,
-            &json!({"state":"published","candidate_identity":copy.identity,"address":"verified",
-            "cleanup":{"residual_name":null,"native_code":null}}),
-        )?;
-        let cleanup = field(field(publication, "cleanup")?, "state")?
-            .as_str()
-            .ok_or("Cleanup state type")?;
-        if !matches!(cleanup, "complete" | "not_needed") {
-            return Err(failure(
-                FailureKind::Contract,
-                "created cleanup is not clean",
-            ));
-        }
-        sync(field(publication, "file_sync")?, false)?;
-        sync(field(publication, "namespace_sync")?, true)?;
-        required(item, &json!({"existing_observation":null,"error":null}))?;
-    } else {
-        required(publication, &unpublished())?;
-        if matches!(case, Case::UpToDate | Case::Conflict) {
-            let copy = copy.as_ref().ok_or("Missing existing observation")?;
-            let existing = field(item, "existing_observation")?;
-            required(
-                existing,
-                &json!({"identity":copy.identity,"bytes_equal":matches!(case,Case::UpToDate),"stable":true,
-                "address":if matches!(case,Case::UpToDate) { "verified" } else { "not_checked" }}),
-            )?;
-            if matches!(case, Case::UpToDate) {
-                sync(field(existing, "file_sync")?, false)?;
-                sync(field(existing, "namespace_sync")?, true)?;
-            } else {
-                required(
-                    existing,
-                    &json!({"file_sync":unattempted_sync(),"namespace_sync":unattempted_namespace()}),
-                )?;
-            }
-        } else {
-            required(item, &json!({"existing_observation":null}))?;
-        }
-        if matches!(case, Case::Conflict | Case::Protected) {
-            let error = field(item, "error")?;
-            required(
-                error,
-                &json!({"code":if matches!(case,Case::Conflict) { "DESTINATION_EXISTS" } else { "PROTECTED" },
-                "phase":if matches!(case,Case::Conflict) { "existing" } else { "prepare" },"section":null}),
-            )?;
-            let detail = field(error, "detail")?
-                .as_str()
-                .ok_or("Error detail type")?;
-            if detail.is_empty() || detail.chars().count() > 1000 {
-                return Err(failure(FailureKind::Contract, "error detail bounds"));
-            }
-        } else {
-            required(item, &json!({"error":null}))?;
-        }
-    }
+    let copy = verify_copy_files(directory, case, copy_before)?;
+    verify_item_effect(item, case, copy.as_ref())?;
     Ok(
         json!({"case":case.name(),"actual_exit":case.exit(),"frames":3,"source_identity":source_after.identity,
         "copy_identity":copy.as_ref().map(|copy|&copy.identity),"independent_bytes_checked":true,"exact_directory_inventory":true}),
@@ -502,23 +394,7 @@ pub(crate) fn run(
         "scope":"extracted Unix CLI independent of Cargo build/sysroot loader search; Windows execution remains unavailable"}),
         )?,
     )?;
-    let mut version_command = extracted_command(executable, &cases);
-    version_command.arg("--version");
-    let version_log = logs.join("version.log");
-    let result = controller()?.run_separate_output(
-        version_command,
-        &version_log,
-        Duration::from_secs(30),
-    )?;
-    if !result.success()
-        || document(&version_log)? != format!("{program} {version}\n").as_bytes()
-        || !document(&version_log.with_extension("stderr"))?.is_empty()
-    {
-        return Err(failure(
-            FailureKind::Process,
-            "extracted executable version/exit/lifetime differs",
-        ));
-    }
+    verify_version(executable, &cases, logs, program, version)?;
     let mut results = Vec::new();
     let ordinary = cases.join("ordinary");
     for case in [
@@ -658,7 +534,12 @@ fn counterfeit_controls(
         let process =
             controller()?.run_separate_output(version_command, &log, Duration::from_secs(30))?;
         if !process.success()
-            || document(&log)? != format!("{program} {version}\n").as_bytes()
+            || document(&log)?
+                != format!(
+                    "{program} {version} (Build {})\n",
+                    eml_protocol::product::BUILD_NUMBER
+                )
+                .as_bytes()
             || !document(&log.with_extension("stderr"))?.is_empty()
         {
             return Err(failure(
@@ -716,6 +597,160 @@ fn counterfeit_trace(bytes: &[u8], directory: &Path) -> Result<Vec<u8>> {
         result.push(b'\n');
     }
     Ok(result)
+}
+
+fn verify_copy_files(
+    directory: &Path,
+    case: Case,
+    copy_before: Option<&ObservedFile>,
+) -> Result<Option<ObservedFile>> {
+    let expected_names: BTreeSet<_> =
+        if matches!(case, Case::Created | Case::UpToDate | Case::Conflict) {
+            ["a.eml", "a.no-attachments.eml"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
+        } else {
+            BTreeSet::from(["a.eml".to_owned()])
+        };
+    let actual_names: BTreeSet<_> = fs::read_dir(directory)?
+        .map(|entry| {
+            entry.and_then(|entry| {
+                entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| std::io::Error::other("Non-UTF-8 unexpected fixture entry"))
+            })
+        })
+        .collect::<std::io::Result<_>>()?;
+    if actual_names != expected_names {
+        return Err(failure(
+            FailureKind::Inventory,
+            "extra/missing output or staging resource",
+        ));
+    }
+    let copy = if matches!(case, Case::Created | Case::UpToDate | Case::Conflict) {
+        Some(observe(&directory.join("a.no-attachments.eml"))?)
+    } else {
+        None
+    };
+    if let Some(copy) = &copy {
+        let expected = if matches!(case, Case::Conflict) {
+            &copy_before.ok_or("Missing conflict pre-observation")?.bytes[..]
+        } else {
+            GOLDEN
+        };
+        if copy.bytes != expected {
+            return Err(failure(
+                FailureKind::GoldenCopy,
+                "actual copy differs from the independent golden/unchanged conflict bytes",
+            ));
+        }
+        if let Some(before) = copy_before
+            && copy.signature != before.signature
+        {
+            return Err(failure(
+                FailureKind::SourceChanged,
+                "preexisting output identity/signature changed",
+            ));
+        }
+    }
+    Ok(copy)
+}
+
+fn verify_item_effect(item: &Value, case: Case, copy: Option<&ObservedFile>) -> Result<()> {
+    let publication = field(item, "publication")?;
+    if matches!(case, Case::Created) {
+        let copy = copy.ok_or("Missing created observation")?;
+        required(
+            publication,
+            &json!({"state":"published","candidate_identity":copy.identity,"address":"verified",
+            "cleanup":{"residual_name":null,"native_code":null}}),
+        )?;
+        let cleanup = field(field(publication, "cleanup")?, "state")?
+            .as_str()
+            .ok_or("Cleanup state type")?;
+        if !matches!(cleanup, "complete" | "not_needed") {
+            return Err(failure(
+                FailureKind::Contract,
+                "created cleanup is not clean",
+            ));
+        }
+        sync(field(publication, "file_sync")?, false)?;
+        sync(field(publication, "namespace_sync")?, true)?;
+        required(item, &json!({"existing_observation":null,"error":null}))?;
+    } else {
+        required(publication, &unpublished())?;
+        if matches!(case, Case::UpToDate | Case::Conflict) {
+            let copy = copy.ok_or("Missing existing observation")?;
+            let existing = field(item, "existing_observation")?;
+            required(
+                existing,
+                &json!({"identity":copy.identity,"bytes_equal":matches!(case,Case::UpToDate),"stable":true,
+                "address":if matches!(case,Case::UpToDate) { "verified" } else { "not_checked" }}),
+            )?;
+            if matches!(case, Case::UpToDate) {
+                sync(field(existing, "file_sync")?, false)?;
+                sync(field(existing, "namespace_sync")?, true)?;
+            } else {
+                required(
+                    existing,
+                    &json!({"file_sync":unattempted_sync(),"namespace_sync":unattempted_namespace()}),
+                )?;
+            }
+        } else {
+            required(item, &json!({"existing_observation":null}))?;
+        }
+        if matches!(case, Case::Conflict | Case::Protected) {
+            let error = field(item, "error")?;
+            required(
+                error,
+                &json!({"code":if matches!(case,Case::Conflict) { "DESTINATION_EXISTS" } else { "PROTECTED" },
+                "phase":if matches!(case,Case::Conflict) { "existing" } else { "prepare" },"section":null}),
+            )?;
+            let detail = field(error, "detail")?
+                .as_str()
+                .ok_or("Error detail type")?;
+            if detail.is_empty() || detail.chars().count() > 1000 {
+                return Err(failure(FailureKind::Contract, "error detail bounds"));
+            }
+        } else {
+            required(item, &json!({"error":null}))?;
+        }
+    }
+    Ok(())
+}
+
+fn verify_version(
+    executable: &Path,
+    cases: &Path,
+    logs: &Path,
+    program: &str,
+    version: &str,
+) -> Result<()> {
+    let mut version_command = extracted_command(executable, cases);
+    version_command.arg("--version");
+    let version_log = logs.join("version.log");
+    let result = controller()?.run_separate_output(
+        version_command,
+        &version_log,
+        Duration::from_secs(30),
+    )?;
+    if !result.success()
+        || document(&version_log)?
+            != format!(
+                "{program} {version} (Build {})\n",
+                eml_protocol::product::BUILD_NUMBER
+            )
+            .as_bytes()
+        || !document(&version_log.with_extension("stderr"))?.is_empty()
+    {
+        return Err(failure(
+            FailureKind::Process,
+            "extracted executable version/exit/lifetime differs",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

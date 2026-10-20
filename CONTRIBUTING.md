@@ -1,9 +1,8 @@
 # Contributing
 
-Use a separate checkout and read [AGENTS.md](AGENTS.md). Version6 is Unreleased.
-Consult the source-bound [implementation evidence](docs/v6-implementation-evidence.md)
-before interpreting a local pass as native platform qualification. Acceptance
-requires the complete native, archive and GUI gates for the delivered source.
+Read [AGENTS.md](AGENTS.md). Acceptance requires the complete [native, archive and GUI gates](docs/verification.md) for the delivered
+source. Local checks establish only the properties they execute; consult the
+source-specific CI run for platform qualification.
 
 ## Start with Rust
 
@@ -23,6 +22,8 @@ do not regenerate it merely to work around a failed locked command. Normal produ
 business behavior belongs in eml-core/eml-fs, not CLI renderers or desktop views.
 All test mail is synthetic. Put build output and owned fixtures under target/.
 Never use owner mail, saved preferences or unrelated processes for verification.
+
+Docker Linux product tests require a reviewed destination filesystem, such as an ext4-backed volume selected through `TMPDIR`; the usual OverlayFS container layer is deliberately refused for namespace creation. Protected archive tooling also admits every ancestor through `/`, so changing only its scratch directory cannot qualify an OverlayFS-root container; run the complete archive/native suite on the supported GitHub CI hosts.
 
 Windows native builds use the matching `*-pc-windows-gnullvm` host with rust-mingw.
 Install that host from the authoritative target table, select its
@@ -96,6 +97,8 @@ and the original failure evidence.
 ```sh
 # Install exact tool versions from xtask/tools.toml on PATH
 cargo xtask check
+cargo xtask check-quality
+cargo xtask check-shell
 cargo xtask notices --check
 cargo xtask notices --write --out target/legal-materials
 cargo xtask qualify --target TARGET --out target/native-qualification
@@ -141,14 +144,22 @@ bridge/test source using the selected Xcode's default formatter configuration.
 are captured from the pinned tool and passed explicitly, so ancestor/owner
 formatter settings are not inputs. A newer local formatter is supplementary.
 
+Rust compiler, rustdoc and Clippy levels are authoritative in [Cargo.toml](Cargo.toml); all authored members inherit them. Excluded Rust workspaces carry checked-equivalent rules and run Clippy too. [clippy.toml](clippy.toml) defines structural review limits. These tripwires support responsibility-based design review; a small file or function alone does not establish good architecture.
+
+[quality.toml](quality.toml) centrally records every necessary authored lint exception by stable identifier, exact file, named syntax scope, lint set and rationale. Source attributes reference `reason = "quality:IDENTIFIER"`; do not copy rationales into independent inventories. `check-quality` rejects unregistered, stale, duplicated or widened exceptions, conditional and opaque macro suppressions, formatter skips, divergent package rules and undocumented literal lint-weakening options. Safe crates retain their stronger unsafe-code prohibition. Mutation lint capping is confined to the explicitly registered experiment command; it does not qualify product sources.
+
+Source discovery includes tracked and pending nonignored files, extensionless shell shebangs and referenced Rust sources. Vendored upstream packages are explicitly classified ownership boundaries, rather than authored style exemptions. The physical source-file limit is a navigation/review tripwire and applies to tests and checking tools too; split responsibilities rather than arbitrary text chunks.
+
+Native Swift checks compile the syntax checker using the selected Xcode's matching SwiftParser/SwiftSyntax host modules. Missing modules or parse errors fail visibly. Callable code-line and parameter limits follow the corresponding Clippy thresholds; Swift branch complexity uses the same numeric threshold but a distinct metric: one plus conditionals, loops, catches, nondefault switch cases, ternaries, additional comma-separated conditions and boolean conjunction/disjunction. Nested callable bodies, closures and accessors are measured separately. Negative controls accompany both Rust policy checks and Swift structure checks.
+
 macOS `qualify` produces a native app candidate; separate same-byte desktop and
 picker consumers establish GUI qualification. Final acceptance on every platform
 requires the delivered source's complete native/archive/GUI matrix. TARGET and ARCHIVE must match actual native
 host and declared artifact identities. Reusing a populated output directory is
 refused. See [verification](docs/verification.md) for the exact implemented scope.
-Future owner release admission, qualification, attestations and draft recovery
-are described in the [release procedure](docs/release.md). Do not dispatch it
-as part of implementation verification; v6 remains Unreleased.
+Release admission, qualification, attestations and draft recovery are described
+in the [release procedure](docs/release.md). Publication requires an explicit
+owner release decision.
 
 From a clean committed source, run the bounded campaigns separately:
 

@@ -137,13 +137,35 @@ fn events(bytes: &[u8]) -> Vec<serde_json::Value> {
         .collect()
 }
 #[test]
+fn usage_errors_preserve_layout_and_explain_missing_output_folders() {
+    let root = root();
+    let output = invoke(root.path(), &["--output", "copies", "message.eml"], None);
+    assert_eq!(output.status.code(), Some(2));
+    let text = String::from_utf8(output.stderr).unwrap();
+    assert!(text.contains("\n\nUsage:"), "{text}");
+    assert!(!text.contains("\\n\\nUsage:"), "{text}");
+    let missing = invoke(
+        root.path(),
+        &["--output-dir", "missing", "message.eml"],
+        None,
+    );
+    assert_eq!(missing.status.code(), Some(2));
+    let text = String::from_utf8(missing.stderr).unwrap();
+    assert!(text.contains("existing, writable folder"), "{text}");
+    assert!(text.contains("OS error"), "{text}");
+}
+#[test]
 fn actual_binary_version_help_and_argument_conflicts_have_checked_channel_contracts() {
     let root = root();
     let version = invoke(root.path(), &["--version"], None);
     assert!(version.status.success());
     assert_eq!(
         version.stdout,
-        format!("remove-eml-attachments {}\n", env!("CARGO_PKG_VERSION")).as_bytes()
+        format!(
+            "remove-eml-attachments {}\n",
+            eml_protocol::product::VERSION_WITH_BUILD.as_str()
+        )
+        .as_bytes()
     );
     assert!(version.stderr.is_empty());
     let help = invoke(root.path(), &["--help"], None);
@@ -428,21 +450,30 @@ fn positional_usage_requires_paths_but_empty_request_is_core_no_inputs() {
 #[test]
 fn invalid_argument_newlines_and_controls_cannot_forge_terminal_structure() {
     let root = root();
-    let output = invoke(
-        root.path(),
-        &["--format", "bad\nforged\u{1b}", "--", "a.eml"],
-        None,
-    );
-    assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
-    assert_eq!(
-        output.stderr.iter().filter(|byte| **byte == b'\n').count(),
-        1
-    );
-    assert!(!output.stderr.contains(&0x1b));
-    assert!(String::from_utf8(output.stderr).unwrap().contains("\\n"));
+    for (plain, hostile) in [
+        (
+            vec!["--format", "bad", "--", "a.eml"],
+            vec!["--format", "bad\nforged\u{1b}", "--", "a.eml"],
+        ),
+        (vec!["--bad"], vec!["--bad\nforged\u{1b}"]),
+    ] {
+        let baseline = invoke(root.path(), &plain, None);
+        let output = invoke(root.path(), &hostile, None);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        // Clap's authored formatting is allowed; argv may not add physical lines.
+        assert_eq!(
+            output.stderr.iter().filter(|b| **b == b'\n').count(),
+            baseline.stderr.iter().filter(|b| **b == b'\n').count()
+        );
+        assert!(!output.stderr.contains(&0x1b));
+        let text = String::from_utf8(output.stderr).unwrap();
+        assert!(text.contains("\\nforged\\u{1b}"), "{text}");
+        assert!(!text.contains("\nforged"), "{text}");
+    }
     root.close().unwrap();
 }
+
 #[cfg(unix)]
 #[test]
 fn caller_argv_zero_does_not_replace_authored_help_program_name() {

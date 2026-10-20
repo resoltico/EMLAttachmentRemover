@@ -133,77 +133,7 @@ pub(crate) fn runtime(
         );
     }
     if os == "linux" {
-        let dynamic = run("readelf", &["--dynamic", "--wide"], "dynamic")?;
-        if dynamic
-            .lines()
-            .any(|line| line.contains("(RPATH)") || line.contains("(RUNPATH)"))
-        {
-            return Err("Unreviewed embedded ELF runtime search path".into());
-        }
-        let mut dependencies = BTreeSet::new();
-        for line in dynamic.lines().filter(|line| line.contains("(NEEDED)")) {
-            let name = line
-                .split_once('[')
-                .and_then(|(_, tail)| tail.split_once(']'))
-                .map(|(name, _)| name)
-                .ok_or("Malformed ELF dependency record")?;
-            if !matches!(
-                name,
-                "libc.so.6"
-                    | "libgcc_s.so.1"
-                    | "libpthread.so.0"
-                    | "libdl.so.2"
-                    | "libm.so.6"
-                    | "librt.so.1"
-                    | "ld-linux-x86-64.so.2"
-                    | "ld-linux-aarch64.so.1"
-            ) {
-                return Err("Unreviewed non-system ELF runtime dependency".into());
-            }
-            dependencies.insert(name.to_owned());
-        }
-        if dependencies.is_empty() {
-            return Err("ELF dependency discovery unexpectedly empty".into());
-        }
-        let headers = run(
-            "readelf",
-            &["--program-headers", "--wide"],
-            "program-headers",
-        )?;
-        let expected = if architecture == "x86_64" {
-            "/lib64/ld-linux-x86-64.so.2"
-        } else {
-            "/lib/ld-linux-aarch64.so.1"
-        };
-        let interpreters: Vec<_> = headers
-            .lines()
-            .filter_map(|line| {
-                line.split_once("[Requesting program interpreter: ")
-                    .and_then(|(_, tail)| tail.strip_suffix(']'))
-            })
-            .collect();
-        if interpreters != [expected] {
-            return Err("ELF interpreter differs from the reviewed GNU platform".into());
-        }
-        let versions = run("readelf", &["--version-info", "--wide"], "symbol-versions")?;
-        let maximum = glibc_version(maximum_glibc)?;
-        let mut required = BTreeSet::new();
-        for token in versions.split(|character: char| {
-            !(character.is_ascii_alphanumeric() || matches!(character, '_' | '.'))
-        }) {
-            if let Some(version) = token.strip_prefix("GLIBC_") {
-                if glibc_version(version)? > maximum {
-                    return Err("ELF GLIBC symbol requirement exceeds declared floor".into());
-                }
-                required.insert(version.to_owned());
-            }
-        }
-        if required.is_empty() {
-            return Err("ELF GLIBC version discovery unexpectedly empty".into());
-        }
-        return Ok(
-            json!({"external_system_dependencies":dependencies,"interpreter":expected,"required_glibc_versions":required,"maximum_policy":maximum_glibc}),
-        );
+        return linux_runtime(architecture, maximum_glibc, &run);
     }
     if os == "windows" {
         let imports = crate::windows_runtime::inspect(&fs::read(executable)?, architecture)?;
@@ -296,13 +226,7 @@ fn verify(
         );
     }
     let host = crate::native_host::inspect(root, target, os, architecture)?;
-    let work_parent = root.join("target/archive-verification");
-    fs::create_dir_all(&work_parent)?;
-    let work = tempfile::Builder::new()
-        .prefix("native-")
-        .tempdir_in(&work_parent)?
-        .keep();
-    eprintln!("Retained native archive verification: {}", work.display());
+    let work = retained_verification_directory(root)?;
     let mut snapshot_identity = None;
     let result: Result<xtask::archive::ByteIdentity> = (|| {
         let snapshot = ArchiveSnapshot::read(archive)?;
@@ -313,50 +237,18 @@ fn verify(
                 &json!({"archive_basename":name,"snapshot":snapshot_identity,"target":target}),
             )?,
         )?;
-        let checked = notices::checked_target(root, platform)?;
-        let mut materials = checked.files().clone();
         let version = plan["version"]
             .as_str()
             .ok_or("Missing Cargo-derived version")?;
-        let root_name = artifact["root"].as_str().ok_or("Missing archive root")?;
         let executable = artifact["executable"]
             .as_str()
             .ok_or("Missing archive executable")?;
-        let readme = cli_readme(
-            version,
-            row["platform_text"]
-                .as_str()
-                .ok_or("Missing archive platform text")?,
-        );
-        materials.insert("README.txt".into(), readme.into_bytes());
-        #[cfg(windows)]
-        if os == "windows" {
-            let evidence = snapshot.read_cli_zip_material(
-                root_name,
-                crate::windows_evidence::MATERIAL,
-                crate::windows_evidence::MAX_BYTES,
-            )?;
-            materials.insert(crate::windows_evidence::MATERIAL.into(), evidence);
-        }
-        let extracted = if os == "linux" {
-            snapshot.extract_cli_tar_gz(root_name, executable, &materials, &work)?
-        } else {
-            snapshot.extract_cli_zip(root_name, executable, &materials, &work)?
-        };
+        let extracted =
+            extract_cli_materials(root, &snapshot, platform, &plan, row, artifact, &work)?;
         let executable = extracted.root().join(executable);
         let executable_bytes = fs::read(&executable)?;
-        let actual_binary = xtask::archive::ByteIdentity::of(&executable_bytes);
-        if expected_binary.is_some_and(|expected| expected != &actual_binary) {
-            return Err("Extracted CLI bytes differ from the frozen signed build artifact".into());
-        }
-        let binary = binary_identity(
-            &executable_bytes,
-            os,
-            architecture,
-            plan["policy"]["macos_minimum"]
-                .as_str()
-                .ok_or("Missing deployment policy")?,
-        )?;
+        let (actual_binary, binary) =
+            verify_executable_bytes(&executable_bytes, expected_binary, os, architecture, &plan)?;
         let runtime = runtime(
             root,
             &executable,
@@ -390,6 +282,163 @@ fn verify(
         )?;
         Ok(snapshot.identity())
     })();
+    record_verification_failure(result, &work, target, &snapshot_identity)
+}
+
+pub(crate) fn cli_readme(version: &str, platform_text: &str) -> String {
+    format!(
+        "EML Attachment Remover {version}\n\n{platform_text}\n\nRun ./remove-eml-attachments --help (remove-eml-attachments.exe on Windows).\nCreate copies: remove-eml-attachments PATH...\nInspect without writes: remove-eml-attachments --dry-run PATH...\nOriginal messages remain unchanged; existing different copies are never replaced.\n\nSource and documentation: https://github.com/resoltico/EMLAttachmentRemover\nSoftware/artwork terms: LICENSE. Complete third-party materials: THIRD-PARTY-NOTICES.txt and licenses/.\nmacOS binaries are ad hoc signed, without Developer ID or notarization; first launch may require the system's Open Anyway choice.\n"
+    )
+}
+
+fn linux_runtime(
+    architecture: &str,
+    maximum_glibc: &str,
+    run: &impl Fn(&str, &[&str], &str) -> Result<String>,
+) -> Result<Value> {
+    let dynamic = run("readelf", &["--dynamic", "--wide"], "dynamic")?;
+    if dynamic
+        .lines()
+        .any(|line| line.contains("(RPATH)") || line.contains("(RUNPATH)"))
+    {
+        return Err("Unreviewed embedded ELF runtime search path".into());
+    }
+    let mut dependencies = BTreeSet::new();
+    for line in dynamic.lines().filter(|line| line.contains("(NEEDED)")) {
+        let name = line
+            .split_once('[')
+            .and_then(|(_, tail)| tail.split_once(']'))
+            .map(|(name, _)| name)
+            .ok_or("Malformed ELF dependency record")?;
+        if !matches!(
+            name,
+            "libc.so.6"
+                | "libgcc_s.so.1"
+                | "libpthread.so.0"
+                | "libdl.so.2"
+                | "libm.so.6"
+                | "librt.so.1"
+                | "ld-linux-x86-64.so.2"
+                | "ld-linux-aarch64.so.1"
+        ) {
+            return Err("Unreviewed non-system ELF runtime dependency".into());
+        }
+        dependencies.insert(name.to_owned());
+    }
+    if dependencies.is_empty() {
+        return Err("ELF dependency discovery unexpectedly empty".into());
+    }
+    let headers = run(
+        "readelf",
+        &["--program-headers", "--wide"],
+        "program-headers",
+    )?;
+    let expected = if architecture == "x86_64" {
+        "/lib64/ld-linux-x86-64.so.2"
+    } else {
+        "/lib/ld-linux-aarch64.so.1"
+    };
+    let interpreters: Vec<_> = headers
+        .lines()
+        .filter_map(|line| {
+            line.split_once("[Requesting program interpreter: ")
+                .and_then(|(_, tail)| tail.strip_suffix(']'))
+        })
+        .collect();
+    if interpreters != [expected] {
+        return Err("ELF interpreter differs from the reviewed GNU platform".into());
+    }
+    let versions = run("readelf", &["--version-info", "--wide"], "symbol-versions")?;
+    let maximum = glibc_version(maximum_glibc)?;
+    let mut required = BTreeSet::new();
+    for token in versions.split(|character: char| {
+        !(character.is_ascii_alphanumeric() || matches!(character, '_' | '.'))
+    }) {
+        if let Some(version) = token.strip_prefix("GLIBC_") {
+            if glibc_version(version)? > maximum {
+                return Err("ELF GLIBC symbol requirement exceeds declared floor".into());
+            }
+            required.insert(version.to_owned());
+        }
+    }
+    if required.is_empty() {
+        return Err("ELF GLIBC version discovery unexpectedly empty".into());
+    }
+    Ok(
+        json!({"external_system_dependencies":dependencies,"interpreter":expected,"required_glibc_versions":required,"maximum_policy":maximum_glibc}),
+    )
+}
+
+fn extract_cli_materials(
+    root: &Path,
+    snapshot: &ArchiveSnapshot,
+    platform: &str,
+    plan: &Value,
+    row: &Value,
+    artifact: &Value,
+    work: &Path,
+) -> Result<xtask::archive::ExtractedCli> {
+    let checked = notices::checked_target(root, platform)?;
+    let mut materials = checked.files().clone();
+    let version = plan["version"]
+        .as_str()
+        .ok_or("Missing Cargo-derived version")?;
+    let root_name = artifact["root"].as_str().ok_or("Missing archive root")?;
+    let executable = artifact["executable"]
+        .as_str()
+        .ok_or("Missing archive executable")?;
+    let readme = cli_readme(
+        version,
+        row["platform_text"]
+            .as_str()
+            .ok_or("Missing archive platform text")?,
+    );
+    materials.insert("README.txt".into(), readme.into_bytes());
+    #[cfg(windows)]
+    if row["os"] == "windows" {
+        let evidence = snapshot.read_cli_zip_material(
+            root_name,
+            crate::windows_evidence::MATERIAL,
+            crate::windows_evidence::MAX_BYTES,
+        )?;
+        materials.insert(crate::windows_evidence::MATERIAL.into(), evidence);
+    }
+    let extracted = if row["os"] == "linux" {
+        snapshot.extract_cli_tar_gz(root_name, executable, &materials, work)?
+    } else {
+        snapshot.extract_cli_zip(root_name, executable, &materials, work)?
+    };
+    Ok(extracted)
+}
+
+fn verify_executable_bytes(
+    executable_bytes: &[u8],
+    expected_binary: Option<&xtask::archive::ByteIdentity>,
+    os: &str,
+    architecture: &str,
+    plan: &Value,
+) -> Result<(xtask::archive::ByteIdentity, Value)> {
+    let actual_binary = xtask::archive::ByteIdentity::of(executable_bytes);
+    if expected_binary.is_some_and(|expected| expected != &actual_binary) {
+        return Err("Extracted CLI bytes differ from the frozen signed build artifact".into());
+    }
+    let binary = binary_identity(
+        executable_bytes,
+        os,
+        architecture,
+        plan["policy"]["macos_minimum"]
+            .as_str()
+            .ok_or("Missing deployment policy")?,
+    )?;
+    Ok((actual_binary, binary))
+}
+
+fn record_verification_failure(
+    result: Result<xtask::archive::ByteIdentity>,
+    work: &Path,
+    target: &str,
+    snapshot_identity: &Option<xtask::archive::ByteIdentity>,
+) -> Result<xtask::archive::ByteIdentity> {
     match result {
         Ok(identity) => Ok(identity),
         Err(error) => {
@@ -404,10 +453,15 @@ fn verify(
     }
 }
 
-pub(crate) fn cli_readme(version: &str, platform_text: &str) -> String {
-    format!(
-        "EML Attachment Remover {version}\n\n{platform_text}\n\nRun ./remove-eml-attachments --help (remove-eml-attachments.exe on Windows).\nCreate copies: remove-eml-attachments PATH...\nInspect without writes: remove-eml-attachments --dry-run PATH...\nOriginal messages remain unchanged; existing different copies are never replaced.\n\nSource and documentation: https://github.com/resoltico/EMLAttachmentRemover\nSoftware/artwork terms: LICENSE. Complete third-party materials: THIRD-PARTY-NOTICES.txt and licenses/.\nmacOS binaries are ad hoc signed, without Developer ID or notarization; first launch may require the system's Open Anyway choice.\n"
-    )
+fn retained_verification_directory(root: &Path) -> Result<std::path::PathBuf> {
+    let work_parent = root.join("target/archive-verification");
+    fs::create_dir_all(&work_parent)?;
+    let work = tempfile::Builder::new()
+        .prefix("native-")
+        .tempdir_in(&work_parent)?
+        .keep();
+    eprintln!("Retained native archive verification: {}", work.display());
+    Ok(work)
 }
 
 #[cfg(test)]
