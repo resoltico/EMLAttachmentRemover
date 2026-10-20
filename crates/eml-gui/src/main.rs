@@ -1,29 +1,24 @@
 //! macOS Slint view over the reusable desktop application model.
 #[allow(
     unsafe_code,
-    reason = "Slint-generated vtables and embedding hooks only"
+    unreachable_pub,
+    clippy::cognitive_complexity,
+    reason = "quality:slint-generated-view"
 )]
 mod view {
     slint::include_modules!();
 }
+use controller::Action;
 use slint::ComponentHandle;
 use slint::winit_030::winit::platform::macos::WindowAttributesExtMacOS;
-#[allow(
-    unsafe_code,
-    reason = "Necessary absent-only native lifecycle, file-open and Services methods"
-)]
+#[allow(unsafe_code, reason = "quality:native-application-boundary")]
 mod application;
 mod controller;
-#[allow(
-    unsafe_code,
-    reason = "Necessary native file ingress, dialogs, responder editing and URL/raw-window boundary"
-)]
+#[allow(unsafe_code, reason = "quality:native-desktop-boundary")]
 mod native;
-#[allow(
-    unsafe_code,
-    reason = "Typed Foundation String preference and immutable argument-domain constant"
-)]
+#[allow(unsafe_code, reason = "quality:native-preferences-boundary")]
 mod preferences;
+mod presentation;
 fn main() -> std::process::ExitCode {
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -50,7 +45,22 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
         })
         .select()?;
     let lifecycle = application::ApplicationHooks::install()?;
+    let (interface_font_family, interface_font_size) = native::system_font()?;
     let window = view::MainWindow::new()?;
+    window.set_interface_font_family(interface_font_family.clone());
+    window.set_interface_font_size(interface_font_size);
+    install_native_edit(&window);
+    let (about, _licenses) =
+        secondary_windows(&window, interface_font_family, interface_font_size)?;
+    let _lifecycle_timer = install_event_pump(&window, &about, lifecycle)?;
+    window.show()?;
+    native::lifecycle_observation("Main window shown; source-location panic hook installed");
+    slint::run_event_loop_until_quit()?;
+    native::lifecycle_observation("Main event loop returned successfully");
+    Ok(())
+}
+
+fn install_native_edit(window: &view::MainWindow) {
     // Native text editing is synchronous: queuing Select All could let the
     // next typed character arrive before AppKit changes the selection.
     let weak = window.as_weak();
@@ -73,19 +83,48 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Native Select All: {error}");
         }
     });
+}
+fn secondary_windows(
+    window: &view::MainWindow,
+    interface_font_family: slint::SharedString,
+    interface_font_size: f32,
+) -> Result<(view::AboutWindow, view::LicenseWindow), Box<dyn std::error::Error>> {
     let about = view::AboutWindow::new()?;
-    about.set_identity(format!("EML Attachment Remover {}\nSoftware: MPL-2.0\nSlint: Royalty-free Desktop, Mobile, and Web Applications License 2.0",env!("CARGO_PKG_VERSION")).into());
-    let weak = about.as_weak();
-    window.on_about_requested(move || {
-        if let Some(about) = weak.upgrade()
-            && let Err(error) = about.show()
-        {
-            eprintln!("About window: {error}");
+    about.set_interface_font_family(interface_font_family.clone());
+    about.set_interface_font_size(interface_font_size);
+    about.set_version_label(eml_protocol::product::VERSION_WITH_BUILD.as_str().into());
+    let copyright = include_str!("../../../LICENSE")
+        .lines()
+        .find_map(|line| line.strip_prefix("Copyright (c) "))
+        .ok_or("The project copyright notice is absent")?;
+    about.set_copyright(format!("© {copyright}").into());
+    about.set_app_icon(native::application_icon()?);
+    about.on_website_requested(|| {
+        if let Err(error) = native::open_project_website() {
+            eprintln!("Project website: {error}");
         }
     });
     let licenses = view::LicenseWindow::new()?;
+    licenses.set_interface_font_family(interface_font_family);
+    licenses.set_interface_font_size(interface_font_size);
     licenses.set_licenses(include_str!("../../../LICENSE").into());
     let weak_licenses = licenses.as_weak();
+    let notice_window = licenses.as_weak();
+    licenses.on_third_party_licenses_requested(move || {
+        if let Err(error) = native::open_third_party_licenses()
+            && let Some(window) = notice_window.upgrade()
+        {
+            window.set_notice(error.to_string().into());
+        }
+    });
+    let about_licenses = licenses.as_weak();
+    about.on_licenses_requested(move || {
+        if let Some(licenses) = about_licenses.upgrade()
+            && let Err(error) = licenses.show()
+        {
+            eprintln!("License window: {error}");
+        }
+    });
     window.on_licenses_requested(move || {
         if let Some(licenses) = weak_licenses.upgrade()
             && let Err(error) = licenses.show()
@@ -93,24 +132,32 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("License window: {error}");
         }
     });
-    let weak = window.as_weak();
-    let commands = std::rc::Rc::new(std::cell::RefCell::new(std::collections::VecDeque::new()));
-    let overflowed = std::rc::Rc::new(std::cell::Cell::new(false));
+    Ok((about, licenses))
+}
+#[derive(Default)]
+struct PendingActions {
+    actions: std::collections::VecDeque<controller::Action>,
+    overflowed: bool,
+}
+impl PendingActions {
+    fn push(&mut self, action: controller::Action) {
+        if self.actions.len() < 32 {
+            self.actions.push_back(action);
+        } else {
+            self.overflowed = true;
+        }
+    }
+}
+fn bind_actions(window: &view::MainWindow) -> std::rc::Rc<std::cell::RefCell<PendingActions>> {
+    let commands = std::rc::Rc::new(std::cell::RefCell::new(PendingActions::default()));
     macro_rules! action {
         ($callback:ident, $action:expr) => {{
             let commands = std::rc::Rc::clone(&commands);
-            let overflowed = std::rc::Rc::clone(&overflowed);
             window.$callback(move || {
-                let mut commands = commands.borrow_mut();
-                if commands.len() < 32 {
-                    commands.push_back($action);
-                } else {
-                    overflowed.set(true);
-                }
+                commands.borrow_mut().push($action);
             });
         }};
     }
-    use controller::Action;
     action!(on_select_files, Action::Files);
     action!(on_select_folder, Action::Folders);
     action!(on_choose_destination, Action::Destination);
@@ -130,41 +177,35 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
     action!(on_cancel_confirmation, Action::CancelConfirmation);
     action!(on_dismiss_notice, Action::DismissNotice);
     let selected_commands = std::rc::Rc::clone(&commands);
-    let selected_overflowed = std::rc::Rc::clone(&overflowed);
     window.on_select_run(move |index| {
         if let Ok(index) = usize::try_from(index) {
-            let mut commands = selected_commands.borrow_mut();
-            if commands.len() < 32 {
-                commands.push_back(Action::Select(index));
-            } else {
-                selected_overflowed.set(true);
-            }
+            selected_commands.borrow_mut().push(Action::Select(index));
         }
     });
     let waiting_commands = std::rc::Rc::clone(&commands);
-    let waiting_overflowed = std::rc::Rc::clone(&overflowed);
     window.on_remove_waiting(move |index| {
         if let Ok(index) = usize::try_from(index) {
-            let mut commands = waiting_commands.borrow_mut();
-            if commands.len() < 32 {
-                commands.push_back(Action::RemoveWaiting(index));
-            } else {
-                waiting_overflowed.set(true);
-            }
+            waiting_commands
+                .borrow_mut()
+                .push(Action::RemoveWaiting(index));
         }
     });
     let item_commands = std::rc::Rc::clone(&commands);
-    let item_overflowed = std::rc::Rc::clone(&overflowed);
     window.on_select_item(move |index| {
         if let Ok(index) = usize::try_from(index) {
-            let mut commands = item_commands.borrow_mut();
-            if commands.len() < 32 {
-                commands.push_back(Action::Item(index));
-            } else {
-                item_overflowed.set(true);
-            }
+            item_commands.borrow_mut().push(Action::Item(index));
         }
     });
+    commands
+}
+fn install_event_pump(
+    window: &view::MainWindow,
+    about: &view::AboutWindow,
+    lifecycle: application::ApplicationHooks,
+) -> Result<slint::Timer, Box<dyn std::error::Error>> {
+    let weak = window.as_weak();
+    let weak_about = about.as_weak();
+    let commands = bind_actions(window);
     let mut controller = controller::Controller::new()?;
     let lifecycle_timer = slint::Timer::default();
     lifecycle_timer.start(
@@ -174,17 +215,29 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
             let Some(window) = weak.upgrade() else {
                 return;
             };
-            if overflowed.replace(false) {
+            let (overflowed, actions) = {
+                let mut pending = commands.borrow_mut();
+                (
+                    std::mem::take(&mut pending.overflowed),
+                    pending.actions.drain(..).collect::<Vec<_>>(),
+                )
+            };
+            if overflowed {
                 controller.boundary_failure(
                     "Too many pending UI actions; further processing admission is closed.",
                 );
             }
-            let actions: Vec<_> = commands.borrow_mut().drain(..).collect();
             for action in actions {
                 controller.action(&window, action);
             }
             match lifecycle.take_events() {
                 Ok(events) => {
+                    if events.about
+                        && let Some(about) = weak_about.upgrade()
+                        && let Err(error) = native::restore(about.window())
+                    {
+                        controller.system_notice(&format!("About window: {error}"));
+                    }
                     if (events.reopen || !events.selections.is_empty())
                         && let Err(error) = native::restore(window.window())
                     {
@@ -211,9 +264,5 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
     );
-    window.show()?;
-    native::lifecycle_observation("Main window shown; source-location panic hook installed");
-    slint::run_event_loop_until_quit()?;
-    native::lifecycle_observation("Main event loop returned successfully");
-    Ok(())
+    Ok(lifecycle_timer)
 }

@@ -139,7 +139,7 @@ impl RunQueue {
         if self.active.is_some() || self.waiting.is_empty() {
             return Ok(None);
         }
-        if self.reports.len() >= 2 {
+        if self.report_capacity_full() {
             return Err(QueueError::ReportSpace);
         }
         let Some(next) = self.waiting.pop_front() else {
@@ -148,6 +148,14 @@ impl RunQueue {
         self.active = Some(next.0);
         self.reports.push(next.0);
         Ok(Some(next))
+    }
+    fn report_capacity_full(&self) -> bool {
+        self.reports.len() >= 2
+    }
+    /// Waiting work cannot start until a retained report is dismissed.
+    /// This uses the same reservation rule as start_next, without mutating it.
+    pub fn is_paused_for_report_space(&self) -> bool {
+        self.active.is_none() && !self.waiting.is_empty() && self.report_capacity_full()
     }
     /// Complete only the exact active run, retaining its report reservation.
     pub fn complete(&mut self, id: RunId) -> Result<(), QueueError> {

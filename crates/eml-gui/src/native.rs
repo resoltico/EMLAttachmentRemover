@@ -21,6 +21,8 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+mod save;
+
 unsafe extern "C" {
     fn NSLog(format: &NSString, ...);
 }
@@ -322,6 +324,20 @@ pub(crate) fn restore(window: &slint::Window) -> Result<(), Box<dyn std::error::
     parent.makeKeyAndOrderFront(None);
     Ok(())
 }
+/// Resolve the registered system UI family and AppKit's base control font size.
+pub(crate) fn system_font() -> Result<(slint::SharedString, f32), &'static str> {
+    let mut fonts = fontique::Collection::new(fontique::CollectionOptions::default());
+    let family = fonts
+        .generic_families(fontique::GenericFamily::SystemUi)
+        .next()
+        .ok_or("The macOS system UI font family is unavailable")?;
+    let name = fonts
+        .family_name(family)
+        .ok_or("The macOS system UI font family has no registered name")?;
+    // Use the registered family rather than a literal CSS generic name: Slint
+    // treats an explicit font-family as a named family before its fallbacks.
+    Ok((name.into(), objc2_app_kit::NSFont::systemFontSize() as f32))
+}
 /// Read system appearance only; never change owner appearance preferences.
 pub(crate) fn appearance() -> Result<(bool, bool), NativeError> {
     use objc2_app_kit::{
@@ -357,6 +373,7 @@ pub(crate) struct NativeDialog {
     parent: Retained<NSWindow>,
     result: Rc<Cell<Option<DialogResult>>>,
     _block: RcBlock<dyn Fn(NSModalResponse)>,
+    _save_delegate: Option<Retained<save::ReportNameDelegate>>,
 }
 impl NativeDialog {
     pub(crate) fn open(
@@ -420,6 +437,7 @@ impl NativeDialog {
             parent,
             result,
             _block: block,
+            _save_delegate: None,
         })
     }
     pub(crate) fn save(window: &slint::Window) -> Result<Self, NativeError> {
@@ -428,9 +446,13 @@ impl NativeDialog {
         let panel = NSSavePanel::savePanel(main);
         panel.setCanCreateDirectories(false);
         panel.setNameFieldStringValue(&NSString::from_str("EML-report.json"));
-        panel.setMessage(Some(&NSString::from_str(
-            "Export metadata only. Existing files will not be replaced.",
-        )));
+        panel.setMessage(Some(&NSString::from_str(save::SAVE_MESSAGE)));
+        let delegate = save::ReportNameDelegate::new(main);
+        // SAFETY: this exact owned, main-thread delegate implements the panel's
+        // typed protocol. NativeDialog retains it until settlement; the link is weak.
+        unsafe {
+            panel.setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(&*delegate)));
+        }
         let result = Rc::new(Cell::new(None));
         let completed = Rc::clone(&result);
         let weak = Weak::new(&*panel);
@@ -459,6 +481,10 @@ impl NativeDialog {
                 };
                 // SAFETY: nil is a valid sender for this owned panel.
                 panel.orderOut(None);
+                // SAFETY: clear only this owned save panel's weak delegate link.
+                unsafe {
+                    panel.setDelegate(None);
+                }
                 value
             }))
             .unwrap_or(DialogResult::Failed(NativeError::DialogAborted));
@@ -470,6 +496,7 @@ impl NativeDialog {
             parent,
             result,
             _block: block,
+            _save_delegate: Some(delegate),
         })
     }
     pub(crate) fn take_result(&self, window: &slint::Window) -> Option<DialogResult> {
@@ -490,6 +517,88 @@ impl NativeDialog {
             }
         }
     }
+}
+
+impl Drop for NativeDialog {
+    fn drop(&mut self) {
+        if let Panel::Save(panel) = &self.panel {
+            // SAFETY: clear the weak link before the strongly owned delegate is released.
+            unsafe {
+                panel.setDelegate(None);
+            }
+        }
+    }
+}
+
+/// Read the actual bundle icon through AppKit, with no duplicate artwork asset.
+pub(crate) fn application_icon() -> Result<slint::Image, &'static str> {
+    use objc2_app_kit::{NSApplication, NSBitmapImageRep, NSColorSpace};
+    let main = MainThreadMarker::new().ok_or("Application icon requires the main thread")?;
+    let image = NSApplication::sharedApplication(main)
+        .applicationIconImage()
+        .ok_or("Application icon is unavailable")?;
+    let data = image
+        .TIFFRepresentation()
+        .ok_or("Application icon has no bitmap representation")?;
+    let bitmap = NSBitmapImageRep::imageRepWithData(&data)
+        .ok_or("Application icon bitmap is unavailable")?;
+    let (width, height) = (bitmap.pixelsWide(), bitmap.pixelsHigh());
+    if !(1..=4096).contains(&width) || !(1..=4096).contains(&height) {
+        return Err("Application icon dimensions are invalid");
+    }
+    // Keep a two-density image for the 64-point About icon. AppKit performs the
+    // color conversion, avoiding assumptions about bitmap channel/alpha layout.
+    let rgb = NSColorSpace::sRGBColorSpace();
+    let mut pixels = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(128, 128);
+    for (index, pixel) in pixels.make_mut_slice().iter_mut().enumerate() {
+        let x = ((index % 128) as isize * width / 128).min(width - 1);
+        let y = ((index / 128) as isize * height / 128).min(height - 1);
+        let color = bitmap
+            .colorAtX_y(x, y)
+            .and_then(|c| c.colorUsingColorSpace(&rgb))
+            .ok_or("Application icon pixel cannot be converted to sRGB")?;
+        let byte = |value: f64| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+        *pixel = slint::Rgba8Pixel::new(
+            byte(color.redComponent()),
+            byte(color.greenComponent()),
+            byte(color.blueComponent()),
+            byte(color.alphaComponent()),
+        );
+    }
+    Ok(slint::Image::from_rgba8(pixels))
+}
+/// Open the fixed project address through the user's selected browser.
+pub(crate) fn open_project_website() -> Result<(), &'static str> {
+    MainThreadMarker::new().ok_or("Project website requires the main thread")?;
+    let url = NSURL::URLWithString(&NSString::from_str(
+        "https://github.com/resoltico/EMLAttachmentRemover",
+    ))
+    .ok_or("Project website URL is invalid")?;
+    if !objc2_app_kit::NSWorkspace::sharedWorkspace().openURL(&url) {
+        return Err("The default browser could not open the project website");
+    }
+    Ok(())
+}
+
+/// Open the bundle's complete component notices and license files in Finder.
+pub(crate) fn open_third_party_licenses() -> Result<(), Box<dyn std::error::Error>> {
+    MainThreadMarker::new().ok_or("Third-party licenses require the main thread")?;
+    let executable = std::env::current_exe()?;
+    let contents = executable
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("The application bundle is unavailable")?;
+    let directory = contents.join("Resources/licenses");
+    if !directory.is_dir() {
+        return Err(
+            "Bundled third-party licenses are missing. Download a complete replacement app.".into(),
+        );
+    }
+    let url = url_from_path(&directory)?;
+    if !objc2_app_kit::NSWorkspace::sharedWorkspace().openURL(&url) {
+        return Err("Finder could not open the bundled third-party licenses.".into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]

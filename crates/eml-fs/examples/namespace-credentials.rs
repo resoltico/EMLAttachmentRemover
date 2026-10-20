@@ -301,92 +301,111 @@ mod probe {
         );
         Ok(())
     }
-    pub fn main() -> Result<()> {
+    #[derive(Clone, Copy)]
+    struct CredentialRoles {
+        victim: u32,
+        victim_gid: u32,
+        actor: u32,
+        foreign: u32,
+    }
+    impl CredentialRoles {
+        fn admit(args: &[String]) -> Result<Self> {
+            require(
+                args.len() == 2,
+                "Usage: sudo -n namespace-credentials VICTIM_UID VICTIM_GID",
+            )?;
+            require(
+                process::getuid().is_root() && process::geteuid().is_root(),
+                "Native credential gate requires available noninteractive root; otherwise UNRUN",
+            )?;
+            let victim: u32 = args[0].parse()?;
+            let victim_gid: u32 = args[1].parse()?;
+            require(
+                victim != 0 && victim_gid != 0,
+                "Victim must be a nonroot runner account",
+            )?;
+            #[cfg(target_os = "linux")]
+            let overflow: u32 = std::fs::read_to_string("/proc/sys/kernel/overflowuid")?
+                .trim()
+                .parse()?;
+            #[cfg(not(target_os = "linux"))]
+            let overflow = u32::MAX;
+            let mut identities = (65_528..65_534)
+                .filter(|uid| *uid != victim && *uid != victim_gid && *uid != overflow);
+            let actor = identities.next().ok_or("No distinct actor identity")?;
+            let foreign = identities
+                .next()
+                .ok_or("No distinct foreign-owner identity")?;
+            #[cfg(target_os = "linux")]
+            for tool in ["setfacl", "getfacl"] {
+                require(
+                    Command::new(tool).arg("--version").status()?.success(),
+                    "Install the native POSIX ACL test tools before running this credential gate",
+                )?;
+            }
+            Ok(Self {
+                victim,
+                victim_gid,
+                actor,
+                foreign,
+            })
+        }
+    }
+    fn launch_child(args: &[String]) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            require(args.len() == 6, "Malformed credential launcher")?;
+            let uid: u32 = args[1].parse()?;
+            let gid: u32 = args[2].parse()?;
+            require(
+                uid != 0
+                    && gid != 0
+                    && process::getuid().as_raw() == uid
+                    && process::geteuid().as_raw() == uid
+                    && process::getgid().as_raw() == gid,
+                "Darwin credential launcher has wrong UID or real GID",
+            )?;
+            let groups = process::getgroups()?;
+            require(
+                process::getegid().as_raw() == 0 && groups.len() == 1 && groups[0].as_raw() == 0,
+                "Darwin launcher did not match the reviewed zero-group normalization state",
+            )?;
+            println!(
+                "Darwin pre-normalization: ruid={} euid={} rgid={} egid={} groups={:?}",
+                process::getuid().as_raw(),
+                process::geteuid().as_raw(),
+                process::getgid().as_raw(),
+                process::getegid().as_raw(),
+                process::getgroups()?
+            );
+            // Rust1.99 clears groups after setgid when uid is requested.
+            // Native Darwin evidence shows that empty group list resets the
+            // effective primary group to0 while the real group stays correct.
+            // A second safe exec requests only our permitted real GID, so it
+            // does not clear groups again. No fixture operation occurs until
+            // the final child strictly verifies all credentials and no regain.
+            let error = Command::new(std::env::current_exe()?)
+                .arg("--verified-child")
+                .args(&args[1..])
+                .gid(gid)
+                .exec();
+            Err(error.into())
+        }
+        #[cfg(not(target_os = "macos"))]
+        child(&args[1..])
+    }
+    pub(super) fn main() -> Result<()> {
         let args: Vec<_> = std::env::args().skip(1).collect();
         if args.first().map(String::as_str) == Some("--noop") {
             return Ok(());
         }
         if args.first().map(String::as_str) == Some("--child") {
-            #[cfg(target_os = "macos")]
-            {
-                require(args.len() == 6, "Malformed credential launcher")?;
-                let uid: u32 = args[1].parse()?;
-                let gid: u32 = args[2].parse()?;
-                require(
-                    uid != 0
-                        && gid != 0
-                        && process::getuid().as_raw() == uid
-                        && process::geteuid().as_raw() == uid
-                        && process::getgid().as_raw() == gid,
-                    "Darwin credential launcher has wrong UID or real GID",
-                )?;
-                let groups = process::getgroups()?;
-                require(
-                    process::getegid().as_raw() == 0
-                        && groups.len() == 1
-                        && groups[0].as_raw() == 0,
-                    "Darwin launcher did not match the reviewed zero-group normalization state",
-                )?;
-                println!(
-                    "Darwin pre-normalization: ruid={} euid={} rgid={} egid={} groups={:?}",
-                    process::getuid().as_raw(),
-                    process::geteuid().as_raw(),
-                    process::getgid().as_raw(),
-                    process::getegid().as_raw(),
-                    process::getgroups()?
-                );
-                // Rust1.99 clears groups after setgid when uid is requested.
-                // Native Darwin evidence shows that empty group list resets the
-                // effective primary group to0 while the real group stays correct.
-                // A second safe exec requests only our permitted real GID, so it
-                // does not clear groups again. No fixture operation occurs until
-                // the final child strictly verifies all credentials and no regain.
-                let error = Command::new(std::env::current_exe()?)
-                    .arg("--verified-child")
-                    .args(&args[1..])
-                    .gid(gid)
-                    .exec();
-                return Err(error.into());
-            }
-            #[cfg(not(target_os = "macos"))]
-            return child(&args[1..]);
+            return launch_child(&args);
         }
         if args.first().map(String::as_str) == Some("--verified-child") {
             return child(&args[1..]);
         }
-        require(
-            args.len() == 2,
-            "Usage: sudo -n namespace-credentials VICTIM_UID VICTIM_GID",
-        )?;
-        require(
-            process::getuid().is_root() && process::geteuid().is_root(),
-            "Native credential gate requires available noninteractive root; otherwise UNRUN",
-        )?;
-        let victim: u32 = args[0].parse()?;
-        let victim_gid: u32 = args[1].parse()?;
-        require(
-            victim != 0 && victim_gid != 0,
-            "Victim must be a nonroot runner account",
-        )?;
-        #[cfg(target_os = "linux")]
-        let overflow: u32 = std::fs::read_to_string("/proc/sys/kernel/overflowuid")?
-            .trim()
-            .parse()?;
-        #[cfg(not(target_os = "linux"))]
-        let overflow = u32::MAX;
-        let mut identities =
-            (65_528..65_534).filter(|uid| *uid != victim && *uid != victim_gid && *uid != overflow);
-        let actor = identities.next().ok_or("No distinct actor identity")?;
-        let foreign = identities
-            .next()
-            .ok_or("No distinct foreign-owner identity")?;
-        #[cfg(target_os = "linux")]
-        for tool in ["setfacl", "getfacl"] {
-            require(
-                Command::new(tool).arg("--version").status()?.success(),
-                "Install the native POSIX ACL test tools before running this credential gate",
-            )?;
-        }
+        let roles = CredentialRoles::admit(&args)?;
         let temporary = BoundDirectory::open(Path::new("/tmp"))?;
         let mut random = [0u8; 16];
         getrandom::fill(&mut random)?;
@@ -399,10 +418,38 @@ mod probe {
             "Owned native credential fixture: {}",
             outer.directory().requested_path().display()
         );
-        fs::fchmod(outer.directory(), Mode::from_raw_mode(0o755))?;
-        let executable = outer.directory().requested_path().join("probe");
-        let fd = fs::openat(
+        let (executable, executable_id) = install_probe(outer.directory())?;
+        let control = root_child(
             outer.directory(),
+            "control",
+            0,
+            0,
+            Mode::from_raw_mode(0o1777),
+        )?;
+        let control_path = control.directory().requested_path();
+        run_protected_modes(outer.directory(), &executable, &roles, control_path)?;
+        run_shared_replacement(outer.directory(), &executable, &roles, control_path)?;
+        run_foreign_refusals(outer.directory(), &executable, &roles, control_path)?;
+        #[cfg(target_os = "linux")]
+        acl_masks(
+            outer.directory(),
+            &executable,
+            roles.victim,
+            roles.victim_gid,
+            roles.actor,
+            control_path,
+        )?;
+        cleanup_fixture(outer, control, executable_id)?;
+        println!(
+            "PASS: actual dropped credentials, own-entry positive controls, private/sticky victim protection, shared negative control, foreign-owner refusals; owned resources removed"
+        );
+        Ok(())
+    }
+    fn install_probe(outer: &BoundDirectory) -> Result<(std::path::PathBuf, Identity)> {
+        fs::fchmod(outer, Mode::from_raw_mode(0o755))?;
+        let executable = outer.requested_path().join("probe");
+        let fd = fs::openat(
+            outer,
             "probe",
             OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
             Mode::from_raw_mode(0o700),
@@ -413,46 +460,36 @@ mod probe {
             &mut copy,
         )?;
         fs::fchmod(&copy, Mode::from_raw_mode(0o755))?;
-        let executable_id = outer
-            .directory()
-            .observe_child(OsStr::new("probe"))?
-            .identity;
+        let executable_id = outer.observe_child(OsStr::new("probe"))?.identity;
         drop(copy);
-        let control = root_child(
-            outer.directory(),
-            "control",
-            0,
-            0,
-            Mode::from_raw_mode(0o1777),
-        )?;
-        let control_path = control.directory().requested_path();
+        Ok((executable, executable_id))
+    }
+    fn run_protected_modes(
+        outer: &BoundDirectory,
+        executable: &Path,
+        roles: &CredentialRoles,
+        control_path: &Path,
+    ) -> Result<()> {
+        let CredentialRoles {
+            victim,
+            victim_gid,
+            actor,
+            ..
+        } = *roles;
         for (name, owner, group, mode) in [
             ("private", victim, victim_gid, 0o700),
             ("sticky", victim, victim_gid, 0o1777),
             ("trusted-root-sticky", 0, 0, 0o1777),
         ] {
-            let fixture = root_child(
-                outer.directory(),
-                name,
-                owner,
-                group,
-                Mode::from_raw_mode(mode),
-            )?;
+            let fixture = root_child(outer, name, owner, group, Mode::from_raw_mode(mode))?;
             let path = fixture.directory().requested_path();
-            run_child(&executable, victim, victim_gid, "admit", path, control_path)?;
+            run_child(executable, victim, victim_gid, "admit", path, control_path)?;
             let stage_handle = fixture.directory().open_child(OsStr::new("stage"))?;
             let stage = stage_handle.identity();
             let actor_control = if mode == 0o1777 { path } else { control_path };
+            run_child(executable, actor, actor, "deny-rename", path, actor_control)?;
             run_child(
-                &executable,
-                actor,
-                actor,
-                "deny-rename",
-                path,
-                actor_control,
-            )?;
-            run_child(
-                &executable,
+                executable,
                 actor,
                 actor,
                 "deny-empty-removal",
@@ -479,53 +516,48 @@ mod probe {
             )?;
             println!("PASS real different-UID namespace mode {mode:o}");
         }
+        Ok(())
+    }
+    fn run_shared_replacement(
+        outer: &BoundDirectory,
+        executable: &Path,
+        roles: &CredentialRoles,
+        control_path: &Path,
+    ) -> Result<()> {
+        let CredentialRoles {
+            victim,
+            victim_gid,
+            actor,
+            ..
+        } = *roles;
         let shared = root_child(
-            outer.directory(),
+            outer,
             "shared",
             victim,
             victim_gid,
             Mode::from_raw_mode(0o777),
         )?;
         run_child(
-            &executable,
+            executable,
             victim,
             victim_gid,
             "refuse",
             shared.directory().requested_path(),
             control_path,
         )?;
-        // Owned negative control establishes actual attack authority in the
-        // refused model, without weakening product admission to create it.
-        // Protect the freshly owned parent before privileged creation/binding;
-        // expose the unsafe model only after the created identity is known.
-        fs::fchown(shared.directory(), Some(Uid::ROOT), Some(Gid::ROOT))?;
-        fs::fchmod(shared.directory(), Mode::from_raw_mode(0o700))?;
-        let held = shared
-            .directory()
-            .create_private_child(OsStr::new("stage"))?
-            .persist();
-        fs::fchown(
-            &held,
-            Some(Uid::from_raw(victim)),
-            Some(Gid::from_raw(victim_gid)),
-        )?;
-        let stage_id = held.identity();
-        let before_links = fs::fstat(&held)?.st_nlink;
-        fs::fchown(
-            shared.directory(),
-            Some(Uid::from_raw(victim)),
-            Some(Gid::from_raw(victim_gid)),
-        )?;
-        fs::fchmod(shared.directory(), Mode::from_raw_mode(0o777))?;
+        let (held, stage_id, before_exposure) = expose_shared_stage(shared.directory(), roles)?;
         // This parent was refused before product mkdir. Do not depend on the
         // additional rename denial observed on older Darwin versions: macOS26
         // permits that rename. The actual other-UID removal/replacement below
         // proves why stage0700 alone is insufficient on this refused model.
-        let replacement = run_replacement(&executable, actor, shared.directory().requested_path())?;
+        let replacement = run_replacement(executable, actor, shared.directory().requested_path())?;
         fs::fchown(shared.directory(), Some(Uid::ROOT), Some(Gid::ROOT))?;
         fs::fchmod(shared.directory(), Mode::from_raw_mode(0o700))?;
         let original = fs::fstat(&held)?;
-        #[allow(clippy::unnecessary_cast)]
+        #[allow(
+            clippy::unnecessary_cast,
+            reason = "quality:native-oracle-device-width"
+        )]
         // Independent native oracle: Darwin dev_t signed32, Linux unsigned64.
         let retained_id = Identity::Posix {
             device: original.st_dev as u64,
@@ -536,8 +568,8 @@ mod probe {
             "Retained original directory handle changed identity",
         )?;
         println!(
-            "Retained original directory link counts before={before_links} after={}; native rmdir receipt and distinct replacement qualify the controlled name removal",
-            original.st_nlink
+            "Retained original directory link counts before={} after={}; native rmdir receipt and distinct replacement qualify the controlled name removal",
+            before_exposure.st_nlink, original.st_nlink
         );
         #[cfg(target_os = "linux")]
         require(
@@ -561,16 +593,59 @@ mod probe {
             shared.remove_empty().state == CleanupState::Complete,
             "Shared fixture cleanup unconfirmed",
         )?;
+        Ok(())
+    }
+    fn expose_shared_stage(
+        shared: &BoundDirectory,
+        roles: &CredentialRoles,
+    ) -> Result<(BoundDirectory, Identity, fs::Stat)> {
+        let CredentialRoles {
+            victim, victim_gid, ..
+        } = *roles;
+        // Owned negative control establishes actual attack authority in the
+        // refused model, without weakening product admission to create it.
+        // Protect the freshly owned parent before privileged creation/binding;
+        // expose the unsafe model only after the created identity is known.
+        fs::fchown(shared, Some(Uid::ROOT), Some(Gid::ROOT))?;
+        fs::fchmod(shared, Mode::from_raw_mode(0o700))?;
+        let held = shared.create_private_child(OsStr::new("stage"))?.persist();
+        fs::fchown(
+            &held,
+            Some(Uid::from_raw(victim)),
+            Some(Gid::from_raw(victim_gid)),
+        )?;
+        let stage_id = held.identity();
+        let before_exposure = fs::fstat(&held)?;
+        fs::fchown(
+            shared,
+            Some(Uid::from_raw(victim)),
+            Some(Gid::from_raw(victim_gid)),
+        )?;
+        fs::fchmod(shared, Mode::from_raw_mode(0o777))?;
+        Ok((held, stage_id, before_exposure))
+    }
+    fn run_foreign_refusals(
+        outer: &BoundDirectory,
+        executable: &Path,
+        roles: &CredentialRoles,
+        control_path: &Path,
+    ) -> Result<()> {
+        let CredentialRoles {
+            victim,
+            victim_gid,
+            foreign,
+            ..
+        } = *roles;
         for mode in [0o555, 0o1777] {
             let fixture = root_child(
-                outer.directory(),
+                outer,
                 "foreign",
                 foreign,
                 foreign,
                 Mode::from_raw_mode(mode),
             )?;
             run_child(
-                &executable,
+                executable,
                 victim,
                 victim_gid,
                 "refuse",
@@ -584,15 +659,13 @@ mod probe {
                 "Foreign fixture cleanup unconfirmed",
             )?;
         }
-        #[cfg(target_os = "linux")]
-        acl_masks(
-            outer.directory(),
-            &executable,
-            victim,
-            victim_gid,
-            actor,
-            control_path,
-        )?;
+        Ok(())
+    }
+    fn cleanup_fixture(
+        outer: CreatedDirectory,
+        control: CreatedDirectory,
+        executable_id: Identity,
+    ) -> Result<()> {
         require(
             control.remove_empty().state == CleanupState::Complete,
             "Control cleanup unconfirmed",
@@ -606,9 +679,6 @@ mod probe {
             outer.remove_empty().state == CleanupState::Complete,
             "Outer cleanup unconfirmed",
         )?;
-        println!(
-            "PASS: actual dropped credentials, own-entry positive controls, private/sticky victim protection, shared negative control, foreign-owner refusals; owned resources removed"
-        );
         Ok(())
     }
 }

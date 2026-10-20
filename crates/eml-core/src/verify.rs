@@ -80,35 +80,7 @@ fn independent(
             return Err(internal());
         };
         let root = if node.media == "multipart/related" {
-            match grammar::parameter_value(&node.content_type.parameters, b"start", true)? {
-                None => children
-                    .first()
-                    .map(|child| child.id)
-                    .ok_or_else(internal)?,
-                Some(grammar::DecodedParameter { bytes: start, .. }) => {
-                    let requested = grammar::identifier(&start)?;
-                    let mut matches = Vec::new();
-                    for child in children {
-                        let fields: Vec<_> = message.nodes[child.id]
-                            .fields
-                            .iter()
-                            .filter(|field| field.name == "content-id")
-                            .collect();
-                        if fields.len() > 1 {
-                            return Err(internal());
-                        }
-                        if let Some(field) = fields.first()
-                            && grammar::identifier(&field.value)? == requested
-                        {
-                            matches.push(child.id);
-                        }
-                    }
-                    if matches.len() != 1 {
-                        return Err(internal());
-                    }
-                    matches[0]
-                }
-            }
+            related_root(message, node, children)?
         } else {
             usize::MAX
         };
@@ -162,6 +134,19 @@ fn independent(
             stripped: BTreeSet::new(),
         });
     }
+    rebuild_retained_node(message, id, changed, body, proofs, claims, stripped)
+}
+
+fn rebuild_retained_node(
+    message: &Message<'_>,
+    id: usize,
+    changed: bool,
+    body: Vec<u8>,
+    proofs: Vec<Proof>,
+    claims: Vec<Claim>,
+    mut stripped: BTreeSet<String>,
+) -> Result<Evaluated, PreparationError> {
+    let node = &message.nodes[id];
     let mut output = Vec::new();
     output.extend_from_slice(&message.input[node.envelope.clone()]);
     for field in &node.fields {
@@ -187,6 +172,43 @@ fn independent(
         claims,
         stripped,
     })
+}
+fn related_root(
+    message: &Message<'_>,
+    node: &crate::message::Node,
+    children: &[crate::message::Child],
+) -> Result<usize, PreparationError> {
+    Ok(
+        match grammar::parameter_value(&node.content_type.parameters, b"start", true)? {
+            None => children
+                .first()
+                .map(|child| child.id)
+                .ok_or_else(internal)?,
+            Some(grammar::DecodedParameter { bytes: start, .. }) => {
+                let requested = grammar::identifier(&start)?;
+                let mut matches = Vec::new();
+                for child in children {
+                    let fields: Vec<_> = message.nodes[child.id]
+                        .fields
+                        .iter()
+                        .filter(|field| field.name == "content-id")
+                        .collect();
+                    if fields.len() > 1 {
+                        return Err(internal());
+                    }
+                    if let Some(field) = fields.first()
+                        && grammar::identifier(&field.value)? == requested
+                    {
+                        matches.push(child.id);
+                    }
+                }
+                if matches.len() != 1 {
+                    return Err(internal());
+                }
+                matches[0]
+            }
+        },
+    )
 }
 /// Actual authorization guard, targeted by the bounded mutation selection.
 pub(crate) fn authorize_deletions(

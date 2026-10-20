@@ -109,8 +109,9 @@ impl RunReport {
     pub fn failure(&self) -> Option<ProtocolFailure> {
         self.failure
     }
-    /// Actual file-size difference, never the sum of removed entity sizes.
-    pub fn saved_bytes(&self, position: usize) -> Option<u64> {
+    /// Prepared source/copy size reduction, independent of publication.
+    /// This is not disk space freed or a claim that a copy exists.
+    pub fn copy_size_reduction(&self, position: usize) -> Option<u64> {
         let item = self.items.get(position)?;
         item.source_bytes
             .value()?

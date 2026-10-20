@@ -1,6 +1,9 @@
 //! Process-local arguments, request transport, signals and checked channels only.
 use crate::human::HumanSink;
-use clap::{Parser, ValueEnum, error::ErrorKind};
+use clap::{
+    Parser, ValueEnum,
+    error::{ContextKind, ContextValue, ErrorKind},
+};
 use eml_core::{InvalidRequest, OutputLocation, RunControl, RunMode, RunRequest};
 use eml_protocol::{JsonSink, MAX_REQUEST_BYTES, TerminalPath, decode_request};
 use std::{
@@ -19,16 +22,21 @@ enum Format {
     Json,
 }
 #[derive(Debug, Parser)]
-#[command(name=env!("CARGO_PKG_NAME"),bin_name=env!("CARGO_PKG_NAME"),version,about="Create verified body-only EML copies without modifying originals",color=clap::ColorChoice::Never,disable_help_subcommand=true)]
+#[command(name=env!("CARGO_PKG_NAME"),bin_name=env!("CARGO_PKG_NAME"),version=eml_protocol::product::VERSION_WITH_BUILD.as_str(),about="Create verified body-only EML copies without modifying originals",color=clap::ColorChoice::Never,disable_help_subcommand=true,after_help="Examples:\n  remove-eml-attachments -- message.eml\n  remove-eml-attachments --dry-run --output-dir copies -- mail-folder\n  remove-eml-attachments --format json -- message.eml")]
 struct Arguments {
+    /// Save copies in an existing folder; mirror selected directory trees.
     #[arg(long = "output-dir", value_name = "DIR", conflicts_with = "request")]
     output_directory: Option<PathBuf>,
+    /// Check inputs and planned destinations without writing copies.
     #[arg(long, conflicts_with = "request")]
     dry_run: bool,
+    /// Choose readable results or protocol-1 JSON lines.
     #[arg(long, value_enum, default_value = "human")]
     format: Format,
+    /// Read a protocol-1 JSON request from FILE, or from stdin with '-'.
     #[arg(long,value_name="FILE|-",conflicts_with_all=["paths","output_directory","dry_run"])]
     request: Option<OsString>,
+    /// EML files or folders to process. Use '--' before filenames starting with '-'.
     #[arg(value_name = "PATH", required_unless_present = "request")]
     paths: Vec<PathBuf>,
 }
@@ -124,14 +132,7 @@ fn diagnostic(text: &str, code: u8, control: &RunControl) -> u8 {
         return 130;
     }
     let mut stderr = io::stderr().lock();
-    let escaped = format!(
-        "{}\n",
-        TerminalPath::new(Path::new(text.trim_end_matches('\n')))
-    );
-    match stderr
-        .write_all(escaped.as_bytes())
-        .and_then(|()| stderr.flush())
-    {
+    match terminal(&mut stderr, &format!("{}\n", text.trim_end_matches('\n'))) {
         Ok(()) => {
             if control.is_stopped() {
                 130
@@ -148,10 +149,41 @@ fn diagnostic(text: &str, code: u8, control: &RunControl) -> u8 {
         }
     }
 }
+// Escape untrusted parser context before Clap adds its own readable line breaks.
+// Usage comes only from the fixed command definition, not from argv values.
+fn argument_error_text(mut error: clap::Error) -> String {
+    let contexts: Vec<_> = error
+        .context()
+        .filter_map(|(kind, value)| {
+            if kind == ContextKind::Usage {
+                return None;
+            }
+            let escape = |text: &str| eml_protocol::DisplayText::new(text).to_string();
+            let value = match value {
+                ContextValue::String(text) => ContextValue::String(escape(text)),
+                ContextValue::Strings(text) => {
+                    ContextValue::Strings(text.iter().map(|v| escape(v)).collect())
+                }
+                ContextValue::StyledStr(text) => {
+                    ContextValue::StyledStr(escape(&text.to_string()).into())
+                }
+                ContextValue::StyledStrs(text) => ContextValue::StyledStrs(
+                    text.iter().map(|v| escape(&v.to_string()).into()).collect(),
+                ),
+                _ => return None,
+            };
+            Some((kind, value))
+        })
+        .collect();
+    for (kind, value) in contexts {
+        error.insert(kind, value);
+    }
+    error.to_string()
+}
 fn native_message(context: &str, error: &io::Error) -> String {
     match error.raw_os_error() {
-        Some(code) => format!("{context} (OS error {code})\n"),
-        None => format!("{context}\n"),
+        Some(code) => format!("{context}: {} (OS error {code})\n", error.kind()),
+        None => format!("{context}: {}\n", error.kind()),
     }
 }
 fn invalid_request(error: InvalidRequest, control: &RunControl) -> u8 {
@@ -161,7 +193,10 @@ fn invalid_request(error: InvalidRequest, control: &RunControl) -> u8 {
             native_message("Cannot bind the captured working directory", &error)
         }
         InvalidRequest::OutputDirectory(error) => {
-            native_message("Cannot bind the existing output directory", &error)
+            format!(
+                "{}Choose an existing, writable folder for --output-dir; create it first if needed.\n",
+                native_message("Cannot use the output folder", &error)
+            )
         }
         InvalidRequest::DryRunModeRequired => {
             "The read-only operation requires a dry-run request\n".into()
@@ -169,21 +204,73 @@ fn invalid_request(error: InvalidRequest, control: &RunControl) -> u8 {
     };
     diagnostic(&message, 2, control)
 }
-pub(super) fn entry() -> u8 {
-    let control = RunControl::default();
+fn install_termination_handler(control: &RunControl) -> Result<(), ctrlc::Error> {
     let handler_control = control.clone();
     let mut already_stopped = false;
     // ctrlc invokes this on its dedicated thread, not inside the native signal
     // handler. Count delivered callbacks; standard Unix signals can coalesce.
-    if ctrlc::set_handler(move || {
+    ctrlc::set_handler(move || {
         if already_stopped {
             std::process::exit(130);
         }
         already_stopped = true;
         handler_control.request_stop();
     })
-    .is_err()
-    {
+}
+fn document_request(
+    location: OsString,
+    working: PathBuf,
+    control: &RunControl,
+) -> Result<RunRequest, u8> {
+    let bytes = match request_bytes(location, control) {
+        Ok(bytes) => bytes,
+        Err(InputError::Cancelled) => return Err(130),
+        Err(InputError::TooLarge) => {
+            return Err(diagnostic("Request document exceeds 8 MiB\n", 2, control));
+        }
+        Err(InputError::Io(error)) => {
+            return Err(diagnostic(
+                &native_message("Cannot read request document", &error),
+                2,
+                control,
+            ));
+        }
+        Err(InputError::Setup(error)) => {
+            return Err(diagnostic(
+                &native_message("Cannot start request transport", &error),
+                1,
+                control,
+            ));
+        }
+        Err(InputError::Disconnected) => {
+            return Err(diagnostic(
+                "Request transport ended before returning an EOF result\n",
+                1,
+                control,
+            ));
+        }
+    };
+    if control.is_stopped() {
+        return Err(130);
+    }
+    let value = match decode_request(&bytes, working) {
+        Ok(value) => value,
+        Err(error) => {
+            return Err(diagnostic(
+                &format!("Invalid request document: {error}\n"),
+                2,
+                control,
+            ));
+        }
+    };
+    if control.is_stopped() {
+        return Err(130);
+    }
+    Ok(value)
+}
+pub(super) fn entry() -> u8 {
+    let control = RunControl::default();
+    if install_termination_handler(&control).is_err() {
         return diagnostic(
             "Cannot install process-local termination handling\n",
             1,
@@ -207,7 +294,7 @@ pub(super) fn entry() -> u8 {
                     Err(_) => 1,
                 }
             } else {
-                diagnostic(&text, 2, &control)
+                diagnostic(&argument_error_text(error), 2, &control)
             };
         }
     };
@@ -225,47 +312,10 @@ pub(super) fn entry() -> u8 {
         }
     };
     let request = if let Some(location) = arguments.request {
-        let bytes = match request_bytes(location, &control) {
-            Ok(bytes) => bytes,
-            Err(InputError::Cancelled) => return 130,
-            Err(InputError::TooLarge) => {
-                return diagnostic("Request document exceeds 8 MiB\n", 2, &control);
-            }
-            Err(InputError::Io(error)) => {
-                return diagnostic(
-                    &native_message("Cannot read request document", &error),
-                    2,
-                    &control,
-                );
-            }
-            Err(InputError::Setup(error)) => {
-                return diagnostic(
-                    &native_message("Cannot start request transport", &error),
-                    1,
-                    &control,
-                );
-            }
-            Err(InputError::Disconnected) => {
-                return diagnostic(
-                    "Request transport ended before returning an EOF result\n",
-                    1,
-                    &control,
-                );
-            }
-        };
-        if control.is_stopped() {
-            return 130;
+        match document_request(location, working, &control) {
+            Ok(request) => request,
+            Err(exit) => return exit,
         }
-        let value = match decode_request(&bytes, working) {
-            Ok(value) => value,
-            Err(error) => {
-                return diagnostic(&format!("Invalid request document: {error}\n"), 2, &control);
-            }
-        };
-        if control.is_stopped() {
-            return 130;
-        }
-        value
     } else {
         RunRequest {
             paths: arguments.paths,

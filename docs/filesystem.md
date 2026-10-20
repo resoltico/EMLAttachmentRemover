@@ -1,11 +1,8 @@
-# Filesystem contracts and reviewed design corrections
+# Filesystem contracts
 
-The native filesystem business workflow implements the contracts below. Reviewed
-corrections preserve the safety requirements; source descriptions are not product
-qualification evidence. Commit-specific observations are historical checkpoints;
-current exact-source outcomes are recorded in the PR and
-[implementation evidence](v6-implementation-evidence.md). The original design
-archive and checksum remain intact.
+The native filesystem workflow implements the contracts below. Source descriptions
+are not execution evidence; the delivered source requires the native checks in
+[verification](verification.md).
 
 ## Typed ordinary-file observations
 
@@ -21,7 +18,7 @@ Windows preserves its existing access, sharing and final-reparse flags. A denied
 directory open can remain an inspection failure; no backup flag or privilege is
 added to force type classification. The parent helper returns a transient handle
 and its observed identity; the caller retains only that identity before opening
-the current entry. This preserves the previous lifetime and does not establish
+the current entry. This does not establish
 atomic parent/entry continuity. `GetFileType`'s UNKNOWN result is distinguished
 from API failure through its immediate thread-local error as
 [Microsoft documents](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfiletype).
@@ -51,19 +48,11 @@ emits no events and supplies no snapshot or permanent-stability guarantee.
 
 ## POSIX namespace admission before creating an entry
 
-A pathname identity check followed by rmdir/unlinkat is not atomic compare-and-
-delete. A controlled same-UID interleaving checked owned-stage, moved it aside,
-moved another owned empty directory into that name, then removed the replacement.
-This demonstrated the mechanism; it was not a cross-UID exploit test. Later native
-Linux controls established another UID can rename an owned0700 directory under
-a suitable nonsticky shared parent. Darwin's directory-rename authorization
-differs across releases: macOS15 denied an additional rename on the refused
-shared model, while macOS26 ARM permitted it. Product safety does not depend on
-that extra denial; the parent admission below remains required before creation
-and cleanup.
-A held private staging descriptor protects its contents, not its outer name.
+A pathname identity check followed by rmdir/unlinkat is not an atomic
+compare-and-delete operation. A held private staging descriptor protects its
+contents, not its outer name.
 
-The correction refuses namespace creation unless the held immediate parent
+Namespace creation is refused unless the held immediate parent
 provides the required other-user name protection. Apply this before stage mkdir
 and before every newly created mirrored-directory edge, not indiscriminately to
 all ancestors. Existing directories are never chmodded or given replacement ACLs.
@@ -105,7 +94,7 @@ Refusal uses DESTINATION_UNSUPPORTED/stage and actionable private-folder guidanc
 
 Required cross-UID, ACL/mask, mirrored-edge, substitution, residue, synchronization
 and native-platform checks remain obligations. Same-UID interleavings or source
-inspection do not establish cross-UID execution or full WP3 acceptance.
+inspection do not establish cross-UID execution or complete product acceptance.
 
 ### Reviewed permission models
 
@@ -138,105 +127,6 @@ Model references: [Linux VFS deletion](https://github.com/torvalds/linux/blob/v6
 [tmpfs](https://docs.kernel.org/filesystems/tmpfs.html),
 [filesystem ownership mappings](https://www.kernel.org/doc/html/latest/filesystems/idmappings.html).
 
-### Native checkpoint evidence
-
-Commit `709fef041ece8de3e4d2076e7ea8fa4428662230` ran the held-filesystem
-crate tests on all four native POSIX runners in [CI38792010023](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38792010023).
-Linux x64/ARM each passed18 tests on actual ext-family f_type0xef53; Mac Intel/ARM
-each passed20 with actual f_flags0x4909000. Compiler host triples matched the CPUs.
-Local Mac tests also passed under invocation-only umask000. These observations
-cover that staging checkpoint, not full WP3 or later source changes.
-
-The native different-UID probe is an explicit developer example, built with
-`cargo build --locked -p eml-fs --example namespace-credentials`. On an isolated
-runner with noninteractive sudo, invoke its executable with the original nonroot
-UID/GID. It verifies the actual dropped credentials and positive controls before
-protection checks. It creates only a fresh owned /tmp fixture, uses held-identity
-cleanup and retains the exact fixture on failure; it never sweeps a pathname.
-Local sudo is unavailable without a password, so local cross-UID execution is
-unrun. The workflow runs this probe on all four POSIX hosts; a missing credential
-or unrelated child failure fails the gate. Linux named-ACL-mask, expanded Darwin
-ACL, full orchestration, Windows product backend and archive/GUI checks remain
-separate obligations.
-
-At `fd28788e320fcd5a18d28a7b2636ec12fcd228ba`, the full local workspace passed
-108 tests. The ACL-clearing negative control cloned that exact source, removed
-only the two owned-object clearing calls and compiled successfully. Its inherited-
-ACL test then failed the independent OS listing assertion (one remaining entry,
-expected zero), demonstrating detection. The injected diff, source identity and
-failure log remain under owned `target/acl-negative.zeiiWS`; the faulty checkout
-was removed. This is detection evidence, not a passing product run.
-
-[Native credential run38794094552](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38794094552)
-passed on Linux x64/ARM with actual nonroot IDs, cleared supplementary groups,
-working own-entry controls, private/self-sticky/trusted-root-sticky protections,
-shared nonsticky attack control and foreign-owner refusals, followed by complete
-owned cleanup. Both Macs failed before fixture operations because the dropped
-child's effective GID was0. [Diagnostic run38794335686](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38794335686)
-confirmed real GID20 but effective GID0 and sole group0, despite UID501. Neither
-failed Mac run established filesystem protection.
-
-Pinned Rust clears groups after setgid when uid is requested; Darwin substitutes
-group0 for an empty group list. The reviewed correction first requires precisely
-the observed nonroot UID/real-GID/sole-group0 state, then performs one safe self-
-exec requesting only the permitted real GID. That hop does not request uid or
-clear groups again. The final child must pass unchanged strict IDs/groups,
-no-root-regain and positive controls before filesystem operations. Corrected
-native Mac execution still requires its complete scenario set. No raw credential
-code, account or owner-preference change is used.
-
-[Run38795256996](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38795256996)
-at d592bac passed native library Clippy/tests on all four POSIX hosts. Both Linux
-credential probes also passed actual named-ACL write grants, pre-mkdir refusal,
-zero-mask admission/actor denial and cleanup. Both Macs verified normalized UID,
-real/effective GID and groups, root-regain refusal, working own-entry controls and
-private/self-sticky/trusted-root-sticky protection. Their shared-parent negative
-control then failed: Darwin denied another UID renaming the victim0700 directory.
-Thus the overall run remained failed; later foreign-owner cases were not reached.
-
-Darwin24 source requires DELETE and ADD_SUBDIRECTORY on a moved directory even
-for same-parent rename, so assuming Linux's0700 rename result was an invalid test
-oracle. Its empty-directory removal requests DELETE only. The corrected owned
-negative control keeps stage0700, retains its original descriptor, synchronizes
-the observation before the actor, and tests actual rmdir plus an actor-owned
-replacement. It records the replacement's identity, retains the original handle,
-verifies distinct native identity, reclaims/protects the parent, then removes only the known owned
-replacement. No product admission is relaxed to obtain an expected test result;
-corrected native execution remains required.
-
-At ac11de0, both Linux probes passed the complete matching empty-removal controls
-and ACL-mask cases. Both Macs executed denied removals in protected parents and
-successful rmdir/replacement in the shared parent, then failed an invalid observer
-expectation that the retained original directory report nlink0. A local owned
-APFS reproduction established successful rmdir with nlink2 through the open
-descriptor. Positive directory link counts therefore never upgrade Unknown
-cleanup to known Residual. The observer now correlates the successful native
-rmdir receipt, retained original handle identity and the independently observed
-distinct actor-owned replacement, recording link counts without assuming APFS
-zero behavior. Unknown cleanup still prevents a Created result; it is never
-rewritten as successful removal. Logs preserve both the actual native operations
-and the failed assertion. That checkpoint preceded the corrected native run below.
-
-The corrected POSIX checkpoint at `45b296b62924f41945c5715ea095bda4f775872e`
-passed [run38797832546](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/38797832546):
-native filesystem Clippy and25 tests on each Mac CPU,21 on each Linux CPU, zero
-failed/ignored/filtered; actual ext-family0xef53 and Mac flags0x4909000 recorded.
-All four credential probes passed matching private/self-sticky/trusted-root-sticky
-empty-removal denials, working actor controls, successful shared empty-removal/
-replacement, foreign-owner refusals and owned cleanup. The retained original link
-counts were2→0 on Linux and2→2 on both Macs. Both Linux ACL-mask probes passed.
-This closes that checkpoint's POSIX admission/staging subset, not full WP3,
-Windows product integration, extracted archives or GUI qualification.
-
-Authorization reference: [Darwin24 rename/rmdir](https://github.com/apple-oss-distributions/xnu/blob/xnu-11417.140.69/bsd/vfs/vfs_subr.c#L8648).
-
-Credential references: [Rust1.99 process setup](https://github.com/rust-lang/rust/blob/1.99.0/library/std/src/sys/process/unix/unix.rs#L302-L330),
-[Darwin credentials](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_prot.c).
-
-References: [unlink/unlinkat](https://man7.org/linux/man-pages/man2/unlink.2.html),
-[POSIX ACL mask and mode](https://man7.org/linux/man-pages/man5/acl.5.html),
-[Apple vnode authorization](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_subr.c).
-
 ## Selection spelling, links and overlap
 
 The raw request input, output and captured-cwd expressions each have the core's
@@ -255,7 +145,7 @@ deduplication. Logical repeated prefixes count even when their allocation is
 shared. Derive transient operands and do not hide independently retained copies.
 Expanded cwd prefixes count when actually reported, rather than remaining
 transient operational material. Exact/one-over
-source-accounting tests now exercise the read-only collector, including max of
+source-accounting tests exercise the read-only collector, including max of
 independent display/native lengths. Planned-destination and maximal event/run
 admission have separate checks; these source tests alone do not establish them.
 
@@ -301,17 +191,16 @@ next offset or the fixed allocation for its last record, not a fabricated return
 byte count. Zero initialization is not evidence of a returned record. A fresh
 iterator restarts after partial consumption, completion or failure.
 
-Windows child observation/open now uses the narrowly reviewed existing-only
+Windows child observation/open uses the narrowly reviewed existing-only
 native contract in [the API record](windows-publication.md#existing-only-native-child-open-contract).
-Source review and both-CPU native read-only cases passed; exact pinned evidence
-is recorded in the implementation log. A reparse leaf is
+A reparse leaf is
 reported before ordinary signature lookup; a traversal open refuses reparse
 processing. The collector must compare its earlier observed full ID before
 descending through the returned directory. Physical ancestry/overlap admission
 remain separate from full writable integration. The read-only core collector
 below consumes the inventory primitives; native qualification has separate gates.
 
-The Windows free `observe_selected` function now supplies selected-root metadata
+The Windows free `observe_selected` function supplies selected-root metadata
 from an already admitted absolute extended DOS/UNC expression. Its fixed
 OPEN_EXISTING/READ_ATTRIBUTES/share-all/BACKUP_SEMANTICS call follows the selected
 final link and opens no object data. The temporary handle supplies observed
@@ -321,11 +210,10 @@ not a fabricated ordinary target. This is a metadata observation, not held-cwd t
 physical admission. Later directory opens must compare the earlier observed ID;
 walked children keep the existing no-follow operations. Benign owned tests cover
 native names, file/directory metadata, exact missing errors and static selected
-directory-alias versus walked-reparse behavior. Source and bounded both-CPU native
-checks closed at cbc9947;
-no new arbitrary flags, data access, privileges, namespace or API dependency.
+directory-alias versus walked-reparse behavior. The observation uses no data
+access or additional privileges and cannot create namespace entries.
 
-Windows `BoundDirectory::resolved_path` now queries the held ordinary directory's
+Windows `BoundDirectory::resolved_path` queries the held ordinary directory's
 normalized DOS/UNC name with fixed GetFinalPathNameByHandleW flags. One UTF-16
 buffer derives from the existing32766-content authority plus NUL; zero retains
 the actual native cause and a capacity result is refused without sizing retries
@@ -336,7 +224,7 @@ root ID and separately qualify the original requested address. Static selected-
 alias tests inspect the RETURNED operand without final-link following and require
 the known ordinary target ID; simply reopening an alias with following is not
 proof of resolution. A separate owned long/unpaired-name case exercises the
-same query. Source/API/test and bounded both-CPU native checks closed at31dd42a. API reference:
+same query. API reference:
 [GetFinalPathNameByHandleW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew).
 
 Windows `BoundDirectory::name_limit` exposes the observed volume component limit
@@ -344,10 +232,9 @@ through its read-only handle before staging. One private handle helper owns the
 unchanged GetVolumeInformationByHandleW query for both this getter and the owned
 creation parent; the edge still queries freshly before allocating/calling.
 Positive DWORDs count WCHARs; native failure/zero remains an error, with no
-Windows cache or guessed255 fallback. The existing boundary test now queries the
+Windows cache or guessed255 fallback. The existing boundary test queries the
 read-only getter before write capability, compares a direct independent SDK
-DWORD, and uses the public staging/rename path for exact/max+1 controls. Source
-and bounded both-CPU native checks closed at e36855b. Metadata
+DWORD, and uses the public staging/rename path for exact/max+1 controls. Metadata
 availability supplies no write-admission or confinement authority.
 
 The Windows `WritableDirectory`/`DirectoryCreation` boundary uses the
@@ -358,13 +245,11 @@ only after the mirror is ordinary, contained and pinned without delete sharing.
 The mirror binding grants no ownership or deletion authority. Required child and
 parent namespace synchronization remains independent of that ownership limit.
 
-Windows `stage_bytes` now supplies the separate owned-file storage capability:
+Windows `stage_bytes` supplies the separate owned-file storage capability:
 bounded same-handle write/readback/EOF checks, actual file synchronization and
-explicit cleanup, with native inherited ACLs unchanged. Source review is closed;
-the bounded both-CPU native storage cases passed at543f8a7. ReadyCandidate now
-consumes into a separate physical rename attempt; that increment's source and
-bounded both-CPU native checks closed at d58d503. Neither storage nor the
-rename-effect receipt qualifies MIME
+explicit cleanup, with native inherited ACLs unchanged. ReadyCandidate consumes
+into a separate physical rename attempt. Neither storage nor the rename-effect
+receipt qualifies MIME
 authorization, source admission, namespace/address synchronization, changed-parent
 confinement or final-copy publication.
 The names-only structure's64-bit file ID is never padded into a full identity.
@@ -444,7 +329,7 @@ and compare the earlier full identity before descent. Windows source-directory
 name resolution checks the reopened normalized endpoint against the held target;
 writable ancestry/address qualification is a separate native gate.
 
-The pure error is now `RequestPathError`, used by `validate_path_limits` and the
+The pure error is `RequestPathError`, used by `validate_path_limits` and the
 transport decoder. Outer `InvalidRequest` preserves genuine working/output-root
 I/O causes through Error::source. Source-root failures after raw validation stay
 returned INPUT_ADMISSION_FAILED, including native InvalidInput failures. No
@@ -481,10 +366,8 @@ work and64/65-depth boundaries, and actual100000/100001 entry totals. Private
 hash injection exercises true collisions and deterministic RunControl/owned-empty-
 directory-removal boundaries while the filesystem remains real. It does not
 qualify another-user interference, mount setup or a signal adapter. Windows
-literal-parent/source-native and static junction cases passed on both native CPUs.
-Source and bounded six-platform native review closed at dfc3c76. Structural
-planning, read-only comparison and serial dry-run execution qualified in subsequent
-checkpoints below. Writable execution is implemented separately.
+literal-parent/source-native and static junction cases require native execution.
+Writable execution is implemented separately.
 
 Complete Windows literal operands use the existing extended validation branch
 after append; ordinary normalization is not repeated on literal names. The one
@@ -511,7 +394,7 @@ native cause, and dangling links remain present. Absence is an observation at a
 held parent, not a promise about a later publication address. These helpers add
 no write rights, flags, fallback lookup or directory creation.
 
-Existing-copy comparison now accepts a privately prepared source and an already
+Existing-copy comparison accepts a privately prepared source and an already
 opened no-follow ordinary destination. It checks both bindings, refuses the held
 source's identity, compares length first and reads at most the verified candidate
 length plus one byte in64KiB buffers. Both bindings are revalidated after a byte
@@ -523,7 +406,7 @@ The final workflow must enforce no-follow destination opening and reject every
 selected-source and prior-created identity; this narrow operation sees only the
 currently prepared source. It performs no flush or write.
 
-The explicit core dry_run capability now performs serial preparation and existing
+The explicit core dry_run capability performs serial preparation and existing
 comparison through typed start/item/summary events. It requires RunMode::DryRun
 before I/O or events; Create is not silently converted. It rebinds destination
 parents in the captured context, compares every frozen observed prefix identity,
@@ -544,11 +427,10 @@ exit class. A failed summary can retain delivery failure and observed user-stop
 precedence because no complete successful stream is claimed.
 
 This operation never creates missing parents, stages, publishes or synchronizes.
-Dry-run native qualification closed at ac8e193. The common writable consumers
-and private success constructors are implemented below. Their native qualification
-is separate; a read-only operation alone establishes no overall product acceptance.
+Writable consumers and private success constructors require separate native
+qualification; a read-only operation alone establishes no product acceptance.
 
-The common run operation now implements both Create and DryRun in source. It
+The common run operation implements both Create and DryRun in source. It
 shares the same admission, preparation, initial read-only destination inspection,
 metadata budget, serial accounting and checked events. Different existing bytes
 fail before directory or file synchronization access is requested. Matching
@@ -584,38 +466,13 @@ source/content/address qualification. Cleanup/checked-close failure is retained
 before later address failures. Staging interruption is classified from the exact
 checkpoint that stopped, not a contemporaneous flag or native ErrorKind.
 
-These are implemented source contracts under native verification, not full
-product acceptance. The replacement Windows product and platform-fact gates passed on both native
-CPUs at [39f7ee3](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/39091719923). Full boundary
-qualification, CLI/JSON, Slint, archive and GUI checks have distinct exact-source
-receipts; that earlier Windows checkpoint alone does not qualify them.
+## Windows containment
 
-## Supersession of design-pack §6 and §10 item7
-
-Windows pins deny delete sharing and allow read/write sharing. The earlier claim
-that write-sharing exclusion prevents attribute-only reparse conversion is
-withdrawn: [CreateFileW dwShareMode](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
-does not exclude attribute access. The relied-on replacement is the
-[MS-FSA nonempty-directory rule](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4aeefef8-92c3-4abc-af7a-a610caf8a165).
-CreateFileW/CREATE_NEW must be followed by actual containment/type/full-ID/zero-
-length observations before any message byte. Mismatch is ADDRESS_CHANGED;
-failed observation is ADDRESS_UNVERIFIED. A refused empty owned file may briefly
-exist elsewhere; cleanup uses its exact handle and preserves uncertainty.
-
-Publication uses documented absolute FileRenameInfo with replacement disabled.
-NtCreateFile and NtSetInformationFile are removed; the narrow existing-only
-NtOpenFile primitive remains. Final identity/readback/address, file and namespace
-synchronization, publication uncertainty and cleanup are separate obligations.
-Windows copies inherit destination ACLs. A writer able to convert an empty
-selected directory may make the item fail, but no message bytes may be staged or
-published outside the bound destination (P-W). Other writers can still change
-final entries after qualification; owner-only Windows access is not promised.
-
-The required native controls are now the actual empty/nonempty conversion fact,
-the Core redirect product gate, normal Created, first-write tagged-candidate
-refusal, no-replace/identity/sync/cleanup and unowned mirror replacement controls.
-The compiled-out/ignored sentinel and containment-disabled experiments passed
-their detection criteria on both native CPUs. They do not replace the positive
-unfiltered run. Same-SID restricted-token evidence is not different-user ACL
-execution. POSIX different-UID checks retain their separate scope. See
-[Windows publication](windows-publication.md) for receipts and native run links.
+Windows publication checks candidate containment before any message byte is
+written. Pins deny delete sharing and allow read/write sharing; attribute-only
+access is not excluded. A held candidate keeps the directory nonempty, preventing
+reparse conversion under the supported filesystem contract. Creation, final
+identity/readback/address, synchronization and cleanup remain independent facts.
+Copies inherit destination ACLs; other writers can change completed entries.
+See [Windows publication](windows-publication.md) for the complete boundary and
+required native controls.

@@ -11,3 +11,22 @@ tempfile = "=3.27.0"
 rustix = { version = "=1.1.5", features = ["fs"] }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_IO"] }
+
+# Checked against the root workspace lint policy by cargo xtask check-quality.
+[lints.rust]
+warnings = "deny"
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "deny"
+unreachable_pub = "deny"
+unused_lifetimes = "deny"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+allow_attributes_without_reason = "deny"
+too_many_lines = "deny"
+cognitive_complexity = "deny"

@@ -232,33 +232,9 @@ fn spawn_bound(
             "Child executable must be absolute",
         ));
     }
-    let cstring = |bytes: &[u8]| {
-        CString::new(bytes).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Native child argument contains NUL",
-            )
-        })
-    };
-    let path = cstring(executable.as_os_str().as_bytes())?;
-    let mut argv = vec![path.clone()];
-    for argument in arguments {
-        argv.push(cstring(argument.as_bytes())?);
-    }
-    let mut environment = Vec::new();
-    for (key, value) in std::env::vars_os() {
-        let mut bytes = key.as_bytes().to_vec();
-        bytes.push(b'=');
-        bytes.extend_from_slice(value.as_bytes());
-        environment.push(cstring(&bytes)?);
-    }
-    let mut argv_pointers: Vec<_> = argv.iter().map(|value| value.as_ptr().cast_mut()).collect();
-    argv_pointers.push(ptr::null_mut());
-    let mut env_pointers: Vec<_> = environment
-        .iter()
-        .map(|value| value.as_ptr().cast_mut())
-        .collect();
-    env_pointers.push(ptr::null_mut());
+    let (path, argv, environment) = command_strings(executable, arguments)?;
+    let argv_pointers = terminated_pointers(&argv);
+    let env_pointers = terminated_pointers(&environment);
     let (child_input, input) = io::pipe()?;
     let (output, child_output) = io::pipe()?;
     let (errors, child_errors) = io::pipe()?;
@@ -275,17 +251,12 @@ fn spawn_bound(
     if unsafe { libc::fcntl(input.as_raw_fd(), SET_NO_SIGPIPE, 1) } < 0 {
         return Err(io::Error::last_os_error());
     }
-    // Sources must be above ALL targets, including the optional descriptor3;
-    // otherwise a dup/close action could destroy a later source or target.
-    let minimum = if control_pipe { 4 } else { 3 };
-    let mut descriptors = vec![
-        rustix::io::fcntl_dupfd_cloexec(child_input.as_fd(), minimum)?,
-        rustix::io::fcntl_dupfd_cloexec(child_output.as_fd(), minimum)?,
-        rustix::io::fcntl_dupfd_cloexec(child_errors.as_fd(), minimum)?,
-    ];
-    if let Some(writer) = &child_control {
-        descriptors.push(rustix::io::fcntl_dupfd_cloexec(writer.as_fd(), minimum)?);
-    }
+    let descriptors = duplicate_child_sources(
+        &child_input,
+        &child_output,
+        &child_errors,
+        child_control.as_ref(),
+    )?;
     let mut attributes = ptr::null_mut();
     let mut actions = ptr::null_mut();
     let mut attributes_ready = false;
@@ -298,94 +269,13 @@ fn spawn_bound(
     // native output storage is initialized or only read after successful calls.
     let attempt = unsafe {
         (|| -> Result<(), SpawnIssue> {
-            let mut disposition = std::mem::zeroed::<libc::sigaction>();
-            if libc::sigaction(libc::SIGCHLD, ptr::null(), &mut disposition) != 0 {
-                return Err(SpawnIssue {
-                    operation: "sigaction-read",
-                    native_code: io::Error::last_os_error()
-                        .raw_os_error()
-                        .unwrap_or(libc::EIO),
-                });
-            }
-            if disposition.sa_sigaction != libc::SIG_DFL
-                || disposition.sa_flags & libc::SA_NOCLDWAIT != 0
-            {
-                return Err(SpawnIssue {
-                    operation: "exclusive-default-SIGCHLD",
-                    native_code: libc::EINVAL,
-                });
-            }
-            checked(
-                "spawn-attributes-init",
-                libc::posix_spawnattr_init(&mut attributes),
+            initialize_spawn_records(
+                &mut attributes,
+                &mut attributes_ready,
+                &mut actions,
+                &mut actions_ready,
+                &descriptors,
             )?;
-            attributes_ready = true;
-            checked(
-                "spawn-actions-init",
-                libc::posix_spawn_file_actions_init(&mut actions),
-            )?;
-            actions_ready = true;
-            let mut defaults = std::mem::zeroed::<libc::sigset_t>();
-            let mut mask = std::mem::zeroed::<libc::sigset_t>();
-            if libc::sigemptyset(&mut defaults) != 0 || libc::sigemptyset(&mut mask) != 0 {
-                return Err(SpawnIssue {
-                    operation: "sigemptyset",
-                    native_code: io::Error::last_os_error()
-                        .raw_os_error()
-                        .unwrap_or(libc::EIO),
-                });
-            }
-            for signal in [
-                libc::SIGINT,
-                libc::SIGTERM,
-                libc::SIGHUP,
-                libc::SIGPIPE,
-                libc::SIGCHLD,
-            ] {
-                if libc::sigaddset(&mut defaults, signal) != 0 {
-                    return Err(SpawnIssue {
-                        operation: "sigaddset",
-                        native_code: io::Error::last_os_error()
-                            .raw_os_error()
-                            .unwrap_or(libc::EIO),
-                    });
-                }
-            }
-            checked(
-                "spawn-default-signals",
-                libc::posix_spawnattr_setsigdefault(&mut attributes, &defaults),
-            )?;
-            checked(
-                "spawn-unblocked-mask",
-                libc::posix_spawnattr_setsigmask(&mut attributes, &mask),
-            )?;
-            let flags = libc::c_short::try_from(
-                libc::POSIX_SPAWN_SETSIGDEF
-                    | libc::POSIX_SPAWN_SETSIGMASK
-                    | libc::POSIX_SPAWN_CLOEXEC_DEFAULT,
-            )
-            .map_err(|_| SpawnIssue {
-                operation: "spawn-flags-range",
-                native_code: libc::EINVAL,
-            })?;
-            checked(
-                "spawn-flags",
-                libc::posix_spawnattr_setflags(&mut attributes, flags),
-            )?;
-            for (standard, descriptor) in descriptors.iter().enumerate() {
-                checked(
-                    "spawn-dup2",
-                    libc::posix_spawn_file_actions_adddup2(
-                        &mut actions,
-                        descriptor.as_raw_fd(),
-                        standard as i32,
-                    ),
-                )?;
-                checked(
-                    "spawn-close-duplicate",
-                    libc::posix_spawn_file_actions_addclose(&mut actions, descriptor.as_raw_fd()),
-                )?;
-            }
             checked(
                 "posix-spawn",
                 libc::posix_spawn(
@@ -417,22 +307,13 @@ fn spawn_bound(
             terminal: None,
         }))
     });
-    // SAFETY: these records were initialized successfully and are destroyed once.
-    if actions_ready
-        && let Err(issue) = checked("spawn-actions-destroy", unsafe {
-            libc::posix_spawn_file_actions_destroy(&mut actions)
-        })
-    {
-        issues.push(issue);
-    }
-    // SAFETY: same initialization/one-destroy invariant as file actions.
-    if attributes_ready
-        && let Err(issue) = checked("spawn-attributes-destroy", unsafe {
-            libc::posix_spawnattr_destroy(&mut attributes)
-        })
-    {
-        issues.push(issue);
-    }
+    destroy_spawn_records(
+        &mut actions,
+        actions_ready,
+        &mut attributes,
+        attributes_ready,
+        &mut issues,
+    );
     for descriptor in descriptors {
         close_descriptor(descriptor, "close-stdio-duplicate", &mut issues);
     }
@@ -452,4 +333,229 @@ fn spawn_bound(
         },
         issues,
     })
+}
+
+/// Check the sole-reaper prerequisite before creating native spawn records.
+fn check_child_disposition() -> Result<(), SpawnIssue> {
+    // SAFETY: sigaction writes this initialized local and does not change disposition.
+    unsafe {
+        let mut disposition = std::mem::zeroed::<libc::sigaction>();
+        if libc::sigaction(libc::SIGCHLD, ptr::null(), &mut disposition) != 0 {
+            return Err(SpawnIssue {
+                operation: "sigaction-read",
+                native_code: io::Error::last_os_error()
+                    .raw_os_error()
+                    .unwrap_or(libc::EIO),
+            });
+        }
+        if disposition.sa_sigaction != libc::SIG_DFL
+            || disposition.sa_flags & libc::SA_NOCLDWAIT != 0
+        {
+            return Err(SpawnIssue {
+                operation: "exclusive-default-SIGCHLD",
+                native_code: libc::EINVAL,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Configure child dispositions without changing the parent's signal state.
+///
+/// # Safety
+/// `attributes` must be an initialized posix_spawn attribute record.
+unsafe fn configure_signal_defaults(
+    attributes: &mut libc::posix_spawnattr_t,
+) -> Result<(), SpawnIssue> {
+    // SAFETY: caller retains the initialized record; signal sets are local initialized storage.
+    unsafe {
+        let mut defaults = std::mem::zeroed::<libc::sigset_t>();
+        let mut mask = std::mem::zeroed::<libc::sigset_t>();
+        if libc::sigemptyset(&mut defaults) != 0 || libc::sigemptyset(&mut mask) != 0 {
+            return Err(SpawnIssue {
+                operation: "sigemptyset",
+                native_code: io::Error::last_os_error()
+                    .raw_os_error()
+                    .unwrap_or(libc::EIO),
+            });
+        }
+        for signal in [
+            libc::SIGINT,
+            libc::SIGTERM,
+            libc::SIGHUP,
+            libc::SIGPIPE,
+            libc::SIGCHLD,
+        ] {
+            if libc::sigaddset(&mut defaults, signal) != 0 {
+                return Err(SpawnIssue {
+                    operation: "sigaddset",
+                    native_code: io::Error::last_os_error()
+                        .raw_os_error()
+                        .unwrap_or(libc::EIO),
+                });
+            }
+        }
+        checked(
+            "spawn-default-signals",
+            libc::posix_spawnattr_setsigdefault(attributes, &defaults),
+        )?;
+        checked(
+            "spawn-unblocked-mask",
+            libc::posix_spawnattr_setsigmask(attributes, &mask),
+        )?;
+        let flags = libc::c_short::try_from(
+            libc::POSIX_SPAWN_SETSIGDEF
+                | libc::POSIX_SPAWN_SETSIGMASK
+                | libc::POSIX_SPAWN_CLOEXEC_DEFAULT,
+        )
+        .map_err(|_| SpawnIssue {
+            operation: "spawn-flags-range",
+            native_code: libc::EINVAL,
+        })?;
+        checked(
+            "spawn-flags",
+            libc::posix_spawnattr_setflags(attributes, flags),
+        )?;
+    }
+    Ok(())
+}
+
+/// Configure duplicated descriptors above all child targets.
+///
+/// # Safety
+/// `actions` must be initialized; descriptors must remain alive until posix_spawn returns.
+unsafe fn configure_file_actions(
+    actions: &mut libc::posix_spawn_file_actions_t,
+    descriptors: &[std::os::fd::OwnedFd],
+) -> Result<(), SpawnIssue> {
+    // SAFETY: caller retains initialized actions and every source descriptor until spawn ends.
+    unsafe {
+        for (standard, descriptor) in descriptors.iter().enumerate() {
+            checked(
+                "spawn-dup2",
+                libc::posix_spawn_file_actions_adddup2(
+                    actions,
+                    descriptor.as_raw_fd(),
+                    standard as i32,
+                ),
+            )?;
+            checked(
+                "spawn-close-duplicate",
+                libc::posix_spawn_file_actions_addclose(actions, descriptor.as_raw_fd()),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn command_strings(
+    executable: &Path,
+    arguments: &[&OsStr],
+) -> io::Result<(CString, Vec<CString>, Vec<CString>)> {
+    let cstring = |bytes: &[u8]| {
+        CString::new(bytes).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Native child argument contains NUL",
+            )
+        })
+    };
+    let path = cstring(executable.as_os_str().as_bytes())?;
+    let mut argv = vec![path.clone()];
+    for argument in arguments {
+        argv.push(cstring(argument.as_bytes())?);
+    }
+    let mut environment = Vec::new();
+    for (key, value) in std::env::vars_os() {
+        let mut bytes = key.as_bytes().to_vec();
+        bytes.push(b'=');
+        bytes.extend_from_slice(value.as_bytes());
+        environment.push(cstring(&bytes)?);
+    }
+    Ok((path, argv, environment))
+}
+
+fn destroy_spawn_records(
+    actions: &mut libc::posix_spawn_file_actions_t,
+    actions_ready: bool,
+    attributes: &mut libc::posix_spawnattr_t,
+    attributes_ready: bool,
+    issues: &mut Vec<SpawnIssue>,
+) {
+    // SAFETY: these records were initialized successfully and are destroyed once.
+    if actions_ready
+        && let Err(issue) = checked("spawn-actions-destroy", unsafe {
+            libc::posix_spawn_file_actions_destroy(actions)
+        })
+    {
+        issues.push(issue);
+    }
+    // SAFETY: same initialization/one-destroy invariant as file actions.
+    if attributes_ready
+        && let Err(issue) = checked("spawn-attributes-destroy", unsafe {
+            libc::posix_spawnattr_destroy(attributes)
+        })
+    {
+        issues.push(issue);
+    }
+}
+
+/// Initialize each native record before configuring it, retaining successful-init flags on failure.
+///
+/// # Safety
+/// Raw record slots must be uninitialized, with both readiness flags false.
+unsafe fn initialize_spawn_records(
+    attributes: &mut libc::posix_spawnattr_t,
+    attributes_ready: &mut bool,
+    actions: &mut libc::posix_spawn_file_actions_t,
+    actions_ready: &mut bool,
+    descriptors: &[std::os::fd::OwnedFd],
+) -> Result<(), SpawnIssue> {
+    // SAFETY: caller owns fresh storage and retains flags for exact checked destruction.
+    unsafe {
+        check_child_disposition()?;
+        checked(
+            "spawn-attributes-init",
+            libc::posix_spawnattr_init(attributes),
+        )?;
+        *attributes_ready = true;
+        checked(
+            "spawn-actions-init",
+            libc::posix_spawn_file_actions_init(actions),
+        )?;
+        *actions_ready = true;
+        configure_signal_defaults(attributes)?;
+        configure_file_actions(actions, descriptors)?;
+    }
+    Ok(())
+}
+
+fn duplicate_child_sources(
+    child_input: &PipeReader,
+    child_output: &PipeWriter,
+    child_errors: &PipeWriter,
+    child_control: Option<&PipeWriter>,
+) -> io::Result<Vec<std::os::fd::OwnedFd>> {
+    // Sources must be above ALL targets, including the optional descriptor3;
+    // otherwise a dup/close action could destroy a later source or target.
+    let minimum = if child_control.is_some() { 4 } else { 3 };
+    let mut descriptors = vec![
+        rustix::io::fcntl_dupfd_cloexec(child_input.as_fd(), minimum)?,
+        rustix::io::fcntl_dupfd_cloexec(child_output.as_fd(), minimum)?,
+        rustix::io::fcntl_dupfd_cloexec(child_errors.as_fd(), minimum)?,
+    ];
+    if let Some(writer) = child_control {
+        descriptors.push(rustix::io::fcntl_dupfd_cloexec(writer.as_fd(), minimum)?);
+    }
+    Ok(descriptors)
+}
+
+/// CString owners remain in the caller until the native call consumes this pointer array.
+fn terminated_pointers(values: &[CString]) -> Vec<*mut libc::c_char> {
+    let mut pointers: Vec<_> = values
+        .iter()
+        .map(|value| value.as_ptr().cast_mut())
+        .collect();
+    pointers.push(ptr::null_mut());
+    pointers
 }

@@ -211,7 +211,6 @@ pub(crate) fn finish(
 }
 
 pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Result<Value> {
-    use std::os::unix::fs::PermissionsExt;
     if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
         || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
     {
@@ -225,6 +224,53 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
         .arg(app)
         .arg(&observed_app);
     crate::macos::checked_run(copy, &out.join("bundle-copy.log"), 120)?;
+    let worker_image = install_observed_worker(root, &observed_app, build, out)?;
+    let identity = crate::macos_archive::bundle_identity(&observed_app)?;
+    let cases = (|| -> Result<Vec<Value>> {
+        let mut cases = Vec::new();
+        for case in [
+            DesktopCase::Stop,
+            DesktopCase::ForceStop,
+            DesktopCase::ActiveQuit,
+            DesktopCase::PublishedError,
+        ] {
+            cases.push(crate::macos_interaction::run_case(
+                root,
+                &observed_app,
+                build,
+                &out.join(case.name()),
+                case,
+            )?);
+        }
+        Ok(cases)
+    })();
+    let after = crate::macos_archive::bundle_identity(app)?;
+    let observed_after = crate::macos_archive::bundle_identity(&observed_app)?;
+    fs::write(
+        out.join("bundle-identities.json"),
+        serde_json::to_vec_pretty(
+            &json!({"shipping_before":before,"shipping_after":after,"observed_bundle":identity,"observed_bundle_after":observed_after,"worker_image":worker_image,"cases":cases.as_ref().map_err(|e|e.to_string()),"fixture_features":["eml-worker/native-fixtures","eml-core/native-fixtures"]}),
+        )?,
+    )?;
+    if before != after {
+        return Err("Observed fixture changed the original shipping bundle".into());
+    }
+    if identity != observed_after {
+        return Err("GUI execution changed the observed fixture bundle".into());
+    }
+    let cases = cases?;
+    let result = json!({"cases":cases,"observed_bundle":identity,"shipping_bundle_unchanged":true,"scope":"separately signed nonshipping worker synchronization and actual GUI integration; unmodified shipping archive checks remain required"});
+    fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+    Ok(result)
+}
+
+fn install_observed_worker(
+    root: &Path,
+    observed_app: &Path,
+    build: &MacBuild,
+    out: &Path,
+) -> Result<crate::macos::MachIdentity> {
+    use std::os::unix::fs::PermissionsExt;
     let mut compile = build.command(root, "cargo");
     compile
         .args([
@@ -275,10 +321,7 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
     }
     fs::write(&worker_path, bytes)?;
     fs::set_permissions(&worker_path, fs::Permissions::from_mode(0o755))?;
-    for (label, path) in [
-        ("worker", worker_path.as_path()),
-        ("app", observed_app.as_path()),
-    ] {
+    for (label, path) in [("worker", worker_path.as_path()), ("app", observed_app)] {
         let mut sign = build.command(root, "/usr/bin/codesign");
         sign.args(["--force", "--sign", "-", "--timestamp=none"])
             .arg(path);
@@ -289,41 +332,5 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
             .arg(path);
         crate::macos::checked_run(verify, &out.join(format!("{label}-verify.log")), 30)?;
     }
-    let identity = crate::macos_archive::bundle_identity(&observed_app)?;
-    let cases = (|| -> Result<Vec<Value>> {
-        let mut cases = Vec::new();
-        for case in [
-            DesktopCase::Stop,
-            DesktopCase::ForceStop,
-            DesktopCase::ActiveQuit,
-            DesktopCase::PublishedError,
-        ] {
-            cases.push(crate::macos_interaction::run_case(
-                root,
-                &observed_app,
-                build,
-                &out.join(case.name()),
-                case,
-            )?);
-        }
-        Ok(cases)
-    })();
-    let after = crate::macos_archive::bundle_identity(app)?;
-    let observed_after = crate::macos_archive::bundle_identity(&observed_app)?;
-    fs::write(
-        out.join("bundle-identities.json"),
-        serde_json::to_vec_pretty(
-            &json!({"shipping_before":before,"shipping_after":after,"observed_bundle":identity,"observed_bundle_after":observed_after,"worker_image":worker_image,"cases":cases.as_ref().map_err(|e|e.to_string()),"fixture_features":["eml-worker/native-fixtures","eml-core/native-fixtures"]}),
-        )?,
-    )?;
-    if before != after {
-        return Err("Observed fixture changed the original shipping bundle".into());
-    }
-    if identity != observed_after {
-        return Err("GUI execution changed the observed fixture bundle".into());
-    }
-    let cases = cases?;
-    let result = json!({"cases":cases,"observed_bundle":identity,"shipping_bundle_unchanged":true,"scope":"separately signed nonshipping worker synchronization and actual GUI integration; unmodified shipping archive checks remain required"});
-    fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
-    Ok(result)
+    Ok(worker_image)
 }

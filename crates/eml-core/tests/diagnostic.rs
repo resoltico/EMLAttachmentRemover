@@ -88,3 +88,21 @@ fn source_publish_and_interruption_phase_boundaries_are_distinct() {
     assert!(!ErrorCode::OutputFailed.allows_phase(ErrorPhase::Prepare));
     assert!(ErrorCode::OutputFailed.allows_phase(ErrorPhase::Delivery));
 }
+
+#[test]
+fn known_wire_guidance_does_not_invent_meanings_for_future_or_misspelled_codes() {
+    use eml_core::ErrorCode;
+    assert_eq!(
+        ErrorCode::from_wire_name("MALFORMED"),
+        Some(ErrorCode::Malformed)
+    );
+    assert!(
+        ErrorCode::Malformed
+            .recovery_hint()
+            .unwrap()
+            .contains("Export")
+    );
+    assert!(ErrorCode::Internal.recovery_hint().is_none());
+    assert!(ErrorCode::from_wire_name("malformed").is_none());
+    assert!(ErrorCode::from_wire_name("FUTURE_CODE").is_none());
+}

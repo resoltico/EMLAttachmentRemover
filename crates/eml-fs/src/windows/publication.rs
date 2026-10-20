@@ -267,15 +267,7 @@ mod tests {
         fixture.close().unwrap();
     }
 
-    #[test]
-    fn native_rename_conflict_and_preedge_name_refusals_only_clean_owned_staging() {
-        let fixture = directory();
-        std::fs::write(fixture.path().join("winner.eml"), b"synthetic winner").unwrap();
-        let actor = RestrictedToken::enter().unwrap();
-        let read = BoundDirectory::open(&operation(fixture.path())).unwrap();
-        // Obtain the public planning property before any write capability, and
-        // compare it with an independently issued direct native DWORD query.
-        let maximum = read.name_limit().unwrap();
+    fn native_name_limit(read: &BoundDirectory) -> usize {
         let mut native_maximum = 0;
         // SAFETY: live read-only directory and one writable DWORD output;
         // the direct SDK call is independent of the production helper.
@@ -293,7 +285,19 @@ mod tests {
         };
         assert_ne!(queried, 0, "{}", io::Error::last_os_error());
         assert!(native_maximum > 0);
-        assert_eq!(maximum, native_maximum as usize);
+        native_maximum as usize
+    }
+
+    #[test]
+    fn native_rename_conflict_and_preedge_name_refusals_only_clean_owned_staging() {
+        let fixture = directory();
+        std::fs::write(fixture.path().join("winner.eml"), b"synthetic winner").unwrap();
+        let actor = RestrictedToken::enter().unwrap();
+        let read = BoundDirectory::open(&operation(fixture.path())).unwrap();
+        // Obtain the public planning property before any write capability, and
+        // compare it with an independently issued direct native DWORD query.
+        let maximum = read.name_limit().unwrap();
+        assert_eq!(maximum, native_name_limit(&read));
         let write =
             WritableDirectory::bind_resolved(&operation(fixture.path()), read.identity()).unwrap();
         let winner = read.observe_child(OsStr::new("winner.eml")).unwrap();

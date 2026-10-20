@@ -576,33 +576,10 @@ pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {
         return Err("App artifacts require a clean committed source checkout".into());
     }
     let source = crate::git(root, &["rev-parse", "HEAD"])?;
-    let icon_record: Value =
-        serde_json::from_slice(&read(&icons.join("result.json"), 1024 * 1024)?)?;
-    if icon_record["source"] != source
-        || icon_record["source_working_tree"] != ""
-        || icon_record["outputs_validated"] != true
-        || icon_record["build"]["minimum_text"] != build.minimum_text
-        || icon_record["build"]["xcode_identity"] != build.xcode_identity
-    {
-        return Err("Shared icon input is not the validated same-source pinned producer".into());
-    }
-    let icon_dir = icons.join("icon-assets");
-    let partial = macos_app::icon_outputs(root, &icon_dir, &build)?;
-    for name in ["Assets.car", "EML.icns", "icon-partial.plist"] {
-        let identity = ByteIdentity::of(&read(&icon_dir.join(name), 64 * 1024 * 1024)?);
-        if serde_json::to_value(identity)? != icon_record["materials"][name] {
-            return Err("Shared icon bytes differ from the selected producer".into());
-        }
-    }
+    let (icon_dir, partial) = checked_icon_inputs(root, &build, icons, &source)?;
     let (platform, name, app_root) = artifact(root, &build.host)?;
     let stage = xtask::archive::create_artifact_directory(&out)?;
-    let gui = notices::checked_component(root, &platform, notices::NoticeComponent::Gui)?;
-    let worker = notices::checked_component(root, &platform, notices::NoticeComponent::Worker)?;
-    for materials in [&gui, &worker] {
-        if materials.target() != build.host || materials.version() != build.version {
-            return Err("App legal material identity differs from native build".into());
-        }
-    }
+    let (gui, worker) = checked_app_materials(root, &platform, &build)?;
     let sources = out.join("sources");
     macos_app::build_sources(root, &sources)?;
     let app = stage.path().join(&app_root);
@@ -613,40 +590,15 @@ pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {
         0o755,
     )?;
     write(&app.join(WORKER), &worker_bytes, 0o755)?;
-    let mut metadata = macos_app::app_metadata(&build.version, &build.minimum_text);
-    metadata
-        .as_object_mut()
-        .ok_or("Invalid app metadata")?
-        .extend(partial.as_object().ok_or("Invalid icon metadata")?.clone());
-    let info = app.join("Contents/Info.plist");
-    write(&info, &serde_json::to_vec(&metadata)?, 0o644)?;
-    let mut plist = build.command(root, "/usr/bin/plutil");
-    plist.args(["-convert", "xml1"]).arg(&info);
-    macos::checked_run(plist, &out.join("info-plist.log"), 30)?;
-    for name in ["Assets.car", "EML.icns"] {
-        write(
-            &app.join("Contents/Resources").join(name),
-            &read(&icon_dir.join(name), 64 * 1024 * 1024)?,
-            0o644,
-        )?;
-    }
-    let resources = app.join("Contents/Resources");
-    write(
-        &resources.join("LICENSE"),
-        &read(&root.join("LICENSE"), 1024 * 1024)?,
-        0o644,
+    write_bundle_metadata(root, &app, &build, &partial, &out)?;
+    write_bundle_resources(
+        root,
+        &app,
+        &build,
+        &icon_dir,
+        &source,
+        &[("gui", &gui), ("worker", &worker)],
     )?;
-    for (component, materials) in [("gui", &gui), ("worker", &worker)] {
-        for (name, bytes) in materials.files() {
-            write(
-                &resources.join("licenses").join(component).join(name),
-                bytes,
-                0o644,
-            )?;
-        }
-    }
-    write(&resources.join("THIRD-PARTY-NOTICES.txt"),b"Complete macOS app interface legal materials: licenses/gui/THIRD-PARTY-NOTICES.txt and its accompanying licenses/.\nComplete private Core-backed worker legal materials: licenses/worker/THIRD-PARTY-NOTICES.txt and its accompanying licenses/.\nEach component's paths are relative to its own directory. Software and owner artwork terms: LICENSE.\n",0o644)?;
-    write(&resources.join("README.txt"),format!("EML Attachment Remover {}\nmacOS {}+, native {}.\nGUI and CLI are separate products using the same Rust business libraries. This app uses its private same-CPU worker.\nAd hoc signed only; no Developer ID or notarization. First launch may require macOS app-specific Open Anyway approval.\nSource: https://github.com/resoltico/EMLAttachmentRemover/tree/{}\nNo v6 release/tag/publication is claimed.\n",build.version,build.minimum_text,build.architecture,source).as_bytes(),0o644)?;
     let mut sign = build.command(root, "/usr/bin/codesign");
     sign.args(["--force", "--sign", "-", "--timestamp=none"])
         .arg(&app);
@@ -713,6 +665,41 @@ pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {
     )?;
     Ok(())
 }
+fn write_bundle_resources(
+    root: &Path,
+    app: &Path,
+    build: &macos::MacBuild,
+    icon_dir: &Path,
+    source: &str,
+    materials: &[(&str, &notices::CheckedTargetMaterials)],
+) -> Result<()> {
+    for name in ["Assets.car", "EML.icns"] {
+        write(
+            &app.join("Contents/Resources").join(name),
+            &read(&icon_dir.join(name), 64 * 1024 * 1024)?,
+            0o644,
+        )?;
+    }
+    let resources = app.join("Contents/Resources");
+    write(
+        &resources.join("LICENSE"),
+        &read(&root.join("LICENSE"), 1024 * 1024)?,
+        0o644,
+    )?;
+    for (component, materials) in materials.iter().copied() {
+        for (name, bytes) in materials.files() {
+            write(
+                &resources.join("licenses").join(component).join(name),
+                bytes,
+                0o644,
+            )?;
+        }
+    }
+    write(&resources.join("THIRD-PARTY-NOTICES.txt"),b"Complete macOS app interface legal materials: licenses/gui/THIRD-PARTY-NOTICES.txt and its accompanying licenses/.\nComplete private Core-backed worker legal materials: licenses/worker/THIRD-PARTY-NOTICES.txt and its accompanying licenses/.\nEach component's paths are relative to its own directory. Software and owner artwork terms: LICENSE.\n",0o644)?;
+    write(&resources.join("README.txt"),format!("EML Attachment Remover {}\nmacOS {}+, native {}.\nGUI and CLI are separate products using the same Rust business libraries. This app uses its private same-CPU worker.\nAd hoc signed only; no Developer ID or notarization. First launch may require macOS app-specific Open Anyway approval.\nSource: https://github.com/resoltico/EMLAttachmentRemover/tree/{}\nNo v6 release/tag/publication is claimed.\n",build.version,build.minimum_text,build.architecture,source).as_bytes(),0o644)?;
+    Ok(())
+}
+
 pub(crate) fn smoke(root: &Path, archive: &Path, reference_path: &Path) -> Result<()> {
     consume(root, archive, reference_path, AppChecks::Desktop)
 }
@@ -748,6 +735,71 @@ fn consume(root: &Path, archive: &Path, reference_path: &Path, checks: AppChecks
         )?,
     )?;
     Ok(())
+}
+
+fn write_bundle_metadata(
+    root: &Path,
+    app: &Path,
+    build: &macos::MacBuild,
+    partial: &Value,
+    out: &Path,
+) -> Result<()> {
+    let mut metadata = macos_app::app_metadata(&build.version, &build.minimum_text);
+    metadata
+        .as_object_mut()
+        .ok_or("Invalid app metadata")?
+        .extend(partial.as_object().ok_or("Invalid icon metadata")?.clone());
+    let info = app.join("Contents/Info.plist");
+    write(&info, &serde_json::to_vec(&metadata)?, 0o644)?;
+    let mut plist = build.command(root, "/usr/bin/plutil");
+    plist.args(["-convert", "xml1"]).arg(&info);
+    macos::checked_run(plist, &out.join("info-plist.log"), 30)?;
+    Ok(())
+}
+
+fn checked_icon_inputs(
+    root: &Path,
+    build: &macos::MacBuild,
+    icons: &Path,
+    source: &str,
+) -> Result<(std::path::PathBuf, Value)> {
+    let icon_record: Value =
+        serde_json::from_slice(&read(&icons.join("result.json"), 1024 * 1024)?)?;
+    if icon_record["source"] != source
+        || icon_record["source_working_tree"] != ""
+        || icon_record["outputs_validated"] != true
+        || icon_record["build"]["minimum_text"] != build.minimum_text
+        || icon_record["build"]["xcode_identity"] != build.xcode_identity
+    {
+        return Err("Shared icon input is not the validated same-source pinned producer".into());
+    }
+    let icon_dir = icons.join("icon-assets");
+    let partial = macos_app::icon_outputs(root, &icon_dir, build)?;
+    for name in ["Assets.car", "EML.icns", "icon-partial.plist"] {
+        let identity = ByteIdentity::of(&read(&icon_dir.join(name), 64 * 1024 * 1024)?);
+        if serde_json::to_value(identity)? != icon_record["materials"][name] {
+            return Err("Shared icon bytes differ from the selected producer".into());
+        }
+    }
+    Ok((icon_dir, partial))
+}
+
+fn checked_app_materials(
+    root: &Path,
+    platform: &str,
+    build: &macos::MacBuild,
+) -> Result<(
+    notices::CheckedTargetMaterials,
+    notices::CheckedTargetMaterials,
+)> {
+    let gui = notices::checked_component(root, platform, notices::NoticeComponent::Gui)?;
+    let worker = notices::checked_component(root, platform, notices::NoticeComponent::Worker)?;
+    for materials in [&gui, &worker] {
+        if materials.target() != build.host || materials.version() != build.version {
+            return Err("App legal material identity differs from native build".into());
+        }
+    }
+    Ok((gui, worker))
 }
 
 #[cfg(test)]

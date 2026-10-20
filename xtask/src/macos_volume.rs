@@ -284,38 +284,7 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
             json!({"image":image,"device":device,"mount":mount,"image_identity":{"device":identity.dev(),"inode":identity.ino()},"mount_identity":{"device":mounted.dev(),"inode":mounted.ino(),"uid":mounted.uid(),"gid":mounted.gid()},"primitive":primitive,"core":core}),
         )
     })();
-    let cleanup = (|| -> Result<Value> {
-        if !controller()?.admits_work() {
-            return Err("Disk-image operation lifetime is uncertain; retain image and do not guess a detach target".into());
-        }
-        let current = fs::symlink_metadata(&image)?;
-        if !current.is_file() || (current.dev(), current.ino()) != (identity.dev(), identity.ino())
-        {
-            return Err("Owned image identity changed before cleanup".into());
-        }
-        let actual = association(root, &out, &image, &mount, "cleanup-association")?;
-        if let Some(actual) = actual {
-            if device.as_ref().is_some_and(|device| device != &actual) {
-                return Err(
-                    "Owned image device reassociated; do not detach an unverified device".into(),
-                );
-            }
-            let mut detach = std::process::Command::new("/usr/bin/hdiutil");
-            detach.args(["detach", &actual]);
-            macos::checked_run(detach, &out.join("detach.log"), 60)?;
-        }
-        if association(root, &out, &image, &mount, "detached-association")?.is_some() {
-            return Err("Owned image remains associated after detach".into());
-        }
-        let current = fs::symlink_metadata(&image)?;
-        if (current.dev(), current.ino()) != (identity.dev(), identity.ino()) {
-            return Err("Image changed before exact owned-file deletion".into());
-        }
-        fs::remove_file(&image)?;
-        Ok(
-            json!({"detached":true,"owned_image_removed":true,"device":device,"forced_detach":false}),
-        )
-    })();
+    let cleanup = cleanup_image(root, &out, &image, &mount, &identity, device.as_deref());
     let record = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"image_service_privilege":"ordinary user only; no elevation","actual_os":crate::capture(&mut std::process::Command::new("/usr/bin/sw_vers")).ok().and_then(|bytes|String::from_utf8(bytes).ok()),"observation":observation.as_ref().ok(),"probe_error":observation.as_ref().err().map(ToString::to_string),"cleanup":cleanup.as_ref().ok(),"cleanup_error":cleanup.as_ref().err().map(ToString::to_string)});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&record)?)?;
     match (observation, cleanup) {
@@ -331,6 +300,43 @@ pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
         )
         .into()),
     }
+}
+
+fn cleanup_image(
+    root: &Path,
+    out: &Path,
+    image: &Path,
+    mount: &Path,
+    identity: &fs::Metadata,
+    device: Option<&str>,
+) -> Result<Value> {
+    if !controller()?.admits_work() {
+        return Err("Disk-image operation lifetime is uncertain; retain image and do not guess a detach target".into());
+    }
+    let current = fs::symlink_metadata(image)?;
+    if !current.is_file() || (current.dev(), current.ino()) != (identity.dev(), identity.ino()) {
+        return Err("Owned image identity changed before cleanup".into());
+    }
+    let actual = association(root, out, image, mount, "cleanup-association")?;
+    if let Some(actual) = actual {
+        if device.is_some_and(|device| device != actual) {
+            return Err(
+                "Owned image device reassociated; do not detach an unverified device".into(),
+            );
+        }
+        let mut detach = std::process::Command::new("/usr/bin/hdiutil");
+        detach.args(["detach", &actual]);
+        macos::checked_run(detach, &out.join("detach.log"), 60)?;
+    }
+    if association(root, out, image, mount, "detached-association")?.is_some() {
+        return Err("Owned image remains associated after detach".into());
+    }
+    let current = fs::symlink_metadata(image)?;
+    if (current.dev(), current.ino()) != (identity.dev(), identity.ino()) {
+        return Err("Image changed before exact owned-file deletion".into());
+    }
+    fs::remove_file(image)?;
+    Ok(json!({"detached":true,"owned_image_removed":true,"device":device,"forced_detach":false}))
 }
 
 #[cfg(test)]

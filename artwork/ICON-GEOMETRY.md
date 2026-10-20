@@ -1,6 +1,10 @@
 # Split-paperclip construction
 
-The SVG layers in `EML.icon/Assets` are the editable production source. The supplied historical construction script below records their measurements and provenance under the proprietary terms in the root LICENSE. It is preserved artwork source material, not an executable tool, supported setup command, generator, test or build input. Its original environment used NumPy/Shapely; exact regeneration across versions was never established. No Python environment is required or supported by this app/tooling.
+The SVG layers in `EML.icon/Assets` are the editable production source. The
+coordinate construction below documents their geometry under the proprietary
+terms in the root LICENSE. It is reference artwork source, not a supported build
+command or test. The application and its tooling require no Python environment;
+exact regeneration with NumPy/Shapely is not guaranteed.
 
 ```python
 """EML Attachment Remover app icon - original paperclip geometry.

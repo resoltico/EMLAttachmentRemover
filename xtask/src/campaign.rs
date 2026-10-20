@@ -16,7 +16,7 @@ pub(crate) struct Campaign {
     tooling_root: PathBuf,
 }
 impl Campaign {
-    pub fn create(root: &Path, role: &str) -> Result<Self> {
+    pub(crate) fn create(root: &Path, role: &str) -> Result<Self> {
         require_stock_topology(root)?;
         let dirty = git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?;
         if !dirty.is_empty() {
@@ -50,7 +50,7 @@ impl Campaign {
             tooling_root: root.to_owned(),
         })
     }
-    pub fn command(&self, program: impl AsRef<std::ffi::OsStr>) -> Result<Command> {
+    pub(crate) fn command(&self, program: impl AsRef<std::ffi::OsStr>) -> Result<Command> {
         require_stock_topology(&self.source)?;
         let mut command = Command::new(program);
         command
@@ -61,7 +61,7 @@ impl Campaign {
         command.env("CARGO_TARGET_DIR", self.directory.join("build"));
         Ok(command)
     }
-    pub fn tool_command(&self, name: &str) -> Result<Command> {
+    pub(crate) fn tool_command(&self, name: &str) -> Result<Command> {
         let mut command = self.command(self.tool_path(name)?)?;
         command.arg(name).env("CARGO_HOME", cargo_home()?).env(
             "RUSTUP_TOOLCHAIN",
@@ -69,10 +69,10 @@ impl Campaign {
         );
         Ok(command)
     }
-    pub fn tool_path(&self, name: &str) -> Result<PathBuf> {
+    pub(crate) fn tool_path(&self, name: &str) -> Result<PathBuf> {
         crate::tools::path(&self.tooling_root, name)
     }
-    pub fn report(&self, value: &impl Serialize) -> Result<()> {
+    pub(crate) fn report(&self, value: &impl Serialize) -> Result<()> {
         let bytes = serde_json::to_vec_pretty(value)?;
         File::options()
             .write(true)

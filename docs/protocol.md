@@ -1,10 +1,7 @@
 # Protocol1
 
-The Rust CLI implements protocol1 request decoding, checked event rendering and
-process-local cancellation. Qualification is recorded by capability and exact
-source in [implementation evidence](v6-implementation-evidence.md) and the PR.
-Historical commit observations below qualify only their stated checkpoint.
-The supplied design archive and checksum remain unchanged.
+The CLI and private worker share protocol 1 through eml-protocol. Native execution
+and release acceptance require the [verification gates](verification.md).
 
 Cleanup residual names use platform-native component validation. POSIX rejects
 slash and NUL; backslash is a valid filename byte. Windows rejects both separators
@@ -12,8 +9,8 @@ and NUL, preserving its UTF-16 native units. Do not suppress a legitimate POSIX
 residual component to satisfy the archive's blanket backslash restriction.
 Mapper tests cover both preservation and rejection.
 
-An internal Windows native rename error retains exact NTSTATUS as primary and
-translated Win32 error as secondary. Its bounded authored Error.detail may explain
+An internal Windows native file-operation error retains exact NTSTATUS as primary
+and translated Win32 error as secondary. Its bounded authored Error.detail may explain
 the lossless eight-digit hexadecimal status; Error.code/phase remain typed stable
 values. No publication.native_code field is added. Neither core nor app parses
 detail or NT hex for decisions, and diagnostics never replace Published/Unknown
@@ -21,7 +18,7 @@ evidence. Existing synchronization/cleanup native_code fields retain their defin
 meanings. Pending native I/O retains buffers/handles through completion; an
 unprovable memory lifetime must not fabricate an unpublished receipt.
 
-## Implemented request decoding
+## Request decoding
 
 The `remove-eml-attachments` executable delegates shared transport to
 `eml-protocol`. Its `decode_request` accepts a complete byte buffer plus the captured
@@ -39,7 +36,7 @@ business path limits remain in core. Their pure error type is RequestPathError;
 the read-only collector's outer InvalidRequest additionally retains genuine
 working/output prerequisite I/O causes. Decoder validation still performs no I/O.
 
-`PathValue` now serializes core-supplied native and display-expression facts into
+`PathValue` serializes core-supplied native and display-expression facts into
 the exact output object, with lossy display text and a lossless native value. Encoding
 names have one shared string authority with strict request decoding. Unix bytes
 and Windows UTF-16LE units are encoded directly, including non-Unicode units.
@@ -60,11 +57,8 @@ without reconstructing one from the other or adding frontend normalization.
 An unadmitted failed root may report its failed requested native input when no
 usable operand exists; this is intended input, not a valid I/O capability.
 Successful items must use their admitted native expression. The borrowed adapter
-now requires both facts explicitly; same-path callers pass the same path twice.
-Its hand-authored split-fact golden rejects using display for native encoding.
-The read-only collector now supplies these facts; bounded native collector and
-Windows literal-versus-trimmed path integration passed at dfc3c76. Full run/event
-and maximal-size checks are separate from that historical collector checkpoint.
+requires both facts explicitly; same-path callers pass the same path twice. The collector supplies both facts. A hand-authored split-fact
+golden rejects using display text for native encoding.
 
 For each source/known destination let d be complete display-expression native
 bytes and n complete reported-native bytes; charge b=max(d,n) once to the8MiB
@@ -189,14 +183,14 @@ is explicitly unattempted, not a successful native receipt. Namespace aggregatio
 must qualify its represented method/outcome across the counted ordered edge set;
 a final edge's stronger method cannot erase a prior limited/failed request.
 
-The same typed event/outcome hierarchy now serves Core run for Create and DryRun;
-normal execution does not silently become a plan. Bounded common native
-integration passed at6e7bb6a. Native receipts, source/output reservations,
+The same typed event/outcome hierarchy serves Core run for Create and DryRun;
+normal execution does not silently become a plan. Native receipts, source/output
+reservations,
 metadata budgeting and counts remain business-library decisions. The CLI package
 has the checked event renderer below. Process/application qualification remains
 distinct from library adapter qualification.
 
-## Implemented event adapters and framing bound
+## Event adapters and framing bound
 
 JsonSink projects borrowed typed Core events into every required protocol1 field,
 including explicit null/unattempted states and native identity/error domains.
@@ -220,8 +214,8 @@ Current tests include hand-authored native planned-create golden lines, actual
 Created/UpToDate projection, raw Unicode separators, human escaping, exact/+1
 line storage, run storage and actual partial-write/flush progress with permanent
 failure. Shared scenarios, extracted shipping smoke and the Rust frontend reducer
-exercise their separate boundaries. Native adapter runtime at0a20591 was an
-earlier library checkpoint; it alone does not qualify the process protocol.
+exercise their separate boundaries. Adapter tests alone do not qualify the
+process protocol.
 
 ## Executable transport and termination
 

@@ -1,5 +1,5 @@
 //! Synthetic independently constructed message and retained-byte oracle.
-pub fn large_report_message() -> (Vec<u8>, Vec<u8>) {
+pub(crate) fn large_report_message() -> (Vec<u8>, Vec<u8>) {
     let prefix=b"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=owned\r\n\r\n--owned\r\nContent-Type: text/plain\r\n\r\nbody\r\n--owned\r\nContent-Type: text/html\r\n\r\n<p>body</p>\r\n";
     let closing = b"--owned--\r\n";
     let mut input = prefix.to_vec();

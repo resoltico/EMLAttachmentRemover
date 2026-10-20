@@ -54,9 +54,8 @@ failure after late settlement, and terminal observations remain terminal on
 repeated polls. Known item outcomes are retained independently of lifecycle
 failure or cancellation intent.
 
-Five owned native tests passed locally: real stdio/EOF/normal exit, Interrupt
-while waiting for input, live-child Kill, deliberately blocked spawning-thread
-mask reset, and failed-spawn/no-authority behavior. Post-reap signal attempts
-were rejected. Test cleanup failures abort later cases visibly and preserve the
-original failure. These observations do not establish complete production
-supervisor, inherited-descriptor, GUI or pinned native2 qualification.
+Owned native tests cover real stdio/EOF/normal exit, Interrupt while waiting for
+input, live-child Kill, spawning-thread mask reset, failed-spawn/no-authority and
+post-reap signal rejection. Test cleanup failures abort later cases visibly and
+preserve the original failure. These tests do not establish complete production
+supervisor, inherited-descriptor or GUI qualification.

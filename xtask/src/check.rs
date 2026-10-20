@@ -54,6 +54,16 @@ pub(crate) fn run(root: &Path) -> Result<()> {
         directory,
         results: Vec::new(),
     };
+    checks.section("source-quality", || crate::quality::run(root));
+    compiler_check(&mut checks, root);
+    rust_checks(&mut checks, root);
+    dependency_checks(&mut checks, root);
+    tool_checks(&mut checks, root);
+    #[cfg(target_os = "macos")]
+    native_checks(&mut checks, root);
+    finish(checks)
+}
+fn compiler_check(checks: &mut Checks, root: &Path) {
     checks.section("compiler", || {
         let authority: toml::Value =
             toml::from_str(&fs::read_to_string(root.join("rust-toolchain.toml"))?)?;
@@ -71,6 +81,9 @@ pub(crate) fn run(root: &Path) -> Result<()> {
         campaign::tool_version(root, "deny", "cargo_deny")?;
         Ok(json!({"rustc":actual}))
     });
+}
+
+fn rust_checks(checks: &mut Checks, root: &Path) {
     checks.command("rust-format", cargo(root, &["fmt", "--all", "--check"]), 60);
     for (name, manifest) in [
         ("fuzz", "fuzz/Cargo.toml"),
@@ -83,6 +96,23 @@ pub(crate) fn run(root: &Path) -> Result<()> {
                 &["fmt", "--manifest-path", manifest, "--all", "--check"],
             ),
             60,
+        );
+        checks.command(
+            &format!("rust-clippy-{name}"),
+            cargo(
+                root,
+                &[
+                    "clippy",
+                    "--locked",
+                    "--manifest-path",
+                    manifest,
+                    "--all-targets",
+                    "--",
+                    "-D",
+                    "warnings",
+                ],
+            ),
+            600,
         );
     }
     checks.command(
@@ -113,6 +143,9 @@ pub(crate) fn run(root: &Path) -> Result<()> {
     let mut docs = cargo(root, &["doc", "--locked", "--workspace", "--no-deps"]);
     docs.env("RUSTDOCFLAGS", "-D warnings");
     checks.command("rust-docs", docs, 600);
+}
+
+fn dependency_checks(checks: &mut Checks, root: &Path) {
     let policy = root.join("xtask/dependencies.toml");
     for (name, manifest) in [
         ("workspace", root.join("Cargo.toml")),
@@ -135,6 +168,9 @@ pub(crate) fn run(root: &Path) -> Result<()> {
             Ok(json!({"log":log,"passed":result.success(),"process":result.evidence()}))
         });
     }
+}
+
+fn tool_checks(checks: &mut Checks, root: &Path) {
     checks.section("actionlint", || {
         let expected = campaign::pin(root, "actionlint")?;
         let actual = String::from_utf8(capture(Command::new("actionlint").arg("--version"))?)?;
@@ -144,33 +180,12 @@ pub(crate) fn run(root: &Path) -> Result<()> {
         capture(Command::new("actionlint").current_dir(root))?;
         Ok(json!({"version":expected}))
     });
-    checks.section("shellcheck", || {
-        let expected = campaign::pin(root, "shellcheck")?;
-        let actual = String::from_utf8(capture(Command::new("shellcheck").arg("--version"))?)?;
-        if !actual
-            .lines()
-            .any(|line| line == format!("version: {expected}"))
-        {
-            return Err("Install shellcheck at the xtask/tools.toml version".into());
-        }
-        let paths = capture(
-            Command::new("git")
-                .current_dir(root)
-                .args(["ls-files", "-z", "--", "*.sh"]),
-        )?;
-        let paths: Vec<_> = paths
-            .split(|byte| *byte == 0)
-            .filter(|path| !path.is_empty())
-            .map(std::str::from_utf8)
-            .collect::<std::result::Result<_, _>>()?;
-        if !paths.is_empty() {
-            let mut command = Command::new("shellcheck");
-            command.current_dir(root).arg("--").args(&paths);
-            capture(&mut command)?;
-        }
-        Ok(json!({"version":expected,"tracked_scripts":paths.len()}))
-    });
+    checks.section("shellcheck", || check_shell(root));
     checks.section("notices", || crate::notices::check(root, None));
+}
+
+#[cfg(target_os = "macos")]
+fn native_checks(checks: &mut Checks, root: &Path) {
     #[cfg(target_os = "macos")]
     let swift_checks = checks.directory.join("swift-format");
     #[cfg(target_os = "macos")]
@@ -184,6 +199,9 @@ pub(crate) fn run(root: &Path) -> Result<()> {
         crate::macos::check_desktop(root, &desktop_checks)?;
         Ok(json!({"scope":"pinned native Slint profile and owned child tests; no GUI acceptance"}))
     });
+}
+
+fn finish(checks: Checks) -> Result<()> {
     let failed = checks
         .results
         .iter()
@@ -208,4 +226,28 @@ pub(crate) fn run(root: &Path) -> Result<()> {
         .into());
     }
     Ok(())
+}
+
+pub(crate) fn check_shell(root: &Path) -> Result<Value> {
+    let expected = campaign::pin(root, "shellcheck")?;
+    let actual = String::from_utf8(capture(Command::new("shellcheck").arg("--version"))?)?;
+    if !actual
+        .lines()
+        .any(|line| line == format!("version: {expected}"))
+    {
+        return Err("Install shellcheck at the xtask/tools.toml version".into());
+    }
+    let paths = crate::quality::shell_sources(root)?;
+    if !paths.is_empty() {
+        let mut command = Command::new("shellcheck");
+        command
+            .current_dir(root)
+            .env_remove("SHELLCHECK_OPTS")
+            .arg("--rcfile")
+            .arg(root.join(".shellcheckrc"))
+            .arg("--")
+            .args(&paths);
+        capture(&mut command)?;
+    }
+    Ok(json!({"version":expected,"authored_scripts":paths.len()}))
 }

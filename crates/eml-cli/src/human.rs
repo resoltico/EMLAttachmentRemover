@@ -3,13 +3,13 @@ use eml_core::{Event, EventSink};
 use eml_protocol::{BoundedEventBuffer, MAX_LINE_BYTES};
 use std::io::{self, Write};
 /// Checked human adapter. Wording is for people and never parsed by the app.
-pub struct HumanSink<W> {
+pub(crate) struct HumanSink<W> {
     writer: W,
     failed: bool,
 }
 impl<W: Write> HumanSink<W> {
     /// Start one human stream on the supplied writer.
-    pub fn new(writer: W) -> Self {
+    pub(crate) fn new(writer: W) -> Self {
         Self {
             writer,
             failed: false,
@@ -17,7 +17,7 @@ impl<W: Write> HumanSink<W> {
     }
     /// Recover the supplied writer without another output attempt.
     #[cfg(test)]
-    pub fn into_inner(self) -> W {
+    pub(crate) fn into_inner(self) -> W {
         self.writer
     }
 }
@@ -39,15 +39,42 @@ impl<W: Write> EventSink for HumanSink<W> {
         result
     }
 }
+fn write_error(
+    writer: &mut impl Write,
+    error: &eml_core::OperationFailure,
+    indent: &str,
+) -> io::Result<()> {
+    write!(
+        writer,
+        "{indent}{}/{}: {}",
+        error.code(),
+        error.phase(),
+        error.detail()
+    )?;
+    if let Some(cause) = error.native_error() {
+        write!(writer, ": {}", cause.kind())?;
+    }
+    match error.native_diagnostic() {
+        Some(eml_core::NativeDiagnostic::OsCode(code)) => write!(writer, " (OS error {code})")?,
+        #[cfg(windows)]
+        Some(eml_core::NativeDiagnostic::NtStatus { status, win32 }) => {
+            write!(writer, " (NTSTATUS {status}; Win32 {win32})")?
+        }
+        None => {}
+    }
+    writeln!(writer)?;
+    if let Some(hint) = eml_protocol::user_messages::recovery_hint(error.code().as_str()) {
+        writeln!(writer, "{indent}{hint}")?;
+    }
+    Ok(())
+}
 fn write_human(writer: &mut impl Write, event: Event<'_>) -> io::Result<()> {
-    use eml_core::{AddressState, FailureEffect, ItemResult, PlanAction};
-    use eml_protocol::TerminalPath;
     match event {
         Event::Start(value) => writeln!(
             writer,
             "{} {} — {} known item(s); discovery {}{}",
             env!("CARGO_PKG_NAME"),
-            env!("CARGO_PKG_VERSION"),
+            eml_protocol::product::VERSION_WITH_BUILD.as_str(),
             value.total,
             if value.collection_complete {
                 "complete"
@@ -56,75 +83,7 @@ fn write_human(writer: &mut impl Write, event: Event<'_>) -> io::Result<()> {
             },
             if value.dry_run { "; dry run" } else { "" }
         ),
-        Event::Item(value) => {
-            let (status, metadata) = match &value.result {
-                ItemResult::Created(_, data) => ("Created", Some(*data)),
-                ItemResult::UpToDate(_, data) => ("Up to date", Some(*data)),
-                ItemResult::Planned(plan) => (
-                    match plan.action() {
-                        PlanAction::Create => "Planned create",
-                        PlanAction::VerifyExisting => "Planned existing-copy verification",
-                    },
-                    Some(plan.metadata()),
-                ),
-                ItemResult::Failed(failure) => ("Failed", failure.metadata()),
-            };
-            write!(
-                writer,
-                "[{index}] {status}: {source}",
-                index = value.index,
-                source = TerminalPath::new(value.source.display)
-            )?;
-            if let Some(path) = value.destination {
-                write!(writer, " -> {}", TerminalPath::new(path.display))?;
-            }
-            writeln!(writer)?;
-            if let Some(data) = metadata {
-                writeln!(
-                    writer,
-                    "  {} source bytes; {} copy bytes; {} removed part(s)",
-                    data.source_bytes,
-                    data.copy_bytes,
-                    data.removed.len()
-                )?;
-            }
-            if let ItemResult::Failed(failure) = &value.result {
-                writeln!(
-                    writer,
-                    "  {}/{}: {}",
-                    failure.error().code(),
-                    failure.error().phase(),
-                    failure.error().detail()
-                )?;
-                match failure.effect() {
-                    FailureEffect::Published(copy) => writeln!(
-                        writer,
-                        "  A complete copy was published; {}.",
-                        match copy.address() {
-                            AddressState::Verified => "its requested address was verified",
-                            AddressState::Changed => "its requested address changed",
-                            _ => "its requested address could not be verified",
-                        }
-                    )?,
-                    FailureEffect::Unknown(_) => writeln!(
-                        writer,
-                        "  Publication could not be confirmed; a complete copy might exist."
-                    )?,
-                    FailureEffect::NotPublished { .. } => {
-                        writeln!(writer, "  This item did not publish a new copy.")?
-                    }
-                }
-                if let Some(existing) = failure.existing()
-                    && existing.bytes_equal == Some(true)
-                {
-                    writeln!(
-                        writer,
-                        "  Existing bytes matched; synchronization/address qualification did not complete."
-                    )?;
-                }
-            }
-            Ok(())
-        }
+        Event::Item(value) => write_item(writer, value),
         Event::Summary(value) => {
             let counts = value.counts();
             writeln!(
@@ -143,17 +102,99 @@ fn write_human(writer: &mut impl Write, event: Event<'_>) -> io::Result<()> {
                 }
             )?;
             if let Some(error) = value.run_error() {
-                writeln!(
-                    writer,
-                    "{}/{}: {}",
-                    error.code(),
-                    error.phase(),
-                    error.detail()
-                )?;
+                write_error(writer, error, "")?;
             }
             Ok(())
         }
     }
+}
+
+fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::Result<()> {
+    use eml_core::{AddressState, FailureEffect, ItemResult, PlanAction};
+    use eml_protocol::TerminalPath;
+    let (status, metadata) = match &value.result {
+        ItemResult::Created(_, data) => ("Created", Some(*data)),
+        ItemResult::UpToDate(_, data) => ("Up to date", Some(*data)),
+        ItemResult::Planned(plan) => (
+            match plan.action() {
+                PlanAction::Create => "Planned create",
+                PlanAction::VerifyExisting => "Planned existing-copy verification",
+            },
+            Some(plan.metadata()),
+        ),
+        ItemResult::Failed(failure) => ("Failed", failure.metadata()),
+    };
+    write!(
+        writer,
+        "[{index}] {status}: {source}",
+        index = value.index,
+        source = TerminalPath::new(value.source.display)
+    )?;
+    if let Some(path) = value.destination {
+        write!(writer, " -> {}", TerminalPath::new(path.display))?;
+    }
+    writeln!(writer)?;
+    if let Some(data) = metadata {
+        writeln!(
+            writer,
+            "  {} source bytes; {} prepared copy bytes; {} part(s) selected for removal",
+            data.source_bytes,
+            data.copy_bytes,
+            data.removed.len()
+        )?;
+    }
+    let copy_was_materialized = match &value.result {
+        ItemResult::Created(..) | ItemResult::UpToDate(..) => true,
+        ItemResult::Failed(failure) => {
+            matches!(failure.effect(), FailureEffect::Published(_))
+        }
+        ItemResult::Planned(..) => false,
+    };
+    if metadata.is_some_and(|data| {
+        data.removed
+            .iter()
+            .any(|part| part.reason == eml_core::RemovalReason::RelatedResource)
+    }) {
+        writeln!(
+            writer,
+            "  {}",
+            if copy_was_materialized {
+                eml_protocol::user_messages::RELATED_RESOURCE_NOTICE
+            } else {
+                eml_protocol::user_messages::PREPARED_RELATED_RESOURCE_NOTICE
+            }
+        )?;
+    }
+    if let ItemResult::Failed(failure) = &value.result {
+        write_error(writer, failure.error(), "  ")?;
+        match failure.effect() {
+            FailureEffect::Published(copy) => writeln!(
+                writer,
+                "  A complete copy was published; {}.",
+                match copy.address() {
+                    AddressState::Verified => "its requested address was verified",
+                    AddressState::Changed => "its requested address changed",
+                    _ => "its requested address could not be verified",
+                }
+            )?,
+            FailureEffect::Unknown(_) => writeln!(
+                writer,
+                "  Publication could not be confirmed; a complete copy might exist."
+            )?,
+            FailureEffect::NotPublished { .. } => {
+                writeln!(writer, "  This item did not publish a new copy.")?
+            }
+        }
+        if let Some(existing) = failure.existing()
+            && existing.bytes_equal == Some(true)
+        {
+            writeln!(
+                writer,
+                "  Existing bytes matched; synchronization/address qualification did not complete."
+            )?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -171,7 +212,7 @@ mod tests {
     fn expected_human_start() -> String {
         format!(
             "remove-eml-attachments {} — 1 known item(s); discovery complete; dry run\n",
-            env!("CARGO_PKG_VERSION")
+            eml_protocol::product::VERSION_WITH_BUILD.as_str()
         )
     }
     #[test]

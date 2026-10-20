@@ -27,14 +27,9 @@ fn entry() -> u8 {
     let observation = if version {
         None
     } else {
-        match publication_observation::load() {
+        match load_observation() {
             Ok(value) => value,
-            Err(error) => {
-                return failure(
-                    &format!("Nonshipping publication observation refused: {error}"),
-                    70,
-                );
-            }
+            Err(code) => return code,
         }
     };
     #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
@@ -59,49 +54,21 @@ fn entry() -> u8 {
     #[cfg(target_os = "macos")]
     let handler_ready = std::sync::Arc::clone(&ready);
     let control = RunControl::default();
-    let stopped = control.clone();
-    let mut signalled = false;
-    if ctrlc::set_handler(move || {
-        if signalled {
-            #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
-            if let Some(observation) = &signal_observation {
-                observation.interrupt(true);
-            }
-            std::process::exit(130);
-        }
-        signalled = true;
-        stopped.request_stop();
+    if install_termination_handler(
+        &control,
         #[cfg(target_os = "macos")]
-        if let Some(writer) = &handler_pipe {
-            // The owner waits for real R. An external signal during startup may
-            // terminate or produce F before R; the parent rejects that sequence
-            // without feeding input. Acknowledgment failure cannot strand ctrlc.
-            if !handler_ready.load(std::sync::atomic::Ordering::Acquire)
-                || writer
-                    .try_write(eml_protocol::worker_control::FIRST_INTERRUPT)
-                    .is_err()
-            {
-                std::process::exit(130);
-            }
-        }
+        handler_pipe,
+        #[cfg(target_os = "macos")]
+        handler_ready,
         #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
-        if let Some(observation) = &signal_observation {
-            // Only expose the first observation after the real Stop flag and
-            // private acknowledgment write, before a fixture actor releases Core.
-            observation.interrupt(false);
-        }
-    })
+        signal_observation,
+    )
     .is_err()
     {
         return pre_stream_failure("Worker termination handling is unavailable", 1, &control);
     }
     if version {
-        return match io::stdout().lock().write_all(
-            eml_protocol::worker_control::identity_line(env!("CARGO_PKG_VERSION")).as_bytes(),
-        ) {
-            Ok(()) => 0,
-            Err(_) => 1,
-        };
+        return write_identity();
     }
     let working = match std::env::current_dir() {
         Ok(value) => value,
@@ -113,25 +80,12 @@ fn entry() -> u8 {
             );
         }
     };
-    // This single transport reader never processes messages or publishes copies.
-    // A blocked OS read is not joined after cancellation: this isolated process
-    // exits, terminating its reader, and the desktop owner observes actual reap.
-    let (sender, receiver) = mpsc::sync_channel(1);
-    if std::thread::Builder::new()
-        .name("desktop-request".into())
-        .spawn(move || {
-            let mut bytes = Vec::new();
-            let result = io::stdin()
-                .lock()
-                .take((MAX_REQUEST_BYTES + 1) as u64)
-                .read_to_end(&mut bytes)
-                .map(|_| bytes);
-            drop(sender.send(result));
-        })
-        .is_err()
-    {
-        return pre_stream_failure("Worker could not start request transport", 1, &control);
-    }
+    let receiver = match start_request_reader() {
+        Ok(receiver) => receiver,
+        Err(_) => {
+            return pre_stream_failure("Worker could not start request transport", 1, &control);
+        }
+    };
     #[cfg(target_os = "macos")]
     if let Some(writer) = &control_pipe {
         if control.is_stopped() {
@@ -147,52 +101,75 @@ fn entry() -> u8 {
             return pre_stream_failure("Worker readiness could not be delivered", 1, &control);
         }
     }
-    let bytes = loop {
-        if control.is_stopped() {
-            return 130;
-        }
-        match receiver.recv_timeout(Duration::from_millis(20)) {
-            Ok(Ok(bytes)) => break bytes,
-            Ok(Err(_)) => return pre_stream_failure("Worker request read failed", 2, &control),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return pre_stream_failure(
-                    "Worker request transport ended unexpectedly",
-                    1,
-                    &control,
-                );
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-        }
+    let bytes = match receive_request(&receiver, &control) {
+        Ok(bytes) => bytes,
+        Err(code) => return code,
     };
+    execute_request(
+        &bytes,
+        working,
+        &control,
+        #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+        observation,
+    )
+}
+
+#[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+fn load_observation() -> Result<Option<std::sync::Arc<publication_observation::Observation>>, u8> {
+    publication_observation::load().map_err(|error| {
+        failure(
+            &format!("Nonshipping publication observation refused: {error}"),
+            70,
+        )
+    })
+}
+
+fn write_identity() -> u8 {
+    match io::stdout().lock().write_all(
+        eml_protocol::worker_control::identity_line(env!("CARGO_PKG_VERSION")).as_bytes(),
+    ) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    }
+}
+
+fn execute_request(
+    bytes: &[u8],
+    working: std::path::PathBuf,
+    control: &RunControl,
+    #[cfg(all(target_os = "macos", feature = "native-fixtures"))] observation: Option<
+        std::sync::Arc<publication_observation::Observation>,
+    >,
+) -> u8 {
     if control.is_stopped() {
         return 130;
     }
-    let request = match decode_request(&bytes, working) {
+    let request = match decode_request(bytes, working) {
         Ok(value) => value,
         Err(_) => {
             return pre_stream_failure(
                 "Worker request did not satisfy protocol-1 admission",
                 2,
-                &control,
+                control,
             );
         }
     };
     let mut sink = JsonSink::new(io::stdout().lock());
     #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
     let result = if let Some(observation) = observation {
-        eml_core::run_observed(&request, &control, &mut sink, observation.hooks())
+        eml_core::run_observed(&request, control, &mut sink, observation.hooks())
     } else {
-        eml_core::run(&request, &control, &mut sink)
+        eml_core::run(&request, control, &mut sink)
     };
     #[cfg(not(all(target_os = "macos", feature = "native-fixtures")))]
-    let result = eml_core::run(&request, &control, &mut sink);
+    let result = eml_core::run(&request, control, &mut sink);
     match result {
         Ok(outcome) => outcome.exit_class().code(),
         Err(_) => {
             if control.is_stopped() {
                 130
             } else {
-                pre_stream_failure("Worker core request admission failed", 2, &control)
+                pre_stream_failure("Worker core request admission failed", 2, control)
             }
         }
     }
@@ -222,6 +199,91 @@ fn failure(message: &str, code: u8) -> u8 {
         code
     } else {
         1
+    }
+}
+
+fn install_termination_handler(
+    control: &RunControl,
+    #[cfg(target_os = "macos")] handler_pipe: Option<
+        std::sync::Arc<eml_macos::InheritedControlWriter>,
+    >,
+    #[cfg(target_os = "macos")] handler_ready: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    #[cfg(all(target_os = "macos", feature = "native-fixtures"))] signal_observation: Option<
+        std::sync::Arc<publication_observation::Observation>,
+    >,
+) -> Result<(), ctrlc::Error> {
+    let stopped = control.clone();
+    let mut signalled = false;
+    ctrlc::set_handler(move || {
+        if signalled {
+            #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+            if let Some(observation) = &signal_observation {
+                observation.interrupt(true);
+            }
+            std::process::exit(130);
+        }
+        signalled = true;
+        stopped.request_stop();
+        #[cfg(target_os = "macos")]
+        if let Some(writer) = &handler_pipe {
+            // The owner waits for real R. An external signal during startup may
+            // terminate or produce F before R; the parent rejects that sequence
+            // without feeding input. Acknowledgment failure cannot strand ctrlc.
+            if !handler_ready.load(std::sync::atomic::Ordering::Acquire)
+                || writer
+                    .try_write(eml_protocol::worker_control::FIRST_INTERRUPT)
+                    .is_err()
+            {
+                std::process::exit(130);
+            }
+        }
+        #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+        if let Some(observation) = &signal_observation {
+            // Only expose the first observation after the real Stop flag and
+            // private acknowledgment write, before a fixture actor releases Core.
+            observation.interrupt(false);
+        }
+    })
+}
+
+type RequestReceiver = mpsc::Receiver<io::Result<Vec<u8>>>;
+
+fn start_request_reader() -> io::Result<RequestReceiver> {
+    // This single transport reader never processes messages or publishes copies.
+    // A blocked OS read is not joined after cancellation: this isolated process
+    // exits, terminating its reader, and the desktop owner observes actual reap.
+    let (sender, receiver) = mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name("desktop-request".into())
+        .spawn(move || {
+            let mut bytes = Vec::new();
+            let result = io::stdin()
+                .lock()
+                .take((MAX_REQUEST_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)
+                .map(|_| bytes);
+            drop(sender.send(result));
+        })?;
+    Ok(receiver)
+}
+
+fn receive_request(receiver: &RequestReceiver, control: &RunControl) -> Result<Vec<u8>, u8> {
+    loop {
+        if control.is_stopped() {
+            return Err(130);
+        }
+        match receiver.recv_timeout(Duration::from_millis(20)) {
+            Ok(Ok(bytes)) => return Ok(bytes),
+            Ok(Err(_)) => return Err(pre_stream_failure("Worker request read failed", 2, control)),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(pre_stream_failure(
+                    "Worker request transport ended unexpectedly",
+                    1,
+                    control,
+                ));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
     }
 }
 

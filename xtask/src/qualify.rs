@@ -287,44 +287,7 @@ pub(crate) fn staged_cli(
         .parent()
         .ok_or("Missing admitted publication parent")?
         .join(name);
-    #[cfg(unix)]
-    {
-        rustix::fs::renameat_with(
-            rustix::fs::CWD,
-            &path,
-            rustix::fs::CWD,
-            &output,
-            rustix::fs::RenameFlags::NOREPLACE,
-        )?;
-        let published = xtask::archive::ArchiveSnapshot::read(&output)?.identity();
-        if published != verified {
-            return Err(
-                "Published CLI archive differs from the verified immutable snapshot".into(),
-            );
-        }
-        Ok(PublishedCliArchive {
-            path: output,
-            identity: verified,
-        })
-    }
-    #[cfg(windows)]
-    {
-        eml_fs::rename_artifact_noreplace(&path, &output)?;
-        if xtask::archive::ArchiveSnapshot::read(&output)?.identity() != verified {
-            return Err(
-                "Published Windows CLI archive differs from its verified immutable snapshot".into(),
-            );
-        }
-        Ok(PublishedCliArchive {
-            path: output,
-            identity: verified,
-        })
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = (verified, output);
-        Err("Native artifact publication is unsupported on this host".into())
-    }
+    publish_verified_cli(&path, output, verified)
 }
 
 pub(crate) fn run(root: &Path, target: &str, out: &Path, icons: Option<&Path>) -> Result<()> {
@@ -501,6 +464,51 @@ fn summary_passes(line: &str) -> Result<u64> {
         .strip_suffix(" passed")
         .ok_or("Missing native test pass count")?
         .parse()?)
+}
+
+fn publish_verified_cli(
+    path: &Path,
+    output: std::path::PathBuf,
+    verified: xtask::archive::ByteIdentity,
+) -> Result<PublishedCliArchive> {
+    #[cfg(unix)]
+    {
+        rustix::fs::renameat_with(
+            rustix::fs::CWD,
+            path,
+            rustix::fs::CWD,
+            &output,
+            rustix::fs::RenameFlags::NOREPLACE,
+        )?;
+        let published = xtask::archive::ArchiveSnapshot::read(&output)?.identity();
+        if published != verified {
+            return Err(
+                "Published CLI archive differs from the verified immutable snapshot".into(),
+            );
+        }
+        Ok(PublishedCliArchive {
+            path: output,
+            identity: verified,
+        })
+    }
+    #[cfg(windows)]
+    {
+        eml_fs::rename_artifact_noreplace(path, &output)?;
+        if xtask::archive::ArchiveSnapshot::read(&output)?.identity() != verified {
+            return Err(
+                "Published Windows CLI archive differs from its verified immutable snapshot".into(),
+            );
+        }
+        Ok(PublishedCliArchive {
+            path: output,
+            identity: verified,
+        })
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (verified, output);
+        Err("Native artifact publication is unsupported on this host".into())
+    }
 }
 
 #[cfg(test)]

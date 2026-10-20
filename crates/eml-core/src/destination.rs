@@ -219,59 +219,10 @@ pub fn plan_destinations<'a>(
             continue;
         }
         match plan_one(&result.sources, index, control, &mut result.labels) {
-            Ok((info, display, mut failure)) => {
-                if control.is_stopped() {
-                    result.state = DestinationPlanState::Interrupted;
+            Ok(planned) => {
+                if !result.admit_destination(index, planned, &ids, &mut reservations, control) {
                     break;
                 }
-                let Some(total) = path_total(
-                    result.path_bytes,
-                    native_bytes(&display),
-                    native_bytes(&info.native),
-                )
-                .filter(|_| path_limits(&display).is_ok()) else {
-                    result.state = DestinationPlanState::InputLimitExceeded;
-                    result.error = Some(OperationFailure::new(
-                        ErrorCode::InputLimitExceeded,
-                        ErrorPhase::Admission,
-                        "Combined reported destination paths exceed run bounds",
-                    ));
-                    break;
-                };
-                if is_source_alias(&result.sources, &info, &ids, control) {
-                    failure = Some(OperationFailure::new(
-                        ErrorCode::SourceDestinationAlias,
-                        ErrorPhase::Admission,
-                        "Planned output aliases a selected source reservation",
-                    ));
-                }
-                if control.is_stopped() {
-                    result.state = DestinationPlanState::Interrupted;
-                    break;
-                }
-                let key = DestinationKey {
-                    closest: info.closest_parent(),
-                    tail: info.reservation_tail(),
-                };
-                // Keep valid keys even if inspection/binding rejected the item.
-                // All contenders become collisions in a separate complete pass.
-                reservations.entry(key).or_default().push(index);
-                // Presence is an observation, never inferred from failure=None.
-                if let DestinationObservation::Present(observed) = info.observation
-                    && observed.kind != EntryKind::File
-                    && failure.is_none()
-                {
-                    failure = Some(OperationFailure::new(
-                        ErrorCode::DestinationExists,
-                        ErrorPhase::Admission,
-                        "Existing output is not an ordinary regular file",
-                    ));
-                }
-                result.records[index] = DestinationRecord(Row::Known {
-                    info: Box::new(info),
-                    failure,
-                });
-                result.path_bytes = total;
             }
             Err(error) => {
                 if control.is_stopped() {
@@ -300,6 +251,71 @@ pub fn plan_destinations<'a>(
         result.state = DestinationPlanState::Interrupted;
     }
     result
+}
+impl DestinationPlan<'_> {
+    fn admit_destination(
+        &mut self,
+        index: usize,
+        planned: (DestinationInfo, PathBuf, Option<OperationFailure>),
+        ids: &HashSet<Identity>,
+        reservations: &mut HashMap<DestinationKey, Vec<usize>>,
+        control: &RunControl,
+    ) -> bool {
+        let (info, display, mut failure) = planned;
+        if control.is_stopped() {
+            self.state = DestinationPlanState::Interrupted;
+            return false;
+        }
+        let Some(total) = path_total(
+            self.path_bytes,
+            native_bytes(&display),
+            native_bytes(&info.native),
+        )
+        .filter(|_| path_limits(&display).is_ok()) else {
+            self.state = DestinationPlanState::InputLimitExceeded;
+            self.error = Some(OperationFailure::new(
+                ErrorCode::InputLimitExceeded,
+                ErrorPhase::Admission,
+                "Combined reported destination paths exceed run bounds",
+            ));
+            return false;
+        };
+        if is_source_alias(&self.sources, &info, ids, control) {
+            failure = Some(OperationFailure::new(
+                ErrorCode::SourceDestinationAlias,
+                ErrorPhase::Admission,
+                "Planned output aliases a selected source reservation",
+            ));
+        }
+        if control.is_stopped() {
+            self.state = DestinationPlanState::Interrupted;
+            return false;
+        }
+        let key = DestinationKey {
+            closest: info.closest_parent(),
+            tail: info.reservation_tail(),
+        };
+        // Keep valid keys even if inspection/binding rejected the item.
+        // All contenders become collisions in a separate complete pass.
+        reservations.entry(key).or_default().push(index);
+        // Presence is an observation, never inferred from failure=None.
+        if let DestinationObservation::Present(observed) = info.observation
+            && observed.kind != EntryKind::File
+            && failure.is_none()
+        {
+            failure = Some(OperationFailure::new(
+                ErrorCode::DestinationExists,
+                ErrorPhase::Admission,
+                "Existing output is not an ordinary regular file",
+            ));
+        }
+        self.records[index] = DestinationRecord(Row::Known {
+            info: Box::new(info),
+            failure,
+        });
+        self.path_bytes = total;
+        true
+    }
 }
 fn native_failure(detail: &'static str, error: io::Error) -> OperationFailure {
     OperationFailure::io(ErrorCode::BindFailed, ErrorPhase::Admission, detail, error)
@@ -512,7 +528,6 @@ fn plan_one(
 ) -> Result<(DestinationInfo, PathBuf, Option<OperationFailure>), OperationFailure> {
     checkpoint(control)?;
     let item = &sources.items()[index];
-    let context = sources.context.as_ref().expect("collected context");
     let mut route = PathBuf::new();
     let beside;
     let base = match &sources.request.output {
@@ -544,11 +559,96 @@ fn plan_one(
             )),
         })
         .collect::<Result<_, _>>()?;
+    let (current, prefix, missing) = inspect_mirrored_route(base, &components, control)?;
+    let mut failure = None;
+    let directory = current.as_ref().unwrap_or(base);
+    let limit = directory.name_limit().map_err(|error| {
+        native_failure("Destination component limit could not be queried", error)
+    })?;
+    let basename = copy_basename(
+        item.native_path().file_name().ok_or_else(|| {
+            native_failure(
+                "Source has no filename component",
+                io::Error::from(io::ErrorKind::InvalidInput),
+            )
+        })?,
+        limit,
+    )
+    .map_err(|error| {
+        native_failure(
+            "Copy name cannot fit the destination",
+            io::Error::new(io::ErrorKind::InvalidInput, error),
+        )
+    })?;
+    #[cfg(windows)]
+    eml_fs::validate_component(&basename, limit)
+        .map_err(|error| native_failure("Copy name is unsupported after truncation", error))?;
+    let display = display_destination(sources, index, labels, &basename);
+    let native = native_destination_path(sources, index, &route, &basename)?;
+    let observation = if missing {
+        DestinationObservation::MissingParent
+    } else {
+        match directory.observe_child_if_present(&basename) {
+            Ok(None) => DestinationObservation::Missing,
+            Ok(Some(value)) => DestinationObservation::Present(value),
+            Err(error) => {
+                failure = Some(native_failure(
+                    "Existing output metadata could not be inspected",
+                    error,
+                ));
+                DestinationObservation::Unobserved
+            }
+        }
+    };
+    let unbound_parents = components.len() + 1 - prefix.len();
+    Ok((
+        DestinationInfo {
+            native,
+            unbound_parents,
+            limit,
+            existing_prefix: prefix,
+            observation,
+        },
+        display,
+        failure,
+    ))
+}
+fn native_destination_path(
+    sources: &CollectedSources<'_>,
+    index: usize,
+    route: &Path,
+    basename: &OsStr,
+) -> Result<PathBuf, OperationFailure> {
+    let item = &sources.items()[index];
+    let context = sources.context.as_ref().expect("collected context");
+    Ok(match &sources.request.output {
+        OutputLocation::BesideSource => {
+            let parent = item.native_path().parent().unwrap_or(Path::new(""));
+            let native = append(parent, Path::new(basename));
+            #[cfg(windows)]
+            let native = context.operand(&native, Path::new("")).map_err(|error| {
+                native_failure("Complete destination path is unsupported", error)
+            })?;
+            native
+        }
+        OutputLocation::Directory(root) => {
+            let suffix = append(route, Path::new(basename));
+            context.operand(root, &suffix).map_err(|error| {
+                native_failure("Complete destination path is unsupported", error)
+            })?
+        }
+    })
+}
+fn inspect_mirrored_route(
+    base: &BoundDirectory,
+    components: &[&OsStr],
+    control: &RunControl,
+) -> Result<(Option<BoundDirectory>, Vec<Identity>, bool), OperationFailure> {
     let mut current: Option<BoundDirectory> = None;
     let mut prefix = vec![base.identity()];
     let mut missing = false;
     let mut failure = None;
-    for name in &components {
+    for name in components {
         checkpoint(control)?;
         let directory = current.as_ref().unwrap_or(base);
         match directory.observe_child_if_present(name) {
@@ -596,73 +696,7 @@ fn plan_one(
     if let Some(error) = failure.take() {
         return Err(error);
     }
-    let directory = current.as_ref().unwrap_or(base);
-    let limit = directory.name_limit().map_err(|error| {
-        native_failure("Destination component limit could not be queried", error)
-    })?;
-    let basename = copy_basename(
-        item.native_path().file_name().ok_or_else(|| {
-            native_failure(
-                "Source has no filename component",
-                io::Error::from(io::ErrorKind::InvalidInput),
-            )
-        })?,
-        limit,
-    )
-    .map_err(|error| {
-        native_failure(
-            "Copy name cannot fit the destination",
-            io::Error::new(io::ErrorKind::InvalidInput, error),
-        )
-    })?;
-    #[cfg(windows)]
-    eml_fs::validate_component(&basename, limit)
-        .map_err(|error| native_failure("Copy name is unsupported after truncation", error))?;
-    let display = display_destination(sources, index, labels, &basename);
-    let native = match &sources.request.output {
-        OutputLocation::BesideSource => {
-            let parent = item.native_path().parent().unwrap_or(Path::new(""));
-            let native = append(parent, Path::new(&basename));
-            #[cfg(windows)]
-            let native = context.operand(&native, Path::new("")).map_err(|error| {
-                native_failure("Complete destination path is unsupported", error)
-            })?;
-            native
-        }
-        OutputLocation::Directory(root) => {
-            let suffix = append(&route, Path::new(&basename));
-            context.operand(root, &suffix).map_err(|error| {
-                native_failure("Complete destination path is unsupported", error)
-            })?
-        }
-    };
-    let observation = if missing {
-        DestinationObservation::MissingParent
-    } else {
-        match directory.observe_child_if_present(&basename) {
-            Ok(None) => DestinationObservation::Missing,
-            Ok(Some(value)) => DestinationObservation::Present(value),
-            Err(error) => {
-                failure = Some(native_failure(
-                    "Existing output metadata could not be inspected",
-                    error,
-                ));
-                DestinationObservation::Unobserved
-            }
-        }
-    };
-    let unbound_parents = components.len() + 1 - prefix.len();
-    Ok((
-        DestinationInfo {
-            native,
-            unbound_parents,
-            limit,
-            existing_prefix: prefix,
-            observation,
-        },
-        display,
-        failure,
-    ))
+    Ok((current, prefix, missing))
 }
 fn is_source_alias(
     sources: &CollectedSources<'_>,

@@ -328,7 +328,7 @@ fn join_captured(base: &Path, tail: &Path) -> PathBuf {
 mod tests {
     use super::*;
     #[test]
-    fn explicit_base_preserves_literal_verbatim_names_navigation_roots_and_terminal_separators() {
+    fn explicit_base_capture_retains_drive_identity_and_operational_ceiling() {
         for (base, expected) in [
             (r"C:\owned\base", r"\\?\C:\owned\base"),
             (
@@ -351,6 +351,9 @@ mod tests {
             context.resolve(Path::new("C:")).unwrap().as_os_str(),
             OsStr::new(&longest_base)
         );
+    }
+    #[test]
+    fn explicit_base_preserves_literal_verbatim_names_navigation_roots_and_terminal_separators() {
         for (base, cases) in [
             (
                 r"\\?\C:\owned\literal. \kept ",

@@ -44,10 +44,7 @@ export that inline; it is never owned, closed or used to mutate a token. This
 avoids reopening another authenticated user's token through a separate DACL
 access check while still observing the actual current effective UserSID.
 
-The first native run rejected the default hosted workspaces: x64's D: owner was
-outside the admitted principals, and ARM's C:\a allowed untrusted mutation.
-Those are real failed prerequisites, not exceptions to the namespace policy.
-Hosted verification now prepares a new exact-source checkout beneath an admitted
+Hosted verification prepares a new exact-source checkout beneath an admitted
 user-profile temporary enclosure. Existing workspace ACLs stay unchanged. Tests,
 compiler scratch and retained evidence live under that checkout's target/. The
 new location must pass native admission and the distinct-user test before it can

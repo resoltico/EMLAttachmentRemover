@@ -19,6 +19,7 @@ use windows_sys::Win32::{
 };
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+#[allow(unsafe_code, reason = "quality:filesystem-probe-restricted-token")]
 mod actor {
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -30,6 +31,7 @@ use actor::RestrictedToken;
 fn wide(path: &OsStr) -> Vec<u16> {
     path.encode_wide().chain(Some(0)).collect()
 }
+#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-directory")]
 fn directory(path: &Path, writable: bool) -> Result<OwnedHandle> {
     let path = wide(path.as_os_str());
     let access = if writable {
@@ -73,6 +75,7 @@ fn directory(path: &Path, writable: bool) -> Result<OwnedHandle> {
     }
     Ok(handle)
 }
+#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-identity")]
 fn identity(handle: HANDLE) -> Result<(u64, [u8; 16])> {
     let mut id = FILE_ID_INFO::default();
     // SAFETY: caller retains a live handle for this call, generated output type is aligned/sized.
@@ -106,6 +109,7 @@ fn candidate(path: &Path, bytes: &[u8]) -> Result<std::fs::File> {
     Ok(file)
 }
 
+#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-rename")]
 fn rename_absolute_no_replace(
     file: &std::fs::File,
     parent: &Path,
@@ -166,6 +170,7 @@ fn rename_absolute_no_replace(
     }
     Ok(())
 }
+#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-flush")]
 fn flush(handle: &OwnedHandle, label: &str) -> Result<()> {
     // SAFETY: live write-capable directory handle, retained for the whole call.
     if unsafe { FlushFileBuffers(handle.as_raw_handle()) } == 0 {
@@ -174,6 +179,7 @@ fn flush(handle: &OwnedHandle, label: &str) -> Result<()> {
     println!("PASS: {label}");
     Ok(())
 }
+#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-delete-check")]
 fn delete_excluded(path: &Path) -> Result<bool> {
     let name = wide(path.as_os_str());
     // SAFETY: terminated live path; successful handle (which means the guard failed)
@@ -201,32 +207,7 @@ fn delete_excluded(path: &Path) -> Result<bool> {
 }
 
 pub(super) fn run() -> Result<()> {
-    let mut process_machine = 0;
-    let mut native_machine = 0;
-    // SAFETY: current process pseudo-handle and live u16 outputs.
-    if unsafe {
-        IsWow64Process2(
-            GetCurrentProcess(),
-            &mut process_machine,
-            &mut native_machine,
-        )
-    } == 0
-    {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    assert_eq!(
-        process_machine, 0,
-        "emulation does not qualify native behavior"
-    );
-    assert_eq!(
-        native_machine,
-        if cfg!(target_arch = "aarch64") {
-            0xaa64
-        } else {
-            0x8664
-        }
-    );
-    println!("Native Windows machine: {native_machine:#x}; no emulation");
+    require_native_machine()?;
     let _restricted_token = RestrictedToken::enter()?;
     let root = tempfile::tempdir()?;
     let destination = root.path().join("destination");
@@ -243,32 +224,7 @@ pub(super) fn run() -> Result<()> {
         pins.push(directory(ancestor, false)?);
     }
     let parent = directory(&destination, true)?;
-    let mut fs_name = [0u16; 32];
-    let mut max_component = 0;
-    // SAFETY: live directory handle; optional outputs null; writable fs-name array
-    // has the stated UTF-16 capacity. This observes the actual test volume.
-    if unsafe {
-        GetVolumeInformationByHandleW(
-            parent.as_raw_handle(),
-            ptr::null_mut(),
-            0,
-            ptr::null_mut(),
-            &mut max_component,
-            ptr::null_mut(),
-            fs_name.as_mut_ptr(),
-            fs_name.len() as u32,
-        )
-    } == 0
-    {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    let fs_end = fs_name
-        .iter()
-        .position(|unit| *unit == 0)
-        .unwrap_or(fs_name.len());
-    let fs_name = String::from_utf16(&fs_name[..fs_end])?;
-    assert_eq!(fs_name, "NTFS", "test requires an actual NTFS volume");
-    println!("Observed filesystem: {fs_name}");
+    let max_component = require_ntfs_volume(&parent)?;
     let parent_id = identity(parent.as_raw_handle())?;
     println!("Resolved ordinary ancestor chain pinned without delete sharing");
     assert!(delete_excluded(&destination)?);
@@ -338,4 +294,66 @@ pub(super) fn run() -> Result<()> {
     root.close()?;
     println!("PASS: no overwrite, final identity/bytes, directory flush and owned cleanup");
     Ok(())
+}
+
+#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-machine")]
+fn require_native_machine() -> Result<()> {
+    let mut process_machine = 0;
+    let mut native_machine = 0;
+    // SAFETY: current process pseudo-handle and live u16 outputs.
+    if unsafe {
+        IsWow64Process2(
+            GetCurrentProcess(),
+            &mut process_machine,
+            &mut native_machine,
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    assert_eq!(
+        process_machine, 0,
+        "emulation does not qualify native behavior"
+    );
+    assert_eq!(
+        native_machine,
+        if cfg!(target_arch = "aarch64") {
+            0xaa64
+        } else {
+            0x8664
+        }
+    );
+    println!("Native Windows machine: {native_machine:#x}; no emulation");
+    Ok(())
+}
+
+#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-volume")]
+fn require_ntfs_volume(parent: &OwnedHandle) -> Result<u32> {
+    let mut fs_name = [0u16; 32];
+    let mut max_component = 0;
+    // SAFETY: live directory handle; optional outputs null; writable fs-name array
+    // has the stated UTF-16 capacity. This observes the actual test volume.
+    if unsafe {
+        GetVolumeInformationByHandleW(
+            parent.as_raw_handle(),
+            ptr::null_mut(),
+            0,
+            ptr::null_mut(),
+            &mut max_component,
+            ptr::null_mut(),
+            fs_name.as_mut_ptr(),
+            fs_name.len() as u32,
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let fs_end = fs_name
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(fs_name.len());
+    let fs_name = String::from_utf16(&fs_name[..fs_end])?;
+    assert_eq!(fs_name, "NTFS", "test requires an actual NTFS volume");
+    println!("Observed filesystem: {fs_name}");
+    Ok(max_component)
 }

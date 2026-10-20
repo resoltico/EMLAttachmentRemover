@@ -5,7 +5,16 @@ GUI are separate products and thin adapters over eml-core. The GUI's private
 eml-worker calls that library directly; it never launches the CLI product.
 Windows/Linux GUI implementations are outside the current scope.
 
-Application destination persistence uses only the fresh copyDestinationBytes
+About is available only from **EML Attachment Remover → About EML Attachment
+Remover** in the macOS menu bar. It shows the application icon, release version and
+distinct build number once, the project copyright notice, and Project website and
+Licenses actions. It retains
+Slint's `AboutSlint` attribution widget under the selected royalty-free license.
+The Help menu opens the complete software/artwork license text separately. Its
+Third-party licenses action opens the bundled component notices and license files
+in Finder.
+
+Application destination persistence uses only the copyDestinationBytes
 String key after an explicit destination action; an argument override remains
 session-only. Native system pickers may also retain Cocoa navigation bookmarks
 and panel/window geometry. Product code does not read, migrate, reset or write
@@ -19,16 +28,21 @@ MACOSX_DEPLOYMENT_TARGET=15.0 cargo build --locked -p eml-gui --features macos-g
 ```
 
 Use x86_64-apple-darwin on a native Intel Mac. These are separate executables;
-there is no universal build. Qualification requires the selected Xcode26.3/17C529
+there is no universal build. Qualification requires the selected Xcode version/build in `xtask/tools.toml`
 and actual native execution on both CPUs. A newer local SDK build is additional
 evidence. Signing is Apple ad hoc only; no Developer ID or notarization is provided.
 
-The initial screen compiles with Slint1.18.1's Winit/software/system-font and
-accessibility profile. It explicitly selects both backend and renderer and rejects
-the unsupported disabled-shaping override. AuditoryLab's accelerated/software
-configuration remains a reference; the initial renderer choice is not an owner
-requirement or native graphics qualification. International text, selection,
-clipboard, appearance and VoiceOver need actual checks.
+The screen uses the pinned Slint Winit/software/system-font and accessibility
+profile. All three application windows explicitly select the registered macOS
+system UI family discovered through Fontique, rather than relying on Slint's
+generic sans-serif fallback. Their base text size comes from AppKit's
+`NSFont.systemFontSize`; headings retain their explicit display sizes. The Fluent
+widget style is separate from this native typography selection. Optical sizing and
+tracking use logical points consistently for shaping, metrics and software drawing
+at either display density; see the [vendored typography patches](../vendor/typography.md).
+The app explicitly selects both backend and renderer and rejects the
+unsupported disabled-shaping override. International text, selection, clipboard,
+appearance and VoiceOver require actual native checks.
 
 eml-app captures immutable native selections/destinations, reserves bounded
 reports, frames LF bytes and reduces checked protocol1 observations. eml-protocol
@@ -51,7 +65,14 @@ retained reports, cooperative Stop, confirmed Force Stop and Quit, and explicit
 protected report export. Export captures the exact run's accepted facts and
 terminal worker lifecycle. Its cancellation has separate intent and never rolls
 back attempted publication; its reservation lasts through task/buffer disposal
-and join. Received results and removed-part details are paged in bounded views.
+and join. The save sheet keeps occupied names editable and asks for another name;
+it does not offer replacement. This inspection reserves nothing: a later collision
+still refuses publication without replacing the existing item. Export notices retain
+publication uncertainty, cleanup observations and typed causes in Technical details.
+Received results and removed-part details are paged in bounded views. Byte comparisons
+and proposed removals describe the prepared copy; they do not claim a copy was
+published or disk space was freed. Run-level errors remain visible when no message
+results exist, with Core guidance separate from the precise diagnostic.
 The event loop remains running when windows are hidden. Minimal application
 hooks extend only absent lifecycle methods on Winit's verified delegate; native
 Quit is deferred to the controller and reopen restores the main window. Actual
@@ -60,8 +81,7 @@ native GUI lifecycle acceptance remains required.
 The pinned Winit source is retained under vendor/winit. Its focused macOS patch
 passes one synchronous, borrowed native pasteboard to the common bounded
 file-URL reader. Inspection never queues work; a committed drop validates the
-current complete batch again. The old filename-string/per-file drop path is
-removed. See the retained [patch notice](../vendor/winit/EML-PATCH.md) for upstream
+current complete batch again. See the retained [patch notice](../vendor/winit/EML-PATCH.md) for upstream
 identity, changed files and the separate native drag-delivery requirement.
 Read-only report text supports Edit/Copy and Select All through Slint; Window
 commands use Slint's minimize, maximize and macOS bring-to-front APIs.

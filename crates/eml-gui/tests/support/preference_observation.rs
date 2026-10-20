@@ -1,13 +1,7 @@
 //! Nonshipping real Foundation preferences in a marker-owned fresh suite.
-#![allow(
-    unsafe_code,
-    reason = "Typed property-list fixture values and the shared Foundation preference boundary"
-)]
+#![allow(unsafe_code, reason = "quality:native-preference-fixture")]
 #[path = "../../src/preferences.rs"]
-#[allow(
-    dead_code,
-    reason = "The probe uses an owned suite; production load uses the standard application domain"
-)]
+#[allow(dead_code, reason = "quality:shared-preference-fixture")]
 mod preferences;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use objc2::{AnyThread, rc::Retained};

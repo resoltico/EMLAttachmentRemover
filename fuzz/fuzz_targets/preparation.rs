@@ -1,3 +1,4 @@
+//! Message-preparation invariants exercised against arbitrary bytes by libFuzzer.
 #![no_main]
 #![forbid(unsafe_code)]
 use eml_core::{PreparationError, Refusal, RunControl, prepare_message};

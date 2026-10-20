@@ -134,62 +134,12 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
         campaign.directory.join("metadata-before.json"),
         serde_json::to_vec_pretty(&before)?,
     )?;
-    let mut inputs = StableInputs::default();
-    for file in [
-        "Cargo.toml",
-        "rust-toolchain.toml",
-        ".cargo/config.toml",
-        "xtask/tools.toml",
-        "fuzz/Cargo.toml",
-        "fuzz/Cargo.lock",
-    ] {
-        inputs.add(campaign.source.join(file))?;
-    }
-    for package in before["packages"]
-        .as_array()
-        .ok_or("Full Cargo metadata packages missing")?
-    {
-        inputs.add(PathBuf::from(
-            package["manifest_path"]
-                .as_str()
-                .ok_or("Package manifest path missing")?,
-        ))?;
-    }
-    for configuration in crate::campaign::effective_configs(&campaign.source)? {
-        inputs.add(configuration)?;
-    }
+    let inputs = capture_build_inputs(&campaign, &before)?;
     let mut seeds = StableInputs::default();
     for file in fixture_files.iter().chain(&edge_files) {
         seeds.add(file.clone())?;
     }
-    let mut command = campaign.command("rustup")?;
-    let fuzz_tool = campaign.tool_path("fuzz")?;
-    command
-        .args(["run", &compiler])
-        .arg(fuzz_tool)
-        .args(["fuzz", "build", "preparation", "--fuzz-dir"])
-        .arg(campaign.source.join("fuzz"))
-        .args(["--target", &target, "--target-dir"])
-        .arg(&build)
-        .env("CARGO_NET_OFFLINE", "true");
-    writeln!(
-        std::io::stderr(),
-        "Building pinned fuzz harness at {}; evidence {}",
-        campaign.sha,
-        campaign.directory.display()
-    )?;
-    let built = run_logged(
-        command,
-        &campaign.directory.join("build.log"),
-        Duration::from_secs(10 * 60),
-    )?;
-    if !built.success() {
-        return Err(format!(
-            "Fuzz build failed; inspect {}",
-            campaign.directory.join("build.log").display()
-        )
-        .into());
-    }
+    build_harness(&campaign, &compiler, &target, &build)?;
     let after = metadata(&campaign, &compiler, &target, &build)?;
     fs::write(
         campaign.directory.join("metadata-after.json"),
@@ -253,6 +203,67 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
     }
     Ok(())
 }
+
+fn capture_build_inputs(campaign: &Campaign, before: &Value) -> Result<StableInputs> {
+    let mut inputs = StableInputs::default();
+    for file in [
+        "Cargo.toml",
+        "rust-toolchain.toml",
+        ".cargo/config.toml",
+        "xtask/tools.toml",
+        "fuzz/Cargo.toml",
+        "fuzz/Cargo.lock",
+    ] {
+        inputs.add(campaign.source.join(file))?;
+    }
+    for package in before["packages"]
+        .as_array()
+        .ok_or("Full Cargo metadata packages missing")?
+    {
+        inputs.add(PathBuf::from(
+            package["manifest_path"]
+                .as_str()
+                .ok_or("Package manifest path missing")?,
+        ))?;
+    }
+    for configuration in crate::campaign::effective_configs(&campaign.source)? {
+        inputs.add(configuration)?;
+    }
+    Ok(inputs)
+}
+
+fn build_harness(campaign: &Campaign, compiler: &str, target: &str, build: &Path) -> Result<()> {
+    let mut command = campaign.command("rustup")?;
+    let fuzz_tool = campaign.tool_path("fuzz")?;
+    command
+        .args(["run", compiler])
+        .arg(fuzz_tool)
+        .args(["fuzz", "build", "preparation", "--fuzz-dir"])
+        .arg(campaign.source.join("fuzz"))
+        .args(["--target", target, "--target-dir"])
+        .arg(build)
+        .env("CARGO_NET_OFFLINE", "true");
+    writeln!(
+        std::io::stderr(),
+        "Building pinned fuzz harness at {}; evidence {}",
+        campaign.sha,
+        campaign.directory.display()
+    )?;
+    let built = run_logged(
+        command,
+        &campaign.directory.join("build.log"),
+        Duration::from_secs(10 * 60),
+    )?;
+    if !built.success() {
+        return Err(format!(
+            "Fuzz build failed; inspect {}",
+            campaign.directory.join("build.log").display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

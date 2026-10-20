@@ -277,32 +277,7 @@ pub(crate) fn parameter_value(
         let Some(suffix) = parameter.name.strip_prefix(attribute) else {
             continue;
         };
-        let (form, segment, starred) = if suffix.is_empty() {
-            (Form::Plain, 0, false)
-        } else if suffix == b"*" {
-            (Form::Extended, 0, true)
-        } else if let Some(rest) = suffix.strip_prefix(b"*") {
-            let starred = rest.ends_with(b"*");
-            let digits = if starred {
-                &rest[..rest.len() - 1]
-            } else {
-                rest
-            };
-            if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-                continue;
-            }
-            let mut index = 0usize;
-            for digit in digits {
-                index = index
-                    .checked_mul(10)
-                    .and_then(|n| n.checked_add((digit - b'0') as usize))
-                    .ok_or_else(limit)?;
-                if index >= 128 {
-                    return Err(limit());
-                }
-            }
-            (Form::Continuation, index, starred)
-        } else {
+        let Some((form, segment, starred)) = parameter_form(suffix)? else {
             continue;
         };
         if let Some(previous) = &chosen {
@@ -381,6 +356,37 @@ pub(crate) fn parameter_value(
         Err(failure) if structural => Err(failure),
         Err(_) => Ok(None),
     }
+}
+fn parameter_form(suffix: &[u8]) -> Result<Option<(Form, usize, bool)>, PreparationError> {
+    let value = if suffix.is_empty() {
+        (Form::Plain, 0, false)
+    } else if suffix == b"*" {
+        (Form::Extended, 0, true)
+    } else if let Some(rest) = suffix.strip_prefix(b"*") {
+        let starred = rest.ends_with(b"*");
+        let digits = if starred {
+            &rest[..rest.len() - 1]
+        } else {
+            rest
+        };
+        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+            return Ok(None);
+        }
+        let mut index = 0usize;
+        for digit in digits {
+            index = index
+                .checked_mul(10)
+                .and_then(|n| n.checked_add((digit - b'0') as usize))
+                .ok_or_else(limit)?;
+            if index >= 128 {
+                return Err(limit());
+            }
+        }
+        (Form::Continuation, index, starred)
+    } else {
+        return Ok(None);
+    };
+    Ok(Some(value))
 }
 pub(crate) fn identifier(value: &[u8]) -> Result<Vec<u8>, PreparationError> {
     let mut cursor = 0;

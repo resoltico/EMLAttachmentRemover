@@ -78,13 +78,16 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: |
+          cargo xtask check-quality
           cargo fmt --all --check
           cargo fmt --manifest-path fuzz/Cargo.toml --all --check
           cargo fmt --manifest-path tests/native-filesystem/Cargo.toml --all --check
           cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path tests/native-filesystem/Cargo.toml --all-targets -- -D warnings
           cargo doc --locked --workspace --no-deps
           actionlint
-          git ls-files -z -- '*.sh' | xargs -0 -r shellcheck --
+          cargo xtask check-shell
   legal:
     needs: plan
     runs-on: ubuntu-22.04
@@ -137,14 +140,18 @@ jobs:
         if: ${{ runner.os == 'Windows' }}
         shell: pwsh
         run: |
-          rustup toolchain install 1.99.0-${{ matrix.target }} --profile minimal --component rust-mingw --component clippy
+          $channelMatch = Select-String -Path rust-toolchain.toml -Pattern '^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$'
+          if (!$channelMatch) { throw 'Missing exact Rust channel in rust-toolchain.toml' }
+          $channel = $channelMatch.Matches.Groups[1].Value
+          $toolchain = "$channel-${{ matrix.target }}"
+          rustup toolchain install $toolchain --profile minimal --component rust-mingw --component clippy
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $sysroot = rustc +1.99.0-${{ matrix.target }} --print sysroot
+          $sysroot = rustc "+$toolchain" --print sysroot
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $linker = Join-Path $sysroot 'lib/rustlib/${{ matrix.target }}/bin/rust-lld.exe'
           if (!(Test-Path $linker)) { throw 'Missing selected native sysroot rust-lld' }
           'CARGO_TARGET_${{ matrix.target }}_LINKER'.ToUpper().Replace('-', '_') + '=' + $linker >> $env:GITHUB_ENV
-          'RUSTUP_TOOLCHAIN=1.99.0-${{ matrix.target }}' >> $env:GITHUB_ENV
+          'RUSTUP_TOOLCHAIN=' + $toolchain >> $env:GITHUB_ENV
           $scratch = Join-Path $env:GITHUB_WORKSPACE 'target/native-scratch'
           New-Item -ItemType Directory $scratch | Out-Null
           'TEMP=' + $scratch >> $env:GITHUB_ENV
@@ -186,6 +193,9 @@ jobs:
           $code = $LASTEXITCODE
           if ($code -ne 0) { exit $code }
           cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures --target '${{ matrix.target }}' -- -D warnings
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { exit $code }
+          cargo clippy --locked --manifest-path tests/native-filesystem/Cargo.toml --all-targets --target '${{ matrix.target }}' -- -D warnings
           exit $LASTEXITCODE
       - name: Windows standalone real filesystem primitive
         if: ${{ runner.os == 'Windows' }}
@@ -230,7 +240,9 @@ jobs:
         run: |
           cargo xtask native-tests --target '${{ matrix.target }}' --out target/native-tests
           cargo clippy --locked --workspace --all-targets --target '${{ matrix.target }}' -- -D warnings
-      - name: Strict selected-Xcode Swift bridge/test formatting
+          cargo clippy --locked --manifest-path tests/native-filesystem/Cargo.toml --all-targets --target '${{ matrix.target }}' -- -D warnings
+          cargo clippy --locked --manifest-path fuzz/Cargo.toml --all-targets --target '${{ matrix.target }}' -- -D warnings
+      - name: Strict selected-Xcode Swift formatting and structure
         if: ${{ runner.os == 'macOS' }}
         run: cargo xtask check-macos-swift --out target/native-swift-checks
       - name: Qualified Slint profile and actual Darwin child/preference fixtures

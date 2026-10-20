@@ -6,11 +6,8 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-#[allow(
-    dead_code,
-    reason = "Shared test support: ordinary harnesses use stderr; the closed-stdio fixture uses its preserved log"
-)]
-pub struct Settle(pub OwnedChild);
+#[allow(dead_code, reason = "quality:shared-child-cleanup")]
+pub(crate) struct Settle(pub OwnedChild);
 impl Drop for Settle {
     fn drop(&mut self) {
         // Acquire no diagnostic lock until native poll/Kill/reap has finished.
@@ -20,11 +17,8 @@ impl Drop for Settle {
     }
 }
 /// The descriptor-collision fixture preserves its diagnostic writer above fd3.
-#[allow(
-    dead_code,
-    reason = "Only the separate closed-stdio fixture target needs a preserved diagnostic descriptor"
-)]
-pub struct SettleWithLog<'a>(pub OwnedChild, pub &'a mut dyn Write);
+#[allow(dead_code, reason = "quality:shared-child-cleanup-log")]
+pub(crate) struct SettleWithLog<'a>(pub OwnedChild, pub &'a mut dyn Write);
 impl Drop for SettleWithLog<'_> {
     fn drop(&mut self) {
         if let Err(error) = settle_native(&self.0) {
@@ -69,7 +63,7 @@ fn unconfirmed(reason: &str, diagnostics: &mut dyn Write) -> ! {
     );
     std::process::exit(1);
 }
-pub fn terminal(child: &OwnedChild) -> ChildExit {
+pub(crate) fn terminal(child: &OwnedChild) -> ChildExit {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         match child.poll().unwrap() {
@@ -83,7 +77,7 @@ pub fn terminal(child: &OwnedChild) -> ChildExit {
         thread::sleep(Duration::from_millis(5));
     }
 }
-pub fn drain(mut reader: impl Read + Send + 'static) -> mpsc::Receiver<Vec<u8>> {
+pub(crate) fn drain(mut reader: impl Read + Send + 'static) -> mpsc::Receiver<Vec<u8>> {
     let (send, receive) = mpsc::sync_channel(1);
     thread::spawn(move || {
         let mut bytes = Vec::new();

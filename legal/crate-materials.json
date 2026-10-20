@@ -4340,8 +4340,8 @@
     {
       "name": "i-slint-core",
       "version": "1.18.1",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "checksum": "ed2ea15059d70bc31b1a8b1eb4c34f2c5df04cb7e53f36179b43c0261231d646",
+      "source": null,
+      "checksum": null,
       "license_expression": "GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0",
       "scopes": [
         "gui@aarch64-apple-darwin",
@@ -4368,15 +4368,17 @@
         }
       ],
       "provenance": {
-        "kind": "registry",
+        "kind": "vendored",
         "repository": "https://github.com/slint-ui/slint",
-        "checksum_basis": "cached published archive SHA-256 independently checked; generator separately binds the current Cargo.lock",
+        "checksum_basis": "Published archive identifies the unchanged upstream basis; current reviewed typography patches and source are retained in this checkout. Cargo.lock has no registry checksum for local source. Licenses and headers remain unchanged; native layout/raster QA is separate.",
         "declared_vcs": {
           "git": {
             "sha1": "372cf0ee5577c3dfec309a45e7b778ba4e81b734"
           },
           "path_in_vcs": "internal/core"
-        }
+        },
+        "manifest_path": "vendor/i-slint-core/Cargo.toml",
+        "published_archive_sha256": "ed2ea15059d70bc31b1a8b1eb4c34f2c5df04cb7e53f36179b43c0261231d646"
       }
     },
     {
@@ -7411,8 +7413,8 @@
     {
       "name": "parley",
       "version": "0.11.1",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "checksum": "22d2ff88bd3f7d68d1d9b09c7e6209f9a8e8c05088295140a2bcf2e9b17038c5",
+      "source": null,
+      "checksum": null,
       "license_expression": "Apache-2.0 OR MIT",
       "scopes": [
         "gui@aarch64-apple-darwin",
@@ -7439,15 +7441,17 @@
         }
       ],
       "provenance": {
-        "kind": "registry",
+        "kind": "vendored",
         "repository": "https://github.com/linebender/parley",
-        "checksum_basis": "cached published archive SHA-256 independently checked; generator separately binds the current Cargo.lock",
+        "checksum_basis": "Published archive identifies the unchanged upstream basis; current reviewed typography patches and source are retained in this checkout. Cargo.lock has no registry checksum for local source. Licenses and headers remain unchanged; native layout/raster QA is separate.",
         "declared_vcs": {
           "git": {
             "sha1": "eea3503dd6cf17130cbb07348e0ff2c918300e94"
           },
           "path_in_vcs": "parley"
-        }
+        },
+        "manifest_path": "vendor/parley/Cargo.toml",
+        "published_archive_sha256": "22d2ff88bd3f7d68d1d9b09c7e6209f9a8e8c05088295140a2bcf2e9b17038c5"
       }
     },
     {
@@ -12602,16 +12606,16 @@
   "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
   "source_inputs": [
     {
-      "bytes": 148706,
+      "bytes": 148507,
       "kind": "review_input",
       "path": "Cargo.lock",
-      "sha256": "0f26bd0a7917a6e3aee1552c96fbc83bc381afd20b052a96a9fdefe9fd67d1cf"
+      "sha256": "a56717775d465d31714dc5094abd3aa6f1655a59601ec3ce2035d09bed692572"
     },
     {
-      "bytes": 906,
+      "bytes": 1382,
       "kind": "review_input",
       "path": "Cargo.toml",
-      "sha256": "1de1cc15a9848725d19e0b7136dded00cbcca53bcd041f0d626d402601cf9897"
+      "sha256": "b882f36c42a3daa54937128e91aa0f3cc810ab6dedc7bbd2380e4b702cf8f528"
     },
     {
       "bytes": 839,
@@ -12626,10 +12630,10 @@
       "sha256": "52c21442a62c86d82331f740bd623d3508182a3a9aaf003fd3bfb1819c5ea61f"
     },
     {
-      "bytes": 1174,
+      "bytes": 1111,
       "kind": "review_input",
       "path": "crates/eml-fs/Cargo.toml",
-      "sha256": "9d77e31e9ea2d9dd7ebe1e41a02443067676580ccae60675c3d71e1a97138d72"
+      "sha256": "11ddcdc07bf7520ae2ab63060d4190ef0839755257d303b785be711b9b44dcf6"
     },
     {
       "bytes": 308,
@@ -12676,8 +12680,8 @@
     {
       "path": "crates/eml-gui/Cargo.toml",
       "kind": "review_input",
-      "bytes": 2115,
-      "sha256": "cfbbf106f15c8f81ecf42e51921e7413804cdbca953529628378bc13801609da"
+      "bytes": 2228,
+      "sha256": "13538a350a6a714fa0720788a61f423025e0f98d110f4abda9bf5b1a28852abd"
     },
     {
       "path": "crates/eml-worker/Cargo.toml",
@@ -12688,8 +12692,8 @@
     {
       "path": "crates/eml-macos/Cargo.toml",
       "kind": "review_input",
-      "bytes": 583,
-      "sha256": "fe610b68730b29861fda42d86d30aacc60b4558247120db608ebc0954b2a5a81"
+      "bytes": 520,
+      "sha256": "c6578ccb4a45ed8207246ee47c6a0666eefe75867a55125498ef36bf85301e8d"
     },
     {
       "path": "xtask/app-notices.toml",
@@ -12708,6 +12712,48 @@
       "kind": "review_input",
       "bytes": 1718,
       "sha256": "96f8c645bc3b39e7e8c8418c2df0d9feded2676cb7595412a8ed1d856ba214be"
+    },
+    {
+      "path": "vendor/i-slint-core/Cargo.toml",
+      "kind": "review_input",
+      "bytes": 9493,
+      "sha256": "afe53ed38ed7c4726f86017960d62e1be2a3568008a8d7465d4d7f6d9ce9365d"
+    },
+    {
+      "path": "vendor/parley/Cargo.toml",
+      "kind": "review_input",
+      "bytes": 3808,
+      "sha256": "f89d6a436c3809c92092b7f85330f8d6deda619424b96a7c0445df29a7a78cd4"
+    },
+    {
+      "path": "vendor/typography.md",
+      "kind": "review_input",
+      "bytes": 2370,
+      "sha256": "15e45dda627250e8952f548a55e142debb816d232926007feaf00c8b0b36fdcf"
+    },
+    {
+      "path": "vendor/i-slint-core/textlayout/sharedparley.rs",
+      "kind": "review_input",
+      "bytes": 32404,
+      "sha256": "79cda18239588271db4ba6ce7c832f6fe587d5ac86dc2c1c68c48f487b256549"
+    },
+    {
+      "path": "vendor/i-slint-core/textlayout/sharedparley/shaping.rs",
+      "kind": "review_input",
+      "bytes": 18117,
+      "sha256": "f002965d987709661cb01b314e2007fae7ab16624ebc82166e8f40a0e0772bb9"
+    },
+    {
+      "path": "vendor/parley/src/shape/mod.rs",
+      "kind": "review_input",
+      "bytes": 24447,
+      "sha256": "e9a9cb8907202b9f3654997221e50a05217bf587ec5bcd8b226db3c9786f2381"
+    },
+    {
+      "path": "vendor/parley/src/bidi.rs",
+      "kind": "review_input",
+      "bytes": 33001,
+      "sha256": "2952a4f446defac3aa33b1d2d13201bb11a82f01606151006bbee81582912f4a"
     }
   ],
   "status": "independent_qa_candidate",
@@ -12852,12 +12898,28 @@
     {
       "basis_head": "2a36e16ace994535d446cc648537591586211780",
       "scope": "The default-mode deferred-panel experiment was removed after the actual Intel call stack moved out of the Slint observer but retained the same native 60-second configuration failure. The GUI manifest is restored byte-for-byte to the reviewed 761ae41 input; no new dependency, license grant or retained material is introduced. The prior source comparison and failed experiment remain historical evidence, not a successful scheduling fix."
+    },
+    {
+      "basis_head": "a3506d12a44ffd1c6a1d0d1c7583bc5654a31a39",
+      "scope": "Working-tree macOS typography review: eml-gui selects the already-locked Fontique 0.11.1 SystemUi family and AppKit systemFontSize. Compared locked before/after metadata on both Darwin targets: registry identities and GUI normal/build closures remain unchanged (343 ARM and 344 Intel registry packages). The direct GUI Fontique edge and macos-gui activation are added; newly activated features are objc2-app-kit NSFont and objc2-foundation NSAffineTransform/NSCharacterSet only. A separate read-only agent checked the Fontique archive/VCS/MIT material and the AppKit/Foundation archive identities and newly exposed generated modules against existing package-level GUI material bindings; no additional per-file notices were identified. Existing GUI scopes cover these materials. Manifest/lock input identities are renewed after this scoped source/material review; hashes do not establish legal completeness, generator execution, native linking or rendered-font selection. Actual notices and renderer checks remain separate."
+    },
+    {
+      "basis_head": "a3506d12",
+      "scope": "Reviewed the local macOS optical-sizing patches to i-slint-core 1.18.1 and Parley 0.11.1. Independent archive comparison identifies exactly three modified source files; original licenses and source headers remain unchanged. Both Darwin normal/build metadata comparisons retain package versions, license expressions and activated features, with only these two registry identities becoming local-source identities. Upstream archive hashes are retained as provenance, not hashes of the modified source. Reviewed patch inputs are bound separately. CoreText comparisons and negative controls are verification, not legal assurance; hashes do not establish review quality, generator execution or release qualification."
+    },
+    {
+      "basis_head": "a3506d12a44ffd1c6a1d0d1c7583bc5654a31a39",
+      "scope": "Reviewed About bundle-icon decoding through existing objc2-app-kit 0.3.2: newly enabled generated NSBitmapImageRep, NSImageRep and NSColorSpace modules remain covered by the unchanged package MIT material and Apple SDK licensing explanation. Before/after macOS metadata has no added/removed package version or license expression; only these three feature flags change. The shared product build-number module and direct xtask eml-protocol edge add no registry packages or shipping dependency features. Input hashes are renewed after this source/material review; they do not establish review quality, legal assurance, native execution or release qualification."
+    },
+    {
+      "basis_head": "a3506d12a44ffd1c6a1d0d1c7583bc5654a31a39",
+      "scope": "Reviewed the strict-lint manifest tables and existing syn 2.0.119/proc-macro2 1.0.107/quote 1.0.47 direct xtask dependencies. An independent isolated comparison removing only those three parser edges retains all 581 lock package identities and identical selected normal/build package-feature graphs for all ten shipping profiles. Cached parser archives and their existing MIT materials were checked; these are tooling-only edges, with no new shipping package/version/material binding. Parley's additional bidi.rs patch replaces deprecated ICU4C numeric conversion with named Unicode BidiClass mappings; all 1,112,064 valid Unicode scalar masks compare identically, and actual resolver regressions pass. The published Parley archive, original MIT file and source headers were independently compared; no legal text changed. Current source-input identities are renewed after that scoped review and bind the additional patched source. Hashes do not establish review quality, generator execution, legal completeness or native release qualification."
     }
   ],
   "product_material_review": {
     "basis_head": "f9da54984a2a76f7b7431c0acb645a4db4f4285a",
     "scope": "Enabled macOS GUI and private-worker normal/build closures on both native target triples; this is source/material review, not native execution, final-link qualification or legal assurance.",
-    "method": "Separate raw-package/upstream catalog and skeptical material pass, not a record emitted by the notice generator. Each target/product membership was compared separately. Cached published archives were SHA-256 checked against Cargo.lock and 718 source members were byte-compared using native tar stdout. Hashes establish identity only. Grant/condition/disclaimer bodies, source copyright notices and nonstandard additional material were separately examined. 101 MIT groups matched identified standard bodies after whitespace/quote normalization; cfg_aliases third-party notices and bytemuck next-paragraph wording were reviewed verbatim and retained. Apache terms 1–9 matched the retained standard; BSD, Zlib and Unicode/ICU notices were retained, including IBM attribution.",
+    "method": "Separate raw-package/upstream catalog and skeptical material pass, not a record emitted by the notice generator. Each target/product membership was compared separately. Cached published archives were SHA-256 checked against Cargo.lock and 718 source members were byte-compared using native tar stdout. Hashes establish identity only. Grant/condition/disclaimer bodies, source copyright notices and nonstandard additional material were separately examined. 101 MIT groups matched identified standard bodies after whitespace/quote normalization; cfg_aliases third-party notices and bytemuck next-paragraph wording were reviewed verbatim and retained. Apache terms 1\u20139 matched the retained standard; BSD, Zlib and Unicode/ICU notices were retained, including IBM attribution.",
     "generator_omission": "cargo-about 0.9.2 includes the ten Slint1.18.1 packages in its selected graph but omits their LicenseRef text groups. The reviewed supplement uses the complete royalty-free license from each exact published package. No patched tool or source-build fallback is used. The macOS top-level Help/About path already displays AboutSlint.",
     "special_cases": [
       "chrono and libm keep their complete combined source legal files; libm and dpi preserve musl/CORE-MATH and original copyright notices.",

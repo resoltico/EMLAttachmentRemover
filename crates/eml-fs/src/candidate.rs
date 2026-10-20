@@ -239,26 +239,7 @@ impl BoundDirectory {
             crate::darwin_acl::clear_owned(&file)?;
             validate_file(&file, directory, observed.unwrap(), 0, true)?;
             operation = StageOperation::Write;
-            for chunk in bytes.chunks(64 * 1024) {
-                checkpoint()?;
-                file.write_all(chunk)?;
-            }
-            file.seek(SeekFrom::Start(0))?;
-            let mut buffer = [0; 64 * 1024];
-            for expected in bytes.chunks(buffer.len()) {
-                checkpoint()?;
-                file.read_exact(&mut buffer[..expected.len()])?;
-                if &buffer[..expected.len()] != expected {
-                    return Err(io::Error::other(
-                        "Candidate storage reread differs from verified bytes",
-                    ));
-                }
-            }
-            if file.read(&mut buffer[..1])? != 0 {
-                return Err(io::Error::other(
-                    "Candidate storage has unexpected trailing bytes",
-                ));
-            }
+            write_verified_bytes(&mut file, bytes, &mut checkpoint)?;
             validate_file(
                 &file,
                 directory,
@@ -296,6 +277,34 @@ impl BoundDirectory {
         }
     }
 }
+fn write_verified_bytes(
+    file: &mut std::fs::File,
+    bytes: &[u8],
+    checkpoint: &mut impl FnMut() -> io::Result<()>,
+) -> io::Result<()> {
+    for chunk in bytes.chunks(64 * 1024) {
+        checkpoint()?;
+        file.write_all(chunk)?;
+    }
+    file.seek(SeekFrom::Start(0))?;
+    let mut buffer = [0; 64 * 1024];
+    for expected in bytes.chunks(buffer.len()) {
+        checkpoint()?;
+        file.read_exact(&mut buffer[..expected.len()])?;
+        if &buffer[..expected.len()] != expected {
+            return Err(io::Error::other(
+                "Candidate storage reread differs from verified bytes",
+            ));
+        }
+    }
+    if file.read(&mut buffer[..1])? != 0 {
+        return Err(io::Error::other(
+            "Candidate storage has unexpected trailing bytes",
+        ));
+    }
+    Ok(())
+}
+
 impl ReadyCandidate {
     /// Identity of the exact object written and synchronized.
     pub fn identity(&self) -> Identity {

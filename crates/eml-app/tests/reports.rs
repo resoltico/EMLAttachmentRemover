@@ -53,7 +53,7 @@ fn missing_results_remain_unknown_and_valid_interrupted_summary_stays_authoritat
     );
     assert_eq!(partial.unreported_item_count(), Some(1));
     assert_eq!(partial.items().len(), 1);
-    assert_eq!(partial.saved_bytes(0), Some(515));
+    assert_eq!(partial.copy_size_reduction(0), Some(515));
     assert_eq!(partial.items()[0].removed[0].bytes, 507);
     assert!(partial.summary().is_none());
 
@@ -127,7 +127,7 @@ fn known_items_survive_malformed_later_records_and_export_unknown_summary() {
         Err(ProtocolFailure::MalformedRecord)
     );
     assert_eq!(report.items().len(), 1);
-    assert_eq!(report.saved_bytes(0), Some(515));
+    assert_eq!(report.copy_size_reduction(0), Some(515));
     assert_eq!(report.items()[0].removed[0].bytes, 507);
     assert_eq!(
         report.finish(Some(0), false),

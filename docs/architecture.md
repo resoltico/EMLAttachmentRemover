@@ -5,7 +5,8 @@ The workspace separates message policy and native storage from frontends.
 - **eml-core** owns request/resource admission, ordered collection, copy naming,
   destination reservations, immutable MIME preparation, independent edit
   authorization, source/existing comparisons, cancellation, publication decisions
-  and typed outcomes. It does not depend on JSON or a GUI framework.
+  and typed outcomes. Its error-code registry supplies recovery guidance shared by
+  the adapters. It does not depend on JSON or a GUI framework.
 - **eml-fs** binds ordinary files and directories, protects staging, performs
   native no-replace publication and synchronization, and reports independent
   identity/address/cleanup facts. Its reviewed native modules contain the narrow
@@ -14,12 +15,15 @@ The workspace separates message policy and native storage from frontends.
   signals and renders checked human or LF-delimited JSON events. Its executable
   calls the reusable business workflow rather than maintaining another engine.
 - **eml-protocol** shares native-path/request/event transport across products.
-  Human wording and command-line arguments remain private CLI concerns.
+  Recovery guidance and shared consequence explanations serve both frontends;
+  command-line arguments, controls and output formatting remain adapter concerns.
 - **eml-worker** is the GUI's private process boundary and calls eml-core
   directly. It does not invoke the CLI product. Its separate process preserves
   the required force-stop capability for stalled native operations.
 - **eml-app** owns bounded request snapshots, serial queue/report reservations,
-  LF framing and checked protocol reduction. It has no UI-toolkit dependency.
+  LF framing, checked protocol reduction, current activity and protected report
+  export. Report-name inspection is advisory; export still uses held filesystem
+  bindings and atomic no-replace publication. It has no UI-toolkit dependency.
   The [frontend design](desktop-frontend-design.md) and
   [process ownership](macos-process-ownership.md) describe its native integration.
 - **eml-gui** contains the Slint macOS screens under the explicit macos-gui
@@ -58,9 +62,5 @@ Cargo metadata supplies the workspace version. Generated target legal trees have
 reviewed source bindings and deterministic freshness checks. Cargo notices do not
 replace native runtime input review. Windows final-link provenance, private
 archive extraction/process supervision and macOS app/GUI behavior require their
-distinct source-bound native observations. See the
-[implementation evidence](v6-implementation-evidence.md) for identities and limits.
-
-Other-platform GUIs can call the reusable library contracts when an actual
-frontend is proposed. There is no second engine, old report decoder, preference
-migration, generic GUI scaffold or Python product/tooling dependency.
+distinct source-bound native observations. See [verification](verification.md)
+for the required checks and their limits.

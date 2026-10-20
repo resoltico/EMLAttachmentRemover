@@ -7,7 +7,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Get-TestNames([string] $Path) {
+function Get-TestName([string] $Path) {
     $names = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($line in [System.IO.File]::ReadLines($Path)) {
         $line = $line.Trim()
@@ -20,8 +20,8 @@ function Get-TestNames([string] $Path) {
 
 $required = @([System.IO.File]::ReadAllLines($Sentinels) | ForEach-Object { $_.Trim() } | Where-Object { $_ -and !$_.StartsWith('#') })
 if ($required.Length -eq 0) { throw 'The required Windows test sentinel list is empty' }
-$available = Get-TestNames $Listing
-$ignored = Get-TestNames $IgnoredListing
+$available = Get-TestName $Listing
+$ignored = Get-TestName $IgnoredListing
 foreach ($name in $required) {
     if (!$available.Contains($name)) { throw "Missing required Windows test: $name" }
     if ($ignored.Contains($name)) { throw "Ignored required Windows test: $name" }

@@ -1,0 +1,5 @@
+# Structural review tripwires; responsibilities still require human design review.
+too-many-lines-threshold = 100
+cognitive-complexity-threshold = 25
+too-many-arguments-threshold = 7
+type-complexity-threshold = 250

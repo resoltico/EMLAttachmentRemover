@@ -287,69 +287,13 @@ impl DestinationBinding {
                     .observe_child_if_present(name)
                     .map_err(|error| native("Mirror metadata cannot be inspected", error))?;
                 let parent_identity = binding.directory().identity();
-                let (mirror, created) = match observed {
-                    Some(observed) => {
-                        if observed.kind != EntryKind::Directory {
-                            return Err(OperationFailure::new(
-                                ErrorCode::DestinationExists,
-                                ErrorPhase::Existing,
-                                "Mirror component is not an ordinary directory",
-                            ));
-                        }
-                        if expected.is_some_and(|expected| expected != observed.identity) {
-                            return Err(changed("A bound mirror changed since inspection"));
-                        }
-                        let opened = open_existing(binding.directory(), name, observed.identity)
-                            .map_err(|error| {
-                                native("Existing mirror cannot be bound for mutation", error)
-                            })?;
-                        (Mirror::Existing(opened), false)
-                    }
-                    None if expected.is_some() => {
-                        return Err(changed("A bound mirror disappeared since inspection"));
-                    }
-                    None => match create(binding.directory(), name) {
-                        Ok(created) => {
-                            pending.created(parent_identity, created.directory().identity());
-                            (Mirror::Added(created), true)
-                        }
-                        Err(error) if error.is_name_collision() => {
-                            let entry = binding
-                                .directory()
-                                .observe_child_if_present(name)
-                                .map_err(|error| {
-                                    native("Concurrent mirror cannot be inspected", error)
-                                })?
-                                .ok_or_else(|| {
-                                    native(
-                                        "Concurrent mirror could not be confirmed",
-                                        io::Error::from(io::ErrorKind::NotFound),
-                                    )
-                                })?;
-                            if entry.kind != EntryKind::Directory {
-                                return Err(OperationFailure::new(
-                                    ErrorCode::DestinationExists,
-                                    ErrorPhase::Existing,
-                                    "Concurrent mirror is not an ordinary directory",
-                                ));
-                            }
-                            let opened = open_existing(binding.directory(), name, entry.identity)
-                                .map_err(|error| {
-                                native("Concurrent ordinary mirror cannot be bound", error)
-                            })?;
-                            (Mirror::Existing(opened), false)
-                        }
-                        Err(error) => {
-                            pending.failed_creation(parent_identity, name, &error.cleanup);
-                            uncertain_cleanup = error.cleanup;
-                            return Err(native(
-                                "Mirror creation could not be admitted",
-                                error.error,
-                            ));
-                        }
-                    },
-                };
-                binding.mirrors.push(mirror);
+                let created = binding.acquire_mirror(
+                    name,
+                    expected,
+                    observed,
+                    pending,
+                    &mut uncertain_cleanup,
+                )?;
                 // Windows also flushes a possibly-new unowned edge. POSIX keeps
                 // its narrower run-created-only namespace contract.
                 let parent = if binding.mirrors.len() == 1 {
@@ -412,6 +356,75 @@ impl DestinationBinding {
                 }))
             }
         }
+    }
+    fn acquire_mirror(
+        &mut self,
+        name: &OsStr,
+        expected: Option<Identity>,
+        observed: Option<eml_fs::EntryObservation>,
+        pending: &mut PendingLayout,
+        uncertain_cleanup: &mut CleanupReceipt,
+    ) -> Result<bool, OperationFailure> {
+        let parent_identity = self.directory().identity();
+        let (mirror, created) = match observed {
+            Some(observed) => {
+                if observed.kind != EntryKind::Directory {
+                    return Err(OperationFailure::new(
+                        ErrorCode::DestinationExists,
+                        ErrorPhase::Existing,
+                        "Mirror component is not an ordinary directory",
+                    ));
+                }
+                if expected.is_some_and(|expected| expected != observed.identity) {
+                    return Err(changed("A bound mirror changed since inspection"));
+                }
+                let opened =
+                    open_existing(self.directory(), name, observed.identity).map_err(|error| {
+                        native("Existing mirror cannot be bound for mutation", error)
+                    })?;
+                (Mirror::Existing(opened), false)
+            }
+            None if expected.is_some() => {
+                return Err(changed("A bound mirror disappeared since inspection"));
+            }
+            None => match create(self.directory(), name) {
+                Ok(created) => {
+                    pending.created(parent_identity, created.directory().identity());
+                    (Mirror::Added(created), true)
+                }
+                Err(error) if error.is_name_collision() => {
+                    let entry = self
+                        .directory()
+                        .observe_child_if_present(name)
+                        .map_err(|error| native("Concurrent mirror cannot be inspected", error))?
+                        .ok_or_else(|| {
+                            native(
+                                "Concurrent mirror could not be confirmed",
+                                io::Error::from(io::ErrorKind::NotFound),
+                            )
+                        })?;
+                    if entry.kind != EntryKind::Directory {
+                        return Err(OperationFailure::new(
+                            ErrorCode::DestinationExists,
+                            ErrorPhase::Existing,
+                            "Concurrent mirror is not an ordinary directory",
+                        ));
+                    }
+                    let opened =
+                        open_existing(self.directory(), name, entry.identity).map_err(|error| {
+                            native("Concurrent ordinary mirror cannot be bound", error)
+                        })?;
+                    (Mirror::Existing(opened), false)
+                }
+                Err(error) => {
+                    pending.failed_creation(parent_identity, name, &error.cleanup);
+                    *uncertain_cleanup = error.cleanup;
+                    return Err(native("Mirror creation could not be admitted", error.error));
+                }
+            },
+        };
+        self.mirrors.push(mirror);
+        Ok(created)
     }
     pub(super) fn directory(&self) -> &Directory {
         self.mirrors

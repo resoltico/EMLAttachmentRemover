@@ -137,130 +137,23 @@ pub(super) fn run(
         log.with_extension("started.json"),
         serde_json::to_vec(&Message::Ready { session: expected })?,
     )?;
-    let request = Request {
-        program: command.get_program().as_bytes().to_vec(),
-        args: command
-            .get_args()
-            .map(|value| value.as_bytes().to_vec())
-            .collect(),
-        cwd: command
-            .get_current_dir()
-            .map(|path| path.as_os_str().as_bytes().to_vec()),
-        env: command
-            .get_envs()
-            .map(|(key, value)| {
-                (
-                    key.as_bytes().to_vec(),
-                    value.map(|value| value.as_bytes().to_vec()),
-                )
-            })
-            .collect(),
-        log: log.as_os_str().as_bytes().to_vec(),
-        deadline_ms: deadline.as_millis().try_into()?,
-        cooperative_stop_ms: cooperative_grace.as_millis().try_into()?,
-        inspector: controller.inspector.as_os_str().as_bytes().to_vec(),
+    let request = process_request(
+        &command,
+        log,
+        deadline,
         capture,
-    };
+        cooperative_grace,
+        &controller.inspector,
+    )?;
     let mut encoded = serde_json::to_vec(&request)?;
     encoded.push(b'\n');
-    if encoded.len() > FRAME_LIMIT {
-        drop(owned.writer.take());
-        let _ = owned.child.wait();
-        return Err("Private process request exceeds its bounded frame".into());
-    }
-    let stdin = owned
-        .writer
-        .as_mut()
-        .ok_or("Missing process control writer")?;
-    let flags = rustix::fs::fcntl_getfl(&*stdin)?;
-    rustix::fs::fcntl_setfl(&*stdin, flags | rustix::fs::OFlags::NONBLOCK)?;
-    let mut sent = 0;
-    let sending = Instant::now();
-    while sent < encoded.len() {
-        if controller.stopped.load(Ordering::Relaxed) || sending.elapsed() > Duration::from_secs(5)
-        {
-            drop(owned.writer.take());
-            let _ = owned.child.wait();
-            return Err(
-                "Process request delivery cancelled or overdue before worker launch".into(),
-            );
-        }
-        match stdin.write(&encoded[sent..]) {
-            Ok(0) => return Err("Process request control pipe closed".into()),
-            Ok(count) => sent += count,
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(Duration::from_millis(1))
-            }
-            Err(error) => return Err(error.into()),
-        }
-    }
-    owned.activated = true;
-    let mut result = None;
-    loop {
-        if controller.stopped.load(Ordering::Relaxed) {
-            drop(owned.writer.take());
-        }
-        match receive.recv_timeout(Duration::from_millis(20)) {
-            Ok(Ok(message @ Message::Finished { .. })) => {
-                result = Some(message);
-                break;
-            }
-            Ok(Ok(_)) => return Err("Duplicate supervisor readiness frame".into()),
-            Ok(Err(error)) => {
-                drop(owned.writer.take());
-                return Err(format!("Supervisor control failed: {error}").into());
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            Err(mpsc::RecvTimeoutError::Timeout) => (),
-        }
-        if started.elapsed()
-            > deadline + cooperative_grace + CLEANUP_GRACE + Duration::from_secs(10)
-        {
-            drop(owned.writer.take());
-            return Err("Supervisor result missing after bounded execution/cleanup grace; cleanup unconfirmed".into());
-        }
-    }
+    owned.send_request(controller, &encoded)?;
+    let result = owned.wait_result(controller, &receive, started, deadline)?;
     drop(owned.writer.take());
     let status = owned.child.wait()?;
     owned.reaped = true;
     let _ = reading.join();
-    let Some(report @ Message::Finished { .. }) = result else {
-        return Err("Missing supervisor completion evidence".into());
-    };
-    let control = log.with_extension("control.json");
-    fs::write(&control, serde_json::to_vec_pretty(&report)?)?;
-    let Message::Finished {
-        raw_status,
-        timed_out,
-        cancelled,
-        unexpected_survivors,
-        survivor_observations: _,
-        cleanup_complete,
-        execution_ms: _,
-        cleanup_ms,
-        detail,
-    } = report
-    else {
-        unreachable!()
-    };
-    if !status.success() || !cleanup_complete {
-        return Err(format!(
-            "Supervisor cleanup failed: {}; evidence {}",
-            detail.unwrap_or_else(|| "unconfirmed".into()),
-            control.display()
-        )
-        .into());
-    }
-    let raw = raw_status.ok_or("Worker exit unconfirmed")?;
-    Ok(ProcessResult {
-        status: ExitStatus::from_raw(raw),
-        timed_out,
-        cancelled,
-        unexpected_survivors,
-        cleanup_complete,
-        elapsed: started.elapsed(),
-        cleanup_elapsed: Duration::from_millis(cleanup_ms),
-    })
+    qualify_completion(result, status, started, log)
 }
 
 pub(super) fn pin_entry(session: Option<OsString>, nonce: Option<OsString>) -> ExitCode {
@@ -444,6 +337,337 @@ fn inspect(program: &Path, session: Pid, until: Instant) -> Result<(Vec<Row>, bo
     if bytes.len() > 8 * 1024 * 1024 {
         return Err("Process inspection output exceeds its bound".into());
     }
+    inspected_rows(&bytes, session, inspector)
+}
+
+struct Session {
+    id: Pid,
+    helper: PathBuf,
+    inspector: PathBuf,
+    pins: BTreeMap<i32, Pin>,
+    worker: Option<Child>,
+    raw_status: Option<i32>,
+    cleaned: bool,
+    root_group: Option<Pid>,
+    cooperative_grace: Duration,
+    cooperative_requested: bool,
+}
+impl Session {
+    fn wait_worker(
+        &mut self,
+        stopped: &AtomicBool,
+        started: Instant,
+        deadline: Duration,
+    ) -> Result<(bool, bool)> {
+        Ok(loop {
+            let status = self.worker.as_mut().ok_or("Worker absent")?.try_wait()?;
+            let elapsed = started.elapsed();
+            if let Some(status) = status {
+                self.raw_status = Some(status.into_raw());
+            }
+            let overdue = elapsed >= deadline;
+            let cancel = stopped.load(Ordering::Relaxed);
+            if self.raw_status.is_some() || overdue || cancel {
+                break (overdue, cancel);
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        })
+    }
+    fn cooperate(&mut self) -> Result<()> {
+        if self.cooperative_requested
+            || self.cooperative_grace.is_zero()
+            || self.raw_status.is_some()
+            || self.worker.is_none()
+        {
+            return Ok(());
+        }
+        self.cooperative_requested = true;
+        let group = self
+            .root_group
+            .ok_or("Cooperative worker root group is absent")?;
+        let pin = self
+            .pins
+            .get(&number(group))
+            .ok_or("Cooperative worker root pin is absent")?;
+        // As in hard cleanup, no pin has been polled/reaped before the last
+        // group signal. An exited pin remains an unreaped PID/group reservation.
+        kill_process_group(pin.id, Signal::TERM)?;
+        let began = Instant::now();
+        while began.elapsed() < self.cooperative_grace {
+            if let Some(status) = self
+                .worker
+                .as_mut()
+                .ok_or("Cooperative worker disappeared")?
+                .try_wait()?
+            {
+                self.raw_status = Some(status.into_raw());
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        Ok(())
+    }
+}
+impl Drop for Session {
+    fn drop(&mut self) {
+        if !self.cleaned && !self.pins.is_empty() {
+            let _ = self.cleanup(false);
+        }
+    }
+}
+pub(super) fn session_entry() -> ExitCode {
+    let result = (|| -> Result<bool> {
+        let session = setsid()?;
+        let helper = std::env::current_exe()?;
+        let stopped = Arc::new(AtomicBool::new(false));
+        let signal = stopped.clone();
+        ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
+        waitable()?;
+        retained_pin_waitability(&helper, session)?;
+        frame(
+            &mut std::io::stdout().lock(),
+            &Message::Ready {
+                session: number(session),
+            },
+        )?;
+        let mut input = BufReader::new(std::io::stdin());
+        let bytes = read_frame(&mut input)?;
+        let request: Request = serde_json::from_slice(&bytes)?;
+        if Duration::from_millis(request.cooperative_stop_ms) > COOPERATIVE_STOP_LIMIT {
+            return Err("Private process cooperative stop exceeds its policy bound".into());
+        }
+        // Refuse an unsupported/malformed inspector before starting any worker.
+        let inspector = PathBuf::from(OsString::from_vec(request.inspector.clone()));
+        let _ = inspect(&inspector, session, Instant::now() + Duration::from_secs(2))?;
+        let lost = stopped.clone();
+        std::thread::spawn(move || {
+            let mut byte = [0u8; 1];
+            let _ = input.read(&mut byte);
+            lost.store(true, Ordering::Relaxed);
+        });
+        let mut state = Session {
+            id: session,
+            helper,
+            inspector: PathBuf::from(OsString::from_vec(request.inspector)),
+            pins: BTreeMap::new(),
+            worker: None,
+            raw_status: None,
+            cleaned: false,
+            root_group: None,
+            cooperative_grace: Duration::from_millis(request.cooperative_stop_ms),
+            cooperative_requested: false,
+        };
+        let root = pin(
+            &state.helper,
+            session,
+            None,
+            Instant::now() + Duration::from_secs(2),
+        )?;
+        let group = root.id;
+        state.root_group = Some(group);
+        state.pins.insert(number(group), root);
+        if stopped.load(Ordering::Relaxed) {
+            return Ok(false);
+        }
+        let mut worker = worker_command(request.program, request.args, request.cwd, request.env);
+        let log = PathBuf::from(OsString::from_vec(request.log));
+        let (output, errors) = worker_outputs(&log, request.capture)?;
+        worker
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(output.try_clone()?))
+            .stderr(Stdio::from(errors))
+            .process_group(number(group));
+        let started = Instant::now();
+        let child = worker.spawn()?;
+        state.worker = Some(child);
+        let deadline = Duration::from_millis(request.deadline_ms);
+        let (timed_out, cancelled) = state.wait_worker(&stopped, started, deadline)?;
+        let execution = started.elapsed();
+        let ordinary = state.raw_status.is_some() && !timed_out && !cancelled;
+        let (complete, survivors, cleanup, detail, observations) = state.cleanup(ordinary);
+        frame(
+            &mut std::io::stdout().lock(),
+            &Message::Finished {
+                raw_status: state.raw_status,
+                timed_out,
+                cancelled,
+                unexpected_survivors: survivors,
+                survivor_observations: observations,
+                cleanup_complete: complete,
+                execution_ms: execution.as_millis().try_into()?,
+                cleanup_ms: cleanup.as_millis().try_into()?,
+                detail,
+            },
+        )?;
+        Ok(complete)
+    })();
+    match result {
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
+        Err(error) => {
+            let _ = writeln!(std::io::stderr(), "Process supervisor: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn process_request(
+    command: &Command,
+    log: &Path,
+    deadline: Duration,
+    capture: bool,
+    cooperative_grace: Duration,
+    inspector: &Path,
+) -> Result<Request> {
+    let request = Request {
+        program: command.get_program().as_bytes().to_vec(),
+        args: command
+            .get_args()
+            .map(|value| value.as_bytes().to_vec())
+            .collect(),
+        cwd: command
+            .get_current_dir()
+            .map(|path| path.as_os_str().as_bytes().to_vec()),
+        env: command
+            .get_envs()
+            .map(|(key, value)| {
+                (
+                    key.as_bytes().to_vec(),
+                    value.map(|value| value.as_bytes().to_vec()),
+                )
+            })
+            .collect(),
+        log: log.as_os_str().as_bytes().to_vec(),
+        deadline_ms: deadline.as_millis().try_into()?,
+        cooperative_stop_ms: cooperative_grace.as_millis().try_into()?,
+        inspector: inspector.as_os_str().as_bytes().to_vec(),
+        capture,
+    };
+    Ok(request)
+}
+
+impl ParentSession {
+    fn send_request(&mut self, controller: &Controller, encoded: &[u8]) -> Result<()> {
+        if encoded.len() > FRAME_LIMIT {
+            drop(self.writer.take());
+            let _ = self.child.wait();
+            return Err("Private process request exceeds its bounded frame".into());
+        }
+        let stdin = self
+            .writer
+            .as_mut()
+            .ok_or("Missing process control writer")?;
+        let flags = rustix::fs::fcntl_getfl(&*stdin)?;
+        rustix::fs::fcntl_setfl(&*stdin, flags | rustix::fs::OFlags::NONBLOCK)?;
+        let mut sent = 0;
+        let sending = Instant::now();
+        while sent < encoded.len() {
+            if controller.stopped.load(Ordering::Relaxed)
+                || sending.elapsed() > Duration::from_secs(5)
+            {
+                drop(self.writer.take());
+                let _ = self.child.wait();
+                return Err(
+                    "Process request delivery cancelled or overdue before worker launch".into(),
+                );
+            }
+            match stdin.write(&encoded[sent..]) {
+                Ok(0) => return Err("Process request control pipe closed".into()),
+                Ok(count) => sent += count,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(1))
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        self.activated = true;
+        Ok(())
+    }
+}
+
+impl ParentSession {
+    fn wait_result(
+        &mut self,
+        controller: &Controller,
+        receive: &mpsc::Receiver<std::result::Result<Message, String>>,
+        started: Instant,
+        deadline: Duration,
+    ) -> Result<Option<Message>> {
+        let mut result = None;
+        loop {
+            if controller.stopped.load(Ordering::Relaxed) {
+                drop(self.writer.take());
+            }
+            match receive.recv_timeout(Duration::from_millis(20)) {
+                Ok(Ok(message @ Message::Finished { .. })) => {
+                    result = Some(message);
+                    break;
+                }
+                Ok(Ok(_)) => return Err("Duplicate supervisor readiness frame".into()),
+                Ok(Err(error)) => {
+                    drop(self.writer.take());
+                    return Err(format!("Supervisor control failed: {error}").into());
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => (),
+            }
+            if started.elapsed()
+                > deadline + self.cooperative_grace + CLEANUP_GRACE + Duration::from_secs(10)
+            {
+                drop(self.writer.take());
+                return Err("Supervisor result missing after bounded execution/cleanup grace; cleanup unconfirmed".into());
+            }
+        }
+        Ok(result)
+    }
+}
+
+fn qualify_completion(
+    result: Option<Message>,
+    status: ExitStatus,
+    started: Instant,
+    log: &Path,
+) -> Result<ProcessResult> {
+    let Some(report @ Message::Finished { .. }) = result else {
+        return Err("Missing supervisor completion evidence".into());
+    };
+    let control = log.with_extension("control.json");
+    fs::write(&control, serde_json::to_vec_pretty(&report)?)?;
+    let Message::Finished {
+        raw_status,
+        timed_out,
+        cancelled,
+        unexpected_survivors,
+        survivor_observations: _,
+        cleanup_complete,
+        execution_ms: _,
+        cleanup_ms,
+        detail,
+    } = report
+    else {
+        unreachable!()
+    };
+    if !status.success() || !cleanup_complete {
+        return Err(format!(
+            "Supervisor cleanup failed: {}; evidence {}",
+            detail.unwrap_or_else(|| "unconfirmed".into()),
+            control.display()
+        )
+        .into());
+    }
+    let raw = raw_status.ok_or("Worker exit unconfirmed")?;
+    Ok(ProcessResult {
+        status: ExitStatus::from_raw(raw),
+        timed_out,
+        cancelled,
+        unexpected_survivors,
+        cleanup_complete,
+        elapsed: started.elapsed(),
+        cleanup_elapsed: Duration::from_millis(cleanup_ms),
+    })
+}
+
+fn inspected_rows(bytes: &[u8], session: Pid, inspector: i32) -> Result<(Vec<Row>, bool)> {
     let mut rows = Vec::new();
     let mut self_seen = false;
     let mut unstable = false;
@@ -512,372 +736,39 @@ fn inspect(program: &Path, session: Pid, until: Instant) -> Result<(Vec<Row>, bo
     }
     Ok((rows, unstable))
 }
-struct Session {
-    id: Pid,
-    helper: PathBuf,
-    inspector: PathBuf,
-    pins: BTreeMap<i32, Pin>,
-    worker: Option<Child>,
-    raw_status: Option<i32>,
-    cleaned: bool,
-    root_group: Option<Pid>,
-    cooperative_grace: Duration,
-    cooperative_requested: bool,
-}
-impl Session {
-    fn cooperate(&mut self) -> Result<()> {
-        if self.cooperative_requested
-            || self.cooperative_grace.is_zero()
-            || self.raw_status.is_some()
-            || self.worker.is_none()
-        {
-            return Ok(());
-        }
-        self.cooperative_requested = true;
-        let group = self
-            .root_group
-            .ok_or("Cooperative worker root group is absent")?;
-        let pin = self
-            .pins
-            .get(&number(group))
-            .ok_or("Cooperative worker root pin is absent")?;
-        // As in hard cleanup, no pin has been polled/reaped before the last
-        // group signal. An exited pin remains an unreaped PID/group reservation.
-        kill_process_group(pin.id, Signal::TERM)?;
-        let began = Instant::now();
-        while began.elapsed() < self.cooperative_grace {
-            if let Some(status) = self
-                .worker
-                .as_mut()
-                .ok_or("Cooperative worker disappeared")?
-                .try_wait()?
-            {
-                self.raw_status = Some(status.into_raw());
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        Ok(())
+
+mod cleanup;
+
+fn worker_command(
+    program: Vec<u8>,
+    args: Vec<Vec<u8>>,
+    cwd: Option<Vec<u8>>,
+    env: Vec<(Vec<u8>, Option<Vec<u8>>)>,
+) -> Command {
+    let mut worker = Command::new(OsString::from_vec(program));
+    worker.args(args.into_iter().map(OsString::from_vec));
+    if let Some(cwd) = cwd {
+        worker.current_dir(PathBuf::from(OsString::from_vec(cwd)));
     }
-    fn cleanup(
-        &mut self,
-        ordinary_exit: bool,
-    ) -> (
-        bool,
-        usize,
-        Duration,
-        Option<String>,
-        Vec<serde_json::Value>,
-    ) {
-        let total_began = Instant::now();
-        let cooperative_error = if ordinary_exit {
-            None
+    for (key, value) in env {
+        if let Some(value) = value {
+            worker.env(OsString::from_vec(key), OsString::from_vec(value));
         } else {
-            self.cooperate().err().map(|error| error.to_string())
-        };
-        let began = Instant::now();
-        let mut unexpected = BTreeSet::new();
-        let mut observations = BTreeMap::new();
-        let mut detail = cooperative_error;
-        let mut stable = 0;
-        let discovery_until = began + CLEANUP_GRACE / 2;
-        let cleanup_until = began + CLEANUP_GRACE;
-        // Freeze the known root first, including cargo-mutants' spawning/reaping threads.
-        for pin in self.pins.values() {
-            let _ = kill_process_group(pin.id, Signal::STOP);
-        }
-        while began.elapsed() < CLEANUP_GRACE / 2 {
-            let scan = inspect(&self.inspector, self.id, discovery_until);
-            let (rows, unstable) = match scan {
-                Ok(scan) => scan,
-                Err(error) => {
-                    detail = Some(error.to_string());
-                    break;
-                }
-            };
-            let pins = self
-                .pins
-                .values()
-                .map(|pin| pin.child.id() as i32)
-                .collect::<BTreeSet<_>>();
-            let mut added = false;
-            let mut running = false;
-            for row in rows {
-                if Instant::now() >= discovery_until {
-                    detail = Some("Cleanup discovery budget exhausted".into());
-                    break;
-                }
-                let pid = number(row.pid);
-                if row.pid == self.id || pins.contains(&pid) {
-                    continue;
-                }
-                if row.group == number(self.id) {
-                    detail =
-                        Some("Unexpected worker joined the supervisor's protected group".into());
-                    continue;
-                }
-                if ordinary_exit && !row.state.starts_with('Z') {
-                    unexpected.insert(pid);
-                    if observations.len() < 64 {
-                        observations.entry(pid).or_insert_with(||serde_json::json!({"pid":pid,"group":row.group,"state":row.state,"command":row.command,"scope":"observed owned-session member; name is diagnostic only"}));
-                    }
-                }
-                if !self.pins.contains_key(&row.group) {
-                    let Some(group) = Pid::from_raw(row.group) else {
-                        detail = Some("Invalid inspected group ID".into());
-                        continue;
-                    };
-                    match pin(&self.helper, self.id, Some(group), discovery_until) {
-                        Ok(held) => {
-                            self.pins.insert(row.group, held);
-                            added = true;
-                        }
-                        Err(_) => {
-                            running = true;
-                            continue;
-                        }
-                    }
-                }
-                if let Some(held) = self.pins.get(&row.group) {
-                    let _ = kill_process_group(held.id, Signal::STOP);
-                }
-                if !row.state.starts_with('T') && !row.state.starts_with('Z') {
-                    running = true;
-                }
-            }
-            if detail.is_some() {
-                break;
-            }
-            if !added && !running && !unstable {
-                stable += 1;
-            } else {
-                stable = 0;
-            }
-            if stable >= 2 {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        if stable < 2 && detail.is_none() {
-            detail = Some("Session quiescence remained unconfirmed within cleanup grace".into());
-        }
-        // Every signal below is authorized by a retained, unreaped pin. No pin is
-        // polled/reaped until its last group signal, even if already a zombie.
-        for held in self.pins.values() {
-            if let Err(error) = kill_process_group(held.id, Signal::KILL)
-                && error != rustix::io::Errno::SRCH
-            {
-                detail = Some("Owned group termination failed".into());
-            }
-        }
-        if self.raw_status.is_none()
-            && let Some(worker) = &mut self.worker
-        {
-            while began.elapsed() < CLEANUP_GRACE {
-                match worker.try_wait() {
-                    Ok(Some(status)) => {
-                        self.raw_status = Some(status.into_raw());
-                        break;
-                    }
-                    Ok(None) => std::thread::sleep(Duration::from_millis(5)),
-                    Err(error) => {
-                        detail = Some(error.to_string());
-                        break;
-                    }
-                }
-            }
-        }
-        let mut clean_observations = 0;
-        while began.elapsed() < CLEANUP_GRACE {
-            match inspect(&self.inspector, self.id, cleanup_until) {
-                Ok((rows, unstable)) => {
-                    if !unstable
-                        && !rows
-                            .iter()
-                            .any(|row| row.pid != self.id && !row.state.starts_with('Z'))
-                    {
-                        clean_observations += 1;
-                    } else {
-                        clean_observations = 0;
-                    }
-                    if clean_observations >= 2 {
-                        break;
-                    }
-                }
-                Err(error) => {
-                    detail = Some(error.to_string());
-                    break;
-                }
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        if clean_observations < 2 {
-            detail = Some("Post-termination live-member observation is unconfirmed".into());
-        }
-        // Pins can now be reaped; no later group signal will use their numbers.
-        for held in self.pins.values_mut() {
-            let mut reaped = false;
-            while began.elapsed() < CLEANUP_GRACE {
-                match held.child.try_wait() {
-                    Ok(Some(_)) => {
-                        reaped = true;
-                        break;
-                    }
-                    Ok(None) => std::thread::sleep(Duration::from_millis(5)),
-                    Err(_) => break,
-                }
-            }
-            if !reaped {
-                detail = Some("Owned pin could not be reaped within cleanup grace".into());
-            }
-        }
-        self.pins.clear();
-        if self.worker.is_some() && self.raw_status.is_none() {
-            detail = Some("Worker could not be reaped within cleanup grace".into());
-        }
-        self.cleaned = detail.is_none();
-        (
-            self.cleaned,
-            unexpected.len(),
-            total_began.elapsed(),
-            detail,
-            observations.into_values().collect(),
-        )
-    }
-}
-impl Drop for Session {
-    fn drop(&mut self) {
-        if !self.cleaned && !self.pins.is_empty() {
-            let _ = self.cleanup(false);
+            worker.env_remove(OsString::from_vec(key));
         }
     }
+    worker
 }
-pub(super) fn session_entry() -> ExitCode {
-    let result = (|| -> Result<bool> {
-        let session = setsid()?;
-        let helper = std::env::current_exe()?;
-        let stopped = Arc::new(AtomicBool::new(false));
-        let signal = stopped.clone();
-        ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
-        waitable()?;
-        retained_pin_waitability(&helper, session)?;
-        frame(
-            &mut std::io::stdout().lock(),
-            &Message::Ready {
-                session: number(session),
-            },
-        )?;
-        let mut input = BufReader::new(std::io::stdin());
-        let bytes = read_frame(&mut input)?;
-        let request: Request = serde_json::from_slice(&bytes)?;
-        if Duration::from_millis(request.cooperative_stop_ms) > COOPERATIVE_STOP_LIMIT {
-            return Err("Private process cooperative stop exceeds its policy bound".into());
-        }
-        // Refuse an unsupported/malformed inspector before starting any worker.
-        let inspector = PathBuf::from(OsString::from_vec(request.inspector.clone()));
-        let _ = inspect(&inspector, session, Instant::now() + Duration::from_secs(2))?;
-        let lost = stopped.clone();
-        std::thread::spawn(move || {
-            let mut byte = [0u8; 1];
-            let _ = input.read(&mut byte);
-            lost.store(true, Ordering::Relaxed);
-        });
-        let mut state = Session {
-            id: session,
-            helper,
-            inspector: PathBuf::from(OsString::from_vec(request.inspector)),
-            pins: BTreeMap::new(),
-            worker: None,
-            raw_status: None,
-            cleaned: false,
-            root_group: None,
-            cooperative_grace: Duration::from_millis(request.cooperative_stop_ms),
-            cooperative_requested: false,
-        };
-        let root = pin(
-            &state.helper,
-            session,
-            None,
-            Instant::now() + Duration::from_secs(2),
-        )?;
-        let group = root.id;
-        state.root_group = Some(group);
-        state.pins.insert(number(group), root);
-        if stopped.load(Ordering::Relaxed) {
-            return Ok(false);
-        }
-        let mut worker = Command::new(OsString::from_vec(request.program));
-        worker.args(request.args.into_iter().map(OsString::from_vec));
-        if let Some(cwd) = request.cwd {
-            worker.current_dir(PathBuf::from(OsString::from_vec(cwd)));
-        }
-        for (key, value) in request.env {
-            if let Some(value) = value {
-                worker.env(OsString::from_vec(key), OsString::from_vec(value));
-            } else {
-                worker.env_remove(OsString::from_vec(key));
-            }
-        }
-        let log = PathBuf::from(OsString::from_vec(request.log));
-        let output = fs::File::options()
+
+fn worker_outputs(log: &Path, capture: bool) -> Result<(fs::File, fs::File)> {
+    let output = fs::File::options().write(true).create_new(true).open(log)?;
+    let errors = if capture {
+        fs::File::options()
             .write(true)
             .create_new(true)
-            .open(&log)?;
-        let errors = if request.capture {
-            fs::File::options()
-                .write(true)
-                .create_new(true)
-                .open(log.with_extension("stderr"))?
-        } else {
-            output.try_clone()?
-        };
-        worker
-            .stdin(Stdio::null())
-            .stdout(Stdio::from(output.try_clone()?))
-            .stderr(Stdio::from(errors))
-            .process_group(number(group));
-        let started = Instant::now();
-        let child = worker.spawn()?;
-        state.worker = Some(child);
-        let deadline = Duration::from_millis(request.deadline_ms);
-        let (timed_out, cancelled) = loop {
-            let status = state.worker.as_mut().ok_or("Worker absent")?.try_wait()?;
-            let elapsed = started.elapsed();
-            if let Some(status) = status {
-                state.raw_status = Some(status.into_raw());
-            }
-            let overdue = elapsed >= deadline;
-            let cancel = stopped.load(Ordering::Relaxed);
-            if state.raw_status.is_some() || overdue || cancel {
-                break (overdue, cancel);
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        };
-        let execution = started.elapsed();
-        let ordinary = state.raw_status.is_some() && !timed_out && !cancelled;
-        let (complete, survivors, cleanup, detail, observations) = state.cleanup(ordinary);
-        frame(
-            &mut std::io::stdout().lock(),
-            &Message::Finished {
-                raw_status: state.raw_status,
-                timed_out,
-                cancelled,
-                unexpected_survivors: survivors,
-                survivor_observations: observations,
-                cleanup_complete: complete,
-                execution_ms: execution.as_millis().try_into()?,
-                cleanup_ms: cleanup.as_millis().try_into()?,
-                detail,
-            },
-        )?;
-        Ok(complete)
-    })();
-    match result {
-        Ok(true) => ExitCode::SUCCESS,
-        Ok(false) => ExitCode::FAILURE,
-        Err(error) => {
-            let _ = writeln!(std::io::stderr(), "Process supervisor: {error}");
-            ExitCode::FAILURE
-        }
-    }
+            .open(log.with_extension("stderr"))?
+    } else {
+        output.try_clone()?
+    };
+    Ok((output, errors))
 }

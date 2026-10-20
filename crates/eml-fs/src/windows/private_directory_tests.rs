@@ -110,43 +110,7 @@ impl TemporaryAccount {
             cleanup_attempted: false,
         };
         account.sid = Some(account_sid(&account.name)?);
-        let users = Sid::named("S-1-5-32-545")?;
-        let mut group = vec![0u16; 256];
-        let mut group_length = group.len() as u32;
-        let mut domain_name = vec![0u16; 256];
-        let mut domain_length = domain_name.len() as u32;
-        let mut use_kind = 0;
-        // Resolve the built-in Users alias by SID instead of a localized label.
-        unsafe {
-            checked(LookupAccountSidW(
-                ptr::null(),
-                users.pointer(),
-                group.as_mut_ptr(),
-                &mut group_length,
-                domain_name.as_mut_ptr(),
-                &mut domain_length,
-                &mut use_kind,
-            ))?;
-        }
-        let member = LOCALGROUP_MEMBERS_INFO_0 {
-            lgrmi0_sid: account.sid.as_ref().expect("captured user SID").pointer(),
-        };
-        // Only this newly owned account's membership is added. Deleting its
-        // still-matching SID removes that membership without changing any policy.
-        let code = unsafe {
-            NetLocalGroupAddMembers(
-                ptr::null(),
-                group.as_ptr(),
-                0,
-                (&member as *const LOCALGROUP_MEMBERS_INFO_0).cast(),
-                1,
-            )
-        };
-        if code != 0 && code != windows_sys::Win32::Foundation::ERROR_MEMBER_IN_ALIAS {
-            return Err(io::Error::other(format!(
-                "Owned account Users membership failed: NetAPI {code}"
-            )));
-        }
+        account.join_users()?;
         let domain = [b'.' as u16, 0];
         let mut raw = ptr::null_mut();
         // SAFETY: local explicit synthetic credentials and a unique token output;
@@ -167,6 +131,46 @@ impl TemporaryAccount {
         // SAFETY: successful LogonUser transferred one uniquely owned token.
         account.token = Some(unsafe { OwnedHandle::from_raw_handle(raw) });
         Ok(account)
+    }
+    fn join_users(&self) -> io::Result<()> {
+        let users = Sid::named("S-1-5-32-545")?;
+        let mut group = vec![0u16; 256];
+        let mut group_length = group.len() as u32;
+        let mut domain_name = vec![0u16; 256];
+        let mut domain_length = domain_name.len() as u32;
+        let mut use_kind = 0;
+        // Resolve the built-in Users alias by SID instead of a localized label.
+        unsafe {
+            checked(LookupAccountSidW(
+                ptr::null(),
+                users.pointer(),
+                group.as_mut_ptr(),
+                &mut group_length,
+                domain_name.as_mut_ptr(),
+                &mut domain_length,
+                &mut use_kind,
+            ))?;
+        }
+        let member = LOCALGROUP_MEMBERS_INFO_0 {
+            lgrmi0_sid: self.sid.as_ref().expect("captured user SID").pointer(),
+        };
+        // Only this newly owned account's membership is added. Deleting its
+        // still-matching SID removes that membership without changing any policy.
+        let code = unsafe {
+            NetLocalGroupAddMembers(
+                ptr::null(),
+                group.as_ptr(),
+                0,
+                (&member as *const LOCALGROUP_MEMBERS_INFO_0).cast(),
+                1,
+            )
+        };
+        if code != 0 && code != windows_sys::Win32::Foundation::ERROR_MEMBER_IN_ALIAS {
+            return Err(io::Error::other(format!(
+                "Owned account Users membership failed: NetAPI {code}"
+            )));
+        }
+        Ok(())
     }
     fn as_user<T>(&self, operation: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
         let mut prior = ptr::null_mut();

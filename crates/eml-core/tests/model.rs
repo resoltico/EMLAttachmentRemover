@@ -127,54 +127,7 @@ fn render(
         },
         Shape::Forward(..) => "message/rfc822",
     };
-    let mut fields = Vec::new();
-    let mut add = |name: &'static str, value: String| {
-        let mut bytes = format!("{name}: {value}").into_bytes();
-        bytes.extend(ending);
-        fields.push((name, bytes));
-    };
-    let mut content_type = media.to_owned();
-    if let Shape::Multipart(kind, last, children) = &model.shape {
-        content_type.push_str(&format!("; boundary={boundary}"));
-        if *kind == 2 && *last {
-            content_type.push_str(&format!("; start=\"<child_{}>\"", children.len()));
-        }
-    }
-    if !omit_type {
-        add("Content-Type", content_type);
-    }
-    if model.attachment {
-        add(
-            "Content-Disposition",
-            "attachment; filename=part.bin".into(),
-        );
-    }
-    if let Some(cid) = cid {
-        add("Content-ID", format!("<{cid}>"));
-    }
-    if let Shape::Forward(identity, _) = &model.shape {
-        add(
-            "Content-Transfer-Encoding",
-            if *identity { "8bit" } else { "base64" }.into(),
-        );
-    }
-    if model.stale {
-        for name in [
-            "Content-Length",
-            "Lines",
-            "Content-MD5",
-            "DKIM-Signature",
-            "DomainKey-Signature",
-            "ARC-Seal",
-            "ARC-Message-Signature",
-            "ARC-Authentication-Results",
-            "X-MS-Has-Attach",
-        ] {
-            add(name, "stale-model-value".into());
-        }
-    }
-    // Keep a header when a digest child omits Content-Type.
-    add("Subject", "synthetic model entity".into());
+    let fields = render_fields(model, &boundary, cid, omit_type, ending, media);
     let mut body = Vec::new();
     let kind = match &model.shape {
         Shape::Leaf(_, payload) => {
@@ -250,6 +203,64 @@ fn render(
         section,
         kind,
     }
+}
+fn render_fields(
+    model: &Model,
+    boundary: &str,
+    cid: Option<String>,
+    omit_type: bool,
+    ending: &[u8],
+    media: &'static str,
+) -> Vec<(&'static str, Vec<u8>)> {
+    let mut fields = Vec::new();
+    let mut add = |name: &'static str, value: String| {
+        let mut bytes = format!("{name}: {value}").into_bytes();
+        bytes.extend(ending);
+        fields.push((name, bytes));
+    };
+    let mut content_type = media.to_owned();
+    if let Shape::Multipart(kind, last, children) = &model.shape {
+        content_type.push_str(&format!("; boundary={boundary}"));
+        if *kind == 2 && *last {
+            content_type.push_str(&format!("; start=\"<child_{}>\"", children.len()));
+        }
+    }
+    if !omit_type {
+        add("Content-Type", content_type);
+    }
+    if model.attachment {
+        add(
+            "Content-Disposition",
+            "attachment; filename=part.bin".into(),
+        );
+    }
+    if let Some(cid) = cid {
+        add("Content-ID", format!("<{cid}>"));
+    }
+    if let Shape::Forward(identity, _) = &model.shape {
+        add(
+            "Content-Transfer-Encoding",
+            if *identity { "8bit" } else { "base64" }.into(),
+        );
+    }
+    if model.stale {
+        for name in [
+            "Content-Length",
+            "Lines",
+            "Content-MD5",
+            "DKIM-Signature",
+            "DomainKey-Signature",
+            "ARC-Seal",
+            "ARC-Message-Signature",
+            "ARC-Authentication-Results",
+            "X-MS-Has-Attach",
+        ] {
+            add(name, "stale-model-value".into());
+        }
+    }
+    // Keep a header when a digest child omits Content-Type.
+    add("Subject", "synthetic model entity".into());
+    fields
 }
 struct Expected {
     copy: Option<Vec<u8>>,

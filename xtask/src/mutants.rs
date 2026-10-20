@@ -281,68 +281,24 @@ fn validate(outcome: &Outcome, selected: &[Value], version: &str, logs: &Path) -
 pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> {
     require_unix_campaign()?;
     let version = tool_version(root, "mutants", "cargo_mutants")?;
-    let resolved_base = if initial {
-        None
-    } else {
-        let base = base.ok_or("Use --initial or --diff BASE")?;
-        Some(git(
-            root,
-            &[
-                "rev-parse",
-                "--verify",
-                "--end-of-options",
-                &format!("{base}^{{commit}}"),
-            ],
-        )?)
-    };
+    let resolved_base = resolve_diff_base(root, initial, base)?;
     let campaign = Campaign::create(root, "mutations")?;
     let all = discovery(&campaign, SELECTION)?;
     let guard_counts = positive_guards(&all)?;
-    let mut merge_base = None;
-    let (selection, required_guards) = if initial {
-        (
-            SELECTION.to_owned(),
-            GUARDS
-                .iter()
-                .map(|name| (*name).to_owned())
-                .collect::<BTreeSet<_>>(),
-        )
-    } else {
-        let resolved = resolved_base
-            .as_deref()
-            .ok_or("Diff base was not admitted")?;
-        capture(
-            Command::new("git")
-                .current_dir(&campaign.source)
-                .args(["fetch", "--no-tags", "--no-recurse-submodules"])
-                .arg(root)
-                .arg(resolved),
-        )?;
-        let common = git(&campaign.source, &["merge-base", "HEAD", resolved])?;
-        let diff = git(
-            &campaign.source,
-            &[
-                "diff",
-                "--no-ext-diff",
-                "--no-renames",
-                "--unified=0",
-                &common,
-                "HEAD",
-                "--",
-                "crates/eml-core/src",
-            ],
-        )?;
-        fs::write(campaign.directory.join("source.diff"), &diff)?;
-        merge_base = Some(common);
-        let guards = changed_guards(&diff, &all)?;
-        if guards.is_empty() {
-            campaign.report(&serde_json::json!({"source":campaign.sha,"merge_base":merge_base,"status":"not_applicable","reason":"Neither selected guard changed; other code is not claimed mutation-covered","guard_discovery":guard_counts}))?;
-            return Ok(());
-        }
-        (
-            format!("({})", guards.iter().cloned().collect::<Vec<_>>().join("|")),
-            guards,
-        )
+    let Some(MutationSelection {
+        expression: selection,
+        required_guards,
+        merge_base,
+    }) = campaign_selection(
+        root,
+        &campaign,
+        initial,
+        resolved_base.as_deref(),
+        &all,
+        &guard_counts,
+    )?
+    else {
+        return Ok(());
     };
     let selected = discovery(&campaign, &selection)?;
     if selected.is_empty() {
@@ -419,6 +375,89 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
     }
     validation.map(|_| ())
 }
+
+/// Exact executable selection and independent required discovery obligations.
+struct MutationSelection {
+    expression: String,
+    required_guards: BTreeSet<String>,
+    merge_base: Option<String>,
+}
+fn campaign_selection(
+    root: &Path,
+    campaign: &Campaign,
+    initial: bool,
+    resolved_base: Option<&str>,
+    all: &[Value],
+    guard_counts: &BTreeMap<String, usize>,
+) -> Result<Option<MutationSelection>> {
+    let mut merge_base = None;
+    let (selection, required_guards) = if initial {
+        (
+            SELECTION.to_owned(),
+            GUARDS
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect::<BTreeSet<_>>(),
+        )
+    } else {
+        let resolved = resolved_base.ok_or("Diff base was not admitted")?;
+        capture(
+            Command::new("git")
+                .current_dir(&campaign.source)
+                .args(["fetch", "--no-tags", "--no-recurse-submodules"])
+                .arg(root)
+                .arg(resolved),
+        )?;
+        let common = git(&campaign.source, &["merge-base", "HEAD", resolved])?;
+        let diff = git(
+            &campaign.source,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-renames",
+                "--unified=0",
+                &common,
+                "HEAD",
+                "--",
+                "crates/eml-core/src",
+            ],
+        )?;
+        fs::write(campaign.directory.join("source.diff"), &diff)?;
+        merge_base = Some(common);
+        let guards = changed_guards(&diff, all)?;
+        if guards.is_empty() {
+            campaign.report(&serde_json::json!({"source":campaign.sha,"merge_base":merge_base,"status":"not_applicable","reason":"Neither selected guard changed; other code is not claimed mutation-covered","guard_discovery":guard_counts}))?;
+            return Ok(None);
+        }
+        (
+            format!("({})", guards.iter().cloned().collect::<Vec<_>>().join("|")),
+            guards,
+        )
+    };
+    Ok(Some(MutationSelection {
+        expression: selection,
+        required_guards,
+        merge_base,
+    }))
+}
+
+fn resolve_diff_base(root: &Path, initial: bool, base: Option<&str>) -> Result<Option<String>> {
+    Ok(if initial {
+        None
+    } else {
+        let base = base.ok_or("Use --initial or --diff BASE")?;
+        Some(git(
+            root,
+            &[
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                &format!("{base}^{{commit}}"),
+            ],
+        )?)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

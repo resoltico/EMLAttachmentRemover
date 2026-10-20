@@ -2,14 +2,45 @@
 // SPDX-License-Identifier: MPL-2.0
 import { AboutSlint, Button, CheckBox, ComboBox, HorizontalBox, VerticalBox, TextEdit, ScrollView } from "std-widgets.slint";
 import { StatusArtwork, ArtworkState } from "artwork.slint";
+component AboutLabel inherits TextInput {
+    read-only: true;
+    single-line: true;
+    horizontal-alignment: center;
+    accessible-label: self.text;
+    vertical-stretch: 0;
+}
 export component AboutWindow inherits Window {
+    in property <string> interface-font-family;
+    in property <float> interface-font-size;
+    default-font-family: root.interface-font-family;
+    default-font-size: root.interface-font-size * 1px;
     title: "About EML Attachment Remover";
-    preferred-width: 580px; preferred-height: 440px;
-    in property <string> identity;
+    preferred-width: 420px; preferred-height: 410px;
+    in property <string> version-label;
+    in property <string> copyright;
+    in property <image> app-icon;
+    callback website_requested();
+    callback licenses_requested();
     MenuBar {
         Menu { title: "Edit";
-            MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: identity-text.has-focus; activated => { identity-text.copy(); } }
-            MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: identity-text.has-focus; activated => { identity-text.select-all(); } }
+            MenuItem { title: "Copy"; shortcut: @keys(Control + C);
+                enabled: name-text.has-focus || version-text.has-focus || purpose-text.has-focus || copyright-text.has-focus;
+                activated => {
+                    if name-text.has-focus { name-text.copy(); }
+                    if version-text.has-focus { version-text.copy(); }
+                    if purpose-text.has-focus { purpose-text.copy(); }
+                    if copyright-text.has-focus { copyright-text.copy(); }
+                }
+            }
+            MenuItem { title: "Select All"; shortcut: @keys(Control + A);
+                enabled: name-text.has-focus || version-text.has-focus || purpose-text.has-focus || copyright-text.has-focus;
+                activated => {
+                    if name-text.has-focus { name-text.select-all(); }
+                    if version-text.has-focus { version-text.select-all(); }
+                    if purpose-text.has-focus { purpose-text.select-all(); }
+                    if copyright-text.has-focus { copyright-text.select-all(); }
+                }
+            }
         }
         Menu { title: "Window";
             MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimized = true; } }
@@ -17,14 +48,35 @@ export component AboutWindow inherits Window {
         }
     }
     VerticalBox {
-        identity-text := TextEdit { text: root.identity; read-only: true; accessible-label: "Product identity and licensing"; }
-        AboutSlint {}
+        padding: 24px; spacing: 12px;
+        alignment: center;
+        HorizontalBox { alignment: center; padding: 0px;
+            Image { source: root.app-icon; width: 64px; height: 64px; image-fit: contain; accessible-label: "Application icon"; }
+        }
+        name-text := AboutLabel { text: "EML Attachment Remover"; font-size: 18px; font-weight: 600; }
+        version-text := AboutLabel { text: "Version " + root.version-label; }
+        purpose-text := AboutLabel { text: "Create attachment-stripped copies.\nOriginals stay untouched."; single-line: false; }
+        copyright-text := AboutLabel { text: root.copyright; }
+        HorizontalBox { alignment: center; spacing: 12px; padding: 0px;
+            Button { text: "Project website"; clicked => { root.website_requested(); } }
+            Button { text: "Licenses"; clicked => { root.licenses_requested(); } }
+        }
+        HorizontalBox {
+            alignment: center; vertical-stretch: 0; padding: 0px;
+            AboutSlint { width: 280px; height: 100px; horizontal-stretch: 0; vertical-stretch: 0; }
+        }
     }
 }
 export component LicenseWindow inherits Window {
+    in property <string> interface-font-family;
+    in property <float> interface-font-size;
+    default-font-family: root.interface-font-family;
+    default-font-size: root.interface-font-size * 1px;
     title: "Software and Artwork Licenses";
     preferred-width: 720px; preferred-height: 560px;
     in property <string> licenses;
+    in property <string> notice: "Open bundled component notices and license files in Finder.";
+    callback third_party_licenses_requested();
     MenuBar {
         Menu { title: "Edit";
             MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: license-text.has-focus; activated => { license-text.copy(); } }
@@ -37,10 +89,18 @@ export component LicenseWindow inherits Window {
     }
     VerticalBox {
         license-text := TextEdit { text: root.licenses; read-only: true; accessible-label: "Complete software and owner artwork license terms"; }
-        Text { text: "Additional component notices accompany this app in Contents/Resources/THIRD-PARTY-NOTICES.txt and licenses/."; wrap: word-wrap; }
+        HorizontalBox {
+            padding: 12px; spacing: 12px; vertical-stretch: 0;
+            Text { text: root.notice; wrap: word-wrap; horizontal-stretch: 1; }
+            Button { text: "Third-party licenses…"; horizontal-stretch: 0; clicked => { root.third_party_licenses_requested(); } }
+        }
     }
 }
 export component MainWindow inherits Window {
+    in property <string> interface-font-family;
+    in property <float> interface-font-size;
+    default-font-family: root.interface-font-family;
+    default-font-size: root.interface-font-size * 1px;
     title: "EML Attachment Remover";
     preferred-width: 960px; preferred-height: 720px;
     min-width: 760px; min-height: 520px;
@@ -56,9 +116,13 @@ export component MainWindow inherits Window {
     in property <bool> export-running;
     in property <bool> confirm-visible;
     in property <string> confirm-text;
+    in property <string> confirm-title;
+    in property <string> confirm-action-label;
+    changed confirm-visible => { if root.confirm-visible { cancel-confirmation.focus(); } }
     in property <string> destination;
     in property <string> activity;
     in property <string> notice-text;
+    in property <string> notice-details;
     in property <[string]> runs;
     in property <[string]> run-picker-labels;
     in property <int> selected-run: -1;
@@ -82,7 +146,6 @@ export component MainWindow inherits Window {
     callback reveal_requested();
     callback cancel_export();
     callback dismiss_requested();
-    callback about_requested();
     callback licenses_requested();
     callback select_run(int);
     callback select_item(int);
@@ -114,12 +177,10 @@ export component MainWindow inherits Window {
             MenuItem { title: "Bring All to Front"; activated => { Platform.macos-bring-all-windows-to-front(); } }
         }
         Menu { title: "Help";
-            MenuItem { title: "About EML Attachment Remover"; activated => { root.about_requested(); } }
             MenuItem { title: "Software and Artwork Licenses…"; activated => { root.licenses_requested(); } }
         }
     }
     ScrollView {
-        visible: !root.confirm-visible;
     VerticalBox {
         padding: 16px; spacing: 10px;
         HorizontalBox {
@@ -128,9 +189,8 @@ export component MainWindow inherits Window {
             VerticalBox {
                 horizontal-stretch: 1; padding: 0px; spacing: root.short-layout ? 0px : 8px;
                 Text { text: "EML Attachment Remover"; font-size: root.short-layout ? 18px : 22px; font-weight: 600; }
-                Text { text: root.short-layout ? "Originals stay untouched." : "Create attachment-stripped copies. Originals stay untouched."; font-size: root.short-layout ? 11px : 12px; wrap: word-wrap; }
+                Text { text: root.short-layout ? "Originals stay untouched." : "Create attachment-stripped copies. Originals stay untouched."; wrap: word-wrap; }
             }
-            Button { text: "About"; width: 80px; clicked => { root.about_requested(); } }
         }
         HorizontalBox {
             Button { text: "Choose messages…"; enabled: root.admission-ready; clicked => { root.select_files(); } }
@@ -145,7 +205,7 @@ export component MainWindow inherits Window {
             Text { text: "Waiting requests: " + root.waiting-runs.length; accessible-label: self.text; }
         }
         if root.notice-text != "": HorizontalBox {
-            Text { text: root.notice-text; overflow: elide; accessible-label: root.notice-text; }
+            Text { text: root.notice-text; wrap: word-wrap; horizontal-stretch: 1; accessible-label: root.notice-text; }
             Button { text: "Dismiss notice"; clicked => {root.dismiss_notice();} }
         }
         HorizontalBox {
@@ -189,7 +249,7 @@ export component MainWindow inherits Window {
                     height: root.items.length == 0 ? 0px : (root.short-layout ? 40px : 100px);
                     VerticalBox { padding: 0px; spacing: 4px; for item[index] in root.items: Button { text: item; height: 32px; clicked => { root.select_item(index); } } }
                 }
-                item-detail := TextEdit { min-height: 55px; vertical-stretch: 1; text: root.item-text + (technical.checked ? "\nTechnical observations\n" + root.technical-text : ""); read-only: true; accessible-label: technical.checked ? "Selected message, removed parts and technical observations" : "Selected message and removed parts"; }
+                item-detail := TextEdit { min-height: 55px; vertical-stretch: 1; text: root.item-text + (technical.checked ? "\nTechnical observations\n" + root.technical-text + (root.notice-details != "" ? "\nNotice details\n" + root.notice-details : "") : ""); read-only: true; accessible-label: technical.checked ? "Selected message, removed parts and technical observations" : "Selected message and removed parts"; }
                 HorizontalBox {
                     Button { text: "Show in Finder"; enabled: root.reveal-available; clicked => {root.reveal_requested();} }
                     Button { text: "Previous parts"; enabled: root.previous_parts_available; clicked => { root.previous_parts(); } }
@@ -204,12 +264,36 @@ export component MainWindow inherits Window {
         }
     }
     }
-    VerticalBox {
-        visible: root.confirm-visible; padding: 30px;
-        Text { text: root.confirm-text; wrap: word-wrap; accessible-label: "Confirmation: " + root.confirm-text; }
-        HorizontalBox {
-            Button { text: "Cancel"; clicked => { root.cancel_confirmation(); } }
-            Button { text: "Confirm"; clicked => { root.confirm_action(); } }
+    if root.confirm-visible: Rectangle {
+        background: root.dark-appearance ? #00000088 : #ffffffaa;
+        TouchArea { }
+    }
+    FocusScope {
+        visible: root.confirm-visible;
+        width: min(parent.width - 48px, 440px); height: 190px;
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+        key-pressed(event) => {
+            if event.text == Key.Escape { root.cancel_confirmation(); return accept; }
+            if event.text == Key.Tab {
+                if cancel-confirmation.has-focus { accept-confirmation.focus(); }
+                else { cancel-confirmation.focus(); }
+                return accept;
+            }
+            return reject;
+        }
+        Rectangle {
+        background: root.dark-appearance ? #202020 : #ffffff;
+        border-width: 1px; border-color: #808080; border-radius: 8px;
+        VerticalBox {
+            padding: 24px; spacing: 16px;
+            Text { text: root.confirm-title; font-weight: 600; vertical-stretch: 0; }
+            Text { text: root.confirm-text; wrap: word-wrap; accessible-label: "Confirmation: " + root.confirm-text; }
+            HorizontalBox {
+                alignment: end; vertical-stretch: 0; spacing: 12px; padding: 0px;
+                cancel-confirmation := Button { text: "Cancel"; min-width: 80px; horizontal-stretch: 0; clicked => { root.cancel_confirmation(); } }
+                accept-confirmation := Button { text: root.confirm-action-label; min-width: 80px; horizontal-stretch: 0; clicked => { root.confirm_action(); } }
+            }
+        }
         }
     }
 }

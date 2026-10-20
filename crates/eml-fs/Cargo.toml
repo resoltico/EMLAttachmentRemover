@@ -25,7 +25,5 @@ tempfile.workspace = true
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_System_Ioctl", "Win32_System_SystemServices", "Win32_Security_Authorization", "Win32_NetworkManagement_NetManagement"] }
 
-[lints.rust]
-unsafe_code = "deny"
-unsafe_op_in_unsafe_fn = "deny"
-missing_docs = "warn"
+[lints]
+workspace = true

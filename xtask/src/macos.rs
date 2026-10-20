@@ -230,10 +230,12 @@ pub(crate) fn check_swift_sources(root: &Path, out: &Path) -> Result<serde_json:
         .arg("--")
         .args(&paths);
     let process = controller()?.run(command, &log, Duration::from_secs(120))?;
+    let structure = crate::quality::check_swift_structure(root, &out, &build, &paths);
     let result = serde_json::json!({"build":build,"formatter_version":version.trim(),"source_count":paths.len(),"sources":paths,
-        "process":process.evidence(),"scope":"strict formatting of discovered retained Swift bridge/test sources using selected Xcode defaults; no native GUI qualification"});
+        "process":process.evidence(),"structure":structure.as_ref().map_err(ToString::to_string),"scope":"strict formatting and syntax-aware structural checks of discovered retained Swift sources using selected Xcode; no native GUI qualification"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     process.require_success(&log)?;
+    structure?;
     Ok(result)
 }
 
@@ -489,15 +491,15 @@ pub(crate) struct MacBuild {
     pub sdk_version: String,
 }
 impl MacBuild {
-    pub fn cargo_directory(&self, root: &Path) -> PathBuf {
+    pub(crate) fn cargo_directory(&self, root: &Path) -> PathBuf {
         root.join("target/native-cargo").join(&self.host)
     }
-    pub fn command(&self, root: &Path, program: impl AsRef<OsStr>) -> Command {
+    pub(crate) fn command(&self, root: &Path, program: impl AsRef<OsStr>) -> Command {
         let mut command = selected_command(root, &self.developer, program);
         command.env("SDKROOT", &self.sdk);
         command
     }
-    pub fn swift_target(&self) -> String {
+    pub(crate) fn swift_target(&self) -> String {
         format!("{}-apple-macos{}", self.swift_arch, self.minimum_text)
     }
 }
@@ -520,29 +522,8 @@ pub(crate) fn load(root: &Path) -> Result<MacBuild> {
         )
         .into());
     }
+    let (xcode, sdk) = selected_xcode(root, &developer, &plan.xcode)?;
     let command = |program: &str| selected_command(root, &developer, program);
-    let xcode = String::from_utf8(capture(command("/usr/bin/xcodebuild").arg("-version"))?)?;
-    if xcode.trim_end()
-        != format!(
-            "Xcode {}\nBuild version {}",
-            plan.xcode.version, plan.xcode.build
-        )
-    {
-        return Err("Actual selected Xcode version/build differs from tools authority".into());
-    }
-    let sdk = PathBuf::from(
-        String::from_utf8(capture(command("/usr/bin/xcrun").args([
-            "--sdk",
-            "macosx",
-            "--toolchain",
-            "XcodeDefault",
-            "--show-sdk-path",
-        ]))?)?
-        .trim_end(),
-    );
-    if !sdk.is_dir() || !sdk.canonicalize()?.starts_with(developer.canonicalize()?) {
-        return Err("Selected macOS SDK is not inside the pinned Xcode".into());
-    }
     let swiftc = developer.join("Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc");
     let swift = String::from_utf8(capture(
         selected_command(root, &developer, &swiftc)
@@ -604,6 +585,33 @@ pub(crate) fn load(root: &Path) -> Result<MacBuild> {
         swift_identity: swift,
         sdk_version: sdk_version.trim_end().to_owned(),
     })
+}
+
+fn selected_xcode(root: &Path, developer: &Path, required: &Xcode) -> Result<(String, PathBuf)> {
+    let command = |program: &str| selected_command(root, developer, program);
+    let xcode = String::from_utf8(capture(command("/usr/bin/xcodebuild").arg("-version"))?)?;
+    if xcode.trim_end()
+        != format!(
+            "Xcode {}\nBuild version {}",
+            required.version, required.build
+        )
+    {
+        return Err("Actual selected Xcode version/build differs from tools authority".into());
+    }
+    let sdk = PathBuf::from(
+        String::from_utf8(capture(command("/usr/bin/xcrun").args([
+            "--sdk",
+            "macosx",
+            "--toolchain",
+            "XcodeDefault",
+            "--show-sdk-path",
+        ]))?)?
+        .trim_end(),
+    );
+    if !sdk.is_dir() || !sdk.canonicalize()?.starts_with(developer.canonicalize()?) {
+        return Err("Selected macOS SDK is not inside the pinned Xcode".into());
+    }
+    Ok((xcode, sdk))
 }
 
 #[cfg(test)]

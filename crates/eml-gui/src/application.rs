@@ -2,7 +2,7 @@
 use crate::native::{self, NativeError};
 use objc2::rc::Retained;
 use objc2::{
-    Encode, MainThreadMarker, ffi,
+    Encode, MainThreadMarker, ffi, msg_send,
     runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel},
     sel,
 };
@@ -18,6 +18,7 @@ use std::{
 const QUIT: u8 = 1;
 const REOPEN: u8 = 2;
 const BROKEN: u8 = 4;
+const ABOUT: u8 = 8;
 static EVENTS: AtomicU8 = AtomicU8::new(0);
 fn wake_event_loop() {
     // Native application callbacks can arrive with every window hidden. Post a
@@ -124,6 +125,10 @@ pub(crate) fn receive_drop(board: *mut std::ffi::c_void, commit: bool) -> bool {
     }
 }
 
+extern "C" fn show_about(_: &AnyObject, _: Sel, _: Option<&AnyObject>) {
+    EVENTS.fetch_or(ABOUT, Ordering::Release);
+    wake_event_loop();
+}
 extern "C" fn should_terminate(_: &AnyObject, _: Sel, _: &NSApplication) -> usize {
     native::lifecycle_observation("Native termination requested; awaiting confirmation");
     EVENTS.fetch_or(QUIT, Ordering::Release);
@@ -166,11 +171,46 @@ extern "C" fn create_copies(
         }
     }
 }
+fn delegate_implementations() -> [Imp; 6] {
+    // SAFETY: these C function signatures match the documented delegate /
+    // Services ABI. Native BOOL encodings derive from objc2 for each CPU.
+    unsafe {
+        [
+            std::mem::transmute::<extern "C" fn(&AnyObject, Sel, &NSApplication) -> usize, Imp>(
+                should_terminate,
+            ),
+            std::mem::transmute::<extern "C" fn(&AnyObject, Sel, &NSApplication, Bool) -> Bool, Imp>(
+                should_reopen,
+            ),
+            std::mem::transmute::<extern "C" fn(&AnyObject, Sel, &NSApplication) -> Bool, Imp>(
+                terminate_after_close,
+            ),
+            std::mem::transmute::<
+                extern "C" fn(&AnyObject, Sel, &NSApplication, Option<&NSArray<AnyObject>>),
+                Imp,
+            >(open_urls),
+            std::mem::transmute::<
+                extern "C" fn(
+                    &AnyObject,
+                    Sel,
+                    Option<&NSPasteboard>,
+                    Option<&NSString>,
+                    *mut *const NSString,
+                ),
+                Imp,
+            >(create_copies),
+            std::mem::transmute::<extern "C" fn(&AnyObject, Sel, Option<&AnyObject>), Imp>(
+                show_about,
+            ),
+        ]
+    }
+}
 pub(crate) struct ApplicationHooks {
     delegate: Retained<ProtocolObject<dyn NSApplicationDelegate>>,
     main: MainThreadMarker,
 }
 pub(crate) struct ApplicationEvents {
+    pub(crate) about: bool,
     pub(crate) quit: bool,
     pub(crate) reopen: bool,
     pub(crate) selections: VecDeque<Result<Vec<PathBuf>, NativeError>>,
@@ -193,6 +233,7 @@ impl ApplicationHooks {
             sel!(applicationShouldTerminateAfterLastWindowClosed:),
             sel!(application:openURLs:),
             sel!(createEMLCopies:userData:error:),
+            sel!(showEMLAbout:),
         ];
         // Check all slots first, including inherited implementations. Installation
         // adds only absent methods; no implementation or delegate is replaced.
@@ -202,41 +243,13 @@ impl ApplicationHooks {
         {
             return Err("Application integration selector already has an implementation".into());
         }
-        // SAFETY: these C function signatures match the documented delegate /
-        // Services ABI. Native BOOL encodings derive from objc2 for each CPU.
-        let implementations = unsafe {
-            [
-                std::mem::transmute::<extern "C" fn(&AnyObject, Sel, &NSApplication) -> usize, Imp>(
-                    should_terminate,
-                ),
-                std::mem::transmute::<
-                    extern "C" fn(&AnyObject, Sel, &NSApplication, Bool) -> Bool,
-                    Imp,
-                >(should_reopen),
-                std::mem::transmute::<extern "C" fn(&AnyObject, Sel, &NSApplication) -> Bool, Imp>(
-                    terminate_after_close,
-                ),
-                std::mem::transmute::<
-                    extern "C" fn(&AnyObject, Sel, &NSApplication, Option<&NSArray<AnyObject>>),
-                    Imp,
-                >(open_urls),
-                std::mem::transmute::<
-                    extern "C" fn(
-                        &AnyObject,
-                        Sel,
-                        Option<&NSPasteboard>,
-                        Option<&NSString>,
-                        *mut *const NSString,
-                    ),
-                    Imp,
-                >(create_copies),
-            ]
-        };
+        let implementations = delegate_implementations();
         let native_bool = Bool::ENCODING.to_string();
         let returns = [
             usize::ENCODING.to_string(),
             native_bool.clone(),
             native_bool.clone(),
+            "v".into(),
             "v".into(),
             "v".into(),
         ];
@@ -246,6 +259,7 @@ impl ApplicationHooks {
             vec!["@", ":", "@"],
             vec!["@", ":", "@", "@"],
             vec!["@", ":", "@", "@", "^@"],
+            vec!["@", ":", "@"],
         ];
         for index in 0..selectors.len() {
             let types = CString::new(format!("{}{}", returns[index], arguments[index].join("")))?;
@@ -299,6 +313,53 @@ impl ApplicationHooks {
         }
         Ok(Self { delegate, main })
     }
+    fn route_about_menu(&self, app: &NSApplication) -> Result<(), &'static str> {
+        // Slint rebuilds each window's native menu as its enabled state changes.
+        // Route its existing application-menu item, including after a rebuild;
+        // do not replace AppKit methods, the application menu or Muda's delegate.
+        // SAFETY: these fixed NSMenu/NSMenuItem selectors use their documented
+        // object, nullable SEL and NSInteger signatures on the main thread.
+        unsafe {
+            let menu: Option<Retained<AnyObject>> = msg_send![app, mainMenu];
+            let Some(menu) = menu else { return Ok(()) };
+            let count: isize = msg_send![&menu, numberOfItems];
+            if count == 0 {
+                return Ok(());
+            }
+            let root: Option<Retained<AnyObject>> = msg_send![&menu, itemAtIndex: 0_isize];
+            let root = root.ok_or("Application menu is absent")?;
+            let submenu: Option<Retained<AnyObject>> = msg_send![&root, submenu];
+            let submenu = submenu.ok_or("Application submenu is absent")?;
+            let count: isize = msg_send![&submenu, numberOfItems];
+            if count == 0 {
+                return Ok(());
+            }
+            let item: Option<Retained<AnyObject>> = msg_send![&submenu, itemAtIndex: 0_isize];
+            let item = item.ok_or("Application About item is absent")?;
+            let title: Retained<NSString> = msg_send![&item, title];
+            if !title.isEqualToString(ns_string!("About EML Attachment Remover")) {
+                return Err("Unexpected application About item");
+            }
+            let action: Option<Sel> = msg_send![&item, action];
+            let object: &AnyObject = (*self.delegate).as_ref();
+            if action != Some(sel!(showEMLAbout:)) {
+                if !matches!(action, Some(action) if action == sel!(fireMenuItemAction:) || action == sel!(orderFrontStandardAboutPanel:))
+                {
+                    return Err("Application About action is already occupied");
+                }
+                let _: () = msg_send![&item, setTarget: object];
+                let _: () = msg_send![&item, setAction: sel!(showEMLAbout:)];
+            }
+            let actual_action: Option<Sel> = msg_send![&item, action];
+            let target: Option<Retained<AnyObject>> = msg_send![&item, target];
+            if actual_action != Some(sel!(showEMLAbout:))
+                || !target.is_some_and(|target| std::ptr::eq(&*target, object))
+            {
+                return Err("Application About routing readback differs");
+            }
+        }
+        Ok(())
+    }
     pub(crate) fn take_events(&self) -> Result<ApplicationEvents, &'static str> {
         // Native pasteboard providers may run a nested event loop. Keep delivery
         // and Quit/reopen intent pending until the one collector has returned.
@@ -309,6 +370,7 @@ impl ApplicationHooks {
                 .unwrap_or(true)
         }) {
             return Ok(ApplicationEvents {
+                about: false,
                 quit: false,
                 reopen: false,
                 selections: VecDeque::new(),
@@ -325,6 +387,7 @@ impl ApplicationHooks {
         {
             return Err("Application delegate or Services ownership changed");
         }
+        self.route_about_menu(&app)?;
         let events = EVENTS.swap(0, Ordering::AcqRel);
         if events & BROKEN != 0 {
             return Err(
@@ -342,6 +405,7 @@ impl ApplicationHooks {
             Ok::<_, &'static str>(batches)
         })?;
         Ok(ApplicationEvents {
+            about: events & ABOUT != 0,
             quit: events & QUIT != 0,
             reopen: events & REOPEN != 0,
             selections,

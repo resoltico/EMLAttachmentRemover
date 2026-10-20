@@ -1,5 +1,5 @@
-// Early native feasibility gate, adapted from the owner-approved design probe.
-// Synthetic data and an exclusively owned temporary root only; not a product processor.
+//! Native filesystem contract probe using synthetic data and an exclusively owned
+//! temporary root. This executable does not process user messages.
 #[cfg(unix)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use rustix::fs::{self, AtFlags, Mode, OFlags};
@@ -96,22 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let conflict = fs::linkat(&stage, "second", &parent, "copy.eml", AtFlags::empty());
     assert_eq!(conflict, Err(rustix::io::Errno::EXIST));
     drop(second);
-    assert!(
-        std::process::Command::new("mkfifo")
-            .arg(root.path().join("moved/fifo.eml"))
-            .status()?
-            .success()
-    );
-    let fifo = fs::openat(
-        &parent,
-        "fifo.eml",
-        OFlags::RDONLY | OFlags::NONBLOCK | OFlags::NOFOLLOW,
-        Mode::empty(),
-    )?;
-    assert_eq!(
-        fs::FileType::from_raw_mode(fs::fstat(&fifo)?.st_mode),
-        fs::FileType::Fifo
-    );
+    reject_fifo(&parent, root.path())?;
     fs::fsync(&parent)?;
     fs::fsync(&rootfd)?;
     println!(
@@ -120,7 +105,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(unix)]
+fn reject_fifo(
+    parent: &impl std::os::fd::AsFd,
+    root: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use rustix::fs::{self, Mode, OFlags};
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(root.join("moved/fifo.eml"))
+            .status()?
+            .success()
+    );
+    let fifo = fs::openat(
+        parent,
+        "fifo.eml",
+        OFlags::RDONLY | OFlags::NONBLOCK | OFlags::NOFOLLOW,
+        Mode::empty(),
+    )?;
+    assert_eq!(
+        fs::FileType::from_raw_mode(fs::fstat(&fifo)?.st_mode),
+        fs::FileType::Fifo
+    );
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
+#[allow(unsafe_code, reason = "quality:filesystem-probe-darwin-acl")]
 fn clear_acl(fd: &impl std::os::fd::AsRawFd) -> std::io::Result<()> {
     use std::{
         ffi::{c_int, c_void},
