@@ -442,6 +442,7 @@ jobs:
             target/native-app-build/**/*.jsonl
             target/native-app-build/**/*.log
             target/native-app-build/**/*.stderr
+            target/native-app-build/**/*.stdout
             target/native-app-build/**/*.plist
             target/native-app-build/**/native-picker-stack-*.txt
             target/native-app-build/**/gui-interaction/**/Results.xcresult/**

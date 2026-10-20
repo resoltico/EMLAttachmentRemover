@@ -190,6 +190,32 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
+  func requireNativePanelMessage(_ panel: XCUIElement, expected: String) async throws {
+    let messages = panel.staticTexts.matching(
+      NSPredicate(format: "identifier == %@ OR value == %@", "_messageTextField", expected))
+    let predicate = NSPredicate { _, _ in
+      panel.exists && messages.count == 1 && messages.firstMatch.exists
+        && (messages.firstMatch.value as? String) == expected
+    }
+    let result = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 10)
+    guard result == .completed, messages.count == 1, messages.firstMatch.exists,
+      (messages.firstMatch.value as? String) == expected
+    else {
+      let identified = panel.staticTexts.matching(identifier: "_messageTextField")
+      if identified.count == 1, identified.firstMatch.exists {
+        let message = identified.firstMatch
+        print(
+          "Native panel message: value=\(String(describing: message.value)), label=\(message.label.debugDescription), title=\(message.title.debugDescription)"
+        )
+      }
+      XCTFail("Required complete native panel message is absent or ambiguous: \(expected)")
+      throw InteractionFailure.expectedPresentation
+    }
+    print("Native panel message readback: \(String(describing: messages.firstMatch.value))")
+  }
+
+  @MainActor
   func requireAccessibleText(_ app: XCUIApplication, prefix: String) async throws {
     enum Attribute { case title, label, value }
     var match: (element: XCUIElement, attribute: Attribute)?

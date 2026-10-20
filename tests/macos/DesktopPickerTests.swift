@@ -367,7 +367,8 @@ extension DesktopInteractionTests {
       XCTFail("Tab/Space did not reach the native folder importer: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
-    try await requireAccessibleText(app, prefix: "Choose folders containing EML messages")
+    try await requireNativePanelMessage(
+      keyboardPicker, expected: "Choose folders containing EML messages")
     keyboardPicker.buttons["Cancel"].click()
     app.typeKey(XCUIKeyboardKey.tab, modifierFlags: .shift)
     try DesktopFixtureRequest.picker.send()
@@ -376,7 +377,7 @@ extension DesktopInteractionTests {
       XCTFail("Shift-Tab/Space did not return to the message importer: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
-    try await requireAccessibleText(app, prefix: "Choose EML messages")
+    try await requireNativePanelMessage(keyboardPicker, expected: "Choose EML messages")
     snapshot(app, "keyboard-forward-and-reverse-native-actions")
     keyboardPicker.buttons["Cancel"].click()
 

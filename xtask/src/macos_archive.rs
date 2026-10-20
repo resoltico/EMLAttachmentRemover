@@ -394,7 +394,9 @@ fn gui_startup(root: &Path, app: &Path, build: &macos::MacBuild, out: &Path) -> 
             .observation_pid()?
             .ok_or("GUI authority unavailable")?;
         let mut command = build.command(root, &observer);
-        command.arg(pid.to_string());
+        command
+            .arg(pid.to_string())
+            .arg(out.join("window-observation.json"));
         macos::checked_run(command, &out.join("window.json"), 25)?;
         if child.poll()? != ChildState::Running {
             return Err("GUI terminated during actual window observation".into());
@@ -402,24 +404,76 @@ fn gui_startup(root: &Path, app: &Path, build: &macos::MacBuild, out: &Path) -> 
         let window: Value = serde_json::from_slice(&read(&out.join("window.json"), 65536)?)?;
         Ok(window)
     })();
+    let startup_failure = observation.as_ref().err().map(|error| {
+        json!({"observation_error":error.to_string(),"sample":startup_sample(root, build, out, child.as_ref()).map_err(|error|error.to_string()),
+            "scope":"failure-only observation of the retained owned GUI before cleanup; never a qualification verdict"})
+    });
     let termination = child.as_ref().map(settle).transpose();
     let stdout = drain(observed.pipes.output);
     let stderr = drain(observed.pipes.errors);
-    if let Some(control) = observed.pipes.control {
-        eml_macos::close_reader(control)?;
-    }
+    let control_close = observed
+        .pipes
+        .control
+        .map(eml_macos::close_reader)
+        .transpose();
     let errors = stderr.as_ref().ok().cloned().unwrap_or_default();
-    fs::write(out.join("gui.stderr"), &errors)?;
-    let cleanup = json!({"terminal":termination.as_ref().ok().and_then(|x|x.as_ref()).map(|exit|json!({"code":exit.code,"signal":exit.signal})),"termination_error":termination.as_ref().err().map(ToString::to_string),"stdout_settled":stdout.is_ok(),"stderr_settled":stderr.is_ok(),"scope":"no requests supplied; exact owned GUI stopped by harness after startup observation; not UI Quit evidence"});
-    fs::write(
-        out.join("cleanup.json"),
-        serde_json::to_vec_pretty(&cleanup)?,
-    )?;
+    let stderr_write = fs::write(out.join("gui.stderr"), &errors);
+    let stdout_write = fs::write(
+        out.join("gui.stdout"),
+        stdout.as_ref().map_or(&[][..], Vec::as_slice),
+    );
+    let cleanup = json!({"terminal":termination.as_ref().ok().and_then(|x|x.as_ref()).map(|exit|json!({"code":exit.code,"signal":exit.signal})),"termination_error":termination.as_ref().err().map(ToString::to_string),"stdout_settled":stdout.is_ok(),"stderr_settled":stderr.is_ok(),"startup_failure":startup_failure,"control_close_error":control_close.as_ref().err().map(ToString::to_string),"stdout_write_error":stdout_write.as_ref().err().map(ToString::to_string),"stderr_write_error":stderr_write.as_ref().err().map(ToString::to_string),"scope":"no requests supplied; exact owned GUI stopped by harness after startup observation; not UI Quit evidence"});
+    let cleanup_write: Result<()> = serde_json::to_vec_pretty(&cleanup)
+        .map_err(Into::into)
+        .and_then(|bytes| fs::write(out.join("cleanup.json"), bytes).map_err(Into::into));
     let window = observation?;
+    cleanup_write?;
+    stdout_write?;
+    stderr_write?;
+    control_close?;
     termination?;
     stdout?;
     stderr?;
     Ok(json!({"window":window,"cleanup":cleanup}))
+}
+fn startup_sample(
+    root: &Path,
+    build: &macos::MacBuild,
+    out: &Path,
+    child: Option<&eml_macos::OwnedChild>,
+) -> Result<Value> {
+    let child = child.ok_or("No retained GUI capability; sampling is unavailable")?;
+    let before = child.poll()?;
+    if before != ChildState::Running {
+        return Ok(
+            json!({"sampled":false,"reason":"owned GUI already exited","state":format!("{before:?}")}),
+        );
+    }
+    let pid = child
+        .observation_pid()?
+        .ok_or("Retained GUI has no observation PID")?;
+    let path = out.join("startup-sample.log");
+    if path.try_exists()? {
+        return Err("Startup sample destination already exists".into());
+    }
+    let mut command = build.command(root, "/usr/bin/sample");
+    command.arg(pid.to_string()).args(["2", "-file"]).arg(&path);
+    let process = controller()?.run(
+        command,
+        &out.join("startup-sample-command.log"),
+        Duration::from_secs(10),
+    );
+    let file = fs::symlink_metadata(&path).map(|metadata| {
+        json!({"path":path,"byte_length":metadata.len(),"ordinary_file":metadata.is_file()})
+    }).map_err(|error|error.to_string());
+    let after = child
+        .poll()
+        .map(|state| format!("{state:?}"))
+        .map_err(|error| error.to_string());
+    Ok(
+        json!({"sampled":true,"owned_pid":pid,"process":process.map(|result|result.evidence()).map_err(|error|error.to_string()),"file":file,"owned_state_after":after,
+        "scope":"read-only exact owned PID sample, two-second requested duration and ten-second managed command deadline; output file size observed after execution, no hard storage cap"}),
+    )
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AppChecks {

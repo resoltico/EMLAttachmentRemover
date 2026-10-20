@@ -105,5 +105,9 @@ The frozen producer reference checks file identities and modes before extraction
 actual extracted worker runs check Core outcomes against independent goldens and
 unchanged originals. Hosted startup smoke observes the exact owned GUI PID's real
 window and settles that process without sending requests. This is not full GUI,
-paint, accessibility or UI Quit acceptance. Native execution at the delivered head
+paint, accessibility or UI Quit acceptance. Startup failure evidence includes
+owned-PID window observations and retained GUI stdout/stderr. While the owned GUI
+remains running, the harness attempts a short managed process sample before
+cleanup; diagnostic failures remain separate from the original observation failure.
+Native execution at the delivered head
 remains required before reporting these gates passed.
