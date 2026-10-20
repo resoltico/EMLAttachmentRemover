@@ -174,28 +174,34 @@ failure with clean controller/owner evidence and identical retained ZIP can emit
 `known_panel_failure`. Other failures remain failed jobs. The measurement retains
 the original exit code and raw owned evidence; it is not compatibility success.
 
-For that admitted failure only, `app_picker_modified` starts on a separate fresh
+For that admitted failure only, `app_picker_followup` starts on a separate fresh
 Intel26 VM. `prepare-macos-picker-host` admits only the exact CI/owner-release
 workflow file and job, actual native Intel26, same source/run/attempt/archive and
-reference, non-root console user and healthy controller. It reuses the existing
-failed-baseline/unchanged-failed-repeat/exact GUI-user icon-agent bootout/successful
-unchanged-probe sequence, retaining all identities and process results. A normal
-probe/repeat success does not authorize unloading. It then runs the same frozen
-dedicated product case and requires final preferences, original/golden bytes,
-normal Quit and complete settlement. Probe recovery alone cannot qualify it.
+reference, non-root console user and healthy controller. It classifies the signed
+probe using settled process status and the exact constructor, presentation,
+visibility and callback phases, retaining its identity before and after each run.
+A healthy baseline or one healthy unchanged repeat after a known failed baseline
+records preparation outcome `unmodified` and performs no service observation or
+intervention. Two settled known failures of the unchanged probe are required
+before the exact GUI-user icon-agent bootout and successful unchanged-probe
+sequence can record outcome `service_intervention`. Unknown, unclean or changed
+probe evidence stops preparation. No retry loop or probe-only acceptance exists.
 
-`app_picker` admits only normal success with the controlled role skipped, or a
-known normal failure plus the complete controlled product pass. Its
-`picker_qualification` envelope states `mode: normal` or `mode: modified_host` and
-retains the failed normal/probe evidence and actual product result. Modified-host
-success establishes no healthy-unmodified-host or wider compatibility claim.
+After either preparation outcome, the same frozen dedicated product case must
+pass final preferences, original/golden bytes, normal Quit and complete settlement.
+`app_picker` admits normal success with the follow-up role skipped, or the retained
+known normal failure plus complete follow-up preparation and actual product pass.
+Its `picker_qualification` envelope states `mode: normal`,
+`mode: unmodified_followup` or `mode: modified_host`; only the last includes service
+intervention. Both follow-up modes retain the earlier failure and establish no
+general unmodified-host compatibility or causal proof from the observed sequence.
 The shared [.github/scripts/picker-evidence.jq](../.github/scripts/picker-evidence.jq)
 predicates also govern release, rejecting missing/mixed source, workflow, run,
 attempt, reference, bytes, method, host, preference or settlement evidence.
 The workflow file SHA is recorded separately from tested source S, as required for
 owner release dispatch W. [GitHub's reusable-workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context)
 belongs to the caller. No default GitHub context is overridden. All six native
-rows and both full macOS15 desktop suites remain required in either mode.
+rows and both full macOS15 desktop suites remain required in every mode.
 
 `cargo xtask distribution` prints the native target policy and expected archive
 identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.

@@ -36,7 +36,7 @@ expected() {
 validate() {
   local maximum=2097152
   case "$1" in
-    modified_qualification|qualification) maximum=16777216 ;;
+    followup_qualification|qualification) maximum=16777216 ;;
     *) ;;
   esac
   bounded_document "$2" "${maximum}"
@@ -84,22 +84,22 @@ case "${mode}" in
     mv "${out}/candidate.json" "${out}/result.json"
     jq -er .outcome "${out}/result.json" > "${out}/outcome.txt"
     ;;
-  modified)
-    out=target/picker-modified
+  followup)
+    out=target/picker-followup
     mkdir "${out}"
     expected > "${out}/expected.json"
     normal_record=$4/picker-normal/result.json
     validate known_failure "${normal_record}"
     cargo xtask prepare-macos-picker-host --archive "${archive}" --reference "${reference}" \
       --normal-failure "${normal_record}" --out "${out}/panel-observation"
-    preparation=${out}/panel-observation/icon-service-experiment/result.json
+    preparation=${out}/panel-observation/picker-preparation/result.json
     bounded_document "${preparation}"
     jq -e -L .github/scripts --arg source "${picker_source}" \
       'include "picker-evidence"; preparation($source)' "${preparation}" > /dev/null
     expected > "${out}/expected-after-preparation.json"
     cmp "${out}/expected.json" "${out}/expected-after-preparation.json"
     jq -n --slurpfile e "${out}/expected.json" --slurpfile n "${normal_record}" --slurpfile p "${preparation}" \
-      '$e[0]+{stage:"picker_modified_attempt",state:"prepared",normal:$n[0],preparation:$p[0]}' > "${out}/attempt.json"
+      '$e[0]+{stage:"picker_followup_attempt",state:"prepared",normal:$n[0],preparation:$p[0]}' > "${out}/attempt.json"
     if cargo xtask check-macos-picker --archive "${archive}" --reference "${reference}"; then
       product_status=0
     else
@@ -113,8 +113,8 @@ case "${mode}" in
     cmp "${out}/expected.json" "${out}/expected-after-product.json"
     jq -n --slurpfile e "${out}/expected.json" --slurpfile n "${normal_record}" \
       --slurpfile prep "${preparation}" --slurpfile p "${out}/product.json" \
-      '$e[0]+{stage:"picker_modified_qualification",normal:$n[0],preparation:$prep[0],product:$p[0],scope:"actual same-frozen-product dedicated picker pass on an explicitly modified fresh host; original normal/probe failures retained; no healthy-normal-host claim"}' > "${out}/candidate.json"
-    validate modified_qualification "${out}/candidate.json"
+      '$e[0]+{stage:"picker_followup_qualification",normal:$n[0],preparation:$prep[0],product:$p[0],scope:"actual same-frozen-product dedicated picker pass after explicit fresh-host preparation; original normal failure retained; preparation outcome records whether service intervention occurred"}' > "${out}/candidate.json"
+    validate followup_qualification "${out}/candidate.json"
     mv "${out}/candidate.json" "${out}/result.json"
     ;;
   select)
@@ -127,12 +127,12 @@ case "${mode}" in
     if test "${normal_outcome}" = normal_pass; then
       test "${5:-}" = ""
       jq -n --slurpfile e "${out}/expected.json" --slurpfile n "${normal_record}" \
-        '$e[0]+{stage:"picker_qualification",mode:"normal",normal:$n[0],modified:null,product:$n[0].product}' > "${out}/candidate.json"
+        '$e[0]+{stage:"picker_qualification",mode:"normal",normal:$n[0],followup:null,product:$n[0].product}' > "${out}/candidate.json"
     else
-      modified_record=${5:?}/picker-modified/result.json
-      validate modified_qualification "${modified_record}"
-      jq -n --slurpfile e "${out}/expected.json" --slurpfile n "${normal_record}" --slurpfile m "${modified_record}" \
-        '$e[0]+{stage:"picker_qualification",mode:"modified_host",normal:$n[0],modified:$m[0],product:$m[0].product}' > "${out}/candidate.json"
+      followup_record=${5:?}/picker-followup/result.json
+      validate followup_qualification "${followup_record}"
+      jq -n --slurpfile e "${out}/expected.json" --slurpfile n "${normal_record}" --slurpfile f "${followup_record}" \
+        '$e[0]+{stage:"picker_qualification",mode:(if $f[0].preparation.outcome=="unmodified" then "unmodified_followup" else "modified_host" end),normal:$n[0],followup:$f[0],product:$f[0].product}' > "${out}/candidate.json"
     fi
     validate qualification "${out}/candidate.json"
     mv "${out}/candidate.json" "${out}/result.json"

@@ -1,4 +1,4 @@
-# Exact-source picker admission shared by normal observation, controlled-host
+# Exact-source picker admission shared by normal observation, follow-up
 # preparation, final CI selection and release. Digests bind tested bytes only.
 def clean:
   .cancelled == false and .timed_out == false and
@@ -75,6 +75,13 @@ def known_failure($e):
     $o.native_picker_owned_process_log.pid == $o.ownership_receipt.pid) and
   (.xctest_log | contains("error: -[DesktopInteraction.DesktopInteractionTests testOwnedNativePickerCompatibility] : failed - Native input panel did not appear")) and
   (.owned_log | contains("Advance to configuration phase semaphore timed out"));
+def probe_observation($expected):
+  .observation == $expected and (.process | clean) and
+  .process.signal == null and (.process | has("signal")) and
+  .process.exit_code == (if $expected == "healthy" then 0 else 2 end) and
+  .phases == ["constructor entry", "constructor returned", "presentation returned",
+    (if $expected == "healthy" then "cancel retained panel; visible=true" else "cancel retained panel; visible=false" end),
+    (if $expected == "healthy" then "callback response 0" else "callback deadline exceeded" end)];
 def preparation($s):
   .stage == "observed" and .failure == null and
   .original_failure_remains_authoritative == true and .baseline.source == $s and
@@ -83,26 +90,39 @@ def preparation($s):
   .baseline.host.kernel_machine == "x86_64" and
   (.baseline.host.actual_os | test("ProductVersion:\\s+26\\.")) and
   (.baseline | has("entitlements")) and .baseline.entitlements == null and
-  (.baseline.identity | probe_identity) and
-  (.baseline.process | clean) and .baseline.process.exit_code == 2 and
-  (.unchanged_repeat.process | clean) and .unchanged_repeat.process.exit_code == 2 and
-  (.bootout.process | clean) and .bootout.process.exit_code == 0 and
-  (.intervention_probe.process | clean) and .intervention_probe.process.exit_code == 0 and
+  (.baseline.identity | probe_identity) and .baseline.identity == .baseline.identity_after and
   (.gui_uid | type) == "number" and .gui_uid > 0 and
   (.gui_uid | floor) == .gui_uid and .gui_uid <= 4294967295 and
-  .target == ("gui/" + (.gui_uid | tostring) + "/com.apple.iconservices.iconservicesagent") and
-  .bootout.program == "/bin/launchctl" and .bootout.arguments == ["bootout", .target] and
-  .baseline.identity == .unchanged_repeat.identity and
-  .baseline.identity == .unchanged_repeat.identity_after and
-  .baseline.identity == .intervention_probe.identity and
-  .baseline.identity == .intervention_probe.identity_after;
+  (if .outcome == "unmodified" then
+    (has("target") or has("service_before") or has("service_after") or has("bootout") or has("intervention_probe") | not) and
+    (if .baseline.observation == "healthy" then
+      (.baseline | probe_observation("healthy")) and (has("unchanged_repeat") | not)
+     else
+      (.baseline | probe_observation("known_panel_failure")) and
+      (.unchanged_repeat | probe_observation("healthy")) and
+      .baseline.identity == .unchanged_repeat.identity and
+      .baseline.identity == .unchanged_repeat.identity_after
+     end)
+   elif .outcome == "service_intervention" then
+    (.baseline | probe_observation("known_panel_failure")) and
+    (.unchanged_repeat | probe_observation("known_panel_failure")) and
+    (.bootout.process | clean) and .bootout.process.exit_code == 0 and
+    (.bootout.process | has("signal")) and .bootout.process.signal == null and
+    (.intervention_probe | probe_observation("healthy")) and
+    .target == ("gui/" + (.gui_uid | tostring) + "/com.apple.iconservices.iconservicesagent") and
+    .bootout.program == "/bin/launchctl" and .bootout.arguments == ["bootout", .target] and
+    .baseline.identity == .unchanged_repeat.identity and
+    .baseline.identity == .unchanged_repeat.identity_after and
+    .baseline.identity == .intervention_probe.identity and
+    .baseline.identity == .intervention_probe.identity_after
+   else false end);
 def normal_observation($e):
   identity($e) and
   (if .outcome == "normal_pass" then
     .stage == "picker_normal_observation" and .original_exit_code == 0 and (.product | product($e))
    else known_failure($e) end);
-def modified_qualification($e):
-  identity($e) and .stage == "picker_modified_qualification" and
+def followup_qualification($e):
+  identity($e) and .stage == "picker_followup_qualification" and
   (.normal | known_failure($e)) and (.preparation | preparation($e.source)) and
   .preparation.purpose == "picker_qualification_preparation" and
   .preparation.baseline.run == $e.run and .preparation.baseline.attempt == $e.attempt and
@@ -111,8 +131,9 @@ def qualification($e):
   identity($e) and .stage == "picker_qualification" and
   (.normal | normal_observation($e)) and (.product | product($e)) and
   (if .mode == "normal" then
-    .normal.outcome == "normal_pass" and .modified == null and .product == .normal.product
-   elif .mode == "modified_host" then
-    (.normal | known_failure($e)) and (.modified | modified_qualification($e)) and
-    .modified.normal == .normal and .product == .modified.product
+    .normal.outcome == "normal_pass" and .followup == null and .product == .normal.product
+   elif .mode == "unmodified_followup" or .mode == "modified_host" then
+    (.normal | known_failure($e)) and (.followup | followup_qualification($e)) and
+    .followup.normal == .normal and .product == .followup.product and
+    .followup.preparation.outcome == (if .mode == "unmodified_followup" then "unmodified" else "service_intervention" end)
    else false end);

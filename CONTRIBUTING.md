@@ -70,9 +70,10 @@ pairings. Native jobs retain compiler/host identities, strict Slint fixtures,
 real different-UID controls, complete legal generation, native archives and
 matching macOS15 desktop qualification and macOS26 Intel picker compatibility.
 Intel26 first records the normal dedicated case. Only a validated native-panel
-failure may start the separate controlled-host role; final acceptance requires
+failure may start the separate follow-up role; final acceptance requires
 the actual same frozen product to pass with normal cleanup and preferences.
-Receipts explicitly distinguish normal and modified-host evidence. See
+Receipts distinguish normal success, unmodified follow-up and service intervention,
+retaining the original failure and limits of each observation. See
 [picker admission](docs/verification.md) for exact guards and limits. The private
 `prepare-macos-picker-host` command is confined to that hosted job; it refuses
 owner-desktop execution. The standalone panel diagnostic remains manual only.
