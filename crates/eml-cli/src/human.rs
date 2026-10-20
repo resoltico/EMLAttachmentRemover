@@ -72,7 +72,7 @@ fn write_human(writer: &mut impl Write, event: Event<'_>) -> io::Result<()> {
     match event {
         Event::Start(value) => writeln!(
             writer,
-            "{} {} — {} known item(s); discovery {}{}",
+            "{} {} — known items: {}; discovery {}{}",
             env!("CARGO_PKG_NAME"),
             eml_protocol::product::VERSION_WITH_BUILD.as_str(),
             value.total,
@@ -137,7 +137,7 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
     if let Some(data) = metadata {
         writeln!(
             writer,
-            "  {} source bytes; {} prepared copy bytes; {} part(s) selected for removal",
+            "  Source bytes: {}; prepared copy bytes: {}; parts selected for removal: {}",
             data.source_bytes,
             data.copy_bytes,
             data.removed.len()
@@ -211,7 +211,7 @@ mod tests {
     ));
     fn expected_human_start() -> String {
         format!(
-            "remove-eml-attachments {} — 1 known item(s); discovery complete; dry run\n",
+            "remove-eml-attachments {} — known items: 1; discovery complete; dry run\n",
             eml_protocol::product::VERSION_WITH_BUILD.as_str()
         )
     }

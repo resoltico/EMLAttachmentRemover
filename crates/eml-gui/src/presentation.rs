@@ -235,7 +235,7 @@ fn report_summary(
     let mut text = format!("Run {id} · ");
     match facts.start() {
         Some(start) => text.push_str(&format!(
-            "{} collected · {} results received",
+            "Collected: {} · Results received: {}",
             start.total,
             facts.items().len()
         )),
@@ -439,7 +439,7 @@ pub(crate) fn waiting_row(id: RunId, request: &eml_app::RequestSnapshot) -> Stri
         }
     };
     format!(
-        "Run {id}: Not started\n{} selections\nSave copies: {destination}",
+        "Run {id}: Not started\nSelected paths: {}\nSave copies: {destination}",
         request.request().paths.len()
     )
 }
