@@ -1,0 +1,161 @@
+//! Authored workflow diagnostics retaining the exact native/validation cause.
+use crate::{ErrorCode, ErrorPhase};
+use std::{io, sync::Arc};
+
+/// Numeric native context for bounded frontend diagnostics; never a semantic code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeDiagnostic {
+    /// Raw host OS error number.
+    OsCode(i32),
+    /// Exact primary NTSTATUS and secondary Win32 translation.
+    #[cfg(windows)]
+    NtStatus {
+        /// Signed completed native status.
+        status: i32,
+        /// Secondary translation, never the primary status.
+        win32: u32,
+    },
+}
+
+/// Typed operation failure, independent of output, publication or cleanup facts.
+/// Construction stays private to business operations; frontends only observe it.
+#[derive(Clone, Debug)]
+pub struct OperationFailure {
+    code: ErrorCode,
+    phase: ErrorPhase,
+    detail: &'static str,
+    cause: Option<Arc<io::Error>>,
+}
+impl OperationFailure {
+    /// Exact numeric cause without unbounded/localized io::Error text or payload.
+    pub fn native_diagnostic(&self) -> Option<NativeDiagnostic> {
+        let error = self.native_error()?;
+        #[cfg(windows)]
+        if let Some(native) = error
+            .get_ref()
+            .and_then(|cause| cause.downcast_ref::<eml_fs::NtStatusError>())
+        {
+            return Some(NativeDiagnostic::NtStatus {
+                status: native.nt_status(),
+                win32: native.win32_code(),
+            });
+        }
+        error.raw_os_error().map(NativeDiagnostic::OsCode)
+    }
+    pub(super) fn with_context(
+        mut self,
+        code: ErrorCode,
+        phase: ErrorPhase,
+        detail: &'static str,
+    ) -> Self {
+        self.code = code;
+        self.phase = phase;
+        self.detail = detail;
+        self
+    }
+    /// Stable semantic code, never inferred from native error prose.
+    pub fn code(&self) -> ErrorCode {
+        self.code
+    }
+    /// Operation that actually failed.
+    pub fn phase(&self) -> ErrorPhase {
+        self.phase
+    }
+    /// Authored context without payload or a lossy path authority.
+    pub fn detail(&self) -> &'static str {
+        self.detail
+    }
+    /// Exact native/validation error, including structured native status payloads.
+    pub fn native_error(&self) -> Option<&io::Error> {
+        self.cause.as_deref()
+    }
+    pub(super) fn new(code: ErrorCode, phase: ErrorPhase, detail: &'static str) -> Self {
+        Self {
+            code,
+            phase,
+            detail,
+            cause: None,
+        }
+    }
+    pub(super) fn io(
+        code: ErrorCode,
+        phase: ErrorPhase,
+        detail: &'static str,
+        error: io::Error,
+    ) -> Self {
+        #[cfg(windows)]
+        if error
+            .get_ref()
+            .is_some_and(|cause| cause.is::<eml_fs::ContainmentFailure>())
+        {
+            let cause = *error
+                .into_inner()
+                .expect("checked contained cause")
+                .downcast::<eml_fs::ContainmentFailure>()
+                .expect("checked containment type");
+            return match cause {
+                eml_fs::ContainmentFailure::Changed => Self::new(
+                    ErrorCode::AddressChanged,
+                    ErrorPhase::Address,
+                    "The created object's destination address changed",
+                ),
+                eml_fs::ContainmentFailure::Unverified(native) => Self {
+                    code: ErrorCode::AddressUnverified,
+                    phase: ErrorPhase::Address,
+                    detail: "The created object's destination address could not be verified",
+                    cause: Some(Arc::new(native)),
+                },
+            };
+        }
+        Self {
+            code,
+            phase,
+            detail,
+            cause: Some(Arc::new(error)),
+        }
+    }
+}
+impl std::fmt::Display for OperationFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.detail)?;
+        if let Some(error) = &self.cause {
+            write!(f, ": {error}")?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for OperationFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.cause.as_deref().map(|error| error as _)
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    #[test]
+    fn creation_address_observations_keep_semantics_and_native_query_cause() {
+        let changed = OperationFailure::io(
+            ErrorCode::StageFailed,
+            ErrorPhase::Stage,
+            "fallback",
+            io::Error::other(eml_fs::ContainmentFailure::Changed),
+        );
+        assert_eq!(changed.code(), ErrorCode::AddressChanged);
+        assert_eq!(changed.phase(), ErrorPhase::Address);
+        let unverified = OperationFailure::io(
+            ErrorCode::StageFailed,
+            ErrorPhase::Stage,
+            "fallback",
+            io::Error::other(eml_fs::ContainmentFailure::Unverified(
+                io::Error::from_raw_os_error(5),
+            )),
+        );
+        assert_eq!(unverified.code(), ErrorCode::AddressUnverified);
+        assert_eq!(unverified.phase(), ErrorPhase::Address);
+        assert_eq!(
+            unverified.native_diagnostic(),
+            Some(NativeDiagnostic::OsCode(5))
+        );
+    }
+}

@@ -1,0 +1,29 @@
+# Applies to normal, build, dev, fuzz and repository-tool dependency graphs.
+[advisories]
+ignore = []
+
+# Repository/tool approval is distinct from the shipped target notice closure.
+[licenses]
+allow = ["MPL-2.0", "MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0", "ISC", "Zlib", "Apache-2.0 WITH LLVM-exception", "CDLA-Permissive-2.0"]
+exceptions = [
+  # The macOS About screen displays AboutSlint under the royalty-free desktop license.
+  { crate = "arrayref@0.3.9", allow = ["BSD-2-Clause"] },
+  { crate = "i-slint-backend-selector@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "i-slint-backend-winit@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "i-slint-common@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "i-slint-compiler@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "i-slint-core@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "i-slint-core-macros@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "i-slint-renderer-software@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "slint@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "slint-build@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "slint-macros@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "libfuzzer-sys@0.4.13", allow = ["NCSA"] },
+  { crate = "nextest-workspace-hack@0.1.0", allow = ["CC0-1.0"] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

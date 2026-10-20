@@ -1,459 +1,184 @@
-name: Release
-
+name: Owner release
 on:
-  push:
-    tags:
-      - "v*"
-
-defaults:
-  run:
-    shell: bash
-
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Exact full commit on main to qualify and release
+        required: true
+        type: string
+      version:
+        description: Workspace version with a nonempty dated changelog section
+        required: true
+        type: string
 permissions:
   contents: read
-
-env:
-  UV_PYTHON_PREFERENCE: only-managed
-
+  actions: read
 concurrency:
-  group: release-${{ github.workflow }}-${{ github.ref }}
+  group: owner-release-${{ inputs.version }}
   cancel-in-progress: false
-
 jobs:
-  qualify:
-    name: Qualify ${{ matrix.os }} / CPython ${{ matrix.python }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    env:
-      PYTHONDEVMODE: "1"
-      PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONNOUSERSITE: "1"
-      PYTHONWARNINGS: error
-      RELEASE_TAG: ${{ github.ref_name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            python: 3.14.8
-            static: true
-          - os: macos-latest
-            python: 3.14.8
-          - os: windows-latest
-            python: 3.14.8
-          - os: ubuntu-latest
-            python: 3.14.8t
-          - os: macos-latest
-            python: 3.14.8t
-          - os: windows-latest
-            python: 3.14.8t
-    steps:
-      - name: Check out the tagged source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Install uv and CPython
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          version: 0.12.23
-          python-version: ${{ matrix.python }}
-          enable-cache: auto
-          cache-dependency-glob: uv.lock
-      - name: Cache and authenticate runtime source archives
-        if: runner.os == 'macOS'
-        uses: ./.github/actions/runtime-source
-      - name: Validate the release tag and main ancestry
-        shell: bash
-        run: exec uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
-      - name: Install locked development dependencies
-        run: exec uv sync --locked --group dev --python ${{ matrix.python }}
-        env:
-          PYTHONWARNINGS: default
-      - name: Require the POSIX integration environment
-        if: runner.os != 'Windows'
-        shell: bash
-        run: test -x /bin/sh
-      - name: Restore pinned Swift quality tool cache
-        if: runner.os == 'macOS'
-        uses: ./.github/actions/swift-quality-cache
-      - name: Install pinned Swift quality tools
-        if: runner.os == 'macOS'
-        run: exec uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
-      - name: Run the complete quality gate
-        if: matrix.static
-        run: exec uv run python tools/tasks.py quality
-      - name: Run the platform-native quality gate
-        if: ${{ !matrix.static }}
-        run: exec uv run python tools/tasks.py quality --native
-      - name: Preserve machine-readable quality reports
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-quality-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            build/test-results-project-ci.xml
-            build/coverage.xml
-            ${{ runner.temp }}/native-fuzz-tests
-          if-no-files-found: warn
-          retention-days: 30
-
-  property:
-    name: Property ${{ matrix.os }} / CPython ${{ matrix.python }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      PYTHONDEVMODE: "1"
-      PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONNOUSERSITE: "1"
-      PYTHONWARNINGS: error
-      RELEASE_TAG: ${{ github.ref_name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            python: 3.14.8
-          - os: macos-latest
-            python: 3.14.8
-          - os: windows-latest
-            python: 3.14.8
-          - os: ubuntu-latest
-            python: 3.14.8t
-          - os: macos-latest
-            python: 3.14.8t
-          - os: windows-latest
-            python: 3.14.8t
-    steps:
-      - name: Check out the tagged source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Install uv and CPython
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          version: 0.12.23
-          python-version: ${{ matrix.python }}
-          enable-cache: auto
-          cache-dependency-glob: uv.lock
-      - name: Cache and authenticate runtime source archives
-        if: runner.os == 'macOS'
-        uses: ./.github/actions/runtime-source
-      - name: Validate the release tag and main ancestry
-        shell: bash
-        run: exec uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
-      - name: Install locked development dependencies
-        run: exec uv sync --locked --group dev --python ${{ matrix.python }}
-        env:
-          PYTHONWARNINGS: default
-      - name: Require the POSIX integration environment
-        if: runner.os != 'Windows'
-        shell: bash
-        run: test -x /bin/sh
-      - name: Restore pinned Swift quality tool cache
-        if: runner.os == 'macOS'
-        uses: ./.github/actions/swift-quality-cache
-      - name: Install pinned Swift quality tools
-        if: runner.os == 'macOS'
-        run: exec uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
-      - name: Run randomized property exploration
-        run: >-
-          exec uv run python tools/tasks.py thorough
-          --observable --timeout-seconds 3300
-      - name: Finalize public Hypothesis evidence
-        id: finalize_hypothesis
-        if: always()
-        run: >-
-          exec uv run python tools/finalize_hypothesis_artifacts.py
-          --observations
-      - name: Preserve native fuzz regression evidence
-        if: always() && runner.os == 'macOS'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-native-fuzz-tests-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/native-fuzz-tests
-          if-no-files-found: warn
-          retention-days: 30
-      - name: Preserve sanitized property observations
-        if: always() && steps.finalize_hypothesis.outcome == 'success'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-property-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .hypothesis/observed/
-          if-no-files-found: error
-          include-hidden-files: true
-          retention-days: 30
-
-  mutation:
-    name: Qualify mutation results for the tagged source
-    needs: qualify
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
-    permissions:
-      contents: read
-    env:
-      PYTHONDEVMODE: "1"
-      PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONNOUSERSITE: "1"
-      PYTHONWARNINGS: error
-      RELEASE_TAG: ${{ github.ref_name }}
-      MUTATION_WORKERS: auto
-    steps:
-      - name: Check out the tagged source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Install uv and canonical CPython
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          version: 0.12.23
-          python-version: 3.14.8
-          enable-cache: auto
-          cache-dependency-glob: uv.lock
-      - name: Cache and authenticate runtime source archives
-        if: runner.os == 'macOS'
-        uses: ./.github/actions/runtime-source
-      - name: Validate the release tag and main ancestry
-        shell: bash
-        run: exec uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
-      - name: Install locked development dependencies
-        run: exec uv sync --locked --group dev --python 3.14.8
-        env:
-          PYTHONWARNINGS: default
-      - name: Run a fresh 100% actionable mutation campaign
-        run: exec uv run python tools/tasks.py mutation --workers "$MUTATION_WORKERS"
-      - name: Preserve tagged mutation evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-mutation-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            mutants/mutmut-cicd-stats.json
-            build/mutmut-results.txt
-            build/coverage.xml
-            ${{ runner.temp }}/native-fuzz-tests
-            build/test-results-project-ci.xml
-            tools/equivalent_mutants.json
-          if-no-files-found: warn
-          retention-days: 30
-
-  fuzz:
-    name: Qualify native receipts with ASan and libFuzzer
-    needs: qualify
-    uses: ./.github/workflows/swift-fuzz.yml
-
-  build:
-    name: Build complete portable and macOS release assets
-    outputs:
-      delivery_artifact_id: ${{ steps.delivery_upload.outputs.artifact-id }}
-    needs:
-      - qualify
-      - property
-      - mutation
-      - fuzz
-    runs-on: macos-26
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      PYTHONDEVMODE: "1"
-      PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONNOUSERSITE: "1"
-      PYTHONWARNINGS: error
-      RELEASE_TAG: ${{ github.ref_name }}
-    steps:
-      - name: Check out the tagged source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Install uv and canonical CPython
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          version: 0.12.23
-          python-version: 3.14.8
-          enable-cache: false
-      - name: Cache and authenticate runtime source archives
-        if: runner.os == 'macOS'
-        uses: ./.github/actions/runtime-source
-      - name: Validate the release tag and main ancestry
-        shell: bash
-        run: exec uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
-      - name: Install locked development dependencies
-        run: exec uv sync --locked --group dev --python 3.14.8
-        env:
-          PYTHONWARNINGS: default
-      - name: Select and verify the pinned delivery SDK
-        run: exec uv run /bin/sh integrations/macos-ui/ci-sdk.sh >> "$GITHUB_ENV"
-      - name: Install the pinned Swift toolchain
-        run: exec uv run /bin/sh integrations/macos-ui/install-swift-toolchain.sh
-      - name: Build and qualify the exact release artifact set
-        # `release-dist` is ephemeral CI artifact staging, not a maintained checkout
-        # distribution directory. Local `tasks.py release` continues to use an
-        # external temporary directory.
-        run: >-
-          exec uv run python -B -m tools.release_delivery
-          --output-directory release-dist
-        env:
-          TZ: UTC
-      - name: Upload release assets
-        id: delivery_upload
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-dist-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            release-dist/*.pyz
-            release-dist/*.whl
-            release-dist/*.tar.gz
-            release-dist/*-macos-arm64.zip
-            release-dist/*-macos-x86_64.zip
-            release-dist/*-macos-arm64-external-python.zip
-            release-dist/*-macos-x86_64-external-python.zip
-            release-dist/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 30
-
-  compatibility:
-    name: Exercise release ZIPs on ${{ matrix.os }}
-    needs: build
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, macos-15-intel, xcode-27]
-    env:
-      PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONWARNINGS: error
-    steps:
-      - name: Check out the tagged source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Verify minimum macOS 15 host and tools
-        if: matrix.os == 'macos-15' || matrix.os == 'macos-15-intel'
-        uses: ./.github/actions/sequoia-compatibility
-        with:
-          architecture: ${{ matrix.os == 'macos-15' && 'arm64' || 'x86_64' }}
-      - name: Install uv and canonical CPython
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          version: 0.12.23
-          python-version: 3.14.8
-          enable-cache: auto
-          cache-dependency-glob: uv.lock
-      - name: Cache and authenticate runtime source archives
-        if: runner.os == 'macOS'
-        uses: ./.github/actions/runtime-source
-      - name: Install locked development dependencies
-        run: exec uv sync --locked --group dev --python 3.14.8
-        env:
-          PYTHONWARNINGS: default
-      - name: Download this tag's release assets
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          artifact-ids: ${{ needs.build.outputs.delivery_artifact_id || '0' }}
-          path: release-dist
-      - name: Reverify downloaded assets on the consumer
-        run: exec uv run --no-project --python 3.14.8 python -B -m tools.release_delivery --verify-directory release-dist
-      - name: Restore pinned Swift quality tool cache
-        uses: ./.github/actions/swift-quality-cache
-      - name: Install pinned Swift quality tools
-        run: exec uv run /bin/sh integrations/macos-ui/install-quality-tools.sh
-      - name: Test the tagged source and downloaded app on this OS
-        run: exec uv run python tools/tasks.py quality --native
-        env:
-          EML_DELIVERY_DIRECTORY: release-dist
-      - name: Preserve release compatibility evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-compatibility-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            build/coverage.xml
-            build/test-results-project-ci.xml
-            ${{ runner.temp }}/native-fuzz-tests
-          if-no-files-found: warn
-          retention-days: 30
-
-  publish:
-    name: Reverify, attest and publish release assets
-    needs:
-      - qualify
-      - property
-      - mutation
-      - build
-      - compatibility
-    runs-on: macos-26
+  admission:
+    runs-on: ubuntu-22.04
     timeout-minutes: 15
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-      artifact-metadata: write
-    env:
-      PYTHONDONTWRITEBYTECODE: "1"
-      RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - name: Check out the tagged source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Install uv and canonical CPython
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          version: 0.12.23
-          python-version: 3.14.8
-          enable-cache: false
-      - name: Cache and authenticate runtime source archives
-        if: runner.os == 'macOS'
-        uses: ./.github/actions/runtime-source
-      - name: Validate the release tag and main ancestry
-        shell: bash
-        run: exec uv run --no-project python tools/check_release_tag.py "$RELEASE_TAG" --require-main
-      - name: Select and verify the pinned delivery SDK
-        run: exec uv run /bin/sh integrations/macos-ui/ci-sdk.sh >> "$GITHUB_ENV"
-      - name: Download release assets
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          artifact-ids: ${{ needs.build.outputs.delivery_artifact_id || '0' }}
-          path: release-dist
-      - name: Reverify the downloaded exact artifact set
-        run: >-
-          exec uv run --no-project --python 3.14.8 python
-          -B -m tools.release_delivery --verify-directory release-dist
-      - name: Identify the verified checksum manifest
-        id: checksum-manifest
-        shell: bash
+      - name: Admit exact source and owner dispatch from main
+        env:
+          SOURCE: ${{ inputs.source }}
         run: |
-          manifest_digest=$(shasum -a 256 release-dist/SHA256SUMS)
-          manifest_digest=${manifest_digest%% *}
-          if [[ ! "$manifest_digest" =~ ^[0-9a-f]{64}$ ]]; then
-            exit 1
-          fi
-          printf 'digest=sha256:%s\n' "$manifest_digest" >> "$GITHUB_OUTPUT"
-      - name: Attest checksummed release assets
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          subject-checksums: release-dist/SHA256SUMS
-      - name: Attest the checksum manifest
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-name: SHA256SUMS
-          subject-digest: ${{ steps.checksum-manifest.outputs.digest }}
-      - name: Publish and verify the changelog-bound release
-        run: >-
-          exec uv run --no-project --python 3.14.8 python -B
-          -m tools.publish_release --assets-directory release-dist
+          ref: ${{ inputs.source }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read-only release admission
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE: ${{ inputs.source }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p target
+          cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission.json
+          test "$(jq -er .release.state target/release-admission.json)" = absent
+  qualification:
+    needs: admission
+    uses: ./.github/workflows/native-qualification.yml
+    with:
+      source: ${{ inputs.source }}
+  publish:
+    needs: [admission, qualification]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+      attestations: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE: ${{ inputs.source }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: native-products-${{ inputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/qualified-products
+          merge-multiple: false
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: floor-smoke-${{ inputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/desktop-qualification
+          merge-multiple: false
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: picker-qualification-${{ inputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/picker-qualification
+          merge-multiple: false
+          digest-mismatch: error
+      - name: Freeze the exact qualified product set and qualification identity
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission.json
+          cargo xtask distribution > target/release-distribution.json
+          mkdir target/release-input
+          : > target/release-desktop-records.jsonl
+          mapfile -t files < <(find target/qualified-products -type f \( -name '*.zip' -o -name '*.tar.gz' \) | sort)
+          test "${#files[@]}" = 8
+          for file in "${files[@]}"; do
+            name="$(basename "$file")"
+            jq -e --arg name "$name" '[.expected_artifacts[]|select(.name==$name)]|length==1' target/release-distribution.json
+            platform=$(jq -er --arg name "$name" '.expected_artifacts[]|select(.name==$name)|.platform' target/release-distribution.json)
+            role=$(jq -er --arg name "$name" '.expected_artifacts[]|select(.name==$name)|.role' target/release-distribution.json)
+            target=$(jq -er --arg platform "$platform" '.native_targets[]|select(.platform==$platform)|.target' target/release-distribution.json)
+            directory="target/qualified-products/native-products-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
+            [[ "$file" == "$directory/"* ]]
+            digest=$(sha256sum "$file" | cut -d ' ' -f 1)
+            size=$(stat -c %s "$file")
+            if [ "$role" = app ]; then
+              mapfile -t records < <(find "$directory" -type f -name app-result.json)
+              test "${#records[@]}" = 1
+              jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" 'def on_host($major): .host.target==$t and .host.process_os=="macos" and .host.process_architecture==(if $t=="x86_64-apple-darwin" then "x86_64" else "aarch64" end) and .host.kernel_machine==(if $t=="x86_64-apple-darwin" then "x86_64" else "arm64" end) and (.host.product_version|split(".")[0])==$major; .stage=="native_candidate" and .source==$s and .target==$t and .identity.sha256==$digest and .identity.byte_length==$size and .verification.stage=="native_candidate" and on_host("26")' "${records[0]}"
+              mapfile -t references < <(find "$directory" -type f -name "$name.reference.json")
+              test "${#references[@]}" = 1
+              jq -e --arg s "$SOURCE" --arg t "$target" --arg v "$VERSION" '.source==$s and .target==$t and .version==$v' "${references[0]}"
+              floor="target/desktop-qualification/floor-smoke-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT/app-archive-smoke"
+              mapfile -t desktop_records < <(find "$floor" -mindepth 2 -maxdepth 2 -type f -name result.json)
+              test "${#desktop_records[@]}" = 1
+              jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" 'def on_host($major): .host.target==$t and .host.process_os=="macos" and .host.process_architecture==(if $t=="x86_64-apple-darwin" then "x86_64" else "aarch64" end) and .host.kernel_machine==(if $t=="x86_64-apple-darwin" then "x86_64" else "arm64" end) and (.host.product_version|split(".")[0])==$major; def passed: .totalTestCount==1 and .passedTests==1 and .failedTests==0 and .skippedTests==0; .stage=="desktop_qualification" and .source==$s and .target==$t and .verification.stage=="desktop_qualification" and .verification.snapshot.sha256==$digest and .verification.snapshot.byte_length==$size and (.verification.gui_interaction.workflow.summary|passed) and (.verification.gui_interaction.pagination.summary|passed) and (.verification.gui_interaction.appearance.summary|passed) and all(.verification.gui_interaction.publication.cases[]; .summary|passed) and ([.verification.gui_interaction.publication.cases[].case]|sort)==["active-quit","force-stop","published-error","stop"] and on_host("15")' "${desktop_records[0]}"
+              jq -c --arg artifact "$floor" '{stage,source,target,host,archive:.verification.snapshot,artifact:$artifact,workflow:.verification.gui_interaction.workflow.summary,pagination:.verification.gui_interaction.pagination.summary,appearance:.verification.gui_interaction.appearance.summary,publication_cases:[.verification.gui_interaction.publication.cases[]|{case,summary}]}' "${desktop_records[0]}" >> target/release-desktop-records.jsonl
+              if [ "$platform" = macos-x86_64 ]; then
+                picker="target/picker-qualification/picker-qualification-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
+                test -f "$picker/result.json"
+                test "$(stat -c %s "$picker/result.json")" -le 16777216
+                ref_digest=$(sha256sum "${references[0]}" | cut -d ' ' -f 1)
+                ref_size=$(stat -c %s "${references[0]}")
+                jq -n --arg s "$SOURCE" --arg t "$target" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg digest "$digest" --argjson size "$size" --arg rd "$ref_digest" --argjson rs "$ref_size" --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '{source:$s,target:$t,run:$run,attempt:$attempt,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,archive:{sha256:$digest,byte_length:$size},reference:{sha256:$rd,byte_length:$rs}}' > target/release-picker-expected.json
+                jq -e -L .github/scripts --slurpfile e target/release-picker-expected.json 'include "picker-evidence"; qualification($e[0])' "$picker/result.json"
+                jq -c --arg artifact "$picker" '.+{artifact:$artifact}' "$picker/result.json" >> target/release-desktop-records.jsonl
+              fi
+            else
+              mapfile -t records < <(find "$directory" -type f \( -name cli-result.json -o -name qualification.json \))
+              test "${#records[@]}" = 1
+              jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" '.source==$s and .target==$t and .archive.identity.sha256==$digest and .archive.identity.byte_length==$size' "${records[0]}"
+            fi
+            cp --no-clobber -- "$file" "target/release-input/$name"
+          done
+          for platform in $(jq -er '.native_targets[].platform' target/release-distribution.json); do
+            directory="target/qualified-products/native-products-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
+            test -d "$directory"
+            mapfile -t records < <(find "$directory" -type f \( -name qualification.json -o -name cli-result.json -o -name app-result.json \))
+            test "${#records[@]}" -gt 0
+            for record in "${records[@]}"; do
+              jq -e --arg source "$SOURCE" '.source==$source' "$record"
+            done
+          done
+          cargo xtask stage-release-assets --archives target/release-input --out target/release-assembly > target/release-assembly.json
+          assets="$(jq -er .assets_directory target/release-assembly.json)"
+          printf 'RELEASE_ASSETS=%s\n' "$assets" >> "$GITHUB_ENV"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" > target/release-native-jobs.json
+          jq -n --arg source "$SOURCE" --arg dispatch "$DISPATCH_SHA" --arg workflow "$WORKFLOW_REF" --arg workflow_sha "$WORKFLOW_SHA" \
+            --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
+            --slurpfile policy target/release-distribution.json --slurpfile assembly target/release-assembly.json --slurpfile desktop target/release-desktop-records.jsonl \
+            '{source:$source,dispatch_sha:$dispatch,workflow_ref:$workflow,workflow_sha:$workflow_sha,qualification_run:$run,policy:$policy[0],assembly:$assembly[0],desktop_qualification:$desktop,scope:"native candidate production, same-archive desktop/picker qualification and exact asset assembly; dispatch workflow identity and artifact source are distinct"}' > target/release-predicate.json
+          awk -v version="$VERSION" 'index($0,"## [" version "] - ")==1 {selected=1; next} selected && /^## / {exit} selected {print}' CHANGELOG.md > target/release-notes.md
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2; explicit qualification/source predicate
+        with:
+          subject-path: ${{ env.RELEASE_ASSETS }}/*
+          predicate-type: https://github.com/resoltico/EMLAttachmentRemover/attestations/native-qualification/v1
+          predicate-path: target/release-predicate.json
+          create-storage-record: false
+      - name: Create draft, verify actual server assets, then publish
+        run: |
+          tag="v$VERSION"
+          cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission-before-upload.json
+          test "$(jq -er .release.state target/release-admission-before-upload.json)" = absent
+          gh release create "$tag" --draft --target "$SOURCE" --title "$tag" --notes-file target/release-notes.md
+          gh release upload "$tag" "$RELEASE_ASSETS"/*
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > target/release-server-before-publish.json
+          cargo xtask check-release-server --assets "$RELEASE_ASSETS" --release target/release-server-before-publish.json > target/release-server-checked.json
+          gh release edit "$tag" --draft=false --latest
+      - name: Observe server state after success or failure without deleting anything
+        if: ${{ always() }}
+        run: |
+          gh api --include "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" > target/release-server-final-response.txt 2> target/release-server-final-error.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: release-observations-${{ inputs.source }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/release-*.json
+            target/release-*.txt
+            target/release-*.md
+            target/release-check/**
+          if-no-files-found: error

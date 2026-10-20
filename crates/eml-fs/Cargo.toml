@@ -1,0 +1,31 @@
+[package]
+name = "eml-fs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+native-fixtures = ["windows-sys/Win32_System_Ioctl", "windows-sys/Win32_System_SystemServices", "windows-sys/Win32_Security_Authorization"]
+
+[dependencies]
+getrandom = "0.4.3"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.5", features = ["fs", "process"] }
+libc = "0.2.190"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Security_Authorization", "Win32_Globalization", "Win32_System_Threading", "Win32_System_IO", "Win32_System_WindowsProgramming", "Win32_System_SystemServices", "Wdk_Storage_FileSystem", "Wdk_Foundation"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_Ioctl", "Win32_System_SystemServices", "Win32_Security_Authorization", "Win32_NetworkManagement_NetManagement"] }
+
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"

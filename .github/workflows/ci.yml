@@ -1,0 +1,115 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  identity:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.identity.outputs.source }}
+      head: ${{ steps.identity.outputs.head }}
+      base: ${{ steps.identity.outputs.base }}
+      merge: ${{ steps.identity.outputs.merge }}
+    steps:
+      - id: identity
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SOURCE: ${{ github.sha }}
+        run: |
+          source="$EVENT_SOURCE"
+          head_sha=""
+          base_sha=""
+          merge_sha=""
+          if [ "$EVENT_NAME" = pull_request ]; then
+            head_sha=$(jq -er .pull_request.head.sha "$GITHUB_EVENT_PATH")
+            base_sha=$(jq -er .pull_request.base.sha "$GITHUB_EVENT_PATH")
+            merge_sha="$EVENT_SOURCE"
+            source="$head_sha"
+          fi
+          for sha in "$source" ${head_sha:+"$head_sha"} ${base_sha:+"$base_sha"} ${merge_sha:+"$merge_sha"}; do
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          done
+          printf 'source=%s\nhead=%s\nbase=%s\nmerge=%s\n' "$source" "$head_sha" "$base_sha" "$merge_sha" >> "$GITHUB_OUTPUT"
+          printf 'Native source: %s\nPR head: %s\nPR base: %s\nPR merge: %s\n' "$source" "$head_sha" "$base_sha" "$merge_sha"
+  native:
+    needs: identity
+    uses: ./.github/workflows/native-qualification.yml
+    with:
+      source: ${{ needs.identity.outputs.source }}
+  integration:
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: identity
+    name: Linux integration at current PR merge
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.identity.outputs.merge }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify exact merge parents and run real workspace integration
+        env:
+          HEAD_SHA: ${{ needs.identity.outputs.head }}
+          BASE_SHA: ${{ needs.identity.outputs.base }}
+          MERGE_SHA: ${{ needs.identity.outputs.merge }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$MERGE_SHA"
+          test "$(git show -s --format=%P HEAD)" = "$BASE_SHA $HEAD_SHA"
+          mkdir -p target
+          jq -n --arg head "$HEAD_SHA" --arg base "$BASE_SHA" --arg merge "$MERGE_SHA" '{head:$head,base:$base,merge:$merge}' > target/integration-source.json
+          cargo xtask native-tests --target x86_64-unknown-linux-gnu --out target/merge-integration
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: merge-integration-${{ needs.identity.outputs.merge }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/integration-source.json
+            target/merge-integration/*.json
+            target/merge-integration/*.log
+            target/merge-integration/*.stderr
+          if-no-files-found: error
+  freshness:
+    if: ${{ always() && github.event_name == 'pull_request' && needs.identity.result == 'success' }}
+    needs: [identity, native, integration]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Reject evidence for an obsolete head or base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ needs.identity.outputs.head }}
+          BASE_SHA: ${{ needs.identity.outputs.base }}
+        run: |
+          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" | jq -e --arg head "$HEAD_SHA" --arg base "$BASE_SHA" '.state == "open" and .head.sha == $head and .base.sha == $base'
+  ci-ok:
+    if: ${{ always() }}
+    needs: [identity, native, integration, freshness]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Require every event-specific result
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          mkdir -p target
+          printf '%s' "$NEEDS" > target/ci-needs.json
+          cargo xtask ci-result --event "$EVENT_NAME" --needs target/ci-needs.json

@@ -1,0 +1,215 @@
+// Copyright 2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
+import { AboutSlint, Button, CheckBox, ComboBox, HorizontalBox, VerticalBox, TextEdit, ScrollView } from "std-widgets.slint";
+import { StatusArtwork, ArtworkState } from "artwork.slint";
+export component AboutWindow inherits Window {
+    title: "About EML Attachment Remover";
+    preferred-width: 580px; preferred-height: 440px;
+    in property <string> identity;
+    MenuBar {
+        Menu { title: "Edit";
+            MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: identity-text.has-focus; activated => { identity-text.copy(); } }
+            MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: identity-text.has-focus; activated => { identity-text.select-all(); } }
+        }
+        Menu { title: "Window";
+            MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimized = true; } }
+            MenuItem { title: "Bring All to Front"; activated => { Platform.macos-bring-all-windows-to-front(); } }
+        }
+    }
+    VerticalBox {
+        identity-text := TextEdit { text: root.identity; read-only: true; accessible-label: "Product identity and licensing"; }
+        AboutSlint {}
+    }
+}
+export component LicenseWindow inherits Window {
+    title: "Software and Artwork Licenses";
+    preferred-width: 720px; preferred-height: 560px;
+    in property <string> licenses;
+    MenuBar {
+        Menu { title: "Edit";
+            MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: license-text.has-focus; activated => { license-text.copy(); } }
+            MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: license-text.has-focus; activated => { license-text.select-all(); } }
+        }
+        Menu { title: "Window";
+            MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimized = true; } }
+            MenuItem { title: "Bring All to Front"; activated => { Platform.macos-bring-all-windows-to-front(); } }
+        }
+    }
+    VerticalBox {
+        license-text := TextEdit { text: root.licenses; read-only: true; accessible-label: "Complete software and owner artwork license terms"; }
+        Text { text: "Additional component notices accompany this app in Contents/Resources/THIRD-PARTY-NOTICES.txt and licenses/."; wrap: word-wrap; }
+    }
+}
+export component MainWindow inherits Window {
+    title: "EML Attachment Remover";
+    preferred-width: 960px; preferred-height: 720px;
+    min-width: 760px; min-height: 520px;
+    in property <bool> admission-ready;
+    in property <bool> destination-editable;
+    in property <bool> native-dialog-active;
+    callback native_copy();
+    callback native_select_all();
+    in property <bool> stop-available;
+    in property <bool> force-available;
+    in property <bool> report-selected;
+    in property <bool> reveal-available;
+    in property <bool> export-running;
+    in property <bool> confirm-visible;
+    in property <string> confirm-text;
+    in property <string> destination;
+    in property <string> activity;
+    in property <string> notice-text;
+    in property <[string]> runs;
+    in property <[string]> run-picker-labels;
+    in property <int> selected-run: -1;
+    in property <[string]> waiting-runs;
+    in property <[string]> items;
+    in property <string> report-text;
+    in property <string> item-text;
+    in property <string> technical-text;
+    in property <ArtworkState> artwork-state;
+    in property <bool> dark-appearance;
+    in property <bool> high-contrast;
+    in property <bool> compact-layout;
+    in property <bool> short-layout;
+    callback select_files();
+    callback select_folder();
+    callback choose_destination();
+    callback beside_requested();
+    callback stop_requested();
+    callback force_requested();
+    callback export_requested();
+    callback reveal_requested();
+    callback cancel_export();
+    callback dismiss_requested();
+    callback about_requested();
+    callback licenses_requested();
+    callback select_run(int);
+    callback select_item(int);
+    callback remove_waiting(int);
+    callback previous_page();
+    in property <bool> previous_items_available;
+    in property <bool> next_items_available;
+    in property <bool> previous_parts_available;
+    in property <bool> next_parts_available;
+    callback next_page();
+    callback previous_parts();
+    callback next_parts();
+    callback quit_requested();
+    callback confirm_action();
+    callback cancel_confirmation();
+    callback dismiss_notice();
+    MenuBar {
+        Menu { title: "File";
+            MenuItem { title: "Create Copies…"; shortcut: @keys(Control + O); enabled: root.admission-ready; activated => { root.select_files(); } }
+            MenuItem { title: "Quit EML Attachment Remover…"; activated => { root.quit_requested(); } }
+        }
+        Menu { title: "Edit";
+            MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: root.native-dialog-active || item-detail.has-focus; activated => { if root.native-dialog-active { root.native_copy(); } else { item-detail.copy(); } } }
+            MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: root.native-dialog-active || item-detail.has-focus; activated => { if root.native-dialog-active { root.native_select_all(); } else { item-detail.select-all(); } } }
+        }
+        Menu { title: "Window";
+            MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimized = true; } }
+            MenuItem { title: "Zoom"; activated => { root.maximized = !root.maximized; } }
+            MenuItem { title: "Bring All to Front"; activated => { Platform.macos-bring-all-windows-to-front(); } }
+        }
+        Menu { title: "Help";
+            MenuItem { title: "About EML Attachment Remover"; activated => { root.about_requested(); } }
+            MenuItem { title: "Software and Artwork Licenses…"; activated => { root.licenses_requested(); } }
+        }
+    }
+    ScrollView {
+        visible: !root.confirm-visible;
+    VerticalBox {
+        padding: 16px; spacing: 10px;
+        HorizontalBox {
+            vertical-stretch: 0; padding: 0px;
+            StatusArtwork { width: root.short-layout ? 32px : 48px; height: self.width; state: root.artwork-state; dark: root.dark-appearance; contrast: root.high-contrast; }
+            VerticalBox {
+                horizontal-stretch: 1; padding: 0px; spacing: root.short-layout ? 0px : 8px;
+                Text { text: "EML Attachment Remover"; font-size: root.short-layout ? 18px : 22px; font-weight: 600; }
+                Text { text: root.short-layout ? "Originals stay untouched." : "Create attachment-stripped copies. Originals stay untouched."; font-size: root.short-layout ? 11px : 12px; wrap: word-wrap; }
+            }
+            Button { text: "About"; width: 80px; clicked => { root.about_requested(); } }
+        }
+        HorizontalBox {
+            Button { text: "Choose messages…"; enabled: root.admission-ready; clicked => { root.select_files(); } }
+            Button { text: "Choose folder…"; enabled: root.admission-ready; clicked => { root.select_folder(); } }
+            Button { text: "Copy destination…"; enabled: root.destination-editable; clicked => { root.choose_destination(); } }
+            Button { text: "Beside originals"; enabled: root.destination-editable; clicked => { root.beside_requested(); } }
+        }
+        Text { text: "Save copies: " + root.destination; overflow: elide; accessible-label: "Copy destination: " + root.destination; }
+        HorizontalBox {
+            padding: 0px;
+            Text { text: root.activity; wrap: word-wrap; horizontal-stretch: 1; accessible-label: "Run status: " + root.activity; }
+            Text { text: "Waiting requests: " + root.waiting-runs.length; accessible-label: self.text; }
+        }
+        if root.notice-text != "": HorizontalBox {
+            Text { text: root.notice-text; overflow: elide; accessible-label: root.notice-text; }
+            Button { text: "Dismiss notice"; clicked => {root.dismiss_notice();} }
+        }
+        HorizontalBox {
+            Button { text: "Stop"; enabled: root.stop-available; clicked => { root.stop_requested(); } }
+            Button { text: "Force Stop…"; enabled: root.force-available; clicked => { root.force_requested(); } }
+            Button { text: "Export Report…"; enabled: root.report-selected; clicked => { root.export_requested(); } }
+            Button { text: "Dismiss report"; enabled: root.report-selected; clicked => { root.dismiss_requested(); } }
+            Button { text: "Cancel export"; enabled: root.export-running; clicked => { root.cancel_export(); } }
+        }
+        if root.compact-layout: ComboBox { model: root.run-picker-labels; current-index: root.selected-run; accessible-label: "Select run"; selected(value) => { root.select_run(self.current-index); } }
+        if root.compact-layout && root.waiting-runs.length > 0: ScrollView {
+            max-height: 80px;
+            VerticalBox { for run[index] in root.waiting-runs: HorizontalBox {
+                Text { text: run; overflow: elide; }
+                Button { text: "Remove waiting run"; clicked => {root.remove_waiting(index);} }
+            } }
+        }
+        HorizontalBox {
+            padding: 0px; vertical-stretch: 1;
+            if !root.compact-layout: ScrollView {
+                width: 220px; horizontal-stretch: 0;
+                VerticalBox {
+                    Text { text: "Runs"; font-weight: 600; }
+                    for run[index] in root.runs: Button { text: run; height: 76px; clicked => { root.select_run(index); } }
+                    for run[index] in root.waiting-runs: VerticalBox {
+                        Text { text: run; wrap: word-wrap; }
+                        Button { text: "Remove waiting run"; clicked => { root.remove_waiting(index); } }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+            VerticalBox {
+                padding: 0px; horizontal-stretch: 1;
+                if root.runs.length == 0 && root.waiting-runs.length == 0: Text {
+                    text: "Drop EML files or folders here, or choose messages or a folder.";
+                    wrap: word-wrap; horizontal-alignment: center;
+                    accessible-label: "Drop local EML files or folders to create copies. You can also use Choose messages or Choose folder.";
+                }
+                Text { text: root.report-text; wrap: word-wrap; accessible-label: "Run summary: " + root.report-text; }
+                ScrollView {
+                    height: root.items.length == 0 ? 0px : (root.short-layout ? 40px : 100px);
+                    VerticalBox { padding: 0px; spacing: 4px; for item[index] in root.items: Button { text: item; height: 32px; clicked => { root.select_item(index); } } }
+                }
+                item-detail := TextEdit { min-height: 55px; vertical-stretch: 1; text: root.item-text + (technical.checked ? "\nTechnical observations\n" + root.technical-text : ""); read-only: true; accessible-label: technical.checked ? "Selected message, removed parts and technical observations" : "Selected message and removed parts"; }
+                HorizontalBox {
+                    Button { text: "Show in Finder"; enabled: root.reveal-available; clicked => {root.reveal_requested();} }
+                    Button { text: "Previous parts"; enabled: root.previous_parts_available; clicked => { root.previous_parts(); } }
+                    Button { text: "Next parts"; enabled: root.next_parts_available; clicked => { root.next_parts(); } }
+                    technical := CheckBox { text: "Technical details"; }
+                }
+                if root.previous_items_available || root.next_items_available: HorizontalBox {
+                    Button { text: "Previous items"; enabled: root.previous_items_available; clicked => { root.previous_page(); } }
+                    Button { text: "Next items"; enabled: root.next_items_available; clicked => { root.next_page(); } }
+                }
+            }
+        }
+    }
+    }
+    VerticalBox {
+        visible: root.confirm-visible; padding: 30px;
+        Text { text: root.confirm-text; wrap: word-wrap; accessible-label: "Confirmation: " + root.confirm-text; }
+        HorizontalBox {
+            Button { text: "Cancel"; clicked => { root.cancel_confirmation(); } }
+            Button { text: "Confirm"; clicked => { root.confirm_action(); } }
+        }
+    }
+}

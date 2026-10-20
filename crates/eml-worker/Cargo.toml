@@ -1,0 +1,40 @@
+[package]
+name = "eml-worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+autobins = false
+
+[features]
+native-fixtures = ["eml-core/native-fixtures"]
+
+[[bin]]
+name = "eml-worker"
+path = "src/main.rs"
+
+[[bin]]
+name = "worker-observation"
+path = "tests/support/worker_observation.rs"
+required-features = ["native-fixtures"]
+
+[dependencies]
+eml-core = { path = "../eml-core" }
+eml-protocol = { path = "../eml-protocol" }
+ctrlc.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+eml-macos = { path = "../eml-macos" }
+
+[dev-dependencies]
+eml-app = { path = "../eml-app" }
+tempfile.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+eml-fs = { path = "../eml-fs" }
+
+[lints]
+workspace = true

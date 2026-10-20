@@ -1,0 +1,248 @@
+//! Human rendering of actual core events; never a GUI protocol.
+use eml_core::{Event, EventSink};
+use eml_protocol::{BoundedEventBuffer, MAX_LINE_BYTES};
+use std::io::{self, Write};
+/// Checked human adapter. Wording is for people and never parsed by the app.
+pub struct HumanSink<W> {
+    writer: W,
+    failed: bool,
+}
+impl<W: Write> HumanSink<W> {
+    /// Start one human stream on the supplied writer.
+    pub fn new(writer: W) -> Self {
+        Self {
+            writer,
+            failed: false,
+        }
+    }
+    /// Recover the supplied writer without another output attempt.
+    #[cfg(test)]
+    pub fn into_inner(self) -> W {
+        self.writer
+    }
+}
+impl<W: Write> EventSink for HumanSink<W> {
+    fn emit(&mut self, event: Event<'_>) -> io::Result<()> {
+        if self.failed {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "Human output stream already failed",
+            ));
+        }
+        let result = (|| {
+            let mut buffer = BoundedEventBuffer::new(MAX_LINE_BYTES);
+            write_human(&mut buffer, event)?;
+            self.writer.write_all(buffer.bytes())?;
+            self.writer.flush()
+        })();
+        self.failed = result.is_err();
+        result
+    }
+}
+fn write_human(writer: &mut impl Write, event: Event<'_>) -> io::Result<()> {
+    use eml_core::{AddressState, FailureEffect, ItemResult, PlanAction};
+    use eml_protocol::TerminalPath;
+    match event {
+        Event::Start(value) => writeln!(
+            writer,
+            "{} {} — {} known item(s); discovery {}{}",
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+            value.total,
+            if value.collection_complete {
+                "complete"
+            } else {
+                "incomplete"
+            },
+            if value.dry_run { "; dry run" } else { "" }
+        ),
+        Event::Item(value) => {
+            let (status, metadata) = match &value.result {
+                ItemResult::Created(_, data) => ("Created", Some(*data)),
+                ItemResult::UpToDate(_, data) => ("Up to date", Some(*data)),
+                ItemResult::Planned(plan) => (
+                    match plan.action() {
+                        PlanAction::Create => "Planned create",
+                        PlanAction::VerifyExisting => "Planned existing-copy verification",
+                    },
+                    Some(plan.metadata()),
+                ),
+                ItemResult::Failed(failure) => ("Failed", failure.metadata()),
+            };
+            write!(
+                writer,
+                "[{index}] {status}: {source}",
+                index = value.index,
+                source = TerminalPath::new(value.source.display)
+            )?;
+            if let Some(path) = value.destination {
+                write!(writer, " -> {}", TerminalPath::new(path.display))?;
+            }
+            writeln!(writer)?;
+            if let Some(data) = metadata {
+                writeln!(
+                    writer,
+                    "  {} source bytes; {} copy bytes; {} removed part(s)",
+                    data.source_bytes,
+                    data.copy_bytes,
+                    data.removed.len()
+                )?;
+            }
+            if let ItemResult::Failed(failure) = &value.result {
+                writeln!(
+                    writer,
+                    "  {}/{}: {}",
+                    failure.error().code(),
+                    failure.error().phase(),
+                    failure.error().detail()
+                )?;
+                match failure.effect() {
+                    FailureEffect::Published(copy) => writeln!(
+                        writer,
+                        "  A complete copy was published; {}.",
+                        match copy.address() {
+                            AddressState::Verified => "its requested address was verified",
+                            AddressState::Changed => "its requested address changed",
+                            _ => "its requested address could not be verified",
+                        }
+                    )?,
+                    FailureEffect::Unknown(_) => writeln!(
+                        writer,
+                        "  Publication could not be confirmed; a complete copy might exist."
+                    )?,
+                    FailureEffect::NotPublished { .. } => {
+                        writeln!(writer, "  This item did not publish a new copy.")?
+                    }
+                }
+                if let Some(existing) = failure.existing()
+                    && existing.bytes_equal == Some(true)
+                {
+                    writeln!(
+                        writer,
+                        "  Existing bytes matched; synchronization/address qualification did not complete."
+                    )?;
+                }
+            }
+            Ok(())
+        }
+        Event::Summary(value) => {
+            let counts = value.counts();
+            writeln!(
+                writer,
+                "Created {}; up to date {}; planned {}; failed {}; not processed {}. Exit {}{}",
+                counts.created(),
+                counts.up_to_date(),
+                counts.planned(),
+                counts.failed(),
+                counts.not_processed(),
+                value.exit_class().code(),
+                if value.interrupted() {
+                    "; interrupted"
+                } else {
+                    ""
+                }
+            )?;
+            if let Some(error) = value.run_error() {
+                writeln!(
+                    writer,
+                    "{}/{}: {}",
+                    error.code(),
+                    error.phase(),
+                    error.detail()
+                )?;
+            }
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eml_core::{ExitClass, OutputLocation, RunControl, RunMode, RunRequest, RunStart, run};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/support/output_writer.rs"
+    ));
+    fn expected_human_start() -> String {
+        format!(
+            "remove-eml-attachments {} — 1 known item(s); discovery complete; dry run\n",
+            env!("CARGO_PKG_VERSION")
+        )
+    }
+    #[test]
+    fn partial_write_and_flush_failures_permanently_stop_human_output() {
+        for flush in [false, true] {
+            let mut sink = HumanSink::new(Writer {
+                remaining: (!flush).then_some(7),
+                fail_flush: flush,
+                ..Writer::default()
+            });
+            assert!(sink.emit(Event::Start(&start())).is_err());
+            let expected = expected_human_start();
+            assert_eq!(
+                sink.writer.bytes,
+                if flush {
+                    expected.as_bytes()
+                } else {
+                    &expected.as_bytes()[..7]
+                }
+            );
+            assert_eq!(sink.writer.flush_calls, usize::from(flush));
+
+            let calls = (
+                sink.writer.write_calls,
+                sink.writer.flush_calls,
+                sink.writer.bytes.len(),
+            );
+            assert!(sink.emit(Event::Start(&start())).is_err());
+            assert_eq!(
+                (
+                    sink.writer.write_calls,
+                    sink.writer.flush_calls,
+                    sink.writer.bytes.len()
+                ),
+                calls
+            );
+        }
+    }
+    fn root() -> tempfile::TempDir {
+        let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/event-tests");
+        fs::create_dir_all(&parent).unwrap();
+        tempfile::tempdir_in(parent).unwrap()
+    }
+    fn request(root: &Path, mode: RunMode) -> RunRequest {
+        RunRequest {
+            paths: vec!["a.eml".into()],
+            working_directory: fs::canonicalize(root).unwrap(),
+            output: OutputLocation::BesideSource,
+            mode,
+        }
+    }
+    #[test]
+    fn human_output_escapes_unsafe_filename_units_and_reports_real_failure_effect() {
+        let root = root();
+        let input = b"Content-Type: text/plain\r\n\r\nbody\r\n";
+        fs::write(root.path().join("a.eml"), input).unwrap();
+        fs::write(root.path().join("a.no-attachments.eml"), b"different").unwrap();
+        let mut req = request(root.path(), RunMode::Create);
+        req.paths.push(PathBuf::from("missing\u{2028}\u{1b}.eml"));
+        let mut sink = HumanSink::new(Vec::new());
+        let outcome = run(&req, &RunControl::default(), &mut sink).unwrap();
+        assert_eq!(outcome.exit_class(), ExitClass::Failure);
+        let text = String::from_utf8(sink.into_inner()).unwrap();
+        assert!(!text.contains('\u{1b}'));
+        assert!(!text.contains('\u{2028}'));
+        assert!(text.contains("This item did not publish a new copy."));
+        assert!(text.contains("not processed 1"));
+        assert_eq!(
+            fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+            b"different"
+        );
+        root.close().unwrap();
+    }
+}

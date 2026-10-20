@@ -1,5 +1,3 @@
-__pycache__/
-*.py[cod]
 .DS_Store
 Desktop.ini
 Thumbs.db
@@ -9,15 +7,4 @@ Thumbs.db
 *.pem
 .idea/
 .vscode/
-.coverage
-.coverage.*
-.hypothesis/
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
-.venv/
-build/
-mutants/
-release-dist/
-*.egg-info/
-dist/
+target/

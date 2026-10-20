@@ -1,0 +1,13 @@
+[package]
+name = "filesystem-contract-probe"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+license = "MPL-2.0"
+[dependencies]
+tempfile = "=3.27.0"
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "=1.1.5", features = ["fs"] }
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_IO"] }

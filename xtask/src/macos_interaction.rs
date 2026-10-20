@@ -1,0 +1,954 @@
+//! Actual extracted-app interaction on a fresh native hosted Mac through XCTest.
+use crate::{Result, controller, macos::MacBuild};
+use serde_json::{Value, json};
+use std::{fs, path::Path, time::Duration};
+pub(crate) const EXECUTION_LIMIT: Duration = Duration::from_secs(1860);
+
+fn owner_controls(
+    root: &Path,
+    app: &Path,
+    build: &MacBuild,
+    owner: &Path,
+    out: &Path,
+) -> Result<Value> {
+    use std::{
+        io::Write,
+        sync::atomic::{AtomicBool, Ordering},
+        time::Instant,
+    };
+    let parent = out.join("owner-controls");
+    fs::create_dir(&parent)?;
+    let mut compile = build.command(root, "cargo");
+    compile.args([
+        "build",
+        "--locked",
+        "--package",
+        "xtask",
+        "--bin",
+        "process-probe",
+        "--message-format=json",
+    ]);
+    let cargo = crate::capture(&mut compile)?;
+    fs::write(parent.join("probe-build.jsonl"), &cargo)?;
+    let probe = crate::cli_build::named_artifact(
+        root,
+        &cargo,
+        "xtask/Cargo.toml",
+        "xtask/tests/support/process_probe.rs",
+        "process-probe",
+    )?;
+    let mut results = Vec::new();
+    for case in [
+        "deadline",
+        "cancel",
+        "runner-crash",
+        "source-change",
+        "force-app",
+    ] {
+        let case_parent = parent.join(case);
+        fs::create_dir(&case_parent)?;
+        let enclosure = xtask::archive::create_artifact_directory(&case_parent)?;
+        let directory = enclosure.path();
+        for name in [
+            "one.eml",
+            "two.eml",
+            "folder-input/folder.eml",
+            "service-input/日本語-مرحبا-\u{202e}report.eml",
+        ] {
+            let file = directory.join(name);
+            if let Some(parent) = file.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(
+                file,
+                include_bytes!("../../tests/contract/mime/inputs/01-gmail-attachment.eml"),
+            )?;
+        }
+        let input = directory.join("input.json");
+        let receipt = directory.join("ownership.json");
+        let ready = directory.join("ownership.ready.json");
+        let result_file = directory.join("owner-result.json");
+        fs::write(
+            &input,
+            serde_json::to_vec_pretty(
+                &json!({"app":app,"fixture":directory,"host_scope":"fresh-github-hosted-runner", "owner_control":match case { "deadline"=>"deadline", "force-app"=>"force-app", _=>"normal" }, "runner_ready":directory.join("worker-ready")}),
+            )?,
+        )?;
+        let mut command = build.command(root, owner);
+        command
+            .current_dir(directory)
+            .arg(&input)
+            .arg(&receipt)
+            .arg(&result_file)
+            .arg(&probe)
+            .arg(if case == "runner-crash" {
+                "abort"
+            } else {
+                "cooperative-resource"
+            })
+            .arg(directory);
+        let local = xtask::process::Controller::new(root, &std::env::current_exe()?)?;
+        let finished = AtomicBool::new(false);
+        let (observed, action) = std::thread::scope(|scope| {
+            let watching = scope.spawn(|| -> std::result::Result<(), String> {
+                let began = Instant::now();
+                let mut acted = false;
+                while !finished.load(Ordering::Relaxed) {
+                    if !controller()
+                        .map_err(|error| error.to_string())?
+                        .admits_work()
+                    {
+                        local.request_stop();
+                        return Err("Owner control interrupted by caller cancellation".into());
+                    }
+                    if !acted && ready.is_file() {
+                        acted = true;
+                        match case {
+                            "cancel" => local.request_stop(),
+                            "source-change" => {
+                                let mut file = fs::OpenOptions::new()
+                                    .append(true)
+                                    .open(directory.join("one.eml"))
+                                    .map_err(|error| error.to_string())?;
+                                file.write_all(b"owned change\n")
+                                    .map_err(|error| error.to_string())?;
+                                drop(file);
+                                fs::write(
+                                    directory.join("control-release"),
+                                    b"release owned probe\n",
+                                )
+                                .map_err(|error| error.to_string())?;
+                            }
+                            _ => (),
+                        }
+                    }
+                    if !acted && began.elapsed() > Duration::from_secs(30) {
+                        local.request_stop();
+                        return Err("Native owner control never established readiness".into());
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                if matches!(case, "cancel" | "source-change") && !acted {
+                    return Err("Native control stimulus was not delivered".into());
+                }
+                Ok(())
+            });
+            let observed = local.run_with_cooperative_stop(
+                command,
+                &directory.join("owner.log"),
+                Duration::from_secs(60),
+                xtask::process::COOPERATIVE_STOP_LIMIT,
+            );
+            finished.store(true, Ordering::Relaxed);
+            (
+                observed,
+                watching
+                    .join()
+                    .unwrap_or_else(|_| Err("Owner control watcher panicked".into())),
+            )
+        });
+        let read_facts = fs::symlink_metadata(&result_file)
+            .map_err(|error| error.to_string())
+            .and_then(|metadata| {
+                if !metadata.is_file() || metadata.len() > 64 * 1024 {
+                    Err("Owner control result is not an ordinary bounded document".into())
+                } else {
+                    Ok(())
+                }
+            })
+            .and_then(|()| fs::read(&result_file).map_err(|error| error.to_string()))
+            .and_then(|bytes| {
+                if bytes.len() > 64 * 1024 {
+                    Err("Owner control result grew beyond its bound".into())
+                } else {
+                    Ok(bytes)
+                }
+            })
+            .and_then(|bytes| {
+                serde_json::from_slice::<Value>(&bytes).map_err(|error| error.to_string())
+            });
+        fs::write(
+            case_parent.join("observed.json"),
+            serde_json::to_vec_pretty(
+                &json!({"case":case,"owner":read_facts,"process":observed.as_ref().map(|process|process.evidence()).map_err(|error|error.to_string()),"stimulus":action}),
+            )?,
+        )?;
+        action.map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+        let observed = observed?;
+        let facts = read_facts.map_err(|error| {
+            format!(
+                "Owner control {case} result unavailable: {error}; actual process {}; retained {}",
+                observed.evidence(),
+                directory.display()
+            )
+        })?;
+        if observed.success()
+            || !observed.cleanup_complete
+            || observed.unexpected_survivors != 0
+            || facts.get("failure").is_none_or(Value::is_null)
+            || facts["originals_captured"] != 4
+            || facts["runner_reaped"] != true
+            || facts["owned_app_terminated"] != true
+            || facts["owned_pasteboard_released"] != true
+            || facts["unexpected_application_pids"] != json!([])
+            || facts["originals_unchanged"] != (case != "source-change")
+            || facts["timed_out"] != (case == "deadline")
+            || facts["cancelled"] != (case == "cancel")
+            || observed.cancelled != (case == "cancel")
+            || observed.timed_out
+        {
+            return Err(format!("Native desktop owner control {case} did not prove its required rejection/cleanup; retained {}", directory.display()).into());
+        }
+        if case == "runner-crash" && facts["runner_status"] != 6 {
+            return Err("Native runner crash control did not observe actual SIGABRT".into());
+        }
+        let expected_failure = match case {
+            "deadline" => Some("deadline"),
+            "cancel" => Some("cancelled"),
+            "force-app" => Some("forcedApplication"),
+            _ => None,
+        };
+        if expected_failure.is_some_and(|reason| facts["failure"] != reason) {
+            return Err(
+                format!("Native owner control {case} failed for another primary reason").into(),
+            );
+        }
+        if case == "source-change" {
+            if facts["source_check_failure"]
+                .as_str()
+                .is_none_or(str::is_empty)
+            {
+                return Err(
+                    "Native source comparison did not independently record its failure".into(),
+                );
+            }
+        } else if facts.get("source_check_failure") != Some(&Value::Null) {
+            return Err("Unchanged-source control has a missing or failed source check".into());
+        }
+        if case == "source-change" && facts["runner_status"] != 0 {
+            return Err("Source-byte control failed before the runner's normal exit".into());
+        }
+        if case == "force-app" && facts["forced_app_cleanup"] != true {
+            return Err("Native retained-app force control was not exercised".into());
+        }
+        if case == "cancel" && local.admits_work() {
+            return Err("Cancelled native owner controller left admission open".into());
+        }
+        results.push(json!({"case":case,"owner":facts,"process":observed.evidence()}));
+    }
+    let result = json!({"cases":results,"scope":"real Cocoa app lifetime authority under controlled runner failure/deadline/cancellation/forced app termination/source-byte change; no GUI processing, natural app-crash, or Cocoa EOF claim"});
+    fs::write(
+        parent.join("result.json"),
+        serde_json::to_vec_pretty(&result)?,
+    )?;
+    Ok(result)
+}
+
+fn preference_snapshot(
+    root: &Path,
+    app: &Path,
+    build: &MacBuild,
+    tool: &Path,
+    out: &Path,
+    label: &str,
+) -> Result<Value> {
+    let log = out.join(format!("preferences-{label}.json"));
+    let mut command = build.command(root, tool);
+    command
+        .arg(app)
+        .arg(out.join(format!("preferences-{label}.plist")));
+    let process = controller()?.run_separate_output(command, &log, Duration::from_secs(15))?;
+    process.require_success(&log)?;
+    if fs::metadata(&log)?.len() > 1024 * 1024 {
+        return Err("Owned app preference observation exceeds its bound".into());
+    }
+    let bytes = fs::read(log)?;
+    if bytes.len() > 1024 * 1024 {
+        return Err("Owned app preference observation grew beyond its bound".into());
+    }
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DesktopCase {
+    Workflow,
+    Picker,
+    Pagination,
+    Appearance,
+    Stop,
+    ForceStop,
+    ActiveQuit,
+    PublishedError,
+}
+impl DesktopCase {
+    fn uses_native_pickers(self) -> bool {
+        matches!(self, Self::Workflow | Self::Picker)
+    }
+    pub(crate) fn is_publication(self) -> bool {
+        matches!(
+            self,
+            Self::Stop | Self::ForceStop | Self::ActiveQuit | Self::PublishedError
+        )
+    }
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Workflow => "workflow",
+            Self::Picker => "picker",
+            Self::Pagination => "pagination",
+            Self::Appearance => "appearance",
+            Self::Stop => "stop",
+            Self::ForceStop => "force-stop",
+            Self::ActiveQuit => "active-quit",
+            Self::PublishedError => "published-error",
+        }
+    }
+    fn method(self) -> &'static str {
+        match self {
+            Self::Workflow => "testOwnedDesktopWorkflowAndNativeIngress",
+            Self::Picker => "testOwnedNativePickerCompatibility",
+            Self::Pagination => "testOwnedPagination",
+            Self::Appearance => "testOwnedNativeAppearance",
+            Self::Stop => "testOwnedCoreStop",
+            Self::ForceStop => "testOwnedCoreForceStop",
+            Self::ActiveQuit => "testOwnedCoreActiveQuit",
+            Self::PublishedError => "testOwnedCorePublishedError",
+        }
+    }
+}
+
+pub(crate) fn run_case(
+    root: &Path,
+    app: &Path,
+    build: &MacBuild,
+    out: &Path,
+    case: DesktopCase,
+) -> Result<Value> {
+    if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+        || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
+    {
+        return Err("Desktop interaction requires a fresh hosted runner; owner desktop/preferences are protected".into());
+    }
+    fs::create_dir(out)?;
+    let out = out.canonicalize()?;
+    let fixture = xtask::archive::create_artifact_directory(&out)?;
+    let original = include_bytes!("../../tests/contract/mime/inputs/01-gmail-attachment.eml");
+    for name in ["one.eml", "two.eml"] {
+        fs::write(fixture.path().join(name), original)?;
+    }
+    for (directory, name) in [
+        ("folder-input", "folder.eml"),
+        ("service-input", "日本語-مرحبا-\u{202e}report.eml"),
+    ] {
+        let directory = fixture.path().join(directory);
+        fs::create_dir(&directory)?;
+        fs::write(directory.join(name), original)?;
+    }
+    fs::write(
+        fixture.path().join("report-collision.json"),
+        b"Owned report collision sentinel\n",
+    )?;
+    if case == DesktopCase::Workflow {
+        fs::create_dir(fixture.path().join("chosen-destination"))?;
+    }
+    if case == DesktopCase::Pagination {
+        let directory = fixture.path().join("pagination-input");
+        fs::create_dir(&directory)?;
+        // This hand-authored MIME oracle is independent of Core serialization.
+        let prefix = "From: synthetic@example.test\r\nSubject: Pagination\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=pages\r\n\r\n--pages\r\nContent-Type: text/plain\r\n\r\nOwned pagination body.\r\n";
+        let mut message = prefix.to_owned();
+        for index in 0..65 {
+            message.push_str(&format!("--pages\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"part-{index:03}.bin\"\r\n\r\nOwned attachment {index}.\r\n"));
+        }
+        message.push_str("--pages--\r\n");
+        fs::write(
+            fixture.path().join("pagination-golden.eml"),
+            format!("{prefix}--pages--\r\n"),
+        )?;
+        for index in 0..65 {
+            fs::write(
+                directory.join(format!("{index:03}.eml")),
+                if index == 0 {
+                    message.as_bytes()
+                } else {
+                    original
+                },
+            )?;
+        }
+    }
+    // One native job owns this new input directory. The test derives its location
+    // from its actual source path; there is no shipping automation mode or saved
+    // preference transport. Refuse accidental reuse instead of replacing inputs.
+    let input = root.join("target").join(if case == DesktopCase::Workflow {
+        "desktop-interaction".to_owned()
+    } else {
+        format!("desktop-interaction-{}", case.name())
+    });
+    fs::create_dir(&input)?;
+    let mut invocation =
+        json!({"app":app,"fixture":fixture.path(),"host_scope":"fresh-github-hosted-runner"});
+    if case.uses_native_pickers() {
+        invocation["fixture_output"] = json!("true");
+        invocation["scenario"] = json!(case.name());
+    }
+    if case == DesktopCase::Appearance {
+        invocation["appearance_session"] = json!("true");
+    }
+    if case == DesktopCase::Pagination {
+        invocation["pagination_session"] = json!("true");
+    }
+    if case.is_publication() {
+        use base64::Engine;
+        use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
+        let control = fixture.path().join("publication-control");
+        fs::create_dir(&control)?;
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o700))?;
+        fs::write(
+            control.join("observation"),
+            if case == DesktopCase::PublishedError {
+                b"after:0\n".as_slice()
+            } else {
+                b"before:1\n".as_slice()
+            },
+        )?;
+        let destination = fixture.path().join("publication-output");
+        fs::create_dir(&destination)?;
+        invocation["scenario"] = json!(case.name());
+        invocation["observation"] = json!(control);
+        invocation["destination"] = json!(
+            base64::engine::general_purpose::STANDARD.encode(destination.as_os_str().as_bytes())
+        );
+    }
+    fs::write(
+        input.join("input.json"),
+        serde_json::to_vec_pretty(&invocation)?,
+    )?;
+    let observer = out.join("DesktopPreferenceSnapshot");
+    let mut compile = build.command(root, &build.swiftc);
+    compile
+        .args([
+            "-parse-as-library",
+            "-swift-version",
+            "6",
+            "-warnings-as-errors",
+            "-target",
+            &build.swift_target(),
+            "-sdk",
+        ])
+        .arg(&build.sdk)
+        .arg(root.join("tests/macos/DesktopPreferenceSnapshot.swift"))
+        .arg("-o")
+        .arg(&observer);
+    crate::macos::checked_run(compile, &out.join("preference-observer-build.log"), 120)?;
+    let observation_tests = out.join("DesktopPreferenceSnapshotTests");
+    let mut compile = build.command(root, &build.swiftc);
+    compile
+        .args([
+            "-parse-as-library",
+            "-swift-version",
+            "6",
+            "-warnings-as-errors",
+            "-D",
+            "PREFERENCE_OBSERVATION_TESTS",
+            "-target",
+            &build.swift_target(),
+            "-sdk",
+        ])
+        .arg(&build.sdk)
+        .arg(root.join("tests/macos/DesktopPreferenceSnapshot.swift"))
+        .arg(root.join("tests/macos/DesktopPreferenceSnapshotTests.swift"))
+        .arg("-o")
+        .arg(&observation_tests);
+    crate::macos::checked_run(
+        compile,
+        &out.join("preference-observation-tests-build.log"),
+        120,
+    )?;
+    crate::macos::checked_run(
+        build.command(root, &observation_tests),
+        &out.join("preference-observation-tests.log"),
+        30,
+    )?;
+    let owner = out.join("DesktopInteractionOwner");
+    if case.uses_native_pickers() {
+        let tests = out.join("DesktopFixtureTests");
+        let mut compile = build.command(root, &build.swiftc);
+        compile
+            .args([
+                "-parse-as-library",
+                "-D",
+                "DESKTOP_FIXTURE_TESTS",
+                "-target",
+                &build.swift_target(),
+                "-sdk",
+            ])
+            .arg(&build.sdk)
+            .arg(root.join("tests/macos/DesktopInteractionOwner.swift"))
+            .arg(root.join("tests/macos/DesktopFixtureOutput.swift"))
+            .arg(root.join("tests/macos/DesktopFixtureTests.swift"))
+            .arg("-o")
+            .arg(&tests);
+        crate::macos::checked_run(compile, &out.join("desktop-fixture-tests-build.log"), 120)?;
+        crate::macos::checked_run(
+            build.command(root, &tests),
+            &out.join("desktop-fixture-tests.log"),
+            30,
+        )?;
+    }
+    let mut compile = build.command(root, &build.swiftc);
+    compile
+        .args([
+            "-parse-as-library",
+            "-swift-version",
+            "6",
+            "-warnings-as-errors",
+            "-target",
+            &build.swift_target(),
+            "-sdk",
+        ])
+        .arg(&build.sdk)
+        .arg(root.join("tests/macos/DesktopInteractionOwner.swift"))
+        .arg(root.join("tests/macos/DesktopFixtureOutput.swift"))
+        .arg("-o")
+        .arg(&owner);
+    crate::macos::checked_run(compile, &out.join("interaction-owner-build.log"), 120)?;
+    let before = preference_snapshot(root, app, build, &observer, &out, "before")?;
+    let (lifetime_controls, control_preferences) = if case.uses_native_pickers() {
+        let controls = owner_controls(root, app, build, &owner, &out)?;
+        let after_controls =
+            preference_snapshot(root, app, build, &observer, &out, "after-owner-controls")?;
+        let comparison = crate::desktop_preferences::compare(&before, &after_controls, false)?;
+        fs::write(
+            out.join("owner-controls/preferences-result.json"),
+            serde_json::to_vec_pretty(
+                &json!({"before":before,"after":after_controls,"comparison":comparison}),
+            )?,
+        )?;
+        (controls, comparison)
+    } else {
+        (Value::Null, Value::Null)
+    };
+    let results = out.join("Results.xcresult");
+    let mut command = build.command(root, &owner);
+    let owner_result = out.join("owner-result.json");
+    command
+        .arg(input.join("input.json"))
+        .arg(input.join("ownership.json"))
+        .arg(&owner_result)
+        .arg(build.developer.join("usr/bin/xcodebuild"));
+    // Swift Build's documented default connection mode honors this per-process
+    // override. Keep the build service within xcodebuild's owned lifetime rather
+    // than accepting a persistent child or weakening generic survivor rejection.
+    command.env("SWIFTBUILD_LAUNCH_IN_PROCESS", "YES");
+    command
+        .arg(format!(
+            "-only-testing:DesktopInteraction/DesktopInteractionTests/{}",
+            case.method()
+        ))
+        .args([
+            "-project",
+            "tests/macos/DesktopInteraction.xcodeproj",
+            "-scheme",
+            "DesktopInteraction",
+            "-destination",
+            "platform=macOS",
+            "-parallel-testing-enabled",
+            "NO",
+            "-derivedDataPath",
+        ])
+        .arg(out.join("build"))
+        .arg("-resultBundlePath")
+        .arg(&results)
+        .arg(format!("ARCHS={}", build.swift_arch))
+        .args([
+            "ONLY_ACTIVE_ARCH=YES",
+            "ALWAYS_SEARCH_USER_PATHS=NO",
+            "test",
+        ]);
+    // The expanded multi-window scenario includes XCTest's own interruption
+    // synchronization. On the native Intel runner individual checks took 60s
+    // while the app continued responding. Keep behavior/settlement deadlines in
+    // the test unchanged; allow their full sequence to finish before outer cleanup.
+    let process = crate::macos_publication_ui::execute(case, fixture.path(), || {
+        controller()?.run_with_cooperative_stop(
+            command,
+            &out.join("xctest.log"),
+            EXECUTION_LIMIT,
+            xtask::process::COOPERATIVE_STOP_LIMIT,
+        )
+    })?;
+    fs::write(
+        out.join("process.json"),
+        serde_json::to_vec_pretty(&process.evidence())?,
+    )?;
+    // Preserve the first failure. Querying a result bundle must not hide a failed
+    // test command or attempt work after process admission has closed.
+    process.require_success(&out.join("xctest.log"))?;
+    if fs::symlink_metadata(&owner_result)?.len() > 64 * 1024 {
+        return Err("Desktop lifetime result exceeds its bound".into());
+    }
+    let ownership: Value = serde_json::from_slice(&fs::read(owner_result)?)?;
+    if ownership.get("failure") != Some(&Value::Null)
+        || ownership["timed_out"] != false
+        || ownership["cancelled"] != false
+        || ownership["runner_reaped"] != true
+        || ownership["runner_status"] != 0
+        || ownership["owned_app_terminated"] != true
+        || ownership["forced_app_cleanup"] != false
+        || ownership["originals_unchanged"] != true
+        || ownership["originals_captured"]
+            != if case == DesktopCase::Pagination {
+                69
+            } else {
+                4
+            }
+        || ownership.get("source_check_failure") != Some(&Value::Null)
+        || ownership["owned_pasteboard_released"] != true
+        || ownership["unexpected_application_pids"] != json!([])
+    {
+        return Err(
+            "Desktop lifetime owner did not verify normal app/runner/resource settlement".into(),
+        );
+    }
+    let after = preference_snapshot(root, app, build, &observer, &out, "after")?;
+    let mut summary = build.command(root, "/usr/bin/xcrun");
+    summary
+        .args(["xcresulttool", "get", "test-results", "summary", "--path"])
+        .arg(&results);
+    let bytes = crate::capture(&mut summary)?;
+    if bytes.len() > 1024 * 1024 {
+        return Err("XCTest summary exceeds its document bound".into());
+    }
+    let summary: Value = serde_json::from_slice(&bytes)?;
+    fs::write(
+        out.join("summary.json"),
+        serde_json::to_vec_pretty(&summary)?,
+    )?;
+    if summary["totalTestCount"] != 1
+        || summary["passedTests"] != 1
+        || summary["failedTests"] != 0
+        || summary["skippedTests"] != 0
+    {
+        return Err("Actual desktop test discovery/execution is incomplete or failed".into());
+    }
+    if case.is_publication() {
+        let actor = crate::macos_publication_ui::finish(root, build, fixture.path(), &out, case)?;
+        let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
+        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"actor":actor,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"nonshipping real-Core publication synchronization with actual native GUI lifecycle/presentation; unchanged shipping archive qualification remains separate"});
+        fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+        return Ok(result);
+    }
+    // XCTest carries observations through its native result bundle. Its runner
+    // need not gain write authority over the source checkout to emit evidence.
+    let attachments = out.join("attachments");
+    let mut export = build.command(root, "/usr/bin/xcrun");
+    export
+        .args(["xcresulttool", "export", "attachments", "--path"])
+        .arg(&results)
+        .arg("--output-path")
+        .arg(&attachments);
+    crate::macos::checked_run(export, &out.join("attachment-export.log"), 120)?;
+    let manifest_path = attachments.join("manifest.json");
+    let metadata = fs::symlink_metadata(&manifest_path)?;
+    if !metadata.is_file() || metadata.len() > 1024 * 1024 {
+        return Err("XCTest attachment manifest is not an ordinary bounded document".into());
+    }
+    let manifest: Value = serde_json::from_slice(&fs::read(manifest_path)?)?;
+    if case == DesktopCase::Pagination {
+        let name = attachment_name(
+            &manifest,
+            "DesktopInteractionTests/testOwnedPagination()",
+            "native-pagination-observation_",
+        )?;
+        let path = attachments.join(name);
+        if !fs::symlink_metadata(&path)?.is_file() || fs::metadata(&path)?.len() > 4096 {
+            return Err("Pagination observation is not an ordinary bounded document".into());
+        }
+        let observation: Value = serde_json::from_slice(&fs::read(path)?)?;
+        if observation["owned_pid"] != ownership["ownership_receipt"]["pid"]
+            || observation["items"] != 65
+            || observation["removed_parts_in_first_item"] != 65
+            || observation["page_transitions"]
+                != json!([
+                    "parts-next",
+                    "parts-previous",
+                    "items-next",
+                    "items-previous"
+                ])
+            || observation["outputs_match_independent_goldens"] != true
+        {
+            return Err("Actual enabled pagination observations are incomplete".into());
+        }
+        let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
+        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"summary":summary,"lifetime_owner":ownership,"observation":observation,"persistent_preferences":{"before":before,"after":after,"comparison":preferences}});
+        fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+        return Ok(result);
+    }
+    if case == DesktopCase::Appearance {
+        let name = attachment_name(
+            &manifest,
+            "DesktopInteractionTests/testOwnedNativeAppearance()",
+            "native-appearance-observation_",
+        )?;
+        let path = attachments.join(name);
+        if !fs::symlink_metadata(&path)?.is_file() || fs::metadata(&path)?.len() > 16 * 1024 {
+            return Err("Native appearance observation is not an ordinary bounded document".into());
+        }
+        let observation: Value = serde_json::from_slice(&fs::read(path)?)?;
+        if observation["schema"] != 1
+            || observation["restored"] != true
+            || !observation["owned_pid"].as_i64().is_some_and(|pid| pid > 0)
+            || !observation["settings_pid"]
+                .as_i64()
+                .is_some_and(|pid| pid > 0)
+            || observation["owned_pid"] != ownership["ownership_receipt"]["pid"]
+            || observation["settings_pid"] != ownership["ownership_receipt"]["settings"]["pid"]
+            || observation["conditions"] != json!(["light", "dark", "increased-contrast"])
+            || observation["native_product_observations"]
+                != json!([
+                    "Interface native appearance: light; increased contrast: false",
+                    "Interface native appearance: dark; increased contrast: false",
+                    "Interface native appearance: dark; increased contrast: true"
+                ])
+            || !matches!(
+                observation["original_selector"].as_str(),
+                Some("Light" | "Dark" | "Auto")
+            )
+            || !native_display_settings_match(&observation)
+            || ownership["owned_settings_terminated"] != true
+            || ownership["unexpected_settings_application_pids"] != json!([])
+        {
+            return Err(
+                "Actual appearance evidence or owned Settings settlement is incomplete".into(),
+            );
+        }
+        let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
+        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"appearance":observation,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"actual extracted shipping app under native light/dark/Increase Contrast changes in a final disposable-host phase; original selectors restored through native Settings UI"});
+        fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+        return Ok(result);
+    }
+    let picker_path = attachments.join(attachment_name(
+        &manifest,
+        &format!("DesktopInteractionTests/{}()", case.method()),
+        "native-picker-observation_",
+    )?);
+    let receipt_path = input.join("ownership.json");
+    for path in [&picker_path, &receipt_path] {
+        let metadata = fs::symlink_metadata(path)?;
+        if !metadata.is_file() || metadata.len() > 4096 {
+            return Err(
+                "Native picker/ownership observation is not an ordinary bounded document".into(),
+            );
+        }
+    }
+    let picker: Value = serde_json::from_slice(&fs::read(picker_path)?)?;
+    let receipt: Value = serde_json::from_slice(&fs::read(receipt_path)?)?;
+    if picker["schema"] != 1
+        || picker["scenario"] != case.name()
+        || !picker["owned_pid"].as_i64().is_some_and(|pid| pid > 0)
+        || picker["owned_pid"] != receipt["pid"]
+        || picker["message"] != fixture.path().join("one.eml").to_string_lossy().as_ref()
+        || picker["folder"]
+            != fixture
+                .path()
+                .join("folder-input")
+                .to_string_lossy()
+                .as_ref()
+    {
+        return Err("Native picker evidence is missing or belongs to another app/fixture".into());
+    }
+    let preferences = crate::desktop_preferences::compare(&before, &after, true)?;
+    if case == DesktopCase::Workflow
+        && (ownership["missing_copy_observation"]["held"] != true
+            || ownership["missing_copy_observation"]["restored_by_request"] != true
+            || ownership["missing_copy_observation"]["copy_left_held"] != false
+            || ownership["missing_copy_observation"]["restoration_failure"] != Value::Null)
+    {
+        return Err(
+            "The owned missing-copy navigation control did not complete and restore".into(),
+        );
+    }
+    let scope = if case == DesktopCase::Picker {
+        "actual extracted app focused picker scenario: original About/license/close/reopen/Open With prelude, native message/folder and keyboard pickers, independent golden/original bytes, settled worker presentation, exact preference guard and hidden-window normal Quit; full Finder and broader integration are required separately on both macOS15 consumers"
+    } else {
+        "actual extracted app full workflow: owned launch, About/license/close/reopen/Open With prelude, native pickers, Services, queue8/refusal9/removal, Save/readback/collision, missing-copy restoration, Finder reveal/selection/move/drag, queued destination, independent golden/original checks, settled worker presentation, screenshots, exact preference guard and hidden-window normal Quit"
+    };
+    let result = json!({"case":case.name(),"test_method":case.method(),"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"host_intervention":"not_requested_by_consumer","app":app,"process":process.evidence(),"lifetime_controls":lifetime_controls,"lifetime_owner":ownership,"summary":summary,"ownership_receipt":receipt,"picker_observation":picker,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"comparison":preferences,"argument_only_controls":control_preferences},"scope":scope});
+    fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+    Ok(result)
+}
+
+fn attachment_name<'a>(
+    manifest: &'a Value,
+    test_identifier: &str,
+    prefix: &str,
+) -> Result<&'a str> {
+    let tests = manifest
+        .as_array()
+        .ok_or("Invalid XCTest attachment manifest")?;
+    let mut matches = Vec::new();
+    for test in tests {
+        if test["testIdentifier"] != test_identifier {
+            continue;
+        }
+        for attachment in test["attachments"]
+            .as_array()
+            .ok_or("Missing XCTest attachment list")?
+        {
+            if attachment["suggestedHumanReadableName"]
+                .as_str()
+                .is_some_and(|name| name.starts_with(prefix) && name.ends_with(".json"))
+            {
+                let name = attachment["exportedFileName"]
+                    .as_str()
+                    .ok_or("Missing exported native observation attachment filename")?;
+                if name.is_empty()
+                    || !name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+                    || name == "."
+                    || name == ".."
+                {
+                    return Err(
+                        "Native observation attachment is not a plain exported basename".into(),
+                    );
+                }
+                matches.push(name);
+            }
+        }
+    }
+    if matches.len() != 1 {
+        return Err("Exactly one matching native observation attachment is required".into());
+    }
+    Ok(matches[0])
+}
+
+fn native_display_settings_match(observation: &Value) -> bool {
+    let states = &observation["native_settings_observations"];
+    observation["original_contrast"].is_boolean()
+        && observation["original_reduce_transparency"].is_boolean()
+        && states["before"]["increase_contrast"] == observation["original_contrast"]
+        && states["before"]["reduce_transparency"] == observation["original_reduce_transparency"]
+        && states["increased_contrast"]["increase_contrast"] == true
+        && states["increased_contrast"]["reduce_transparency"].is_boolean()
+        && states["restored"] == states["before"]
+}
+
+#[cfg(test)]
+mod tests {
+    fn picker_attachment_name(manifest: &serde_json::Value) -> crate::Result<&str> {
+        super::attachment_name(
+            manifest,
+            "DesktopInteractionTests/testOwnedDesktopWorkflowAndNativeIngress()",
+            "native-picker-observation_",
+        )
+    }
+    use super::*;
+
+    #[test]
+    fn native_display_receipt_requires_actual_states_and_exact_restoration() {
+        let valid = json!({
+            "original_contrast":false,
+            "original_reduce_transparency":true,
+            "native_settings_observations": {
+                "before":{"increase_contrast":false,"reduce_transparency":true},
+                "increased_contrast":{"increase_contrast":true,"reduce_transparency":true},
+                "restored":{"increase_contrast":false,"reduce_transparency":true}
+            }
+        });
+        assert!(native_display_settings_match(&valid));
+        let mut missing = valid.clone();
+        missing
+            .as_object_mut()
+            .unwrap()
+            .remove("native_settings_observations");
+        assert!(!native_display_settings_match(&missing));
+        let mut unchanged = valid.clone();
+        unchanged["native_settings_observations"]["increased_contrast"]["increase_contrast"] =
+            json!(false);
+        assert!(!native_display_settings_match(&unchanged));
+        let mut unrestored = valid.clone();
+        unrestored["native_settings_observations"]["restored"]["reduce_transparency"] =
+            json!(false);
+        assert!(!native_display_settings_match(&unrestored));
+        let mut coerced = valid;
+        coerced["original_contrast"] = json!("false");
+        assert!(!native_display_settings_match(&coerced));
+    }
+
+    #[test]
+    fn native_observation_requires_the_requested_case_and_attachment_kind() {
+        let mut manifest = json!([
+            {"testIdentifier":"DesktopInteractionTests/testOwnedNativeAppearance()", "attachments":[
+                {"suggestedHumanReadableName":"native-appearance-observation_0.json","exportedFileName":"appearance.json"}
+            ]},
+            {"testIdentifier":"DesktopInteractionTests/testOwnedDesktopWorkflowAndNativeIngress()", "attachments":[
+                {"suggestedHumanReadableName":"native-picker-observation_0.json","exportedFileName":"picker.json"}
+            ]}
+        ]);
+        let focused_identifier =
+            format!("DesktopInteractionTests/{}()", DesktopCase::Picker.method());
+        assert!(
+            attachment_name(&manifest, &focused_identifier, "native-picker-observation_").is_err()
+        );
+        manifest.as_array_mut().unwrap().push(json!({
+            "testIdentifier": focused_identifier,
+            "attachments": [{"suggestedHumanReadableName":"native-picker-observation_1.json","exportedFileName":"focused-picker.json"}]
+        }));
+        assert_eq!(
+            attachment_name(&manifest, &focused_identifier, "native-picker-observation_").unwrap(),
+            "focused-picker.json"
+        );
+        assert_eq!(picker_attachment_name(&manifest).unwrap(), "picker.json");
+        assert_eq!(
+            attachment_name(
+                &manifest,
+                "DesktopInteractionTests/testOwnedNativeAppearance()",
+                "native-appearance-observation_"
+            )
+            .unwrap(),
+            "appearance.json"
+        );
+        assert!(
+            attachment_name(
+                &manifest,
+                "DesktopInteractionTests/testOwnedNativeAppearance()",
+                "native-picker-observation_"
+            )
+            .is_err()
+        );
+        assert!(
+            attachment_name(
+                &manifest,
+                "OtherCase/testOwnedNativeAppearance()",
+                "native-appearance-observation_"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn picker_attachment_requires_one_matching_test_and_a_plain_filename() {
+        let attachment = json!({"suggestedHumanReadableName":"native-picker-observation_0_OWNED.json","exportedFileName":"OWNED.json"});
+        let manifest = |attachments: Value| json!([{"testIdentifier":"DesktopInteractionTests/testOwnedDesktopWorkflowAndNativeIngress()","attachments":attachments}]);
+        assert_eq!(
+            picker_attachment_name(&manifest(json!([attachment]))).unwrap(),
+            "OWNED.json"
+        );
+        assert!(picker_attachment_name(&manifest(json!([]))).is_err());
+        assert!(picker_attachment_name(&manifest(json!([attachment, attachment]))).is_err());
+        let mut unrelated = manifest(json!([attachment]));
+        unrelated[0]["testIdentifier"] = json!("OtherTest/unrelated()");
+        assert!(picker_attachment_name(&unrelated).is_err());
+        for filename in [
+            "../outside.json",
+            "/absolute.json",
+            "nested/owned.json",
+            "..",
+            "",
+        ] {
+            let mut invalid = attachment.clone();
+            invalid["exportedFileName"] = json!(filename);
+            assert!(picker_attachment_name(&manifest(json!([invalid]))).is_err());
+        }
+    }
+}

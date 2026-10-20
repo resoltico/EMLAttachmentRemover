@@ -1,0 +1,2 @@
+{"type":"start","protocol":1,"program":"remove-eml-attachments","version":"@VERSION@","dry_run":false,"total":2,"collection_complete":false}
+{"type":"summary","counts":{"created":0,"up_to_date":0,"planned":0,"failed":0,"not_processed":2},"interrupted":false,"collection_complete":false,"run_error":{"code":"INPUT_LIMIT_EXCEEDED","phase":"collection","detail":"Collection exceeded its admitted resource limit","section":null},"exit_code":1}
