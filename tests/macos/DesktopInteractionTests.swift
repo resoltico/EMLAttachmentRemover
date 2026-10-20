@@ -310,27 +310,14 @@ final class DesktopInteractionTests: XCTestCase {
 
   @MainActor
   func requireText(_ app: XCUIApplication, containing text: String) async throws {
-    var snapshotFailure: Error?
     let predicate = NSPredicate { _, _ in
-      do {
-        var pending = try app.snapshot().children
-        snapshotFailure = nil
-        while let element = pending.popLast() {
-          let value = element.title + "\n" + element.label + "\n" + (element.value as? String ?? "")
-          if value.contains(text) { return true }
-          pending.append(contentsOf: element.children)
-        }
-      } catch {
-        snapshotFailure = error
+      app.descendants(matching: .any).allElementsBoundByIndex.contains {
+        ($0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")).contains(text)
       }
-      return false
     }
     let result = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 20)
-    XCTAssertEqual(
-      result, .completed,
-      "Expected presentation \(text); snapshot error: \(String(describing: snapshotFailure)): \(app.debugDescription)"
-    )
+    XCTAssertEqual(result, .completed, "Expected presentation \(text): \(app.debugDescription)")
     guard result == .completed else { throw InteractionFailure.expectedPresentation }
   }
 
