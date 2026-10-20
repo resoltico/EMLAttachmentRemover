@@ -46,13 +46,17 @@ from the same run/attempt, source, target and archive bytes. The selected produc
 must have case `picker` and method `testOwnedNativePickerCompatibility`;
 it cannot substitute for either full macOS15 desktop consumer. Failed, skipped,
 missing or mismatched case receipts cannot admit an app. Intel envelopes admit
-normal success or the explicitly owner-authorized controlled-host product pass
-after a retained known normal failure. Modified-host mode retains the same-run
-normal failure, complete preparation and actual product; it makes no healthy
-unmodified-host claim. The shared picker predicates independently bind S, workflow
-W, current run/attempt, archive/reference bytes, native host, method, preferences
-and normal settlement. Unknown failures and incomplete controlled attempts block
-both the reusable aggregate and release. Both full macOS15 consumers remain required.
+normal success or an explicitly owner-authorized follow-up after a retained known
+normal failure. Preparation distinguishes a healthy baseline or unchanged probe
+recovery without service action from a measured service intervention after two
+settled known probe failures. Every path still requires the actual same-archive
+product to pass the complete dedicated picker case. Follow-up records retain the
+normal failure, signed probe identities before and after observation, preparation
+and actual product; neither follow-up mode establishes general unmodified-host
+compatibility. The shared picker predicates independently bind S, workflow W,
+current run/attempt, archive/reference bytes, native host, method, preferences and
+normal settlement. Unknown failures and incomplete attempts block both the
+reusable aggregate and release. Both full macOS15 consumers remain required.
 The policy derives exactly eight archive names. `stage-release-assets` freezes their actual bytes,
 checks copy readback and writes the sorted SHA256SUMS as the ninth asset.
 Existing native checks establish behavior; artifact digests preserve the tested

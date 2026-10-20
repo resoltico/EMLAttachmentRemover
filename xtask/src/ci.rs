@@ -11,7 +11,7 @@ pub(crate) fn validate(event: &str, native: bool, needs: &Value) -> Result<()> {
         if event != "workflow_call" {
             return Err("Native CI admission requires the reusable-workflow event policy".into());
         }
-        let modified = match results
+        let followup = match results
             .get("app_picker_normal")
             .and_then(|job| job["outputs"]["outcome"].as_str())
         {
@@ -27,7 +27,7 @@ pub(crate) fn validate(event: &str, native: bool, needs: &Value) -> Result<()> {
             ("app", "success"),
             ("app_smoke", "success"),
             ("app_picker_normal", "success"),
-            ("app_picker_modified", modified),
+            ("app_picker_followup", followup),
             ("app_picker", "success"),
         ]
     } else {
@@ -87,7 +87,7 @@ mod tests {
             (
                 true,
                 "workflow_call",
-                json!({"plan":{"result":"success"},"lint":{"result":"success"},"legal":{"result":"success"},"test":{"result":"success"},"app":{"result":"success"},"app_smoke":{"result":"success"},"app_picker_normal":{"result":"success","outputs":{"outcome":"normal_pass"}},"app_picker_modified":{"result":"skipped"},"app_picker":{"result":"success"}}),
+                json!({"plan":{"result":"success"},"lint":{"result":"success"},"legal":{"result":"success"},"test":{"result":"success"},"app":{"result":"success"},"app_smoke":{"result":"success"},"app_picker_normal":{"result":"success","outputs":{"outcome":"normal_pass"}},"app_picker_followup":{"result":"skipped"},"app_picker":{"result":"success"}}),
             ),
         ] {
             validate(event, native, &good).unwrap();
@@ -114,17 +114,17 @@ mod tests {
         }
     }
     #[test]
-    fn controlled_picker_is_required_only_after_a_known_normal_failure() {
-        let mut needs = json!({"plan":{"result":"success"},"lint":{"result":"success"},"legal":{"result":"success"},"test":{"result":"success"},"app":{"result":"success"},"app_smoke":{"result":"success"},"app_picker_normal":{"result":"success","outputs":{"outcome":"known_panel_failure"}},"app_picker_modified":{"result":"success"},"app_picker":{"result":"success"}});
+    fn followup_picker_is_required_only_after_a_known_normal_failure() {
+        let mut needs = json!({"plan":{"result":"success"},"lint":{"result":"success"},"legal":{"result":"success"},"test":{"result":"success"},"app":{"result":"success"},"app_smoke":{"result":"success"},"app_picker_normal":{"result":"success","outputs":{"outcome":"known_panel_failure"}},"app_picker_followup":{"result":"success"},"app_picker":{"result":"success"}});
         validate("workflow_call", true, &needs).unwrap();
         for result in ["skipped", "failure", "cancelled"] {
-            needs["app_picker_modified"]["result"] = json!(result);
+            needs["app_picker_followup"]["result"] = json!(result);
             assert!(validate("workflow_call", true, &needs).is_err());
         }
-        needs["app_picker_modified"]["result"] = json!("success");
+        needs["app_picker_followup"]["result"] = json!("success");
         needs["app_picker_normal"]["outputs"]["outcome"] = json!("normal_pass");
         assert!(validate("workflow_call", true, &needs).is_err());
-        needs["app_picker_modified"]["result"] = json!("skipped");
+        needs["app_picker_followup"]["result"] = json!("skipped");
         validate("workflow_call", true, &needs).unwrap();
         needs["app_picker_normal"]["outputs"]["outcome"] = json!("unknown_failure");
         assert!(validate("workflow_call", true, &needs).is_err());

@@ -123,7 +123,7 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Prepare one controlled Intel26 picker host after a validated same-run normal failure.
+    /// Prepare one fresh Intel26 follow-up host after a validated same-run normal failure.
     PrepareMacosPickerHost {
         #[arg(long)]
         archive: PathBuf,
