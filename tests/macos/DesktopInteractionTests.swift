@@ -81,7 +81,11 @@ final class DesktopInteractionTests: XCTestCase {
     }
     panel.buttons["Save"].click()
     if expectNameCollision {
-      try await requireText(app, containing: "An item already exists with that name.")
+      try await requireNativePanelMessage(
+        panel,
+        expected:
+          "An item already exists with that name. Choose a different name; existing items are never replaced."
+      )
       XCTAssertTrue(panel.exists, "Refusing an occupied name must keep the Save panel usable")
       XCTAssertEqual(filename.value as? String, destination.lastPathComponent)
       XCTAssertFalse(
@@ -306,14 +310,27 @@ final class DesktopInteractionTests: XCTestCase {
 
   @MainActor
   func requireText(_ app: XCUIApplication, containing text: String) async throws {
+    var snapshotFailure: Error?
     let predicate = NSPredicate { _, _ in
-      app.descendants(matching: .any).allElementsBoundByIndex.contains {
-        ($0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")).contains(text)
+      do {
+        var pending = try app.snapshot().children
+        snapshotFailure = nil
+        while let element = pending.popLast() {
+          let value = element.title + "\n" + element.label + "\n" + (element.value as? String ?? "")
+          if value.contains(text) { return true }
+          pending.append(contentsOf: element.children)
+        }
+      } catch {
+        snapshotFailure = error
       }
+      return false
     }
     let result = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 20)
-    XCTAssertEqual(result, .completed, "Expected presentation \(text): \(app.debugDescription)")
+    XCTAssertEqual(
+      result, .completed,
+      "Expected presentation \(text); snapshot error: \(String(describing: snapshotFailure)): \(app.debugDescription)"
+    )
     guard result == .completed else { throw InteractionFailure.expectedPresentation }
   }
 
