@@ -1,7 +1,6 @@
 # Contributing
 
-Read [AGENTS.md](AGENTS.md). Version 6 is Unreleased. Acceptance requires the
-complete [native, archive and GUI gates](docs/verification.md) for the delivered
+Read [AGENTS.md](AGENTS.md). Acceptance requires the complete [native, archive and GUI gates](docs/verification.md) for the delivered
 source. Local checks establish only the properties they execute; consult the
 source-specific CI run for platform qualification.
 
@@ -23,6 +22,8 @@ do not regenerate it merely to work around a failed locked command. Normal produ
 business behavior belongs in eml-core/eml-fs, not CLI renderers or desktop views.
 All test mail is synthetic. Put build output and owned fixtures under target/.
 Never use owner mail, saved preferences or unrelated processes for verification.
+
+Docker Linux product tests require a reviewed destination filesystem, such as an ext4-backed volume selected through `TMPDIR`; the usual OverlayFS container layer is deliberately refused for namespace creation. Protected archive tooling also admits every ancestor through `/`, so changing only its scratch directory cannot qualify an OverlayFS-root container; run the complete archive/native suite on the supported GitHub CI hosts.
 
 Windows native builds use the matching `*-pc-windows-gnullvm` host with rust-mingw.
 Install that host from the authoritative target table, select its
