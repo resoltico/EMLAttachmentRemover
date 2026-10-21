@@ -1,9 +1,9 @@
 {
-  "version": "1.99.0",
-  "commit": "b940084d7eb6a299eb4bfeb8e34901bc051e7ac4",
-  "manifest": "https://static.rust-lang.org/dist/2026-10-01/channel-rust-1.99.0.toml",
-  "component": "https://static.rust-lang.org/dist/2026-10-01/rustc-1.99.0-aarch64-apple-darwin.tar.xz",
-  "component_sha256": "334a66714ca316d71bbe5efe44f71762d0b276cea73be2987374693a837f7450",
+  "version": "1.99.1",
+  "commit": "58cf8f9c35b355199727627d07ae34a4e2846d67",
+  "manifest": "https://static.rust-lang.org/dist/2026-10-15/channel-rust-1.99.1.toml",
+  "component": "https://static.rust-lang.org/dist/2026-10-15/rustc-1.99.1-aarch64-apple-darwin.tar.xz",
+  "component_sha256": "23948a0a9c162fd2952defb3fb0462c44e8fcfd1a4ab8a274a1e1bdb2cf810a3",
   "materials": [
     {
       "file": "COPYRIGHT-library.html",

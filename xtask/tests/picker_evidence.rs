@@ -10,7 +10,8 @@ use std::{
 fn expected() -> Value {
     json!({"source":"a".repeat(40),"target":"x86_64-apple-darwin","run":"12","attempt":"1",
         "workflow_ref":"owner/repo/.github/workflows/ci.yml@refs/pull/1/merge","workflow_sha":"c".repeat(40),
-        "archive":{"sha256":"b".repeat(64),"byte_length":100},"reference":{"sha256":"d".repeat(64),"byte_length":50}})
+        "archive":{"sha256":"b".repeat(64),"byte_length":100},"reference":{"sha256":"d".repeat(64),"byte_length":50},
+        "picker_host":{"image_os":"macos26","image_version":"20260824.0517.1","product_version":"26.6.1","build_version":"25G76"}})
 }
 fn admits(filter: &str, value: &Value) -> bool {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
@@ -48,7 +49,7 @@ fn owner() -> Value {
 }
 fn product() -> Value {
     json!({"stage":"picker_compatibility","source":expected()["source"],"target":expected()["target"],
-    "host":{"target":"x86_64-apple-darwin","process_os":"macos","process_architecture":"x86_64","kernel_machine":"x86_64","product_version":"26.6.1"},
+    "host":{"target":"x86_64-apple-darwin","process_os":"macos","process_architecture":"x86_64","kernel_machine":"x86_64","product_version":"26.6.1","actual_os":"ProductName: macOS\nProductVersion: 26.6.1\nBuildVersion: 25G76\n"},
     "verification":{"stage":"picker_compatibility","snapshot":expected()["archive"],"picker":{
         "source":expected()["source"],"case":"picker","test_method":"testOwnedNativePickerCompatibility","app":"/owned/app.app",
         "summary":{"totalTestCount":1,"passedTests":1,"failedTests":0,"skippedTests":0,"expectedFailures":0},
@@ -57,120 +58,168 @@ fn product() -> Value {
         "persistent_preferences":{"comparison":{"real_pickers_observed":true,"application_and_other_preferences_unchanged":true}}
     }}})
 }
-fn known_failure() -> Value {
-    let mut result = expected();
-    let mut failed_owner = owner();
-    failed_owner["failure"] = json!("runner failed");
-    failed_owner["runner_status"] = json!(65);
-    failed_owner["native_picker_diagnostic_settled"] = json!(true);
-    failed_owner["native_picker_owned_process_log"] = json!({"pid":42});
-    failed_owner["fixture_output_relay"] =
-        json!({"enabled":true,"eof_observed":true,"drain_within_deadline":true,"failure":null});
-    result.as_object_mut().unwrap().extend(json!({"stage":"picker_normal_observation","outcome":"known_panel_failure","original_exit_code":1,
-        "process":process(1),"owner":failed_owner,
-        "xctest_log":"error: -[DesktopInteraction.DesktopInteractionTests testOwnedNativePickerCompatibility] : failed - Native input panel did not appear",
-        "owned_log":"Advance to configuration phase semaphore timed out"}).as_object().unwrap().clone());
+fn host() -> Value {
+    json!({"target":"x86_64-apple-darwin","process_os":"macos","process_architecture":"x86_64","kernel_machine":"x86_64",
+        "image_os":"macos26","image_version":"20260824.0517.1","product_version":"26.6.1","build_version":"25G76",
+        "boot_uuid":"11111111-2222-3333-4444-555555555555"})
+}
+fn caller() -> Value {
+    json!({"uid":501,"euid":501,"console_uid":501,"security_session":{"status":0,"security_session_id":9,"graphic_access":true}})
+}
+fn command(arguments: Value, exit: i32) -> Value {
+    json!({"program":"/bin/launchctl","arguments":arguments,"process":process(exit),
+        "stdout_path":"/owned/command.stdout","stderr_path":"/owned/command.stderr"})
+}
+fn disabled(value: Value) -> Value {
+    let mut result = command(json!(["print-disabled", "gui/501"]), 0);
+    result["override"] = value;
     result
 }
-fn probe(healthy: bool) -> Value {
-    let id = json!({"path":"/owned/probe.app","signature_display":"Mach-O thin (x86_64) Signature=adhoc",
-        "files":{"Contents/Info.plist":{"sha256":"1".repeat(64),"byte_length":10},
-            "Contents/MacOS/NativePanelDiagnostic":{"sha256":"2".repeat(64),"byte_length":100},
-            "Contents/_CodeSignature/CodeResources":{"sha256":"3".repeat(64),"byte_length":20}}});
-    json!({"identity":id,"identity_after":id,"process":process(if healthy {0} else {2}),
-        "observation":if healthy {"healthy"} else {"known_panel_failure"},
-        "phases":["constructor entry","constructor returned","presentation returned",
-            if healthy {"cancel retained panel; visible=true"} else {"cancel retained panel; visible=false"},
-            if healthy {"callback response 0"} else {"callback deadline exceeded"}]})
+fn absent() -> Value {
+    let mut result = command(
+        json!(["print", "gui/501/com.apple.iconservices.iconservicesagent"]),
+        113,
+    );
+    result["selected_fields"] = json!({});
+    result["absence_diagnostic"] = json!(
+        "Could not find service \"com.apple.iconservices.iconservicesagent\" in domain for user gui: 501"
+    );
+    result
 }
-fn preparation(outcome: &str, healthy_baseline: bool) -> Value {
-    let mut baseline = probe(healthy_baseline);
-    baseline.as_object_mut().unwrap().extend(json!({"source":expected()["source"],"run":"12","attempt":"1","entitlements":null,
-        "host":{"target":"x86_64-apple-darwin","process_os":"macos","process_architecture":"x86_64","kernel_machine":"x86_64","actual_os":"ProductVersion: 26.6.1\n"}}).as_object().unwrap().clone());
-    let mut prep = json!({"stage":"observed","purpose":"picker_qualification_preparation","outcome":outcome,
-        "original_failure_remains_authoritative":true,"gui_uid":501,"baseline":baseline});
-    if !healthy_baseline {
-        prep["unchanged_repeat"] = probe(outcome == "unmodified");
-    }
-    if outcome == "service_intervention" {
-        prep["target"] = json!("gui/501/com.apple.iconservices.iconservicesagent");
-        prep["bootout"] = json!({"program":"/bin/launchctl","arguments":["bootout","gui/501/com.apple.iconservices.iconservicesagent"],"process":process(0)});
-        prep["intervention_probe"] = probe(true);
-    }
-    prep
+fn provisioned() -> Value {
+    json!({"target":"gui/501/com.apple.iconservices.iconservicesagent","print":absent(),"disabled":disabled(json!(true))})
 }
-fn followup(prep: Value) -> Value {
-    let mut record = expected();
-    record.as_object_mut().unwrap().extend(json!({"stage":"picker_followup_qualification","normal":known_failure(),"preparation":prep,"product":product()}).as_object().unwrap().clone());
-    record
+fn loaded() -> Value {
+    let mut result = command(
+        json!(["print", "gui/501/com.apple.iconservices.iconservicesagent"]),
+        0,
+    );
+    result["absence_diagnostic"] = Value::Null;
+    result["selected_fields"] = json!({"path":"/System/Library/LaunchAgents/com.apple.iconservices.iconservicesagent.plist",
+        "program":"/System/Library/CoreServices/iconservicesagent","type":"LaunchAgent","domain":"gui/501 [100001]","state":"spawn scheduled"});
+    json!({"target":"gui/501/com.apple.iconservices.iconservicesagent","print":result,"disabled":disabled(Value::Null)})
 }
-fn qualification(prep: Value) -> Value {
-    let mode = if prep["outcome"] == "unmodified" {
-        "unmodified_followup"
-    } else {
-        "modified_host"
-    };
-    let mut record = expected();
-    record.as_object_mut().unwrap().extend(json!({"stage":"picker_qualification","mode":mode,"normal":known_failure(),"followup":followup(prep),"product":product()}).as_object().unwrap().clone());
-    record
+fn crash() -> Value {
+    json!({"file_name":"iconservicesagent-native.ips","identity":{"sha256":"e".repeat(64),"byte_length":1000},
+        "pid":700,"user_id":501,"boot_uuid":host()["boot_uuid"],"os_build":"25G76","capture_time":"2026-10-21 03:20:00+0000",
+        "proc_path":"/System/Library/CoreServices/iconservicesagent","exception_signal":"SIGABRT","termination":{"namespace":"SIGNAL","code":6},
+        "faulting_thread":{"index":0,"triggered":true,"frames":[
+            {"symbol":"+[MTLLoader sliceIDForDevice:legacyDriverVersion:airntDriverVersion:]","image_name":"Metal","image_path":"/System/Library/Frameworks/Metal.framework/Versions/A/Metal"},
+            {"symbol":"RBCreateDevice","image_name":"RenderBox","image_path":"/System/Library/PrivateFrameworks/RenderBox.framework/Versions/A/RenderBox"},
+            {"symbol":null,"image_name":"libsystem_kernel.dylib","image_path":"/usr/lib/system/libsystem_kernel.dylib"}]}})
 }
-
-#[test]
-fn normal_picker_requires_real_case_identity_and_complete_owner_facts() {
-    let p = product();
-    assert!(admits("product($e)", &p));
-    for field in ["case", "test_method"] {
-        let mut wrong = p.clone();
-        wrong["verification"]["picker"][field] = json!("workflow");
-        assert!(!admits("product($e)", &wrong));
-    }
-    let mut skipped = p.clone();
-    skipped["verification"]["picker"]["summary"]["skippedTests"] = json!(1);
-    assert!(!admits("product($e)", &skipped));
-    let mut forced = p.clone();
-    forced["verification"]["picker"]["lifetime_owner"]["forced_app_cleanup"] = json!(true);
-    assert!(!admits("product($e)", &forced));
-    let mut missing = p;
-    missing["verification"]["picker"]["lifetime_owner"]
-        .as_object_mut()
+fn preparation() -> Value {
+    let mut result = expected();
+    result.as_object_mut().unwrap().extend(json!({"stage":"picker_host_preparation","host":host(),"caller":caller(),
+        "service_before":loaded(),"crash_reports":[crash()],
+        "bootout":command(json!(["bootout","gui/501/com.apple.iconservices.iconservicesagent"]),0),"bootout_absence":null,
+        "disable":command(json!(["disable","gui/501/com.apple.iconservices.iconservicesagent"]),0),"service_after":provisioned()}).as_object().unwrap().clone());
+    result
+}
+fn postverification() -> Value {
+    let mut result = expected();
+    result.as_object_mut().unwrap().extend(json!({"stage":"picker_host_verification","host":host(),"caller":caller(),"service":provisioned()}).as_object().unwrap().clone());
+    result
+}
+fn qualification() -> Value {
+    let mut result = expected();
+    result.as_object_mut().unwrap().extend(
+        json!({"stage":"picker_qualification","mode":"modified_host",
+        "preparation":preparation(),"product":product(),"postverification":postverification()})
+        .as_object()
         .unwrap()
-        .remove("failure");
-    assert!(!admits("product($e)", &missing));
-    let mut normal = expected();
-    normal.as_object_mut().unwrap().extend(json!({"stage":"picker_normal_observation","outcome":"normal_pass","original_exit_code":0,"product":product()}).as_object().unwrap().clone());
-    let mut qualification = expected();
-    qualification.as_object_mut().unwrap().extend(json!({"stage":"picker_qualification","mode":"normal","normal":normal,"followup":null,"product":product()}).as_object().unwrap().clone());
-    assert!(admits("qualification($e)", &qualification));
-    qualification["mode"] = json!("modified_host");
-    assert!(!admits("qualification($e)", &qualification));
+        .clone(),
+    );
+    result
+}
+fn rejects(path: &str, value: Value) {
+    let mut record = qualification();
+    *record.pointer_mut(path).unwrap() = value;
+    assert!(!admits("qualification($e)", &record), "accepted {path}");
 }
 
 #[test]
-fn followup_requires_original_failure_same_run_and_actual_product() {
-    assert!(admits("known_failure($e)", &known_failure()));
-    let mut unrelated = known_failure();
-    unrelated["xctest_log"] = json!("Go To sheet did not close");
-    assert!(!admits("known_failure($e)", &unrelated));
-    for prep in [
-        preparation("unmodified", true),
-        preparation("unmodified", false),
-        preparation("service_intervention", false),
+fn real_product_contract_remains_required_without_skips_or_forced_cleanup() {
+    assert!(admits("product($e)", &product()));
+    for (path, value) in [
+        ("/product/verification/picker/case", json!("workflow")),
+        (
+            "/product/verification/picker/test_method",
+            json!("readiness"),
+        ),
+        (
+            "/product/verification/picker/summary/skippedTests",
+            json!(1),
+        ),
+        (
+            "/product/verification/picker/summary/expectedFailures",
+            json!(1),
+        ),
+        (
+            "/product/verification/picker/lifetime_owner/forced_app_cleanup",
+            json!(true),
+        ),
+        (
+            "/product/verification/picker/lifetime_owner/failure",
+            json!("failure"),
+        ),
+        (
+            "/product/verification/picker/persistent_preferences/comparison/application_and_other_preferences_unchanged",
+            json!(false),
+        ),
+        ("/product/verification/picker/process/signal", json!(9)),
+        (
+            "/product/verification/snapshot/sha256",
+            json!("0".repeat(64)),
+        ),
     ] {
-        let qualified = qualification(prep);
-        assert!(admits("qualification($e)", &qualified));
-        for path in [
-            "/normal",
-            "/followup/normal",
-            "/product",
-            "/followup/product",
-        ] {
-            let mut missing = qualified.clone();
-            *missing.pointer_mut(path).unwrap() = Value::Null;
-            assert!(
-                !admits("qualification($e)", &missing),
-                "accepted missing {path}"
-            );
+        rejects(path, value);
+    }
+}
+
+#[test]
+fn modified_host_requires_complete_bracketing_and_observed_not_assumed_state() {
+    assert!(admits("qualification($e)", &qualification()));
+    for prior in [Value::Null, json!(true), json!(false)] {
+        let mut record = qualification();
+        record["preparation"]["service_before"]["disabled"]["override"] = prior;
+        assert!(admits("qualification($e)", &record));
+    }
+    let mut already_absent = qualification();
+    already_absent["preparation"]["bootout"]["process"]["exit_code"] = json!(1);
+    already_absent["preparation"]["bootout_absence"] = absent();
+    assert!(admits("qualification($e)", &already_absent));
+    already_absent["preparation"]["bootout_absence"]["process"]["exit_code"] = json!(1);
+    assert!(!admits("qualification($e)", &already_absent));
+    let mut older = qualification();
+    let mut report = crash();
+    report["boot_uuid"] = json!("different-old-boot");
+    older["preparation"]["crash_reports"]
+        .as_array_mut()
+        .unwrap()
+        .push(report);
+    assert!(admits("qualification($e)", &older));
+    for mode in ["normal", "unmodified_followup", "unknown"] {
+        rejects("/mode", json!(mode));
+    }
+    for path in ["/preparation", "/product", "/postverification"] {
+        rejects(path, Value::Null);
+    }
+    rejects("/stage", json!("picker_qualification_attempt"));
+    rejects("/preparation/stage", json!("ready"));
+    rejects("/postverification/stage", json!("picker_host_preparation"));
+    for prefix in ["", "/preparation", "/postverification"] {
+        for field in ["failure", "error"] {
+            let mut failed = qualification();
+            failed.pointer_mut(prefix).unwrap()[field] = json!("failed operation");
+            assert!(!admits("qualification($e)", &failed));
         }
+    }
+}
+
+#[test]
+fn source_run_archive_policy_host_and_gui_context_cannot_be_substituted() {
+    for prefix in ["", "/preparation", "/postverification"] {
         for field in [
             "source",
             "target",
@@ -180,174 +229,143 @@ fn followup_requires_original_failure_same_run_and_actual_product() {
             "workflow_sha",
             "archive",
             "reference",
+            "picker_host",
         ] {
-            for prefix in ["", "/normal", "/followup", "/followup/normal"] {
-                let mut wrong = qualified.clone();
-                wrong.pointer_mut(prefix).unwrap()[field] = json!("wrong identity");
-                assert!(
-                    !admits("qualification($e)", &wrong),
-                    "accepted {prefix}/{field}"
-                );
-            }
+            rejects(&format!("{prefix}/{field}"), json!("unrelated"));
         }
-        for path in [
-            "/followup/preparation/baseline/run",
-            "/followup/preparation/baseline/attempt",
-            "/followup/preparation/baseline/source",
-        ] {
-            let mut wrong = qualified.clone();
-            *wrong.pointer_mut(path).unwrap() = json!("wrong");
-            assert!(!admits("qualification($e)", &wrong));
-        }
-        for mode in [
-            "normal",
-            "unknown",
-            if qualified["mode"] == "modified_host" {
-                "unmodified_followup"
-            } else {
-                "modified_host"
-            },
-        ] {
-            let mut wrong = qualified.clone();
-            wrong["mode"] = json!(mode);
-            assert!(!admits("qualification($e)", &wrong));
-        }
-        let mut forged = qualified;
-        forged["normal"]["outcome"] = json!("normal_pass");
-        forged["normal"]["original_exit_code"] = json!(0);
-        forged["normal"]["product"] = product();
-        forged["followup"]["normal"] = forged["normal"].clone();
-        assert!(!admits("qualification($e)", &forged));
     }
+    for prefix in ["/preparation", "/postverification"] {
+        for (field, value) in [
+            ("image_os", json!("macos15")),
+            ("image_version", json!("unknown")),
+            ("build_version", json!("25G77")),
+            ("product_version", json!("26.6.2")),
+            ("process_architecture", json!("aarch64")),
+        ] {
+            rejects(&format!("{prefix}/host/{field}"), value);
+        }
+        for (field, value) in [
+            ("uid", json!(0)),
+            ("euid", json!(0)),
+            ("console_uid", json!(502)),
+        ] {
+            rejects(&format!("{prefix}/caller/{field}"), value);
+        }
+        for (field, value) in [
+            ("status", json!(1)),
+            ("security_session_id", json!(0)),
+            ("graphic_access", json!(false)),
+        ] {
+            rejects(&format!("{prefix}/caller/security_session/{field}"), value);
+        }
+    }
+    rejects(
+        "/postverification/host/boot_uuid",
+        json!("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+    );
+    rejects(
+        "/postverification/caller/security_session/security_session_id",
+        json!(10),
+    );
+    rejects(
+        "/product/host/actual_os",
+        json!("ProductVersion: 26.6.1\nBuildVersion: 25G77\n"),
+    );
 }
 
 #[test]
-fn preparation_rejects_partial_changed_unknown_or_unclean_probe_evidence() {
-    for prep in [
-        preparation("unmodified", true),
-        preparation("unmodified", false),
-        preparation("service_intervention", false),
-    ] {
-        assert!(admits("preparation($e.source)", &prep));
-        for key in ["baseline", "unchanged_repeat", "intervention_probe"] {
-            if prep.get(key).is_none() {
-                continue;
-            }
-            for field in [
-                "identity",
-                "identity_after",
-                "observation",
-                "phases",
-                "process",
-            ] {
-                let mut missing = prep.clone();
-                missing[key].as_object_mut().unwrap().remove(field);
-                assert!(
-                    !admits("preparation($e.source)", &missing),
-                    "accepted missing {key}/{field}"
-                );
-            }
-            for field in ["identity", "identity_after"] {
-                let mut changed = prep.clone();
-                changed[key][field]["path"] = json!("/changed/app.app");
-                assert!(!admits("preparation($e.source)", &changed));
-            }
-            for field in [
-                "cancelled",
-                "timed_out",
-                "cleanup_complete",
-                "unexpected_survivors",
-                "signal",
-                "exit_code",
-            ] {
-                let mut wrong = prep.clone();
-                wrong[key]["process"][field] = match field {
-                    "cancelled" | "timed_out" => json!(true),
-                    "cleanup_complete" => json!(false),
-                    "unexpected_survivors" => json!(1),
-                    "signal" => json!(9),
-                    _ => json!(99),
-                };
-                assert!(
-                    !admits("preparation($e.source)", &wrong),
-                    "accepted {key}/{field}"
-                );
-            }
-            let mut unknown = prep.clone();
-            unknown[key]["observation"] = json!("unknown");
-            assert!(!admits("preparation($e.source)", &unknown));
-            let mut wrong_phases = prep.clone();
-            wrong_phases[key]["phases"][4] = json!("callback response 1");
-            assert!(!admits("preparation($e.source)", &wrong_phases));
-        }
-        for file in [
-            "Contents/Info.plist",
-            "Contents/MacOS/NativePanelDiagnostic",
-            "Contents/_CodeSignature/CodeResources",
+fn exact_native_actions_and_postconditions_are_required() {
+    for path in ["/preparation/bootout", "/preparation/disable"] {
+        rejects(&format!("{path}/program"), json!("/usr/bin/true"));
+        rejects(&format!("{path}/arguments"), json!(["other-service"]));
+        for (field, value) in [
+            ("cancelled", json!(true)),
+            ("timed_out", json!(true)),
+            ("signal", json!(9)),
+            ("cleanup_complete", json!(false)),
+            ("unexpected_survivors", json!(1)),
         ] {
-            let mut partial = prep.clone();
-            partial["baseline"]["identity"]["files"]
-                .as_object_mut()
-                .unwrap()
-                .remove(file);
-            partial["baseline"]["identity_after"] = partial["baseline"]["identity"].clone();
-            assert!(!admits("preparation($e.source)", &partial));
+            rejects(&format!("{path}/process/{field}"), value);
         }
     }
-}
-
-#[test]
-fn unmodified_preparation_forbids_intervention_and_extra_repeat() {
-    for healthy in [false, true] {
-        let prep = preparation("unmodified", healthy);
-        for key in [
-            "target",
-            "service_before",
-            "service_after",
-            "bootout",
-            "intervention_probe",
-        ] {
-            let mut hidden = prep.clone();
-            hidden[key] = Value::Null;
-            assert!(
-                !admits("preparation($e.source)", &hidden),
-                "accepted intervention field {key}"
-            );
-        }
-    }
-    let mut extra = preparation("unmodified", true);
-    extra["unchanged_repeat"] = probe(true);
-    assert!(!admits("preparation($e.source)", &extra));
-    let mut failed = preparation("unmodified", false);
-    failed["unchanged_repeat"] = probe(false);
-    assert!(!admits("preparation($e.source)", &failed));
-    let mut premature = preparation("service_intervention", false);
-    premature["unchanged_repeat"] = probe(true);
-    assert!(!admits("preparation($e.source)", &premature));
-}
-
-#[test]
-fn intervention_preparation_requires_targeted_successful_service_action() {
-    let prep = preparation("service_intervention", false);
-    for path in ["/bootout", "/intervention_probe", "/unchanged_repeat"] {
-        let mut missing = prep.clone();
-        *missing.pointer_mut(path).unwrap() = Value::Null;
-        assert!(!admits("preparation($e.source)", &missing));
-    }
-    for (path, value) in [
-        (
-            "/target",
+    rejects("/preparation/bootout/process/exit_code", json!(1));
+    rejects("/preparation/disable/process/exit_code", json!(1));
+    rejects(
+        "/preparation/service_before/print/selected_fields/program",
+        json!("/tmp/counterfeit"),
+    );
+    rejects(
+        "/preparation/service_before/print/selected_fields/domain",
+        json!("gui/502 [100001]"),
+    );
+    rejects(
+        "/preparation/service_before/print/selected_fields/state",
+        json!(""),
+    );
+    for prefix in ["/preparation/service_after", "/postverification/service"] {
+        rejects(
+            &format!("{prefix}/target"),
             json!("gui/502/com.apple.iconservices.iconservicesagent"),
-        ),
-        ("/gui_uid", json!(0)),
-        ("/bootout/program", json!("/usr/bin/true")),
-        ("/bootout/arguments", json!(["bootout", "other-service"])),
-        ("/bootout/process/exit_code", json!(1)),
-        ("/bootout/process/signal", json!(9)),
-        ("/bootout/process/cleanup_complete", json!(false)),
+        );
+        rejects(&format!("{prefix}/print/process/exit_code"), json!(0));
+        rejects(
+            &format!("{prefix}/print/absence_diagnostic"),
+            json!("Not found"),
+        );
+        rejects(
+            &format!("{prefix}/print/selected_fields"),
+            json!({"state":"running"}),
+        );
+        rejects(&format!("{prefix}/disabled/override"), json!(false));
+        rejects(&format!("{prefix}/disabled/process/exit_code"), json!(1));
+    }
+}
+
+#[test]
+fn all_selected_crashes_require_recognized_schema_and_a_matching_fault() {
+    for (field, value) in [
+        ("capture_time", Value::Null),
+        ("identity", Value::Null),
+        ("file_name", json!("other.ips")),
+        ("pid", json!(0)),
+        ("user_id", json!(502)),
+        ("boot_uuid", json!("old-boot")),
+        ("os_build", json!("25G77")),
+        ("proc_path", json!("/tmp/iconservicesagent")),
+        ("exception_signal", json!("SIGSEGV")),
     ] {
-        let mut wrong = prep.clone();
-        *wrong.pointer_mut(path).unwrap() = value;
-        assert!(!admits("preparation($e.source)", &wrong), "accepted {path}");
+        rejects(&format!("/preparation/crash_reports/0/{field}"), value);
+    }
+    rejects("/preparation/crash_reports", json!([]));
+    rejects("/preparation/crash_reports/0/termination/code", json!(11));
+    rejects(
+        "/preparation/crash_reports/0/faulting_thread/triggered",
+        json!(false),
+    );
+    for (path, value) in [
+        ("0/symbol", Value::Null),
+        ("0/symbol", json!(true)),
+        ("0/image_path", json!("/tmp/Metal")),
+        ("1/symbol", Value::Null),
+        ("1/image_path", json!("/tmp/RenderBox")),
+        ("2/symbol", json!(4)),
+    ] {
+        rejects(
+            &format!("/preparation/crash_reports/0/faulting_thread/frames/{path}"),
+            value,
+        );
+    }
+    let mut partial = qualification();
+    partial["preparation"]["crash_reports"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"boot_uuid":host()["boot_uuid"]}));
+    assert!(!admits("qualification($e)", &partial));
+    for path in [
+        "/preparation/bootout/process",
+        "/preparation/service_after/print/process",
+        "/postverification/service/disabled/process",
+    ] {
+        rejects(path, json!({"event":"ready","session":1}));
     }
 }

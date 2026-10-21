@@ -349,12 +349,15 @@ pub(crate) fn macho_identity(bytes: &[u8]) -> Result<MachIdentity> {
     let mut commands = mach.macho_load_commands()?;
     let mut build = None;
     while let Some(command) = commands.next()? {
-        if let Some(value) = command.build_version()? {
+        if let Some((value, _tools)) = command.build_version(mach.endian())? {
             if build.is_some() || value.platform.get(mach.endian()) != object::macho::PLATFORM_MACOS
             {
                 return Err("Expected exactly one macOS build-version command".into());
             }
-            build = Some((value.minos.get(mach.endian()), value.sdk.get(mach.endian())));
+            build = Some((
+                value.minos.get(mach.endian()).0,
+                value.sdk.get(mach.endian()).0,
+            ));
         }
     }
     let (minimum, sdk) = build.ok_or("Missing macOS build version")?;
@@ -705,7 +708,7 @@ mod tests {
             .flat_map(u32::to_le_bytes)
             .collect();
             for size in sizes {
-                bytes.extend(object::macho::LC_UUID.to_le_bytes());
+                bytes.extend(object::macho::LC_UUID.0.to_le_bytes());
                 bytes.extend(size.to_le_bytes());
                 bytes.extend(std::iter::repeat_n(0x42, size.saturating_sub(8) as usize));
             }

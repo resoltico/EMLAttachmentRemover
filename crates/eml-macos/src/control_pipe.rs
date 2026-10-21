@@ -39,12 +39,10 @@ impl InheritedControlWriter {
                 "Private control descriptor must be a write-only pipe",
             ));
         }
-        // Darwin sys/fcntl.h: F_SETNOSIGPIPE=73, absent in libc0.2.190.
-        const SET_NO_SIGPIPE: libc::c_int = 73;
         // SAFETY: this pipe's open-file-description IO policy is changed, shared
         // with original3; CLOEXEC above is descriptor-local. There is no global
         // signal change. Nonblocking one-byte writes cannot strand ctrlc.
-        if unsafe { libc::fcntl(descriptor.as_raw_fd(), SET_NO_SIGPIPE, 1) } < 0
+        if unsafe { libc::fcntl(descriptor.as_raw_fd(), libc::F_SETNOSIGPIPE, 1) } < 0
             || unsafe {
                 libc::fcntl(
                     descriptor.as_raw_fd(),

@@ -167,41 +167,48 @@ the same source/target/archive snapshot and actual host. CI and release
 preparation require these distinct stages; candidate success cannot promote
 itself to desktop qualification.
 
-Intel26 picker admission first records the ordinary dedicated product run in
-`app_picker_normal`. A normal success qualifies through `app_picker`; no service
-action runs. Only the exact dedicated-method native-panel/configuration-timeout
-failure with clean controller/owner evidence and identical retained ZIP can emit
-`known_panel_failure`. Other failures remain failed jobs. The measurement retains
-the original exit code and raw owned evidence; it is not compatibility success.
+Intel26 picker admission uses one `app_picker` job on a fresh hosted VM. Its
+`picker_host` policy comes from `xtask/distribution.toml`; unknown image/OS/build
+coordinates fail before any service action. `prepare-macos-picker-host` admits
+only the exact CI/owner-release workflow file and job, actual native Intel26,
+same source/run/attempt/archive/reference, and a non-root current console user
+with a graphical Security session. It checks the fixed Apple GUI-user
+`com.apple.iconservices.iconservicesagent` identity and bounded native crash
+reports. Every selected report must have a recognized schema; at least one must
+identify this user's current boot/build, the Apple executable, SIGABRT and the
+known Metal/RenderBox fault. See the [runner-image issue](https://github.com/actions/runner-images/issues/14751).
 
-For that admitted failure only, `app_picker_followup` starts on a separate fresh
-Intel26 VM. `prepare-macos-picker-host` admits only the exact CI/owner-release
-workflow file and job, actual native Intel26, same source/run/attempt/archive and
-reference, non-root console user and healthy controller. It classifies the signed
-probe using settled process status and the exact constructor, presentation,
-visibility and callback phases, retaining its identity before and after each run.
-A healthy baseline or one healthy unchanged repeat after a known failed baseline
-records preparation outcome `unmodified` and performs no service observation or
-intervention. Two settled known failures of the unchanged probe are required
-before the exact GUI-user icon-agent bootout and successful unchanged-probe
-sequence can record outcome `service_intervention`. Unknown, unclean or changed
-probe evidence stops preparation. No retry loop or probe-only acceptance exists.
+Only after these guards does preparation boot out and disable that exact
+GUI-user agent. Console-user identity is rechecked immediately before each
+mutation. A nonzero ordinary bootout status is admitted only with immediate,
+exact service-absence readback; timeout, signal or uncertain cleanup fails.
+Disable must succeed, and readback must show both the absent service and its
+explicit disabled override. Environment-bearing launchctl output stays in
+private temporary storage; retained observations contain selected fields and
+command statuses. Unknown, partial or malformed evidence cannot qualify.
 
-After either preparation outcome, the same frozen dedicated product case must
-pass final preferences, original/golden bytes, normal Quit and complete settlement.
-`app_picker` admits normal success with the follow-up role skipped, or the retained
-known normal failure plus complete follow-up preparation and actual product pass.
-Its `picker_qualification` envelope states `mode: normal`,
-`mode: unmodified_followup` or `mode: modified_host`; only the last includes service
-intervention. Both follow-up modes retain the earlier failure and establish no
-general unmodified-host compatibility or causal proof from the observed sequence.
+The same frozen app must then pass the full dedicated picker case, including
+preferences, original/golden bytes, normal Quit and complete settlement.
+`verify-macos-picker-host` performs read-only checks afterward. The final
+`picker_qualification` envelope has `mode: modified_host` and retains
+`preparation`, `product` and `postverification`. Policy, source/bytes, host boot,
+console user and opaque Security-session identity must agree before and after;
+Security-session identifiers are not equated with POSIX session IDs. The product
+must observe the same OS/build and CPU. Its receipt has no boot UUID: same-job
+before/after observations bracket execution rather than directly proving its
+boot identity. This qualifies the actual product on the configured modified
+host; it establishes neither general unmodified-host compatibility nor that the
+service action caused recovery. Earlier failed runs retain their failed status.
+
 The shared [.github/scripts/picker-evidence.jq](../.github/scripts/picker-evidence.jq)
-predicates also govern release, rejecting missing/mixed source, workflow, run,
-attempt, reference, bytes, method, host, preference or settlement evidence.
-The workflow file SHA is recorded separately from tested source S, as required for
-owner release dispatch W. [GitHub's reusable-workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context)
+predicates also govern release, rejecting missing/mixed source, policy, workflow,
+run, attempt, reference, bytes, method, host, preference or settlement evidence.
+The workflow file SHA is recorded separately from tested source S, as required
+for owner release dispatch W. [GitHub's reusable-workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context)
 belongs to the caller. No default GitHub context is overridden. All six native
-rows and both full macOS15 desktop suites remain required in every mode.
+rows and both full macOS15 desktop suites remain required. The separate manual
+native-panel diagnostic retains its probe and controlled experiments; probe
+success cannot substitute for actual-product qualification.
 
 `cargo xtask distribution` prints the native target policy and expected archive
 identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.

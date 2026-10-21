@@ -4,8 +4,11 @@ use std::path::Path;
 
 #[cfg(target_os = "macos")]
 pub(super) fn run(root: &Path, task: Task) -> Result<()> {
-    if matches!(task, Task::PrepareMacosPickerHost { .. }) {
-        crate::macos_panel::require_picker_preparation_context()?;
+    if matches!(
+        task,
+        Task::PrepareMacosPickerHost { .. } | Task::VerifyMacosPickerHost { .. }
+    ) {
+        crate::macos_picker_host::require_context(root)?;
     }
     crate::initialize_controller(root)?;
     match task {
@@ -14,18 +17,20 @@ pub(super) fn run(root: &Path, task: Task) -> Result<()> {
         Task::PrepareMacosPickerHost {
             archive,
             reference,
-            normal_failure,
             out,
         } => {
             let build = crate::macos::load(root)?;
-            crate::macos_panel::prepare_picker_host(
-                root,
-                &build,
-                &archive,
-                &reference,
-                &normal_failure,
-                &out,
-            )
+            crate::macos_picker_host::prepare(root, &build, &archive, &reference, &out).map(|_| ())
+        }
+        Task::VerifyMacosPickerHost {
+            archive,
+            reference,
+            preparation,
+            out,
+        } => {
+            let build = crate::macos::load(root)?;
+            crate::macos_picker_host::verify(root, &build, &archive, &reference, &preparation, &out)
+                .map(|_| ())
         }
         Task::CheckMacosDesktop { out } => crate::macos::check_desktop(root, &out),
         Task::MacosIconDiagnostic { out } => crate::macos_icon::run(root, &out),
@@ -59,8 +64,9 @@ pub(super) fn run(_root: &Path, task: Task) -> Result<()> {
         }
         Task::ObserveMacosPanel { .. } => "Native AppKit panel observation requires macOS",
         Task::PrepareMacosPickerHost { .. } => {
-            "Controlled picker preparation requires native Intel macOS26"
+            "Picker host preparation requires its exact native hosted Intel macOS job"
         }
+        Task::VerifyMacosPickerHost { .. } => "Picker host verification requires native macOS",
         Task::CheckMacosDesktop { .. } => "Native macOS is required for desktop profile checks",
         Task::MacosIconDiagnostic { .. } => "Native macOS is required for icon observations",
         Task::CompileMacosIcon { .. } => "Native macOS is required for owner-icon compilation",

@@ -1,13 +1,13 @@
 {
   "scope": "Upstream legal materials only; final EML link-input/native-runtime qualification is separate and pending",
   "producer": {
-    "rust": "1.99.0",
+    "rust": "1.99.1",
     "llvm_mingw": "20251104",
     "mingw": "287a0d4d478e3575d082ba37ce4dcba86524fc9e",
     "llvm": "21.1.5",
     "llvm_commit": "8e2cd28cd4ba46613a46467b0c91b1cabead26cd"
   },
-  "manifest": "https://static.rust-lang.org/dist/2026-10-01/channel-rust-1.99.0.toml",
+  "manifest": "https://static.rust-lang.org/dist/2026-10-15/channel-rust-1.99.1.toml",
   "materials": [
     {
       "file": "mingw-COPYING",
@@ -54,26 +54,26 @@
     {
       "target": "x86_64-pc-windows-gnullvm",
       "package": "rust-std",
-      "url": "https://static.rust-lang.org/dist/2026-10-01/rust-std-1.99.0-x86_64-pc-windows-gnullvm.tar.xz",
-      "sha256": "dcf636d91ef0639dd31a67169c7d7e27e1f013632490e1af97753b31728e85c0"
+      "url": "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-x86_64-pc-windows-gnullvm.tar.xz",
+      "sha256": "8ddc26705e13c46530c898524b0d2657b7d416a25e8d9ffe369a97b23a619bf6"
     },
     {
       "target": "x86_64-pc-windows-gnullvm",
       "package": "rust-mingw",
-      "url": "https://static.rust-lang.org/dist/2026-10-01/rust-mingw-1.99.0-x86_64-pc-windows-gnullvm.tar.xz",
-      "sha256": "ddd6969ad77f5f65873e3fe54ee45a54cca3ec710f0fd0450ee02659c228f12a"
+      "url": "https://static.rust-lang.org/dist/2026-10-15/rust-mingw-1.99.1-x86_64-pc-windows-gnullvm.tar.xz",
+      "sha256": "98d26260b8581f37309aba228d9613c2f27dff6c23f3eb9e1082577c662596eb"
     },
     {
       "target": "aarch64-pc-windows-gnullvm",
       "package": "rust-std",
-      "url": "https://static.rust-lang.org/dist/2026-10-01/rust-std-1.99.0-aarch64-pc-windows-gnullvm.tar.xz",
-      "sha256": "a4289959bd1f01def677c24ad5331a1ddb10a9d12b5d1f3185b213d09fbd845c"
+      "url": "https://static.rust-lang.org/dist/2026-10-15/rust-std-1.99.1-aarch64-pc-windows-gnullvm.tar.xz",
+      "sha256": "cf14a1b1fb7f32b90369d91f97fa157fe1ca43edb64235df951006baab677a95"
     },
     {
       "target": "aarch64-pc-windows-gnullvm",
       "package": "rust-mingw",
-      "url": "https://static.rust-lang.org/dist/2026-10-01/rust-mingw-1.99.0-aarch64-pc-windows-gnullvm.tar.xz",
-      "sha256": "29e047799840eff929f616f5821c91a2b7fd2f86f045d72d4b52454b7cccade5"
+      "url": "https://static.rust-lang.org/dist/2026-10-15/rust-mingw-1.99.1-aarch64-pc-windows-gnullvm.tar.xz",
+      "sha256": "182ac47dc66767868c376502ea188142485ce7bcd75449b41a8b60a1676be280"
     }
   ]
 }

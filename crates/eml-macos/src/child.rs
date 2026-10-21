@@ -246,9 +246,7 @@ fn spawn_bound(
     };
     // SAFETY: only this newly owned request pipe is changed. A broken worker
     // pipe must return EPIPE without depending on a global SIGPIPE disposition.
-    // Darwin sys/fcntl.h defines F_SETNOSIGPIPE=73; libc0.2.190 omits the binding.
-    const SET_NO_SIGPIPE: libc::c_int = 73;
-    if unsafe { libc::fcntl(input.as_raw_fd(), SET_NO_SIGPIPE, 1) } < 0 {
+    if unsafe { libc::fcntl(input.as_raw_fd(), libc::F_SETNOSIGPIPE, 1) } < 0 {
         return Err(io::Error::last_os_error());
     }
     let descriptors = duplicate_child_sources(

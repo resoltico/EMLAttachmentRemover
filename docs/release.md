@@ -46,17 +46,20 @@ from the same run/attempt, source, target and archive bytes. The selected produc
 must have case `picker` and method `testOwnedNativePickerCompatibility`;
 it cannot substitute for either full macOS15 desktop consumer. Failed, skipped,
 missing or mismatched case receipts cannot admit an app. Intel envelopes admit
-normal success or an explicitly owner-authorized follow-up after a retained known
-normal failure. Preparation distinguishes a healthy baseline or unchanged probe
-recovery without service action from a measured service intervention after two
-settled known probe failures. Every path still requires the actual same-archive
-product to pass the complete dedicated picker case. Follow-up records retain the
-normal failure, signed probe identities before and after observation, preparation
-and actual product; neither follow-up mode establishes general unmodified-host
-compatibility. The shared picker predicates independently bind S, workflow W,
-current run/attempt, archive/reference bytes, native host, method, preferences and
-normal settlement. Unknown failures and incomplete attempts block both the
-reusable aggregate and release. Both full macOS15 consumers remain required.
+only `mode: modified_host`: guarded preparation on the image declared by
+`xtask/distribution.toml`, followed by the complete unchanged product case and
+read-only host/service verification. Preparation requires recognized current-boot
+IconServices crash evidence, then records the exact GUI-user agent bootout and
+disable operations. The shared picker predicates independently bind S, workflow
+W, current run/attempt, configured policy, archive/reference bytes, native host,
+method, preferences and normal settlement. Preparation and final verification
+must agree on boot and caller context; the intervening product's observed OS and
+CPU must match. The product does not directly report its boot UUID. This is
+modified-host coverage, not general unmodified-host compatibility or causal proof
+of recovery. Unconfigured hosts, malformed crash reports, absence of the required
+current-boot fault and incomplete attempts block both the reusable aggregate and
+release. Both full macOS15 consumers
+remain required.
 The policy derives exactly eight archive names. `stage-release-assets` freezes their actual bytes,
 checks copy readback and writes the sorted SHA256SUMS as the ninth asset.
 Existing native checks establish behavior; artifact digests preserve the tested

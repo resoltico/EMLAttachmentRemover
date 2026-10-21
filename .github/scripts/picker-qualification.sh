@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# CI glue only. The real product consumer and shared evidence predicates decide
-# qualification; neither a probe nor a measurement exit alone qualifies an app.
+# CI glue only. Preparation never substitutes for the actual frozen-product case.
 set -euo pipefail
 
-mode=$1
-archive=$2
-reference=$3
+archive=$1
+reference=$2
 picker_source=$(git rev-parse HEAD)
 [[ "${picker_source}" =~ ^[0-9a-f]{40}$ ]]
 [[ "${GITHUB_RUN_ID:?}" =~ ^[1-9][0-9]*$ ]]
 [[ "${GITHUB_RUN_ATTEMPT:?}" =~ ^[1-9][0-9]*$ ]]
+out=target/picker-qualification
+mkdir "${out}"
+cargo xtask distribution > "${out}/distribution.json"
 
 file_identity() {
   test -f "$1" && test ! -L "$1" || return
@@ -22,7 +23,7 @@ bounded_document() {
   test -f "$1" && test ! -L "$1" || return
   local size
   size=$(wc -c < "$1" | tr -d '[:space:]') || return
-  test "${size}" -le "${2:-2097152}"
+  test "${size}" -le 16777216
 }
 expected() {
   local archive_id reference_id
@@ -31,111 +32,37 @@ expected() {
   jq -n --arg source "${picker_source}" --arg run "${GITHUB_RUN_ID}" --arg attempt "${GITHUB_RUN_ATTEMPT}" \
     --arg workflow_ref "${GITHUB_WORKFLOW_REF:?}" --arg workflow_sha "${GITHUB_WORKFLOW_SHA:?}" \
     --argjson archive "${archive_id}" --argjson reference "${reference_id}" \
-    '{source:$source,target:"x86_64-apple-darwin",run:$run,attempt:$attempt,archive:$archive,reference:$reference,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha}'
+    --slurpfile distribution "${out}/distribution.json" \
+    '{source:$source,target:"x86_64-apple-darwin",run:$run,attempt:$attempt,archive:$archive,reference:$reference,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,picker_host:$distribution[0].picker_host}'
 }
 validate() {
-  local maximum=2097152
-  case "$1" in
-    followup_qualification|qualification) maximum=16777216 ;;
-    *) ;;
-  esac
-  bounded_document "$2" "${maximum}"
+  bounded_document "$2"
   jq -e -L .github/scripts --slurpfile e "${out}/expected.json" \
     "include \"picker-evidence\"; $1(\$e[0])" "$2" > /dev/null
 }
-current_product() {
-  local records=(target/app-picker-compatibility/native-*/result.json)
-  test "${#records[@]}" = 1
-  validate product "${records[0]}"
-  cat "${records[0]}"
-}
-
-case "${mode}" in
-  normal)
-    out=target/picker-normal
-    mkdir "${out}"
-    expected > "${out}/expected.json"
-    if cargo xtask check-macos-picker --archive "${archive}" --reference "${reference}"; then
-      current_product > "${out}/product.json"
-      jq -n --slurpfile e "${out}/expected.json" --slurpfile p "${out}/product.json" \
-        '$e[0]+{stage:"picker_normal_observation",outcome:"normal_pass",original_exit_code:0,product:$p[0]}' > "${out}/candidate.json"
-    else
-      original_status=$?
-      normals=(target/app-picker-compatibility/native-*/gui-picker)
-      test "${#normals[@]}" = 1
-      normal=${normals[0]}
-      for file in process.json owner-result.json xctest.log native-picker-owned-process.log; do
-        bounded_document "${normal}/${file}"
-      done
-      retained=(target/app-picker-compatibility/native-*/artifact-*/inspected-input.zip)
-      test "${#retained[@]}" = 1
-      cmp "${retained[0]}" "${archive}"
-      jq -n --slurpfile e "${out}/expected.json" --argjson status "${original_status}" \
-        --slurpfile process "${normal}/process.json" --slurpfile owner "${normal}/owner-result.json" \
-        --rawfile test_log "${normal}/xctest.log" --rawfile owned_log "${normal}/native-picker-owned-process.log" \
-        '$e[0]+{stage:"picker_normal_observation",outcome:"unclassified_failure",original_exit_code:$status,process:$process[0],owner:$owner[0],xctest_log:$test_log,owned_log:$owned_log,scope:"failed normal product evidence; measurement is not compatibility acceptance"}' > "${out}/failure.json"
-      jq -e -L .github/scripts --slurpfile e "${out}/expected.json" \
-        'include "picker-evidence"; (.outcome="known_panel_failure") | known_failure($e[0])' "${out}/failure.json" > /dev/null
-      jq '.outcome="known_panel_failure"' "${out}/failure.json" > "${out}/candidate.json"
-    fi
-    validate normal_observation "${out}/candidate.json"
-    expected > "${out}/expected-after.json"
-    cmp "${out}/expected.json" "${out}/expected-after.json"
-    mv "${out}/candidate.json" "${out}/result.json"
-    jq -er .outcome "${out}/result.json" > "${out}/outcome.txt"
-    ;;
-  followup)
-    out=target/picker-followup
-    mkdir "${out}"
-    expected > "${out}/expected.json"
-    normal_record=$4/picker-normal/result.json
-    validate known_failure "${normal_record}"
-    cargo xtask prepare-macos-picker-host --archive "${archive}" --reference "${reference}" \
-      --normal-failure "${normal_record}" --out "${out}/panel-observation"
-    preparation=${out}/panel-observation/picker-preparation/result.json
-    bounded_document "${preparation}"
-    jq -e -L .github/scripts --arg source "${picker_source}" \
-      'include "picker-evidence"; preparation($source)' "${preparation}" > /dev/null
-    expected > "${out}/expected-after-preparation.json"
-    cmp "${out}/expected.json" "${out}/expected-after-preparation.json"
-    jq -n --slurpfile e "${out}/expected.json" --slurpfile n "${normal_record}" --slurpfile p "${preparation}" \
-      '$e[0]+{stage:"picker_followup_attempt",state:"prepared",normal:$n[0],preparation:$p[0]}' > "${out}/attempt.json"
-    if cargo xtask check-macos-picker --archive "${archive}" --reference "${reference}"; then
-      product_status=0
-    else
-      product_status=$?
-    fi
-    jq --argjson status "${product_status}" '.product_exit_code=$status' "${out}/attempt.json" > "${out}/attempt-after.json"
-    mv "${out}/attempt-after.json" "${out}/attempt.json"
-    test "${product_status}" = 0
-    current_product > "${out}/product.json"
-    expected > "${out}/expected-after-product.json"
-    cmp "${out}/expected.json" "${out}/expected-after-product.json"
-    jq -n --slurpfile e "${out}/expected.json" --slurpfile n "${normal_record}" \
-      --slurpfile prep "${preparation}" --slurpfile p "${out}/product.json" \
-      '$e[0]+{stage:"picker_followup_qualification",normal:$n[0],preparation:$prep[0],product:$p[0],scope:"actual same-frozen-product dedicated picker pass after explicit fresh-host preparation; original normal failure retained; preparation outcome records whether service intervention occurred"}' > "${out}/candidate.json"
-    validate followup_qualification "${out}/candidate.json"
-    mv "${out}/candidate.json" "${out}/result.json"
-    ;;
-  select)
-    out=target/picker-qualification
-    mkdir "${out}"
-    expected > "${out}/expected.json"
-    normal_record=$4/picker-normal/result.json
-    validate normal_observation "${normal_record}"
-    normal_outcome=$(jq -er .outcome "${normal_record}")
-    if test "${normal_outcome}" = normal_pass; then
-      test "${5:-}" = ""
-      jq -n --slurpfile e "${out}/expected.json" --slurpfile n "${normal_record}" \
-        '$e[0]+{stage:"picker_qualification",mode:"normal",normal:$n[0],followup:null,product:$n[0].product}' > "${out}/candidate.json"
-    else
-      followup_record=${5:?}/picker-followup/result.json
-      validate followup_qualification "${followup_record}"
-      jq -n --slurpfile e "${out}/expected.json" --slurpfile n "${normal_record}" --slurpfile f "${followup_record}" \
-        '$e[0]+{stage:"picker_qualification",mode:(if $f[0].preparation.outcome=="unmodified" then "unmodified_followup" else "modified_host" end),normal:$n[0],followup:$f[0],product:$f[0].product}' > "${out}/candidate.json"
-    fi
-    validate qualification "${out}/candidate.json"
-    mv "${out}/candidate.json" "${out}/result.json"
-    ;;
-  *) exit 2 ;;
-esac
+expected > "${out}/expected.json"
+cargo xtask prepare-macos-picker-host --archive "${archive}" --reference "${reference}" \
+  --out "${out}/host-preparation"
+preparation=${out}/host-preparation/preparation.json
+validate host_preparation "${preparation}"
+expected > "${out}/expected-after-preparation.json"
+cmp "${out}/expected.json" "${out}/expected-after-preparation.json"
+jq -n --slurpfile e "${out}/expected.json" --slurpfile p "${preparation}" \
+  '$e[0]+{stage:"picker_qualification_attempt",state:"prepared",preparation:$p[0]}' > "${out}/attempt.json"
+cargo xtask check-macos-picker --archive "${archive}" --reference "${reference}"
+records=(target/app-picker-compatibility/native-*/result.json)
+test "${#records[@]}" = 1
+validate product "${records[0]}"
+cp "${records[0]}" "${out}/product.json"
+cargo xtask verify-macos-picker-host --archive "${archive}" --reference "${reference}" \
+  --preparation "${preparation}" --out "${out}/host-verification"
+verification=${out}/host-verification/verification.json
+validate host_verification "${verification}"
+expected > "${out}/expected-after-product.json"
+cmp "${out}/expected.json" "${out}/expected-after-product.json"
+jq -n --slurpfile e "${out}/expected.json" --slurpfile prep "${preparation}" \
+  --slurpfile product "${out}/product.json" --slurpfile verification "${verification}" \
+  '$e[0]+{stage:"picker_qualification",mode:"modified_host",preparation:$prep[0],product:$product[0],postverification:$verification[0],scope:"actual same-frozen-product picker pass on the explicitly provisioned host; not unmodified-host compatibility or causal proof"}' > "${out}/candidate.json"
+validate qualification "${out}/candidate.json"
+mv "${out}/candidate.json" "${out}/result.json"
+jq '{stage,mode,source,target,run,attempt,picker_host}' "${out}/result.json"

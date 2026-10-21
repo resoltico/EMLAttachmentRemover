@@ -19,6 +19,7 @@ pub(crate) fn run(root: &Path, task: Task) -> Result<()> {
         task @ (Task::CheckMacosSwift { .. }
         | Task::ObserveMacosPanel { .. }
         | Task::PrepareMacosPickerHost { .. }
+        | Task::VerifyMacosPickerHost { .. }
         | Task::CheckMacosDesktop { .. }
         | Task::MacosIconDiagnostic { .. }
         | Task::CompileMacosIcon { .. }

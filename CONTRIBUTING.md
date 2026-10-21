@@ -69,14 +69,17 @@ checks its ordered base/H parents. A final API observation rejects stale head/ba
 pairings. Native jobs retain compiler/host identities, strict Slint fixtures,
 real different-UID controls, complete legal generation, native archives and
 matching macOS15 desktop qualification and macOS26 Intel picker compatibility.
-Intel26 first records the normal dedicated case. Only a validated native-panel
-failure may start the separate follow-up role; final acceptance requires
-the actual same frozen product to pass with normal cleanup and preferences.
-Receipts distinguish normal success, unmodified follow-up and service intervention,
-retaining the original failure and limits of each observation. See
+Intel26 uses one dedicated modified-host job. Preparation requires the exact
+configured hosted image, a non-root console user with a graphical Security
+session, the fixed Apple GUI-user agent and recognized current-boot crash
+evidence. Only then may it boot out and disable that agent. The actual same
+frozen product must pass with normal cleanup and preferences; read-only final
+checks verify host/context identity and the absent, disabled service. See
 [picker admission](docs/verification.md) for exact guards and limits. The private
-`prepare-macos-picker-host` command is confined to that hosted job; it refuses
-owner-desktop execution. The standalone panel diagnostic remains manual only.
+`prepare-macos-picker-host` and `verify-macos-picker-host` commands are confined
+to that hosted job and refuse owner-desktop execution. Unknown images or failure
+signatures stop qualification. The standalone panel diagnostic remains manual
+only.
 `ci-ok` always runs and rejects failed, missing and
 unexpectedly skipped jobs; only non-PR events omit merge integration/freshness.
 Full product acceptance requires every registered native role and its matching
