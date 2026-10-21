@@ -330,6 +330,15 @@ can leave undiscovered groups unconfirmed; pin EOF covers only already pinned
 groups. Missing supervisor completion remains failure. Helpers are developer
 verification resources and are not introduced into the product CLI/app runtime.
 
+Before starting a worker, the supervisor inspects only its own
+PID to check process-row grammar and visibility. This does not establish support
+for full-census options or stable session topology; cleanup still performs the
+complete census and refuses missing, malformed or unconfirmed observations.
+Admission inspection failures emit a terminal private record with their detail
+and observed elapsed time. The parent reaps the supervisor and retains that
+record before closing admission; it does not invent worker status or cleanup
+success.
+
 The process integration harness isolates its outer scenarios with one test-local
 mutex because they share a global process census and finite observation budget.
 Each scenario retains its own real process concurrency and all negative controls.
