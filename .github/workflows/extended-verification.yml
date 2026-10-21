@@ -3,6 +3,9 @@ on:
   schedule:
     - cron: '23 4 * * 1'
   workflow_dispatch:
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
 concurrency:
@@ -35,13 +38,7 @@ jobs:
           FUZZ_COMPILER: ${{ steps.policy.outputs.fuzz_compiler }}
         run: rustup toolchain install "$FUZZ_COMPILER" --profile minimal
       - name: Fresh advisory and source policy across supported graphs
-        run: |
-          cargo deny --locked --config xtask/dependencies.toml check advisories sources licenses
-          cargo deny --locked --manifest-path fuzz/Cargo.toml --config xtask/dependencies.toml check advisories sources licenses
-          cargo deny --locked --manifest-path tests/native-filesystem/Cargo.toml --config xtask/dependencies.toml check advisories sources licenses
-          for target in aarch64-apple-darwin x86_64-apple-darwin; do
-            cargo deny --locked --target "$target" --features eml-gui/macos-gui --config xtask/dependencies.toml check advisories sources licenses
-          done
+        run: bash .github/scripts/check-dependencies.sh
       - name: Extended independent semantic properties
         if: ${{ !cancelled() && steps.policy.outcome == 'success' }}
         env:

@@ -10,9 +10,11 @@ on:
         description: Workspace version with a nonempty dated changelog section
         required: true
         type: string
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
-  actions: read
 concurrency:
   group: owner-release-${{ inputs.version }}
   cancel-in-progress: false
@@ -42,6 +44,9 @@ jobs:
           cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission.json
           test "$(jq -er .release.state target/release-admission.json)" = absent
   qualification:
+    permissions:
+      contents: read
+      actions: read
     needs: admission
     uses: ./.github/workflows/native-qualification.yml
     with:
@@ -79,9 +84,8 @@ jobs:
           digest-mismatch: error
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: picker-qualification-${{ inputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: target/picker-qualification
-          merge-multiple: false
+          name: picker-qualification-${{ inputs.source }}-macos-x86_64-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/picker-qualification/picker-qualification-${{ inputs.source }}-macos-x86_64-r${{ github.run_id }}-a${{ github.run_attempt }}
           digest-mismatch: error
       - name: Freeze the exact qualified product set and qualification identity
         env:
@@ -119,7 +123,7 @@ jobs:
               jq -c --arg artifact "$floor" '{stage,source,target,host,archive:.verification.snapshot,artifact:$artifact,workflow:.verification.gui_interaction.workflow.summary,pagination:.verification.gui_interaction.pagination.summary,appearance:.verification.gui_interaction.appearance.summary,publication_cases:[.verification.gui_interaction.publication.cases[]|{case,summary}]}' "${desktop_records[0]}" >> target/release-desktop-records.jsonl
               if [ "$platform" = macos-x86_64 ]; then
                 picker="target/picker-qualification/picker-qualification-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
-                test -f "$picker/result.json"
+                test -f "$picker/result.json" || { printf 'Missing exact-run picker qualification receipt: %s\n' "$picker/result.json" >&2; exit 1; }
                 test "$(stat -c %s "$picker/result.json")" -le 16777216
                 ref_digest=$(sha256sum "${references[0]}" | cut -d ' ' -f 1)
                 ref_size=$(stat -c %s "${references[0]}")
@@ -178,6 +182,7 @@ jobs:
           name: release-observations-${{ inputs.source }}-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: |
             target/release-*.json
+            target/release-*.jsonl
             target/release-*.txt
             target/release-*.md
             target/release-check/**

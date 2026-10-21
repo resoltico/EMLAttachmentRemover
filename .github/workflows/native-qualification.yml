@@ -5,9 +5,11 @@ on:
       source:
         required: true
         type: string
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
-  actions: read
 jobs:
   plan:
     runs-on: ubuntu-22.04
@@ -25,7 +27,7 @@ jobs:
       xcode_build: ${{ steps.plan.outputs.xcode_build }}
       minimum: ${{ steps.plan.outputs.minimum }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1; default PR merge checkout
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.source }}
@@ -73,7 +75,7 @@ jobs:
           mkdir "$RUNNER_TEMP/actionlint-bin"
           tar -xzf "$archive" -C "$RUNNER_TEMP/actionlint-bin" actionlint
           printf '%s\n' "$RUNNER_TEMP/actionlint-bin" >> "$GITHUB_PATH"
-          test "$("$RUNNER_TEMP/actionlint-bin/actionlint" --version | head -1)" = "$VERSION"
+          test "$("$RUNNER_TEMP/actionlint-bin/actionlint" --version | sed -n '1p')" = "$VERSION"
       - name: Rust, documentation and workflow checks
         env:
           RUSTDOCFLAGS: -D warnings
@@ -105,13 +107,7 @@ jobs:
           checksum: true
           fallback: none
       - name: Default workspace, excluded fuzz and enabled macOS GUI dependency policies
-        run: |
-          cargo deny --locked --config xtask/dependencies.toml check advisories sources licenses
-          cargo deny --locked --manifest-path fuzz/Cargo.toml --config xtask/dependencies.toml check advisories sources licenses
-          cargo deny --locked --manifest-path tests/native-filesystem/Cargo.toml --config xtask/dependencies.toml check advisories sources licenses
-          for target in aarch64-apple-darwin x86_64-apple-darwin; do
-            cargo deny --locked --target "$target" --features eml-gui/macos-gui --config xtask/dependencies.toml check advisories sources licenses
-          done
+        run: bash .github/scripts/check-dependencies.sh
       - name: Generate complete selected legal components on a clean source
         run: cargo xtask notices --write --out target/generated-legal-materials
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -178,20 +174,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           rustc -vV
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $arguments = @('test', '--workspace', '--locked', '--features', 'eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures', '--target', '${{ matrix.target }}')
-          $listing = & cargo @arguments -- --list --color never 2>&1
+          cargo xtask native-tests --target '${{ matrix.target }}' --out target/native-tests
           $code = $LASTEXITCODE
-          $listing | ForEach-Object { Write-Output $_ }
           if ($code -ne 0) { exit $code }
-          $listing | Set-Content -Encoding utf8 target/tests.list
+          $tests = Get-Content -LiteralPath target/native-tests/result.json -Raw | ConvertFrom-Json
+          $testTarget = [string] $tests.cargo_target_directory
+          if ([string]::IsNullOrWhiteSpace($testTarget) -or !(Test-Path -LiteralPath $testTarget -PathType Container)) { throw 'Missing canonical native test build directory' }
+          $env:CARGO_TARGET_DIR = $testTarget
+          $arguments = @('test', '--workspace', '--locked', '--features', 'eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures', '--target', '${{ matrix.target }}')
           $ignored = & cargo @arguments -- --list --ignored --color never 2>&1
           $code = $LASTEXITCODE
           if ($code -ne 0) { exit $code }
           $ignored | Set-Content -Encoding utf8 target/ignored.list
-          & ./tests/windows/assert-test-sentinels.ps1 -Listing target/tests.list -IgnoredListing target/ignored.list
-          cargo xtask native-tests --target '${{ matrix.target }}' --out target/native-tests
-          $code = $LASTEXITCODE
-          if ($code -ne 0) { exit $code }
+          & ./tests/windows/assert-test-sentinels.ps1 -Listing target/native-tests/native-test-discovery.log -IgnoredListing target/ignored.list
           cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures --target '${{ matrix.target }}' -- -D warnings
           $code = $LASTEXITCODE
           if ($code -ne 0) { exit $code }
@@ -211,6 +206,7 @@ jobs:
         with:
           artifact-ids: ${{ needs.legal.outputs.artifact_id }}
           path: ${{ steps.private_workspace.outputs.path }}/target/generated-legal-materials
+          digest-mismatch: error
       - name: Qualify native Windows release tests, final link and extracted CLI archive
         if: ${{ !cancelled() && runner.os == 'Windows' && steps.private_workspace.outcome == 'success' }}
         working-directory: ${{ steps.private_workspace.outputs.path }}
@@ -263,6 +259,7 @@ jobs:
         with:
           artifact-ids: ${{ needs.legal.outputs.artifact_id }}
           path: target/legal-input
+          digest-mismatch: error
       - name: Qualify native Linux release tests and extracted CLI archive
         if: ${{ runner.os == 'Linux' }}
         env:
@@ -272,6 +269,7 @@ jobs:
         if: ${{ runner.os != 'macOS' }}
         with:
           name: native-products-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          compression-level: 0
           path: |
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/${{ runner.os == 'Windows' && 'windows-link-observation' || 'native-cli-build' }}/*.zip
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/${{ runner.os == 'Windows' && 'windows-link-observation' || 'native-cli-build' }}/*.tar.gz
@@ -399,10 +397,12 @@ jobs:
         with:
           artifact-ids: ${{ needs.legal.outputs.artifact_id }}
           path: target/legal-input
+          digest-mismatch: error
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.icon.outputs.artifact_id || needs.icon_fallback.outputs.artifact_id }}
           path: target/icon-input
+          digest-mismatch: error
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: cargo_cache
         with:
@@ -416,7 +416,7 @@ jobs:
       - name: Verify native release tests, exFAT, CLI and ad hoc app candidates
         run: cargo xtask qualify --target '${{ matrix.target }}' --icons target/icon-input --out target/native-app-build
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: ${{ !cancelled() && steps.cargo_cache.outputs.cache-hit != 'true' }}
+        if: ${{ success() && steps.cargo_cache.outputs.cache-hit != 'true' }}
         with:
           path: |
             target/native-cargo/${{ matrix.target }}
@@ -426,6 +426,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-products-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          compression-level: 0
           path: |
             target/native-app-build/*.zip
             target/native-app-build/qualification.json
@@ -460,8 +461,11 @@ jobs:
             target/archive-verification/**
           if-no-files-found: error
   app_smoke:
+    permissions:
+      contents: read
+      actions: read
     needs: [plan, legal, app]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' && needs.app.result == 'success' }}
     name: macOS15 desktop qualification / ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
@@ -480,6 +484,7 @@ jobs:
         with:
           artifact-ids: ${{ needs.legal.outputs.artifact_id }}
           path: target/legal-input
+          digest-mismatch: error
       - name: Select the exact current producer artifact ID
         id: artifact
         env:
@@ -495,6 +500,7 @@ jobs:
         with:
           artifact-ids: ${{ steps.artifact.outputs.id }}
           path: target/products
+          digest-mismatch: error
       - name: Run the same native CLI and app archive bytes on the floor host
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -518,6 +524,9 @@ jobs:
             target/native-host/**
           if-no-files-found: error
   app_picker:
+    permissions:
+      contents: read
+      actions: read
     needs: [plan, legal, app]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' && needs.app.result == 'success' }}
     name: macOS26 picker qualification / ${{ matrix.platform }}
