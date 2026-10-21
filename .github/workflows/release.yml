@@ -123,7 +123,7 @@ jobs:
                 test "$(stat -c %s "$picker/result.json")" -le 16777216
                 ref_digest=$(sha256sum "${references[0]}" | cut -d ' ' -f 1)
                 ref_size=$(stat -c %s "${references[0]}")
-                jq -n --arg s "$SOURCE" --arg t "$target" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg digest "$digest" --argjson size "$size" --arg rd "$ref_digest" --argjson rs "$ref_size" --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" '{source:$s,target:$t,run:$run,attempt:$attempt,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,archive:{sha256:$digest,byte_length:$size},reference:{sha256:$rd,byte_length:$rs}}' > target/release-picker-expected.json
+                jq -n --arg s "$SOURCE" --arg t "$target" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg digest "$digest" --argjson size "$size" --arg rd "$ref_digest" --argjson rs "$ref_size" --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" --slurpfile distribution target/release-distribution.json '{source:$s,target:$t,run:$run,attempt:$attempt,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,archive:{sha256:$digest,byte_length:$size},reference:{sha256:$rd,byte_length:$rs},picker_host:$distribution[0].picker_host}' > target/release-picker-expected.json
                 jq -e -L .github/scripts --slurpfile e target/release-picker-expected.json 'include "picker-evidence"; qualification($e[0])' "$picker/result.json"
                 jq -c --arg artifact "$picker" '.+{artifact:$artifact}' "$picker/result.json" >> target/release-desktop-records.jsonl
               fi

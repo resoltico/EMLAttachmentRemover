@@ -53,7 +53,12 @@ impl Session {
             let _ = kill_process_group(pin.id, Signal::STOP);
         }
         while began.elapsed() < CLEANUP_GRACE / 2 {
-            let scan = inspect(&self.inspector, self.id, discovery_until);
+            let scan = inspect(
+                &self.inspector,
+                self.id,
+                InspectionScope::Session,
+                discovery_until,
+            );
             let (rows, unstable) = match scan {
                 Ok(scan) => scan,
                 Err(error) => {
@@ -181,7 +186,12 @@ impl Session {
         let cleanup_until = began + CLEANUP_GRACE;
         let mut clean_observations = 0;
         while began.elapsed() < CLEANUP_GRACE {
-            match inspect(&self.inspector, self.id, cleanup_until) {
+            match inspect(
+                &self.inspector,
+                self.id,
+                InspectionScope::Session,
+                cleanup_until,
+            ) {
                 Ok((rows, unstable)) => {
                     if !unstable
                         && !rows

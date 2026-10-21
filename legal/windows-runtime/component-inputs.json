@@ -2,8 +2,8 @@
   "components": [
     {
       "archive": {
-        "byte_length": 29008864,
-        "sha256": "dcf636d91ef0639dd31a67169c7d7e27e1f013632490e1af97753b31728e85c0"
+        "byte_length": 28986460,
+        "sha256": "8ddc26705e13c46530c898524b0d2657b7d416a25e8d9ffe369a97b23a619bf6"
       },
       "code_files": 31,
       "package": "rust-std",
@@ -11,8 +11,8 @@
     },
     {
       "archive": {
-        "byte_length": 639092,
-        "sha256": "ddd6969ad77f5f65873e3fe54ee45a54cca3ec710f0fd0450ee02659c228f12a"
+        "byte_length": 638632,
+        "sha256": "98d26260b8581f37309aba228d9613c2f27dff6c23f3eb9e1082577c662596eb"
       },
       "code_files": 11,
       "package": "rust-mingw",
@@ -20,8 +20,8 @@
     },
     {
       "archive": {
-        "byte_length": 29078564,
-        "sha256": "a4289959bd1f01def677c24ad5331a1ddb10a9d12b5d1f3185b213d09fbd845c"
+        "byte_length": 29078512,
+        "sha256": "cf14a1b1fb7f32b90369d91f97fa157fe1ca43edb64235df951006baab677a95"
       },
       "code_files": 31,
       "package": "rust-std",
@@ -29,220 +29,220 @@
     },
     {
       "archive": {
-        "byte_length": 571640,
-        "sha256": "29e047799840eff929f616f5821c91a2b7fd2f86f045d72d4b52454b7cccade5"
+        "byte_length": 571996,
+        "sha256": "182ac47dc66767868c376502ea188142485ce7bcd75449b41a8b60a1676be280"
       },
       "code_files": 11,
       "package": "rust-mingw",
       "target": "aarch64-pc-windows-gnullvm"
     }
   ],
-  "rust": "1.99.0",
+  "rust": "1.99.1",
   "schema": 1,
   "scope": "byte references derived from checksum-pinned official component archives; selected input/member/source/legal approval and native execution are separate",
   "targets": {
     "aarch64-pc-windows-gnullvm": {
-      "libaddr2line-2a2af9c99085a2f6.rlib": {
+      "libaddr2line-52b942b333aaef06.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 27328,
-          "sha256": "b3329840e7efe2a4c67698b102429e92099134b8618fb75cff564b6791948f44"
+          "byte_length": 27324,
+          "sha256": "88dae9e94292bf30bc5b70e6ba283c8c2ed6ca1bffe97e7370f064972657a6bc"
         }
       },
-      "libadler2-e9a65a3d878adcc2.rlib": {
+      "libadler2-cf21d78db7093194.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 8764,
-          "sha256": "72d7b61d22f6d22d998f52b9c2373ddf204557fff53669f9c63b4de1b2cfd99d"
+          "sha256": "3245094952e4992f07e1ae288b6b10db106fdd87d4efe0ff14d2e15a774b99fb"
         }
       },
-      "liballoc-386aa42159fcf9b5.rlib": {
+      "liballoc-aed8b771666fd02b.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 922986,
-          "sha256": "7df3fcb2469459632c1304cfc284bb4eb3a3e20af311d8800b683788c91e46a3"
+          "byte_length": 922982,
+          "sha256": "886c9aca28e7955bc31c5007cbd76f0a16f6d58e920ac44ddf5b89dc6e91b451"
         }
       },
-      "libcfg_if-b21c77fed92d30ac.rlib": {
+      "libcfg_if-5fc14d6d86415215.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 4434,
-          "sha256": "1d7c34dd03a3bfdf94ffdea7976237f3607e751518ffe41f29371cbbe951d93a"
+          "sha256": "72317f50ac784c90524a111447cc497fa09526c794c5379e57f3a7bc8f4c90ef"
         }
       },
-      "libcompiler_builtins-6d1bd3a14c059653.rlib": {
+      "libcompiler_builtins-182371fbef055195.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 3669562,
-          "sha256": "f884f7298b02786b259d6e358a1a3bfd3bd67c09cd05621326f50bd6c91e19cd"
+          "sha256": "96ef9cc00504c53e1fd83ed73d5eea16c46c941fa64f639f1ea0f205a74b6e36"
         }
       },
-      "libcore-e82273513a0c152c.rlib": {
+      "libcore-ce12a9ddb6cf16c3.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 2899274,
-          "sha256": "15e3bd5f0138d47835b25462978de4cc8c4e70faaf37ad0f3c9183e22a4668b3"
+          "byte_length": 2899254,
+          "sha256": "71c377d07a8f46c7d4b0833de80a1a058d3d04d0dc3d8ed6255ab7634f2f6334"
         }
       },
-      "libgetopts-e955702c7718ad73.rlib": {
+      "libgetopts-a9b67e1a1a987003.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 653660,
-          "sha256": "2f4591da5ba696d4eed65ecfc189d7b50c04cbe6d8631a88af90f093fde0e613"
+          "byte_length": 653654,
+          "sha256": "679342a9f87e70064bc15455df569c6330288101af27f83db62cc8958c5f11a8"
         }
       },
-      "libgimli-3c47c8ac76453f7e.rlib": {
+      "libgimli-4b646a31fcc69bbd.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 1027942,
-          "sha256": "1a5a8e25cc8fa5fde96665e045b98be9ecef429d3ce46bbc13e0b9dd98524318"
+          "byte_length": 1027918,
+          "sha256": "9516cf3c4a7cc112cf2a41b8f210d474448204a5a77db3e437fbb3a8d4d94885"
         }
       },
-      "libhashbrown-d1c9dadd202fd5e6.rlib": {
+      "libhashbrown-bb9605559a555e21.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 39832,
-          "sha256": "834f4983166dc3701ea20d351d94c2b34cd481517bb84a81db0528398a50405c"
+          "byte_length": 39836,
+          "sha256": "05db5112ecf63c4215a3cc09a247417433e7c4e7b7fa5bcce172aa15e5bc8c71"
         }
       },
-      "liblibc-cf3ce01a8e86af71.rlib": {
+      "liblibc-2369aa8fcb4ab731.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 4400,
-          "sha256": "ef126fa0ea20ff3dffd4bd8cac968036ed77e7d7f9d76def5b7afa8af79a219c"
+          "byte_length": 4404,
+          "sha256": "109623b1429d73a4f97a78a0f7e8e545b0c5e4b6122879714cec7527b8cc45aa"
         }
       },
-      "libmemchr-de26daebd255a83d.rlib": {
+      "libmemchr-5cbaad29898554a0.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 204502,
-          "sha256": "3fff4a6cc21a50f27d80ca231f2c595d6367e96a9b39b44dfbcae29ebbbc5021"
+          "byte_length": 204498,
+          "sha256": "d043f8529cb2207553f82ae1d207cf4a33be33724b10e595cb8a1f9629f24769"
         }
       },
-      "libminiz_oxide-c91dd23714f02454.rlib": {
+      "libminiz_oxide-75dfa3d471044f17.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 103264,
-          "sha256": "2059125808f4f055234337adf564e8e75cb38c05112cec39c81474e198e80483"
+          "byte_length": 103272,
+          "sha256": "e5edd38b626471848dbef55b503bd973f9e5a2ebf75b55709e4bac9f6db43a0d"
         }
       },
-      "libobject-b248d89c70f8ce7b.rlib": {
+      "libobject-f2dd689dd14e3d59.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 290392,
-          "sha256": "1287fe405356594c5c328d84c6174f20ec370768d51223a657901436eaf2b2bd"
+          "byte_length": 290380,
+          "sha256": "9e89265799d30db893ba29b507b1c98fd752c79104bcda01372e6640d75e6d33"
         }
       },
-      "libpanic_abort-00546ee17517667f.rlib": {
+      "libpanic_abort-f2067a71e0348c00.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 10110,
-          "sha256": "e294a560c29f9f31dd8b53abd2032bae2bc1a77f0993996e267848c097013396"
+          "byte_length": 10106,
+          "sha256": "167c302fcb5f9101f9e131e28b8b71af80e7b27f3d0fc1071d4f0947d07e716f"
         }
       },
-      "libpanic_unwind-f631a65088e20883.rlib": {
+      "libpanic_unwind-06c950ef831115e7.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 33168,
-          "sha256": "562107216011e1ac44becc07a65674261908611ca442dc3732d117057af0d165"
+          "byte_length": 33164,
+          "sha256": "849454fce55d0034c16e9e9ac4e26009d47224a336289c460c582a656ef6aaf4"
         }
       },
-      "libproc_macro-8a84d3f9118b2cf3.rlib": {
+      "libproc_macro-429e41b50441bec2.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 4067978,
-          "sha256": "872d9dbd81c4ef37ad67a4f9929f190a8a7b95b8d6133279a13cfb2b1ffe0bcd"
+          "byte_length": 4067962,
+          "sha256": "fb9fa3c9cbb44ed0f63051886e9479205664bd200fc9695b6e1db21ea4c242f8"
         }
       },
-      "libprofiler_builtins-68fac981ef5fae76.rlib": {
+      "libprofiler_builtins-676a647f39d81e04.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 376332,
-          "sha256": "81d1b60a7ca3302eacfafcacc205906682e925a9f3609ed6adf0008eb7f25626"
+          "sha256": "c0dcca5a5c862169cb69497cdcf26fd84578c908f4d5fe513f635582e08e6bdc"
         }
       },
-      "librustc_demangle-b30d70aef455d5bf.rlib": {
+      "librustc_demangle-b007b0a8200500c9.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 236452,
-          "sha256": "beb93bb3bf54f720c6a24dab1e8afbad8ce0249283001e26c2399cd374a7a415"
+          "byte_length": 236464,
+          "sha256": "7286e62ecb125718e1645d1d7d4e725f449c3856c5f0c7f5874cc7790e5f766e"
         }
       },
-      "librustc_literal_escaper-eb7c0c9d786934eb.rlib": {
+      "librustc_literal_escaper-d1607532392db4af.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 4644,
-          "sha256": "b541aa9493f9693c65d2b10074d76d3e4c56a3feeb7bab7a33eb7460b0f33b05"
+          "sha256": "77e4dc60db0aead2a3b2810b90a6443cbcaf7ca7e7eb44b75cd5b0d6cbcfba80"
         }
       },
-      "librustc_std_workspace_alloc-3bf2933a73049470.rlib": {
+      "librustc_std_workspace_alloc-07c25aaf232777a0.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 4732,
-          "sha256": "0c25403bfc5fb3a1bd863919d6a5e10abe9d3bb5ba91a6c2bd94826d91f17540"
+          "sha256": "391252b9997803a2406af526b414ff615ab02afe489839955da36374252b6959"
         }
       },
-      "librustc_std_workspace_core-e4d5e3d0d4146f89.rlib": {
+      "librustc_std_workspace_core-4ac1adbde9ce502a.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 4722,
-          "sha256": "5ab63b4459f029397cd3a0a5d1407be129ce694acc5c03f588af1b3c41fab962"
+          "sha256": "930f2bb28f7f60b33e1cba7f072d5e8a6cd493a215000fd607776f2c5ca32e57"
         }
       },
-      "librustc_std_workspace_std-31dcf7f22575fb6c.rlib": {
+      "librustc_std_workspace_std-f682a3a57545224a.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 4710,
-          "sha256": "027d9ec0a6981077a5e377909608148b3bd5b7269bf163699e0748d8e76df36e"
+          "byte_length": 4706,
+          "sha256": "ed037332dfca2559d94e5d186447d4193ac0031496ec15b368148d0259abd78c"
         }
       },
-      "libstd-629e8e2c178722f0.dll.a": {
+      "libstd-71c47acdbf3cb76a.dll.a": {
         "component": "rust-std",
         "identity": {
           "byte_length": 1019956,
-          "sha256": "1e3186650ca09aab94eedb09004b3b50c5bc236699cc730f6a413d7dc72342f2"
+          "sha256": "71574c1db952912c632ecd23c3b34e33c883cabcf1ee88c10ab38c5e34715865"
         }
       },
-      "libstd-629e8e2c178722f0.rlib": {
+      "libstd-71c47acdbf3cb76a.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 10202640,
-          "sha256": "8dfcff62ee9474c0e4de230e69f87adf9c347f6b25db65bd1af3969330bae168"
+          "byte_length": 10202770,
+          "sha256": "7eb0f9a82c21cd33a6c90cfc2c7faac9cf81223d8477b59b051ebacff0ba139e"
         }
       },
-      "libstd_detect-4d7f750c419a79f5.rlib": {
+      "libstd_detect-9264c7d8bd215a7d.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 49576,
-          "sha256": "dcbf9f2f727fa86f8ff707d2c81faebb958b57c05a66ed273470d20069aee9d8"
+          "byte_length": 49580,
+          "sha256": "d7de1051a276136750c1d10ff5a09297bdadcec6314984a8b3d67603307679ce"
         }
       },
-      "libsysroot-5e77026d98a71cdf.rlib": {
+      "libsysroot-e1326179ffa55cbc.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 4504,
-          "sha256": "500209c7d28b657ca1eaabb0d399ec71256cf6a12fcb02f4169a9d6c51b5036e"
+          "sha256": "85b5c6c6f523c602dc1df4fb7d436e5b796e68ee4d874e72e705580abb44b7a5"
         }
       },
-      "libtest-a7d8d54db68a94d0.rlib": {
+      "libtest-d197a3792e2b54e8.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 6653614,
-          "sha256": "432a97ba0b6c296eca5b0da417314f78ff4830928ba24a1e77f3b9feef4b6dd4"
+          "byte_length": 6653662,
+          "sha256": "19f3fec8975f806ba085d47338b2705ff8847275101e4805825c7ffbc0928e73"
         }
       },
-      "libunwind-ae1c25bef45f49fd.rlib": {
+      "libunwind-c201cd8531d0ed5d.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 4490,
-          "sha256": "f2d16e4afa81af37e43a0cf89fd99d2c48d0756cd9ec3fda0c6fe8557a9ce5da"
+          "byte_length": 4494,
+          "sha256": "fb0019e1ea474159512a707d4392c8e3984f7ecd023d1c4e0e92e920038c86f4"
         }
       },
-      "libwindows_link-bf03d225bc08c607.rlib": {
+      "libwindows_link-5f19994526824f14.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 4560,
-          "sha256": "da2de9c5851dacb96c2d681cca551dccee154081b76a0cdd747bca961e47312a"
+          "byte_length": 4564,
+          "sha256": "3910874a79c992ea5cc01f560a2579a410263615e35525b339ddde8b4d2668b7"
         }
       },
       "self-contained/crt2.o": {
@@ -338,207 +338,207 @@
       }
     },
     "x86_64-pc-windows-gnullvm": {
-      "libaddr2line-1d057c8d9b4cac32.rlib": {
+      "libaddr2line-2b07d9ced89ec54d.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 28670,
-          "sha256": "e3b6115a105b8b26b058bc60cfa6701c9c51295cade61620801374457d96df0b"
+          "byte_length": 28624,
+          "sha256": "d42036532bc6419b1350cb8c713936d903219276c2d6b838da8660dd042f51dd"
         }
       },
-      "libadler2-2d8f98077a42450b.rlib": {
+      "libadler2-9cbc8ff98ed442be.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 9290,
-          "sha256": "01dea44824f2f4ac2552a08df4f1d3608ac6db01f31b75d189b2f5e244742b1d"
+          "byte_length": 9286,
+          "sha256": "1316485aa05e8ee3183e291397ab0ba8197cc9e258c8a100a7f670bd0ef4261f"
         }
       },
-      "liballoc-24ecf31351daecfa.rlib": {
+      "liballoc-c0cf2292f71f2777.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 903572,
-          "sha256": "30d3591c9dba8cb08756d8ce1958b017ddbb3e3e98e09b500f72ab8eefab9afe"
+          "byte_length": 902236,
+          "sha256": "f96caf327cdb4010f8ffb1391ad60cc63bab74dc73614e63f4cc88393faa7933"
         }
       },
-      "libcfg_if-e4d3dc957cc36a64.rlib": {
+      "libcfg_if-8d01e0dd98d0ed25.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 4410,
-          "sha256": "936803820488cf62e9ef77104e700f3ceeb24f89a3daf0d75f52877d37296f3f"
+          "sha256": "6feea4141514a6cdb942ee6b3c846b864158711b8c3d6de9d8ada663368b4b2d"
         }
       },
-      "libcompiler_builtins-d96506bf0b7fb241.rlib": {
+      "libcompiler_builtins-8b65e37e06ac5520.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 3636026,
-          "sha256": "0fd7dbc5d98f0c8780471df04ec38506f627aee731d740f541143e0d36d81b0b"
+          "byte_length": 3633264,
+          "sha256": "487777e92c006a04f7da5a7c155e08e785a551a4641c6560a5db95db8e0ea7d2"
         }
       },
-      "libcore-3a88752aa18d4bbe.rlib": {
+      "libcore-b87300d1e70b9611.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 2867106,
-          "sha256": "d198cd26aa7863d3df92a98ec4df438f1a4c1f4a5994084b521f67204096d599"
+          "byte_length": 2859688,
+          "sha256": "9f969d14509b59b05b04bfdb88ad37ef10a4e27ec745cbd8c1db6db0f6fc99ef"
         }
       },
-      "libgetopts-5f1a11b93ce472f6.rlib": {
+      "libgetopts-56850dc73e23db5a.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 647042,
-          "sha256": "e8cfe943834645ddcf7c1cfbecd8046142a1746828fbe75dfffefbe4c20bde8d"
+          "byte_length": 646160,
+          "sha256": "89b71a8b9801b62d6397eade86bd9695c8e0a3bb187259fb9e3a4d0d22585241"
         }
       },
-      "libgimli-1a54b8fa647becf1.rlib": {
+      "libgimli-23e2f5e789b17a43.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 1032318,
-          "sha256": "39d06ebeeaf12290b6043929cf8b1a27cca3f325acd1318742ea8cdcd7fc53fd"
+          "byte_length": 1031950,
+          "sha256": "4f7f4d341b34ad57565aaf5410a46207ee0f51addb44da50344744716986bfe2"
         }
       },
-      "libhashbrown-c63ba5c7ebbe13e6.rlib": {
+      "libhashbrown-fb783324369106e7.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 38064,
-          "sha256": "8da0c2d029f760fc62d755501edf48decca7ebfa64f24032dee58192dc857eb2"
+          "byte_length": 37982,
+          "sha256": "2099b5e22862a7d1cb621c38eda33e392f17d3a69115e263437339c1d2884f32"
         }
       },
-      "liblibc-22e413ca5327a77d.rlib": {
+      "liblibc-a1f94d846adb1a06.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 4388,
-          "sha256": "efdbd403d3a163899ad44fe7ee94b73347ff29459054440192e67f2421f0d65d"
+          "sha256": "3a588ed2474fd605ee6f6812bbd241acc7060fd4259cf76e6cdb73e78d681ef5"
         }
       },
-      "libmemchr-3a8e81d9ba243832.rlib": {
+      "libmemchr-3ba6db5256f176f1.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 369798,
-          "sha256": "e2ddcd757c0c37f28410c342b1abae263b9ba619c815c1ff740db1289244845c"
+          "byte_length": 369454,
+          "sha256": "86ea30ab8c487210ff5933c11bd15359e844fb6bada8578d025a39d26e2ad0c1"
         }
       },
-      "libminiz_oxide-33e8c69fccd38e07.rlib": {
+      "libminiz_oxide-fa4ec4f2685268db.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 109008,
-          "sha256": "580f9fbe032b90146864ae7dfe42b06f59bfe488061478fa4b04f2d2bfe37502"
+          "byte_length": 109250,
+          "sha256": "ae759bcf7a1c06a4fbbaaa680f287d5e70a6d9d6f0494890cb55f98a65e03bde"
         }
       },
-      "libobject-43385e6c08c4681f.rlib": {
+      "libobject-ef0ce400e9c83d69.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 281000,
-          "sha256": "b1f967e1deb38e31cec5b63fb9bcaa814af8f8912257e2ef9d25d1a532111441"
+          "byte_length": 280604,
+          "sha256": "c87c23b81895af50c0095f644dd07b2f5300b3fc00dc3df266cd241b6cfa0215"
         }
       },
-      "libpanic_abort-b62d1dc618d60190.rlib": {
+      "libpanic_abort-1cba97485cf24d74.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 10166,
-          "sha256": "031342a81525662f069ffac21fd4d41d5a5188fce9394a29bca67fcb53692d9b"
+          "byte_length": 10162,
+          "sha256": "e26da266892bc199c86d762e3342daa5dc82a4fac9d1863a82d90e2f20c3933e"
         }
       },
-      "libpanic_unwind-b68a469172e23c3e.rlib": {
+      "libpanic_unwind-cd5e645044ad7923.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 33200,
-          "sha256": "516cbeab92fa840382e93f0e181515c872a9eaf5413f1e0f884f79563860b061"
+          "byte_length": 33158,
+          "sha256": "0d94547fad659d5a01d12d48b0fdde54690660568dd3d353324bc267fba53c54"
         }
       },
-      "libproc_macro-833920dc5955eb4d.rlib": {
+      "libproc_macro-2733eaf6c56afd21.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 3908292,
-          "sha256": "b1a36a69dd80cf27458f303c1024caa7de2aebfec994a7b1c1a1be6f067ba811"
+          "byte_length": 3904680,
+          "sha256": "53eafc5b3986f28753b1080be55311092c0e6fb1d2f91dd22dd3b14cc39ac19e"
         }
       },
-      "libprofiler_builtins-23cd628f287188a6.rlib": {
+      "libprofiler_builtins-1ff59f2e6948d8ff.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 365542,
-          "sha256": "f4a74b60d20f92d4ad796294fb282e6e3bf2a6698a24fd79ebfe0e826fee340c"
+          "sha256": "433fa343144b04ed596df8ec46f68e5066858dc595957042a9b0252a17d7445d"
         }
       },
-      "librustc_demangle-4e4db7169b5fcf53.rlib": {
+      "librustc_demangle-d453127867563371.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 235976,
-          "sha256": "b371dae86882586f9ffca84e2862b528a75e505f7b872d5dfd2cd0fb10b4c620"
+          "byte_length": 235638,
+          "sha256": "38faa60f4b6f7a954cabb7f12b132a42ec288437b4dfc60c195ce051be298af4"
         }
       },
-      "librustc_literal_escaper-ebd0652cfe7e0945.rlib": {
+      "librustc_literal_escaper-9fde2ce0cd7f73e6.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 4622,
-          "sha256": "f1466de6a63081d397eee753906c0d56c4adf26a5c33163028ab68b4095e4666"
+          "byte_length": 4626,
+          "sha256": "d4c8da6e0c29a256dc795653f8071cf7fc4d52a42a993e38c8ca2c4fb456a1c7"
         }
       },
-      "librustc_std_workspace_alloc-1848d9c28bb16565.rlib": {
+      "librustc_std_workspace_alloc-e60772487c6253cf.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 4714,
-          "sha256": "e3d3d19ea34719149e96ed759201cf3f0e4b47400a2963585db186240b7363bd"
+          "sha256": "097e495e680570c0dcecaa0b07cdc456860e507b7dfa6e9a7f75cbb7d9d433d7"
         }
       },
-      "librustc_std_workspace_core-3cb843cb9071dc9c.rlib": {
+      "librustc_std_workspace_core-c59448e474df3813.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 4710,
-          "sha256": "94a3693d1e8a86dcf7256a52dad3bf3f9eb2f101373973fb3e28fe0a05b2c69c"
+          "byte_length": 4706,
+          "sha256": "7c6fb9710214939771e7ce4baa77bfd43e51404fddaf4d1d176288461856a805"
         }
       },
-      "librustc_std_workspace_std-983ab739ffd6d766.rlib": {
+      "librustc_std_workspace_std-7d50c4a2bcf29531.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 4692,
-          "sha256": "403fdf985e9fbaf625477870d97f2d79d5bc9c028ed02cf28fead0fa54dc52b1"
+          "sha256": "ae9bf9c900b4a3ab311fdebe34836887a6d914037bd17e4c9b833f63e6061aec"
         }
       },
-      "libstd-242d47786fef2212.dll.a": {
+      "libstd-82b864d91ed8c057.dll.a": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 1027414,
-          "sha256": "194b572c2d51e46866fbe6548b0c242da3c325ab86dd885f005aac6a92ad4124"
+          "byte_length": 1022354,
+          "sha256": "3340b4d85f18fe51ec9f81d41cbc678f4174a15c5992cd0f23144de9cec37111"
         }
       },
-      "libstd-242d47786fef2212.rlib": {
+      "libstd-82b864d91ed8c057.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 10064574,
-          "sha256": "c8e95cff417a1c39aac00516c1c7aabb124835b61517598c6daed7bfd489e305"
+          "byte_length": 10052042,
+          "sha256": "913772029522ba677770ddc6e7e8170636465368e579013e4dd1ade2b276e480"
         }
       },
-      "libstd_detect-7c4f350664a88ca9.rlib": {
+      "libstd_detect-4431a17586515b86.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 62870,
-          "sha256": "95854e1afd74e70f91f70bf0f8a34c59b670d5ba863d4e4014c6c987d526fdd4"
+          "byte_length": 62856,
+          "sha256": "48064fe8e37273c681d223ee580f6cf854a49c437c5c7b7c4f251c4419b6bb41"
         }
       },
-      "libsysroot-b2b23e29274e39d2.rlib": {
+      "libsysroot-90c3a05a7ff07b5e.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 4494,
-          "sha256": "8c261b5e4984c1bfa0a148c8cd364f3dde785bd4872d956e0aa936dfd35140d0"
+          "byte_length": 4490,
+          "sha256": "a8bf4ae4a96f0ed9575d1b20e124ee4df691084b38aefdf61c0420518f8cfb53"
         }
       },
-      "libtest-92b835c51e99c6c0.rlib": {
+      "libtest-6f07cb3f08acb6b0.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 6565440,
-          "sha256": "451779c5d3102d30a8842317f621dc488f8edd5d2a058c9faa80c3e90508626e"
+          "byte_length": 6558134,
+          "sha256": "0798b5e6b8cab3ee5664f078c8ab9576e8acc737d3bef6abd8ac53505bfd289f"
         }
       },
-      "libunwind-097e6191ed6985b6.rlib": {
+      "libunwind-72c1f82ffb369623.rlib": {
         "component": "rust-std",
         "identity": {
           "byte_length": 4470,
-          "sha256": "0dca2d80bd2dcf28da7255b400400aad0ff4bcfa8bb3873e0591634cda174394"
+          "sha256": "a4cdd18b55cd5a6bbc161890de7ddbe78c8bc01decb28328837e220682781c11"
         }
       },
-      "libwindows_link-6ce1a74a9fe13d7a.rlib": {
+      "libwindows_link-29ad0cb6668e3669.rlib": {
         "component": "rust-std",
         "identity": {
-          "byte_length": 4556,
-          "sha256": "c209a25446a687552b4bdc02f0d45c6d724e5344022a293e322354a30bdb13a5"
+          "byte_length": 4552,
+          "sha256": "a92b7855300948bb458c467fdeebc8dfd71a0dad59b02425e324b49f24f92821"
         }
       },
       "self-contained/crt2.o": {

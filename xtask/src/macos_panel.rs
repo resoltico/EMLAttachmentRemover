@@ -4,119 +4,27 @@ use serde_json::{Value, json};
 use std::{fs, path::Path, time::Duration};
 use xtask::{archive::ByteIdentity, process::ProcessResult};
 
-pub(crate) fn observe(root: &Path, build: &MacBuild, out: &Path) -> Result<Value> {
-    observe_for(root, build, out, PanelPurpose::Diagnostic)
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PanelPurpose {
-    Diagnostic,
-    PickerQualification,
-}
-
-fn authorized_job(purpose: PanelPurpose, workflow: &str, job: &str) -> bool {
-    match purpose {
-        PanelPurpose::Diagnostic => workflow == "Native AppKit panel observation" && job == "panel",
-        PanelPurpose::PickerQualification => {
-            matches!(workflow, "CI" | "Owner release") && job == "app_picker_followup"
-        }
-    }
-}
-
-fn authorized_qualification_file(workflow: &str, repository: &str, reference: &str) -> bool {
-    let file = match workflow {
-        "CI" => ".github/workflows/ci.yml",
-        "Owner release" => ".github/workflows/release.yml",
-        _ => return false,
-    };
-    !repository.is_empty() && reference.starts_with(&format!("{repository}/{file}@"))
-}
-
-pub(crate) fn require_picker_preparation_context() -> Result<()> {
-    let workflow = std::env::var("GITHUB_WORKFLOW").unwrap_or_default();
-    let job = std::env::var("GITHUB_JOB").unwrap_or_default();
-    let workflow_ref = std::env::var("GITHUB_WORKFLOW_REF").unwrap_or_default();
-    let workflow_sha = std::env::var("GITHUB_WORKFLOW_SHA").unwrap_or_default();
-    if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
-        || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
-        || !authorized_job(PanelPurpose::PickerQualification, &workflow, &job)
-        || !authorized_qualification_file(
-            &workflow,
-            &std::env::var("GITHUB_REPOSITORY").unwrap_or_default(),
-            &workflow_ref,
-        )
-        || workflow_sha.len() != 40
-        || !workflow_sha
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    {
-        return Err(format!("Picker follow-up preparation requires its exact fresh hosted qualification job; observed workflow={workflow:?}, job={job:?}; owner desktop is protected").into());
-    }
-    Ok(())
-}
-
 fn bounded_bytes(path: &Path, maximum: u64) -> Result<Vec<u8>> {
     use std::io::Read;
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_file() || metadata.len() > maximum {
-        return Err("Picker input is not an ordinary bounded file".into());
+        return Err("Panel diagnostic input is not an ordinary bounded file".into());
     }
     let mut bytes = Vec::new();
     fs::File::open(path)?
         .take(maximum + 1)
         .read_to_end(&mut bytes)?;
     if bytes.len() as u64 > maximum {
-        return Err("Picker input grew beyond its bound".into());
+        return Err("Panel diagnostic input grew beyond its bound".into());
     }
     Ok(bytes)
 }
 
-pub(crate) fn prepare_picker_host(
-    root: &Path,
-    build: &MacBuild,
-    archive: &Path,
-    reference: &Path,
-    normal_failure: &Path,
-    out: &Path,
-) -> Result<()> {
-    require_picker_preparation_context()?;
-    let mut version = build.command(root, "/usr/bin/sw_vers");
-    version.arg("-productVersion");
-    let version = String::from_utf8(crate::capture(&mut version)?)?;
-    if build.host != "x86_64-apple-darwin" || version.trim().split('.').next() != Some("26") {
-        return Err("Picker follow-up preparation is confined to native Intel macOS26".into());
-    }
-    let source = crate::git(root, &["rev-parse", "HEAD"])?;
-    let reference_bytes = bounded_bytes(reference, 2 * 1024 * 1024)?;
-    let declared: Value = serde_json::from_slice(&reference_bytes)?;
-    if declared["source"] != source
-        || declared["target"] != "x86_64-apple-darwin"
-        || declared["architecture"] != "x86_64"
-    {
-        return Err("Picker follow-up reference does not bind the current native source".into());
-    }
-    let expected = json!({"source":source,"target":"x86_64-apple-darwin","run":std::env::var("GITHUB_RUN_ID")?,"attempt":std::env::var("GITHUB_RUN_ATTEMPT")?,"workflow_ref":std::env::var("GITHUB_WORKFLOW_REF")?,"workflow_sha":std::env::var("GITHUB_WORKFLOW_SHA")?,"archive":ByteIdentity::of(&bounded_bytes(archive,512*1024*1024)?),"reference":ByteIdentity::of(&reference_bytes)});
-    let _ = bounded_bytes(normal_failure, 2 * 1024 * 1024)?;
-    let mut admission = build.command(root, "jq");
-    admission
-        .args(["-e", "-L", ".github/scripts", "--argjson", "e"])
-        .arg(expected.to_string())
-        .arg("include \"picker-evidence\"; known_failure($e)")
-        .arg(normal_failure);
-    crate::capture(&mut admission)?;
-    // Retain the original normal-product failure. Preparation admits only the
-    // observed host path; actual same-archive product acceptance remains separate.
-    let _baseline = observe_for(root, build, out, PanelPurpose::PickerQualification)?;
-    let receipt = out.join("picker-preparation/result.json");
-    let _ = bounded_bytes(&receipt, 2 * 1024 * 1024)?;
-    let mut validation = build.command(root, "jq");
-    validation.args(["-e", "-L", ".github/scripts", "--argjson", "e"]).arg(expected.to_string())
-        .arg("include \"picker-evidence\"; preparation($e.source) and .purpose==\"picker_qualification_preparation\" and .baseline.run==$e.run and .baseline.attempt==$e.attempt").arg(receipt);
-    crate::capture(&mut validation)?;
-    Ok(())
+fn authorized_job(workflow: &str, job: &str) -> bool {
+    workflow == "Native AppKit panel observation" && job == "panel"
 }
 
-fn observe_for(root: &Path, build: &MacBuild, out: &Path, purpose: PanelPurpose) -> Result<Value> {
+pub(crate) fn observe(root: &Path, build: &MacBuild, out: &Path) -> Result<Value> {
     if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
         || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
     {
@@ -149,15 +57,12 @@ fn observe_for(root: &Path, build: &MacBuild, out: &Path, purpose: PanelPurpose)
         return Err("Ambiguous actual host OS version; no preparation admitted".into());
     };
     if build.architecture == "x86_64" && version.split('.').next() == Some("26") {
-        let prepared = observe_preparation(root, build, out, &app, &result, observation, purpose);
+        let prepared = observe_preparation(root, build, out, &app, &result, observation);
         if let Err(error) = &prepared {
             eprintln!(
                 "Panel preparation stopped: {error}. Original panel result remains authoritative at {}",
                 out.join("result.json").display()
             );
-        }
-        if purpose == PanelPurpose::PickerQualification {
-            prepared?;
         }
     }
     // Standalone diagnostics retain the original baseline's authority even if a repeat recovers.
@@ -171,32 +76,15 @@ fn observe_preparation(
     app: &Path,
     baseline: &Value,
     observation: PanelObservation,
-    purpose: PanelPurpose,
 ) -> Result<()> {
-    let experiment = out.join(match purpose {
-        PanelPurpose::Diagnostic => "icon-service-experiment",
-        PanelPurpose::PickerQualification => "picker-preparation",
-    });
+    let experiment = out.join("icon-service-experiment");
     fs::create_dir(&experiment)?;
     let mut receipt = json!({"scope":"authorized disposable-host panel preparation; never product qualification or a healthy unmodified-host compatibility claim", "baseline":baseline,"stage":"admission"});
-    if purpose == PanelPurpose::PickerQualification
-        || observation == PanelObservation::KnownPanelFailure
-    {
+    if observation == PanelObservation::KnownPanelFailure {
         receipt["original_failure_remains_authoritative"] = json!(true);
     }
-    receipt["purpose"] = json!(match purpose {
-        PanelPurpose::Diagnostic => "standalone_diagnostic",
-        PanelPurpose::PickerQualification => "picker_qualification_preparation",
-    });
-    let prepared = prepare_observed_host(
-        root,
-        build,
-        app,
-        &experiment,
-        &mut receipt,
-        observation,
-        purpose,
-    );
+    receipt["purpose"] = json!("standalone_diagnostic");
+    let prepared = prepare_observed_host(root, build, app, &experiment, &mut receipt, observation);
     if let Err(error) = &prepared {
         receipt["failure"] = json!(error.to_string());
     }
@@ -430,9 +318,8 @@ fn prepare_observed_host(
     out: &Path,
     receipt: &mut Value,
     observation: PanelObservation,
-    purpose: PanelPurpose,
 ) -> Result<()> {
-    let uid = require_preparation_authority(purpose)?;
+    let uid = require_preparation_authority()?;
     receipt["gui_uid"] = json!(uid);
     let identity = receipt["baseline"]["identity"].clone();
     if observation == PanelObservation::Healthy {
@@ -446,12 +333,8 @@ fn prepare_observed_host(
     service_intervention(root, build, app, out, receipt, &identity, uid)
 }
 
-fn require_preparation_authority(purpose: PanelPurpose) -> Result<u32> {
-    if purpose == PanelPurpose::PickerQualification {
-        require_picker_preparation_context()?;
-    }
+fn require_preparation_authority() -> Result<u32> {
     if !authorized_job(
-        purpose,
         &std::env::var("GITHUB_WORKFLOW").unwrap_or_default(),
         &std::env::var("GITHUB_JOB").unwrap_or_default(),
     ) || [
@@ -629,68 +512,18 @@ mod tests {
     }
 
     #[test]
-    fn panel_purposes_admit_only_their_exact_jobs() {
-        assert!(authorized_qualification_file(
-            "CI",
-            "owner/repo",
-            "owner/repo/.github/workflows/ci.yml@refs/pull/39/merge"
-        ));
-        assert!(authorized_qualification_file(
-            "Owner release",
-            "owner/repo",
-            "owner/repo/.github/workflows/release.yml@refs/heads/main"
-        ));
-        assert!(!authorized_qualification_file(
-            "CI",
-            "owner/repo",
-            "owner/repo/.github/workflows/unrelated.yml@main"
-        ));
-        assert!(!authorized_qualification_file(
-            "CI",
-            "owner/repo",
-            "other/repo/.github/workflows/ci.yml@main"
-        ));
-        assert!(authorized_job(
-            PanelPurpose::Diagnostic,
-            "Native AppKit panel observation",
-            "panel"
-        ));
-        for workflow in ["CI", "Owner release"] {
-            assert!(authorized_job(
-                PanelPurpose::PickerQualification,
-                workflow,
-                "app_picker_followup"
-            ));
-            assert!(!authorized_job(
-                PanelPurpose::Diagnostic,
-                workflow,
-                "app_picker_followup"
-            ));
-            for job in [
-                "app_picker_normal",
-                "app_picker_modified",
-                "app_picker",
-                "panel",
-                "app",
-                "",
-            ] {
-                assert!(!authorized_job(
-                    PanelPurpose::PickerQualification,
-                    workflow,
-                    job
-                ));
-            }
+    fn standalone_diagnostic_admits_only_its_own_job() {
+        assert!(authorized_job("Native AppKit panel observation", "panel"));
+        for (workflow, job) in [
+            ("CI", "panel"),
+            ("Owner release", "panel"),
+            ("CI", "app_picker"),
+            ("Native AppKit panel observation", "app_picker"),
+            ("unrelated", "panel"),
+            ("Native AppKit panel observation", ""),
+        ] {
+            assert!(!authorized_job(workflow, job));
         }
-        assert!(!authorized_job(
-            PanelPurpose::PickerQualification,
-            "Native AppKit panel observation",
-            "panel"
-        ));
-        assert!(!authorized_job(
-            PanelPurpose::PickerQualification,
-            "unrelated",
-            "app_picker_followup"
-        ));
     }
 
     #[test]

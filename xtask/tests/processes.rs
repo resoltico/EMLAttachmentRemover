@@ -503,6 +503,149 @@ fn failed_enumeration_cannot_launch_a_worker_or_qualify_cleanup() {
     assert!(!root.path().join("worker-group").exists());
     assert!(!root.path().join("invoked").exists());
 }
+
+fn inspection_controller(root: &Path, script: &str) -> controller_source::Controller {
+    let inspector = root.join("inspect");
+    fs::write(&inspector, script).unwrap();
+    fs::set_permissions(&inspector, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut controller =
+        controller_source::Controller::new(root, Path::new(env!("CARGO_BIN_EXE_xtask"))).unwrap();
+    controller.inspector = inspector;
+    controller
+}
+
+#[test]
+fn admission_inspects_only_supervisor_then_cleanup_inspects_full_session() {
+    let _scenario = scenario();
+    let root = scratch();
+    let controller = inspection_controller(
+        root.path(),
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$0.args\"\nexec /bin/ps \"$@\"\n",
+    );
+    let result = controller
+        .run(
+            Command::new("/usr/bin/true"),
+            &root.path().join("worker.log"),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    assert!(result.success());
+    let ready: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path().join("worker.started.json")).unwrap())
+            .unwrap();
+    let args = fs::read_to_string(root.path().join("inspect.args")).unwrap();
+    let lines = args.lines().collect::<Vec<_>>();
+    assert_eq!(
+        lines[0],
+        format!("-p {} -o pid=,pgid=,state=,ucomm=", ready["session"])
+    );
+    assert!(lines.len() > 1);
+    assert!(
+        lines[1..]
+            .iter()
+            .all(|line| *line == "-axo pid=,pgid=,state=,ucomm=")
+    );
+}
+
+#[test]
+fn delayed_admission_inspection_is_reaped_recorded_and_closes_admission() {
+    let _scenario = scenario();
+    let root = scratch();
+    let controller = inspection_controller(
+        root.path(),
+        "#!/bin/sh\nprintf '%s\\n' \"$$\" > \"$0.pid\"\nexec /bin/sleep 4\n",
+    );
+    let error = controller
+        .run(
+            worker(root.path(), "marker"),
+            &root.path().join("worker.log"),
+            Duration::from_secs(5),
+        )
+        .err()
+        .expect("A delayed inspector cannot admit a worker");
+    assert!(
+        error
+            .to_string()
+            .contains("inspection failed before worker launch")
+    );
+    assert!(error.to_string().contains("exceeded its remaining budget"));
+    let record: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path().join("worker.control.json")).unwrap())
+            .unwrap();
+    assert_eq!(record["event"], "inspection_failed");
+    assert!(record["elapsed_ms"].as_u64().unwrap() >= 2000);
+    assert!(record.get("raw_status").is_none());
+    assert!(record.get("cleanup_complete").is_none());
+    let pid: i32 = fs::read_to_string(root.path().join("inspect.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        rustix::process::getpgid(rustix::process::Pid::from_raw(pid)).unwrap_err(),
+        rustix::io::Errno::SRCH
+    );
+    assert!(!root.path().join("worker-group").exists());
+    assert!(!root.path().join("invoked").exists());
+    assert!(!controller.admits_work());
+}
+
+#[test]
+fn malformed_admission_inspection_refuses_worker_with_terminal_evidence() {
+    let _scenario = scenario();
+    let root = scratch();
+    let controller = inspection_controller(root.path(), "#!/bin/sh\nprintf 'malformed row\\n'\n");
+    let error = controller
+        .run(
+            worker(root.path(), "marker"),
+            &root.path().join("worker.log"),
+            Duration::from_secs(5),
+        )
+        .err()
+        .expect("Malformed inspection cannot admit a worker");
+    assert!(
+        error
+            .to_string()
+            .contains("Malformed numeric process inspection")
+    );
+    let record: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path().join("worker.control.json")).unwrap())
+            .unwrap();
+    assert_eq!(record["event"], "inspection_failed");
+    assert!(!controller.admits_work());
+    assert!(!root.path().join("worker-group").exists());
+    assert!(!root.path().join("invoked").exists());
+}
+
+#[test]
+fn unsupported_full_census_refuses_cleanup_after_valid_self_inspection() {
+    let _scenario = scenario();
+    let root = scratch();
+    let controller = inspection_controller(
+        root.path(),
+        "#!/bin/sh\nif [ \"$1\" = -axo ]; then exit 1; fi\nexec /bin/ps \"$@\"\n",
+    );
+    let error = controller
+        .run(
+            worker(root.path(), "marker"),
+            &root.path().join("worker.log"),
+            Duration::from_secs(5),
+        )
+        .err()
+        .expect("A successful worker cannot qualify without the full census");
+    assert!(
+        error.to_string().contains("Supervisor cleanup failed:"),
+        "{error}"
+    );
+    let record: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path().join("worker.control.json")).unwrap())
+            .unwrap();
+    assert_eq!(record["event"], "finished");
+    assert_eq!(record["raw_status"], 0);
+    assert_eq!(record["cleanup_complete"], false);
+    assert!(root.path().join("invoked").exists());
+    assert!(!controller.admits_work());
+}
 #[test]
 fn a_group_in_another_owned_session_is_not_signal_authority() {
     let _scenario = scenario();

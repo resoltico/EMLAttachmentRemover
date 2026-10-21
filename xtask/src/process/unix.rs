@@ -117,7 +117,11 @@ pub(super) fn run(
         loop {
             let result = read_frame(&mut reader)
                 .and_then(|bytes| Ok(serde_json::from_slice::<Message>(&bytes)?));
-            let finished = result.is_err() || matches!(result, Ok(Message::Finished { .. }));
+            let finished = result.is_err()
+                || matches!(
+                    result,
+                    Ok(Message::Finished { .. } | Message::InspectionFailed { .. })
+                );
             let _ = send.send(result.map_err(|error| error.to_string()));
             if finished {
                 break;
@@ -292,15 +296,36 @@ struct Row {
     state: String,
     command: String,
 }
-fn inspect(program: &Path, session: Pid, until: Instant) -> Result<(Vec<Row>, bool)> {
+enum InspectionScope {
+    Supervisor,
+    Session,
+}
+fn inspect(
+    program: &Path,
+    session: Pid,
+    scope: InspectionScope,
+    until: Instant,
+) -> Result<(Vec<Row>, bool)> {
     let until = until.min(Instant::now() + Duration::from_secs(2));
     if Instant::now() >= until {
         return Err("Inspection budget exhausted before spawn".into());
     }
-    let mut process = Command::new(program)
-        // The short kernel command name is sufficient for diagnostics. Avoid
-        // resolving executable paths for every process in this global census.
-        .args(["-axo", "pid=,pgid=,state=,ucomm="])
+    let mut command = Command::new(program);
+    // The short kernel command name is diagnostic only, never signal authority.
+    match scope {
+        InspectionScope::Supervisor => {
+            command.args([
+                "-p",
+                &number(session).to_string(),
+                "-o",
+                "pid=,pgid=,state=,ucomm=",
+            ]);
+        }
+        InspectionScope::Session => {
+            command.args(["-axo", "pid=,pgid=,state=,ucomm="]);
+        }
+    }
+    let mut process = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -338,6 +363,26 @@ fn inspect(program: &Path, session: Pid, until: Instant) -> Result<(Vec<Row>, bo
         return Err("Process inspection output exceeds its bound".into());
     }
     inspected_rows(&bytes, session, inspector)
+}
+
+fn admit_inspection(program: &Path, session: Pid) -> Result<()> {
+    let began = Instant::now();
+    if let Err(error) = inspect(
+        program,
+        session,
+        InspectionScope::Supervisor,
+        began + Duration::from_secs(2),
+    ) {
+        frame(
+            &mut std::io::stdout().lock(),
+            &Message::InspectionFailed {
+                detail: error.to_string(),
+                elapsed_ms: began.elapsed().as_millis().try_into()?,
+            },
+        )?;
+        return Err(error);
+    }
+    Ok(())
 }
 
 struct Session {
@@ -436,9 +481,10 @@ pub(super) fn session_entry() -> ExitCode {
         if Duration::from_millis(request.cooperative_stop_ms) > COOPERATIVE_STOP_LIMIT {
             return Err("Private process cooperative stop exceeds its policy bound".into());
         }
-        // Refuse an unsupported/malformed inspector before starting any worker.
+        // Check row grammar and supervisor visibility before any worker exists.
+        // Full-session enumeration and topology are checked during cleanup.
         let inspector = PathBuf::from(OsString::from_vec(request.inspector.clone()));
-        let _ = inspect(&inspector, session, Instant::now() + Duration::from_secs(2))?;
+        admit_inspection(&inspector, session)?;
         let lost = stopped.clone();
         std::thread::spawn(move || {
             let mut byte = [0u8; 1];
@@ -599,7 +645,7 @@ impl ParentSession {
                 drop(self.writer.take());
             }
             match receive.recv_timeout(Duration::from_millis(20)) {
-                Ok(Ok(message @ Message::Finished { .. })) => {
+                Ok(Ok(message @ (Message::Finished { .. } | Message::InspectionFailed { .. }))) => {
                     result = Some(message);
                     break;
                 }
@@ -628,11 +674,17 @@ fn qualify_completion(
     started: Instant,
     log: &Path,
 ) -> Result<ProcessResult> {
-    let Some(report @ Message::Finished { .. }) = result else {
+    let Some(report) = result else {
         return Err("Missing supervisor completion evidence".into());
     };
     let control = log.with_extension("control.json");
     fs::write(&control, serde_json::to_vec_pretty(&report)?)?;
+    if let Message::InspectionFailed { detail, elapsed_ms } = &report {
+        return Err(format!(
+            "Supervisor inspection failed before worker launch after {elapsed_ms} ms: {detail}; evidence {}",
+            control.display()
+        ).into());
+    }
     let Message::Finished {
         raw_status,
         timed_out,
@@ -645,7 +697,7 @@ fn qualify_completion(
         detail,
     } = report
     else {
-        unreachable!()
+        return Err("Unexpected supervisor completion evidence".into());
     };
     if !status.success() || !cleanup_complete {
         return Err(format!(

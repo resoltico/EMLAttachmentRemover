@@ -206,7 +206,7 @@ jobs:
         run: |
           cargo run --locked --manifest-path tests/native-filesystem/Cargo.toml --target '${{ matrix.target }}'
           exit $LASTEXITCODE
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: ${{ runner.os == 'Windows' && steps.private_workspace.outcome == 'success' }}
         with:
           artifact-ids: ${{ needs.legal.outputs.artifact_id }}
@@ -517,15 +517,12 @@ jobs:
             target/archive-verification/**
             target/native-host/**
           if-no-files-found: error
-  app_picker_normal:
+  app_picker:
     needs: [plan, legal, app]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' }}
-    name: Normal macOS26 picker observation / ${{ matrix.platform }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' && needs.app.result == 'success' }}
+    name: macOS26 picker qualification / ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
-    outputs:
-      outcome: ${{ steps.observation.outputs.outcome }}
-      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.picker) }}
@@ -541,6 +538,7 @@ jobs:
         with:
           artifact-ids: ${{ needs.legal.outputs.artifact_id }}
           path: target/legal-input
+          digest-mismatch: error
       - name: Select the exact current candidate artifact ID
         id: artifact
         env:
@@ -555,151 +553,33 @@ jobs:
         with:
           artifact-ids: ${{ steps.artifact.outputs.id }}
           path: target/products
-      - name: Observe normal dedicated picker result without qualifying a failure
-        id: observation
+          digest-mismatch: error
+      - name: Prepare the admitted host, test the frozen product and verify host settlement
         env:
           PLATFORM: ${{ matrix.platform }}
         run: |
           cargo xtask distribution > target/distribution.json
           app=$(jq -er --arg platform "$PLATFORM" '.expected_artifacts[]|select(.platform==$platform and .role=="app")|.name' target/distribution.json)
-          bash .github/scripts/picker-qualification.sh normal "target/products/app-build/$app" "target/products/app-build/$app.reference.json"
-          printf 'outcome=%s\n' "$(cat target/picker-normal/outcome.txt)" >> "$GITHUB_OUTPUT"
-      - id: upload
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ always() }}
-        with:
-          name: picker-normal-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: |
-            target/picker-normal/**
-            target/app-picker-compatibility/**
-            !target/app-picker-compatibility/**/gui-picker/build/**
-            target/native-host/**
-          if-no-files-found: error
-  app_picker_followup:
-    needs: [plan, legal, app, app_picker_normal]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.legal.result == 'success' && needs.app.result == 'success' && needs.app_picker_normal.result == 'success' && needs.app_picker_normal.outputs.outcome == 'known_panel_failure' }}
-    name: Follow-up macOS26 Intel picker qualification
-    runs-on: macos-26-intel
-    timeout-minutes: 45
-    outputs:
-      artifact_id: ${{ steps.upload.outputs.artifact-id }}
-    env:
-      EML_GENERATED_LEGAL_MATERIALS: ${{ github.workspace }}/target/legal-input
-      MACOSX_DEPLOYMENT_TARGET: ${{ needs.plan.outputs.minimum }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.source }}
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          artifact-ids: ${{ needs.legal.outputs.artifact_id }}
-          path: target/legal-input
-          digest-mismatch: error
-      - name: Select exact current candidate artifact
-        id: artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT_NAME: native-products-${{ inputs.source }}-macos-x86_64-r${{ github.run_id }}-a${{ github.run_attempt }}
-        run: |
-          id=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" | jq -er --arg name "$ARTIFACT_NAME" '[.[]|.artifacts[]|select(.name==$name and .expired==false)]|if length==1 then .[0].id else error("missing or ambiguous exact candidate") end')
-          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          artifact-ids: ${{ steps.artifact.outputs.id }}
-          path: target/products
-          digest-mismatch: error
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          artifact-ids: ${{ needs.app_picker_normal.outputs.artifact_id }}
-          path: target/normal-picker-evidence
-          digest-mismatch: error
-      - name: Admit exact failure, prepare fresh host and require actual same product pass
-        run: |
-          archives=(target/products/app-build/EML-Attachment-Remover-*.zip)
-          test "${#archives[@]}" = 1
-          bash .github/scripts/picker-qualification.sh followup "${archives[0]}" "${archives[0]}.reference.json" target/normal-picker-evidence
-      - id: upload
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ always() }}
-        with:
-          name: picker-followup-${{ inputs.source }}-macos-x86_64-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: |
-            target/picker-followup/**
-            target/app-picker-compatibility/**
-            !target/app-picker-compatibility/**/gui-picker/build/**
-            target/native-host/**
-          if-no-files-found: error
-  app_picker:
-    needs: [plan, app, app_picker_normal, app_picker_followup]
-    if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
-    name: Required macOS26 Intel picker acceptance
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.source }}
-          persist-credentials: false
-      - name: Require the applicable normal or follow-up result
-        env:
-          NORMAL_RESULT: ${{ needs.app_picker_normal.result }}
-          NORMAL_OUTCOME: ${{ needs.app_picker_normal.outputs.outcome }}
-          FOLLOWUP_RESULT: ${{ needs.app_picker_followup.result }}
-        run: |
-          test "$NORMAL_RESULT" = success
-          if [ "$NORMAL_OUTCOME" = normal_pass ]; then
-            test "$FOLLOWUP_RESULT" = skipped
-          elif [ "$NORMAL_OUTCOME" = known_panel_failure ]; then
-            test "$FOLLOWUP_RESULT" = success
-          else
-            exit 1
-          fi
-      - name: Select exact current candidate artifact
-        id: artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT_NAME: native-products-${{ inputs.source }}-macos-x86_64-r${{ github.run_id }}-a${{ github.run_attempt }}
-        run: |
-          id=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" | jq -er --arg name "$ARTIFACT_NAME" '[.[]|.artifacts[]|select(.name==$name and .expired==false)]|if length==1 then .[0].id else error("missing or ambiguous exact candidate") end')
-          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          artifact-ids: ${{ steps.artifact.outputs.id }}
-          path: target/products
-          digest-mismatch: error
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          artifact-ids: ${{ needs.app_picker_normal.outputs.artifact_id }}
-          path: target/normal-picker-evidence
-          digest-mismatch: error
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: ${{ needs.app_picker_normal.outputs.outcome == 'known_panel_failure' }}
-        with:
-          artifact-ids: ${{ needs.app_picker_followup.outputs.artifact_id }}
-          path: target/followup-picker-evidence
-          digest-mismatch: error
-      - name: Validate source, archive, method, host mode, preferences and complete settlement
-        env:
-          NORMAL_OUTCOME: ${{ needs.app_picker_normal.outputs.outcome }}
-        run: |
-          archives=(target/products/app-build/EML-Attachment-Remover-*.zip)
-          test "${#archives[@]}" = 1
-          if [ "$NORMAL_OUTCOME" = normal_pass ]; then
-            bash .github/scripts/picker-qualification.sh select "${archives[0]}" "${archives[0]}.reference.json" target/normal-picker-evidence
-          else
-            bash .github/scripts/picker-qualification.sh select "${archives[0]}" "${archives[0]}.reference.json" target/normal-picker-evidence target/followup-picker-evidence
-          fi
-          jq '{stage,mode,source,target,run,attempt}' target/picker-qualification/result.json
+          bash .github/scripts/picker-qualification.sh "target/products/app-build/$app" "target/products/app-build/$app.reference.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
-          name: picker-qualification-${{ inputs.source }}-macos-x86_64-r${{ github.run_id }}-a${{ github.run_attempt }}
+          name: picker-qualification-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: target/picker-qualification/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: picker-observations-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/picker-qualification/**
+            target/app-picker-compatibility/**
+            !target/app-picker-compatibility/**/gui-picker/build/**
+            target/native-host/**
           if-no-files-found: error
   ci-ok:
     if: ${{ always() }}
-    needs: [plan, lint, legal, test, app, app_smoke, app_picker_normal, app_picker_followup, app_picker]
+    needs: [plan, lint, legal, test, app, app_smoke, app_picker]
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:

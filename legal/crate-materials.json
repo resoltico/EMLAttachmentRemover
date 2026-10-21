@@ -293,9 +293,9 @@
     },
     {
       "name": "annotate-snippets",
-      "version": "0.12.16",
+      "version": "0.12.17",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "checksum": "f211a51805bc641f3ad5b7664c77d2547af685cc33b4cd8d31964027a46f13f1",
+      "checksum": "b2a5b0a5ab8561c603f16c3b78c24a386b1f70e7fc1b1b1e8c15738828e4a176",
       "license_expression": "MIT OR Apache-2.0",
       "scopes": [
         "gui@aarch64-apple-darwin",
@@ -324,10 +324,10 @@
       "provenance": {
         "kind": "registry",
         "repository": "https://github.com/rust-lang/annotate-snippets-rs",
-        "checksum_basis": "cached published archive SHA-256 independently checked; generator separately binds the current Cargo.lock",
+        "checksum_basis": "Published registry archive downloaded and SHA-256 checked against Cargo.lock during the dependency material review; generation and native qualification remain separate.",
         "declared_vcs": {
           "git": {
-            "sha1": "2d2643cf7c64abbf014ff1df736865074a8b94de"
+            "sha1": "80dd9881ffd2247438ca4fe766b81ac7c81f6536"
           },
           "path_in_vcs": ""
         }
@@ -718,43 +718,11 @@
       }
     },
     {
-      "bindings": [
-        {
-          "generator_group_source_path_was_null": false,
-          "generator_text_bytes": 1076,
-          "generator_text_sha256": "0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7",
-          "license_id": "MIT",
-          "mapping": "exact_per_package_legal_file",
-          "materials": [
-            {
-              "bytes": 1076,
-              "kind": "package_file",
-              "path": "LICENSE-MIT",
-              "sha256": "0dd882e53de11566d50f8e8e2d5a651bcf3fabee4987d70f306233cf39094ba7"
-            }
-          ],
-          "scopes": [
-            "cli@aarch64-apple-darwin",
-            "cli@aarch64-pc-windows-gnullvm",
-            "cli@aarch64-unknown-linux-gnu",
-            "cli@x86_64-apple-darwin",
-            "cli@x86_64-pc-windows-gnullvm",
-            "cli@x86_64-unknown-linux-gnu",
-            "gui@aarch64-apple-darwin",
-            "gui@x86_64-apple-darwin",
-            "worker@aarch64-apple-darwin",
-            "worker@x86_64-apple-darwin"
-          ]
-        }
-      ],
-      "checksum": "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6",
-      "license_expression": "MIT OR Apache-2.0",
       "name": "base64",
-      "provenance": {
-        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
-        "kind": "registry"
-      },
+      "version": "0.23.1",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5",
+      "license_expression": "MIT OR Apache-2.0",
       "scopes": [
         "cli@aarch64-apple-darwin",
         "cli@aarch64-pc-windows-gnullvm",
@@ -767,26 +735,22 @@
         "worker@aarch64-apple-darwin",
         "worker@x86_64-apple-darwin"
       ],
-      "version": "0.22.1"
-    },
-    {
-      "name": "base64",
-      "version": "0.23.1",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "checksum": "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5",
-      "license_expression": "MIT OR Apache-2.0",
-      "scopes": [
-        "gui@aarch64-apple-darwin",
-        "gui@x86_64-apple-darwin"
-      ],
       "bindings": [
         {
           "license_id": "MIT",
           "generator_text_sha256": "ab499c75a0f0da8e0fe83bf9ba3a27e5c39705310f07107c6c66b69958d2401c",
           "generator_text_bytes": 1093,
           "scopes": [
+            "cli@aarch64-apple-darwin",
+            "cli@aarch64-pc-windows-gnullvm",
+            "cli@aarch64-unknown-linux-gnu",
+            "cli@x86_64-apple-darwin",
+            "cli@x86_64-pc-windows-gnullvm",
+            "cli@x86_64-unknown-linux-gnu",
             "gui@aarch64-apple-darwin",
-            "gui@x86_64-apple-darwin"
+            "gui@x86_64-apple-darwin",
+            "worker@aarch64-apple-darwin",
+            "worker@x86_64-apple-darwin"
           ],
           "mapping": "exact_per_package_legal_file",
           "materials": [
@@ -802,7 +766,7 @@
       "provenance": {
         "kind": "registry",
         "repository": "https://github.com/marshallpierce/rust-base64",
-        "checksum_basis": "cached published archive SHA-256 independently checked; generator separately binds the current Cargo.lock",
+        "checksum_basis": "Published registry archive downloaded and SHA-256 checked against Cargo.lock during the dependency material review; generation and native qualification remain separate.",
         "declared_vcs": {
           "git": {
             "sha1": "069bf7067b949f5c0a92b6ceb82492920502f2c2"
@@ -2059,9 +2023,9 @@
     },
     {
       "name": "crc32fast",
-      "version": "1.5.2",
+      "version": "1.5.3",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "checksum": "01a7799fd6b852db0e61728dde9a204c423b44d689dbd432522543614b490e78",
+      "checksum": "0ba106e844045ddc02c20768ac4b0b7cb45f2cc2ecbd833ac9f5dacb183c2055",
       "license_expression": "MIT OR Apache-2.0",
       "scopes": [
         "gui@aarch64-apple-darwin",
@@ -2090,10 +2054,10 @@
       "provenance": {
         "kind": "registry",
         "repository": "https://github.com/srijs/rust-crc32fast",
-        "checksum_basis": "cached published archive SHA-256 independently checked; generator separately binds the current Cargo.lock",
+        "checksum_basis": "Published registry archive downloaded and SHA-256 checked against Cargo.lock during the dependency material review; generation and native qualification remain separate.",
         "declared_vcs": {
           "git": {
-            "sha1": "7eb0b8a2c9b246d27dc4cb5a53d3fc3b43a4bb83"
+            "sha1": "d2363eab95ebc85fcf726d1c8fa845148e474591"
           },
           "path_in_vcs": ""
         }
@@ -5640,12 +5604,18 @@
           ]
         }
       ],
-      "checksum": "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78",
+      "checksum": "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a",
       "license_expression": "MIT OR Apache-2.0",
       "name": "libc",
       "provenance": {
-        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
-        "kind": "registry"
+        "checksum_basis": "Published registry archive downloaded and SHA-256 checked against Cargo.lock during the dependency material review; generation and native qualification remain separate.",
+        "kind": "registry",
+        "declared_vcs": {
+          "git": {
+            "sha1": "ccc2ff4aaab962f7fde7b8edda7379c045b1ca12"
+          },
+          "path_in_vcs": ""
+        }
       },
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "scopes": [
@@ -5658,7 +5628,7 @@
         "worker@aarch64-apple-darwin",
         "worker@x86_64-apple-darwin"
       ],
-      "version": "0.2.190"
+      "version": "0.2.191"
     },
     {
       "name": "libm",
@@ -5866,9 +5836,9 @@
     },
     {
       "name": "lyon_algorithms",
-      "version": "1.0.21",
+      "version": "1.0.22",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "checksum": "cdfa8785f95e57914ddb35e3b59994aeba6f5e79e9cfd03da1c269f010f36009",
+      "checksum": "f3a6b9d4e8b48acd531fbf1241ad9b270df6e60b6b92bdea1469f4f40899d805",
       "license_expression": "MIT OR Apache-2.0",
       "scopes": [
         "gui@aarch64-apple-darwin",
@@ -5891,7 +5861,7 @@
               "sha256": "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e",
               "upstream": {
                 "repository": "https://github.com/nical/lyon",
-                "revision": "994526f2766c7e9bc5bb16687232fd7e8999dbdf",
+                "revision": "db98d26a1a90076a7a894262dcb51117eef643c8",
                 "repository_path": "LICENSE-MIT",
                 "crate_path_in_vcs": "crates/algorithms"
               }
@@ -5903,10 +5873,10 @@
       "provenance": {
         "kind": "registry",
         "repository": "https://github.com/nical/lyon",
-        "checksum_basis": "cached published archive SHA-256 independently checked; generator separately binds the current Cargo.lock",
+        "checksum_basis": "Published registry archive downloaded and SHA-256 checked against Cargo.lock during the dependency material review; generation and native qualification remain separate.",
         "declared_vcs": {
           "git": {
-            "sha1": "994526f2766c7e9bc5bb16687232fd7e8999dbdf"
+            "sha1": "db98d26a1a90076a7a894262dcb51117eef643c8"
           },
           "path_in_vcs": "crates/algorithms"
         }
@@ -5962,9 +5932,9 @@
     },
     {
       "name": "lyon_geom",
-      "version": "1.0.19",
+      "version": "1.0.20",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "checksum": "4336502e29e32af93cf2dad2214ed6003c17ceb5bd499df77b1de663b9042b92",
+      "checksum": "d82dd26aa4dc0b5b70b9115de59824842bcb43cf4a28e1b1e6d0ad148c93f93e",
       "license_expression": "MIT OR Apache-2.0",
       "scopes": [
         "gui@aarch64-apple-darwin",
@@ -5987,7 +5957,7 @@
               "sha256": "80f275e90d799911ed3830a7f242a2ef5a4ade2092fe0aa07bfb2d2cf2f2b95e",
               "upstream": {
                 "repository": "https://github.com/nical/lyon",
-                "revision": "56219c95c658d4f39de7b190d98e57d5773ba241",
+                "revision": "db98d26a1a90076a7a894262dcb51117eef643c8",
                 "repository_path": "LICENSE-MIT",
                 "crate_path_in_vcs": "crates/geom"
               }
@@ -5999,10 +5969,10 @@
       "provenance": {
         "kind": "registry",
         "repository": "https://github.com/nical/lyon",
-        "checksum_basis": "cached published archive SHA-256 independently checked; generator separately binds the current Cargo.lock",
+        "checksum_basis": "Published registry archive downloaded and SHA-256 checked against Cargo.lock during the dependency material review; generation and native qualification remain separate.",
         "declared_vcs": {
           "git": {
-            "sha1": "56219c95c658d4f39de7b190d98e57d5773ba241"
+            "sha1": "db98d26a1a90076a7a894262dcb51117eef643c8"
           },
           "path_in_vcs": "crates/geom"
         }
@@ -9624,9 +9594,9 @@
     },
     {
       "name": "smol_str",
-      "version": "0.3.6",
+      "version": "0.3.7",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "checksum": "4aaa7368fcf4852a4c2dd92df0cace6a71f2091ca0a23391ce7f3a31833f1523",
+      "checksum": "eeb7109d23f319619d4cc0de5464613c8b7b1a09db2774a58101459cf6be2f10",
       "license_expression": "MIT OR Apache-2.0",
       "scopes": [
         "gui@aarch64-apple-darwin",
@@ -9655,10 +9625,10 @@
       "provenance": {
         "kind": "registry",
         "repository": "https://github.com/rust-lang/rust-analyzer/tree/master/lib/smol_str",
-        "checksum_basis": "cached published archive SHA-256 independently checked; generator separately binds the current Cargo.lock",
+        "checksum_basis": "Published registry archive downloaded and SHA-256 checked against Cargo.lock during the dependency material review; generation and native qualification remain separate.",
         "declared_vcs": {
           "git": {
-            "sha1": "3c4ae110c7682cfc723f9f0adb49c19e2e7a0893",
+            "sha1": "81a8e1f6871919611868225d09386d4f830b0cc1",
             "dirty": true
           },
           "path_in_vcs": "lib/smol_str"
@@ -12606,16 +12576,16 @@
   "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
   "source_inputs": [
     {
-      "bytes": 148507,
+      "bytes": 148258,
       "kind": "review_input",
       "path": "Cargo.lock",
-      "sha256": "a56717775d465d31714dc5094abd3aa6f1655a59601ec3ce2035d09bed692572"
+      "sha256": "321a0d8ee1c1c5a8f03ed79bb65f071837e0c28375f9e68c76e27df3b64b303f"
     },
     {
       "bytes": 1382,
       "kind": "review_input",
       "path": "Cargo.toml",
-      "sha256": "b882f36c42a3daa54937128e91aa0f3cc810ab6dedc7bbd2380e4b702cf8f528"
+      "sha256": "0cefcb9924d5473335f79f0becfd873590a084f6548f62e44431e55cd0a2379f"
     },
     {
       "bytes": 839,
@@ -12633,19 +12603,19 @@
       "bytes": 1111,
       "kind": "review_input",
       "path": "crates/eml-fs/Cargo.toml",
-      "sha256": "11ddcdc07bf7520ae2ab63060d4190ef0839755257d303b785be711b9b44dcf6"
+      "sha256": "ea235f1a94486075d2860dea0720f5edbe5666ca1f3c2180bc5f9d85a6d23360"
     },
     {
       "bytes": 308,
       "kind": "review_input",
       "path": "xtask/tools.toml",
-      "sha256": "ad27bf09ec17beae9286784afe18faad47719efccd27cf1800494e03bf310523"
+      "sha256": "5b6f4b955b911d32fecd9392147abbbab5a9a35b99b6ea61fc29c6443a6f2c9c"
     },
     {
-      "bytes": 866,
+      "bytes": 1127,
       "kind": "review_input",
       "path": "xtask/distribution.toml",
-      "sha256": "f181377e88039bbec469ca43a85d36377d872b741d1da30b0951590298d57854"
+      "sha256": "a073a3a48c0969f635c0262ccf752f8c95c4b1ab1974202f35c06de7ce6a1d9b"
     },
     {
       "bytes": 19327,
@@ -12693,7 +12663,7 @@
       "path": "crates/eml-macos/Cargo.toml",
       "kind": "review_input",
       "bytes": 520,
-      "sha256": "c6578ccb4a45ed8207246ee47c6a0666eefe75867a55125498ef36bf85301e8d"
+      "sha256": "2807061061c054479ec77dc0e91315b64800f3d45c792ff7e559b51a42b26dd1"
     },
     {
       "path": "xtask/app-notices.toml",
@@ -12914,6 +12884,10 @@
     {
       "basis_head": "a3506d12a44ffd1c6a1d0d1c7583bc5654a31a39",
       "scope": "Reviewed the strict-lint manifest tables and existing syn 2.0.119/proc-macro2 1.0.107/quote 1.0.47 direct xtask dependencies. An independent isolated comparison removing only those three parser edges retains all 581 lock package identities and identical selected normal/build package-feature graphs for all ten shipping profiles. Cached parser archives and their existing MIT materials were checked; these are tooling-only edges, with no new shipping package/version/material binding. Parley's additional bidi.rs patch replaces deprecated ICU4C numeric conversion with named Unicode BidiClass mappings; all 1,112,064 valid Unicode scalar masks compare identically, and actual resolver regressions pass. The published Parley archive, original MIT file and source headers were independently compared; no legal text changed. Current source-input identities are renewed after that scoped review and bind the additional patched source. Hashes do not establish review quality, generator execution, legal completeness or native release qualification."
+    },
+    {
+      "basis_head": "0a61569a10c4d75775b9e1c76a5315d637392e3c",
+      "scope": "Reviewed the dependency update against ten independently captured normal/build product feature trees: only base64, libc, annotate-snippets, crc32fast, lyon_algorithms, lyon_geom and smol_str change shipping identities. The two base64 records consolidate into the already-reviewed 0.23.1 MIT binding with the complete union of component scopes; its actual copyright names Alice Maz and Marshall Pierce. Every changed registry archive was downloaded and SHA-256 checked against Cargo.lock. Selected package MIT texts match retained bindings; annotate-snippets changes only its unselected Apache appendix attribution. Both Lyon packages omit license files; their newly declared VCS revision supplies the exact retained upstream MIT bytes. An independent pass checked changed material hashes, lengths, scope consolidation and Lyon revision bindings. Current package scopes exactly match all ten product trees. Syn, Object and other changed tooling identities do not enter those shipping graphs. Rust 1.99.1 standard-library legal members were independently byte-compared with the official checksum-verified compiler component and are unchanged; Windows runtime component identities and references are renewed separately. Manifest, lockfile, tool and distribution input identities below reflect this review, including the guarded hosted picker policy, which adds no shipping dependency. Generator execution, selected native link inputs, native qualification and legal assurance remain separate."
     }
   ],
   "product_material_review": {

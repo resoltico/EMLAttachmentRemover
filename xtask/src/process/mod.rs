@@ -336,6 +336,10 @@ pub(crate) enum Message {
     Ready {
         session: i32,
     },
+    InspectionFailed {
+        detail: String,
+        elapsed_ms: u64,
+    },
     Finished {
         raw_status: Option<i32>,
         timed_out: bool,

@@ -15,7 +15,47 @@ const MAX_PLAN_BYTES: usize = 16 * 1024;
 #[serde(deny_unknown_fields)]
 struct Distribution {
     policy: Policy,
+    picker_host: PickerHostPolicy,
     targets: Vec<Target>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PickerHostPolicy {
+    pub(crate) image_os: String,
+    pub(crate) image_version: String,
+    pub(crate) product_version: String,
+    pub(crate) build_version: String,
+}
+impl PickerHostPolicy {
+    fn validate(&self) -> Result<()> {
+        let image: Vec<_> = self.image_version.split('.').collect();
+        let product: Vec<_> = self.product_version.split('.').collect();
+        if self.image_os != "macos26"
+            || image.len() != 3
+            || image[0].len() != 8
+            || image[1].len() != 4
+            || image[2].is_empty()
+            || self.image_version.len() > 32
+            || image
+                .iter()
+                .any(|part| !part.bytes().all(|byte| byte.is_ascii_digit()))
+            || !(2..=3).contains(&product.len())
+            || product[0] != "26"
+            || self.product_version.len() > 16
+            || product
+                .iter()
+                .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
+            || self.build_version.is_empty()
+            || self.build_version.len() > 32
+            || !self
+                .build_version
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric())
+        {
+            return Err("Invalid Intel picker host image policy".into());
+        }
+        Ok(())
+    }
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -78,6 +118,7 @@ struct ExpectedArtifact {
 struct Plan {
     version: String,
     policy: Policy,
+    picker_host: PickerHostPolicy,
     native_targets: Vec<NativeTarget>,
     expected_artifacts: Vec<ExpectedArtifact>,
 }
@@ -189,6 +230,7 @@ impl Target {
 impl Distribution {
     fn parse(input: &str) -> Result<Self> {
         let table: Self = toml::from_str(input)?;
+        table.picker_host.validate()?;
         if table.targets.len() != 6 {
             return Err("Distribution requires exactly six native targets".into());
         }
@@ -302,6 +344,7 @@ impl Distribution {
         Ok(Plan {
             version,
             policy: self.policy,
+            picker_host: self.picker_host,
             native_targets,
             expected_artifacts,
         })
@@ -367,6 +410,19 @@ fn workspace_version(root: &Path, bytes: &[u8]) -> Result<String> {
     Ok(package.version)
 }
 
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn picker_host_policy(root: &Path) -> Result<PickerHostPolicy> {
+    use std::io::Read;
+    let mut input = Vec::new();
+    std::fs::File::open(root.join("xtask/distribution.toml"))?
+        .take((MAX_PLAN_BYTES + 1) as u64)
+        .read_to_end(&mut input)?;
+    if input.len() > MAX_PLAN_BYTES {
+        return Err("Distribution policy exceeds its input bound".into());
+    }
+    Ok(Distribution::parse(std::str::from_utf8(&input)?)?.picker_host)
+}
+
 pub(crate) fn run(root: &Path) -> Result<()> {
     let table = Distribution::parse(&std::fs::read_to_string(
         root.join("xtask/distribution.toml"),
@@ -416,10 +472,63 @@ mod tests {
     const TABLE: &str = include_str!("../distribution.toml");
 
     #[test]
+    fn picker_policy_is_derived_from_the_selected_distribution_input() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("xtask")).unwrap();
+        for image_version in ["20260824.0517.1", "20260825.0517.2"] {
+            let input = TABLE.replace("20260824.0517.1", image_version);
+            std::fs::write(root.path().join("xtask/distribution.toml"), &input).unwrap();
+            let selected = picker_host_policy(root.path()).unwrap();
+            assert_eq!(selected.image_version, image_version);
+            let plan = Distribution::parse(&input)
+                .unwrap()
+                .plan("6.0.0".into())
+                .unwrap();
+            let output = serde_json::to_value(plan).unwrap();
+            assert_eq!(
+                output["picker_host"],
+                serde_json::to_value(selected).unwrap()
+            );
+        }
+        std::fs::write(
+            root.path().join("xtask/distribution.toml"),
+            vec![b' '; MAX_PLAN_BYTES + 1],
+        )
+        .unwrap();
+        assert!(
+            picker_host_policy(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("exceeds")
+        );
+    }
+
+    #[test]
+    fn picker_policy_rejects_missing_unknown_and_malformed_host_coordinates() {
+        for input in [
+            TABLE.replace("[picker_host]", "[unknown_picker_host]"),
+            TABLE.replace("[picker_host]", "[picker_host]\nunknown = true"),
+            TABLE.replace("image_os = \"macos26\"", "image_os = \"macos27\""),
+            TABLE.replace("20260824.0517.1", "20260824..1"),
+            TABLE.replace("20260824.0517.1", "../20260824.0517.1"),
+            TABLE.replace("image_version = \"20260824.0517.1\"\n", ""),
+            TABLE.replace("product_version = \"26.6.1\"", "product_version = \"27.0\""),
+            TABLE.replace(
+                "product_version = \"26.6.1\"",
+                "product_version = \"26..1\"",
+            ),
+            TABLE.replace("build_version = \"25G76\"", "build_version = \"../25G76\""),
+            TABLE.replace("build_version = \"25G76\"", "build_version = \"\""),
+        ] {
+            assert!(Distribution::parse(&input).is_err(), "{input}");
+        }
+    }
+
+    #[test]
     fn developer_tool_output_uses_the_same_validated_pin_authority() {
         let tools = tool_versions(include_str!("../tools.toml")).unwrap();
         assert_eq!(tools["cargo_about"], "0.9.2");
-        assert_eq!(tools["fuzz_compiler"], "nightly-2026-09-30");
+        assert_eq!(tools["fuzz_compiler"], "nightly-2026-10-21");
         for invalid in [
             "",
             "[versions]",

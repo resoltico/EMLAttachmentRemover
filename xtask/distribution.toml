@@ -5,6 +5,14 @@ linux_minimum_ubuntu = "22.04"
 linux_glibc_maximum = "2.35"
 windows_rust_minimum = "10"
 
+# Intel GUI qualification uses the affected hosted image with recorded preparation.
+# https://github.com/actions/runner-images/issues/14751
+[picker_host]
+image_os = "macos26"
+image_version = "20260824.0517.1"
+product_version = "26.6.1"
+build_version = "25G76"
+
 [[targets]]
 platform = "macos-aarch64"
 target = "aarch64-apple-darwin"

@@ -22,6 +22,8 @@ mod macos_icon;
 mod macos_interaction;
 #[cfg(target_os = "macos")]
 mod macos_panel;
+#[cfg(any(target_os = "macos", test))]
+mod macos_picker_host;
 #[cfg(target_os = "macos")]
 mod macos_publication_ui;
 #[cfg(target_os = "macos")]
@@ -123,14 +125,23 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Prepare one fresh Intel26 follow-up host after a validated same-run normal failure.
+    /// Prepare the exact affected hosted Intel picker environment; never product acceptance.
     PrepareMacosPickerHost {
         #[arg(long)]
         archive: PathBuf,
         #[arg(long)]
         reference: PathBuf,
         #[arg(long)]
-        normal_failure: PathBuf,
+        out: PathBuf,
+    },
+    /// Read back the unchanged picker inputs, caller and host state after the real product.
+    VerifyMacosPickerHost {
+        #[arg(long)]
+        archive: PathBuf,
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long)]
+        preparation: PathBuf,
         #[arg(long)]
         out: PathBuf,
     },
