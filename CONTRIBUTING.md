@@ -86,9 +86,10 @@ Full product acceptance requires every registered native role and its matching
 archive/desktop consumers. Icon and standalone panel diagnostics
 are manual only. Partial reruns
 that lack the exact current producer artifact fail; rerun the complete workflow.
-Actionlint uses its exact checksum-pinned upstream prebuilt because install-action
-does not provide it; supported tools use SHA-pinned install-action, checksums and
-`fallback:none`. No tool source-build path remains.
+Actionlint and cargo-fuzz use exact checksum-pinned upstream prebuilts because
+install-action does not provide them. Other supported tools use SHA-pinned
+install-action, checksums and `fallback:none`. CI requires the pinned prebuilt
+downloads; it does not build tools from source.
 
 If a native run disproves a premise relied on by product safety, stop that design
 work and obtain the owner decision after that run. Do not leave an impossible
