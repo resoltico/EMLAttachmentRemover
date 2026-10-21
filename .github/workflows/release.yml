@@ -20,6 +20,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   admission:
+    permissions:
+      contents: write # Draft visibility requires push access; admission does not mutate releases.
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
@@ -34,6 +36,19 @@ jobs:
           ref: ${{ inputs.source }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Admit source from current main before executing repository code
+        env:
+          SOURCE: ${{ inputs.source }}
+        run: &admit_source |
+          head=$(git rev-parse HEAD)
+          test "$head" = "$SOURCE"
+          local_main=$(git rev-parse refs/remotes/origin/main)
+          remote_main=$(git ls-remote --exit-code origin refs/heads/main)
+          test "$remote_main" = "$(printf '%s\trefs/heads/main' "$local_main")"
+          git merge-base --is-ancestor "$SOURCE" "$local_main"
+          source_workflows=$(git rev-parse "${SOURCE}:.github/workflows")
+          main_workflows=$(git rev-parse "${local_main}:.github/workflows")
+          test "$source_workflows" = "$main_workflows"
       - name: Read-only release admission
         env:
           GH_TOKEN: ${{ github.token }}
@@ -43,6 +58,14 @@ jobs:
           mkdir -p target
           cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission.json
           test "$(jq -er .release.state target/release-admission.json)" = absent
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() && hashFiles('target/release-admission.json') != '' }}
+        with:
+          name: release-admission-${{ inputs.source }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/release-admission.json
+            target/release-check/**
+          if-no-files-found: error
   qualification:
     permissions:
       contents: read
@@ -70,6 +93,8 @@ jobs:
           ref: ${{ inputs.source }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Recheck source against current main before executing repository code
+        run: *admit_source
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: native-products-${{ inputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
@@ -169,13 +194,21 @@ jobs:
           test "$(jq -er .release.state target/release-admission-before-upload.json)" = absent
           gh release create "$tag" --draft --target "$SOURCE" --title "$tag" --notes-file target/release-notes.md
           gh release upload "$tag" "$RELEASE_ASSETS"/*
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > target/release-server-before-publish.json
+          gh release view "$tag" --json databaseId > target/release-draft-lookup.json
+          release_id=$(jq -er '.databaseId|select(type=="number" and .>0 and floor==.)' target/release-draft-lookup.json)
+          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > target/release-server-before-publish.json
+          jq -e --argjson id "$release_id" '.id==$id' target/release-server-before-publish.json
           cargo xtask check-release-server --assets "$RELEASE_ASSETS" --release target/release-server-before-publish.json > target/release-server-checked.json
           gh release edit "$tag" --draft=false --latest
       - name: Observe server state after success or failure without deleting anything
         if: ${{ always() }}
         run: |
-          gh api --include "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" > target/release-server-final-response.txt 2> target/release-server-final-error.txt
+          mkdir -p target
+          gh release view "v$VERSION" --json databaseId > target/release-final-lookup.json 2> target/release-final-lookup-error.txt
+          release_id=$(jq -er '.databaseId|select(type=="number" and .>0 and floor==.)' target/release-final-lookup.json)
+          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
+          gh api --include "repos/$GITHUB_REPOSITORY/releases/$release_id" > target/release-server-final-response.txt 2> target/release-server-final-error.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:

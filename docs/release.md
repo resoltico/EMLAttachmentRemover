@@ -5,8 +5,10 @@ workflow lint do not establish live attestation or publication integration.
 
 ## Prepare and dispatch
 
-Authenticate `gh` for this repository. Select a full commit on main containing the
-workspace version and release notes, fetch main, and verify read-only admission
+Authenticate `gh` with repository push access so it can see unpublished drafts.
+Select a full commit on main containing the
+workspace version and release notes and the same workflow tree as current main,
+fetch main, and verify read-only admission
 from a clean checkout of that commit:
 
 ```sh
@@ -30,9 +32,16 @@ before attempting recovery.
 After owner review and a separate release decision, the `Owner release` workflow
 accepts a full source commit S on main and the matching Cargo version. S must
 contain one nonempty dated changelog section while retaining Unreleased and
-published history. Dispatch the workflow from main. Read-only admission checks
-the exact clean checkout, current remote main ancestry, version, notes, tag and
-actual API release state. An API failure is never treated as absence.
+published history. Dispatch the workflow from main. Trusted workflow steps verify
+S against current remote main before executing any repository code, including
+ancestry and equality of the workflow trees. A source with different workflows
+would require a workflow-write credential that `GITHUB_TOKEN` cannot provide.
+Read-only admission operations check the exact clean checkout, version, notes,
+tag and draft-aware API release state. Only a successful GraphQL lookup with an
+explicit null release establishes absence; a resolved release ID must return a
+matching REST response. API errors and inaccessible IDs never establish absence.
+Local callers must supply push-capable credentials; a read-only credential can
+hide drafts and cannot establish their absence.
 
 The same reusable native qualification workflow runs on S. All six native test
 jobs, both native app candidate producers, both complete minimum-OS desktop
@@ -74,9 +83,14 @@ subjects. This is a qualification/assembly statement, not default SLSA build
 provenance pretending that a checkout override changes the dispatch identity.
 Full native job observations and build/test records remain in run artifacts.
 
-Only the publication job has release, attestation and OIDC write permissions.
-It repeats admission, requires an absent release, creates an unpublished draft,
-and uploads without clobbering. An actual API response feeds
+Admission and publication receive `contents: write` credentials because draft
+visibility requires push access. Admission performs only read operations on Git refs and releases.
+Attestation and OIDC write scopes belong only to publication. Publication rechecks
+S against current main before executing repository code, repeats admission,
+requires an absent release, creates an unpublished draft and uploads without
+clobbering. Draft-aware lookup resolves its numeric ID before reading the raw
+REST response; the release-by-tag REST endpoint only finds published releases.
+That actual API response feeds
 `cargo xtask check-release-server --assets DIR --release RESPONSE.json`:
 exact source/version/draft, nine distinct positive asset IDs, exact names,
 uploaded state, sizes and SHA256 digests must match the local immutable set.
@@ -86,8 +100,9 @@ from the correct repository; the workflow supplies that boundary directly.
 Only after these checks does the workflow publish the draft.
 
 After success or failure, the workflow observes server state and retains its
-responses, assembly/admission records, source/policy predicate and diagnostics.
-No failure handler deletes a release, replaces assets or resets a tag. Existing
+draft-aware ID lookup and REST responses, assembly/admission records,
+source/policy predicate and diagnostics. Failed final lookups retain their errors
+and leave server state uncertain; they do not assert absence. No failure handler deletes a release, replaces assets or resets a tag. Existing
 tags are always refused. A matching unpublished draft is recognized by admission
 but automatic publication still refuses it: inspect its actual assets and tag
 state and obtain an owner recovery decision. A failed action does not prove the
