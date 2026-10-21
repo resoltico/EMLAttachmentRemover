@@ -3,6 +3,9 @@ on:
   schedule:
     - cron: '23 4 * * 1'
   workflow_dispatch:
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
 concurrency:
@@ -27,21 +30,26 @@ jobs:
           done
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
         with:
-          tool: cargo-deny@${{ steps.policy.outputs.cargo_deny }},cargo-fuzz@${{ steps.policy.outputs.cargo_fuzz }}
+          tool: cargo-deny@${{ steps.policy.outputs.cargo_deny }}
           checksum: true
           fallback: none
+      - name: Install exact upstream prebuilt cargo-fuzz
+        env:
+          VERSION: ${{ steps.policy.outputs.cargo_fuzz }}
+        run: |
+          archive="$RUNNER_TEMP/cargo-fuzz.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --max-time 60 --max-filesize 20000000 "https://github.com/rust-fuzz/cargo-fuzz/releases/download/$VERSION/cargo-fuzz-$VERSION-x86_64-unknown-linux-musl.tar.gz" -o "$archive"
+          printf 'b5b704018b63e0f151c17a057ac53b5111e1db545d1b9f72fee79f08a545931c  %s\n' "$archive" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/cargo-fuzz-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/cargo-fuzz-bin" cargo-fuzz
+          test "$("$RUNNER_TEMP/cargo-fuzz-bin/cargo-fuzz" fuzz --version)" = "cargo-fuzz $VERSION"
+          printf '%s\n' "$RUNNER_TEMP/cargo-fuzz-bin" >> "$GITHUB_PATH"
       - name: Install separate pinned fuzz compiler
         env:
           FUZZ_COMPILER: ${{ steps.policy.outputs.fuzz_compiler }}
         run: rustup toolchain install "$FUZZ_COMPILER" --profile minimal
       - name: Fresh advisory and source policy across supported graphs
-        run: |
-          cargo deny --locked --config xtask/dependencies.toml check advisories sources licenses
-          cargo deny --locked --manifest-path fuzz/Cargo.toml --config xtask/dependencies.toml check advisories sources licenses
-          cargo deny --locked --manifest-path tests/native-filesystem/Cargo.toml --config xtask/dependencies.toml check advisories sources licenses
-          for target in aarch64-apple-darwin x86_64-apple-darwin; do
-            cargo deny --locked --target "$target" --features eml-gui/macos-gui --config xtask/dependencies.toml check advisories sources licenses
-          done
+        run: bash .github/scripts/check-dependencies.sh
       - name: Extended independent semantic properties
         if: ${{ !cancelled() && steps.policy.outcome == 'success' }}
         env:

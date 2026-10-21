@@ -74,7 +74,7 @@ fn release_section<'a>(changelog: &'a str, version: &str) -> Result<&'a str> {
     }
     Ok(date)
 }
-fn release_response(bytes: &[u8], exit: Option<i32>, version: &str, source: &str) -> Result<Value> {
+fn response_json(bytes: &[u8]) -> Result<Value> {
     let text = std::str::from_utf8(bytes)?.replace("\r\n", "\n");
     let (headers, body) = text
         .split_once("\n\n")
@@ -88,31 +88,81 @@ fn release_response(bytes: &[u8], exit: Option<i32>, version: &str, source: &str
         return Err("Unknown GitHub HTTP response version".into());
     }
     let code = status.next().ok_or("Missing GitHub response code")?;
-    let body: Value = serde_json::from_str(body)?;
-    match (code, exit) {
-        ("404", Some(1)) if body["message"] == "Not Found" && body["status"] == "404" => {
-            Ok(json!({"state":"absent"}))
-        }
-        ("200", Some(0))
-            if body["draft"] == true
-                && body["tag_name"] == format!("v{version}")
-                && body["target_commitish"] == source =>
-        {
-            Ok(
-                json!({"state":"recoverable_unpublished_draft","id":body["id"],"url":body["html_url"]}),
-            )
-        }
-        _ => Err(
-            "Release already published, draft source differs, or GitHub absence is unverified"
-                .into(),
-        ),
+    if code != "200" {
+        return Err("GitHub release lookup did not return HTTP 200; absence is unverified".into());
     }
+    Ok(serde_json::from_str(body)?)
+}
+
+fn release_id(body: &Value, repository: &str) -> Result<Option<u64>> {
+    if body.get("errors").is_some() {
+        return Err("GraphQL release lookup reported errors; absence is unverified".into());
+    }
+    let repo = body
+        .pointer("/data/repository")
+        .filter(|value| value.is_object())
+        .ok_or("GraphQL release lookup omitted the repository")?;
+    if !repo["nameWithOwner"]
+        .as_str()
+        .is_some_and(|name| name.eq_ignore_ascii_case(repository))
+    {
+        return Err("GraphQL release lookup returned a different repository".into());
+    }
+    let release = repo
+        .get("release")
+        .ok_or("GraphQL release lookup omitted the release field")?;
+    if release.is_null() {
+        return Ok(None);
+    }
+    release["databaseId"]
+        .as_u64()
+        .filter(|id| *id > 0)
+        .map(Some)
+        .ok_or_else(|| "GraphQL release lookup omitted a positive integer release ID".into())
+}
+
+fn draft_release(body: &Value, id: u64, version: &str, source: &str) -> Result<Value> {
+    if body["id"].as_u64() != Some(id)
+        || body["draft"] != true
+        || body["tag_name"] != format!("v{version}")
+        || body["target_commitish"] != source
+        || !body["html_url"].as_str().is_some_and(|url| !url.is_empty())
+    {
+        return Err(
+            "Release ID/source differs, release is published, or draft identity is incomplete"
+                .into(),
+        );
+    }
+    Ok(json!({"state":"recoverable_unpublished_draft","id":id,"url":body["html_url"]}))
+}
+
+fn github_read(root: &Path, out: &Path, label: &str, args: &[String]) -> Result<Value> {
+    let log = out.join(format!("{label}.log"));
+    let mut command = Command::new("gh");
+    command
+        .current_dir(root)
+        .args(["api", "--include"])
+        .args(args);
+    let process = controller()?.run_separate_output(command, &log, Duration::from_secs(30))?;
+    fs::write(
+        out.join(format!("{label}-process.json")),
+        serde_json::to_vec_pretty(&process.evidence())?,
+    )?;
+    process.require_success(&log)?;
+    if fs::metadata(&log)?.len() > 1024 * 1024 {
+        return Err("GitHub release response exceeds its bound".into());
+    }
+    let bytes = fs::read(&log)?;
+    if bytes.len() > 1024 * 1024 {
+        return Err("GitHub release response grew beyond its bound".into());
+    }
+    response_json(&bytes)
 }
 
 pub(crate) fn run(root: &Path, source: &str, version: &str) -> Result<()> {
     // Design: validate immutable source and local release text before remote
-    // reads. Challenge: a CLI error is not proof of absence; accept only an
-    // observed404 body/status, or a matching unpublished draft. Never mutate
+    // reads. Absence requires a successful draft-aware lookup with push-capable
+    // credentials; an HTTP/CLI error or inaccessible ID cannot prove it. Never mutate
     // tags, releases, assets, remote refs, changelog or repository settings.
     source_id(source)?;
     if git(root, &["rev-parse", "HEAD"])? != source
@@ -173,30 +223,27 @@ pub(crate) fn run(root: &Path, source: &str, version: &str) -> Result<()> {
         .prefix("observation-")
         .tempdir_in(parent)?
         .keep();
-    let log = out.join("github-release-response.log");
-    let mut command = Command::new("gh");
-    command.current_dir(root).args([
-        "api",
-        "--include",
-        &format!("repos/{repository}/releases/tags/{tag}"),
-    ]);
-    let process = controller()?.run_separate_output(command, &log, Duration::from_secs(30))?;
-    fs::write(
-        out.join("process.json"),
-        serde_json::to_vec_pretty(&process.evidence())?,
-    )?;
-    if process.cancelled
-        || process.timed_out
-        || !process.cleanup_complete
-        || process.unexpected_survivors != 0
-    {
-        return Err("GitHub release read did not settle cleanly".into());
-    }
-    if fs::metadata(&log)?.len() > 1024 * 1024 {
-        return Err("GitHub release response exceeds its bound".into());
-    }
-    let release = release_response(&fs::read(&log)?, process.status.code(), version, source)?;
-    let result = json!({"source":source,"main":local_main,"version":version,"date":date,"repository":repository,"release":release,"expected_archives":names,"scope":"read-only source/version/changelog/tag/release-state/expected-name admission; no archive, attestation or publication qualification"});
+    let (owner, name) = repository
+        .split_once('/')
+        .ok_or("Missing repository owner/name")?;
+    let lookup = github_read(root, &out, "github-release-lookup", &[
+        "graphql".into(), "-f".into(),
+        "query=query($owner:String!,$name:String!,$tag:String!){repository(owner:$owner,name:$name){nameWithOwner release(tagName:$tag){databaseId}}}".into(),
+        "-f".into(), format!("owner={owner}"), "-f".into(), format!("name={name}"), "-f".into(), format!("tag={tag}"),
+    ])?;
+    let release = match release_id(&lookup, repository)? {
+        None => json!({"state":"absent"}),
+        Some(id) => {
+            let body = github_read(
+                root,
+                &out,
+                "github-release-response",
+                &[format!("repos/{repository}/releases/{id}")],
+            )?;
+            draft_release(&body, id, version, source)?
+        }
+    };
+    let result = json!({"source":source,"main":local_main,"version":version,"date":date,"repository":repository,"release":release,"expected_archives":names,"release_visibility":"requires push-capable credentials to include unpublished drafts","scope":"read-only source/version/changelog/tag/release-state/expected-name admission; no archive, attestation or publication qualification"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
@@ -242,6 +289,14 @@ fn verify_main_ancestry(root: &Path, source: &str) -> Result<String> {
         source,
         &local_main,
     ]))?;
+    if git(root, &["rev-parse", &format!("{source}:.github/workflows")])?
+        != git(
+            root,
+            &["rev-parse", &format!("{local_main}:.github/workflows")],
+        )?
+    {
+        return Err("Release source workflow tree differs from current main; the release token cannot create that tag".into());
+    }
     Ok(local_main)
 }
 
@@ -262,19 +317,74 @@ mod tests {
         assert_eq!(release_section("## [Unreleased]\n\n## [6.0.0] - 2026-10-18\n- Outcome\n## [5.0.0] - 2026-10-15\n- History","6.0.0").unwrap(),"2026-10-18");
     }
     #[test]
-    fn remote_errors_and_published_releases_never_count_as_absence() {
-        let absent=b"HTTP/2.0 404 Not Found\nX-Test: owned\r\n\r\n{\"message\":\"Not Found\",\"status\":\"404\"}";
+    fn only_successful_http_json_can_supply_release_observations() {
         assert_eq!(
-            release_response(absent, Some(1), "6.0.0", "source").unwrap()["state"],
-            "absent"
+            response_json(b"HTTP/2.0 200 OK\r\nX-Test: owned\r\n\r\n{\"id\":7}").unwrap()["id"],
+            7
         );
-        assert!(release_response(absent, Some(0), "6.0.0", "source").is_err());
-        for response in [
+        for bytes in [
+            "HTTP/2.0 404 Not Found\n\n{\"message\":\"Not Found\",\"status\":\"404\"}",
             "HTTP/2.0 403 Forbidden\n\n{\"message\":\"Forbidden\"}",
-            "HTTP/2.0 200 OK\n\n{\"draft\":false,\"tag_name\":\"v6.0.0\",\"target_commitish\":\"source\"}",
-            "HTTP/2.0 200 OK\n\n{\"draft\":true,\"tag_name\":\"v6.0.0\",\"target_commitish\":\"wrong-source\"}",
+            "HTTP/2.0 500 Server Error\n\n{}",
+            "HTTP/2.0 200 OK\n\nnot JSON",
+            "HTTP/2.0 200 OK",
+            "unknown 200 OK\n\n{}",
         ] {
-            assert!(release_response(response.as_bytes(), Some(0), "6.0.0", "source").is_err());
+            assert!(response_json(bytes.as_bytes()).is_err(), "{bytes}");
+        }
+    }
+    #[test]
+    fn only_explicit_draft_aware_null_proves_absence() {
+        let absent = json!({"data":{"repository":{"nameWithOwner":"owner/repo","release":null}}});
+        assert_eq!(release_id(&absent, "owner/repo").unwrap(), None);
+        assert_eq!(release_id(&absent, "OWNER/Repo").unwrap(), None);
+        let present = json!({"data":{"repository":{"nameWithOwner":"owner/repo","release":{"databaseId":7}}}});
+        assert_eq!(release_id(&present, "owner/repo").unwrap(), Some(7));
+        for body in [
+            json!({}),
+            json!({"data":null}),
+            json!({"data":{"repository":null}}),
+            json!({"data":{"repository":{"nameWithOwner":"owner/repo"}}}),
+            json!({"data":{"repository":{"release":null}}}),
+            json!({"data":{"repository":{"nameWithOwner":"other/repo","release":null}}}),
+            json!({"data":absent["data"],"errors":[{"message":"inaccessible"}]}),
+            json!({"data":absent["data"],"errors":[]}),
+        ] {
+            assert!(release_id(&body, "owner/repo").is_err(), "{body}");
+        }
+        for id in [json!(null), json!(0), json!(-1), json!(1.5), json!("7")] {
+            let mut body = present.clone();
+            body["data"]["repository"]["release"]["databaseId"] = id;
+            assert!(release_id(&body, "owner/repo").is_err());
+        }
+        for release in [json!({}), json!(false), json!([])] {
+            let mut body = present.clone();
+            body["data"]["repository"]["release"] = release;
+            assert!(release_id(&body, "owner/repo").is_err());
+        }
+    }
+    #[test]
+    fn resolved_draft_id_source_and_publication_state_must_agree() {
+        let draft = json!({"id":7,"draft":true,"tag_name":"v6.0.0","target_commitish":"source","html_url":"https://github.com/owner/repo/releases/tag/untagged"});
+        assert_eq!(
+            draft_release(&draft, 7, "6.0.0", "source").unwrap()["state"],
+            "recoverable_unpublished_draft"
+        );
+        for (field, value) in [
+            ("id", json!(8)),
+            ("id", json!(null)),
+            ("draft", json!(false)),
+            ("tag_name", json!("v5.0.0")),
+            ("target_commitish", json!("other")),
+            ("html_url", json!(null)),
+            ("html_url", json!("")),
+        ] {
+            let mut body = draft.clone();
+            body[field] = value;
+            assert!(
+                draft_release(&body, 7, "6.0.0", "source").is_err(),
+                "{field}"
+            );
         }
     }
 }

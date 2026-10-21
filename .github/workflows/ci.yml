@@ -5,10 +5,11 @@ on:
     branches: [main]
   merge_group:
   workflow_dispatch:
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
-  actions: read
-  pull-requests: read
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
@@ -44,6 +45,9 @@ jobs:
           printf 'Native source: %s\nPR head: %s\nPR base: %s\nPR merge: %s\n' "$source" "$head_sha" "$base_sha" "$merge_sha"
   native:
     needs: identity
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/native-qualification.yml
     with:
       source: ${{ needs.identity.outputs.source }}
@@ -81,6 +85,8 @@ jobs:
             target/merge-integration/*.stderr
           if-no-files-found: error
   freshness:
+    permissions:
+      pull-requests: read
     if: ${{ always() && github.event_name == 'pull_request' && needs.identity.result == 'success' }}
     needs: [identity, native, integration]
     runs-on: ubuntu-22.04
