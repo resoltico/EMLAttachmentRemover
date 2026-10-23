@@ -217,6 +217,7 @@ pub(crate) fn check_swift_sources(
 
 pub(crate) fn check_desktop(root: &Path, plan: &BuildPlan, out: &Path) -> Result<()> {
     fs::create_dir(out)?;
+    let out = out.canonicalize()?;
     let build = load(root, plan)?;
     let mut lint = build.command(root, "cargo");
     lint.args([
@@ -237,11 +238,8 @@ pub(crate) fn check_desktop(root: &Path, plan: &BuildPlan, out: &Path) -> Result
     .env("SLINT_COMPILER_DENY_WARNINGS", "1");
     let lint_result = checked_run(lint, &out.join("slint-profile-clippy.log"), 1200);
     let borrowed_result = check_borrowed_url_docs(root, &build, &out.join("borrowed-url-docs"));
-    let fixture = out.join("child-fixtures");
-    fs::create_dir(&fixture)?;
-    let fixture_build = fixture.join("build");
-    fs::create_dir(&fixture_build)?;
-    let fixture_owner = eml_fs::BoundDirectory::open(&fixture_build)?;
+    let (fixture, fixture_build, fixture_owner) =
+        prepare_private_test_build(&out.join("child-fixtures"))?;
     let tests = crate::qualify::checked_commands(&fixture, |listing| {
         let mut command = build.command(root, "cargo");
         command
@@ -304,14 +302,22 @@ pub(crate) fn check_desktop(root: &Path, plan: &BuildPlan, out: &Path) -> Result
     Ok(())
 }
 
+/// Both finite compiler scopes admit a fresh output before binding its build
+/// directory. CLI output spelling may be relative; storage capabilities may not.
+fn prepare_private_test_build(out: &Path) -> Result<(PathBuf, PathBuf, eml_fs::BoundDirectory)> {
+    fs::create_dir(out)?;
+    let out = out.canonicalize()?;
+    let build = out.join("build");
+    fs::create_dir(&build)?;
+    let owner = eml_fs::BoundDirectory::open(&build)?;
+    Ok((out, build, owner))
+}
+
 /// Three authored borrowed-batch guards; upstream vendor doctests are deliberately
 /// outside this finite selection. The same desktop gate compiles the application's
 /// actual callback/as_ptr use as its positive import and use control.
 fn check_borrowed_url_docs(root: &Path, build: &MacBuild, out: &Path) -> Result<()> {
-    fs::create_dir(out)?;
-    let private_build = out.join("build");
-    fs::create_dir(&private_build)?;
-    let owner = eml_fs::BoundDirectory::open(&private_build)?;
+    let (out, private_build, owner) = prepare_private_test_build(out)?;
     let mut command = build.command(root, "cargo");
     command
         .args([
@@ -353,7 +359,7 @@ fn check_borrowed_url_docs(root: &Path, build: &MacBuild, out: &Path) -> Result<
     let cleanup = crate::qualify::cleanup_private_test_build(
         root,
         &private_build,
-        out,
+        &out,
         controller()?.ownership_settled(),
         &owner,
     );
@@ -743,6 +749,48 @@ fn selected_xcode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn relative_private_test_outputs_are_anchored_before_binding_and_cleanup() {
+        let cwd = std::env::current_dir().unwrap();
+        let target = cwd.join("target");
+        fs::create_dir_all(&target).unwrap();
+        let parent = tempfile::Builder::new()
+            .prefix("mac-private-build-")
+            .tempdir_in(&target)
+            .unwrap();
+        for name in ["child-fixtures", "borrowed-url-docs"] {
+            let requested = parent.path().join(name);
+            let relative = requested.strip_prefix(&cwd).unwrap();
+            assert!(!relative.is_absolute());
+            let (out, build, owner) = prepare_private_test_build(relative).unwrap();
+            assert_eq!(out, requested.canonicalize().unwrap());
+            assert!(out.is_absolute() && build.is_absolute());
+            assert_eq!(
+                eml_fs::BoundDirectory::open(&build).unwrap().identity(),
+                owner.identity()
+            );
+            // The original spelling still cannot be used as a native capability.
+            assert!(eml_fs::BoundDirectory::open(&relative.join("build")).is_err());
+            fs::write(
+                build.join("compiler-scratch"),
+                b"disposable compiler output",
+            )
+            .unwrap();
+            fs::write(out.join("native-tests.log"), b"retained transcript").unwrap();
+            let receipt =
+                crate::qualify::cleanup_private_test_build(&cwd, &build, &out, true, &owner)
+                    .unwrap();
+            assert_eq!(receipt["removed"], true);
+            assert!(!build.exists());
+            assert_eq!(
+                fs::read(out.join("native-tests.log")).unwrap(),
+                b"retained transcript"
+            );
+            assert!(out.join("native-test-build-cleanup.json").is_file());
+            assert!(prepare_private_test_build(relative).is_err());
+        }
+    }
+
     #[test]
     fn borrowed_url_docs_require_exact_selection_and_causal_compiler_failures() {
         let stdout = "running 3 tests\ntest src/platform/macos.rs - platform::macos::BorrowedFileUrls (line 42) - compile fail ... ok\ntest src/platform/macos.rs - platform::macos::BorrowedFileUrls (line 46) - compile fail ... ok\ntest src/platform/macos.rs - platform::macos::BorrowedFileUrls (line 51) - compile fail ... ok\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.21s\n";
