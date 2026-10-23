@@ -1,5 +1,5 @@
 //! Complete owned file storage, consumed separately by the physical rename edge.
-use super::writable::{Creation, WritableDirectory, flush};
+use super::creation::{Creation, CreationDirectory, flush};
 use crate::{
     CleanupReceipt, CleanupState, Identity, StageFailure, StageOperation, SyncReceipt, SyncState,
     staging::{NAME_ATTEMPTS, random_name},
@@ -59,7 +59,7 @@ fn before_creation(error: io::Error) -> StageFailure {
     }
 }
 
-impl WritableDirectory {
+impl CreationDirectory {
     /// Stage bytes with bounded same-handle write/reread/EOF and file flush checks.
     /// Native inherited ACL remains unchanged; share-zero excludes normal data
     /// opens temporarily, without promising owner-only or metadata immutability.
@@ -249,9 +249,9 @@ mod tests {
     use crate::{BoundDirectory, NtStatusError, SyncMethod};
     use std::{cell::Cell, os::windows::fs::FileExt};
 
-    fn writer(root: &std::path::Path) -> (BoundDirectory, WritableDirectory) {
+    fn writer(root: &std::path::Path) -> (BoundDirectory, CreationDirectory) {
         let read = BoundDirectory::open(&operation(root)).unwrap();
-        let write = WritableDirectory::bind_resolved(&operation(root), read.identity()).unwrap();
+        let write = CreationDirectory::bind_resolved(&operation(root), read.identity()).unwrap();
         (read, write)
     }
     fn missing(error: &io::Error) -> bool {

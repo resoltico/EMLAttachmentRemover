@@ -131,7 +131,10 @@ fn reject_fifo(
 }
 
 #[cfg(target_os = "macos")]
-#[allow(unsafe_code, reason = "quality:filesystem-probe-darwin-acl")]
+#[allow(
+    unsafe_code,
+    reason = "The independent native filesystem probe calls the Darwin opaque ACL ABI only in this borrowed-descriptor adapter and frees every allocated ACL. Reusing product ACL code would remove its independence as a native boundary oracle."
+)]
 fn clear_acl(fd: &impl std::os::fd::AsRawFd) -> std::io::Result<()> {
     use std::{
         ffi::{c_int, c_void},

@@ -174,7 +174,7 @@ fn cleanup(owned: CreatedDirectory, expected: Option<Identity>) -> CleanupReceip
 impl BoundDirectory {
     /// Stage supplied verified bytes privately, with bounded storage checks and
     /// caller cancellation checkpoints. This function never publishes a final name.
-    pub fn stage_bytes(
+    pub(crate) fn stage_bytes(
         &self,
         bytes: &[u8],
         mut checkpoint: impl FnMut() -> io::Result<()>,

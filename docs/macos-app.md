@@ -5,14 +5,13 @@ GUI are separate products and thin adapters over eml-core. The GUI's private
 eml-worker calls that library directly; it never launches the CLI product.
 Windows/Linux GUI implementations are outside the current scope.
 
-About is available only from **EML Attachment Remover → About EML Attachment
-Remover** in the macOS menu bar. It shows the application icon, release version and
-distinct build number once, the project copyright notice, and Project website and
-Licenses actions. It retains
-Slint's `AboutSlint` attribution widget under the selected royalty-free license.
-The Help menu opens the complete software/artwork license text separately. Its
-Third-party licenses action opens the bundled component notices and license files
-in Finder.
+The standard native About panel is available from **EML Attachment Remover →
+About EML Attachment Remover**. Its bundle metadata and Credits contain the product
+name, release version, distinct build number, copyright and license information.
+**Help → About Slint and Licenses…** displays the actual `AboutSlint` attribution
+widget under the selected royalty-free license, plus complete software/artwork
+license text. Its Third-party licenses action opens bundled notices and license
+files in Finder. **Help → Project Website** opens the project website.
 
 Application destination persistence uses only the copyDestinationBytes
 String key after an explicit destination action; an argument override remains
@@ -33,7 +32,7 @@ and actual native execution on both CPUs. A newer local SDK build is additional
 evidence. Signing is Apple ad hoc only; no Developer ID or notarization is provided.
 
 The screen uses the pinned Slint Winit/software/system-font and accessibility
-profile. All three application windows explicitly select the registered macOS
+profile. Both application windows explicitly select the registered macOS
 system UI family discovered through Fontique, rather than relying on Slint's
 generic sans-serif fallback. Their base text size comes from AppKit's
 `NSFont.systemFontSize`; headings retain their explicit display sizes. The Fluent
@@ -44,8 +43,9 @@ The app explicitly selects both backend and renderer and rejects the
 unsupported disabled-shaping override. International text, selection, clipboard,
 appearance and VoiceOver require actual native checks.
 
-eml-app captures immutable native selections/destinations, reserves bounded
-reports, frames LF bytes and reduces checked protocol1 observations. eml-protocol
+eml-app captures immutable native selections, modes and destinations, reserves bounded
+reports, owns processing/export children and reduces checked protocol1 observations.
+The private desktop transport is protocol2; the public CLI transport remains protocol1. eml-protocol
 owns wire records shared across products. Display text never reconstructs an
 operation path; explicit report export contains accepted structured facts rather
 than raw protocol frames or message contents. The technical disclosure also shows
@@ -62,25 +62,41 @@ copy and publication receipts remain available when a later stream fails.
 
 The controller connects message/folder/destination sheets, immutable queued runs,
 retained reports, cooperative Stop, confirmed Force Stop and Quit, and explicit
-protected report export. Export captures the exact run's accepted facts and
-terminal worker lifecycle. Its cancellation has separate intent and never rolls
-back attempted publication; its reservation lasts through task/buffer disposal
-and join. The save sheet keeps occupied names editable and asks for another name;
-it does not offer replacement. This inspection reserves nothing: a later collision
-still refuses publication without replacing the existing item. Export notices retain
-publication uncertainty, cleanup observations and typed causes in Technical details.
+protected report export. Export captures the exact run's accepted facts and terminal
+worker lifecycle. Choose an existing folder, then enter a filename in the export
+form; the pure application draft validates the exact destination. Existing files
+are never replaced. Occupancy is a worker refusal that leaves the draft editable;
+the GUI performs no target-filesystem occupancy check. The export child owns all
+publication I/O. Its source-report reservation lasts through actual child, pipe,
+reader/writer and process-owner settlement. Processing Stop/Force Stop and export
+Cancel Export/Force Stop Export carry distinct operation identities. Forced export
+termination can leave an unknown outcome and temporary artifacts when cleanup
+could not be observed. A qualified receipt followed by a transport/process failure
+retains both facts.
+
+Choose **Check only** or **Create copies** for later selections; Create copies is
+the default. Check shows the exact core-planned destinations without creating
+copies. **Create from this check** enqueues the immutable captured selection with
+fresh IDs and Create mode. Filesystem contents can change after a check; all
+collection, MIME, identity, destination and publication checks run again. A check
+grants no later Create authority. Existing report-capacity and explicit-dismissal
+rules apply.
+
 Received results and removed-part details are paged in bounded views. Byte comparisons
 and proposed removals describe the prepared copy; they do not claim a copy was
 published or disk space was freed. Run-level errors remain visible when no message
 results exist, with Core guidance separate from the precise diagnostic.
-The event loop remains running when windows are hidden. Minimal application
-hooks extend only absent lifecycle methods on Winit's verified delegate; native
-Quit is deferred to the controller and reopen restores the main window. Actual
+The event loop remains running when windows are hidden. Source-defined typed lifecycle callbacks on the retained Winit delegate defer
+native Quit to application confirmation and restore the main window on reopen.
+Services uses a separate retained application-owned provider. Control intents drain
+independently of diagnostics, after any reentrant native batch collector unwinds.
+Confirmed Quit stops both child lanes and waits for actual settlement; automatic
+escalation uses the one confirmation instant and does not equate timeout with exit. Actual
 native GUI lifecycle acceptance remains required.
 
 The pinned Winit source is retained under vendor/winit. Its focused macOS patch
-passes one synchronous, borrowed native pasteboard to the common bounded
-file-URL reader. Inspection never queues work; a committed drop validates the
+passes synchronous lifetime-bound native open-URL batches and one borrowed pasteboard
+to the common bounded file-URL reader. Inspection never queues work; a committed drop validates the
 current complete batch again. See the retained [patch notice](../vendor/winit/EML-PATCH.md) for upstream
 identity, changed files and the separate native drag-delivery requirement.
 Read-only report text supports Edit/Copy and Select All through Slint; Window

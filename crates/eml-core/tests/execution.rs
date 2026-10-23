@@ -141,7 +141,9 @@ impl EventSink for Sink {
 fn real_run_creates_independent_golden_then_resynchronizes_the_existing_copy() {
     let root = root();
     let source = root.path().join("a.eml");
-    let copy = root.path().join("a.no-attachments.eml");
+    let copy = root
+        .path()
+        .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml");
     fs::write(&source, INPUT).unwrap();
     let req = request(root.path(), &["a.eml"], None);
     let mut first = Sink::default();
@@ -187,7 +189,9 @@ fn new_multilevel_mirrors_have_all_required_namespace_edges_and_no_staging_resid
     fs::create_dir_all(root.path().join("Inbox/deep")).unwrap();
     fs::create_dir(root.path().join("out")).unwrap();
     let source = root.path().join("Inbox/deep/a.eml");
-    let copy = root.path().join("out/Inbox/deep/a.no-attachments.eml");
+    let copy = root
+        .path()
+        .join("out/Inbox.eml-dir/deep.eml-dir/a.me3ivmmrueemyhdrt3amlnsvre.no-attachments.eml");
     fs::write(&source, INPUT).unwrap();
     let req = request(root.path(), &["Inbox"], Some("out"));
     let mut sink = Sink::default();
@@ -200,7 +204,7 @@ fn new_multilevel_mirrors_have_all_required_namespace_edges_and_no_staging_resid
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        for path in ["out/Inbox", "out/Inbox/deep"] {
+        for path in ["out/Inbox.eml-dir", "out/Inbox.eml-dir/deep.eml-dir"] {
             assert_eq!(
                 fs::metadata(root.path().join(path))
                     .unwrap()
@@ -226,7 +230,9 @@ fn new_multilevel_mirrors_have_all_required_namespace_edges_and_no_staging_resid
 fn readable_different_readonly_copy_is_a_conflict_before_any_sync_access() {
     let root = root();
     let source = root.path().join("a.eml");
-    let copy = root.path().join("a.no-attachments.eml");
+    let copy = root
+        .path()
+        .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml");
     fs::write(&source, INPUT).unwrap();
     fs::write(&copy, b"different owned data").unwrap();
     let permissions = fs::metadata(&copy).unwrap().permissions();
@@ -259,8 +265,12 @@ fn same_run_output_identity_is_a_collision_even_when_its_bytes_match() {
     for name in ["a.eml", "b.eml"] {
         fs::write(root.path().join(name), INPUT).unwrap();
     }
-    let a = root.path().join("a.no-attachments.eml");
-    let b = root.path().join("b.no-attachments.eml");
+    let a = root
+        .path()
+        .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml");
+    let b = root
+        .path()
+        .join("b.rsdsaffec2pcixjwzvef2ljmuu.no-attachments.eml");
     let (from, to) = (a.clone(), b.clone());
     let mut sink = Sink {
         after_first: Some(Box::new(move || fs::hard_link(from, to).unwrap())),
@@ -306,10 +316,19 @@ fn delivery_failure_retains_the_created_result_and_stops_the_next_source() {
     assert!(!control.is_stopped());
     assert!(sink.summary.is_none());
     assert_eq!(
-        fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+        )
+        .unwrap(),
         GOLDEN
     );
-    assert!(!root.path().join("b.no-attachments.eml").exists());
+    assert!(
+        !root
+            .path()
+            .join("b.rsdsaffec2pcixjwzvef2ljmuu.no-attachments.eml")
+            .exists()
+    );
     root.close().unwrap();
 }
 #[test]
@@ -333,10 +352,19 @@ fn stop_after_a_published_terminal_item_keeps_its_complete_copy_and_counts() {
     assert_eq!(outcome.counts().created(), 1, "{:?}", sink.items);
     assert_eq!(outcome.counts().not_processed(), 1);
     assert_eq!(
-        fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+        )
+        .unwrap(),
         GOLDEN
     );
-    assert!(!root.path().join("b.no-attachments.eml").exists());
+    assert!(
+        !root
+            .path()
+            .join("b.rsdsaffec2pcixjwzvef2ljmuu.no-attachments.eml")
+            .exists()
+    );
     root.close().unwrap();
 }
 #[test]
@@ -365,7 +393,9 @@ fn missing_explicit_root_prevents_every_other_copy_before_processing() {
 fn identical_readonly_copy_retains_equality_and_never_clears_its_attribute() {
     let root = root();
     let source = root.path().join("a.eml");
-    let copy = root.path().join("a.no-attachments.eml");
+    let copy = root
+        .path()
+        .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml");
     fs::write(&source, INPUT).unwrap();
     fs::write(&copy, GOLDEN).unwrap();
     let permissions = fs::metadata(&copy).unwrap().permissions();
@@ -422,14 +452,22 @@ fn multiple_items_keep_frozen_missing_layout_provenance_without_retaining_batch_
         sink.items[1].namespace_edges,
         if cfg!(windows) { 5 } else { 1 }
     );
-    for name in ["a.no-attachments.eml", "b.no-attachments.eml"] {
+    for name in [
+        "a.me3ivmmrueemyhdrt3amlnsvre.no-attachments.eml",
+        "b.qmtwumtsfrv2ay6uorjwh3nmpa.no-attachments.eml",
+    ] {
         assert_eq!(
-            fs::read(root.path().join("out/Inbox/deep").join(name)).unwrap(),
+            fs::read(
+                root.path()
+                    .join("out/Inbox.eml-dir/deep.eml-dir")
+                    .join(name)
+            )
+            .unwrap(),
             GOLDEN
         );
     }
     assert_eq!(
-        fs::read_dir(root.path().join("out/Inbox/deep"))
+        fs::read_dir(root.path().join("out/Inbox.eml-dir/deep.eml-dir"))
             .unwrap()
             .count(),
         2
@@ -459,9 +497,10 @@ fn selected_aliases_keep_requested_paths_through_real_publication_and_resynchron
         );
         assert_eq!(outcome.counts().created(), 1);
         let copy = if output.is_some() {
-            root.path().join("out/alias/a.no-attachments.eml")
+            root.path()
+                .join("out/alias.eml-dir/a.qk7agux3h6qbo3hcinfmncoeiq.no-attachments.eml")
         } else {
-            target.join("a.no-attachments.eml")
+            target.join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
         };
         assert_eq!(fs::read(&copy).unwrap(), GOLDEN);
         assert_eq!(fs::read(target.join("a.eml")).unwrap(), INPUT);
@@ -476,5 +515,167 @@ fn selected_aliases_keep_requested_paths_through_real_publication_and_resynchron
         assert_eq!(outcome.counts().up_to_date(), 1);
         assert_eq!(fs::read(copy).unwrap(), GOLDEN);
         root.close().unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn existing_sync_does_not_require_namespace_creation_policy() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = root();
+    fs::write(root.path().join("a.eml"), INPUT).unwrap();
+    let output = root
+        .path()
+        .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml");
+    fs::write(&output, GOLDEN).unwrap();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o777)).unwrap();
+    let mut sink = Sink::default();
+    let result = run(
+        &request(root.path(), &["a.eml"], None),
+        &RunControl::default(),
+        &mut sink,
+    )
+    .unwrap();
+    assert_eq!(result.exit_class(), ExitClass::Success);
+    assert_eq!(sink.items[0].status, "up_to_date");
+    assert_eq!(fs::read(&output).unwrap(), GOLDEN);
+    assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), INPUT);
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    root.close().unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn only_the_immediate_mutation_parent_requires_namespace_admission() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = root();
+    fs::create_dir(root.path().join("Inbox")).unwrap();
+    fs::write(root.path().join("Inbox/a.eml"), INPUT).unwrap();
+    fs::create_dir_all(root.path().join("out/Inbox.eml-dir")).unwrap();
+    fs::set_permissions(root.path().join("out"), fs::Permissions::from_mode(0o777)).unwrap();
+    let mut sink = Sink::default();
+    let result = run(
+        &request(root.path(), &["Inbox"], Some("out")),
+        &RunControl::default(),
+        &mut sink,
+    )
+    .unwrap();
+    assert_eq!(result.exit_class(), ExitClass::Success);
+    assert_eq!(sink.items[0].status, "created");
+    assert_eq!(
+        fs::read(
+            root.path()
+                .join("out/Inbox.eml-dir/a.jqp3zjytiqvs4hdhcvxvgec6qa.no-attachments.eml")
+        )
+        .unwrap(),
+        GOLDEN
+    );
+    fs::set_permissions(root.path().join("out"), fs::Permissions::from_mode(0o700)).unwrap();
+    root.close().unwrap();
+}
+
+#[test]
+fn raw_case_normalization_and_greek_stems_keep_independent_native_outputs() {
+    let root = root();
+    fs::create_dir(root.path().join("out")).unwrap();
+    let cases = [
+        (
+            "upper",
+            "A.eml",
+            "A.gsfuhldmedi75npfikxt6rlujm.no-attachments.eml",
+        ),
+        (
+            "lower",
+            "a.eml",
+            "a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml",
+        ),
+        (
+            "nfc",
+            "é.eml",
+            "é.mvvnv6ggb7vtnbb5eidfbxgq3m.no-attachments.eml",
+        ),
+        (
+            "nfd",
+            "e\u{301}.eml",
+            "e\u{301}.w7nepcjblfyamzt2pfw3uib3xi.no-attachments.eml",
+        ),
+        (
+            "sigma-upper",
+            "Σ.eml",
+            "Σ.k4defi4kyicoiqn267xetvtr64.no-attachments.eml",
+        ),
+        (
+            "sigma-lower",
+            "σ.eml",
+            "σ.6uox7dgm4ga7yqem52yadgfoay.no-attachments.eml",
+        ),
+    ];
+    let mut paths = Vec::new();
+    for (parent, name, _) in cases {
+        fs::create_dir(root.path().join(parent)).unwrap();
+        let relative = PathBuf::from(parent).join(name);
+        fs::write(root.path().join(&relative), INPUT).unwrap();
+        paths.push(relative);
+    }
+    let request = RunRequest {
+        paths,
+        working_directory: root.path().to_owned(),
+        output: OutputLocation::Directory("out".into()),
+        mode: RunMode::Create,
+    };
+    for repeat in [false, true] {
+        let mut sink = Sink::default();
+        let outcome = run(&request, &RunControl::default(), &mut sink).unwrap();
+        assert_eq!(outcome.exit_class(), ExitClass::Success, "{:?}", sink.items);
+        assert_eq!(
+            if repeat {
+                outcome.counts().up_to_date()
+            } else {
+                outcome.counts().created()
+            },
+            6
+        );
+        for (parent, name, output) in cases {
+            assert_eq!(
+                fs::read(root.path().join("out").join(output)).unwrap(),
+                GOLDEN
+            );
+            assert_eq!(
+                fs::read(root.path().join(parent).join(name)).unwrap(),
+                INPUT
+            );
+        }
+        assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 6);
+    }
+}
+
+#[test]
+fn natively_coalesced_mirrors_retain_full_raw_route_tokens_on_repeat() {
+    let root = root();
+    fs::create_dir(root.path().join("out")).unwrap();
+    for source in ["left/A/message.eml", "right/a/message.eml"] {
+        fs::create_dir_all(root.path().join(source).parent().unwrap()).unwrap();
+        fs::write(root.path().join(source), INPUT).unwrap();
+    }
+    let request = request(root.path(), &["right/a", "left/A"], Some("out"));
+    for repeat in [false, true] {
+        let mut sink = Sink::default();
+        let outcome = run(&request, &RunControl::default(), &mut sink).unwrap();
+        assert_eq!(outcome.exit_class(), ExitClass::Success, "{:?}", sink.items);
+        assert_eq!(
+            if repeat {
+                outcome.counts().up_to_date()
+            } else {
+                outcome.counts().created()
+            },
+            2
+        );
+        for path in [
+            "out/A.eml-dir/message.updzf5iesh4csbqanb4nwnbwvq.no-attachments.eml",
+            "out/a.eml-dir/message.cm4zcng4zlgyhbvuybqmj3gnbq.no-attachments.eml",
+        ] {
+            assert_eq!(fs::read(root.path().join(path)).unwrap(), GOLDEN);
+        }
     }
 }

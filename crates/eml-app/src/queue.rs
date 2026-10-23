@@ -1,6 +1,6 @@
 //! Immutable selection snapshots and serial report reservations.
 use eml_core::{OutputLocation, RunMode, RunRequest};
-use eml_protocol::{MAX_REQUEST_BYTES, NativePathValue};
+use eml_protocol::encode_request;
 use serde::Serialize;
 use std::{collections::VecDeque, path::PathBuf};
 /// Maximum admitted waiting selections, excluding the one active run.
@@ -9,6 +9,12 @@ pub const MAX_WAITING_REQUESTS: usize = 8;
 /// Session-local identity; never derived from a displayed filename or queue index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct RunId(u64);
+impl RunId {
+    /// Positive processing-report identity.
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
 impl std::fmt::Display for RunId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -55,6 +61,14 @@ pub struct RequestSnapshot {
 impl RequestSnapshot {
     /// Capture paths without resolving or opening them; core owns filesystem admission.
     pub fn new(paths: Vec<PathBuf>, destination: Option<PathBuf>) -> Result<Self, QueueError> {
+        Self::with_mode(paths, destination, RunMode::Create)
+    }
+    /// Capture immutable mode and paths without target filesystem work.
+    pub fn with_mode(
+        paths: Vec<PathBuf>,
+        destination: Option<PathBuf>,
+        mode: RunMode,
+    ) -> Result<Self, QueueError> {
         if paths.is_empty()
             || paths.iter().any(|path| !path.is_absolute())
             || destination.as_ref().is_some_and(|path| !path.is_absolute())
@@ -70,36 +84,24 @@ impl RequestSnapshot {
             paths,
             working_directory,
             output: destination.map_or(OutputLocation::BesideSource, OutputLocation::Directory),
-            mode: RunMode::Create,
+            mode,
         };
         request
             .validate_path_limits()
             .map_err(QueueError::InvalidRequest)?;
-        #[derive(Serialize)]
-        struct Wire<'a> {
-            protocol: u8,
-            paths: Vec<NativePathValue<'a>>,
-            output_directory: Option<NativePathValue<'a>>,
-            dry_run: bool,
-        }
-        let encoded = serde_json::to_vec(&Wire {
-            protocol: 1,
-            paths: request
-                .paths
-                .iter()
-                .map(|path| NativePathValue::new(path))
-                .collect(),
-            output_directory: match &request.output {
-                OutputLocation::BesideSource => None,
-                OutputLocation::Directory(path) => Some(NativePathValue::new(path)),
-            },
-            dry_run: false,
-        })
-        .map_err(|_| QueueError::RequestEncoding)?;
-        if encoded.len() > MAX_REQUEST_BYTES {
-            return Err(QueueError::RequestEncoding);
-        }
+        let encoded = encode_request(&request).map_err(|_| QueueError::RequestEncoding)?;
         Ok(Self { request, encoded })
+    }
+    /// Re-enqueue a checked selection with fresh independent Create authorization.
+    pub fn create_from_check(&self) -> Result<Self, QueueError> {
+        let mut request = self.request.clone();
+        request.mode = RunMode::Create;
+        let encoded = encode_request(&request).map_err(|_| QueueError::RequestEncoding)?;
+        Ok(Self { request, encoded })
+    }
+    /// Captured Check or Create mode.
+    pub fn mode(&self) -> RunMode {
+        self.request.mode
     }
     /// Immutable native request facts, including the captured destination.
     pub fn request(&self) -> &RunRequest {

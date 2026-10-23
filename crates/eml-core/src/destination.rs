@@ -3,7 +3,7 @@ use crate::{
     CollectedObservation, CollectedSources, CollectionState, ErrorCode, ErrorPhase,
     OperationFailure, OutputLocation, RunControl, SourceOrigin,
     collection::{RootKind, path_total},
-    copy_basename,
+    naming::{RouteToken, logical_basename, mirror_basename, route_copy_basename, route_token},
     request::{native_bytes, path_limits},
     selection::{SelectionError, append},
 };
@@ -44,6 +44,8 @@ pub enum DestinationObservation {
 /// publication receipt, stable absence promise or writable capability.
 pub struct DestinationInfo {
     native: PathBuf,
+    token: RouteToken,
+    mirror_limits: Vec<usize>,
     unbound_parents: usize,
     limit: usize,
     existing_prefix: Vec<Identity>,
@@ -134,6 +136,8 @@ pub struct DestinationPlan<'a> {
     path_bytes: usize,
     error: Option<OperationFailure>,
     labels: HashMap<usize, Option<OsString>>,
+    conflicts: Vec<ConflictGroup>,
+    blocked_prefixes: HashMap<Identity, Vec<usize>>,
 }
 impl DestinationPlan<'_> {
     /// Original collection state/completeness/errors, preserved through planning.
@@ -147,7 +151,12 @@ impl DestinationPlan<'_> {
     /// Derived original request display expression; no duplicate full path is retained.
     pub fn display_path(&self, index: usize) -> Option<Cow<'_, Path>> {
         let info = self.records.get(index)?.destination()?;
-        let display = display_destination(&self.sources, index, &self.labels, info.basename());
+        let display = display_destination(
+            &self.sources,
+            index,
+            &self.mirror_route(index),
+            info.basename(),
+        );
         Some(if display.as_os_str() == info.native.as_os_str() {
             Cow::Borrowed(&info.native)
         } else {
@@ -173,6 +182,36 @@ struct DestinationKey {
     tail: OsString,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ConflictReason {
+    SameIntendedAddress,
+    ExistingObjectAlias,
+    FileDirectoryPrefix,
+    RouteTokenCollision,
+}
+struct ConflictGroup {
+    members: Vec<usize>,
+    reason: ConflictReason,
+}
+impl ConflictReason {
+    fn detail(self) -> &'static str {
+        match self {
+            Self::SameIntendedAddress => {
+                "Distinct source entries have the same complete logical destination"
+            }
+            Self::FileDirectoryPrefix => {
+                "Known destination routes contend for a file-versus-mirror prefix"
+            }
+            Self::RouteTokenCollision => {
+                "Different complete logical routes have the same route token"
+            }
+            Self::ExistingObjectAlias => {
+                "Distinct source entries contend for one existing destination identity"
+            }
+        }
+    }
+}
+type TokenProvider = fn(&Path, &OsStr) -> Result<RouteToken, crate::NamingError>;
 /// Freeze layout/names and reserve all known outputs without reading message
 /// bodies, creating parents, probing writes or synchronizing. Consume rather than
 /// duplicate inventory; later execution must revalidate every native binding,
@@ -181,14 +220,25 @@ pub fn plan_destinations<'a>(
     sources: CollectedSources<'a>,
     control: &RunControl,
 ) -> DestinationPlan<'a> {
+    plan_with_token(sources, control, route_token)
+}
+fn plan_with_token<'a>(
+    sources: CollectedSources<'a>,
+    control: &RunControl,
+    token_provider: TokenProvider,
+) -> DestinationPlan<'a> {
     let path_bytes = sources.source_path_bytes();
     let records = sources
         .items()
         .iter()
         .map(|item| {
-            DestinationRecord(match item.observation() {
-                CollectedObservation::Failed(error) => Row::Failed(error.clone()),
-                _ => Row::Unplanned,
+            DestinationRecord(if let Some(error) = &item.version_failure {
+                Row::Failed(error.clone())
+            } else {
+                match item.observation() {
+                    CollectedObservation::Failed(error) => Row::Failed(error.clone()),
+                    _ => Row::Unplanned,
+                }
             })
         })
         .collect();
@@ -199,6 +249,8 @@ pub fn plan_destinations<'a>(
         path_bytes,
         error: None,
         labels: HashMap::new(),
+        conflicts: Vec::new(),
+        blocked_prefixes: HashMap::new(),
     };
     if control.is_stopped() {
         result.state = DestinationPlanState::Interrupted;
@@ -206,6 +258,9 @@ pub fn plan_destinations<'a>(
     }
     if result.sources.state() != CollectionState::Collected {
         result.state = DestinationPlanState::CollectionBlocked;
+        if result.sources.state() == CollectionState::InputAdmissionFailed {
+            result.canonicalize();
+        }
         return result;
     }
     let ids = source_identities(&result.sources);
@@ -215,10 +270,32 @@ pub fn plan_destinations<'a>(
             result.state = DestinationPlanState::Interrupted;
             break;
         }
+        let item = &result.sources.items()[index];
+        if item.origin() == SourceOrigin::Walked
+            && matches!(item.observation(), CollectedObservation::File { .. })
+            && !result.labels.contains_key(&item.root)
+        {
+            match root_label(&result.sources, item.root) {
+                Ok(label) => {
+                    result.labels.insert(item.root, label);
+                }
+                Err(error) => {
+                    result.records[index] = DestinationRecord(Row::Failed(error));
+                    continue;
+                }
+            }
+        }
         if result.records[index].failure().is_some() {
             continue;
         }
-        match plan_one(&result.sources, index, control, &mut result.labels) {
+        match plan_one(
+            &result.sources,
+            index,
+            control,
+            &mut result.labels,
+            token_provider,
+            &mut result.blocked_prefixes,
+        ) {
             Ok(planned) => {
                 if !result.admit_destination(index, planned, &ids, &mut reservations, control) {
                     break;
@@ -233,26 +310,203 @@ pub fn plan_destinations<'a>(
             }
         }
     }
-    for contenders in reservations
-        .values()
-        .filter(|contenders| contenders.len() > 1)
-    {
-        for &index in contenders {
-            if let Row::Known { failure, .. } = &mut result.records[index].0 {
-                *failure = Some(OperationFailure::new(
-                    ErrorCode::DestinationCollision,
-                    ErrorPhase::Admission,
-                    "Distinct sources contend for the same planned output",
-                ));
-            }
-        }
+    for contenders in reservations.values().filter(|group| group.len() > 1) {
+        result.conflicts.push(ConflictGroup {
+            members: contenders.clone(),
+            reason: ConflictReason::SameIntendedAddress,
+        });
     }
+    result.mark_identity_and_token_conflicts(token_provider);
+    result.apply_conflicts();
     if control.is_stopped() {
         result.state = DestinationPlanState::Interrupted;
+    }
+    if result.state == DestinationPlanState::Complete {
+        result.canonicalize();
     }
     result
 }
 impl DestinationPlan<'_> {
+    fn logical_route(&self, index: usize) -> PathBuf {
+        match self.sources.request.output {
+            OutputLocation::BesideSource => PathBuf::new(),
+            OutputLocation::Directory(_) => mirrored_route(&self.sources, index, &self.labels),
+        }
+    }
+    fn logical_components(&self, index: usize) -> Vec<OsString> {
+        let mut parts: Vec<_> = self
+            .logical_route(index)
+            .components()
+            .map(|part| part.as_os_str().to_owned())
+            .collect();
+        if let Some(name) = self.sources.items()[index]
+            .native_path()
+            .file_name()
+            .and_then(|name| logical_basename(name).ok())
+        {
+            parts.push(name);
+        }
+        parts
+    }
+    fn mark_identity_and_token_conflicts(&mut self, token_provider: TokenProvider) {
+        let mut tokens: HashMap<(Identity, RouteToken), Vec<usize>> = HashMap::new();
+        let mut identities: HashMap<Identity, Vec<usize>> = HashMap::new();
+        for (index, record) in self.records.iter().enumerate() {
+            if let Some(info) = record.destination()
+                && let DestinationObservation::Present(entry) = info.observation
+            {
+                identities.entry(entry.identity).or_default().push(index);
+            }
+            if let CollectedObservation::File { parent, .. } =
+                self.sources.items()[index].observation()
+            {
+                let item = &self.sources.items()[index];
+                if item.origin() == SourceOrigin::Walked && !self.labels.contains_key(&item.root) {
+                    continue;
+                }
+                let token = match record.destination() {
+                    Some(info) => info.token,
+                    None => match token_provider(
+                        &self.logical_route(index),
+                        item.native_path().file_name().unwrap(),
+                    ) {
+                        Ok(token) => token,
+                        Err(_) => continue,
+                    },
+                };
+                let scope = self
+                    .sources
+                    .output
+                    .as_ref()
+                    .map_or(*parent, BoundDirectory::identity);
+                tokens.entry((scope, token)).or_default().push(index);
+            }
+        }
+        for group in tokens.values().filter(|group| group.len() > 1) {
+            let seed = self.logical_components(group[0]);
+            let collision = group
+                .iter()
+                .any(|&index| self.logical_components(index) != seed);
+            self.conflicts.push(ConflictGroup {
+                members: group.clone(),
+                reason: if collision {
+                    ConflictReason::RouteTokenCollision
+                } else {
+                    ConflictReason::SameIntendedAddress
+                },
+            });
+        }
+        for (identity, prefix_members) in &self.blocked_prefixes {
+            let mut members = prefix_members.clone();
+            members.extend(identities.get(identity).into_iter().flatten().copied());
+            members.sort_unstable();
+            members.dedup();
+            if members.len() > 1 {
+                self.conflicts.push(ConflictGroup {
+                    members,
+                    reason: ConflictReason::FileDirectoryPrefix,
+                });
+            }
+        }
+        for group in identities.values().filter(|group| group.len() > 1) {
+            self.conflicts.push(ConflictGroup {
+                members: group.clone(),
+                reason: ConflictReason::ExistingObjectAlias,
+            });
+        }
+    }
+    fn apply_conflicts(&mut self) {
+        self.conflicts.sort_by_key(|group| group.reason);
+        for group in &self.conflicts {
+            for &index in &group.members {
+                let error = OperationFailure::new(
+                    ErrorCode::DestinationCollision,
+                    ErrorPhase::Admission,
+                    group.reason.detail(),
+                );
+                match &mut self.records[index].0 {
+                    Row::Known { failure, .. } => *failure = Some(error),
+                    Row::Failed(previous) => *previous = error,
+                    Row::Unplanned => {}
+                }
+            }
+        }
+    }
+    fn canonicalize(&mut self) {
+        let mut order: Vec<_> = (0..self.records.len()).collect();
+        order.sort_by_cached_key(|&index| {
+            use crate::collection::native_order_key;
+            let item = &self.sources.items()[index];
+            let known = matches!(item.observation(), CollectedObservation::File { .. })
+                && (item.origin() == SourceOrigin::Explicit
+                    || self.labels.contains_key(&item.root));
+            let origin = &self.sources.request.paths[self.sources.roots[item.root].request_index];
+            let absolute = |path: &Path| {
+                if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    append(&self.sources.request.working_directory, path)
+                }
+            };
+            let scope = match &self.sources.request.output {
+                OutputLocation::Directory(root) => absolute(root),
+                OutputLocation::BesideSource => {
+                    absolute(item.native_path().parent().unwrap_or(Path::new("")))
+                }
+            };
+            let diagnostic = self.records[index].failure().map(|error| {
+                let native = error.native_diagnostic().map(|cause| match cause {
+                    crate::NativeDiagnostic::OsCode(code) => (0, i64::from(code), 0),
+                    #[cfg(windows)]
+                    crate::NativeDiagnostic::NtStatus { status, win32 } => {
+                        (1, i64::from(status), i64::from(win32))
+                    }
+                });
+                (error.phase().as_str(), error.code().as_str(), native)
+            });
+            (
+                !known,
+                if known {
+                    self.logical_components(index)
+                        .iter()
+                        .map(|part| native_order_key(part))
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                },
+                if known {
+                    native_order_key(scope.as_os_str())
+                } else {
+                    Vec::new()
+                },
+                native_order_key(absolute(item.native_path()).as_os_str()),
+                native_order_key(origin.as_os_str()),
+                diagnostic,
+            )
+        });
+        let mut records: Vec<_> = self.records.drain(..).map(Some).collect();
+        let mut items: Vec<_> = self.sources.items.drain(..).map(Some).collect();
+        let mut reverse = vec![0; order.len()];
+        for (new, &old) in order.iter().enumerate() {
+            reverse[old] = new;
+        }
+        for members in self.blocked_prefixes.values_mut() {
+            for index in members.iter_mut() {
+                *index = reverse[*index];
+            }
+            members.sort_unstable();
+        }
+        for group in &mut self.conflicts {
+            for index in &mut group.members {
+                *index = reverse[*index];
+            }
+            group.members.sort_unstable();
+        }
+        for index in order {
+            self.records.push(records[index].take().unwrap());
+            self.sources.items.push(items[index].take().unwrap());
+        }
+    }
     fn admit_destination(
         &mut self,
         index: usize,
@@ -271,7 +525,7 @@ impl DestinationPlan<'_> {
             native_bytes(&display),
             native_bytes(&info.native),
         )
-        .filter(|_| path_limits(&display).is_ok()) else {
+        .filter(|_| path_limits(&display).is_ok() && path_limits(&info.native).is_ok()) else {
             self.state = DestinationPlanState::InputLimitExceeded;
             self.error = Some(OperationFailure::new(
                 ErrorCode::InputLimitExceeded,
@@ -503,7 +757,7 @@ fn mirrored_route(
 fn display_destination(
     sources: &CollectedSources<'_>,
     index: usize,
-    labels: &HashMap<usize, Option<OsString>>,
+    rendered_route: &Path,
     basename: &OsStr,
 ) -> PathBuf {
     match &sources.request.output {
@@ -514,10 +768,9 @@ fn display_destination(
                 Path::new(basename),
             )
         }
-        OutputLocation::Directory(root) => append(
-            root,
-            &append(&mirrored_route(sources, index, labels), Path::new(basename)),
-        ),
+        OutputLocation::Directory(root) => {
+            append(root, &append(rendered_route, Path::new(basename)))
+        }
     }
 }
 fn plan_one(
@@ -525,6 +778,8 @@ fn plan_one(
     index: usize,
     control: &RunControl,
     labels: &mut HashMap<usize, Option<OsString>>,
+    token_provider: TokenProvider,
+    blocked_prefixes: &mut HashMap<Identity, Vec<usize>>,
 ) -> Result<(DestinationInfo, PathBuf, Option<OperationFailure>), OperationFailure> {
     checkpoint(control)?;
     let item = &sources.items()[index];
@@ -549,47 +804,89 @@ fn plan_one(
                 .expect("explicit output retained after admission")
         }
     };
-    let components: Vec<_> = route
-        .components()
-        .map(|part| match part {
-            Component::Normal(name) => Ok(name),
-            _ => Err(native_failure(
-                "Invalid mirrored component",
-                io::Error::from(io::ErrorKind::InvalidInput),
-            )),
-        })
-        .collect::<Result<_, _>>()?;
-    let (current, prefix, missing) = inspect_mirrored_route(base, &components, control)?;
+    let source_name = item.native_path().file_name().ok_or_else(|| {
+        native_failure(
+            "Source has no filename component",
+            io::Error::from(io::ErrorKind::InvalidInput),
+        )
+    })?;
+    let token = token_provider(&route, source_name).map_err(naming_failure)?;
+    let mut rendered_route = PathBuf::new();
+    let mut current: Option<BoundDirectory> = None;
+    let mut prefix = vec![base.identity()];
+    let mut missing = false;
+    let mut mirror_limits = Vec::new();
     let mut failure = None;
+    for raw in route.components() {
+        checkpoint(control)?;
+        let directory = current.as_ref().unwrap_or(base);
+        let limit = directory.name_limit().map_err(|error| {
+            native_failure("Mirror component limit could not be queried", error)
+        })?;
+        mirror_limits.push(limit);
+        let name = mirror_basename(raw.as_os_str(), limit).map_err(naming_failure)?;
+        #[cfg(windows)]
+        eml_fs::validate_component(&name, limit).map_err(|error| {
+            native_failure("Mirror name is unsupported after truncation", error)
+        })?;
+        rendered_route = append(&rendered_route, Path::new(&name));
+        if missing {
+            continue;
+        }
+        match directory
+            .observe_child_if_present(&name)
+            .map_err(|error| native_failure("Mirrored parent could not be inspected", error))?
+        {
+            None => {
+                if let Err(error) = directory.inspect_creation_support() {
+                    failure = Some(creation_support_failure(error));
+                }
+                missing = true;
+            }
+            Some(observed) if observed.kind == EntryKind::Directory => {
+                let child = directory.open_child(&name).map_err(|error| {
+                    native_failure("Mirrored parent could not be opened", error)
+                })?;
+                if child.identity() != observed.identity {
+                    return Err(changed("Mirrored parent changed while opening"));
+                }
+                prefix.push(child.identity());
+                current = Some(child);
+            }
+            Some(observed) => {
+                blocked_prefixes
+                    .entry(observed.identity)
+                    .or_default()
+                    .push(index);
+                return Err(OperationFailure::new(
+                    ErrorCode::DestinationExists,
+                    ErrorPhase::Admission,
+                    "Mirrored parent is not an ordinary directory",
+                ));
+            }
+        }
+    }
+    let components_count = mirror_limits.len();
     let directory = current.as_ref().unwrap_or(base);
     let limit = directory.name_limit().map_err(|error| {
         native_failure("Destination component limit could not be queried", error)
     })?;
-    let basename = copy_basename(
-        item.native_path().file_name().ok_or_else(|| {
-            native_failure(
-                "Source has no filename component",
-                io::Error::from(io::ErrorKind::InvalidInput),
-            )
-        })?,
-        limit,
-    )
-    .map_err(|error| {
-        native_failure(
-            "Copy name cannot fit the destination",
-            io::Error::new(io::ErrorKind::InvalidInput, error),
-        )
-    })?;
+    let basename = route_copy_basename(source_name, token, limit).map_err(naming_failure)?;
     #[cfg(windows)]
     eml_fs::validate_component(&basename, limit)
         .map_err(|error| native_failure("Copy name is unsupported after truncation", error))?;
-    let display = display_destination(sources, index, labels, &basename);
-    let native = native_destination_path(sources, index, &route, &basename)?;
+    let display = display_destination(sources, index, &rendered_route, &basename);
+    let native = native_destination_path(sources, index, &rendered_route, &basename)?;
     let observation = if missing {
         DestinationObservation::MissingParent
     } else {
         match directory.observe_child_if_present(&basename) {
-            Ok(None) => DestinationObservation::Missing,
+            Ok(None) => {
+                if let Err(error) = directory.inspect_creation_support() {
+                    failure = Some(creation_support_failure(error));
+                }
+                DestinationObservation::Missing
+            }
             Ok(Some(value)) => DestinationObservation::Present(value),
             Err(error) => {
                 failure = Some(native_failure(
@@ -600,10 +897,12 @@ fn plan_one(
             }
         }
     };
-    let unbound_parents = components.len() + 1 - prefix.len();
+    let unbound_parents = components_count + 1 - prefix.len();
     Ok((
         DestinationInfo {
             native,
+            token,
+            mirror_limits,
             unbound_parents,
             limit,
             existing_prefix: prefix,
@@ -612,6 +911,20 @@ fn plan_one(
         display,
         failure,
     ))
+}
+fn creation_support_failure(error: io::Error) -> OperationFailure {
+    OperationFailure::io(
+        ErrorCode::DestinationUnsupported,
+        ErrorPhase::Admission,
+        "Destination creation profile is unsupported; choose a supported private folder",
+        error,
+    )
+}
+fn naming_failure(error: crate::NamingError) -> OperationFailure {
+    native_failure(
+        "Destination name cannot fit its fixed grammar",
+        io::Error::new(io::ErrorKind::InvalidInput, error),
+    )
 }
 fn native_destination_path(
     sources: &CollectedSources<'_>,
@@ -638,65 +951,6 @@ fn native_destination_path(
             })?
         }
     })
-}
-fn inspect_mirrored_route(
-    base: &BoundDirectory,
-    components: &[&OsStr],
-    control: &RunControl,
-) -> Result<(Option<BoundDirectory>, Vec<Identity>, bool), OperationFailure> {
-    let mut current: Option<BoundDirectory> = None;
-    let mut prefix = vec![base.identity()];
-    let mut missing = false;
-    let mut failure = None;
-    for name in components {
-        checkpoint(control)?;
-        let directory = current.as_ref().unwrap_or(base);
-        match directory.observe_child_if_present(name) {
-            Ok(None) => {
-                missing = true;
-                break;
-            }
-            Ok(Some(observed)) if observed.kind == EntryKind::Directory => {
-                match directory.open_child(name) {
-                    Ok(child) if child.identity() == observed.identity => {
-                        prefix.push(child.identity());
-                        current = Some(child);
-                    }
-                    Ok(_) => {
-                        failure = Some(changed("Mirrored parent changed while opening"));
-                        break;
-                    }
-                    Err(error) => {
-                        failure =
-                            Some(native_failure("Mirrored parent could not be opened", error));
-                        break;
-                    }
-                }
-            }
-            Ok(Some(_)) => {
-                failure = Some(OperationFailure::new(
-                    ErrorCode::DestinationExists,
-                    ErrorPhase::Admission,
-                    "Mirrored parent is not an ordinary directory",
-                ));
-                break;
-            }
-            Err(error) => {
-                failure = Some(native_failure(
-                    "Mirrored parent could not be inspected",
-                    error,
-                ));
-                break;
-            }
-        }
-    }
-    // Only a positively missing tail may use the closest existing parent's
-    // limit as an assumption. An existing/unverified blocked component does not
-    // establish the actual naming parent or a valid frozen basename/key.
-    if let Some(error) = failure.take() {
-        return Err(error);
-    }
-    Ok((current, prefix, missing))
 }
 fn is_source_alias(
     sources: &CollectedSources<'_>,
@@ -738,6 +992,7 @@ pub(super) fn source_identities(sources: &CollectedSources<'_>) -> HashSet<Ident
             _ => None,
         })
         .collect();
+    ids.extend(sources.observed_identities.iter().copied());
     for root in &sources.roots {
         if let RootKind::File(signature, _) = root.kind {
             ids.insert(signature.identity);
@@ -747,22 +1002,34 @@ pub(super) fn source_identities(sources: &CollectedSources<'_>) -> HashSet<Ident
 }
 
 /// Current-item read-only facts, including mirrors first observed after planning.
-pub(super) struct ReadOnlyParent {
+pub(super) struct ObservedRoute {
     pub(super) directory: BoundDirectory,
     pub(super) prefix: Vec<Identity>,
     pub(super) complete: bool,
 }
 impl DestinationInfo {
+    pub(super) fn mirror_limits(&self) -> &[usize] {
+        &self.mirror_limits
+    }
     pub(super) fn planned_prefix(&self) -> &[Identity] {
         &self.existing_prefix
     }
 }
 impl DestinationPlan<'_> {
     pub(super) fn mirror_route(&self, index: usize) -> PathBuf {
-        match self.sources.request.output {
-            OutputLocation::BesideSource => PathBuf::new(),
-            OutputLocation::Directory(_) => mirrored_route(&self.sources, index, &self.labels),
-        }
+        let Some(info) = self.records[index].destination() else {
+            return PathBuf::new();
+        };
+        let mut parts: Vec<_> = info
+            .native
+            .components()
+            .rev()
+            .skip(1)
+            .take(info.mirror_limits.len())
+            .map(|part| part.as_os_str())
+            .collect();
+        parts.reverse();
+        parts.into_iter().collect()
     }
     pub(super) fn rebind_root(
         &self,
@@ -800,7 +1067,7 @@ impl DestinationPlan<'_> {
         &self,
         index: usize,
         control: &RunControl,
-    ) -> Result<ReadOnlyParent, OperationFailure> {
+    ) -> Result<ObservedRoute, OperationFailure> {
         let info = self.records[index]
             .destination()
             .expect("known destination");
@@ -813,6 +1080,7 @@ impl DestinationPlan<'_> {
             let Component::Normal(name) = part else {
                 unreachable!("frozen mirror route");
             };
+            check_parent_assumption(&current, info.mirror_limits[offset])?;
             let observed = current.observe_child_if_present(name).map_err(|error| {
                 execution_native_failure("Destination parent cannot be inspected", error)
             })?;
@@ -823,7 +1091,7 @@ impl DestinationPlan<'_> {
                     ));
                 }
                 check_parent_assumption(&current, info.limit)?;
-                return Ok(ReadOnlyParent {
+                return Ok(ObservedRoute {
                     directory: current,
                     prefix,
                     complete: false,
@@ -853,7 +1121,7 @@ impl DestinationPlan<'_> {
             current = opened;
         }
         check_parent_assumption(&current, info.limit)?;
-        Ok(ReadOnlyParent {
+        Ok(ObservedRoute {
             directory: current,
             prefix,
             complete: true,
@@ -942,5 +1210,45 @@ mod execution_tests {
         drop(directory);
         drop(context);
         root.close().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod conflict_tests {
+    use super::*;
+    #[test]
+    fn injected_equal_tokens_for_distinct_full_seeds_fail_every_contender_before_writes() {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/destination-tests");
+        std::fs::create_dir_all(&base).unwrap();
+        let root = tempfile::tempdir_in(base).unwrap();
+        std::fs::create_dir(root.path().join("out")).unwrap();
+        for name in ["a.eml", "b.eml"] {
+            std::fs::write(root.path().join(name), b"independent source").unwrap();
+        }
+        let request = crate::RunRequest {
+            paths: vec!["a.eml".into(), "b.eml".into()],
+            working_directory: root.path().to_owned(),
+            output: OutputLocation::Directory("out".into()),
+            mode: crate::RunMode::Create,
+        };
+        let control = RunControl::default();
+        let plan = plan_with_token(
+            crate::collect_sources(&request, &control).unwrap(),
+            &control,
+            |_, _| route_token(Path::new(""), OsStr::new("same.eml")),
+        );
+        assert!(plan.records().iter().all(|row| {
+            row.failure().is_some_and(|error| {
+                error.code() == ErrorCode::DestinationCollision
+                    && error.detail().contains("same route token")
+            })
+        }));
+        assert!(plan.conflicts.iter().any(|group| group.members.len() == 2
+            && matches!(group.reason, ConflictReason::RouteTokenCollision)));
+        assert_ne!(plan.logical_components(0), plan.logical_components(1));
+        assert_eq!(
+            std::fs::read_dir(root.path().join("out")).unwrap().count(),
+            0
+        );
     }
 }

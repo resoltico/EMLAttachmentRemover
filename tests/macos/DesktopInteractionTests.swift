@@ -61,45 +61,40 @@ final class DesktopInteractionTests: XCTestCase {
     app.buttons["Export Report…"].click()
     let panel = app.sheets.firstMatch
     guard panel.waitForExistence(timeout: 10) else {
-      XCTFail("Native report save panel did not appear: \(app.debugDescription)")
+      XCTFail("Native report folder panel did not appear: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
     try await navigateNativePanel(app, panel: panel, to: destination.deletingLastPathComponent())
-    let filename = panel.textFields["saveAsNameTextField"]
+    panel.buttons["Open"].click()
+    let closed = NSPredicate { _, _ in !panel.exists }
+    let result = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: closed, object: nil)], timeout: 10)
+    guard result == .completed else {
+      XCTFail("Native report folder panel did not complete: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    let filename = app.textFields["Report filename"]
     guard filename.waitForExistence(timeout: 5) else {
-      XCTFail("Native Save As control is unavailable: \(app.debugDescription)")
+      XCTFail("Report filename form is unavailable: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
     filename.click()
     app.typeKey("a", modifierFlags: .command)
     app.typeText(destination.lastPathComponent)
-    guard filename.value as? String == destination.lastPathComponent else {
-      XCTFail(
-        "Native Save filename was not replaced: \(String(describing: filename.value)); \(app.debugDescription)"
-      )
-      throw InteractionFailure.expectedPresentation
-    }
-    panel.buttons["Save"].click()
+    XCTAssertEqual(filename.value as? String, destination.lastPathComponent)
+    try await requireAccessibleText(app, prefix: "Exact report destination: " + destination.path)
+    try await requireText(app, containing: "Existing files are never replaced.")
+    XCTAssertFalse(app.buttons["Replace"].exists)
+    app.buttons["Export Report"].click()
     if expectNameCollision {
-      try await requireNativePanelMessage(
-        panel,
-        expected:
-          "An item already exists with that name. Choose a different name; existing items are never replaced."
-      )
-      XCTAssertTrue(panel.exists, "Refusing an occupied name must keep the Save panel usable")
+      // Occupancy is a worker refusal, not a UI filesystem preflight. Keep the
+      // exact filename draft available after the owned child settles.
+      try await requireText(app, containing: "Report was not published.")
       XCTAssertEqual(filename.value as? String, destination.lastPathComponent)
-      XCTAssertFalse(
-        panel.sheets.firstMatch.exists, "An occupied name must not open a Replace sheet")
-      XCTAssertFalse(panel.buttons["Replace"].exists)
-      XCTAssertTrue(filename.isEnabled && panel.buttons["Cancel"].isEnabled)
-      panel.buttons["Cancel"].click()
+      XCTAssertTrue(filename.isEnabled)
+      XCTAssertFalse(app.sheets.firstMatch.exists)
+      XCTAssertFalse(app.buttons["Replace"].exists)
     }
-    let closed = NSPredicate { _, _ in !panel.exists }
-    let result = await XCTWaiter.fulfillment(
-      of: [XCTNSPredicateExpectation(predicate: closed, object: nil)], timeout: 10)
-    XCTAssertEqual(
-      result, .completed, "Native report save panel did not complete: \(app.debugDescription)")
-    guard result == .completed else { throw InteractionFailure.expectedPresentation }
   }
 
   @MainActor

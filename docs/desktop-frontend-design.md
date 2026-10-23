@@ -1,7 +1,8 @@
 # macOS frontend boundaries
 
 The macOS frontend uses Slint over reusable Rust libraries. Windows and Linux
-GUIs are outside scope. The CLI and GUI use one business engine and protocol 1.
+GUIs are outside scope. The CLI and GUI use one business engine. Public requests/events remain protocol 1;
+private desktop framing is protocol 2 and metadata reports use app-owned schema 1.
 
 eml-app owns immutable native request/destination snapshots, serial queue and
 report reservations, LF framing and checked protocol reduction. It has no native
@@ -25,8 +26,8 @@ Unknown child/reader lifetime stops later admission. EOF or process exit alone
 does not establish settlement. See [worker ownership](macos-process-ownership.md).
 
 Slint and its compiler use one pinned version with explicit Winit/software/font/
-accessibility features. The vendored Winit patch provides synchronous borrowed
-native pasteboard batches; see its [source contract](../vendor/winit/EML-PATCH.md).
+accessibility features. The vendored Winit patch provides source-defined lifecycle callbacks and synchronous borrowed
+native URL/pasteboard batches; see its [source contract](../vendor/winit/EML-PATCH.md).
 Native panels retain weak completion references, parent checks, cancellation and
 native paths. Renderer selection still requires actual native frames, text,
 artwork, accessibility and appearance checks.
@@ -69,3 +70,18 @@ settlement; it grants no signal authority and is not sufficient by itself.
 Uncertain ownership stops further cases. These observations establish fixture
 lifecycle/presentation boundaries only when executed; the baseline workflow and
 unmodified shipping archive checks remain mandatory. Exact-source native outcomes are recorded in the CI run and its retained artifacts.
+
+## Capacity-consistent export and processing acceptance
+
+Two full report reservations include the active processing report. The handoff's
+literal three-distinct-report example (export A, view B, process C concurrently)
+cannot coexist with that required bound. The resolved contract preserves two
+slots: A can export while B is viewed and C waits for capacity, or A can export
+while C processes and the view switches between A/C. Export remains bound to A
+through real child/writer/reader settlement. A slot becomes available only after
+settlement and explicit dismissal; stale controls cannot affect a later child.
+The staged lane regression covers both admissible states without a third slot.
+
+This corrects the concrete acceptance scenario rather than relaxing reservation,
+responsiveness or process ownership. Native execution of these prepared scenarios
+remains a separate frozen-archive qualification obligation.

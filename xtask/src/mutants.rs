@@ -327,6 +327,9 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
     )?;
     let mut child = command(&campaign, &selection)?;
     child
+        // Mutations intentionally alter code so unrelated lint diagnostics do not
+        // classify a viable guard change as caught. The clean baseline and each
+        // mutant still compile and execute; this cap is confined to cargo-mutants.
         .args([
             "--cap-lints=true",
             "--profile",

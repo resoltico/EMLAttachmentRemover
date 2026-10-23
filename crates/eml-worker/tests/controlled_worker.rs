@@ -49,7 +49,7 @@ fn controls(mut reader: std::io::PipeReader) -> mpsc::Receiver<Control> {
 #[test]
 fn readiness_precedes_request_and_stop_reaps_without_processing_held_open_input() {
     let result =
-        spawn_with_control_pipe(Path::new(BIN), &[OsStr::new("--desktop-control")]).unwrap();
+        spawn_with_control_pipe(Path::new(BIN), &[OsStr::new("--desktop-operation")]).unwrap();
     let child = result.child.map(Settle);
     assert!(result.issues.is_empty(), "{:?}", result.issues);
     let child = child.unwrap();
@@ -102,7 +102,7 @@ fn acknowledged_first_int_then_same_second_int_forces_after_real_publication_and
     fs::write(&source, &input).unwrap();
     let request = eml_app::RequestSnapshot::new(vec![source.clone()], None).unwrap();
     let result =
-        spawn_with_control_pipe(Path::new(BIN), &[OsStr::new("--desktop-control")]).unwrap();
+        spawn_with_control_pipe(Path::new(BIN), &[OsStr::new("--desktop-operation")]).unwrap();
     let child = result.child.map(Settle);
     assert!(result.issues.is_empty(), "{:?}", result.issues);
     let child = child.unwrap();
@@ -113,7 +113,18 @@ fn acknowledged_first_int_then_same_second_int_forces_after_real_publication_and
         Control::Byte(READY)
     ));
     let mut writer = result.pipes.input;
-    let request = request.encoded().to_vec();
+    let mut framed = Vec::new();
+    let mut body = eml_protocol::desktop::BodyWriter::new(
+        &mut framed,
+        &eml_protocol::desktop::Header {
+            operation_id: eml_protocol::desktop::OperationId::new(1).unwrap(),
+            operation: eml_protocol::desktop::Operation::Processing,
+        },
+    )
+    .unwrap();
+    body.write_all(request.encoded()).unwrap();
+    body.finish().unwrap();
+    let request = framed;
     let (sent, complete) = mpsc::sync_channel(1);
     thread::spawn(move || {
         let result = writer.write_all(&request);
@@ -135,7 +146,12 @@ fn acknowledged_first_int_then_same_second_int_forces_after_real_publication_and
         .unwrap();
     assert!(String::from_utf8_lossy(&prefix).contains("\"removed\":["));
     assert!(
-        fs::read(root.path().join("message.no-attachments.eml")).unwrap() == golden,
+        fs::read(
+            root.path()
+                .join("message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml")
+        )
+        .unwrap()
+            == golden,
         "Published copy differs from independent retained-byte oracle"
     );
     assert!(fs::read(&source).unwrap() == input, "Original changed");

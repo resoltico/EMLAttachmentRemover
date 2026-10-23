@@ -78,7 +78,7 @@ extension DesktopInteractionTests {
     XCTAssertEqual(try Data(contentsOf: source), original)
     XCTAssertEqual(
       try Data(
-        contentsOf: source.deletingPathExtension().appendingPathExtension("no-attachments.eml")),
+        contentsOf: expectedCopy(for: source)),
       golden)
     let observation: [String: Any] = [
       "schema": 1, "owned_pid": pid, "settings_pid": settingsOwner.processIdentifier,

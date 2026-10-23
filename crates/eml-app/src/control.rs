@@ -26,6 +26,7 @@ struct State {
 #[derive(Clone)]
 pub struct WorkerControl {
     id: RunId,
+    operation_id: eml_protocol::desktop::OperationId,
     state: Arc<Mutex<State>>,
 }
 /// Desired control action; successful OS signal delivery is a separate observation.
@@ -47,10 +48,22 @@ pub struct WorkerIntent {
 impl WorkerControl {
     /// Bind a fresh control reference to the immutable queue identity.
     pub fn new(id: RunId) -> Self {
+        Self::for_operation(
+            eml_protocol::desktop::OperationId::new(id.get()).expect("nonzero run identity"),
+            id,
+        )
+    }
+    /// Bind the exact child operation independently of its source report.
+    pub fn for_operation(operation_id: eml_protocol::desktop::OperationId, id: RunId) -> Self {
         Self {
             id,
+            operation_id,
             state: Arc::new(Mutex::new(State::default())),
         }
+    }
+    /// Exact child operation identity, independent of the report identity.
+    pub fn operation_id(&self) -> eml_protocol::desktop::OperationId {
+        self.operation_id
     }
     /// Stable run identity; stale callbacks must not control another run.
     pub fn id(&self) -> RunId {

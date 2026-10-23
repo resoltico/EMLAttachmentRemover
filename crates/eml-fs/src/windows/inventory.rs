@@ -51,6 +51,31 @@ impl EntryPin {
     }
 }
 impl BoundDirectory {
+    /// Revalidate held ordinary-directory/full-ID facts without mutation access.
+    pub fn check_held(&self) -> io::Result<()> {
+        self.check_identity()
+    }
+    /// Observe support for generated names, without probing writes.
+    pub fn admit_name_domain(&self) -> io::Result<()> {
+        super::name_domain::admit(&self.file)
+    }
+    /// Read-only name-domain qualification; actual creation access is checked at its boundary.
+    pub fn inspect_creation_support(&self) -> io::Result<()> {
+        self.admit_name_domain()
+    }
+    /// Open a nondeletable metadata/traverse child pin.
+    pub fn pin_directory(&self, name: &OsStr, expected: Identity) -> io::Result<Self> {
+        self.check_identity()?;
+        let file = child::ancestor_pin(&self.file, name)?;
+        let child = Self::from_file(file)?;
+        if child.identity != expected {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Pinned mirror identity changed",
+            ));
+        }
+        Ok(child)
+    }
     /// Retain one existing no-follow child's metadata handle. This grants no
     /// creation-address protection and does not qualify the requested path.
     pub fn pin_child(&self, name: &OsStr) -> io::Result<EntryPin> {
@@ -104,7 +129,7 @@ impl BoundDirectory {
         self.check_identity()?;
         Ok(resolved)
     }
-    fn check_identity(&self) -> io::Result<()> {
+    pub(super) fn check_identity(&self) -> io::Result<()> {
         if handle::directory_identity(&self.file)? != self.identity {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

@@ -86,7 +86,11 @@ mod probe {
             }
             "admit" | "refuse" => {
                 let held = BoundDirectory::open(parent)?;
-                let result = held.create_private_child(OsStr::new("stage"));
+                let result = eml_fs::CreationDirectory::acquire(&held).and_then(|creation| {
+                    creation
+                        .create_child(OsStr::new("stage"))
+                        .map_err(|failure| failure.error)
+                });
                 if action == "admit" {
                     let created = result?;
                     require(
@@ -99,7 +103,7 @@ mod probe {
                         .err()
                         .ok_or("Unsafe namespace unexpectedly admitted")?;
                     require(
-                        error.error.kind() == io::ErrorKind::Unsupported,
+                        error.kind() == io::ErrorKind::Unsupported,
                         "Refusal was unrelated to namespace admission",
                     )?;
                     require(
@@ -210,7 +214,7 @@ mod probe {
         gid: u32,
         mode: Mode,
     ) -> Result<CreatedDirectory> {
-        let created = parent.create_private_child(OsStr::new(name))?;
+        let created = eml_fs::CreationDirectory::acquire(parent)?.create_child(OsStr::new(name))?;
         fs::fchown(
             created.directory(),
             Some(Uid::from_raw(owner)),
@@ -225,7 +229,7 @@ mod probe {
         expected: Identity,
         directory: bool,
     ) -> Result<()> {
-        parent.admit_namespace()?;
+        let _creation = eml_fs::CreationDirectory::acquire(parent)?;
         require(
             parent.observe_child(OsStr::new(name))?.identity == expected,
             "Owned cleanup identity changed; resource retained",
@@ -410,8 +414,8 @@ mod probe {
         let mut random = [0u8; 16];
         getrandom::fill(&mut random)?;
         let suffix: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
-        let outer =
-            temporary.create_private_child(OsStr::new(&format!("eml-namespace-{suffix}")))?;
+        let outer = eml_fs::CreationDirectory::acquire(&temporary)?
+            .create_child(OsStr::new(&format!("eml-namespace-{suffix}")))?;
         // No automatic recursive/root pathname cleanup. On failure, retain the
         // exact owned fixture and print its address for investigation.
         println!(
@@ -556,7 +560,7 @@ mod probe {
         let original = fs::fstat(&held)?;
         #[allow(
             clippy::unnecessary_cast,
-            reason = "quality:native-oracle-device-width"
+            reason = "The independent filesystem identity oracle retains Darwin signed32 and Linux unsigned64 device IDs in the common unsigned64 representation."
         )]
         // Independent native oracle: Darwin dev_t signed32, Linux unsigned64.
         let retained_id = Identity::Posix {
@@ -608,7 +612,9 @@ mod probe {
         // expose the unsafe model only after the created identity is known.
         fs::fchown(shared, Some(Uid::ROOT), Some(Gid::ROOT))?;
         fs::fchmod(shared, Mode::from_raw_mode(0o700))?;
-        let held = shared.create_private_child(OsStr::new("stage"))?.persist();
+        let held = eml_fs::CreationDirectory::acquire(shared)?
+            .create_child(OsStr::new("stage"))?
+            .persist();
         fs::fchown(
             &held,
             Some(Uid::from_raw(victim)),

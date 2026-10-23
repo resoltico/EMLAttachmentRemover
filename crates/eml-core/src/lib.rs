@@ -42,6 +42,8 @@ pub use eml_fs::{CleanupReceipt, CleanupState, Identity, SyncMethod, SyncReceipt
 #[cfg(any(unix, windows))]
 pub use failure::{NativeDiagnostic, OperationFailure};
 mod diagnostic;
+pub mod meaning;
+pub mod product;
 #[cfg(any(unix, windows))]
 mod selection;
 #[cfg(any(unix, windows))]
@@ -60,6 +62,8 @@ mod request;
 #[cfg(any(unix, windows))]
 mod source;
 mod verify;
+#[cfg(test)]
+mod work_bounds;
 pub use diagnostic::{ErrorCode, ErrorPhase};
 #[cfg(any(unix, windows))]
 pub use naming::{COPY_SUFFIX, NamingError, copy_basename};
@@ -78,6 +82,8 @@ use std::sync::{
 
 /// Largest admitted source message, in bytes. Equality is permitted.
 pub const MAX_MESSAGE_BYTES: usize = 256 * 1024 * 1024;
+// Payload scanning, copying and equality comparisons share this work-unit bound.
+pub(crate) const PREPARATION_CHUNK_BYTES: usize = 64 * 1024;
 /// Maximum parsed MIME entities in one message, including containers/root.
 pub const MAX_MESSAGE_PARTS: usize = 10_000;
 
@@ -111,6 +117,8 @@ pub enum Refusal {
     LimitExceeded,
     /// Protected MIME occurred in a retained body context.
     Protected,
+    /// A retained semantic container is outside the supported MIME profile.
+    UnsupportedMime,
     /// No supported text entity would remain.
     NoBody,
     /// Independent authorization or candidate verification detected a defect.
@@ -141,6 +149,7 @@ impl PreparationError {
                 Refusal::Malformed => ErrorCode::Malformed,
                 Refusal::LimitExceeded => ErrorCode::LimitExceeded,
                 Refusal::Protected => ErrorCode::Protected,
+                Refusal::UnsupportedMime => ErrorCode::UnsupportedMime,
                 Refusal::NoBody => ErrorCode::NoBody,
                 Refusal::Internal => ErrorCode::Internal,
             },
@@ -180,7 +189,7 @@ pub(crate) fn error(kind: Refusal, detail: &'static str) -> PreparationError {
 /// One independently authorized reason for removing an entity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RemovalReason {
-    /// Explicit attachment disposition on an ordinary entity.
+    /// Present non-inline disposition on an ordinary entity, including extensions.
     Attachment,
     /// Non-root direct child of a retained related compound.
     RelatedResource,
@@ -188,6 +197,14 @@ pub enum RemovalReason {
     NonBodyPart,
 }
 impl RemovalReason {
+    /// Canonical user-facing category; the parser owns the decision itself.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Attachment => "Attachment",
+            Self::RelatedResource => "Related image or resource",
+            Self::NonBodyPart => "Other non-body content",
+        }
+    }
     /// Canonical protocol-1 name; rendering does not duplicate MIME decisions.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -248,8 +265,14 @@ pub fn prepare_message(
             "Raw message exceeds the admitted byte limit",
         ));
     }
+    #[cfg(test)]
+    work_bounds::stage(work_bounds::Stage::SourceParse);
     let source = message::parse(input, control)?;
+    #[cfg(test)]
+    work_bounds::stage(work_bounds::Stage::Planning);
     let plan = plan::build(&source, control)?;
+    #[cfg(test)]
+    work_bounds::stage(work_bounds::Stage::Authorization);
     let authorization = verify::authorize_deletions(&source, &plan.claims, control)?;
     if authorization.stripped != plan.stripped {
         return Err(error(
@@ -257,6 +280,8 @@ pub fn prepare_message(
             "Stripped-field metadata disagrees with independent authorization",
         ));
     }
+    #[cfg(test)]
+    work_bounds::stage(work_bounds::Stage::CandidateCopy);
     let bytes = plan::apply(input, &plan.edits, control)?;
     verify::verify_candidate(&source, &authorization, &bytes, control)?;
     let removed = plan

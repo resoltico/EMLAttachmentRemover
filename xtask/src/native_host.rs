@@ -1,4 +1,5 @@
 //! Native execution observations, distinct from compiler/source qualification.
+use crate::distribution::BuildPlan;
 use crate::{Result, capture};
 use serde_json::Value;
 use serde_json::json;
@@ -6,23 +7,13 @@ use serde_json::json;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-pub(crate) fn inspect_target(root: &Path, target: &str) -> Result<Value> {
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(root)
-            .arg("distribution"),
-    )?)?;
-    let row = plan["native_targets"]
-        .as_array()
-        .ok_or("Missing native target policy")?
-        .iter()
-        .find(|row| row["target"] == target)
-        .ok_or("Unsupported native target")?;
+pub(crate) fn inspect_target(root: &Path, plan: &BuildPlan, target: &str) -> Result<Value> {
+    let row = plan.lookup_target(target)?;
     inspect(
         root,
         target,
-        row["os"].as_str().ok_or("Missing native OS")?,
-        row["architecture"].as_str().ok_or("Missing native CPU")?,
+        row.platform().family().as_str(),
+        row.platform().architecture().as_str(),
     )
 }
 

@@ -65,7 +65,8 @@ fn synchronized_full_run_preserves_real_stop_and_published_error_receipts() {
             let (output, moved) = (output.clone(), moved.clone());
             Box::new(move || {
                 assert_eq!(
-                    fs::read(output.join("one.no-attachments.eml")).unwrap(),
+                    fs::read(output.join("one.7wxqoa2jifs7cdaqt2anqogulu.no-attachments.eml"))
+                        .unwrap(),
                     GOLDEN
                 );
                 fs::rename(&output, moved).unwrap();
@@ -102,10 +103,14 @@ fn synchronized_full_run_preserves_real_stop_and_published_error_receipts() {
         assert_eq!((sink.items, sink.summaries), (1, 1));
         assert_eq!(outcome.counts().failed(), 1);
         assert_eq!(fs::read(&source).unwrap(), INPUT);
-        assert!(!output.join("one.no-attachments.eml").exists());
+        assert!(
+            !output
+                .join("one.7wxqoa2jifs7cdaqt2anqogulu.no-attachments.eml")
+                .exists()
+        );
         if published {
             assert_eq!(
-                fs::read(moved.join("one.no-attachments.eml")).unwrap(),
+                fs::read(moved.join("one.7wxqoa2jifs7cdaqt2anqogulu.no-attachments.eml")).unwrap(),
                 GOLDEN
             );
         }
@@ -164,10 +169,19 @@ fn refused_selected_item_cannot_pass_unused_observation_to_next_message() {
     );
     assert_eq!((sink.created, sink.failed), (1, 1));
     assert_eq!(
-        fs::read(root.path().join("b.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("b.rsdsaffec2pcixjwzvef2ljmuu.no-attachments.eml")
+        )
+        .unwrap(),
         GOLDEN
     );
-    assert!(!root.path().join("a.no-attachments.eml").exists());
+    assert!(
+        !root
+            .path()
+            .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+            .exists()
+    );
     assert_eq!(fs::read(protected).unwrap(), protected_bytes);
     assert_eq!(fs::read(valid).unwrap(), INPUT);
 }
@@ -225,10 +239,19 @@ fn stopping_second_publication_retains_first_copy_and_actual_interrupted_summary
         (1, 1, 0, 130)
     );
     assert_eq!(
-        fs::read(root.path().join("one.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("one.7wxqoa2jifs7cdaqt2anqogulu.no-attachments.eml")
+        )
+        .unwrap(),
         GOLDEN
     );
-    assert!(!root.path().join("two.no-attachments.eml").exists());
+    assert!(
+        !root
+            .path()
+            .join("two.ctpjzw7urreuwuroqgjcbuwt3m.no-attachments.eml")
+            .exists()
+    );
     assert_eq!(fs::read(root.path().join("one.eml")).unwrap(), INPUT);
     assert_eq!(fs::read(root.path().join("two.eml")).unwrap(), INPUT);
 }

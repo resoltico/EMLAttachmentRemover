@@ -7,6 +7,7 @@ pub(super) fn hex_id(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+#[cfg(any(target_os = "macos", test))]
 pub(super) fn validate_authority(values: &BTreeMap<String, String>) -> Result<()> {
     for (name, expected) in [
         ("GITHUB_ACTIONS", "true"),
@@ -43,7 +44,7 @@ pub(super) fn validate_authority(values: &BTreeMap<String, String>) -> Result<()
     }
     Ok(())
 }
-pub(super) fn validate_host(host: &Host, policy: &PickerHostPolicy, target: &str) -> Result<()> {
+pub(super) fn validate_host(host: &Host, policy: &IncidentHost, target: &str) -> Result<()> {
     if host.target != target
         || host.process_os != "macos"
         || host.process_architecture != "x86_64"
@@ -88,22 +89,8 @@ pub(super) fn validate_caller(caller: &Caller) -> Result<()> {
 pub(super) fn target(uid: u32) -> String {
     format!("gui/{uid}/{SERVICE}")
 }
-pub(super) fn clean(process: &Value) -> Result<i64> {
-    if process["cancelled"] != false
-        || process["timed_out"] != false
-        || process["cleanup_complete"] != true
-        || process["unexpected_survivors"] != 0
-        || process.get("signal") != Some(&Value::Null)
-    {
-        return Err(
-            "Native host command did not settle cleanly without cancellation, signal or survivors"
-                .into(),
-        );
-    }
-    process["exit_code"]
-        .as_i64()
-        .filter(|code| *code >= 0)
-        .ok_or_else(|| "Native host command exit is unconfirmed".into())
+pub(super) fn clean(process: &ProcessObservation) -> Result<i64> {
+    Ok(i64::from(process.clean()?))
 }
 pub(super) fn command_is(program: &str, arguments: &[String], expected: &[&str]) -> Result<()> {
     if program != LAUNCHCTL || arguments != expected {
@@ -111,6 +98,7 @@ pub(super) fn command_is(program: &str, arguments: &[String], expected: &[&str])
     }
     Ok(())
 }
+#[cfg(any(target_os = "macos", test))]
 pub(super) fn parse_fields(text: &str) -> Result<BTreeMap<String, String>> {
     let mut fields = BTreeMap::new();
     for line in text.lines() {
@@ -151,28 +139,50 @@ pub(super) fn parse_fields(text: &str) -> Result<BTreeMap<String, String>> {
     }
     Ok(fields)
 }
+#[cfg(any(target_os = "macos", test))]
 pub(super) fn parse_disabled(text: &str) -> Result<Option<bool>> {
-    let prefix = format!("\"{SERVICE}\" => ");
-    let mut value = None;
-    for line in text.lines().map(str::trim) {
-        if let Some(raw) = line.strip_prefix(&prefix) {
-            if value.is_some() {
-                return Err("Duplicate targeted disabled-state entry".into());
-            }
-            value = Some(match raw.trim_end() {
-                "disabled" => true,
-                "enabled" => false,
-                _ => return Err("Unknown targeted disabled-state value".into()),
-            });
-        } else if line.contains(SERVICE) {
-            return Err("Unrecognized targeted disabled-state syntax".into());
+    if text.len() > 2 * 1024 * 1024 {
+        return Err("Disabled-state readback exceeds its bound".into());
+    }
+    let lines: Vec<_> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    if lines == ["disabled services = {}"] {
+        return Ok(None);
+    }
+    if lines.len() < 2
+        || lines.first() != Some(&"disabled services = {")
+        || lines.last() != Some(&"}")
+    {
+        return Err("Disabled-state readback lacks a complete recognized map".into());
+    }
+    let mut labels = std::collections::BTreeSet::new();
+    let mut result = None;
+    for line in &lines[1..lines.len() - 1] {
+        let (label, state) = line
+            .split_once(" => ")
+            .ok_or("Unrecognized disabled-state entry")?;
+        let label: String = serde_json::from_str(label)?;
+        if label.is_empty() || label.len() > 4096 || !labels.insert(label.clone()) {
+            return Err("Invalid or duplicate disabled-state label".into());
+        }
+        let disabled = match state {
+            "disabled" => true,
+            "enabled" => false,
+            _ => return Err("Unknown disabled-state value".into()),
+        };
+        if label == SERVICE {
+            result = Some(disabled);
         }
     }
-    Ok(value)
+    Ok(result)
 }
 pub(super) fn absent_text(uid: u32) -> String {
     format!("Could not find service \"{SERVICE}\" in domain for user gui: {uid}")
 }
+#[cfg(any(target_os = "macos", test))]
 pub(super) fn parse_absence(text: &str, uid: u32) -> Result<Option<String>> {
     let expected = absent_text(uid);
     let found = text
@@ -269,7 +279,7 @@ pub(super) fn action(observation: &CommandObservation, operation: &str, uid: u32
     )?;
     clean(&observation.process)
 }
-pub(super) fn validate_preparation(p: &Preparation) -> Result<()> {
+pub(crate) fn validate_preparation(p: &Preparation) -> Result<()> {
     if p.stage != "picker_host_preparation" || !hex_id(&p.binding.source) {
         return Err("Not a completed picker host preparation".into());
     }
@@ -289,7 +299,7 @@ pub(super) fn validate_preparation(p: &Preparation) -> Result<()> {
     provisioned(&p.service_after, p.caller.uid)
 }
 
-pub(super) fn validate_post(prepared: &Preparation, verified: &Postverification) -> Result<()> {
+pub(crate) fn validate_post(prepared: &Preparation, verified: &Postverification) -> Result<()> {
     validate_preparation(prepared)?;
     if verified.stage != "picker_host_verification"
         || verified.binding != prepared.binding
@@ -306,17 +316,4 @@ pub(super) fn validate_post(prepared: &Preparation, verified: &Postverification)
     )?;
     validate_caller(&verified.caller)?;
     provisioned(&verified.service, verified.caller.uid)
-}
-
-pub(super) fn parse_preparation(bytes: &[u8]) -> Result<Preparation> {
-    if bytes.len() as u64 > DOCUMENT_LIMIT {
-        return Err("Preparation document exceeds its bound".into());
-    }
-    let raw: Value = serde_json::from_slice(bytes)?;
-    if raw.get("failure").is_some() || raw.get("error").is_some() {
-        return Err("A partial or failed preparation cannot be promoted".into());
-    }
-    let prepared: Preparation = serde_json::from_value(raw)?;
-    validate_preparation(&prepared)?;
-    Ok(prepared)
 }

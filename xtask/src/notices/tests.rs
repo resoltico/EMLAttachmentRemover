@@ -17,7 +17,27 @@ fn generated_source_identity_rejects_stale_and_dirty_receipts() {
 
 #[test]
 fn current_policy_requires_every_notice_pair_and_rejects_extra_or_mismatched_components() {
-    let plan = json!({"version":"6.0.0","native_targets":[{"platform":"macos-aarch64","target":"aarch64-apple-darwin"},{"platform":"linux-x86_64","target":"x86_64-unknown-linux-gnu"}]});
+    let config = r#"
+[policy]
+macos_minimum="15.0"
+linux_minimum_ubuntu="22.04"
+linux_glibc_maximum="2.35"
+windows_rust_minimum="10"
+[[targets]]
+platform="macos-aarch64"
+target="aarch64-apple-darwin"
+runner="macos-26"
+products=["cli","app"]
+[targets.desktop]
+floor_runner="macos-15"
+floor_major=15
+[[targets]]
+platform="linux-x86_64"
+target="x86_64-unknown-linux-gnu"
+runner="ubuntu-22.04"
+products=["cli"]
+"#;
+    let plan = BuildPlan::parse(config, include_str!("../../tools.toml"), "6.0.0".into()).unwrap();
     let mut all = Files::new();
     for (prefix, platform, target, component) in [
         (

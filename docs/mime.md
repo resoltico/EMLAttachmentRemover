@@ -13,11 +13,16 @@ text/html representations remain in source order, including empty bodies and
 their original encoded payload bytes. A filename does not decide whether a part
 is body content.
 
-An ordinary non-root entity with attachment disposition is removed whole before
-its interior is parsed. A multipart/related container selects its direct body root
+An ordinary non-root entity with a valid disposition other than `inline` is
+removed whole before its interior is parsed. This includes extension tokens
+such as `x-unknown` and `form-data`; an absent disposition remains eligible
+for body selection. Empty, malformed or duplicate primary controls refuse. A multipart/related container selects its direct body root
 by `start`, or its first child when `start` is absent; every other direct child is
-removed whole as a related resource. Other multipart containers classify all
-children in order. Identity-encoded message/rfc822 and message/global parts are
+removed whole as a related resource. `multipart/report` reached in body context refuses the entire preparation
+with `UNSUPPORTED_MIME`: its required report parts cannot be preserved by this
+body-only policy. Attached reports and nonselected related reports stay opaque
+and removable, including malformed interiors. Other generic multipart
+containers classify all children in order. Identity-encoded message/rfc822 and message/global parts are
 descended using the embedded root's own rules; encoded or opaque forwarded
 messages follow the non-body rule.
 
@@ -71,3 +76,25 @@ underscore-as-space are decoded. Invalid or undecodable words remain literal.
 Whitespace is suppressed only between two successfully decoded adjacent words,
 including folded linear whitespace after header unfolding. The scanner's
 lookahead is bounded even for long repeated unterminated prefixes.
+
+## Preparation work and cancellation
+
+One cached physical cursor scans the message forward. A stack-scoped trie matches
+active boundaries at physical line starts, giving the outermost matching owner
+precedence. Explicit parser frames retain ancestor visibility through forwarded
+messages and opaque entities. The terminator before a delimiter belongs to the
+parent frame; header charges and spans exclude it.
+
+Authorization independently derives retained nodes and ordered removal claims.
+A forward source-span iterator emits each retained byte once without rebuilding
+payloads at container ancestors. Preparation allocates one candidate payload,
+compares every authorized byte, reparses and compares the retained structure,
+then proves policy fixed-point coverage without constructing another payload.
+
+Whole-message scanning, pre-admission header classification, copying and equality
+comparisons checkpoint in units of at most 64 KiB. Admitted header metadata and
+charset decoding have separate existing size bounds; allocation, scheduling and
+native I/O prevent a universal elapsed-time stop guarantee. Test-only counters
+measure actual scan/classification/padding/copy/comparison work and inject stop
+at each preparation phase. These tests do not replace the required controlled
+Linux release-build timing and RSS campaign.

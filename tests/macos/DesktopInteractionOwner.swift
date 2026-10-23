@@ -310,8 +310,7 @@ final class DesktopInteractionOwner {
   private func handleCopyRequest(_ request: DesktopFixtureRequest?, fixture: URL) throws {
     if request == .holdCopy {
       guard !copyWasHeld, originals.count == 4 else { throw Failure.invalidInput }
-      let source = originals[3].0.deletingPathExtension().appendingPathExtension(
-        "no-attachments.eml")
+      let source = expectedCopy(for: originals[3].0)
       let held = fixture.appendingPathComponent("held-service-copy.eml")
       let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .deletingLastPathComponent().deletingLastPathComponent()

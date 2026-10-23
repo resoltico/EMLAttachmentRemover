@@ -86,7 +86,7 @@ impl BoundFile {
     /// Request the actual file flush; insufficient rights/failure are receipts,
     /// never silently successful. This alone does not qualify an existing copy.
     pub fn sync_file(&self) -> crate::SyncReceipt {
-        super::writable::flush(&self.file)
+        super::creation::flush(&self.file)
     }
     /// Consume and explicitly check closure of this primary ordinary file owner.
     /// Never retry a failed close or treat it as a successful ownership transfer.

@@ -6,6 +6,10 @@ mod file;
 mod namespace;
 #[cfg(unix)]
 pub use file::BoundFile;
+mod capabilities;
+#[cfg(unix)]
+pub use capabilities::CreationDirectory;
+pub use capabilities::SyncDirectory;
 mod observation;
 pub use observation::{BoundFileError, EntryKind, EntryObservation, FileSignature};
 mod receipts;
@@ -27,10 +31,16 @@ mod unix;
 #[cfg(unix)]
 pub use unix::{BoundDirectory, CreatedDirectory};
 #[cfg(target_os = "macos")]
-#[allow(unsafe_code, reason = "quality:darwin-acl-boundary")]
+#[allow(
+    unsafe_code,
+    reason = "Only the Darwin opaque ACL ABI, ownership and descriptor operations are unsafe in this module."
+)]
 mod darwin_acl;
 #[cfg(windows)]
-#[allow(unsafe_code, reason = "quality:windows-filesystem-boundary")]
+#[allow(
+    unsafe_code,
+    reason = "Generated Windows ABI calls are confined to the filesystem adapter; native buffers and handles remain owned."
+)]
 mod windows;
 #[cfg(all(windows, any(test, feature = "native-fixtures")))]
 pub use windows::creation_observer;
@@ -38,10 +48,10 @@ pub use windows::creation_observer;
 pub use windows::path::{PathContext, validate_component};
 #[cfg(windows)]
 pub use windows::{
-    BoundDirectory, BoundFile, ContainmentFailure, DirectoryCreation, DirectoryEntries, EntryPin,
-    NtStatusError, PinnedRoot, PrivateDirectory, PublicationCandidate, PublishAttempt,
-    ReadyCandidate, RootBindingError, WritableDirectory, create_private_directory,
-    observe_selected, rename_artifact_noreplace,
+    BoundDirectory, BoundFile, ContainmentFailure, CreationDirectory, DirectoryCreation,
+    DirectoryEntries, EntryPin, NtStatusError, PinnedRoot, PrivateDirectory, PublicationCandidate,
+    PublishAttempt, ReadyCandidate, RootBindingError, create_private_directory, observe_selected,
+    rename_artifact_noreplace,
 };
 
 /// Native object identity; never a pathname hash or lossy display value.

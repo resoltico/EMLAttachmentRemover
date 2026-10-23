@@ -1,6 +1,8 @@
 # Protocol1
 
-The CLI and private worker share protocol 1 through eml-protocol. Native execution
+Public CLI requests and processing events use protocol 1 through eml-protocol.
+The private desktop operation envelope is protocol 2; technical reports use the
+app-owned schema described in [worker ownership](macos-process-ownership.md). Native execution
 and release acceptance require the [verification gates](verification.md).
 
 Cleanup residual names use platform-native component validation. POSIX rejects
@@ -108,19 +110,18 @@ publication, synchronization, existing-copy and error records are defined by the
 fields, but reject unknown types, wrong value shapes, missing required fields and
 inconsistent state/count/receipt/exit observations. There is no older decoder.
 
-## Collection-admission event indices
+## Canonical terminal report indices
 
-The collector supplies bounded work positions/provenance. Item indices identify
-positions in the known work list.
-They are neither emission ordinals nor raw argument indices. Strictly increasing
-indices within `start.total` may have gaps when admission leaves known inputs
-unstarted. For known file0, missing explicit root1 and known file2, the valid
-admission stream has total3/incomplete collection, one failed item at index1
-with no publication, then failed1/not_processed2 and INPUT_ADMISSION_FAILED/exit1.
-Do not reindex that failure to0 or fabricate the unexpanded contents of folders.
-Collection limit and collection stop remain the separately specified no-item
-cases. Shared protocol/reducer fixtures accept this gap and reject
-repeated, decreasing and out-of-range indices.
+Core freezes ordinary rows by complete raw logical destination route, absolute
+scope/source, selected-origin and semantic/native diagnostic tie breaks. Failed
+rows without a logical route follow in raw native source/origin order. Terminal
+item indices are contiguous zero-based report ordinals in that order; they are
+never raw argument indices. For a known file, a missing explicit root and another
+known file, the admission stream has total3/incomplete collection, one failed item
+at index0 with no publication, then failed1/not_processed2 and
+INPUT_ADMISSION_FAILED/exit1. Unexpanded folders never become fabricated items.
+This intentionally changes the former gapped-inventory-index meaning while
+retaining the protocol-1 field set.
 
 ## Core diagnostic vocabulary
 
@@ -140,6 +141,7 @@ enforces that condition and preserves all observed publication effects.
 | MALFORMED | prepare |
 | LIMIT_EXCEEDED | prepare |
 | PROTECTED | prepare |
+| UNSUPPORTED_MIME | prepare |
 | NO_BODY | prepare |
 | INTERNAL | prepare |
 | INPUT_ADMISSION_FAILED | admission/collection |
@@ -149,7 +151,7 @@ enforces that condition and preserves all observed publication effects.
 | DESTINATION_COLLISION | admission/existing/publish |
 | DESTINATION_EXISTS | admission/existing/publish |
 | SOURCE_DESTINATION_ALIAS | admission/existing/publish |
-| DESTINATION_UNSUPPORTED | stage/publish |
+| DESTINATION_UNSUPPORTED | admission/stage/publish |
 | BIND_FAILED | admission/read/stage/address |
 | STAGE_FAILED | stage |
 | WRITE_FAILED | write/publish |

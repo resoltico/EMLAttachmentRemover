@@ -63,7 +63,7 @@ fn output_preflight_is_read_only_and_does_not_authorize_later_collection() {
 }
 
 #[test]
-fn ordered_dfs_skips_only_walked_names_and_keeps_first_encounter_layout() {
+fn ordered_dfs_skips_only_walked_names_and_explicit_occurrences_own_entries() {
     let root = scratch();
     fs::create_dir_all(root.path().join("selected/nested")).unwrap();
     fs::create_dir_all(root.path().join("selected/.hidden")).unwrap();
@@ -115,13 +115,13 @@ fn ordered_dfs_skips_only_walked_names_and_keeps_first_encounter_layout() {
         [
             SourceOrigin::Walked,
             SourceOrigin::Walked,
-            SourceOrigin::Walked,
+            SourceOrigin::Explicit,
             SourceOrigin::Explicit,
             SourceOrigin::Explicit
         ]
     );
-    assert_eq!(found.request_index(2), Some(0));
-    assert_eq!(found.items()[2].relative_path(), Path::new("nested/c.eml"));
+    assert_eq!(found.request_index(2), Some(1));
+    assert_eq!(found.items()[2].relative_path(), Path::new(""));
     assert!(
         found
             .items()
@@ -406,7 +406,7 @@ fn initially_stopped_collection_retains_no_metadata_only_root_as_work() {
 mod directory_alias;
 
 #[test]
-fn selected_directory_aliases_keep_distinct_spellings_and_walked_aliases_are_excluded() {
+fn selected_directory_aliases_coalesce_only_proven_leaf_entries_and_walked_aliases_are_excluded() {
     let root = scratch();
     fs::create_dir(root.path().join("target")).unwrap();
     fs::create_dir(root.path().join("outside")).unwrap();
@@ -430,10 +430,7 @@ fn selected_directory_aliases_keep_distinct_spellings_and_walked_aliases_are_exc
             .map(|item| (item.native_path(), item.observation()))
             .collect::<Vec<_>>()
     );
-    assert_eq!(
-        displays(&found),
-        ["alpha/a.eml", "beta/a.eml"].map(PathBuf::from)
-    );
+    assert_eq!(displays(&found), ["alpha/a.eml"].map(PathBuf::from));
     let ids: Vec<_> = found
         .items()
         .iter()
@@ -442,8 +439,8 @@ fn selected_directory_aliases_keep_distinct_spellings_and_walked_aliases_are_exc
             _ => panic!("ordinary alias target file"),
         })
         .collect();
-    assert_eq!(ids[0], ids[1]);
-    for (item, expected) in found.items().iter().zip(["alpha", "beta"]) {
+    assert_eq!(ids.len(), 1);
+    for (item, expected) in found.items().iter().zip(["alpha"]) {
         assert_eq!(
             item.native_path().parent().unwrap().file_name(),
             Some(std::ffi::OsStr::new(expected))

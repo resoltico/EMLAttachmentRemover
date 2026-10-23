@@ -480,21 +480,19 @@ fn destroy_spawn_records(
     attributes_ready: bool,
     issues: &mut Vec<SpawnIssue>,
 ) {
-    // SAFETY: these records were initialized successfully and are destroyed once.
-    if actions_ready
-        && let Err(issue) = checked("spawn-actions-destroy", unsafe {
-            libc::posix_spawn_file_actions_destroy(actions)
-        })
-    {
-        issues.push(issue);
+    if actions_ready {
+        // SAFETY: this record was initialized successfully and is destroyed once.
+        let result = unsafe { libc::posix_spawn_file_actions_destroy(actions) };
+        if let Err(issue) = checked("spawn-actions-destroy", result) {
+            issues.push(issue);
+        }
     }
-    // SAFETY: same initialization/one-destroy invariant as file actions.
-    if attributes_ready
-        && let Err(issue) = checked("spawn-attributes-destroy", unsafe {
-            libc::posix_spawnattr_destroy(attributes)
-        })
-    {
-        issues.push(issue);
+    if attributes_ready {
+        // SAFETY: this initialized attribute record is live and destroyed once.
+        let result = unsafe { libc::posix_spawnattr_destroy(attributes) };
+        if let Err(issue) = checked("spawn-attributes-destroy", result) {
+            issues.push(issue);
+        }
     }
 }
 

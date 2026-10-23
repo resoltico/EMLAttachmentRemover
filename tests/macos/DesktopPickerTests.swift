@@ -34,7 +34,7 @@ extension DesktopInteractionTests {
     for source in session.sources + [folderSource] {
       XCTAssertEqual(
         try Data(
-          contentsOf: source.deletingPathExtension().appendingPathExtension("no-attachments.eml")),
+          contentsOf: expectedCopy(for: source)),
         session.golden)
     }
     snapshot(session.app, "native-picker-compatibility-complete")
@@ -160,7 +160,13 @@ extension DesktopInteractionTests {
       bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
     XCTAssertNotEqual(version, build)
     XCTAssertTrue(about.descendants(matching: .any)["EML Attachment Remover"].exists)
-    XCTAssertTrue(about.descendants(matching: .any)["Version \(version) (Build \(build))"].exists)
+    // AppKit formats the standard About panel's version label. Inspect the
+    // actual text without imposing the removed custom Slint window's format.
+    let aboutText = about.descendants(matching: .any).allElementsBoundByIndex.map {
+      $0.label + " " + (($0.value as? String) ?? "")
+    }.joined(separator: "\n")
+    XCTAssertTrue(aboutText.contains(version), aboutText)
+    XCTAssertTrue(aboutText.contains(build), aboutText)
     let license = try String(
       contentsOf: repository.appendingPathComponent("LICENSE"), encoding: .utf8)
     let copyright = try XCTUnwrap(
@@ -169,13 +175,6 @@ extension DesktopInteractionTests {
       }
     ).replacingOccurrences(of: "Copyright (c) ", with: "© ")
     XCTAssertTrue(about.descendants(matching: .any)[copyright].exists)
-    XCTAssertTrue(about.images["Application icon"].exists)
-    XCTAssertTrue(about.buttons["Project website"].exists)
-    about.buttons["Licenses"].click()
-    let aboutLicenses = app.windows["Software and Artwork Licenses"]
-    XCTAssertTrue(aboutLicenses.waitForExistence(timeout: 5))
-    XCTAssertTrue(aboutLicenses.buttons["Third-party licenses…"].exists)
-    aboutLicenses.buttons["_XCUI:CloseWindow"].click()
     app.menuBars.menuBarItems["EML Attachment Remover"].click()
     app.menuItems["About EML Attachment Remover"].click()
     XCTAssertEqual(app.windows.matching(identifier: "About EML Attachment Remover").count, 1)
@@ -189,9 +188,10 @@ extension DesktopInteractionTests {
       throw InteractionFailure.expectedPresentation
     }
     app.menuBars.menuBarItems["Help"].click()
-    app.menuItems["Software and Artwork Licenses…"].click()
-    let licenses = app.windows["Software and Artwork Licenses"]
+    app.menuItems["About Slint and Licenses…"].click()
+    let licenses = app.windows["About Slint and Licenses"]
     XCTAssertTrue(licenses.waitForExistence(timeout: 10), app.debugDescription)
+    XCTAssertTrue(licenses.images["#MadeWithSlint"].exists, licenses.debugDescription)
     let licenseText = try XCTUnwrap(
       app.descendants(matching: .any).allElementsBoundByIndex.first {
         $0.title == "Complete software and owner artwork license terms"
@@ -301,7 +301,7 @@ extension DesktopInteractionTests {
       observation, .completed, "Settled native report is unavailable: \(app.debugDescription)")
     guard observation == .completed else { throw InteractionFailure.expectedPresentation }
     for source in sources {
-      let copy = source.deletingPathExtension().appendingPathExtension("no-attachments.eml")
+      let copy = expectedCopy(for: source)
       XCTAssertEqual(try Data(contentsOf: copy), golden)
     }
     snapshot(app, "finished")
@@ -328,15 +328,14 @@ extension DesktopInteractionTests {
     try await requireText(app, containing: "Queue paused: dismiss a retained report to make room.")
     XCTAssertFalse(
       FileManager.default.fileExists(
-        atPath: folderSource.deletingPathExtension().appendingPathExtension("no-attachments.eml")
+        atPath: expectedCopy(for: folderSource)
           .path))
     snapshot(app, "report-space-paused")
     app.buttons["Dismiss report"].click()
     try await requireRun(app, counts: "1 created · 0 up to date", source: folderSource)
     XCTAssertEqual(
       try Data(
-        contentsOf: folderSource.deletingPathExtension().appendingPathExtension(
-          "no-attachments.eml")), golden)
+        contentsOf: expectedCopy(for: folderSource)), golden)
     snapshot(app, "folder-import-finished")
 
   }

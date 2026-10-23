@@ -1,78 +1,13 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { AboutSlint, Button, CheckBox, ComboBox, HorizontalBox, VerticalBox, TextEdit, ScrollView } from "std-widgets.slint";
+import { AboutSlint, LineEdit, Button, CheckBox, ComboBox, HorizontalBox, VerticalBox, TextEdit, ScrollView } from "std-widgets.slint";
 import { StatusArtwork, ArtworkState } from "artwork.slint";
-component AboutLabel inherits TextInput {
-    read-only: true;
-    single-line: true;
-    horizontal-alignment: center;
-    accessible-label: self.text;
-    vertical-stretch: 0;
-}
-export component AboutWindow inherits Window {
-    in property <string> interface-font-family;
-    in property <float> interface-font-size;
-    default-font-family: root.interface-font-family;
-    default-font-size: root.interface-font-size * 1px;
-    title: "About EML Attachment Remover";
-    preferred-width: 420px; preferred-height: 410px;
-    in property <string> version-label;
-    in property <string> copyright;
-    in property <image> app-icon;
-    callback website_requested();
-    callback licenses_requested();
-    MenuBar {
-        Menu { title: "Edit";
-            MenuItem { title: "Copy"; shortcut: @keys(Control + C);
-                enabled: name-text.has-focus || version-text.has-focus || purpose-text.has-focus || copyright-text.has-focus;
-                activated => {
-                    if name-text.has-focus { name-text.copy(); }
-                    if version-text.has-focus { version-text.copy(); }
-                    if purpose-text.has-focus { purpose-text.copy(); }
-                    if copyright-text.has-focus { copyright-text.copy(); }
-                }
-            }
-            MenuItem { title: "Select All"; shortcut: @keys(Control + A);
-                enabled: name-text.has-focus || version-text.has-focus || purpose-text.has-focus || copyright-text.has-focus;
-                activated => {
-                    if name-text.has-focus { name-text.select-all(); }
-                    if version-text.has-focus { version-text.select-all(); }
-                    if purpose-text.has-focus { purpose-text.select-all(); }
-                    if copyright-text.has-focus { copyright-text.select-all(); }
-                }
-            }
-        }
-        Menu { title: "Window";
-            MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimized = true; } }
-            MenuItem { title: "Bring All to Front"; activated => { Platform.macos-bring-all-windows-to-front(); } }
-        }
-    }
-    VerticalBox {
-        padding: 24px; spacing: 12px;
-        alignment: center;
-        HorizontalBox { alignment: center; padding: 0px;
-            Image { source: root.app-icon; width: 64px; height: 64px; image-fit: contain; accessible-label: "Application icon"; }
-        }
-        name-text := AboutLabel { text: "EML Attachment Remover"; font-size: 18px; font-weight: 600; }
-        version-text := AboutLabel { text: "Version " + root.version-label; }
-        purpose-text := AboutLabel { text: "Create attachment-stripped copies.\nOriginals stay untouched."; single-line: false; }
-        copyright-text := AboutLabel { text: root.copyright; }
-        HorizontalBox { alignment: center; spacing: 12px; padding: 0px;
-            Button { text: "Project website"; clicked => { root.website_requested(); } }
-            Button { text: "Licenses"; clicked => { root.licenses_requested(); } }
-        }
-        HorizontalBox {
-            alignment: center; vertical-stretch: 0; padding: 0px;
-            AboutSlint { width: 280px; height: 100px; horizontal-stretch: 0; vertical-stretch: 0; }
-        }
-    }
-}
 export component LicenseWindow inherits Window {
     in property <string> interface-font-family;
     in property <float> interface-font-size;
     default-font-family: root.interface-font-family;
     default-font-size: root.interface-font-size * 1px;
-    title: "Software and Artwork Licenses";
+    title: "About Slint and Licenses";
     preferred-width: 720px; preferred-height: 560px;
     in property <string> licenses;
     in property <string> notice: "Open bundled component notices and license files in Finder.";
@@ -88,6 +23,7 @@ export component LicenseWindow inherits Window {
         }
     }
     VerticalBox {
+        AboutSlint { height: 100px; vertical-stretch: 0; }
         license-text := TextEdit { text: root.licenses; read-only: true; accessible-label: "Complete software and owner artwork license terms"; }
         HorizontalBox {
             padding: 12px; spacing: 12px; vertical-stretch: 0;
@@ -109,11 +45,25 @@ export component MainWindow inherits Window {
     in property <bool> native-dialog-active;
     callback native_copy();
     callback native_select_all();
+    in property <string> processing-operation-id;
+    in property <string> selected-operation-id;
+    in property <string> export-operation-id;
     in property <bool> stop-available;
     in property <bool> force-available;
     in property <bool> report-selected;
     in property <bool> reveal-available;
     in property <bool> export-running;
+    in property <bool> export-cancel-available;
+    in property <bool> export-force-available;
+    in property <bool> export-form-visible;
+    in property <bool> export-start-available;
+    in property <bool> dismiss-available;
+    in property <bool> create-from-check-available;
+    in property <string> export-reservation;
+    in-out property <string> export-filename;
+    in property <string> export-destination;
+    in property <string> export-explanation;
+    in property <string> export-status;
     in property <bool> confirm-visible;
     in property <string> confirm-text;
     in property <string> confirm-title;
@@ -140,13 +90,20 @@ export component MainWindow inherits Window {
     callback select_folder();
     callback choose_destination();
     callback beside_requested();
-    callback stop_requested();
-    callback force_requested();
+    callback stop_requested(string);
+    callback force_requested(string);
     callback export_requested();
+    callback start_export();
+    callback force_export(string);
+    callback export_name_changed(string);
+    callback close_export_form();
+    callback mode_changed(bool);
+    callback create_from_check();
     callback reveal_requested();
-    callback cancel_export();
+    callback cancel_export(string);
     callback dismiss_requested();
     callback licenses_requested();
+    callback website_requested();
     callback select_run(int);
     callback select_item(int);
     callback remove_waiting(int);
@@ -164,7 +121,7 @@ export component MainWindow inherits Window {
     callback dismiss_notice();
     MenuBar {
         Menu { title: "File";
-            MenuItem { title: "Create Copies…"; shortcut: @keys(Control + O); enabled: root.admission-ready; activated => { root.select_files(); } }
+            MenuItem { title: "Choose Messages…"; shortcut: @keys(Control + O); enabled: root.admission-ready; activated => { root.select_files(); } }
             MenuItem { title: "Quit EML Attachment Remover…"; activated => { root.quit_requested(); } }
         }
         Menu { title: "Edit";
@@ -177,7 +134,8 @@ export component MainWindow inherits Window {
             MenuItem { title: "Bring All to Front"; activated => { Platform.macos-bring-all-windows-to-front(); } }
         }
         Menu { title: "Help";
-            MenuItem { title: "Software and Artwork Licenses…"; activated => { root.licenses_requested(); } }
+            MenuItem { title: "Project Website"; activated => { root.website_requested(); } }
+            MenuItem { title: "About Slint and Licenses…"; activated => { root.licenses_requested(); } }
         }
     }
     ScrollView {
@@ -198,6 +156,11 @@ export component MainWindow inherits Window {
             Button { text: "Copy destination…"; enabled: root.destination-editable; clicked => { root.choose_destination(); } }
             Button { text: "Beside originals"; enabled: root.destination-editable; clicked => { root.beside_requested(); } }
         }
+        HorizontalBox {
+            Text { text: "Operation for later selections:"; }
+            ComboBox { model: ["Check only", "Create copies"]; current-index: 1; enabled: root.admission-ready; accessible-label: "Operation mode"; selected(value) => { root.mode_changed(self.current-index == 0); } }
+            Text { text: "A check grants no authority to create. Filesystem contents can change."; wrap: word-wrap; }
+        }
         Text { text: "Save copies: " + root.destination; overflow: elide; accessible-label: "Copy destination: " + root.destination; }
         HorizontalBox {
             padding: 0px;
@@ -209,11 +172,26 @@ export component MainWindow inherits Window {
             Button { text: "Dismiss notice"; clicked => {root.dismiss_notice();} }
         }
         HorizontalBox {
-            Button { text: "Stop"; enabled: root.stop-available; clicked => { root.stop_requested(); } }
-            Button { text: "Force Stop…"; enabled: root.force-available; clicked => { root.force_requested(); } }
+            Button { text: "Stop"; enabled: root.stop-available; clicked => { root.stop_requested(root.processing-operation-id); } }
+            Button { text: "Force Stop…"; enabled: root.force-available; clicked => { root.force_requested(root.processing-operation-id); } }
             Button { text: "Export Report…"; enabled: root.report-selected; clicked => { root.export_requested(); } }
-            Button { text: "Dismiss report"; enabled: root.report-selected; clicked => { root.dismiss_requested(); } }
-            Button { text: "Cancel export"; enabled: root.export-running; clicked => { root.cancel_export(); } }
+            Button { text: "Dismiss report"; enabled: root.dismiss-available; clicked => { root.dismiss_requested(); } }
+            Button { text: "Cancel Export"; enabled: root.export-cancel-available; clicked => { root.cancel_export(root.export-operation-id); } }
+            Button { text: "Force Stop Export…"; enabled: root.export-force-available; clicked => { root.force_export(root.export-operation-id); } }
+            Button { text: "Create from this check"; enabled: root.create-from-check-available; clicked => { root.create_from_check(); } }
+        }
+        if root.export-reservation != "": Text { text: root.export-reservation; wrap: word-wrap; }
+        if root.export-form-visible: VerticalBox {
+            padding: 8px; spacing: 6px; vertical-stretch: 0;
+            Text { text: "Export technical report"; font-weight: 600; }
+            LineEdit { text <=> root.export-filename; enabled: !root.export-running; accessible-label: "Report filename"; edited(text) => { root.export_name_changed(text); } }
+            Text { text: root.export-destination; wrap: word-wrap; accessible-label: "Exact report destination: " + root.export-destination; }
+            Text { text: root.export-explanation; }
+            Text { text: root.export-status; wrap: word-wrap; accessible-label: "Export status: " + root.export-status; }
+            HorizontalBox {
+                Button { text: "Export Report"; enabled: root.export-start-available; clicked => { root.start_export(); } }
+                Button { text: "Close export form"; enabled: !root.export-running; clicked => { root.close_export_form(); } }
+            }
         }
         if root.compact-layout: ComboBox { model: root.run-picker-labels; current-index: root.selected-run; accessible-label: "Select run"; selected(value) => { root.select_run(self.current-index); } }
         if root.compact-layout && root.waiting-runs.length > 0: ScrollView {
@@ -249,7 +227,7 @@ export component MainWindow inherits Window {
                     height: root.items.length == 0 ? 0px : (root.short-layout ? 40px : 100px);
                     VerticalBox { padding: 0px; spacing: 4px; for item[index] in root.items: Button { text: item; height: 32px; clicked => { root.select_item(index); } } }
                 }
-                item-detail := TextEdit { min-height: 55px; vertical-stretch: 1; text: root.item-text + (technical.checked ? "\nTechnical observations\n" + root.technical-text + (root.notice-details != "" ? "\nNotice details\n" + root.notice-details : "") : ""); read-only: true; accessible-label: technical.checked ? "Selected message, removed parts and technical observations" : "Selected message and removed parts"; }
+                item-detail := TextEdit { min-height: 55px; vertical-stretch: 1; text: root.item-text + (technical.checked ? "\nTechnical observations\nProcessing operation: " + root.selected-operation-id + "\n" + root.technical-text + (root.notice-details != "" ? "\nNotice details\n" + root.notice-details : "") : ""); read-only: true; accessible-label: technical.checked ? "Selected message, removed parts and technical observations" : "Selected message and removed parts"; }
                 HorizontalBox {
                     Button { text: "Show in Finder"; enabled: root.reveal-available; clicked => {root.reveal_requested();} }
                     Button { text: "Previous parts"; enabled: root.previous_parts_available; clicked => { root.previous_parts(); } }

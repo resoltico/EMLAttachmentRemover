@@ -63,11 +63,11 @@ pub(super) fn open_existing(
     }
 }
 pub(super) struct MatchingInspection {
-    pub(super) frame: crate::destination::ReadOnlyParent,
+    pub(super) frame: crate::destination::ObservedRoute,
     pub(super) comparison: crate::ComparedExisting,
 }
 pub(super) enum Inspection {
-    Missing(crate::destination::ReadOnlyParent),
+    Missing(crate::destination::ObservedRoute),
     Matching(Box<MatchingInspection>),
 }
 impl Inspection {
@@ -272,7 +272,7 @@ pub(super) fn guard_existing_identity(
 pub(super) fn qualify_existing_address(
     plan: &DestinationPlan<'_>,
     index: usize,
-    binding: &crate::binding::DestinationBinding,
+    binding: &crate::binding::ExistingSyncBinding,
     compared: &crate::ComparedExisting,
     source: &PreparedSource,
     control: &RunControl,
@@ -324,7 +324,7 @@ pub(super) fn resynchronize_item<'a>(
     data: MessageMetadata<'a>,
 ) -> ItemResult<'a> {
     let mut observed = observation(matched.comparison.signature().identity, Some(true), true);
-    let mut binding = match crate::binding::DestinationBinding::acquire(
+    let mut binding = match crate::binding::ExistingSyncBinding::acquire_existing(
         plan,
         index,
         &matched.frame,
@@ -333,14 +333,7 @@ pub(super) fn resynchronize_item<'a>(
     ) {
         Ok(binding) => binding,
         Err(error) => {
-            observed.namespace_sync = error.namespace;
-            let mut result = existing_failure(sync_access_error(error.error), data, observed);
-            if let ItemResult::Failed(item) = &mut result
-                && let FailureEffect::NotPublished { cleanup, .. } = &mut item.effect
-            {
-                *cleanup = error.cleanup;
-            }
-            return result;
+            return existing_failure(sync_access_error(error), data, observed);
         }
     };
     observed.namespace_sync = binding.namespace();
@@ -372,9 +365,13 @@ pub(super) fn resynchronize_item<'a>(
     ) {
         return existing_failure(error, data, observed);
     }
-    if let Err(error) =
-        synchronize_existing_storage(&mut binding, &compared, control, &mut observed)
-    {
+    if let Err(error) = synchronize_existing_storage(
+        &mut binding,
+        &compared,
+        control,
+        &mut observed,
+        &mut context.pending_layout,
+    ) {
         return existing_failure(error, data, observed);
     }
     if let Err(error) = qualify_existing_address(
@@ -409,7 +406,7 @@ pub(super) fn resynchronize_item<'a>(
 }
 
 fn bind_inspected_existing(
-    frame: &crate::destination::ReadOnlyParent,
+    frame: &crate::destination::ObservedRoute,
     info: &crate::DestinationInfo,
     entry: EntryObservation,
     ids: &HashSet<Identity>,
@@ -466,7 +463,7 @@ fn bind_inspected_existing(
 fn qualify_inspected_existing(
     plan: &DestinationPlan<'_>,
     index: usize,
-    frame: &crate::destination::ReadOnlyParent,
+    frame: &crate::destination::ObservedRoute,
     compared: &crate::ComparedExisting,
     source: &PreparedSource,
     control: &RunControl,
@@ -512,7 +509,7 @@ fn qualify_inspected_existing(
 fn handoff_existing_for_sync(
     source: &PreparedSource,
     matched: MatchingInspection,
-    binding: &crate::binding::DestinationBinding,
+    binding: &crate::binding::ExistingSyncBinding,
     info: &crate::DestinationInfo,
     context: &mut RunContext,
     control: &RunControl,
@@ -605,10 +602,11 @@ fn handoff_existing_for_sync(
 }
 
 fn synchronize_existing_storage(
-    binding: &mut crate::binding::DestinationBinding,
+    binding: &mut crate::binding::ExistingSyncBinding,
     compared: &crate::ComparedExisting,
     control: &RunControl,
     observed: &mut ExistingObservation,
+    pending: &mut crate::binding::PendingLayout,
 ) -> Result<(), OperationFailure> {
     checkpoint(control, ErrorPhase::Existing)?;
     let receipt = compared.sync_file();
@@ -621,7 +619,7 @@ fn synchronize_existing_storage(
         ));
     }
     checkpoint(control, ErrorPhase::Existing)?;
-    if let Err(error) = binding.final_sync() {
+    if let Err(error) = binding.final_sync(pending, control) {
         observed.namespace_sync = binding.namespace();
         return Err(sync_access_error(error));
     }

@@ -8,7 +8,7 @@ use eml_protocol::{PROGRAM_ID, records::*};
 use serde::Serialize;
 
 /// A terminal transport/contract failure; earlier accepted items remain retained.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProtocolFailure {
     /// Invalid JSON, wire map shape, closed vocabulary or required member.
@@ -48,14 +48,7 @@ pub struct RunReport {
     removed: usize,
     path_charge_floor: usize,
     finished: bool,
-    native_create_only: bool,
-}
-#[derive(Serialize)]
-struct TechnicalReport<'a> {
-    start: &'a Option<StartRecord>,
-    items: &'a [ItemRecord],
-    summary: &'a Option<SummaryRecord>,
-    protocol_failure: Option<ProtocolFailure>,
+    expected_mode: Option<eml_core::RunMode>,
 }
 impl RunReport {
     /// Start a report for the independently checked worker version.
@@ -70,15 +63,18 @@ impl RunReport {
             removed: 0,
             path_charge_floor: 0,
             finished: false,
-            native_create_only: false,
+            expected_mode: None,
         }
     }
-    /// The bundled desktop worker must produce create-mode facts for this host.
-    /// General report decoding remains available for independent cross-host fixtures.
-    pub fn for_native_worker(expected_version: impl Into<String>) -> Self {
+    /// Bind both host-native encoding and the captured operation mode.
+    pub fn for_native_mode(expected_version: impl Into<String>, mode: eml_core::RunMode) -> Self {
         let mut report = Self::new(expected_version);
-        report.native_create_only = true;
+        report.expected_mode = Some(mode);
         report
+    }
+    /// Classify terminal facts once for views and exported reports.
+    pub fn terminal_meaning(&self, completion: &crate::WorkerCompletion) -> crate::RunMeaning {
+        crate::lifecycle::classify_run(self.summary.as_ref(), self.failure, completion)
     }
     /// Accepted item facts, retained even after a later malformed record.
     pub fn items(&self) -> &[ItemRecord] {
@@ -190,7 +186,9 @@ impl RunReport {
                 if start.protocol != 1
                     || start.program != PROGRAM_ID
                     || start.version != self.expected_version
-                    || (self.native_create_only && start.dry_run)
+                    || self
+                        .expected_mode
+                        .is_some_and(|mode| start.dry_run != (mode == eml_core::RunMode::DryRun))
                 {
                     return Err(ProtocolFailure::IncompatibleHelper);
                 }
@@ -201,12 +199,7 @@ impl RunReport {
             }
             EventRecord::Item(item) => {
                 let start = self.start.as_ref().ok_or(ProtocolFailure::InvalidOrder)?;
-                if item.index >= start.total
-                    || self
-                        .items
-                        .last()
-                        .is_some_and(|previous| previous.index >= item.index)
-                {
+                if item.index >= start.total || item.index as usize != self.items.len() {
                     return Err(ProtocolFailure::InvalidOrder);
                 }
                 let dry_run = start.dry_run;
@@ -290,39 +283,25 @@ impl RunReport {
         }
         result
     }
-    /// Export only structured accepted facts, never raw frames/message contents.
-    pub fn technical_report(&self) -> Result<Vec<u8>, serde_json::Error> {
-        serde_json::to_vec_pretty(&self.export_record())
-    }
-    fn export_record(&self) -> TechnicalReport<'_> {
-        TechnicalReport {
-            start: &self.start,
-            items: &self.items,
-            summary: &self.summary,
-            protocol_failure: self.failure,
-        }
-    }
-    #[cfg(target_os = "macos")]
-    pub(crate) fn technical_report_with_lifecycle(
+    /// Stream the versioned metadata report without a second complete buffer.
+    pub fn write_document(
         &self,
         run_id: crate::RunId,
         completion: &crate::WorkerCompletion,
-    ) -> Result<Vec<u8>, serde_json::Error> {
-        #[derive(Serialize)]
-        struct Export<'a> {
-            run_id: crate::RunId,
-            #[serde(flatten)]
-            report: TechnicalReport<'a>,
-            worker: &'a crate::WorkerCompletion,
-        }
-        serde_json::to_vec_pretty(&Export {
+        writer: impl std::io::Write,
+    ) -> Result<(), crate::report_document::ReportWriteError> {
+        crate::report_document::write(
+            writer,
             run_id,
-            report: self.export_record(),
-            worker: completion,
-        })
+            &self.start,
+            &self.items,
+            &self.summary,
+            self.failure,
+            completion,
+        )
     }
     fn admit_path(&mut self, path: &ReportPathRecord) -> Result<(), ProtocolFailure> {
-        if self.native_create_only
+        if self.expected_mode.is_some()
             && path.native.encoding
                 != if cfg!(windows) {
                     PathEncoding::WindowsUtf16Le
@@ -356,17 +335,11 @@ impl RunReport {
         self.path_charge_floor += charge;
         Ok(())
     }
-    fn validate_item(&mut self, item: &ItemRecord, dry_run: bool) -> Result<(), ProtocolFailure> {
+    /// Bound report metadata without retaining items or recreating processing decisions.
+    pub(crate) fn admit_item_metadata(&mut self, item: &ItemRecord) -> Result<(), ProtocolFailure> {
         self.admit_path(&item.source)?;
         if let Some(path) = item.destination.value() {
             self.admit_path(path)?;
-        }
-        validate_publication(&item.publication)?;
-        if let Some(existing) = item.existing_observation.value() {
-            validate_existing(existing)?;
-        }
-        if let Some(error) = item.error.value() {
-            validate_error(error)?;
         }
         let source = item.source_bytes.value().copied();
         let copy = item.copy_bytes.value().copied();
@@ -396,6 +369,21 @@ impl RunReport {
             }
         }
         self.removed += item.removed.len();
+        if let Some(error) = item.error.value() {
+            validate_error(error)?;
+        }
+        Ok(())
+    }
+    fn validate_item(&mut self, item: &ItemRecord, dry_run: bool) -> Result<(), ProtocolFailure> {
+        self.admit_item_metadata(item)?;
+        validate_publication(&item.publication)?;
+        if let Some(existing) = item.existing_observation.value() {
+            validate_existing(existing)?;
+        }
+        if let Some(error) = item.error.value() {
+            validate_error(error)?;
+        }
+        let source = item.source_bytes.value().copied();
         let p = &item.publication;
         let no_sync = p.file_sync.state == Synchronization::NotAttempted
             && p.namespace_sync.state == Synchronization::NotAttempted
@@ -600,7 +588,7 @@ fn usable_existing(e: &ExistingRecord) -> bool {
         && e.file_sync.state == Synchronization::Succeeded
         && usable_namespace(&e.namespace_sync)
 }
-fn validate_error(error: &ErrorRecord) -> Result<(), ProtocolFailure> {
+pub(crate) fn validate_error(error: &ErrorRecord) -> Result<(), ProtocolFailure> {
     if error.code.is_empty()
         || error.code.len() > 128
         || error.detail.chars().count() > 1000

@@ -245,6 +245,7 @@ impl RestrictedToken {
         }
         // SAFETY: successful restricted-token allocation transfers one owner.
         let mut actor = Self {
+            // SAFETY: successful CreateRestrictedToken returned one uniquely owned handle.
             token: unsafe { OwnedHandle::from_raw_handle(raw) },
             entered: false,
             _thread_affinity: std::marker::PhantomData,

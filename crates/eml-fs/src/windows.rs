@@ -13,17 +13,19 @@ mod publication;
 pub use private_directory::{
     PrivateDirectory, create_private_directory, rename_artifact_noreplace,
 };
+mod creation;
+mod name_domain;
 mod root;
 mod status;
-mod writable;
+pub(crate) mod sync_directory;
 pub use candidate::ReadyCandidate;
 pub use containment::ContainmentFailure;
+pub use creation::{CreationDirectory, DirectoryCreation};
 pub use file::BoundFile;
 pub use inventory::{BoundDirectory, DirectoryEntries, EntryPin, observe_selected};
 pub use publication::{PublicationCandidate, PublishAttempt};
 pub use root::{PinnedRoot, RootBindingError};
 pub use status::NtStatusError;
-pub use writable::{DirectoryCreation, WritableDirectory};
 #[cfg(test)]
 mod test_fixture;
 #[cfg(any(test, feature = "native-fixtures"))]

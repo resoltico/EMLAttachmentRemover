@@ -1,18 +1,17 @@
 use super::*;
 #[test]
-fn export_refuses_busy_model_without_waiting_for_inspector() {
+fn held_report_never_blocks_ui_inspection_or_control_intent() {
     let report = ReportHandle::new("test-version".into());
     let held = report.0.lock().unwrap();
     let captured = report.clone();
     let (send, receive) = std::sync::mpsc::channel();
     let actor = thread::spawn(move || {
-        send.send(captured.export_bytes().map_err(|error| error.kind()))
-            .unwrap();
+        send.send(captured.inspect(|_| ())).unwrap();
     });
     let observed = receive.recv_timeout(Duration::from_secs(1));
     drop(held);
     actor.join().unwrap();
-    assert_eq!(observed.unwrap(), Err(io::ErrorKind::WouldBlock));
+    assert_eq!(observed.unwrap().unwrap(), None);
 }
 #[test]
 fn held_final_report_warns_then_finishes_without_erasing_the_warning() {
@@ -100,4 +99,43 @@ fn independent_prelaunch_abort_is_not_hidden_by_either_stop_order() {
         assert!(!completion.input_may_have_been_sent);
         assert_eq!(completion.faults, ["Earlier retained warning"]);
     }
+}
+
+#[test]
+fn qualified_export_receipt_and_later_process_failure_remain_independent() {
+    let id = eml_protocol::desktop::OperationId::new(1).unwrap();
+    let raw=br#"{"operation_id":1,"publication":"published","file_sync":{"method":"fsync","state":"succeeded","native_code":null},"namespace_sync":{"method":"fsync","state":"succeeded","native_code":null},"address_verified":true,"candidate_identity":{"kind":"posix","value":"1:2"},"final_file_verified":true,"cleanup":{"state":"complete","residual_name":null,"native_code":null},"failures":[]}"#;
+    let receipt = eml_protocol::desktop::decode_receipt(raw, id).unwrap();
+    assert!(receipt.qualified());
+    let request =
+        RequestSnapshot::new(vec![PathBuf::from("/owned-synthetic/message.eml")], None).unwrap();
+    let mut queue = crate::RunQueue::default();
+    let run_id = queue.enqueue(request).unwrap();
+    let mut worker = WorkerCompletion::empty(id);
+    worker.settled = true;
+    worker.reusable = true;
+    worker.exit_code = Some(0);
+    let mut result = ExportCompletion {
+        operation_id: id,
+        run_id,
+        destination: PathBuf::from("/owned-synthetic/report.json"),
+        receipt: Some(Box::new(receipt)),
+        worker,
+        report_too_large: false,
+    };
+    assert!(result.usable());
+    result.worker.failure = Some(WorkerFailure::Transport);
+    assert!(!result.usable());
+    assert!(result.receipt.as_ref().unwrap().qualified());
+    assert!(
+        result
+            .outcome_message()
+            .starts_with("A complete report was published")
+    );
+    result.worker.failure = None;
+    result.worker.exit_code = Some(1);
+    assert!(!result.usable());
+    result.worker.exit_code = Some(0);
+    result.worker.operation_id = id.next().unwrap();
+    assert!(!result.usable());
 }

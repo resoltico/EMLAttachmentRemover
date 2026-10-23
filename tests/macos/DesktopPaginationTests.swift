@@ -87,7 +87,7 @@ extension DesktopInteractionTests {
     for (index, source) in sources.enumerated() {
       XCTAssertEqual(
         try Data(
-          contentsOf: source.deletingPathExtension().appendingPathExtension("no-attachments.eml")),
+          contentsOf: expectedCopy(for: source)),
         index == 0 ? specialGolden : ordinaryGolden)
     }
     try await checkCompactReport(app, window: window, source: sources[0], exercisePagination: true)

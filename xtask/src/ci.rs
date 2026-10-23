@@ -29,6 +29,7 @@ pub(crate) fn validate(event: &str, native: bool, needs: &Value) -> Result<()> {
         vec![
             ("identity", "success"),
             ("native", "success"),
+            ("assembly", "success"),
             ("integration", if pr { "success" } else { "skipped" }),
             ("freshness", if pr { "success" } else { "skipped" }),
         ]
@@ -72,7 +73,7 @@ mod tests {
             (
                 false,
                 "pull_request",
-                json!({"identity":{"result":"success"},"native":{"result":"success"},"integration":{"result":"success"},"freshness":{"result":"success"}}),
+                json!({"identity":{"result":"success"},"native":{"result":"success"},"assembly":{"result":"success"},"integration":{"result":"success"},"freshness":{"result":"success"}}),
             ),
             (
                 true,
@@ -116,7 +117,7 @@ mod tests {
     }
     #[test]
     fn only_non_pr_events_allow_their_inapplicable_merge_roles_to_be_absent() {
-        let needs = json!({"identity":{"result":"success"},"native":{"result":"success"},"integration":{"result":"skipped"},"freshness":{"result":"skipped"}});
+        let needs = json!({"identity":{"result":"success"},"native":{"result":"success"},"assembly":{"result":"success"},"integration":{"result":"skipped"},"freshness":{"result":"skipped"}});
         for event in ["push", "merge_group", "workflow_dispatch"] {
             validate(event, false, &needs).unwrap();
         }

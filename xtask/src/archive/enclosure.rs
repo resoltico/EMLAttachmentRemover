@@ -25,7 +25,7 @@ impl ArtifactDirectory {
 pub fn create_artifact_directory(parent: &Path) -> io::Result<ArtifactDirectory> {
     let parent = parent.canonicalize()?;
     let mut ancestors = vec![eml_fs::BoundDirectory::open(Path::new("/"))?];
-    ancestors[0].admit_namespace()?;
+    ancestors[0].inspect_creation_support()?;
     for component in parent.components() {
         let std::path::Component::Normal(name) = component else {
             continue;
@@ -36,9 +36,9 @@ pub fn create_artifact_directory(parent: &Path) -> io::Result<ArtifactDirectory>
             ));
         }
         let held_parent = ancestors.last().expect("filesystem root retained");
-        held_parent.admit_namespace()?;
+        held_parent.inspect_creation_support()?;
         let child = held_parent.open_child(name)?;
-        child.admit_namespace()?;
+        child.inspect_creation_support()?;
         let observed = held_parent.observe_child(name)?;
         if observed.kind != eml_fs::EntryKind::Directory || observed.identity != child.identity() {
             return Err(invalid(
@@ -53,9 +53,9 @@ pub fn create_artifact_directory(parent: &Path) -> io::Result<ArtifactDirectory>
         getrandom::fill(&mut random).map_err(io::Error::other)?;
         let suffix: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
         let name = format!("artifact-{suffix}");
-        match held.create_private_child(std::ffi::OsStr::new(&name)) {
+        match eml_fs::CreationDirectory::acquire(held)?.create_child(std::ffi::OsStr::new(&name)) {
             Ok(created) => {
-                created.directory().admit_namespace()?;
+                created.directory().inspect_creation_support()?;
                 let observed = held.observe_child(std::ffi::OsStr::new(&name))?;
                 if observed.kind != eml_fs::EntryKind::Directory
                     || observed.identity != created.directory().identity()

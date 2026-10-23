@@ -1,5 +1,6 @@
 //! Native inspection and actual behavior of extracted CLI archive bytes.
-use crate::{Result, capture, controller, notices, smoke};
+use crate::distribution::BuildPlan;
+use crate::{Result, controller, notices, smoke};
 use object::{Object, ObjectKind};
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, fs, path::Path, process::Command, time::Duration};
@@ -167,56 +168,44 @@ pub(crate) fn runtime(
     Err("Unsupported runtime inspection platform".into())
 }
 
-pub(crate) fn run(root: &Path, archive: &Path, target: &str) -> Result<()> {
-    verify(root, archive, target, None).map(|_| ())
+pub(crate) fn run(root: &Path, plan: &BuildPlan, archive: &Path, target: &str) -> Result<()> {
+    verify(root, plan, archive, target, None).map(|_| ())
 }
 
 pub(crate) fn expected(
     root: &Path,
+    plan: &BuildPlan,
     archive: &Path,
     target: &str,
     expected_binary: &xtask::archive::ByteIdentity,
 ) -> Result<xtask::archive::ByteIdentity> {
-    verify(root, archive, target, Some(expected_binary))
+    verify(root, plan, archive, target, Some(expected_binary))
 }
 
 fn verify(
     root: &Path,
+    plan: &BuildPlan,
     archive: &Path,
     target: &str,
     expected_binary: Option<&xtask::archive::ByteIdentity>,
 ) -> Result<xtask::archive::ByteIdentity> {
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(root)
-            .arg("distribution"),
-    )?)?;
-    let row = plan["native_targets"]
-        .as_array()
-        .ok_or("Missing native target table")?
-        .iter()
-        .find(|row| row["target"] == target)
-        .ok_or("Unsupported archive target")?;
-    let platform = row["platform"]
-        .as_str()
-        .ok_or("Missing platform identity")?;
-    let os = row["os"].as_str().ok_or("Missing platform family")?;
-    let architecture = row["architecture"].as_str().ok_or("Missing architecture")?;
+    let row = plan.lookup_target(target)?;
+    let platform = row.platform().to_string();
+    let os = row.platform().family().as_str();
+    let architecture = row.platform().architecture().as_str();
     let name = archive
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or("Archive basename must match a declared artifact")?;
-    let artifact = plan["expected_artifacts"]
-        .as_array()
-        .ok_or("Missing archive identities")?
-        .iter()
-        .find(|artifact| artifact["name"] == name && artifact["platform"] == platform)
-        .ok_or("Archive basename/version/target does not match the declared artifact set")?;
-    if artifact["role"] != "cli" {
+    let artifact = plan.named_artifact(name)?;
+    if artifact.key().platform() != row.platform() {
+        return Err("Archive platform differs from the requested native target".into());
+    }
+    if artifact.key().role() != crate::distribution::ProductRole::Cli {
         #[cfg(target_os = "macos")]
         {
             let reference = archive.with_file_name(format!("{name}.reference.json"));
-            crate::macos_archive::smoke(root, archive, &reference)?;
+            crate::macos_archive::smoke(root, plan, archive, &reference)?;
             return Ok(ArchiveSnapshot::read(archive)?.identity());
         }
         #[cfg(not(target_os = "macos"))]
@@ -237,35 +226,26 @@ fn verify(
                 &json!({"archive_basename":name,"snapshot":snapshot_identity,"target":target}),
             )?,
         )?;
-        let version = plan["version"]
-            .as_str()
-            .ok_or("Missing Cargo-derived version")?;
-        let executable = artifact["executable"]
-            .as_str()
-            .ok_or("Missing archive executable")?;
+        let version = plan.version();
+        let executable = artifact.executable();
         let extracted =
-            extract_cli_materials(root, &snapshot, platform, &plan, row, artifact, &work)?;
+            extract_cli_materials(root, &snapshot, &platform, plan, row, artifact, &work)?;
         let executable = extracted.root().join(executable);
         let executable_bytes = fs::read(&executable)?;
         let (actual_binary, binary) =
-            verify_executable_bytes(&executable_bytes, expected_binary, os, architecture, &plan)?;
+            verify_executable_bytes(&executable_bytes, expected_binary, os, architecture, plan)?;
         let runtime = runtime(
             root,
             &executable,
             os,
             architecture,
-            plan["policy"]["linux_glibc_maximum"]
-                .as_str()
-                .ok_or("Missing ABI policy")?,
+            plan.floors().linux_glibc_maximum(),
             &work,
         )?;
         let behavior = smoke::run(
             root,
             &executable,
-            artifact["executable"]
-                .as_str()
-                .unwrap()
-                .trim_end_matches(".exe"),
+            artifact.executable().trim_end_matches(".exe"),
             version,
             extracted
                 .root()
@@ -373,29 +353,20 @@ fn extract_cli_materials(
     root: &Path,
     snapshot: &ArchiveSnapshot,
     platform: &str,
-    plan: &Value,
-    row: &Value,
-    artifact: &Value,
+    plan: &BuildPlan,
+    row: &crate::distribution::NativeTarget,
+    artifact: &crate::distribution::ArtifactSpec,
     work: &Path,
 ) -> Result<xtask::archive::ExtractedCli> {
-    let checked = notices::checked_target(root, platform)?;
+    let checked = notices::checked_target(root, plan, platform)?;
     let mut materials = checked.files().clone();
-    let version = plan["version"]
-        .as_str()
-        .ok_or("Missing Cargo-derived version")?;
-    let root_name = artifact["root"].as_str().ok_or("Missing archive root")?;
-    let executable = artifact["executable"]
-        .as_str()
-        .ok_or("Missing archive executable")?;
-    let readme = cli_readme(
-        version,
-        row["platform_text"]
-            .as_str()
-            .ok_or("Missing archive platform text")?,
-    );
+    let version = plan.version();
+    let root_name = artifact.root();
+    let executable = artifact.executable();
+    let readme = cli_readme(version, row.platform_text());
     materials.insert("README.txt".into(), readme.into_bytes());
     #[cfg(windows)]
-    if row["os"] == "windows" {
+    if row.platform().family() == crate::distribution::OsFamily::Windows {
         let evidence = snapshot.read_cli_zip_material(
             root_name,
             crate::windows_evidence::MATERIAL,
@@ -403,7 +374,7 @@ fn extract_cli_materials(
         )?;
         materials.insert(crate::windows_evidence::MATERIAL.into(), evidence);
     }
-    let extracted = if row["os"] == "linux" {
+    let extracted = if row.platform().family() == crate::distribution::OsFamily::Linux {
         snapshot.extract_cli_tar_gz(root_name, executable, &materials, work)?
     } else {
         snapshot.extract_cli_zip(root_name, executable, &materials, work)?
@@ -416,7 +387,7 @@ fn verify_executable_bytes(
     expected_binary: Option<&xtask::archive::ByteIdentity>,
     os: &str,
     architecture: &str,
-    plan: &Value,
+    plan: &BuildPlan,
 ) -> Result<(xtask::archive::ByteIdentity, Value)> {
     let actual_binary = xtask::archive::ByteIdentity::of(executable_bytes);
     if expected_binary.is_some_and(|expected| expected != &actual_binary) {
@@ -426,9 +397,7 @@ fn verify_executable_bytes(
         executable_bytes,
         os,
         architecture,
-        plan["policy"]["macos_minimum"]
-            .as_str()
-            .ok_or("Missing deployment policy")?,
+        plan.floors().macos_minimum(),
     )?;
     Ok((actual_binary, binary))
 }

@@ -40,6 +40,33 @@ fn overflow_uid(reader: impl io::Read) -> io::Result<u32> {
     raw.parse().map_err(|_| unsupported())
 }
 
+#[cfg(target_os = "macos")]
+fn darwin_name_model(name: &[u8], flags: u32) -> io::Result<()> {
+    if matches!(name, b"apfs" | b"hfs") && flags & libc::MNT_LOCAL as u32 != 0 {
+        Ok(())
+    } else {
+        Err(unsupported())
+    }
+}
+/// Supported generated-name domain; independent of ownership or write access.
+pub(crate) fn admit_name_domain(fd: impl AsFd) -> io::Result<()> {
+    let actual = rustix::fs::fstatfs(fd)?;
+    #[cfg(target_os = "linux")]
+    {
+        linux_model(actual.f_type as i64)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let bytes: Vec<_> = actual
+            .f_fstypename
+            .iter()
+            .take_while(|&&byte| byte != 0)
+            .map(|byte| *byte as u8)
+            .collect();
+        darwin_name_model(&bytes, actual.f_flags)
+    }
+}
+
 #[cfg(target_os = "linux")]
 pub(crate) fn admit_model(fd: impl AsFd, owner: u32) -> io::Result<()> {
     let actual = rustix::fs::fstatfs(fd)?;
@@ -70,6 +97,17 @@ pub(crate) fn admit_model(fd: impl AsFd, _owner: u32) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn only_local_apfs_and_hfs_generated_name_domains_are_admitted() {
+        for name in [b"apfs".as_slice(), b"hfs"] {
+            assert!(darwin_name_model(name, libc::MNT_LOCAL as u32).is_ok());
+            assert!(darwin_name_model(name, 0).is_err());
+        }
+        for name in [b"smbfs".as_slice(), b"nfs", b"unknown", b""] {
+            assert!(darwin_name_model(name, libc::MNT_LOCAL as u32).is_err());
+        }
+    }
     #[cfg(target_os = "macos")]
     #[test]
     fn ignoring_ownership_is_refused_even_with_unrelated_flags() {

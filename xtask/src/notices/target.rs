@@ -8,8 +8,11 @@ pub(crate) enum NoticeComponent {
     Worker,
 }
 impl NoticeComponent {
-    pub(super) fn applies_to(self, platform: &str) -> bool {
-        self == Self::Cli || platform.starts_with("macos-")
+    pub(super) fn applies_to(self, target: &crate::distribution::NativeTarget) -> bool {
+        target.products().contains(&match self {
+            Self::Cli => crate::distribution::ProductRole::Cli,
+            Self::Gui | Self::Worker => crate::distribution::ProductRole::DesktopApp,
+        })
     }
     pub(super) fn name(self) -> &'static str {
         match self {
@@ -57,6 +60,7 @@ pub(super) struct NoticeTarget<'a> {
 
 pub(super) fn target_materials(
     root: &Path,
+    about: &Path,
     selection: NoticeTarget<'_>,
     review: &Review,
     lock: &Lock,
@@ -86,7 +90,13 @@ pub(super) fn target_materials(
     if component == NoticeComponent::Gui {
         arguments.extend(["--features", "macos-gui"]);
     }
-    let bytes = capture(crate::tools::command(root, "about")?.args(&arguments[1..]))?;
+    let mut command = Command::new(about);
+    command
+        .current_dir(root)
+        .args(&arguments)
+        .env("CARGO_HOME", campaign::cargo_home()?)
+        .env("RUSTUP_TOOLCHAIN", crate::tools::compiler(root)?);
+    let bytes = capture(&mut command)?;
     let report: About = serde_json::from_slice(&bytes)?;
     let (mut files, inventory) = render(
         root,

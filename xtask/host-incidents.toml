@@ -1,0 +1,16 @@
+# Exact temporary runner incident. Healthy qualification never loads this file.
+schema = 1
+[[incidents]]
+id = "intel-iconservices-panel-2026-10"
+architecture = "x86_64"
+classifier = "iconservices-metal-renderbox-panel"
+service = "com.apple.iconservices.iconservicesagent"
+upstream_issue = "https://github.com/actions/runner-images/issues/14751"
+# Reviewed 2026-10-22T00:00:00Z; exclusive expiry 2026-11-21T00:00:00Z.
+reviewed_at = 1792627200
+expires_at = 1795219200
+[incidents.host]
+image_os = "macos26"
+image_version = "20260824.0517.1"
+product_version = "26.6.1"
+build_version = "25G76"

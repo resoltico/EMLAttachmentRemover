@@ -2,8 +2,8 @@
 use super::*;
 use serde_json::json;
 
-fn policy() -> PickerHostPolicy {
-    PickerHostPolicy {
+fn policy() -> IncidentHost {
+    IncidentHost {
         image_os: "macos26".into(),
         image_version: "20260824.0517.1".into(),
         product_version: "26.6.1".into(),
@@ -35,8 +35,8 @@ fn caller() -> Caller {
         },
     }
 }
-fn process(code: i64) -> Value {
-    json!({"exit_code":code,"signal":null,"timed_out":false,"cancelled":false,"unexpected_survivors":0,"cleanup_complete":true})
+fn process(code: i64) -> ProcessObservation {
+    serde_json::from_value(json!({"exit_code":code,"signal":null,"timed_out":false,"cancelled":false,"unexpected_survivors":0,"cleanup_complete":true,"elapsed_seconds":0.1,"cleanup_seconds":0.0})).unwrap()
 }
 fn command(operation: &str) -> CommandObservation {
     CommandObservation {
@@ -45,6 +45,10 @@ fn command(operation: &str) -> CommandObservation {
         process: process(0),
         stdout_path: "owned/command.log".into(),
         stderr_path: "owned/command.stderr".into(),
+        guard: crate::picker_evidence::ActionGuardObservation {
+            wall_at: 1792713600,
+            monotonic_elapsed_ns: 1,
+        },
     }
 }
 fn service(present: bool) -> ServiceObservation {
@@ -68,7 +72,7 @@ fn service(present: bool) -> ServiceObservation {
             program: LAUNCHCTL.into(),
             arguments: vec!["print".into(), format!("gui/501/{SERVICE}")],
             process: process(if present { 0 } else { 113 }),
-            selected_fields: fields,
+            selected_fields: fields.into(),
             absence_diagnostic: (!present).then(|| {
                 format!("Could not find service \"{SERVICE}\" in domain for user gui: 501")
             }),
@@ -210,7 +214,10 @@ fn service_parsing_excludes_environment_and_rejects_duplicate_or_unknown_fields(
     assert!(evidence::parse_fields(&format!("{text}\tpath = other\n")).is_err());
     for (native, expected) in [("disabled", true), ("enabled", false)] {
         assert_eq!(
-            evidence::parse_disabled(&format!("\t\t\"{SERVICE}\" => {native}\n")).unwrap(),
+            evidence::parse_disabled(&format!(
+                "disabled services = {{\n\t\t\"{SERVICE}\" => {native}\n}}\n"
+            ))
+            .unwrap(),
             Some(expected)
         );
     }
@@ -219,6 +226,11 @@ fn service_parsing_excludes_environment_and_rejects_duplicate_or_unknown_fields(
         None
     );
     for text in [
+        String::new(),
+        "unrecognized output".into(),
+        "disabled services = {".into(),
+        format!("\"{SERVICE}\" => disabled\n"),
+        format!("disabled services = {{\n\"{SERVICE}\" => disabled\n\"{SERVICE}\" => enabled\n}}"),
         format!("\"{SERVICE}\" => true\n"),
         format!("\"{SERVICE}\" => disabled\n\"{SERVICE}\" => enabled\n"),
         format!("\"{SERVICE}\" ? disabled\n"),
@@ -252,12 +264,13 @@ fn clean_commands_and_exact_post_state_are_required_even_after_exit_zero() {
         "signal",
     ] {
         let mut wrong = preparation();
-        wrong.disable.process[field] = match field {
-            "cleanup_complete" => json!(false),
-            "unexpected_survivors" => json!(1),
-            "signal" => json!(9),
-            _ => json!(true),
-        };
+        match field {
+            "cleanup_complete" => wrong.disable.process.cleanup_complete = false,
+            "unexpected_survivors" => wrong.disable.process.unexpected_survivors = 1,
+            "signal" => wrong.disable.process.signal = Some(9),
+            "timed_out" => wrong.disable.process.timed_out = true,
+            _ => wrong.disable.process.cancelled = true,
+        }
         assert!(evidence::validate_preparation(&wrong).is_err(), "{field}");
     }
     for observed in [None, Some(false)] {
@@ -297,12 +310,12 @@ fn nonzero_bootout_needs_immediate_known_absence_but_disable_needs_zero() {
 fn postverification_rejects_changed_binding_policy_boot_and_opaque_caller_context() {
     let prepared = preparation();
     for path in [
-        "/source",
-        "/run",
-        "/attempt",
-        "/workflow_sha",
-        "/archive/sha256",
-        "/reference/sha256",
+        "/binding/source",
+        "/binding/run",
+        "/binding/attempt",
+        "/binding/workflow_sha",
+        "/binding/archive/sha256",
+        "/binding/reference/sha256",
         "/picker_host/image_version",
         "/host/boot_uuid",
         "/caller/security_session/security_session_id",
@@ -322,15 +335,22 @@ fn postverification_rejects_changed_binding_policy_boot_and_opaque_caller_contex
 #[test]
 fn partial_or_failed_records_never_promote_even_with_other_valid_facts() {
     let bytes = serde_json::to_vec(&preparation()).unwrap();
-    assert!(evidence::parse_preparation(&bytes).is_ok());
+    assert!(
+        serde_json::from_slice::<Preparation>(&bytes)
+            .and_then(|p| evidence::validate_preparation(&p).map_err(serde::de::Error::custom))
+            .is_ok()
+    );
     for field in ["failure", "error"] {
         let mut raw = serde_json::to_value(preparation()).unwrap();
         raw[field] = json!(null);
-        assert!(evidence::parse_preparation(&serde_json::to_vec(&raw).unwrap()).is_err());
+        assert!(serde_json::from_value::<Preparation>(raw.clone()).is_err());
     }
     let mut raw = serde_json::to_value(preparation()).unwrap();
     raw["stage"] = json!("attempt");
-    assert!(evidence::parse_preparation(&serde_json::to_vec(&raw).unwrap()).is_err());
+    assert!(
+        evidence::validate_preparation(&serde_json::from_value::<Preparation>(raw).unwrap())
+            .is_err()
+    );
 }
 #[test]
 fn authorization_rejects_owner_desktop_other_jobs_and_unknown_workflow_files() {

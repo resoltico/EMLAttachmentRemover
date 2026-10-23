@@ -2,21 +2,31 @@
 #[allow(
     unsafe_code,
     unreachable_pub,
-    clippy::cognitive_complexity,
-    reason = "quality:slint-generated-view"
+    reason = "Only this private module expands Slint-generated component ABI, public generated members and vtable/embedding hooks. Generated public members cannot be made private; authored controller and native bridge code do not inherit these permissions."
 )]
 mod view {
     slint::include_modules!();
 }
 use controller::Action;
 use slint::ComponentHandle;
-use slint::winit_030::winit::platform::macos::WindowAttributesExtMacOS;
-#[allow(unsafe_code, reason = "quality:native-application-boundary")]
+use slint::winit_030::winit::platform::macos::{
+    EventLoopBuilderExtMacOS, WindowAttributesExtMacOS,
+};
+#[allow(
+    unsafe_code,
+    reason = "Typed source-defined application lifecycle callbacks, callback-scoped NSURL conversion and the separately retained Services provider require this narrow native boundary."
+)]
 mod application;
 mod controller;
-#[allow(unsafe_code, reason = "quality:native-desktop-boundary")]
+#[allow(
+    unsafe_code,
+    reason = "Necessary native file ingress, dialogs, responder editing and URL/raw-window boundary"
+)]
 mod native;
-#[allow(unsafe_code, reason = "quality:native-preferences-boundary")]
+#[allow(
+    unsafe_code,
+    reason = "Typed Foundation String preference and immutable argument-domain constant"
+)]
 mod preferences;
 mod presentation;
 fn main() -> std::process::ExitCode {
@@ -37,9 +47,12 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var_os("SLINT_SOFTWARE_RENDERER_PARLEY_DISABLED").is_some() {
         return Err("Unset SLINT_SOFTWARE_RENDERER_PARLEY_DISABLED: this app requires the desktop system-font shaping path".into());
     }
+    let mut event_loop_builder = slint::winit_030::winit::event_loop::EventLoop::with_user_event();
+    event_loop_builder.with_application_callback(application::receive_application);
     slint::BackendSelector::new()
         .backend_name("winit".into())
         .renderer_name("software".into())
+        .with_winit_event_loop_builder(event_loop_builder)
         .with_winit_window_attributes_hook(|attributes| {
             attributes.with_file_url_drop_receiver(application::receive_drop)
         })
@@ -50,9 +63,14 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
     window.set_interface_font_family(interface_font_family.clone());
     window.set_interface_font_size(interface_font_size);
     install_native_edit(&window);
-    let (about, _licenses) =
-        secondary_windows(&window, interface_font_family, interface_font_size)?;
-    let _lifecycle_timer = install_event_pump(&window, &about, lifecycle)?;
+    let commands = bind_actions(&window);
+    let _licenses = secondary_windows(
+        &window,
+        interface_font_family,
+        interface_font_size,
+        std::rc::Rc::clone(&commands),
+    )?;
+    let _lifecycle_timer = install_event_pump(&window, lifecycle, commands)?;
     window.show()?;
     native::lifecycle_observation("Main window shown; source-location panic hook installed");
     slint::run_event_loop_until_quit()?;
@@ -88,22 +106,8 @@ fn secondary_windows(
     window: &view::MainWindow,
     interface_font_family: slint::SharedString,
     interface_font_size: f32,
-) -> Result<(view::AboutWindow, view::LicenseWindow), Box<dyn std::error::Error>> {
-    let about = view::AboutWindow::new()?;
-    about.set_interface_font_family(interface_font_family.clone());
-    about.set_interface_font_size(interface_font_size);
-    about.set_version_label(eml_protocol::product::VERSION_WITH_BUILD.as_str().into());
-    let copyright = include_str!("../../../LICENSE")
-        .lines()
-        .find_map(|line| line.strip_prefix("Copyright (c) "))
-        .ok_or("The project copyright notice is absent")?;
-    about.set_copyright(format!("© {copyright}").into());
-    about.set_app_icon(native::application_icon()?);
-    about.on_website_requested(|| {
-        if let Err(error) = native::open_project_website() {
-            eprintln!("Project website: {error}");
-        }
-    });
+    commands: std::rc::Rc<std::cell::RefCell<PendingActions>>,
+) -> Result<view::LicenseWindow, Box<dyn std::error::Error>> {
     let licenses = view::LicenseWindow::new()?;
     licenses.set_interface_font_family(interface_font_family);
     licenses.set_interface_font_size(interface_font_size);
@@ -117,22 +121,16 @@ fn secondary_windows(
             window.set_notice(error.to_string().into());
         }
     });
-    let about_licenses = licenses.as_weak();
-    about.on_licenses_requested(move || {
-        if let Some(licenses) = about_licenses.upgrade()
-            && let Err(error) = licenses.show()
-        {
-            eprintln!("License window: {error}");
-        }
-    });
     window.on_licenses_requested(move || {
         if let Some(licenses) = weak_licenses.upgrade()
             && let Err(error) = licenses.show()
         {
-            eprintln!("License window: {error}");
+            commands
+                .borrow_mut()
+                .push(Action::SystemNotice(format!("License window: {error}")));
         }
     });
-    Ok((about, licenses))
+    Ok(licenses)
 }
 #[derive(Default)]
 struct PendingActions {
@@ -159,14 +157,43 @@ fn bind_actions(window: &view::MainWindow) -> std::rc::Rc<std::cell::RefCell<Pen
         }};
     }
     action!(on_select_files, Action::Files);
+    action!(on_website_requested, Action::Website);
     action!(on_select_folder, Action::Folders);
     action!(on_choose_destination, Action::Destination);
     action!(on_beside_requested, Action::Beside);
-    action!(on_stop_requested, Action::Stop);
-    action!(on_force_requested, Action::Force);
+
     action!(on_export_requested, Action::Export);
+    action!(on_start_export, Action::StartExport);
+
+    action!(on_close_export_form, Action::CloseExportForm);
+    action!(on_create_from_check, Action::CreateFromCheck);
+    let mode_commands = std::rc::Rc::clone(&commands);
+    window.on_mode_changed(move |check| mode_commands.borrow_mut().push(Action::Mode(check)));
+    let export_commands = std::rc::Rc::clone(&commands);
+    window.on_export_name_changed(move |name| {
+        export_commands
+            .borrow_mut()
+            .push(Action::ExportName(name.to_string()))
+    });
     action!(on_reveal_requested, Action::Reveal);
-    action!(on_cancel_export, Action::CancelExport);
+    macro_rules! operation_action {
+        ($callback:ident, $variant:ident) => {{
+            let commands = std::rc::Rc::clone(&commands);
+            window.$callback(move |identity| {
+                if let Some(id) = identity
+                    .parse()
+                    .ok()
+                    .and_then(eml_protocol::desktop::OperationId::new)
+                {
+                    commands.borrow_mut().push(Action::$variant(id));
+                }
+            });
+        }};
+    }
+    operation_action!(on_stop_requested, Stop);
+    operation_action!(on_force_requested, Force);
+    operation_action!(on_cancel_export, CancelExport);
+    operation_action!(on_force_export, ForceExport);
     action!(on_dismiss_requested, Action::Dismiss);
     action!(on_previous_page, Action::Previous);
     action!(on_next_page, Action::Next);
@@ -200,12 +227,10 @@ fn bind_actions(window: &view::MainWindow) -> std::rc::Rc<std::cell::RefCell<Pen
 }
 fn install_event_pump(
     window: &view::MainWindow,
-    about: &view::AboutWindow,
     lifecycle: application::ApplicationHooks,
+    commands: std::rc::Rc<std::cell::RefCell<PendingActions>>,
 ) -> Result<slint::Timer, Box<dyn std::error::Error>> {
     let weak = window.as_weak();
-    let weak_about = about.as_weak();
-    let commands = bind_actions(window);
     let mut controller = controller::Controller::new()?;
     let lifecycle_timer = slint::Timer::default();
     lifecycle_timer.start(
@@ -230,29 +255,20 @@ fn install_event_pump(
             for action in actions {
                 controller.action(&window, action);
             }
-            match lifecycle.take_events() {
-                Ok(events) => {
-                    if events.about
-                        && let Some(about) = weak_about.upgrade()
-                        && let Err(error) = native::restore(about.window())
-                    {
-                        controller.system_notice(&format!("About window: {error}"));
-                    }
-                    if (events.reopen || !events.selections.is_empty())
-                        && let Err(error) = native::restore(window.window())
-                    {
-                        controller.system_notice(&format!("Main window: {error}"));
-                    }
-                    if events.quit {
-                        controller.action(&window, Action::Quit);
-                    }
-                    for selection in events.selections {
-                        controller.ingress(selection);
-                    }
-                }
-                Err(error) => {
-                    controller.boundary_failure(error);
-                }
+            let events = lifecycle.take_events();
+            if (events.reopen || !events.selections.is_empty())
+                && let Err(error) = native::restore(window.window())
+            {
+                controller.system_notice(&format!("Main window: {error}"));
+            }
+            if events.quit {
+                controller.action(&window, Action::Quit);
+            }
+            for selection in events.selections {
+                controller.ingress(selection);
+            }
+            for diagnostic in events.diagnostics {
+                controller.system_notice(diagnostic);
             }
             if controller.tick(&window) {
                 native::lifecycle_observation(

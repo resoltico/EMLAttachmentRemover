@@ -1,14 +1,15 @@
 //! Two finite observations of the unchanged pinned icon invocation. Diagnostic
 //! output never substitutes for the actual app/signature/archive gates.
+use crate::distribution::BuildPlan;
 use crate::{Result, controller, macos, macos_app};
 use serde_json::{Value, json};
 use std::{fs, os::unix::process::ExitStatusExt, path::Path, time::Duration};
 
 /// One production input set. A settled actool failure may select the approved
 /// alternate host; validation, timeout or uncertain cleanup never permits it.
-pub(crate) fn compile(root: &Path, out: &Path) -> Result<()> {
+pub(crate) fn compile(root: &Path, plan: &BuildPlan, out: &Path) -> Result<()> {
     fs::create_dir(out)?;
-    let build = macos::load(root)?;
+    let build = macos::load(root, plan)?;
     let host = crate::native_host::inspect(root, &build.host, "macos", &build.architecture)?;
     let (command, icons) = macos_app::icon_command(root, out, &build)?;
     let log = out.join("icon-build.log");
@@ -93,8 +94,8 @@ fn fallback_classes(root: &Path, developer: &Path) -> Vec<&'static str> {
         .unwrap_or_default()
 }
 
-pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {
-    let build = macos::load(root)?;
+pub(crate) fn run(root: &Path, plan: &BuildPlan, out: &Path) -> Result<()> {
+    let build = macos::load(root, plan)?;
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     macos::observe_graphics(root, &out.join("graphics"), &build)?;

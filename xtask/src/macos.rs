@@ -1,4 +1,5 @@
 //! Shared pinned native Mac build inputs and executable inspection.
+use crate::distribution::BuildPlan;
 use crate::{Result, capture, controller};
 use object::Object;
 use serde::{Deserialize, Serialize};
@@ -171,40 +172,17 @@ pub(crate) fn selected_command(
     command
 }
 
-pub(crate) fn check_swift_sources(root: &Path, out: &Path) -> Result<serde_json::Value> {
-    use std::collections::BTreeSet;
+pub(crate) fn check_swift_sources(
+    root: &Path,
+    plan: &BuildPlan,
+    out: &Path,
+) -> Result<serde_json::Value> {
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
-    let build = load(root)?;
-    let listed = capture(Command::new("git").current_dir(root).args([
-        "ls-files",
-        "--cached",
-        "--others",
-        "--exclude-standard",
-        "-z",
-        "--",
-        "*.swift",
-    ]))?;
-    let paths = listed
-        .split(|byte| *byte == 0)
-        .filter(|path| !path.is_empty())
-        .map(std::str::from_utf8)
-        .collect::<std::result::Result<BTreeSet<_>, _>>()?;
+    let build = load(root, plan)?;
+    let paths = crate::source_files::swift(root)?;
     if paths.is_empty() {
-        return Err(
-            "Swift bridge/test discovery is empty; investigate the source selection".into(),
-        );
-    }
-    let canonical_root = root.canonicalize()?;
-    for path in &paths {
-        let input = root.join(path);
-        if !fs::symlink_metadata(&input)?.is_file()
-            || !input.canonicalize()?.starts_with(&canonical_root)
-        {
-            return Err(
-                "Swift formatting requires ordinary source files inside the checkout".into(),
-            );
-        }
+        return Err("Swift bridge/test discovery is empty; investigate retained sources".into());
     }
     let version = String::from_utf8(capture(
         build
@@ -230,18 +208,16 @@ pub(crate) fn check_swift_sources(root: &Path, out: &Path) -> Result<serde_json:
         .arg("--")
         .args(&paths);
     let process = controller()?.run(command, &log, Duration::from_secs(120))?;
-    let structure = crate::quality::check_swift_structure(root, &out, &build, &paths);
     let result = serde_json::json!({"build":build,"formatter_version":version.trim(),"source_count":paths.len(),"sources":paths,
-        "process":process.evidence(),"structure":structure.as_ref().map_err(ToString::to_string),"scope":"strict formatting and syntax-aware structural checks of discovered retained Swift sources using selected Xcode; no native GUI qualification"});
+        "process":process.evidence(),"scope":"strict formatting of discovered retained Swift sources using selected Xcode; native compilation and GUI qualification remain separate"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     process.require_success(&log)?;
-    structure?;
     Ok(result)
 }
 
-pub(crate) fn check_desktop(root: &Path, out: &Path) -> Result<()> {
+pub(crate) fn check_desktop(root: &Path, plan: &BuildPlan, out: &Path) -> Result<()> {
     fs::create_dir(out)?;
-    let build = load(root)?;
+    let build = load(root, plan)?;
     let mut lint = build.command(root, "cargo");
     lint.args([
         "clippy",
@@ -300,28 +276,6 @@ pub(crate) fn check_desktop(root: &Path, out: &Path) -> Result<()> {
     lint_result
 }
 
-#[derive(Deserialize)]
-struct Plan {
-    version: String,
-    policy: Policy,
-    xcode: Xcode,
-    native_targets: Vec<Target>,
-}
-#[derive(Deserialize)]
-struct Policy {
-    macos_minimum: String,
-}
-#[derive(Deserialize)]
-struct Xcode {
-    version: String,
-    build: String,
-}
-#[derive(Deserialize)]
-struct Target {
-    target: String,
-    architecture: String,
-    os: String,
-}
 #[derive(Debug, Serialize)]
 pub(crate) struct MachIdentity {
     pub architecture: String,
@@ -506,26 +460,21 @@ impl MacBuild {
         format!("{}-apple-macos{}", self.swift_arch, self.minimum_text)
     }
 }
-pub(crate) fn load(root: &Path) -> Result<MacBuild> {
+pub(crate) fn load(root: &Path, plan: &BuildPlan) -> Result<MacBuild> {
     crate::campaign::require_stock_topology(root)?;
-    let plan: Plan = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .arg("distribution")
-            .current_dir(root),
-    )?)?;
     let developer = PathBuf::from(format!(
         "/Applications/Xcode_{}.app/Contents/Developer",
-        plan.xcode.version
+        plan.xcode().version()
     ));
     if !developer.is_dir() {
         return Err(format!(
             "Required Xcode {} is unavailable at {}",
-            plan.xcode.version,
+            plan.xcode().version(),
             developer.display()
         )
         .into());
     }
-    let (xcode, sdk) = selected_xcode(root, &developer, &plan.xcode)?;
+    let (xcode, sdk) = selected_xcode(root, &developer, plan.xcode())?;
     let command = |program: &str| selected_command(root, &developer, program);
     let swiftc = developer.join("Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc");
     let swift = String::from_utf8(capture(
@@ -557,28 +506,26 @@ pub(crate) fn load(root: &Path) -> Result<MacBuild> {
     {
         return Err("Actual Rust release differs from pinned compiler".into());
     }
-    let target = plan
-        .native_targets
-        .iter()
-        .find(|row| row.target == host && row.os == "macos")
-        .ok_or("Native macOS compiler host required")?;
-    let swift_arch = match target.architecture.as_str() {
-        "aarch64" => "arm64",
-        "x86_64" => "x86_64",
-        _ => return Err("Unsupported native Mac CPU".into()),
+    let target = plan.lookup_target(host)?;
+    if target.platform().family() != crate::distribution::OsFamily::Macos {
+        return Err("Native macOS compiler host required".into());
+    }
+    let swift_arch = match target.platform().architecture() {
+        crate::distribution::Architecture::Aarch64 => "arm64",
+        crate::distribution::Architecture::X86_64 => "x86_64",
     };
     let own_bytes = fs::read(std::env::current_exe()?)?;
     let own = object::File::parse(own_bytes.as_slice())?;
-    if macho_architecture(&own)? != target.architecture {
+    if macho_architecture(&own)? != target.platform().architecture().as_str() {
         return Err("Running xtask CPU differs from compiler host".into());
     }
-    let minimum = packed_version(&plan.policy.macos_minimum)?;
+    let minimum = packed_version(plan.floors().macos_minimum())?;
     Ok(MacBuild {
-        version: plan.version.clone(),
-        minimum_text: plan.policy.macos_minimum.clone(),
+        version: plan.version().to_owned(),
+        minimum_text: plan.floors().macos_minimum().to_owned(),
         minimum,
         host: host.to_owned(),
-        architecture: target.architecture.clone(),
+        architecture: target.platform().architecture().as_str().to_owned(),
         swift_arch: swift_arch.to_owned(),
         developer,
         sdk,
@@ -590,13 +537,18 @@ pub(crate) fn load(root: &Path) -> Result<MacBuild> {
     })
 }
 
-fn selected_xcode(root: &Path, developer: &Path, required: &Xcode) -> Result<(String, PathBuf)> {
+fn selected_xcode(
+    root: &Path,
+    developer: &Path,
+    required: &crate::distribution::XcodePin,
+) -> Result<(String, PathBuf)> {
     let command = |program: &str| selected_command(root, developer, program);
     let xcode = String::from_utf8(capture(command("/usr/bin/xcodebuild").arg("-version"))?)?;
     if xcode.trim_end()
         != format!(
             "Xcode {}\nBuild version {}",
-            required.version, required.build
+            required.version(),
+            required.build()
         )
     {
         return Err("Actual selected Xcode version/build differs from tools authority".into());

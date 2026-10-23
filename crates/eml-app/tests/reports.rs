@@ -133,12 +133,11 @@ fn known_items_survive_malformed_later_records_and_export_unknown_summary() {
         report.finish(Some(0), false),
         Err(ProtocolFailure::MalformedRecord)
     );
-    let exported: serde_json::Value =
-        serde_json::from_slice(&report.technical_report().unwrap()).unwrap();
+    let exported: serde_json::Value = serde_json::from_slice(&export_document(&report)).unwrap();
     assert!(exported["summary"].is_null());
     assert_eq!(exported["protocol_failure"], "malformed_record");
     assert!(
-        !String::from_utf8(report.technical_report().unwrap())
+        !String::from_utf8(export_document(&report))
             .unwrap()
             .contains("Hello Bob")
     );
@@ -306,7 +305,7 @@ fn desktop_worker_rejects_dry_run_and_foreign_native_operands() {
     )
     .unwrap();
     assert_eq!(
-        RunReport::for_native_worker("test-version")
+        RunReport::for_native_mode("test-version", eml_core::RunMode::Create)
             .accept_frame(&serde_json::to_vec(&dry).unwrap()),
         Err(ProtocolFailure::IncompatibleHelper)
     );
@@ -317,7 +316,64 @@ fn desktop_worker_rejects_dry_run_and_foreign_native_operands() {
     };
     let frames = paths_item(("a", foreign.1, foreign.0), ("b", foreign.1, foreign.0));
     assert!(matches!(
-        accept_item(&frames, RunReport::for_native_worker("test-version")),
+        accept_item(
+            &frames,
+            RunReport::for_native_mode("test-version", eml_core::RunMode::Create)
+        ),
         Err(ProtocolFailure::IncompatibleHelper)
     ));
+}
+
+#[test]
+fn terminal_item_indices_are_contiguous_and_check_mode_is_captured() {
+    let mut frames: Vec<serde_json::Value> = fixture("created")
+        .split(|b| *b == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice(line).unwrap())
+        .collect();
+    frames[0]["total"] = 3.into();
+    frames[1]["index"] = 1.into();
+    let mut report = RunReport::new("test-version");
+    report
+        .accept_frame(&serde_json::to_vec(&frames[0]).unwrap())
+        .unwrap();
+    assert_eq!(
+        report.accept_frame(&serde_json::to_vec(&frames[1]).unwrap()),
+        Err(ProtocolFailure::InvalidOrder)
+    );
+    let mut expected_check = RunReport::for_native_mode("test-version", eml_core::RunMode::DryRun);
+    assert_eq!(
+        expected_check.accept_frame(&serde_json::to_vec(&frames[0]).unwrap()),
+        Err(ProtocolFailure::IncompatibleHelper)
+    );
+    frames[0]["dry_run"] = true.into();
+    let mut expected_check = RunReport::for_native_mode("test-version", eml_core::RunMode::DryRun);
+    expected_check
+        .accept_frame(&serde_json::to_vec(&frames[0]).unwrap())
+        .unwrap();
+}
+
+fn export_document(report: &RunReport) -> Vec<u8> {
+    let request =
+        eml_app::RequestSnapshot::new(vec![std::env::current_dir().unwrap().join("a.eml")], None)
+            .unwrap();
+    let mut queue = eml_app::RunQueue::default();
+    let id = queue.enqueue(request).unwrap();
+    let completion = eml_app::WorkerCompletion {
+        operation_id: eml_protocol::desktop::OperationId::new(1).unwrap(),
+        exit_code: Some(130),
+        signal: None,
+        input_may_have_been_sent: true,
+        settled: true,
+        reusable: true,
+        failure: None,
+        faults: Vec::new(),
+        stderr: Vec::new(),
+        stderr_truncated: false,
+        interrupt_calls_succeeded: 1,
+        first_interrupt_observed: true,
+    };
+    let mut bytes = Vec::new();
+    report.write_document(id, &completion, &mut bytes).unwrap();
+    bytes
 }

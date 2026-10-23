@@ -163,7 +163,7 @@ fn actual_binary_version_help_and_argument_conflicts_have_checked_channel_contra
         version.stdout,
         format!(
             "remove-eml-attachments {}\n",
-            eml_protocol::product::VERSION_WITH_BUILD.as_str()
+            eml_core::product::VERSION_WITH_BUILD.as_str()
         )
         .as_bytes()
     );
@@ -208,7 +208,11 @@ fn actual_binary_positional_create_and_rerun_match_independent_bytes_and_exit() 
         assert_eq!(values[1]["status"], status);
         assert_eq!(values[2]["exit_code"], 0);
         assert_eq!(
-            fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+            fs::read(
+                root.path()
+                    .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+            )
+            .unwrap(),
             GOLDEN
         );
         assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), INPUT);
@@ -238,7 +242,12 @@ fn actual_request_file_and_stdin_accept_both_output_formats_without_creating_dry
         assert!(file.stderr.is_empty() && pipe.stderr.is_empty());
     }
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
-    assert!(!root.path().join("a.no-attachments.eml").exists());
+    assert!(
+        !root
+            .path()
+            .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+            .exists()
+    );
     root.close().unwrap();
 }
 #[test]
@@ -310,14 +319,23 @@ fn request_pipe_requires_eof_before_any_stream_or_copy() {
     thread::sleep(Duration::from_millis(150));
     assert!(child.0.try_wait().unwrap().is_none());
     assert_eq!(observed.load(Ordering::Relaxed), 0);
-    assert!(!root.path().join("a.no-attachments.eml").exists());
+    assert!(
+        !root
+            .path()
+            .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+            .exists()
+    );
     drop(input);
     assert_eq!(wait(&mut child.0).code(), Some(0));
     let values = events(&stdout.join().unwrap());
     assert_eq!(values[1]["status"], "created");
     assert!(stderr.join().unwrap().is_empty());
     assert_eq!(
-        fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+        )
+        .unwrap(),
         GOLDEN
     );
     root.close().unwrap();
@@ -421,7 +439,12 @@ fn first_stop_interrupts_unfinished_request_fifo_after_real_reader_handshake() {
         drop(input);
         assert!(stdout.join().unwrap().is_empty());
         assert!(stderr.join().unwrap().is_empty());
-        assert!(!root.path().join("a.no-attachments.eml").exists());
+        assert!(
+            !root
+                .path()
+                .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+                .exists()
+        );
         assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), INPUT);
         root.close().unwrap();
     }
@@ -547,7 +570,9 @@ fn distinct_termination_requests_force_owned_process_after_observed_partial_repo
     };
     read.unwrap();
     assert!(String::from_utf8_lossy(&partial).contains("\"removed\":["));
-    let copy = root.path().join("a.no-attachments.eml");
+    let copy = root
+        .path()
+        .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml");
     assert_eq!(fs::read(&copy).unwrap(), golden);
     assert!(child.0.try_wait().unwrap().is_none());
     // Both handlers are installed before the actual report is emitted. Distinct

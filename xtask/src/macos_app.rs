@@ -1,4 +1,5 @@
 //! Native desktop sources and owner icon inputs; full app qualification is separate.
+use crate::distribution::BuildPlan;
 use crate::macos::{self, checked_run, fixture_identity};
 use crate::{Result, capture, controller};
 use serde_json::{Value, json};
@@ -9,11 +10,11 @@ use std::{
     time::Duration,
 };
 
-pub(crate) fn build_sources(root: &Path, out: &Path) -> Result<()> {
+pub(crate) fn build_sources(root: &Path, plan: &BuildPlan, out: &Path) -> Result<()> {
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let result = (|| -> Result<()> {
-        let build = macos::load(root)?;
+        let build = macos::load(root, plan)?;
         let host = crate::native_host::inspect(root, &build.host, "macos", &build.architecture)?;
         let target_directory = build.cargo_directory(root);
         let mut compile = build.command(root, "cargo");
@@ -273,8 +274,37 @@ pub(crate) fn icon_outputs(root: &Path, icons: &Path, build: &macos::MacBuild) -
     Ok(partial)
 }
 
+fn copyright_notice() -> &'static str {
+    include_str!("../../LICENSE")
+        .lines()
+        .find(|line| line.starts_with("Copyright (c)"))
+        .expect("project LICENSE has a software copyright notice")
+}
+fn html_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+/// Standard AppKit About credits, with no remote resources or custom panel.
+pub(crate) fn about_credits(version: &str) -> String {
+    let identity = &eml_core::product::DISPLAY_NAME;
+    let copyright = copyright_notice();
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"></head><body><h2>{}</h2><p>{} (Build {})</p><p>{}</p><p>Software: Mozilla Public License 2.0. Owner artwork has separate terms in LICENSE.</p><p>Complete software and artwork terms and dependency notices are available in Help → About Slint and Licenses… and in the application resources.</p><p>Project: <a href=\"{}\">{}</a></p></body></html>\n",
+        html_text(identity),
+        html_text(version),
+        eml_core::product::BUILD_NUMBER,
+        html_text(copyright),
+        html_text(eml_core::product::WEBSITE),
+        html_text(eml_core::product::WEBSITE)
+    )
+}
+
 pub(crate) fn app_metadata(version: &str, minimum: &str) -> Value {
-    json!({"CFBundleIdentifier":"io.github.resoltico.emlattachmentremover","CFBundleName":"EML Attachment Remover","CFBundleDisplayName":"EML Attachment Remover","CFBundleExecutable":"EMLAttachmentRemover","CFBundlePackageType":"APPL","CFBundleDevelopmentRegion":"en","LSApplicationCategoryType":"public.app-category.utilities","CFBundleShortVersionString":version,"CFBundleVersion":eml_protocol::product::BUILD_NUMBER.to_string(),"LSMinimumSystemVersion":minimum,"NSHighResolutionCapable":true,"CFBundleIconName":"EML","NSServices":[{"NSMenuItem":{"default":"Create EML Copies Without Attachments"},"NSMessage":"createEMLCopies","NSPortName":"EMLAttachmentRemover","NSSendTypes":["public.file-url"],"NSSendFileTypes":["public.email-message","public.folder"],"NSRestricted":true,"NSRequiredContext":{}}],"CFBundleDocumentTypes":[{"CFBundleTypeName":"EML message","CFBundleTypeExtensions":["eml"],"LSItemContentTypes":["public.email-message"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"},{"CFBundleTypeName":"Folder containing EML messages","LSItemContentTypes":["public.folder"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"}]})
+    json!({"CFBundleIdentifier":"io.github.resoltico.emlattachmentremover","CFBundleName":eml_core::product::DISPLAY_NAME,"CFBundleDisplayName":eml_core::product::DISPLAY_NAME,"CFBundleExecutable":"EMLAttachmentRemover","CFBundlePackageType":"APPL","NSHumanReadableCopyright":copyright_notice(),"CFBundleDevelopmentRegion":"en","LSApplicationCategoryType":"public.app-category.utilities","CFBundleShortVersionString":version,"CFBundleVersion":eml_core::product::BUILD_NUMBER.to_string(),"LSMinimumSystemVersion":minimum,"NSHighResolutionCapable":true,"CFBundleIconName":"EML","NSServices":[{"NSMenuItem":{"default":"Create EML Copies Without Attachments"},"NSMessage":"createEMLCopies","NSPortName":"EMLAttachmentRemover","NSSendTypes":["public.file-url"],"NSSendFileTypes":["public.email-message","public.folder"],"NSRestricted":true,"NSRequiredContext":{}}],"CFBundleDocumentTypes":[{"CFBundleTypeName":"EML message","CFBundleTypeExtensions":["eml"],"LSItemContentTypes":["public.email-message"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"},{"CFBundleTypeName":"Folder containing EML messages","LSItemContentTypes":["public.folder"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"}]})
 }
 
 #[cfg(test)]
@@ -289,10 +319,21 @@ mod tests {
         );
         assert_eq!(value["CFBundleShortVersionString"], "7.2.1");
         assert_eq!(
-            value["CFBundleVersion"],
-            eml_protocol::product::BUILD_NUMBER.to_string()
+            value["NSHumanReadableCopyright"],
+            "Copyright (c) 2026 Ervins Strauhmanis"
         );
-        assert!((1..=9999).contains(&eml_protocol::product::BUILD_NUMBER));
+        let credits = about_credits("7.2.1");
+        assert!(credits.contains("7.2.1 (Build 36)"));
+        assert!(credits.contains("About Slint and Licenses"));
+        assert!(credits.contains("Mozilla Public License 2.0"));
+        assert!(credits.contains("Copyright (c) 2026 Ervins Strauhmanis"));
+        assert!(!credits.contains("<script") && !credits.contains("<img"));
+        assert_eq!(html_text("<&>\"'"), "&lt;&amp;&gt;&quot;&#39;");
+        assert_eq!(
+            value["CFBundleVersion"],
+            eml_core::product::BUILD_NUMBER.to_string()
+        );
+        assert!((1..=9999).contains(&eml_core::product::BUILD_NUMBER));
         assert_eq!(value["LSMinimumSystemVersion"], "15.0");
         assert_eq!(value["NSServices"][0]["NSMessage"], "createEMLCopies");
         assert_eq!(

@@ -2,29 +2,31 @@
 use crate::{
     native::{DialogResult, NativeDialog, OpenKind},
     preferences::DestinationPreference,
-    presentation::{self, ReportPosition, UserNotice, display_lines, terminal_label},
+    presentation::{self, ReportPosition, UserNotice, display_lines},
     view::MainWindow,
 };
-use eml_app::{
-    DesktopSession, ReportExportOutcome, RequestSnapshot, RunId, TerminalReport, WorkerObservation,
-};
+use eml_app::{DesktopSession, ExportDraft, RequestSnapshot, RunId, WorkerObservation};
 use eml_protocol::DisplayText;
 use slint::{ComponentHandle, ModelRc, VecModel};
-use std::{
-    path::PathBuf,
-    thread::{self, JoinHandle},
-    time::Instant,
-};
+use std::{path::PathBuf, time::Instant};
 pub(crate) enum Action {
     Files,
+    Website,
+    SystemNotice(String),
     Folders,
     Destination,
     Beside,
-    Stop,
-    Force,
+    Stop(eml_protocol::desktop::OperationId),
+    Force(eml_protocol::desktop::OperationId),
     Export,
+    StartExport,
+    ForceExport(eml_protocol::desktop::OperationId),
+    ExportName(String),
+    CloseExportForm,
+    Mode(bool),
+    CreateFromCheck,
     Reveal,
-    CancelExport,
+    CancelExport(eml_protocol::desktop::OperationId),
     Dismiss,
     Select(usize),
     RemoveWaiting(usize),
@@ -39,31 +41,21 @@ pub(crate) enum Action {
     DismissNotice,
 }
 enum Confirmation {
-    Force(RunId),
+    Force(eml_protocol::desktop::OperationId),
+    ForceExport(eml_protocol::desktop::OperationId),
     Quit,
 }
 enum DialogPurpose {
     Selection,
     Destination,
-    Export(TerminalReport),
+    Export(RunId),
 }
 struct Dialog {
     accept_result: bool,
     purpose: DialogPurpose,
     native: NativeDialog,
 }
-struct ExportTask {
-    reservation: TerminalReport,
-    control: eml_core::RunControl,
-    actor: JoinHandle<ReportExportOutcome>,
-}
-enum RevealTask {
-    Inspect {
-        path: PathBuf,
-        actor: JoinHandle<std::io::Result<bool>>,
-    },
-    Native(crate::native::NativeReveal),
-}
+type RevealTask = crate::native::NativeReveal;
 pub(crate) struct Controller {
     session: DesktopSession,
     preference: DestinationPreference,
@@ -76,7 +68,10 @@ pub(crate) struct Controller {
     waiting_rows: Vec<slint::SharedString>,
     dialog: Option<Dialog>,
     confirmation: Option<Confirmation>,
-    export: Option<ExportTask>,
+    mode: eml_core::RunMode,
+    export_folder: Option<PathBuf>,
+    export_name: String,
+    export_run: Option<RunId>,
     reveal: Option<RevealTask>,
     closing_since: Option<Instant>,
     admission_failure: Option<String>,
@@ -107,7 +102,10 @@ impl Controller {
             waiting_rows: Vec::new(),
             dialog: None,
             confirmation: None,
-            export: None,
+            mode: eml_core::RunMode::Create,
+            export_folder: None,
+            export_name: "EML-report.json".into(),
+            export_run: None,
             reveal: None,
             closing_since: None,
             admission_failure: None,
@@ -165,11 +163,6 @@ impl Controller {
     }
     pub(crate) fn action(&mut self, window: &MainWindow, action: Action) {
         if self.closing_since.is_some() {
-            if matches!(action, Action::CancelExport)
-                && let Some(export) = &self.export
-            {
-                export.control.request_stop();
-            }
             return;
         }
         if self.confirmation.is_some()
@@ -182,6 +175,32 @@ impl Controller {
         }
         match action {
             Action::DismissNotice => self.notice = None,
+            Action::SystemNotice(message) => self.system_notice(&message),
+            Action::Website => {
+                if let Err(error) = crate::native::open_project_website() {
+                    self.system_notice(error);
+                }
+            }
+            Action::Mode(check) if self.dialog.is_none() => {
+                self.mode = if check {
+                    eml_core::RunMode::DryRun
+                } else {
+                    eml_core::RunMode::Create
+                };
+            }
+            Action::ExportName(name) => self.export_name = name,
+            Action::CloseExportForm => self.export_run = None,
+            Action::StartExport => self.start_export(),
+            Action::ForceExport(id) => {
+                if self.session.export_control_for(id).is_some_and(|control| {
+                    control
+                        .intent(Instant::now())
+                        .is_ok_and(|intent| intent.interrupts == 1 && !intent.reaped)
+                }) {
+                    self.confirmation = Some(Confirmation::ForceExport(id));
+                }
+            }
+            Action::CreateFromCheck => self.create_from_check(),
             Action::Files if self.admission_failure.is_none() => {
                 self.open(window, OpenKind::Files, DialogPurpose::Selection)
             }
@@ -199,10 +218,13 @@ impl Controller {
                     Err(error) => self.system_notice(&error.to_string()),
                 }
             }
-            Action::Stop => self.request_stop(),
-            Action::Force => {
-                if let Some(id) = self.session.active()
-                    && self.session.control_for(id).is_some_and(|control| {
+            Action::Stop(id) => self.request_stop(id),
+            Action::Force(id) => {
+                if self
+                    .session
+                    .control()
+                    .filter(|control| control.operation_id() == id)
+                    .is_some_and(|control| {
                         control
                             .intent(Instant::now())
                             .is_ok_and(|intent| intent.interrupts == 1)
@@ -243,17 +265,22 @@ impl Controller {
                 if let Some(id) = self.selected
                     && self.session.dismiss(id)
                 {
+                    if self.export_run == Some(id) {
+                        self.export_run = None;
+                    }
                     self.selected = self.session.reports().last().map(|report| report.id());
                     self.position.page = 0;
                 }
             }
             Action::Reveal if self.reveal.is_none() => self.start_reveal(),
-            Action::Export if self.export.is_none() && self.dialog.is_none() => {
+            Action::Export if self.session.active_export().is_none() && self.dialog.is_none() => {
                 self.choose_export(window)
             }
-            Action::CancelExport => {
-                if let Some(export) = &self.export {
-                    export.control.request_stop();
+            Action::CancelExport(id) => {
+                if let Some(control) = self.session.export_control_for(id)
+                    && let Err(error) = control.request_stop()
+                {
+                    self.system_notice(&error.to_string());
                 }
             }
             Action::Previous
@@ -264,8 +291,11 @@ impl Controller {
             _ => {}
         }
     }
-    fn request_stop(&mut self) {
-        if let Some(control) = self.session.control()
+    fn request_stop(&mut self, id: eml_protocol::desktop::OperationId) {
+        if let Some(control) = self
+            .session
+            .control()
+            .filter(|control| control.operation_id() == id)
             && control
                 .intent(Instant::now())
                 .is_ok_and(|intent| intent.interrupts == 0)
@@ -281,19 +311,26 @@ impl Controller {
     fn confirm_action(&mut self) {
         match self.confirmation.take() {
             Some(Confirmation::Force(id)) => {
-                if let Some(control) = self.session.control_for(id)
+                if let Some(control) = self
+                    .session
+                    .control()
+                    .filter(|control| control.operation_id() == id)
                     && let Err(error) = control.request_stop()
                 {
                     self.boundary_failure(&error.to_string());
+                }
+            }
+            Some(Confirmation::ForceExport(id)) => {
+                if let Some(control) = self.session.export_control_for(id)
+                    && let Err(error) = control.request_stop()
+                {
+                    self.system_notice(&error.to_string());
                 }
             }
             Some(Confirmation::Quit) => {
                 let confirmed = Instant::now();
                 self.closing_since = Some(confirmed);
                 self.invalidate_dialog();
-                if let Some(export) = &self.export {
-                    export.control.request_stop();
-                }
                 if let Err(error) = self.session.confirm_shutdown(confirmed) {
                     self.boundary_failure(&error.to_string());
                 }
@@ -319,15 +356,9 @@ impl Controller {
                     .flatten()
             });
         if let Some(path) = captured {
-            let check = path.clone();
-            match thread::Builder::new()
-                .name("finder-reveal".into())
-                .spawn(move || check.try_exists())
-            {
-                Ok(actor) => self.reveal = Some(RevealTask::Inspect { path, actor }),
-                Err(error) => {
-                    self.system_notice(&format!("Could not start Finder navigation: {error}"))
-                }
+            match crate::native::reveal(path) {
+                Ok(task) => self.reveal = Some(task),
+                Err(error) => self.system_notice(&format!("Finder navigation: {error}")),
             }
         }
     }
@@ -337,9 +368,14 @@ impl Controller {
             .reports()
             .iter()
             .find(|report| Some(report.id()) == self.selected)
-            .and_then(|report| report.export_snapshot());
+            .filter(|report| report.completion().is_some())
+            .map(|report| report.id());
         if let Some(report) = captured {
-            match NativeDialog::save(window.window()) {
+            match NativeDialog::open(
+                window.window(),
+                OpenKind::Export,
+                self.export_folder.as_deref(),
+            ) {
                 Ok(native) => {
                     self.dialog = Some(Dialog {
                         accept_result: true,
@@ -388,7 +424,7 @@ impl Controller {
                 return;
             }
         };
-        match RequestSnapshot::new(paths, destination)
+        match RequestSnapshot::with_mode(paths, destination, self.mode)
             .map_err(|error| error.to_string())
             .and_then(|request| {
                 self.session
@@ -399,24 +435,59 @@ impl Controller {
             Err(error) => self.system_notice(&format!("Selection not started: {error}")),
         }
     }
-    fn start_export(&mut self, report: TerminalReport, destination: PathBuf) {
-        let control = eml_core::RunControl::default();
-        let background_control = control.clone();
-        let captured = report.clone();
-        match thread::Builder::new()
-            .name("report-export".into())
-            .spawn(move || eml_app::export_report(&captured, &destination, &background_control))
-        {
-            Ok(actor) => {
-                self.export = Some(ExportTask {
-                    reservation: report,
-                    control,
-                    actor,
-                });
-                self.status =
-                    "Exporting technical report; existing files will not be replaced.".into();
+    fn create_from_check(&mut self) {
+        let captured = self
+            .session
+            .reports()
+            .iter()
+            .find(|report| Some(report.id()) == self.selected)
+            .filter(|report| {
+                report.completion().is_some()
+                    && report.request().mode() == eml_core::RunMode::DryRun
+            })
+            .map(|report| report.request().create_from_check());
+        if let Some(request) = captured {
+            match request
+                .map_err(|error| error.to_string())
+                .and_then(|request| {
+                    self.session
+                        .enqueue(request)
+                        .map_err(|error| error.to_string())
+                }) {
+                Ok(id) => {
+                    self.status = format!(
+                        "Create run {id} queued. Filesystem contents can change after a check; all checks run again."
+                    )
+                }
+                Err(error) => self.system_notice(&error),
             }
-            Err(error) => self.system_notice(&format!("Could not start report export: {error}")),
+        }
+    }
+    fn export_draft(&self) -> Result<ExportDraft, String> {
+        ExportDraft::new(
+            self.export_folder
+                .clone()
+                .ok_or("Choose an export folder")?,
+            self.export_name.clone(),
+        )
+        .map_err(|error| error.to_string())
+    }
+    fn start_export(&mut self) {
+        if let Some(id) = self.export_run {
+            match self.export_draft().and_then(|draft| {
+                self.session
+                    .start_export(id, draft.destination().to_owned())
+                    .map_err(|error| error.to_string())
+            }) {
+                Ok(operation) => {
+                    self.status = format!(
+                        "Export operation {} started. {}",
+                        operation.get(),
+                        eml_app::NO_REPLACE_EXPLANATION
+                    )
+                }
+                Err(error) => self.system_notice(&error),
+            }
         }
     }
     /// Applies bounded view models before acknowledging a terminal run. This
@@ -427,7 +498,7 @@ impl Controller {
         self.settle_export();
         let completed = match self.session.poll() {
             Some(WorkerObservation::Settled(completion)) => {
-                self.status = terminal_label(&completion).into();
+                self.status = self.terminal_status(self.session.active(), &completion);
                 self.session.active()
             }
             Some(WorkerObservation::Pending {
@@ -465,34 +536,21 @@ impl Controller {
         self.closing_since.is_some()
             && self.session.worker_shutdown_settled()
             && self.dialog.is_none()
-            && self.export.is_none()
+            && self.session.active_export().is_none()
             && self.reveal.is_none()
     }
     fn settle_reveal(&mut self) {
-        let reveal_ready = self.reveal.as_ref().is_some_and(|task| match task {
-            RevealTask::Inspect { actor, .. } => actor.is_finished(),
-            RevealTask::Native(task) => task.result().is_some(),
-        });
-        if reveal_ready {
-            let task = self.reveal.take().expect("finished owned Finder task");
-            match task {
-                RevealTask::Inspect { path, actor } => match actor.join() {
-                    Ok(Ok(true)) if self.closing_since.is_none() => {
-                        match crate::native::reveal(path) {
-                            Ok(task) => self.reveal = Some(RevealTask::Native(task)),
-                            Err(error) => self.system_notice(&format!("Finder navigation: {error}")),
-                        }
-                    }
-                    Ok(Ok(true)) => {}
-                    Ok(Ok(false)) => self.system_notice("The earlier reported copy is unavailable at that address. Its receipt remains unchanged; Finder navigation does not reverify it."),
-                    Ok(Err(error)) => self.system_notice(&format!("Finder navigation is unavailable: {error}. The earlier receipt remains unchanged.")),
-                    Err(_) => self.boundary_failure("Finder navigation task failed; its owned I/O settlement could not be verified."),
-                },
-                RevealTask::Native(task) => {
-                    if let Err(error) = task.result().expect("observed native Finder completion") {
-                        self.system_notice(&format!("Finder navigation: {error}"));
-                    }
-                }
+        if self
+            .reveal
+            .as_ref()
+            .is_some_and(|task| task.result().is_some())
+        {
+            let task = self
+                .reveal
+                .take()
+                .expect("observed Finder dispatch completion");
+            if let Err(error) = task.result().expect("observed Finder dispatch completion") {
+                self.system_notice(&format!("Finder navigation: {error}"));
             }
         }
     }
@@ -519,11 +577,10 @@ impl Controller {
                             }
                         }
                         DialogPurpose::Export(report) => {
-                            if paths.len() == 1 && self.export.is_none() {
-                                self.start_export(
-                                    report,
-                                    paths.into_iter().next().expect("one selected path"),
-                                );
+                            if paths.len() == 1 && self.session.active_export().is_none() {
+                                self.export_folder = paths.into_iter().next();
+                                self.export_run = Some(report);
+                                self.export_name = "EML-report.json".into();
                             }
                         }
                     },
@@ -534,22 +591,15 @@ impl Controller {
         }
     }
     fn settle_export(&mut self) {
-        if self
-            .export
-            .as_ref()
-            .is_some_and(|export| export.actor.is_finished())
-        {
-            let export = self.export.take().expect("finished owned export");
-            match export.actor.join() {
-                Ok(outcome) => {
-                    self.status = "Report export finished.".into();
-                    self.notice = Some(presentation::export_notice(export.reservation.id(), &outcome));
-                }
-                Err(_) => self.boundary_failure("Report export panicked; its filesystem outcome is unverified. Inspect the chosen destination before trying again."),
+        match self.session.poll_export() {
+            Some(eml_app::ExportObservation::Settled(completion)) => {
+                self.status = completion.outcome_message().into();
+                self.notice = Some(presentation::export_notice(&completion));
             }
-            // The extra reservation is released only after task join and after
-            // the task's serialized buffer has been destroyed.
-            drop(export.reservation);
+            Some(eml_app::ExportObservation::Pending {
+                warning: Some(warning),
+            }) => self.system_notice(&warning),
+            _ => {}
         }
     }
     fn render(&mut self, window: &MainWindow) -> bool {
@@ -644,6 +694,26 @@ impl Controller {
         }
         window.set_destination(destination.into());
     }
+    fn terminal_status(&self, id: Option<RunId>, completion: &eml_app::WorkerCompletion) -> String {
+        if !completion.settled {
+            return "Waiting for owned processing to stop.".into();
+        }
+        id.and_then(|id| {
+            self.session
+                .reports()
+                .iter()
+                .find(|report| report.id() == id)
+        })
+        .and_then(|report| {
+            report
+                .report()
+                .inspect(|facts| facts.terminal_meaning(completion).label())
+                .ok()
+                .flatten()
+        })
+        .unwrap_or("Processing child settled; inspect the retained report.")
+        .into()
+    }
     fn current_activity(&self) -> String {
         let shutdown = self.closing_since.map(|since| {
             if since.elapsed() >= std::time::Duration::from_secs(2) {
@@ -671,9 +741,6 @@ impl Controller {
                 self.status
             );
         }
-        if self.export.is_some() {
-            return "Exporting technical report; existing files will not be replaced.".into();
-        }
         match self.session.activity() {
             eml_app::SessionActivity::Running(id) => format!("Processing run {id}…"),
             eml_app::SessionActivity::StopRequested { id, repeated } => format!(
@@ -686,7 +753,10 @@ impl Controller {
                 .iter()
                 .find(|r| r.id() == id)
                 .and_then(|r| r.completion())
-                .map_or_else(|| self.status.clone(), |c| terminal_label(c).into()),
+                .map_or_else(
+                    || self.status.clone(),
+                    |c| self.terminal_status(Some(id), c),
+                ),
             eml_app::SessionActivity::WaitingForReportSpace => {
                 "Queue paused: dismiss a retained report to make room.".into()
             }
@@ -719,6 +789,15 @@ impl Controller {
         window.set_destination_editable(
             self.closing_since.is_none() && self.admission_failure.is_none() && idle_dialog,
         );
+        window.set_processing_operation_id(self.session.control().map_or_else(
+            || "".into(),
+            |control| control.operation_id().get().to_string().into(),
+        ));
+        window.set_export_operation_id(
+            self.session
+                .active_export()
+                .map_or_else(|| "".into(), |id| id.get().to_string().into()),
+        );
         window.set_stop_available(
             self.closing_since.is_none()
                 && self.session.control().is_some_and(|c| {
@@ -733,7 +812,59 @@ impl Controller {
                         .is_ok_and(|i| i.interrupts == 1 && !i.reaped)
                 }),
         );
-        window.set_export_running(self.export.is_some());
+        window.set_export_running(self.session.active_export().is_some());
+        let export_status = self.session.active_export().map_or_else(
+            || {
+                self.session.export_completion().map_or_else(
+                    || "Choose a folder and filename.".into(),
+                    |completion| completion.outcome_message().into(),
+                )
+            },
+            |id| {
+                let stopped = self
+                    .session
+                    .export_control_for(id)
+                    .and_then(|control| control.intent(Instant::now()).ok())
+                    .is_some_and(|intent| intent.interrupts > 0);
+                format!(
+                    "Export operation {}: {}",
+                    id.get(),
+                    if stopped {
+                        "Stop requested; waiting for actual child and transport settlement."
+                    } else {
+                        "Running; publication and final verification are owned by the export child."
+                    }
+                )
+            },
+        );
+        window.set_export_status(export_status.into());
+        let export_intent = self
+            .session
+            .active_export()
+            .and_then(|id| self.session.export_control_for(id))
+            .and_then(|control| control.intent(Instant::now()).ok());
+        window.set_export_force_available(
+            export_intent.is_some_and(|intent| intent.interrupts == 1 && !intent.reaped),
+        );
+        window.set_export_cancel_available(
+            export_intent.is_some_and(|intent| intent.interrupts == 0 && !intent.reaped),
+        );
+        window.set_export_form_visible(self.export_run.is_some());
+        window.set_export_filename(self.export_name.clone().into());
+        window.set_export_explanation(eml_app::NO_REPLACE_EXPLANATION.into());
+        let draft = self.export_draft();
+        window.set_export_destination(
+            draft
+                .as_ref()
+                .map_or_else(
+                    |error| error.clone(),
+                    |draft| DisplayText::new(&draft.destination().to_string_lossy()).to_string(),
+                )
+                .into(),
+        );
+        window.set_export_start_available(
+            draft.is_ok() && self.session.active_export().is_none() && self.closing_since.is_none(),
+        );
         let selected = self
             .session
             .reports()
@@ -751,10 +882,36 @@ impl Controller {
                         .unwrap_or(false)
                 }),
         );
+        window.set_create_from_check_available(
+            self.closing_since.is_none()
+                && idle_dialog
+                && selected.is_some_and(|report| {
+                    report.completion().is_some()
+                        && report.request().mode() == eml_core::RunMode::DryRun
+                }),
+        );
+        window.set_dismiss_available(
+            self.closing_since.is_none()
+                && idle_dialog
+                && selected.is_some_and(|report| {
+                    report.completion().is_some()
+                        && self.session.export_reserved_run() != Some(report.id())
+                }),
+        );
+        window.set_export_reservation(
+            if selected
+                .is_some_and(|report| self.session.export_reserved_run() == Some(report.id()))
+            {
+                eml_app::EXPORT_RESERVATION_EXPLANATION
+            } else {
+                ""
+            }
+            .into(),
+        );
         window.set_report_selected(
             self.closing_since.is_none()
                 && idle_dialog
-                && self.export.is_none()
+                && self.session.active_export().is_none()
                 && selected.is_some_and(|r| r.completion().is_some()),
         );
     }
@@ -772,6 +929,7 @@ impl Controller {
             self.clear_selected_report(window);
             return true;
         };
+        window.set_selected_operation_id(report.operation_id().get().to_string().into());
         let inspected = report.report().inspect(|facts| {
             let position = self.position.clamped(facts);
             let key = presentation::view_key(
@@ -855,6 +1013,7 @@ impl Controller {
             match self.confirmation {
                 Some(Confirmation::Quit) => "Quit EML Attachment Remover?",
                 Some(Confirmation::Force(_)) => "Force stop this run?",
+                Some(Confirmation::ForceExport(_)) => "Force stop this export?",
                 None => "",
             }
             .into(),
@@ -863,12 +1022,14 @@ impl Controller {
             match self.confirmation {
                 Some(Confirmation::Quit) => "Quit",
                 Some(Confirmation::Force(_)) => "Force Stop",
+                Some(Confirmation::ForceExport(_)) => "Force Stop Export",
                 None => "",
             }
             .into(),
         );
         window.set_confirm_text(match self.confirmation {
-            Some(Confirmation::Quit) => "Any active run will stop and waiting runs will be cancelled. The app will close after processing and report export have stopped safely.",
+            Some(Confirmation::Quit) => "Processing and export children will stop, then be force-stopped if necessary. Waiting requests will be cancelled. An export outcome can remain unknown. The app waits for actual child, transport and dialog settlement.",
+            Some(Confirmation::ForceExport(_)) => "The export outcome may remain unknown; a complete report may exist. Temporary artifacts can remain when cleanup could not be observed.",
             Some(Confirmation::Force(_)) => "Earlier results will remain. A copy being saved may already have been created.",
             None => "",
         }.into());

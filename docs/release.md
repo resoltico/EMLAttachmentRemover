@@ -13,14 +13,14 @@ from a clean checkout of that commit:
 
 ```sh
 git fetch origin main
-cargo xtask release-check --source FULL_SHA --version 6.0.0
+cargo xtask release-check --source FULL_SHA --version 7.0.0
 ```
 
 Resolve every admission failure before dispatch. After the owner authorizes
 publication, start the workflow from main with the same source and version:
 
 ```sh
-gh workflow run release.yml --ref main -f source=FULL_SHA -f version=6.0.0
+gh workflow run release.yml --ref main -f source=FULL_SHA -f version=7.0.0
 ```
 
 Follow the resulting run through qualification and publication; a successful
@@ -43,43 +43,38 @@ matching REST response. API errors and inaccessible IDs never establish absence.
 Local callers must supply push-capable credentials; a read-only credential can
 hide drafts and cannot establish their absence.
 
-The same reusable native qualification workflow runs on S. All six native test
-jobs, both native app candidate producers, both complete minimum-OS desktop
-consumers, the macOS26 Intel picker compatibility check and the strict aggregate
-must pass. Products are selected only from this run/attempt's six
-platform artifacts, downloaded into separate directories with digest mismatch
-treated as an error. Their source records must bind to S. Consumer evidence is downloaded separately from
-products. Preparation requires each candidate's `native_candidate` stage plus
-matching `desktop_qualification` and, for Intel, `picker_qualification` envelopes
-from the same run/attempt, source, target and archive bytes. The selected product
-must have case `picker` and method `testOwnedNativePickerCompatibility`;
-it cannot substitute for either full macOS15 desktop consumer. Failed, skipped,
-missing or mismatched case receipts cannot admit an app. Intel envelopes admit
-only `mode: modified_host`: guarded preparation on the image declared by
-`xtask/distribution.toml`, followed by the complete unchanged product case and
-read-only host/service verification. Preparation requires recognized current-boot
-IconServices crash evidence, then records the exact GUI-user agent bootout and
-disable operations. The shared picker predicates independently bind S, workflow
-W, current run/attempt, configured policy, archive/reference bytes, native host,
-method, preferences and normal settlement. Preparation and final verification
-must agree on boot and caller context; the intervening product's observed OS and
-CPU must match. The product does not directly report its boot UUID. This is
-modified-host coverage, not general unmodified-host compatibility or causal proof
-of recovery. Unconfigured hosts, malformed crash reports, absence of the required
-current-boot fault and incomplete attempts block both the reusable aggregate and
-release. Both full macOS15 consumers
-remain required.
-The policy derives exactly eight archive names. `stage-release-assets` freezes their actual bytes,
-checks copy readback and writes the sorted SHA256SUMS as the ninth asset.
-Existing native checks establish behavior; artifact digests preserve the tested
-bytes through transport. Assembly alone establishes neither property.
+The reusable native qualification workflow runs on S. Its native, app, complete
+desktop-floor and picker matrices are rendered from the one immutable typed
+`BuildPlan` loaded from Cargo metadata, `xtask/distribution.toml` and tool pins.
+The approved six CLI products, two macOS app products, both macOS15 desktop
+consumers and macOS26 Intel picker role have one independent ordinary regression
+oracle. Missing or skipped required jobs fail the explicit CI-result admission.
+
+`cargo xtask verify-release-inputs --products DIR --desktop DIR --picker DIR --out DIR`
+replaces the former shell inventory loop. It admits the exact declared product set
+and current source, run, attempt, workflow ref/SHA, native target and archive bytes.
+App references and full desktop consumer records must match the actual frozen
+archive/reference identities. Picker receipts use the app's declared picker role;
+ordinary-host and admitted incident-host evidence remain distinct, and the raw
+product receipt bytes must match their typed projection. Failed, missing, skipped,
+duplicate or mismatched evidence refuses admission before assembly. No receipt or
+digest alone establishes native execution.
+
+The versioned `verified-inputs.json` retains the exact frozen native documents and
+identities, typed picker receipt and source/run binding. Archive bytes are copied
+with exclusive creation, synchronized and read back. This manifest is admitted
+data, not a filesystem mutation capability or continuing release authorization.
+`cargo xtask stage-release-assets --inputs verified-inputs.json --out DIR` checks
+those identities again and assembles the exact planned archive set plus the typed
+`SHA256SUMS` auxiliary asset. Counts derive from the expected set. No production
+consumer maintains another six/eight/nine inventory.
 
 The pinned `actions/attest` action uses an explicit qualification predicate at
 `https://github.com/resoltico/EMLAttachmentRemover/attestations/native-qualification/v1`.
 It records S, the distinct dispatch commit and workflow ref/SHA, native run and
 attempt, policy and assembly identities, and compact actual-host/desktop/picker
-case observations from the validated consumer records. All eight archives and SHA256SUMS are
-subjects. This is a qualification/assembly statement, not default SLSA build
+case observations from the validated consumer records. Every admitted archive and
+SHA256SUMS is a subject. This is a qualification/assembly statement, not default SLSA build
 provenance pretending that a checkout override changes the dispatch identity.
 Full native job observations and build/test records remain in run artifacts.
 
@@ -91,13 +86,19 @@ requires an absent release, creates an unpublished draft and uploads without
 clobbering. Draft-aware lookup resolves its numeric ID before reading the raw
 REST response; the release-by-tag REST endpoint only finds published releases.
 That actual API response feeds
-`cargo xtask check-release-server --assets DIR --release RESPONSE.json`:
-exact source/version/draft, nine distinct positive asset IDs, exact names,
+`cargo xtask check-release-server --inputs verified-inputs.json --assets DIR --release RESPONSE.json`:
+exact source/version/draft, distinct positive IDs for the complete planned asset set, exact names,
 uploaded state, sizes and SHA256 digests must match the local immutable set.
 The manifest itself is regenerated from the actual local archive bytes before
 comparison. This read-only command trusts the caller to obtain the response
 from the correct repository; the workflow supplies that boundary directly.
-Only after these checks does the workflow publish the draft.
+The final read-only predicate then revalidates each exact modified-host incident
+identity and its current validity interval. Ordinary-host receipts never load the
+incident registry. Expired, replaced or malformed incident policy leaves the
+uploaded release as a draft; no policy renewal is substituted for the original
+receipt. There is no staging, upload or attestation between this predicate and the
+external `gh release edit --draft=false` call. That call still has a small external
+time-of-check interval; admission and GitHub publication are not one atomic edge.
 
 After success or failure, the workflow observes server state and retains its
 draft-aware ID lookup and REST responses, assembly/admission records,
@@ -112,7 +113,7 @@ retargeting or replacing anything already published.
 ## Version and build identity
 
 `workspace.package.version` in the root `Cargo.toml` is the sole release-version
-source. `BUILD_NUMBER` in `crates/eml-protocol/src/product.rs` is the sole product
+source. `BUILD_NUMBER` in `crates/eml-core/src/product.rs` is the sole product
 build-number source, shared by CLI display, GUI About and `CFBundleVersion`.
 Increase that positive integer (1–9999) before distributing changed binaries;
 never reset it on a release-version change. Private dirty builds, both CPU

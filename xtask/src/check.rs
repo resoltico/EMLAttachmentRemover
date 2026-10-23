@@ -1,4 +1,5 @@
 //! Independent repository checks with retained failures and actual tool graphs.
+use crate::distribution::BuildPlan;
 use crate::{Result, campaign, capture, controller};
 use serde_json::{Value, json};
 use std::{
@@ -41,7 +42,7 @@ fn cargo(root: &Path, args: &[&str]) -> Command {
     command
 }
 
-pub(crate) fn run(root: &Path) -> Result<()> {
+pub(crate) fn run(root: &Path, plan: &BuildPlan) -> Result<()> {
     campaign::require_stock_topology(root)?;
     let parent = root.join("target/repository-checks");
     fs::create_dir_all(&parent)?;
@@ -54,13 +55,17 @@ pub(crate) fn run(root: &Path) -> Result<()> {
         directory,
         results: Vec::new(),
     };
-    checks.section("source-quality", || crate::quality::run(root));
+    checks.section("repository-config", || {
+        Ok(serde_json::to_value(crate::repository_config::check(
+            root,
+        )?)?)
+    });
     compiler_check(&mut checks, root);
-    rust_checks(&mut checks, root);
-    dependency_checks(&mut checks, root);
-    tool_checks(&mut checks, root);
+    rust_checks(&mut checks, root, plan);
+    dependency_checks(&mut checks, root, plan);
+    tool_checks(&mut checks, root, plan);
     #[cfg(target_os = "macos")]
-    native_checks(&mut checks, root);
+    native_checks(&mut checks, root, plan);
     finish(checks)
 }
 fn compiler_check(checks: &mut Checks, root: &Path) {
@@ -83,7 +88,7 @@ fn compiler_check(checks: &mut Checks, root: &Path) {
     });
 }
 
-fn rust_checks(checks: &mut Checks, root: &Path) {
+fn rust_checks(checks: &mut Checks, root: &Path, plan: &BuildPlan) {
     checks.command("rust-format", cargo(root, &["fmt", "--all", "--check"]), 60);
     for (name, manifest) in [
         ("fuzz", "fuzz/Cargo.toml"),
@@ -138,39 +143,33 @@ fn rust_checks(checks: &mut Checks, root: &Path) {
     );
     let test_directory = checks.directory.clone();
     checks.section("rust-tests", || {
-        crate::qualify::checked_tests(root, None, false, &test_directory)
+        crate::qualify::checked_tests(root, plan, None, false, &test_directory)
     });
     let mut docs = cargo(root, &["doc", "--locked", "--workspace", "--no-deps"]);
     docs.env("RUSTDOCFLAGS", "-D warnings");
     checks.command("rust-docs", docs, 600);
+    let mut python = Command::new("python3");
+    python.current_dir(root).args([
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tools",
+        "-p",
+        "test_*.py",
+        "-v",
+    ]);
+    checks.command("python-tool-tests", python, 120);
 }
 
-fn dependency_checks(checks: &mut Checks, root: &Path) {
-    let policy = root.join("xtask/dependencies.toml");
-    for (name, manifest) in [
-        ("workspace", root.join("Cargo.toml")),
-        ("fuzz", root.join("fuzz/Cargo.toml")),
-        (
-            "filesystem-probe",
-            root.join("tests/native-filesystem/Cargo.toml"),
-        ),
-    ] {
-        let log = checks.directory.join(format!("dependencies-{name}.log"));
-        checks.section(&format!("dependencies-{name}"), || {
-            let mut command = crate::tools::command(root, "deny")?;
-            command
-                .args(["--locked", "--manifest-path"])
-                .arg(manifest)
-                .arg("--config")
-                .arg(&policy)
-                .args(["check", "advisories", "sources", "licenses"]);
-            let result = controller()?.run(command, &log, Duration::from_secs(600))?;
-            Ok(json!({"log":log,"passed":result.success(),"process":result.evidence()}))
-        });
-    }
+fn dependency_checks(checks: &mut Checks, root: &Path, plan: &BuildPlan) {
+    let out = checks.directory.join("dependencies");
+    checks.section("dependencies", || {
+        crate::dependencies::run(root, plan, &out)
+    });
 }
 
-fn tool_checks(checks: &mut Checks, root: &Path) {
+fn tool_checks(checks: &mut Checks, root: &Path, plan: &BuildPlan) {
     checks.section("actionlint", || {
         let expected = campaign::pin(root, "actionlint")?;
         let actual = String::from_utf8(capture(Command::new("actionlint").arg("--version"))?)?;
@@ -181,22 +180,22 @@ fn tool_checks(checks: &mut Checks, root: &Path) {
         Ok(json!({"version":expected}))
     });
     checks.section("shellcheck", || check_shell(root));
-    checks.section("notices", || crate::notices::check(root, None));
+    checks.section("notices", || crate::notices::check(root, plan, None));
 }
 
 #[cfg(target_os = "macos")]
-fn native_checks(checks: &mut Checks, root: &Path) {
+fn native_checks(checks: &mut Checks, root: &Path, plan: &BuildPlan) {
     #[cfg(target_os = "macos")]
     let swift_checks = checks.directory.join("swift-format");
     #[cfg(target_os = "macos")]
     checks.section("swift-format", || {
-        crate::macos::check_swift_sources(root, &swift_checks)
+        crate::macos::check_swift_sources(root, plan, &swift_checks)
     });
     #[cfg(target_os = "macos")]
     let desktop_checks = checks.directory.join("desktop");
     #[cfg(target_os = "macos")]
     checks.section("macos-desktop", || {
-        crate::macos::check_desktop(root, &desktop_checks)?;
+        crate::macos::check_desktop(root, plan, &desktop_checks)?;
         Ok(json!({"scope":"pinned native Slint profile and owned child tests; no GUI acceptance"}))
     });
 }
@@ -237,8 +236,13 @@ pub(crate) fn check_shell(root: &Path) -> Result<Value> {
     {
         return Err("Install shellcheck at the xtask/tools.toml version".into());
     }
-    let paths = crate::quality::shell_sources(root)?;
-    if !paths.is_empty() {
+    let paths = crate::source_files::shells(root)?;
+    if paths.is_empty() {
+        return Err(
+            "Authored shell discovery is empty; investigate the retained script selection".into(),
+        );
+    }
+    {
         let mut command = Command::new("shellcheck");
         command
             .current_dir(root)

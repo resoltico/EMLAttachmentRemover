@@ -20,8 +20,8 @@ use windows_sys::{
     Win32::{
         Foundation::{INVALID_HANDLE_VALUE, OBJ_DONT_REPARSE, UNICODE_STRING},
         Storage::FileSystem::{
-            FILE_GENERIC_WRITE, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE,
-            FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, READ_CONTROL, SYNCHRONIZE,
+            FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+            FILE_SHARE_WRITE, FILE_TRAVERSE, READ_CONTROL, SYNCHRONIZE,
         },
         System::IO::IO_STATUS_BLOCK,
     },
@@ -32,7 +32,6 @@ enum Kind {
     Directory,
     AncestorPin,
     SecurityPin,
-    WritableDirectory,
 }
 pub(super) const ANCESTOR_PIN_ACCESS: u32 = FILE_READ_ATTRIBUTES | FILE_TRAVERSE | SYNCHRONIZE;
 pub(super) fn observe(parent: &File, name: &OsStr) -> io::Result<File> {
@@ -46,9 +45,6 @@ pub(super) fn ancestor_pin(parent: &File, name: &OsStr) -> io::Result<File> {
 }
 pub(super) fn security_pin(parent: &File, name: &OsStr) -> io::Result<File> {
     open(parent, name, Kind::SecurityPin)
-}
-pub(super) fn writable_directory(parent: &File, name: &OsStr) -> io::Result<File> {
-    open(parent, name, Kind::WritableDirectory)
 }
 fn open(parent: &File, name: &OsStr, kind: Kind) -> io::Result<File> {
     // UNICODE_STRING counts bytes in u16 fields; no terminator is part of its name.
@@ -83,16 +79,6 @@ fn open(parent: &File, name: &OsStr, kind: Kind) -> io::Result<File> {
         ),
         Kind::SecurityPin => (
             ANCESTOR_PIN_ACCESS | READ_CONTROL,
-            FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE,
-            OBJ_DONT_REPARSE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-        ),
-        Kind::WritableDirectory => (
-            FILE_GENERIC_WRITE
-                | FILE_LIST_DIRECTORY
-                | FILE_READ_ATTRIBUTES
-                | FILE_TRAVERSE
-                | SYNCHRONIZE,
             FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE,
             OBJ_DONT_REPARSE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,

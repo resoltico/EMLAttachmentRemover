@@ -1,5 +1,5 @@
 //! One physical no-replace edge; final-copy/address qualification is separate.
-use super::{containment, path::validate_component, writable::Creation};
+use super::{containment, creation::Creation, path::validate_component};
 use crate::{CleanupReceipt, CleanupState, Identity, PublicationState, SyncReceipt};
 use std::{
     ffi::{OsStr, OsString},
@@ -194,12 +194,12 @@ mod tests {
         test_fixture::{directory, operation},
     };
     use super::*;
-    use crate::{BoundDirectory, SyncState, WritableDirectory};
+    use crate::{BoundDirectory, CreationDirectory, SyncState};
     use std::os::windows::fs::FileExt;
 
-    fn writer(path: &std::path::Path) -> (BoundDirectory, WritableDirectory) {
+    fn writer(path: &std::path::Path) -> (BoundDirectory, CreationDirectory) {
         let read = BoundDirectory::open(&operation(path)).unwrap();
-        let write = WritableDirectory::bind_resolved(&operation(path), read.identity()).unwrap();
+        let write = CreationDirectory::bind_resolved(&operation(path), read.identity()).unwrap();
         (read, write)
     }
     #[test]
@@ -299,7 +299,7 @@ mod tests {
         let maximum = read.name_limit().unwrap();
         assert_eq!(maximum, native_name_limit(&read));
         let write =
-            WritableDirectory::bind_resolved(&operation(fixture.path()), read.identity()).unwrap();
+            CreationDirectory::bind_resolved(&operation(fixture.path()), read.identity()).unwrap();
         let winner = read.observe_child(OsStr::new("winner.eml")).unwrap();
         let attempt = write
             .stage_bytes(b"synthetic loser", || Ok(()))

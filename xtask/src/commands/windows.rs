@@ -1,18 +1,19 @@
 //! Native Windows command admission precedes any process-controller setup.
+use crate::distribution::BuildPlan;
 use crate::{Result, Task};
 use std::path::Path;
 
 #[cfg(windows)]
-pub(super) fn run(root: &Path, task: Task) -> Result<()> {
+pub(super) fn run(root: &Path, plan: &BuildPlan, task: Task) -> Result<()> {
     crate::initialize_controller(root)?;
     match task {
         Task::PrepareWindowsWorkspace => crate::windows_workspace::prepare(root),
-        Task::ObserveWindowsLink { target, out } => observe(root, &target, &out),
+        Task::ObserveWindowsLink { target, out } => observe(root, plan, &target, &out),
         _ => Err("Internal Windows command dispatch mismatch".into()),
     }
 }
 #[cfg(not(windows))]
-pub(super) fn run(_root: &Path, task: Task) -> Result<()> {
+pub(super) fn run(_root: &Path, _plan: &BuildPlan, task: Task) -> Result<()> {
     match task {
         Task::PrepareWindowsWorkspace => {
             Err("Protected Windows checkout preparation requires native Windows".into())
@@ -24,18 +25,19 @@ pub(super) fn run(_root: &Path, task: Task) -> Result<()> {
     }
 }
 #[cfg(windows)]
-fn observe(root: &Path, target: &str, out: &Path) -> Result<()> {
+fn observe(root: &Path, plan: &BuildPlan, target: &str, out: &Path) -> Result<()> {
     std::fs::create_dir(out)?;
     let out = out.canonicalize()?;
-    let cli = crate::cli_build::build(root, target, &out.join("cli-build"))?;
+    let cli = crate::cli_build::build(root, plan, target, &out.join("cli-build"))?;
     let unknown_input = crate::cli_build::unknown_input_control(
         root,
+        plan,
         target,
         &cli,
         &out.join("unknown-input-control"),
     )?;
-    let materials = crate::notices::checked_target(root, cli.platform())?;
-    let archive = crate::qualify::staged_cli(root, &cli, &materials, &out)?;
+    let materials = crate::notices::checked_target(root, plan, cli.platform())?;
+    let archive = crate::qualify::staged_cli(root, plan, &cli, &materials, &out)?;
     std::fs::write(
         out.join("result.json"),
         serde_json::to_vec_pretty(

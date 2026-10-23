@@ -17,10 +17,10 @@ jobs:
     outputs:
       native: ${{ steps.plan.outputs.native }}
       apps: ${{ steps.plan.outputs.apps }}
-      smoke: ${{ steps.plan.outputs.smoke }}
+      smoke: ${{ steps.plan.outputs.floors }}
       picker: ${{ steps.plan.outputs.picker }}
-      about: ${{ steps.plan.outputs.about }}
-      deny: ${{ steps.plan.outputs.deny }}
+      about: ${{ steps.plan.outputs.cargo_about }}
+      deny: ${{ steps.plan.outputs.cargo_deny }}
       actionlint: ${{ steps.plan.outputs.actionlint }}
       shellcheck: ${{ steps.plan.outputs.shellcheck }}
       xcode: ${{ steps.plan.outputs.xcode }}
@@ -37,19 +37,7 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "$EVENT_SOURCE"
           mkdir -p target
-          cargo xtask distribution > target/distribution.json
-          {
-            jq -ce '{include:[.native_targets[]|{platform,target,runner,os}]}' target/distribution.json | sed 's/^/native=/'
-            jq -ce '{include:[.native_targets[]|select(.app)|{platform,target,runner}]}' target/distribution.json | sed 's/^/apps=/'
-            jq -ce '{include:[.native_targets[]|select(.app)|{platform,target,runner:.app_smoke_runner}]}' target/distribution.json | sed 's/^/smoke=/'
-            jq -ce '{include:[.native_targets[]|select(.platform=="macos-x86_64")|{platform,target,runner}]}' target/distribution.json | sed 's/^/picker=/'
-            for name in about deny actionlint shellcheck; do
-              key="$name"
-              if [ "$name" = about ] || [ "$name" = deny ]; then key="cargo_$name"; fi
-              printf '%s=%s\n' "$name" "$(jq -er --arg key "$key" '.tools[$key]' target/distribution.json)"
-            done
-            printf 'xcode=%s\nxcode_build=%s\nminimum=%s\n' "$(jq -er '.xcode.version' target/distribution.json)" "$(jq -er '.xcode.build' target/distribution.json)" "$(jq -er '.policy.macos_minimum' target/distribution.json)"
-          } >> "$GITHUB_OUTPUT"
+          cargo xtask distribution --github-output "$GITHUB_OUTPUT" > target/distribution.json
           git show -s --format='Actual checkout: %H; parents: %P'
   lint:
     needs: plan
@@ -80,7 +68,7 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: |
-          cargo xtask check-quality
+          cargo xtask check-config
           cargo fmt --all --check
           cargo fmt --manifest-path fuzz/Cargo.toml --all --check
           cargo fmt --manifest-path tests/native-filesystem/Cargo.toml --all --check
@@ -88,6 +76,7 @@ jobs:
           cargo clippy --locked --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
           cargo clippy --locked --manifest-path tests/native-filesystem/Cargo.toml --all-targets -- -D warnings
           cargo doc --locked --workspace --no-deps
+          python3 -m unittest discover -s tools -p 'test_*.py' -v
           actionlint
           cargo xtask check-shell
   legal:
@@ -107,7 +96,7 @@ jobs:
           checksum: true
           fallback: none
       - name: Default workspace, excluded fuzz and enabled macOS GUI dependency policies
-        run: bash .github/scripts/check-dependencies.sh
+        run: cargo xtask check-dependencies --out target/dependency-checks
       - name: Generate complete selected legal components on a clean source
         run: cargo xtask notices --write --out target/generated-legal-materials
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -238,7 +227,7 @@ jobs:
           cargo clippy --locked --workspace --all-targets --target '${{ matrix.target }}' -- -D warnings
           cargo clippy --locked --manifest-path tests/native-filesystem/Cargo.toml --all-targets --target '${{ matrix.target }}' -- -D warnings
           cargo clippy --locked --manifest-path fuzz/Cargo.toml --all-targets --target '${{ matrix.target }}' -- -D warnings
-      - name: Strict selected-Xcode Swift formatting and structure
+      - name: Strict selected-Xcode Swift formatting
         if: ${{ runner.os == 'macOS' }}
         run: cargo xtask check-macos-swift --out target/native-swift-checks
       - name: Qualified Slint profile and actual Darwin child/preference fixtures
@@ -260,6 +249,14 @@ jobs:
           artifact-ids: ${{ needs.legal.outputs.artifact_id }}
           path: target/legal-input
           digest-mismatch: error
+      - name: Install native owned-volume profile prerequisites
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          sudo -n apt-get update
+          sudo -n apt-get install --no-install-recommends -y e2fsprogs util-linux xfsprogs btrfs-progs
+          mkdir -p target/name-profile-prerequisites
+          dpkg-query -W e2fsprogs util-linux xfsprogs btrfs-progs > target/name-profile-prerequisites/packages.txt
+          uname -a > target/name-profile-prerequisites/kernel.txt
       - name: Qualify native Linux release tests and extracted CLI archive
         if: ${{ runner.os == 'Linux' }}
         env:
@@ -294,6 +291,18 @@ jobs:
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-creation-evidence/*.json
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/*.list
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/name-profile-prerequisites/*.txt
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/name-profiles/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/name-profiles/**/*.jsonl
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/name-profiles/**/*.log
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/name-profiles/**/*.stderr
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/name-profiles/**/*.txt
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/name-profiles/**/*.tsv
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/preparation-resources/**/*.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/preparation-resources/**/*.jsonl
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/preparation-resources/**/*.time
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/preparation-resources/**/*.stderr
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/preparation-resources/**/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.stderr
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.tar.gz
@@ -308,6 +317,7 @@ jobs:
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.stderr
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.map
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/name-profiles/**/*.txt
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/*.zip
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/cargo/**
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/native-test-build/**
@@ -445,6 +455,7 @@ jobs:
             target/native-app-build/**/*.stderr
             target/native-app-build/**/*.stdout
             target/native-app-build/**/*.plist
+            target/native-app-build/name-profiles/**/*.txt
             target/native-app-build/**/native-picker-stack-*.txt
             target/native-app-build/**/gui-interaction/**/Results.xcresult/**
             target/native-app-build/**/gui-interaction/**/preferences-*.plist
@@ -563,13 +574,13 @@ jobs:
           artifact-ids: ${{ steps.artifact.outputs.id }}
           path: target/products
           digest-mismatch: error
-      - name: Prepare the admitted host, test the frozen product and verify host settlement
+      - name: Qualify the frozen picker once in its admitted ordinary or incident host state
         env:
           PLATFORM: ${{ matrix.platform }}
         run: |
           cargo xtask distribution > target/distribution.json
           app=$(jq -er --arg platform "$PLATFORM" '.expected_artifacts[]|select(.platform==$platform and .role=="app")|.name' target/distribution.json)
-          bash .github/scripts/picker-qualification.sh "target/products/app-build/$app" "target/products/app-build/$app.reference.json"
+          cargo xtask qualify-macos-picker --archive "target/products/app-build/$app" --reference "target/products/app-build/$app.reference.json" --out target/picker-qualification
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:

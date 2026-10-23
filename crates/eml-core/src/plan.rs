@@ -1,7 +1,7 @@
 //! Source-bound deletion planning; independent permission is in verify.rs.
 use crate::{
     PreparationError, Refusal, RemovalReason, RunControl, error, grammar,
-    message::{Child, Kind, Message, PROTECTED, Span},
+    message::{Child, Kind, Message, PROTECTED, Span, UNSUPPORTED_BODY_MEDIA},
 };
 use std::collections::BTreeSet;
 pub(crate) const CONTAINER_STALE: &[&str] = &["content-length", "lines", "content-md5"];
@@ -69,13 +69,23 @@ fn visit(
     control: &RunControl,
 ) -> Result<(bool, bool), PreparationError> {
     control.checkpoint()?;
+    #[cfg(test)]
+    crate::work_bounds::record(crate::work_bounds::Work::Node, 1, control)?;
     let node = &message.nodes[id];
-    if !node.root && node.disposition.as_deref() == Some("attachment") {
+    if !node.root
+        && node
+            .disposition
+            .as_deref()
+            .is_some_and(|token| token != "inline")
+    {
         plan.claims.push(Claim {
             id,
             reason: RemovalReason::Attachment,
         });
         return Ok((false, true));
+    }
+    if UNSUPPORTED_BODY_MEDIA.contains(&node.media.as_str()) {
+        return Err(internal());
     }
     if PROTECTED.contains(&node.media.as_str()) {
         return Err(error(
@@ -186,9 +196,11 @@ pub(crate) fn apply(
         .cloned()
         .chain(std::iter::once(input.len()..input.len()))
     {
-        for chunk in input[cursor..span.start].chunks(1024 * 1024) {
+        for chunk in input[cursor..span.start].chunks(crate::PREPARATION_CHUNK_BYTES) {
             control.checkpoint()?;
             output.extend_from_slice(chunk);
+            #[cfg(test)]
+            crate::work_bounds::record(crate::work_bounds::Work::Copy, chunk.len(), control)?;
         }
         cursor = span.end;
     }

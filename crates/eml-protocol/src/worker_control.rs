@@ -6,11 +6,7 @@ pub const FIRST_INTERRUPT: u8 = b'F';
 /// Exact private worker identity includes compiled CPU/OS, so a translated or
 /// wrong-target helper cannot satisfy the desktop product's version probe.
 pub fn identity_line(version: &str) -> String {
-    format!(
-        "eml-worker {version} {}-{}\n",
-        std::env::consts::ARCH,
-        std::env::consts::OS
-    )
+    crate::desktop::identity_line(version, &eml_core::product::BUILD_NUMBER.to_string())
 }
 /// Invalid, duplicated, overlong or out-of-order private control bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

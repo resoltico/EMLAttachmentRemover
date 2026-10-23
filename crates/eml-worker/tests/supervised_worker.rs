@@ -81,7 +81,6 @@ fn real_supervisor_checks_identity_feeds_core_drains_and_preserves_complete_outc
             control,
         )
         .unwrap();
-        let report = worker.report();
         let done = finish(&mut worker);
         assert!(
             matches!(worker.poll(), WorkerObservation::Settled(ref terminal) if terminal.exit_code == done.exit_code && terminal.failure == done.failure)
@@ -90,14 +89,26 @@ fn real_supervisor_checks_identity_feeds_core_drains_and_preserves_complete_outc
         assert_eq!(done.failure, None);
         assert_eq!(done.exit_code, Some(0));
         assert!(done.input_may_have_been_sent);
-        let bytes = report.export_bytes().unwrap();
+        let snapshot = worker.export_snapshot().unwrap();
+        let bytes = thread::spawn(move || {
+            let mut bytes = Vec::new();
+            snapshot.write_document(&mut bytes).unwrap();
+            bytes
+        })
+        .join()
+        .unwrap();
         let exported: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(exported["items"][0]["status"], expected);
         assert_eq!(exported["summary"]["exit_code"], 0);
         assert!(exported["protocol_failure"].is_null());
         assert!(fs::read(&source).unwrap() == INPUT, "Original changed");
         assert!(
-            fs::read(root.path().join("message.no-attachments.eml")).unwrap() == GOLDEN,
+            fs::read(
+                root.path()
+                    .join("message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml")
+            )
+            .unwrap()
+                == GOLDEN,
             "Independent copy bytes differ"
         );
     }
@@ -127,7 +138,7 @@ fn stopped_before_launch_does_not_start_even_an_unavailable_helper() {
     root.close().unwrap();
 }
 #[test]
-fn wrong_version_and_invalid_destination_refuse_before_request() {
+fn wrong_version_refuses_before_request_and_destination_is_validated_by_child() {
     let root = root();
     let source = root.path().join("message.eml");
     fs::write(&source, INPUT).unwrap();
@@ -149,7 +160,7 @@ fn wrong_version_and_invalid_destination_refuse_before_request() {
         Some(root.path().join("absent-destination")),
     );
     let mut worker = WorkerRun::start(
-        root.path().join("absent-helper"),
+        PathBuf::from(BIN),
         env!("CARGO_PKG_VERSION").into(),
         request,
         control,
@@ -157,14 +168,9 @@ fn wrong_version_and_invalid_destination_refuse_before_request() {
     .unwrap();
     let done = finish(&mut worker);
     assert!(done.settled && done.reusable, "{done:?}");
-    assert_eq!(done.failure, Some(WorkerFailure::Request));
-    assert_eq!(done.exit_code, None);
-    assert!(!done.input_may_have_been_sent);
-    assert!(
-        done.faults
-            .iter()
-            .any(|fault| fault.contains("Choose an existing copy destination"))
-    );
+    assert_eq!(done.failure, None);
+    assert_eq!(done.exit_code, Some(2));
+    assert!(done.input_may_have_been_sent);
     assert!(fs::read(source).unwrap() == INPUT);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     root.close().unwrap();
@@ -278,7 +284,24 @@ fn pending_report_warning_closes_admission_and_preserves_identity_failure_after_
     ));
     let snapshot = session.reports()[0].export_snapshot().unwrap();
     let exported = root.path().join("failed-worker-report.json");
-    let receipt = eml_app::export_report(&snapshot, &exported, &eml_core::RunControl::default());
+    let control =
+        WorkerControl::for_operation(eml_protocol::desktop::OperationId::new(2).unwrap(), id);
+    let mut export = eml_app::ExportRun::start(
+        PathBuf::from(BIN),
+        env!("CARGO_PKG_VERSION").into(),
+        snapshot,
+        exported.clone(),
+        control,
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let receipt = loop {
+        if let eml_app::ExportObservation::Settled(done) = export.poll() {
+            break done;
+        }
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(5));
+    };
     assert!(receipt.usable(), "{receipt:?}");
     let saved: serde_json::Value = serde_json::from_slice(&fs::read(exported).unwrap()).unwrap();
     assert_eq!(saved["run_id"], 1);
@@ -352,7 +375,12 @@ fn missing_ready_and_first_interrupt_acknowledgment_end_as_failed_owned_cleanup(
             );
         }
         assert_eq!(fs::read(source).unwrap(), INPUT);
-        assert!(!root.path().join("message.no-attachments.eml").exists());
+        assert!(
+            !root
+                .path()
+                .join("message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml")
+                .exists()
+        );
         root.close().unwrap();
     }
 }
@@ -437,7 +465,7 @@ fn desktop_session_waits_for_final_view_application_and_explicit_report_dismissa
             INPUT
         );
         assert_eq!(
-            fs::read(root.path().join(format!("{name}.no-attachments.eml"))).unwrap(),
+            fs::read(root.path().join(named_copy(name))).unwrap(),
             GOLDEN
         );
     }
@@ -500,142 +528,98 @@ fn confirmed_shutdown_cancels_waiting_and_retains_actual_worker_until_final_ack(
             fs::read(root.path().join(format!("{name}.eml"))).unwrap(),
             INPUT
         );
-        assert!(
-            !root
-                .path()
-                .join(format!("{name}.no-attachments.eml"))
-                .exists()
-        );
+        assert!(!root.path().join(named_copy(name)).exists());
     }
     root.close().unwrap();
 }
 
+fn finish_export(session: &mut eml_app::DesktopSession) -> eml_app::ExportCompletion {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        if let Some(eml_app::ExportObservation::Settled(done)) = session.poll_export() {
+            return done;
+        }
+        if Instant::now() >= deadline {
+            session
+                .confirm_shutdown(Instant::now() - Duration::from_secs(12))
+                .unwrap();
+            panic!("Owned export exceeded allowance; shutdown intent retained");
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+}
 #[test]
-fn explicit_report_export_reuses_protected_publication_and_never_replaces_original_or_report() {
-    use eml_app::export_report;
+fn child_report_export_pins_exact_report_and_never_replaces_any_existing_entry() {
     let root = root();
     let source = root.path().join("message.eml");
     fs::write(&source, INPUT).unwrap();
-    let (request, control) = admitted(vec![source.clone()], None);
-    let mut worker = WorkerRun::start(
-        PathBuf::from(BIN),
-        env!("CARGO_PKG_VERSION").into(),
-        request,
-        control,
-    )
-    .unwrap();
-
-    let done = finish(&mut worker);
+    let mut session =
+        eml_app::DesktopSession::new(PathBuf::from(BIN), env!("CARGO_PKG_VERSION").into());
+    let id = session
+        .enqueue(RequestSnapshot::new(vec![source.clone()], None).unwrap())
+        .unwrap();
+    session.start_next().unwrap();
+    let done = session_finish(&mut session);
     assert!(done.settled && done.reusable, "{done:?}");
-    let report = worker.export_snapshot().expect("actually settled export");
+    session.acknowledge_completion(id).unwrap();
     let destination = root.path().join("report.json");
-    let output = destination.clone();
-    let retained = report.clone();
-    let first =
-        thread::spawn(move || export_report(&retained, &output, &eml_core::RunControl::default()))
-            .join()
-            .unwrap();
-    assert!(first.usable(), "{first:?}");
-    assert_eq!(first.publication, eml_fs::PublicationState::Published);
-    assert_eq!(first.final_file_verified, Some(true));
-    assert_eq!(first.cleanup.state, eml_fs::CleanupState::Complete);
+    let operation = session.start_export(id, destination.clone()).unwrap();
+    assert_eq!(session.export_reserved_run(), Some(id));
+    assert!(!session.dismiss(id));
+    assert!(
+        session
+            .start_export(id, root.path().join("other.json"))
+            .is_err()
+    );
+    let done = finish_export(&mut session);
+    assert!(done.usable(), "{done:?}");
+    assert_eq!(done.operation_id, operation);
+    assert!(session.export_control_for(operation).is_none());
     let bytes = fs::read(&destination).unwrap();
     assert_exported_facts(&bytes);
-    for output in [destination.clone(), source.clone()] {
-        let retained = report.clone();
-        let refused = thread::spawn(move || {
-            export_report(&retained, &output, &eml_core::RunControl::default())
-        })
-        .join()
-        .unwrap();
-        assert!(!refused.usable(), "{refused:?}");
-        assert_eq!(refused.publication, eml_fs::PublicationState::NotPublished);
-        assert_eq!(refused.cleanup.state, eml_fs::CleanupState::Complete);
-        assert!(
-            refused
-                .failures
-                .iter()
-                .any(|failure| failure.kind == Some(std::io::ErrorKind::AlreadyExists))
-        );
+    eml_app::report_document::validate(&bytes).unwrap();
+    fs::create_dir(root.path().join("directory.json")).unwrap();
+    std::os::unix::fs::symlink("missing", root.path().join("dangling.json")).unwrap();
+    std::os::unix::fs::symlink("report.json", root.path().join("link.json")).unwrap();
+    for name in [
+        "report.json",
+        "directory.json",
+        "dangling.json",
+        "link.json",
+    ] {
+        session.start_export(id, root.path().join(name)).unwrap();
+        let done = finish_export(&mut session);
+        assert!(!done.usable(), "{done:?}");
+        assert_eq!(done.receipt.as_ref().unwrap().publication, "not_published");
     }
-    let late = root.path().join("late-collision.json");
-    assert_eq!(
-        eml_app::inspect_report_destination(&late).unwrap(),
-        eml_app::ReportNameAvailability::Unused
-    );
-    fs::write(&late, b"Created after advisory inspection").unwrap();
-    let raced = export_report(&report, &late, &eml_core::RunControl::default());
-    assert_eq!(raced.publication, eml_fs::PublicationState::NotPublished);
-    assert!(
-        raced
-            .failures
-            .iter()
-            .any(|f| f.stage == eml_app::ReportExportStage::Publication
-                && f.kind == Some(std::io::ErrorKind::AlreadyExists))
-    );
-    assert_eq!(
-        fs::read(&late).unwrap(),
-        b"Created after advisory inspection"
-    );
-    let retained = report.clone();
-    let cancelled_path = root.path().join("cancelled.json");
-    let output = cancelled_path.clone();
-    let stopped = eml_core::RunControl::default();
-    stopped.request_stop();
-    let cancelled = thread::spawn(move || export_report(&retained, &output, &stopped))
-        .join()
-        .unwrap();
-    assert!(!cancelled.usable());
-    assert_eq!(
-        cancelled.publication,
-        eml_fs::PublicationState::NotPublished
-    );
-    assert_eq!(cancelled.cleanup.state, eml_fs::CleanupState::NotNeeded);
-    assert!(!cancelled_path.exists());
     assert_eq!(fs::read(&destination).unwrap(), bytes);
-    assert_eq!(fs::read(source).unwrap(), INPUT);
-    assert_eq!(
-        fs::read(root.path().join("message.no-attachments.eml")).unwrap(),
-        GOLDEN
-    );
-    assert_eq!(
-        fs::read_dir(root.path()).unwrap().count(),
-        4,
-        "Owned stages must be removed"
-    );
+    assert_eq!(fs::read(&source).unwrap(), INPUT);
+    assert!(root.path().join("dangling.json").is_symlink());
+    assert!(session.dismiss(id));
     root.close().unwrap();
 }
-
 #[test]
-fn report_name_inspection_counts_every_existing_entry_without_granting_write_authority() {
-    use eml_app::{ReportNameAvailability, inspect_report_destination};
+fn export_draft_is_pure_and_rejects_names_without_filesystem_preflight() {
     let root = root();
-    fs::write(root.path().join("file.json"), b"Keep this").unwrap();
-    fs::create_dir(root.path().join("directory")).unwrap();
-    std::os::unix::fs::symlink("missing", root.path().join("dangling.json")).unwrap();
-    std::os::unix::fs::symlink("file.json", root.path().join("link.json")).unwrap();
-    for name in ["file.json", "directory", "dangling.json", "link.json"] {
-        assert_eq!(
-            inspect_report_destination(&root.path().join(name)).unwrap(),
-            ReportNameAvailability::Occupied
+    let absent = root.path().join("does-not-exist");
+    let draft = eml_app::ExportDraft::new(absent.clone(), "report.json".into()).unwrap();
+    assert_eq!(draft.destination(), absent.join("report.json"));
+    assert!(!absent.exists());
+    for name in [
+        "",
+        ".",
+        "..",
+        "a/b.json",
+        "a\\b.json",
+        "a\0.json",
+        "report.txt",
+    ] {
+        assert!(
+            eml_app::ExportDraft::new(absent.clone(), name.into()).is_err(),
+            "{name:?}"
         );
     }
-    assert_eq!(
-        inspect_report_destination(&root.path().join("unused")).unwrap(),
-        ReportNameAvailability::Unused
-    );
-    assert_eq!(
-        inspect_report_destination(Path::new("relative.json"))
-            .unwrap_err()
-            .kind(),
-        std::io::ErrorKind::InvalidInput
-    );
-    assert_eq!(
-        fs::read(root.path().join("file.json")).unwrap(),
-        b"Keep this"
-    );
-    assert!(root.path().join("dangling.json").is_symlink());
-    root.close().unwrap();
+    assert!(eml_app::ExportDraft::new(PathBuf::from("relative"), "report.json".into()).is_err());
 }
 
 #[cfg(feature = "native-fixtures")]
@@ -671,7 +655,11 @@ fn apply_first_view(session: &mut eml_app::DesktopSession, ids: &[eml_app::RunId
         !session.start_next().unwrap(),
         "Final rendering acknowledgment is required before the next launch"
     );
-    assert!(!root.join("second.no-attachments.eml").exists());
+    assert!(
+        !root
+            .join("second.upo25prhcgga75aaidzgwhbnsi.no-attachments.eml")
+            .exists()
+    );
     assert!(matches!(
         session.acknowledge_completion(ids[1]),
         Err(SessionError::InactiveRun)
@@ -713,7 +701,11 @@ fn resume_after_report_dismissal(
     ));
     assert_eq!(session.waiting(), 1);
     assert_eq!(session.reports().len(), 2);
-    assert!(!root.join("third.no-attachments.eml").exists());
+    assert!(
+        !root
+            .join("third.3q5ojtrbmvu25fm2qmny5jtbda.no-attachments.eml")
+            .exists()
+    );
     let exporting = session.reports()[0].report();
     assert!(
         !session.dismiss(ids[0]),
@@ -835,4 +827,169 @@ fn poison_processing_report(report: &eml_app::ReportHandle) -> bool {
         }
     }
     false
+}
+
+fn named_copy(name: &str) -> &'static str {
+    match name {
+        "first" => "first.l2tsrs7rk6r3a2nclycneb7ohu.no-attachments.eml",
+        "second" => "second.upo25prhcgga75aaidzgwhbnsi.no-attachments.eml",
+        "third" => "third.3q5ojtrbmvu25fm2qmny5jtbda.no-attachments.eml",
+        "active" => "active.poeb6fxajwxx2n7po7yw24z3pi.no-attachments.eml",
+        "queued" => "queued.hel47aj6pfuvjmudvp6uxwms5e.no-attachments.eml",
+        _ => panic!("Missing independent filename vector"),
+    }
+}
+
+#[cfg(feature = "native-fixtures")]
+#[test]
+fn two_report_capacity_preserves_export_view_queue_and_exact_later_operation_controls() {
+    use eml_app::{DesktopSession, QueueError, SessionError};
+    let root = root();
+    let helper = worker_fixture(root.path(), Some("two-lanes"));
+    let source = root.path().join("message.eml");
+    let second = root.path().join("second.eml");
+    let hold = root.path().join("hold.eml");
+    for path in [&source, &second, &hold] {
+        fs::write(path, INPUT).unwrap();
+    }
+    let mut session = DesktopSession::new(helper, env!("CARGO_PKG_VERSION").into());
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let a = session
+            .enqueue(RequestSnapshot::new(vec![source.clone()], None).unwrap())
+            .unwrap();
+        session.start_next().unwrap();
+        let done = session_finish(&mut session);
+        assert!(done.settled && done.reusable, "{done:?}");
+        session.acknowledge_completion(a).unwrap();
+        let b = session
+            .enqueue(RequestSnapshot::new(vec![second.clone()], None).unwrap())
+            .unwrap();
+        session.start_next().unwrap();
+        let done = session_finish(&mut session);
+        assert!(done.settled && done.reusable, "{done:?}");
+        session.acknowledge_completion(b).unwrap();
+        let c = session
+            .enqueue(RequestSnapshot::new(vec![hold.clone()], None).unwrap())
+            .unwrap();
+        assert!(matches!(
+            session.start_next(),
+            Err(SessionError::Queue(QueueError::ReportSpace))
+        ));
+        assert_eq!(session.waiting(), 1);
+        assert_eq!(session.reports().len(), 2);
+        let export = session
+            .start_export(a, root.path().join("report.json"))
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !root.path().join("export-fed").exists() {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            session
+                .reports()
+                .iter()
+                .find(|r| r.id() == b)
+                .unwrap()
+                .report()
+                .inspect(|r| r.items().len())
+                .unwrap(),
+            Some(1)
+        );
+        assert_eq!(session.export_reserved_run(), Some(a));
+        assert!(!session.dismiss(a));
+        assert!(matches!(
+            session.start_next(),
+            Err(SessionError::Queue(QueueError::ReportSpace))
+        ));
+        assert!(session.dismiss(b));
+        assert!(session.start_next().unwrap());
+        while !root.path().join("processing-fed").exists() {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(5));
+        }
+        let processing = session.control_for(c).unwrap().operation_id();
+        let old_processing = session.control_for(c).unwrap().clone();
+        let old_export = session.export_control_for(export).unwrap().clone();
+        assert_ne!(processing, export);
+        assert_eq!(session.reports().len(), 2);
+        for id in [a, c, a, c] {
+            assert!(
+                session
+                    .reports()
+                    .iter()
+                    .find(|r| r.id() == id)
+                    .unwrap()
+                    .report()
+                    .inspect(|_| ())
+                    .unwrap()
+                    .is_some()
+            );
+            assert_eq!(session.active_export(), Some(export));
+        }
+        let d = session
+            .enqueue(RequestSnapshot::new(vec![source.clone()], None).unwrap())
+            .unwrap();
+        assert!(!session.start_next().unwrap());
+        old_export.request_stop().unwrap();
+        old_export.request_stop().unwrap();
+        let done = finish_export(&mut session);
+        assert_eq!(done.operation_id, export);
+        assert!(done.worker.settled);
+        assert_eq!(done.worker.exit_code, Some(130));
+        assert!(done.receipt.is_none());
+        assert!(done.outcome_message().starts_with("Export outcome unknown"));
+        assert!(session.export_control_for(export).is_none());
+        assert!(!old_export.request_stop().unwrap());
+        assert_eq!(session.control_for(c).unwrap().operation_id(), processing);
+        assert!(matches!(
+            session.poll(),
+            Some(WorkerObservation::Pending { .. })
+        ));
+        assert!(session.dismiss(a));
+        assert!(!session.start_next().unwrap());
+        old_processing.request_stop().unwrap();
+        old_processing.request_stop().unwrap();
+        let done = session_finish(&mut session);
+        assert!(done.settled && done.reusable, "{done:?}");
+        session.acknowledge_completion(c).unwrap();
+        assert!(session.start_next().unwrap());
+        let later = session.control_for(d).unwrap().operation_id();
+        assert_ne!(later, processing);
+        assert_ne!(later, export);
+        assert!(!old_processing.request_stop().unwrap());
+        assert!(session.export_control_for(export).is_none());
+        let done = session_finish(&mut session);
+        assert!(done.settled && done.reusable, "{done:?}");
+        session.acknowledge_completion(d).unwrap();
+        session.confirm_shutdown(Instant::now()).unwrap();
+        assert!(session.worker_shutdown_settled());
+        assert!(!root.path().join("report.json").exists());
+        for path in [&source, &second, &hold] {
+            assert_eq!(fs::read(path).unwrap(), INPUT);
+        }
+    }));
+    if let Err(payload) = result {
+        session
+            .confirm_shutdown(Instant::now() - Duration::from_secs(12))
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !session.worker_shutdown_settled() {
+            if let Some(WorkerObservation::Settled(_)) = session.poll() {
+                session
+                    .acknowledge_completion(session.active().unwrap())
+                    .unwrap();
+            }
+            session.poll_export();
+            if Instant::now() >= deadline {
+                eprintln!(
+                    "Failed lane fixture still owns unsettled resources; abort later tests and retain the fixture directory"
+                );
+                std::process::exit(1);
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        std::panic::resume_unwind(payload);
+    }
+    root.close().unwrap();
 }

@@ -69,9 +69,12 @@ impl Acl {
             let mut mask = 0;
             // SAFETY: entry belongs to live ACL; tag/mask have SDK-compatible
             // c_int/u64 alignment/size and stay writable for these calls.
-            if unsafe { acl_get_tag_type(entry, &mut tag) } != 0
-                || unsafe { acl_get_permset_mask_np(entry, &mut mask) } != 0
-            {
+            if unsafe { acl_get_tag_type(entry, &mut tag) } != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: entry belongs to the same live ACL; mask is an aligned
+            // initialized u64 output retained through this synchronous call.
+            if unsafe { acl_get_permset_mask_np(entry, &mut mask) } != 0 {
                 return Err(io::Error::last_os_error());
             }
             result.push((tag, mask));

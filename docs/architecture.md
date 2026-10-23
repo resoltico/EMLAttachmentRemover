@@ -5,8 +5,9 @@ The workspace separates message policy and native storage from frontends.
 - **eml-core** owns request/resource admission, ordered collection, copy naming,
   destination reservations, immutable MIME preparation, independent edit
   authorization, source/existing comparisons, cancellation, publication decisions
-  and typed outcomes. Its error-code registry supplies recovery guidance shared by
-  the adapters. It does not depend on JSON or a GUI framework.
+  and typed outcomes. Its pure meaning classifier supplies canonical vocabulary,
+  conservative outcome/removal meanings and simultaneous consequence guidance
+  shared by the adapters. Product display identity also belongs to core. It does not depend on JSON or a GUI framework.
 - **eml-fs** binds ordinary files and directories, protects staging, performs
   native no-replace publication and synchronization, and reports independent
   identity/address/cleanup facts. Its reviewed native modules contain the narrow
@@ -15,15 +16,18 @@ The workspace separates message policy and native storage from frontends.
   signals and renders checked human or LF-delimited JSON events. Its executable
   calls the reusable business workflow rather than maintaining another engine.
 - **eml-protocol** shares native-path/request/event transport across products.
-  Recovery guidance and shared consequence explanations serve both frontends;
-  command-line arguments, controls and output formatting remain adapter concerns.
+  One strict generic request envelope supports encoding and decoding. Validated
+  event facts project into core meaning without a second classifier. Command-line
+  arguments, controls and output formatting remain adapter concerns.
 - **eml-worker** is the GUI's private process boundary and calls eml-core
   directly. It does not invoke the CLI product. Its separate process preserves
   the required force-stop capability for stalled native operations.
 - **eml-app** owns bounded request snapshots, serial queue/report reservations,
-  LF framing, checked protocol reduction, current activity and protected report
-  export. Report-name inspection is advisory; export still uses held filesystem
-  bindings and atomic no-replace publication. It has no UI-toolkit dependency.
+  private operation framing, checked protocol reduction, captured run mode,
+  terminal run meaning, current activity and report reservations. Processing and
+  report export use distinct lanes over one owned child transport. Report drafts
+  receive pure lexical validation; the child binds and publishes through native
+  no-replace/readback/durability services. It has no UI-toolkit dependency.
   The [frontend design](desktop-frontend-design.md) and
   [process ownership](macos-process-ownership.md) describe its native integration.
 - **eml-gui** contains the Slint macOS screens under the explicit macos-gui
@@ -41,9 +45,11 @@ The workspace separates message policy and native storage from frontends.
   and source-bound native/console evidence.
   Developer process supervision is separate from product helper ownership.
 
-A PreparedMessage retains source bytes and authorized deletion ranges. Production
-verification independently checks that retained content and structure remain
-unchanged. It does not regenerate MIME or treat its own removal list as an oracle.
+A PreparedMessage owns the single prepared payload and bounded removal metadata.
+The forward parser records immutable source spans. Independent authorization
+derives a retained-tree proof and iterates its spans in source order; complete
+chunked equality, reparsing, structural comparison and gap-free fixed-point
+coverage establish that retained bytes and structure remain unchanged. It does not regenerate MIME or treat its own removal list as an oracle.
 Real storage observations remain distinct: candidate verification, atomic
 publication knowledge, requested address, file/namespace synchronization and
 cleanup cannot be collapsed into a Boolean success.

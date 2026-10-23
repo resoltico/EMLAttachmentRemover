@@ -27,6 +27,15 @@ pub enum RunMode {
     /// Inspect and plan without creating entries or attempting synchronization.
     DryRun,
 }
+impl RunMode {
+    /// Canonical operation wording shared by user-facing renderers.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::DryRun => "Check only",
+            Self::Create => "Create copies",
+        }
+    }
+}
 
 /// Frontend-independent request; all paths retain their original native units.
 ///

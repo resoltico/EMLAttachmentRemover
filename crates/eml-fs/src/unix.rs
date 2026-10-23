@@ -35,7 +35,10 @@ pub(crate) fn component(name: &OsStr) -> io::Result<()> {
     }
     Ok(())
 }
-#[allow(clippy::unnecessary_cast, reason = "quality:native-device-width")]
+#[allow(
+    clippy::unnecessary_cast,
+    reason = "Darwin dev_t is signed32 and Linux dev_t is unsigned64; preserving the established identity conversion requires a cast on Darwin and makes that same cast redundant on Linux."
+)]
 pub(crate) fn identity(stat: &fs::Stat) -> io::Result<Identity> {
     usable_identity(stat.st_dev as u64, stat.st_ino)
 }
@@ -158,7 +161,7 @@ impl BoundDirectory {
         self.uid
     }
     /// Request synchronization of this exact held directory namespace.
-    pub fn sync_namespace(&self) -> crate::SyncReceipt {
+    pub(crate) fn sync_namespace(&self) -> crate::SyncReceipt {
         crate::candidate::portable_sync(self)
     }
     /// Compare the current requested address with the held directory. An error
@@ -234,7 +237,10 @@ impl BoundDirectory {
     }
     /// Create one owned private directory after namespace admission. Existing
     /// names are refused, never chmodded or stripped of ACLs.
-    pub fn create_private_child(&self, name: &OsStr) -> Result<CreatedDirectory, CreationFailure> {
+    pub(crate) fn create_private_child(
+        &self,
+        name: &OsStr,
+    ) -> Result<CreatedDirectory, CreationFailure> {
         component(name).map_err(no_creation)?;
         self.admit_namespace().map_err(no_creation)?;
         fs::mkdirat(self, name, Mode::from_raw_mode(0o700)).map_err(|error| {
@@ -338,9 +344,26 @@ impl BoundDirectory {
             .filter(|value| *value > 0)
             .unwrap_or(255))
     }
+    /// Observe the held filesystem's supported generated-name domain without writes.
+    pub fn admit_name_domain(&self) -> io::Result<()> {
+        crate::namespace::admit_name_domain(self)
+    }
+    /// Read-only observation of supported creation policy, without granting authority.
+    pub fn inspect_creation_support(&self) -> io::Result<()> {
+        self.admit_name_domain()?;
+        self.admit_namespace()
+    }
+    /// Reobserve ordinary directory identity without creation admission.
+    pub fn check_held(&self) -> io::Result<()> {
+        if identity(&fs::fstat(self)?)? != self.identity {
+            return Err(io::Error::other("Held directory identity changed"));
+        }
+        Ok(())
+    }
     /// Establish the other-UID namespace predicate before creating or removing an owned entry.
     /// This is access-control admission, not an atomic compare-and-unlink operation.
-    pub fn admit_namespace(&self) -> io::Result<()> {
+    pub(crate) fn admit_namespace(&self) -> io::Result<()> {
+        self.admit_name_domain()?;
         let stat = fs::fstat(&*self.fd)?;
         crate::namespace::admit_model(self, stat.st_uid)?;
         if self.identity != identity(&stat)? {

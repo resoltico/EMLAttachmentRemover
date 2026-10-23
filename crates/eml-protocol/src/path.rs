@@ -8,12 +8,40 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Serialize)]
 pub(super) struct NativePath {
     encoding: NativeEncoding,
     base64: String,
 }
+impl<'de> Deserialize<'de> for NativePath {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Fields {
+            encoding: NativeEncoding,
+            base64: String,
+        }
+        struct Map;
+        impl<'de> serde::de::Visitor<'de> for Map {
+            type Value = NativePath;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("native path object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                a: A,
+            ) -> Result<Self::Value, A::Error> {
+                let f = Fields::deserialize(serde::de::value::MapAccessDeserializer::new(a))?;
+                Ok(NativePath {
+                    encoding: f.encoding,
+                    base64: f.base64,
+                })
+            }
+        }
+        d.deserialize_map(Map)
+    }
+}
+
 #[derive(PartialEq, Eq)]
 enum NativeEncoding {
     UnixBytes,

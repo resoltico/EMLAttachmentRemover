@@ -1,93 +1,32 @@
-//! Expected native distribution identities, never fabricated qualification.
+//! One immutable typed build policy; JSON is rendered only at external boundaries.
 use crate::Result;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::Write,
+    fmt,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
 };
-
 const CLI_PACKAGE: &str = "remove-eml-attachments";
 const MAX_PLAN_BYTES: usize = 16 * 1024;
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Distribution {
-    policy: Policy,
-    picker_host: PickerHostPolicy,
-    targets: Vec<Target>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PickerHostPolicy {
-    pub(crate) image_os: String,
-    pub(crate) image_version: String,
-    pub(crate) product_version: String,
-    pub(crate) build_version: String,
-}
-impl PickerHostPolicy {
-    fn validate(&self) -> Result<()> {
-        let image: Vec<_> = self.image_version.split('.').collect();
-        let product: Vec<_> = self.product_version.split('.').collect();
-        if self.image_os != "macos26"
-            || image.len() != 3
-            || image[0].len() != 8
-            || image[1].len() != 4
-            || image[2].is_empty()
-            || self.image_version.len() > 32
-            || image
-                .iter()
-                .any(|part| !part.bytes().all(|byte| byte.is_ascii_digit()))
-            || !(2..=3).contains(&product.len())
-            || product[0] != "26"
-            || self.product_version.len() > 16
-            || product
-                .iter()
-                .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
-            || self.build_version.is_empty()
-            || self.build_version.len() > 32
-            || !self
-                .build_version
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric())
-        {
-            return Err("Invalid Intel picker host image policy".into());
-        }
-        Ok(())
-    }
-}
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Policy {
-    macos_minimum: String,
-    linux_minimum_ubuntu: String,
-    linux_glibc_maximum: String,
-    windows_rust_minimum: String,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Target {
-    platform: String,
-    target: String,
-    runner: String,
-    app_smoke_runner: Option<String>,
-}
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Family {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum OsFamily {
     Macos,
     Linux,
     Windows,
 }
-impl Family {
-    fn name(self) -> &'static str {
+impl OsFamily {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Macos => "macos",
             Self::Linux => "linux",
             Self::Windows => "windows",
         }
     }
-    fn target_suffix(self) -> &'static str {
+    fn suffix(self) -> &'static str {
         match self {
             Self::Macos => "apple-darwin",
             Self::Linux => "unknown-linux-gnu",
@@ -95,160 +34,361 @@ impl Family {
         }
     }
 }
-#[derive(Serialize)]
-struct NativeTarget {
-    platform: String,
-    target: String,
-    runner: String,
-    app_smoke_runner: Option<String>,
-    os: &'static str,
-    architecture: String,
-    app: bool,
-    platform_text: String,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Architecture {
+    X86_64,
+    Aarch64,
 }
-#[derive(Serialize)]
-struct ExpectedArtifact {
-    name: String,
-    platform: String,
-    role: &'static str,
-    root: String,
-    executable: &'static str,
+impl Architecture {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::X86_64 => "x86_64",
+            Self::Aarch64 => "aarch64",
+        }
+    }
 }
-#[derive(Serialize)]
-struct Plan {
-    version: String,
-    policy: Policy,
-    picker_host: PickerHostPolicy,
-    native_targets: Vec<NativeTarget>,
-    expected_artifacts: Vec<ExpectedArtifact>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct PlatformId {
+    family: OsFamily,
+    architecture: Architecture,
 }
-
-#[derive(Deserialize, Serialize)]
+impl PlatformId {
+    pub(crate) fn parse(value: &str) -> Result<Self> {
+        let (family, architecture) = value.split_once('-').ok_or("Invalid platform identifier")?;
+        Ok(Self {
+            family: match family {
+                "macos" => OsFamily::Macos,
+                "linux" => OsFamily::Linux,
+                "windows" => OsFamily::Windows,
+                _ => return Err("Unknown platform family".into()),
+            },
+            architecture: match architecture {
+                "x86_64" => Architecture::X86_64,
+                "aarch64" => Architecture::Aarch64,
+                _ => return Err("Unknown native architecture".into()),
+            },
+        })
+    }
+    pub(crate) fn family(self) -> OsFamily {
+        self.family
+    }
+    pub(crate) fn architecture(self) -> Architecture {
+        self.architecture
+    }
+}
+impl fmt::Display for PlatformId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}-{}", self.family.as_str(), self.architecture.as_str())
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ProductRole {
+    Cli,
+    #[serde(rename = "app")]
+    DesktopApp,
+}
+impl ProductRole {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Cli => "cli",
+            Self::DesktopApp => "app",
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ArtifactKey {
+    platform: PlatformId,
+    role: ProductRole,
+}
+impl ArtifactKey {
+    pub(crate) fn new(platform: PlatformId, role: ProductRole) -> Self {
+        Self { platform, role }
+    }
+    pub(crate) fn platform(self) -> PlatformId {
+        self.platform
+    }
+    pub(crate) fn role(self) -> ProductRole {
+        self.role
+    }
+}
+macro_rules! text_value {
+    ($name:ident) => {
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        pub(crate) struct $name(String);
+        impl $name {
+            pub(crate) fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+    };
+}
+text_value!(PackageVersion);
+text_value!(RustTarget);
+text_value!(RunnerLabel);
+text_value!(ArchiveBasename);
+text_value!(ArchiveRoot);
+text_value!(ArchiveMemberPath);
+text_value!(SourceCommit);
+impl ArchiveBasename {
+    pub(crate) fn parse(value: String) -> Result<Self> {
+        if !plain(&value, 255) {
+            return Err("Archive name must be one bounded plain native component".into());
+        }
+        Ok(Self(value))
+    }
+}
+impl SourceCommit {
+    fn parse(value: String) -> Result<Self> {
+        if value.len() != 40
+            || !value
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
+            return Err("Source must be a full lowercase commit identity".into());
+        }
+        Ok(Self(value))
+    }
+}
+fn plain(value: &str, max: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max
+        && value != "."
+        && value != ".."
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_.+".contains(&b))
+}
+fn runner(value: String) -> Result<RunnerLabel> {
+    if !plain(&value, 64) || !value.as_bytes()[0].is_ascii_alphanumeric() {
+        return Err("Invalid runner label".into());
+    }
+    Ok(RunnerLabel(value))
+}
+fn bounded(path: &Path, maximum: usize) -> Result<Vec<u8>> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_file() || metadata.len() > maximum as u64 {
+        return Err(format!("Input must be an ordinary bounded file: {}", path.display()).into());
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take((maximum + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > maximum {
+        return Err("Build input grew beyond its bound".into());
+    }
+    Ok(bytes)
+}
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Xcode {
+pub(crate) struct PlatformFloors {
+    macos_minimum: String,
+    linux_minimum_ubuntu: String,
+    linux_glibc_maximum: String,
+    windows_rust_minimum: String,
+}
+impl PlatformFloors {
+    pub(crate) fn macos_minimum(&self) -> &str {
+        &self.macos_minimum
+    }
+    pub(crate) fn linux_minimum_ubuntu(&self) -> &str {
+        &self.linux_minimum_ubuntu
+    }
+    pub(crate) fn linux_glibc_maximum(&self) -> &str {
+        &self.linux_glibc_maximum
+    }
+    pub(crate) fn windows_rust_minimum(&self) -> &str {
+        &self.windows_rust_minimum
+    }
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct XcodePin {
     version: String,
     build: String,
 }
-impl Xcode {
-    fn parse(input: &str) -> Result<Self> {
-        let document: toml::Value = toml::from_str(input)?;
-        let selected: Self = document
-            .get("xcode")
-            .ok_or("Missing Xcode build input")?
-            .clone()
-            .try_into()?;
-        let pieces: Vec<_> = selected.version.split('.').collect();
-        if !(2..=3).contains(&pieces.len())
-            || selected.version.len() > 16
-            || pieces
-                .iter()
-                .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
-            || selected.build.is_empty()
-            || selected.build.len() > 32
-            || !selected
-                .build
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric())
-        {
-            return Err("Invalid Xcode version/build input".into());
-        }
-        Ok(selected)
+impl XcodePin {
+    pub(crate) fn version(&self) -> &str {
+        &self.version
+    }
+    pub(crate) fn build(&self) -> &str {
+        &self.build
     }
 }
-#[derive(Serialize)]
-struct BuildPlan {
-    #[serde(flatten)]
-    distribution: Plan,
-    xcode: Xcode,
-    tools: BTreeMap<String, String>,
+pub(crate) struct ToolPins(BTreeMap<String, String>);
+impl ToolPins {
+    pub(crate) fn version(&self, name: &str) -> Result<&str> {
+        self.0
+            .get(name)
+            .map(String::as_str)
+            .ok_or_else(|| format!("Missing pinned tool: {name}").into())
+    }
 }
+pub(crate) struct PickerCheck {
+    runner: RunnerLabel,
+    os_major: u32,
+}
+impl PickerCheck {
+    pub(crate) fn runner(&self) -> &str {
+        self.runner.as_str()
+    }
+    pub(crate) fn os_major(&self) -> u32 {
+        self.os_major
+    }
+}
+pub(crate) struct DesktopChecks {
+    floor_runner: RunnerLabel,
+    floor_major: u32,
+    picker: Option<PickerCheck>,
+}
+impl DesktopChecks {
+    pub(crate) fn floor_runner(&self) -> &str {
+        self.floor_runner.as_str()
+    }
+    pub(crate) fn floor_major(&self) -> u32 {
+        self.floor_major
+    }
+    pub(crate) fn picker(&self) -> Option<&PickerCheck> {
+        self.picker.as_ref()
+    }
+}
+pub(crate) struct NativeTarget {
+    platform: PlatformId,
+    rust_target: RustTarget,
+    build_runner: RunnerLabel,
+    products: BTreeSet<ProductRole>,
+    desktop: Option<DesktopChecks>,
+    platform_text: String,
+}
+impl NativeTarget {
+    pub(crate) fn platform(&self) -> PlatformId {
+        self.platform
+    }
+    pub(crate) fn rust_target(&self) -> &str {
+        self.rust_target.as_str()
+    }
+    pub(crate) fn build_runner(&self) -> &str {
+        self.build_runner.as_str()
+    }
+    pub(crate) fn products(&self) -> &BTreeSet<ProductRole> {
+        &self.products
+    }
+    pub(crate) fn desktop(&self) -> Option<&DesktopChecks> {
+        self.desktop.as_ref()
+    }
+    pub(crate) fn platform_text(&self) -> &str {
+        &self.platform_text
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ArchiveFormat {
+    TarGz,
+    Zip,
+}
+#[derive(Clone, Copy)]
+pub(crate) enum AuxiliaryAsset {
+    ChecksumManifest,
+}
+impl AuxiliaryAsset {
+    pub(crate) fn basename(self) -> &'static str {
+        match self {
+            Self::ChecksumManifest => "SHA256SUMS",
+        }
+    }
+}
+pub(crate) struct ArtifactSpec {
+    key: ArtifactKey,
+    basename: ArchiveBasename,
+    root: ArchiveRoot,
+    executable: ArchiveMemberPath,
+    format: ArchiveFormat,
+}
+impl ArtifactSpec {
+    pub(crate) fn key(&self) -> ArtifactKey {
+        self.key
+    }
+    pub(crate) fn basename(&self) -> &str {
+        self.basename.as_str()
+    }
+    pub(crate) fn root(&self) -> &str {
+        self.root.as_str()
+    }
+    pub(crate) fn executable(&self) -> &str {
+        self.executable.as_str()
+    }
+    pub(crate) fn format(&self) -> ArchiveFormat {
+        self.format
+    }
+}
+pub(crate) struct BuildPlan {
+    version: PackageVersion,
+    floors: PlatformFloors,
+    targets: BTreeMap<PlatformId, NativeTarget>,
+    artifacts: BTreeMap<ArtifactKey, ArtifactSpec>,
+    tools: ToolPins,
+    xcode: XcodePin,
+}
+pub(crate) struct BuildContext {
+    root: PathBuf,
+    source: SourceCommit,
+    plan: BuildPlan,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Distribution {
+    policy: PlatformFloors,
+    targets: Vec<TargetInput>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TargetInput {
+    platform: String,
+    target: String,
+    runner: String,
+    products: Vec<ProductRole>,
+    desktop: Option<DesktopInput>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DesktopInput {
+    floor_runner: String,
+    floor_major: u32,
+    picker: Option<PickerInput>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PickerInput {
+    runner: String,
+    os_major: u32,
+}
+#[derive(Deserialize)]
+struct ToolInput {
+    xcode: XcodePin,
+    versions: BTreeMap<String, String>,
+}
+impl BuildPlan {
+    #[cfg(test)]
+    pub(crate) fn test_plan() -> Self {
+        Self::parse(
+            include_str!("../distribution.toml"),
+            include_str!("../tools.toml"),
+            env!("CARGO_PKG_VERSION").into(),
+        )
+        .unwrap()
+    }
 
-fn tool_versions(input: &str) -> Result<BTreeMap<String, String>> {
-    let document: toml::Value = toml::from_str(input)?;
-    let tools: BTreeMap<String, String> = document
-        .get("versions")
-        .ok_or("Missing developer tool versions")?
-        .clone()
-        .try_into()?;
-    if tools.is_empty()
-        || tools.iter().any(|(name, version)| {
-            name.is_empty()
-                || name.len() > 64
-                || !name
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
-                || version.is_empty()
-                || version.len() > 64
-                || !version
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
-        })
-    {
-        return Err("Invalid developer tool identity".into());
-    }
-    Ok(tools)
-}
-
-impl Target {
-    fn coordinates(&self) -> Result<(Family, &str)> {
-        let (family, architecture) = self
-            .platform
-            .split_once('-')
-            .ok_or("Invalid platform identifier")?;
-        let family = match family {
-            "macos" => Family::Macos,
-            "linux" => Family::Linux,
-            "windows" => Family::Windows,
-            _ => return Err("Unsupported platform family".into()),
-        };
-        if !matches!(architecture, "x86_64" | "aarch64") {
-            return Err("Unsupported native architecture".into());
+    pub(crate) fn parse(distribution: &str, tool_input: &str, version: String) -> Result<Self> {
+        let table: Distribution = toml::from_str(distribution)?;
+        let tools: ToolInput = toml::from_str(tool_input)?;
+        if !plain(&version, 128) {
+            return Err("Cargo version cannot form a safe archive component".into());
         }
-        if self.target != format!("{architecture}-{}", family.target_suffix()) {
-            return Err("Rust target does not match its native platform".into());
-        }
-        let valid_runner = |label: &str| {
-            !label.is_empty()
-                && label.len() <= 64
-                && label
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.'))
-                && label.as_bytes()[0].is_ascii_alphanumeric()
-        };
-        if !valid_runner(&self.runner)
-            || self
-                .app_smoke_runner
-                .as_deref()
-                .is_some_and(|label| !valid_runner(label))
-            || (family == Family::Macos) != self.app_smoke_runner.is_some()
-        {
-            return Err("Invalid native build or macOS app smoke runner".into());
-        }
-        Ok((family, architecture))
-    }
-}
-impl Distribution {
-    fn parse(input: &str) -> Result<Self> {
-        let table: Self = toml::from_str(input)?;
-        table.picker_host.validate()?;
-        if table.targets.len() != 6 {
-            return Err("Distribution requires exactly six native targets".into());
-        }
-        let mut platforms = BTreeSet::new();
-        let mut targets = BTreeSet::new();
-        for row in &table.targets {
-            row.coordinates()?;
-            if !platforms.insert(&row.platform) || !targets.insert(&row.target) {
-                return Err("Duplicate native platform or Rust target".into());
-            }
-        }
-        // Exactly six unique members of the supported three-family/two-CPU
-        // product also establishes that no required native platform is missing.
         for value in [
             &table.policy.macos_minimum,
             &table.policy.linux_minimum_ubuntu,
             &table.policy.linux_glibc_maximum,
             &table.policy.windows_rust_minimum,
+            &tools.xcode.version,
         ] {
             let parts: Vec<_> = value.split('.').collect();
             if value.len() > 16
@@ -256,101 +396,358 @@ impl Distribution {
                 || parts.len() > 3
                 || parts
                     .iter()
-                    .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
-                || parts[0].bytes().all(|byte| byte == b'0')
+                    .any(|part| part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()))
+                || parts[0].bytes().all(|b| b == b'0')
             {
-                return Err("Invalid distribution platform floor".into());
+                return Err("Invalid platform floor or Xcode version".into());
             }
         }
-        Ok(table)
-    }
-
-    fn plan(self, version: String) -> Result<Plan> {
-        if version.is_empty()
-            || !version
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+        if tools.xcode.version.split('.').count() < 2
+            || !plain(&tools.xcode.build, 32)
+            || !tools.xcode.build.bytes().all(|b| b.is_ascii_alphanumeric())
+            || tools.versions.is_empty()
+            || tools.versions.iter().any(|(name, version)| {
+                name.is_empty()
+                    || name.len() > 64
+                    || !name.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+                    || !plain(version, 64)
+            })
         {
-            return Err("Cargo version cannot form a safe archive component".into());
+            return Err("Invalid compiler-adjacent tool pin".into());
         }
-        let mut native_targets = Vec::new();
-        let mut expected_artifacts = Vec::new();
-        for row in &self.targets {
-            let (family, architecture) = row.coordinates()?;
-            let platform_text = match family {
-                Family::Macos => format!(
-                    "macOS {}+, {architecture}. Native build host {}; app archive smoke host {}. A deployment minimum is not execution evidence for the original OS release.",
-                    self.policy.macos_minimum,
-                    row.runner,
-                    row.app_smoke_runner
-                        .as_deref()
-                        .ok_or("Missing macOS app smoke host")?
-                ),
-                Family::Linux => format!(
-                    "Ubuntu {}+, GNU/glibc {architecture}; required GLIBC symbols no newer than {}. Native qualification required on {}; other distributions are unqualified.",
-                    self.policy.linux_minimum_ubuntu, self.policy.linux_glibc_maximum, row.runner
-                ),
-                Family::Windows => format!(
-                    "Rust target minimum Windows {}+, {architecture}. Native qualification required on {}; client patch coverage depends on actual qualification records.",
-                    self.policy.windows_rust_minimum, row.runner
-                ),
-            };
-            native_targets.push(NativeTarget {
-                platform: row.platform.clone(),
-                target: row.target.clone(),
-                runner: row.runner.clone(),
-                app_smoke_runner: row.app_smoke_runner.clone(),
-                os: family.name(),
-                architecture: architecture.into(),
-                app: family == Family::Macos,
-                platform_text,
-            });
-            let root = format!("{CLI_PACKAGE}-{version}-{}", row.platform);
-            let extension = if family == Family::Linux {
-                "tar.gz"
-            } else {
-                "zip"
-            };
-            expected_artifacts.push(ExpectedArtifact {
-                name: format!("{root}.{extension}"),
-                root,
-                platform: row.platform.clone(),
-                role: "cli",
-                executable: if family == Family::Windows {
-                    "remove-eml-attachments.exe"
-                } else {
-                    CLI_PACKAGE
-                },
-            });
-            if family == Family::Macos {
-                expected_artifacts.push(ExpectedArtifact {
-                    name: format!("EML-Attachment-Remover-{version}-{}.zip", row.platform),
-                    root: "EML Attachment Remover.app".into(),
-                    platform: row.platform.clone(),
-                    role: "app",
-                    executable: "Contents/MacOS/EMLAttachmentRemover",
-                });
-            }
-        }
-        expected_artifacts.sort_by(|left, right| left.name.cmp(&right.name));
+        let mut targets = BTreeMap::new();
+        let mut artifacts = BTreeMap::new();
         let mut names = BTreeSet::new();
-        for artifact in &expected_artifacts {
-            if artifact.name.len() > 255 || !names.insert(&artifact.name) {
-                return Err(
-                    "Expected archive basenames must be unique and fit one component".into(),
+        let mut rust_targets = BTreeSet::new();
+        for input in table.targets {
+            let platform = PlatformId::parse(&input.platform)?;
+            if input.target
+                != format!(
+                    "{}-{}",
+                    platform.architecture.as_str(),
+                    platform.family.suffix()
+                )
+                || !rust_targets.insert(input.target.clone())
+            {
+                return Err("Duplicate or platform-mismatched Rust target".into());
+            }
+            let products: BTreeSet<_> = input.products.iter().copied().collect();
+            if products.is_empty()
+                || products.len() != input.products.len()
+                || (products.contains(&ProductRole::DesktopApp) != input.desktop.is_some())
+                || (input.desktop.is_some() && platform.family != OsFamily::Macos)
+            {
+                return Err("Invalid or duplicate product/desktop roles".into());
+            }
+            let desktop = input
+                .desktop
+                .map(|desktop| -> Result<DesktopChecks> {
+                    if !(1..=100).contains(&desktop.floor_major) {
+                        return Err("Invalid desktop floor major".into());
+                    }
+                    Ok(DesktopChecks {
+                        floor_runner: runner(desktop.floor_runner)?,
+                        floor_major: desktop.floor_major,
+                        picker: desktop
+                            .picker
+                            .map(|picker| -> Result<PickerCheck> {
+                                if picker.os_major < desktop.floor_major || picker.os_major > 100 {
+                                    return Err("Invalid picker OS role".into());
+                                }
+                                Ok(PickerCheck {
+                                    runner: runner(picker.runner)?,
+                                    os_major: picker.os_major,
+                                })
+                            })
+                            .transpose()?,
+                    })
+                })
+                .transpose()?;
+            let build_runner = runner(input.runner)?;
+            let platform_text = match platform.family {
+                OsFamily::Macos => format!(
+                    "macOS {}+, {}. Native build host {}; complete desktop floor host {}. A deployment minimum is not execution evidence for the original OS release.",
+                    table.policy.macos_minimum,
+                    platform.architecture.as_str(),
+                    build_runner.as_str(),
+                    desktop.as_ref().map_or("none", DesktopChecks::floor_runner)
+                ),
+                OsFamily::Linux => format!(
+                    "Ubuntu {}+, GNU/glibc {}; required GLIBC symbols no newer than {}. Native qualification required on {}; other distributions are unqualified.",
+                    table.policy.linux_minimum_ubuntu,
+                    platform.architecture.as_str(),
+                    table.policy.linux_glibc_maximum,
+                    build_runner.as_str()
+                ),
+                OsFamily::Windows => format!(
+                    "Rust target minimum Windows {}+, {}. Native qualification required on {}; client patch coverage depends on actual qualification records.",
+                    table.policy.windows_rust_minimum,
+                    platform.architecture.as_str(),
+                    build_runner.as_str()
+                ),
+            };
+            for &role in &products {
+                let key = ArtifactKey { platform, role };
+                let (basename, root, executable, format) = match role {
+                    ProductRole::Cli => {
+                        let root = format!("{CLI_PACKAGE}-{version}-{platform}");
+                        let format = if platform.family == OsFamily::Linux {
+                            ArchiveFormat::TarGz
+                        } else {
+                            ArchiveFormat::Zip
+                        };
+                        (
+                            format!(
+                                "{root}.{}",
+                                if format == ArchiveFormat::TarGz {
+                                    "tar.gz"
+                                } else {
+                                    "zip"
+                                }
+                            ),
+                            root,
+                            if platform.family == OsFamily::Windows {
+                                "remove-eml-attachments.exe"
+                            } else {
+                                CLI_PACKAGE
+                            }
+                            .to_owned(),
+                            format,
+                        )
+                    }
+                    ProductRole::DesktopApp => (
+                        format!("EML-Attachment-Remover-{version}-{platform}.zip"),
+                        "EML Attachment Remover.app".into(),
+                        "Contents/MacOS/EMLAttachmentRemover".into(),
+                        ArchiveFormat::Zip,
+                    ),
+                };
+                if !plain(&basename, 255) || !names.insert(basename.clone()) {
+                    return Err("Archive basenames must be unique bounded components".into());
+                }
+                artifacts.insert(
+                    key,
+                    ArtifactSpec {
+                        key,
+                        basename: ArchiveBasename::parse(basename)?,
+                        root: ArchiveRoot(root),
+                        executable: ArchiveMemberPath(executable),
+                        format,
+                    },
                 );
             }
+            let row = NativeTarget {
+                platform,
+                rust_target: RustTarget(input.target),
+                build_runner,
+                products,
+                desktop,
+                platform_text,
+            };
+            if targets.insert(platform, row).is_some() {
+                return Err("Duplicate native platform".into());
+            }
         }
-        Ok(Plan {
-            version,
-            policy: self.policy,
-            picker_host: self.picker_host,
-            native_targets,
-            expected_artifacts,
+        if targets.is_empty() || artifacts.is_empty() {
+            return Err("Distribution has no native products".into());
+        }
+        Ok(Self {
+            version: PackageVersion(version),
+            floors: table.policy,
+            targets,
+            artifacts,
+            tools: ToolPins(tools.versions),
+            xcode: tools.xcode,
         })
     }
+    pub(crate) fn version(&self) -> &str {
+        self.version.as_str()
+    }
+    pub(crate) fn floors(&self) -> &PlatformFloors {
+        &self.floors
+    }
+    pub(crate) fn tools(&self) -> &ToolPins {
+        &self.tools
+    }
+    pub(crate) fn xcode(&self) -> &XcodePin {
+        &self.xcode
+    }
+    pub(crate) fn targets(&self) -> impl Iterator<Item = &NativeTarget> {
+        self.targets.values()
+    }
+    pub(crate) fn expected_artifacts(&self) -> impl Iterator<Item = &ArtifactSpec> {
+        self.artifacts.values()
+    }
+    pub(crate) fn target(&self, key: PlatformId) -> &NativeTarget {
+        self.targets
+            .get(&key)
+            .expect("internally admitted platform key")
+    }
+    pub(crate) fn lookup_target(&self, target: &str) -> Result<&NativeTarget> {
+        self.targets
+            .values()
+            .find(|row| row.rust_target() == target)
+            .ok_or_else(|| format!("Unsupported native Rust target: {target}").into())
+    }
+    pub(crate) fn lookup_platform(&self, platform: &str) -> Result<&NativeTarget> {
+        let id = PlatformId::parse(platform)?;
+        if self.targets.contains_key(&id) {
+            Ok(self.target(id))
+        } else {
+            Err(format!("Undeclared native platform: {platform}").into())
+        }
+    }
+    pub(crate) fn artifact(&self, key: ArtifactKey) -> &ArtifactSpec {
+        self.artifacts
+            .get(&key)
+            .expect("internally admitted artifact key")
+    }
+    pub(crate) fn lookup_artifact(
+        &self,
+        platform: PlatformId,
+        role: ProductRole,
+    ) -> Result<&ArtifactSpec> {
+        let key = ArtifactKey::new(platform, role);
+        if self.artifacts.contains_key(&key) {
+            Ok(self.artifact(key))
+        } else {
+            Err("Target does not declare this product role".into())
+        }
+    }
+    pub(crate) fn named_artifact(&self, name: &str) -> Result<&ArtifactSpec> {
+        self.artifacts
+            .values()
+            .find(|row| row.basename() == name)
+            .ok_or_else(|| "Undeclared archive basename/version/platform".into())
+    }
+    pub(crate) fn archive_names(&self) -> BTreeSet<String> {
+        self.expected_artifacts()
+            .map(|row| row.basename().to_owned())
+            .collect()
+    }
+    fn row_json(row: &NativeTarget) -> Value {
+        json!({"platform":row.platform.to_string(),"target":row.rust_target(),"runner":row.build_runner(),"app_smoke_runner":row.desktop().map(DesktopChecks::floor_runner),"os":row.platform.family.as_str(),"architecture":row.platform.architecture.as_str(),"app":row.products.contains(&ProductRole::DesktopApp),"products":row.products.iter().map(|role|role.as_str()).collect::<Vec<_>>(),"platform_text":row.platform_text()})
+    }
+    pub(crate) fn native_matrix(&self) -> Value {
+        json!({"include":self.targets().map(Self::row_json).collect::<Vec<_>>()})
+    }
+    pub(crate) fn app_matrix(&self) -> Value {
+        json!({"include":self.targets().filter(|row|row.products.contains(&ProductRole::DesktopApp)).map(Self::row_json).collect::<Vec<_>>()})
+    }
+    pub(crate) fn floor_matrix(&self) -> Value {
+        json!({"include":self.targets().filter_map(|row|row.desktop().map(|desktop|json!({"platform":row.platform.to_string(),"target":row.rust_target(),"runner":desktop.floor_runner(),"os_major":desktop.floor_major()}))).collect::<Vec<_>>()})
+    }
+    pub(crate) fn picker_matrix(&self) -> Value {
+        json!({"include":self.targets().filter_map(|row|row.desktop().and_then(DesktopChecks::picker).map(|picker|json!({"platform":row.platform.to_string(),"target":row.rust_target(),"runner":picker.runner(),"os_major":picker.os_major()}))).collect::<Vec<_>>()})
+    }
+    pub(crate) fn render(&self) -> Value {
+        json!({"schema":"eml-build-plan","schema_version":1,"version":self.version(),"policy":{"macos_minimum":self.floors.macos_minimum(),"linux_minimum_ubuntu":self.floors.linux_minimum_ubuntu(),"linux_glibc_maximum":self.floors.linux_glibc_maximum(),"windows_rust_minimum":self.floors.windows_rust_minimum()},"native_targets":self.targets().map(Self::row_json).collect::<Vec<_>>(),"expected_artifacts":self.expected_artifacts().map(|row|json!({"name":row.basename(),"platform":row.key.platform.to_string(),"role":row.key.role.as_str(),"root":row.root(),"executable":row.executable(),"format":match row.format() {ArchiveFormat::Zip=>"zip",ArchiveFormat::TarGz=>"tar.gz"}})).collect::<Vec<_>>(),"xcode":{"version":self.xcode().version(),"build":self.xcode().build()},"tools":self.tools.0,"native_matrix":self.native_matrix(),"app_matrix":self.app_matrix(),"floor_matrix":self.floor_matrix(),"picker_matrix":self.picker_matrix()})
+    }
 }
-
+impl BuildContext {
+    pub(crate) fn load(root: &Path) -> Result<Self> {
+        let root = root.canonicalize()?;
+        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+        let metadata = Command::new(cargo)
+            .current_dir(&root)
+            .args([
+                "metadata",
+                "--locked",
+                "--offline",
+                "--no-deps",
+                "--format-version",
+                "1",
+                "--manifest-path",
+            ])
+            .arg(root.join("Cargo.toml"))
+            .output()?;
+        if !metadata.status.success() {
+            std::io::stderr().write_all(&metadata.stderr)?;
+            return Err(format!("Cargo metadata failed: {}", metadata.status).into());
+        }
+        if metadata.stdout.len() > 8 * 1024 * 1024 {
+            return Err("Cargo metadata exceeds its input bound".into());
+        }
+        let version = workspace_version(&root, &metadata.stdout)?;
+        let source = Command::new("git")
+            .current_dir(&root)
+            .args(["rev-parse", "--verify", "HEAD"])
+            .output()?;
+        if !source.status.success() {
+            return Err("Cannot observe source commit".into());
+        }
+        let source = SourceCommit::parse(String::from_utf8(source.stdout)?.trim_end().to_owned())?;
+        let plan = BuildPlan::parse(
+            std::str::from_utf8(&bounded(
+                &root.join("xtask/distribution.toml"),
+                MAX_PLAN_BYTES,
+            )?)?,
+            std::str::from_utf8(&bounded(&root.join("xtask/tools.toml"), MAX_PLAN_BYTES)?)?,
+            version,
+        )?;
+        Ok(Self { root, source, plan })
+    }
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+    pub(crate) fn source(&self) -> &str {
+        self.source.as_str()
+    }
+    pub(crate) fn plan(&self) -> &BuildPlan {
+        &self.plan
+    }
+}
+pub(crate) fn run(context: &BuildContext, github_output: Option<&Path>) -> Result<()> {
+    let plan = context.plan();
+    let mut bytes = serde_json::to_vec(&plan.render())?;
+    bytes.push(b'\n');
+    if bytes.len() > MAX_PLAN_BYTES {
+        return Err("Distribution output exceeds its bound".into());
+    }
+    if let Some(path) = github_output {
+        let mut fields = vec![
+            ("version".to_owned(), json!(plan.version())),
+            ("native".into(), plan.native_matrix()),
+            ("apps".into(), plan.app_matrix()),
+            ("floors".into(), plan.floor_matrix()),
+            ("picker".into(), plan.picker_matrix()),
+            ("xcode".into(), json!(plan.xcode().version())),
+            ("xcode_build".into(), json!(plan.xcode().build())),
+            ("minimum".into(), json!(plan.floors.macos_minimum())),
+        ];
+        fields.extend(
+            plan.tools
+                .0
+                .iter()
+                .map(|(name, value)| (name.clone(), json!(value))),
+        );
+        let mut names = BTreeSet::new();
+        let mut encoded = String::new();
+        for (name, value) in fields {
+            if !names.insert(name.clone()) {
+                return Err("Developer tool pin collides with a workflow output field".into());
+            }
+            let text = if let Some(value) = value.as_str() {
+                value.to_owned()
+            } else {
+                serde_json::to_string(&value)?
+            };
+            if text.len() > MAX_PLAN_BYTES || text.contains(['\r', '\n']) {
+                return Err("GitHub output must be a bounded single line".into());
+            }
+            use std::fmt::Write as _;
+            writeln!(encoded, "{name}={text}")?;
+        }
+        if encoded.len() > 4 * MAX_PLAN_BYTES {
+            return Err("GitHub workflow outputs exceed their total bound".into());
+        }
+        let mut output = std::fs::OpenOptions::new().append(true).open(path)?;
+        output.write_all(encoded.as_bytes())?;
+        output.flush()?;
+    }
+    std::io::stdout().lock().write_all(&bytes)?;
+    Ok(())
+}
 #[derive(Deserialize)]
 struct Metadata {
     packages: Vec<Package>,
@@ -410,421 +807,5 @@ fn workspace_version(root: &Path, bytes: &[u8]) -> Result<String> {
     Ok(package.version)
 }
 
-#[cfg(any(target_os = "macos", test))]
-pub(crate) fn picker_host_policy(root: &Path) -> Result<PickerHostPolicy> {
-    use std::io::Read;
-    let mut input = Vec::new();
-    std::fs::File::open(root.join("xtask/distribution.toml"))?
-        .take((MAX_PLAN_BYTES + 1) as u64)
-        .read_to_end(&mut input)?;
-    if input.len() > MAX_PLAN_BYTES {
-        return Err("Distribution policy exceeds its input bound".into());
-    }
-    Ok(Distribution::parse(std::str::from_utf8(&input)?)?.picker_host)
-}
-
-pub(crate) fn run(root: &Path) -> Result<()> {
-    let table = Distribution::parse(&std::fs::read_to_string(
-        root.join("xtask/distribution.toml"),
-    )?)?;
-    // Fixed read-only Cargo metadata, not a campaign worker. No Unix controller,
-    // copied helper, custom signal handler or bounded process-lifetime claim.
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let metadata = Command::new(cargo)
-        .current_dir(root)
-        .args([
-            "metadata",
-            "--locked",
-            "--offline",
-            "--no-deps",
-            "--format-version",
-            "1",
-            "--manifest-path",
-        ])
-        .arg(root.join("Cargo.toml"))
-        .output()?;
-    if !metadata.status.success() {
-        std::io::stderr().write_all(&metadata.stderr)?;
-        return Err(format!("Cargo metadata failed: {}", metadata.status).into());
-    }
-    let version = workspace_version(root, &metadata.stdout)?;
-    let plan = table.plan(version)?;
-    let tool_input = std::fs::read_to_string(root.join("xtask/tools.toml"))?;
-    let plan = BuildPlan {
-        distribution: plan,
-        xcode: Xcode::parse(&tool_input)?,
-        tools: tool_versions(&tool_input)?,
-    };
-    let mut bytes = serde_json::to_vec(&plan)?;
-    bytes.push(b'\n');
-    if bytes.len() > MAX_PLAN_BYTES {
-        return Err("Distribution metadata exceeds its bounded output size".into());
-    }
-    let mut stdout = std::io::stdout().lock();
-    stdout.write_all(&bytes)?;
-    stdout.flush()?;
-    Ok(())
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    const TABLE: &str = include_str!("../distribution.toml");
-
-    #[test]
-    fn picker_policy_is_derived_from_the_selected_distribution_input() {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::create_dir(root.path().join("xtask")).unwrap();
-        for image_version in ["20260824.0517.1", "20260825.0517.2"] {
-            let input = TABLE.replace("20260824.0517.1", image_version);
-            std::fs::write(root.path().join("xtask/distribution.toml"), &input).unwrap();
-            let selected = picker_host_policy(root.path()).unwrap();
-            assert_eq!(selected.image_version, image_version);
-            let plan = Distribution::parse(&input)
-                .unwrap()
-                .plan("6.0.0".into())
-                .unwrap();
-            let output = serde_json::to_value(plan).unwrap();
-            assert_eq!(
-                output["picker_host"],
-                serde_json::to_value(selected).unwrap()
-            );
-        }
-        std::fs::write(
-            root.path().join("xtask/distribution.toml"),
-            vec![b' '; MAX_PLAN_BYTES + 1],
-        )
-        .unwrap();
-        assert!(
-            picker_host_policy(root.path())
-                .unwrap_err()
-                .to_string()
-                .contains("exceeds")
-        );
-    }
-
-    #[test]
-    fn picker_policy_rejects_missing_unknown_and_malformed_host_coordinates() {
-        for input in [
-            TABLE.replace("[picker_host]", "[unknown_picker_host]"),
-            TABLE.replace("[picker_host]", "[picker_host]\nunknown = true"),
-            TABLE.replace("image_os = \"macos26\"", "image_os = \"macos27\""),
-            TABLE.replace("20260824.0517.1", "20260824..1"),
-            TABLE.replace("20260824.0517.1", "../20260824.0517.1"),
-            TABLE.replace("image_version = \"20260824.0517.1\"\n", ""),
-            TABLE.replace("product_version = \"26.6.1\"", "product_version = \"27.0\""),
-            TABLE.replace(
-                "product_version = \"26.6.1\"",
-                "product_version = \"26..1\"",
-            ),
-            TABLE.replace("build_version = \"25G76\"", "build_version = \"../25G76\""),
-            TABLE.replace("build_version = \"25G76\"", "build_version = \"\""),
-        ] {
-            assert!(Distribution::parse(&input).is_err(), "{input}");
-        }
-    }
-
-    #[test]
-    fn developer_tool_output_uses_the_same_validated_pin_authority() {
-        let tools = tool_versions(include_str!("../tools.toml")).unwrap();
-        assert_eq!(tools["cargo_about"], "0.9.2");
-        assert_eq!(tools["fuzz_compiler"], "nightly-2026-10-21");
-        for invalid in [
-            "",
-            "[versions]",
-            "[versions]\ncargo_about=1",
-            "[versions]\n'bad key'='1'",
-            "[versions]\ncargo_about='../1'",
-            "[versions]\ncargo_about='1 2'",
-        ] {
-            assert!(tool_versions(invalid).is_err());
-        }
-    }
-
-    #[test]
-    fn xcode_input_rejects_missing_unknown_and_unsafe_path_components() {
-        assert!(Xcode::parse(include_str!("../tools.toml")).is_ok());
-        for input in [
-            "[versions]\ntool='1'",
-            "[xcode]\nversion='26.3'",
-            "[xcode]\nversion='../26.3'\nbuild='17C529'",
-            "[xcode]\nversion='26.3'\nbuild=''",
-            "[xcode]\nversion='26.3'\nbuild='17C529'\nextra=true",
-            "[xcode]\nversion=26.3\nbuild='17C529'",
-        ] {
-            assert!(
-                Xcode::parse(input).is_err(),
-                "Accepted invalid input: {input}"
-            );
-        }
-    }
-
-    fn source_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .canonicalize()
-            .unwrap()
-    }
-    fn metadata(version: &str) -> serde_json::Value {
-        let root = source_root();
-        serde_json::json!({
-            "workspace_root": root,
-            "workspace_members": ["owned-workspace-cli"],
-            "packages": [{"id":"owned-workspace-cli", "name":"remove-eml-attachments",
-                "version":version, "source":null,
-                "manifest_path":root.join("crates/eml-cli/Cargo.toml")}]
-        })
-    }
-    fn version(value: &serde_json::Value) -> Result<String> {
-        workspace_version(&source_root(), &serde_json::to_vec(value).unwrap())
-    }
-
-    #[test]
-    fn distribution_records_match_all_six_approved_native_tuples() {
-        let table = Distribution::parse(TABLE).unwrap();
-        let actual: Vec<_> = table
-            .targets
-            .iter()
-            .map(|row| {
-                (
-                    row.platform.as_str(),
-                    row.target.as_str(),
-                    row.runner.as_str(),
-                )
-            })
-            .collect();
-        assert_eq!(
-            actual,
-            [
-                ("macos-aarch64", "aarch64-apple-darwin", "macos-26"),
-                ("macos-x86_64", "x86_64-apple-darwin", "macos-26-intel"),
-                ("linux-x86_64", "x86_64-unknown-linux-gnu", "ubuntu-22.04"),
-                (
-                    "linux-aarch64",
-                    "aarch64-unknown-linux-gnu",
-                    "ubuntu-22.04-arm"
-                ),
-                (
-                    "windows-x86_64",
-                    "x86_64-pc-windows-gnullvm",
-                    "windows-2022"
-                ),
-                (
-                    "windows-aarch64",
-                    "aarch64-pc-windows-gnullvm",
-                    "windows-11-arm"
-                ),
-            ]
-        );
-        assert_eq!(table.policy.macos_minimum, "15.0");
-        assert_eq!(table.policy.linux_minimum_ubuntu, "22.04");
-        assert_eq!(table.policy.linux_glibc_maximum, "2.35");
-        assert_eq!(table.policy.windows_rust_minimum, "10");
-        assert_eq!(
-            table.targets[0].app_smoke_runner.as_deref(),
-            Some("macos-15")
-        );
-        assert_eq!(
-            table.targets[1].app_smoke_runner.as_deref(),
-            Some("macos-15-intel")
-        );
-    }
-
-    #[test]
-    fn expected_archive_names_are_exactly_six_cli_and_two_separate_mac_apps() {
-        let plan = Distribution::parse(TABLE)
-            .unwrap()
-            .plan("6.0.0".into())
-            .unwrap();
-        let names: Vec<_> = plan
-            .expected_artifacts
-            .iter()
-            .map(|row| row.name.as_str())
-            .collect();
-        assert_eq!(
-            names,
-            [
-                "EML-Attachment-Remover-6.0.0-macos-aarch64.zip",
-                "EML-Attachment-Remover-6.0.0-macos-x86_64.zip",
-                "remove-eml-attachments-6.0.0-linux-aarch64.tar.gz",
-                "remove-eml-attachments-6.0.0-linux-x86_64.tar.gz",
-                "remove-eml-attachments-6.0.0-macos-aarch64.zip",
-                "remove-eml-attachments-6.0.0-macos-x86_64.zip",
-                "remove-eml-attachments-6.0.0-windows-aarch64.zip",
-                "remove-eml-attachments-6.0.0-windows-x86_64.zip",
-            ]
-        );
-        assert_eq!(
-            plan.expected_artifacts
-                .iter()
-                .filter(|row| row.role == "app")
-                .count(),
-            2
-        );
-        assert_eq!(plan.native_targets.iter().filter(|row| row.app).count(), 2);
-        for artifact in &plan.expected_artifacts {
-            if artifact.role == "app" {
-                assert_eq!(artifact.root, "EML Attachment Remover.app");
-                assert_eq!(artifact.executable, "Contents/MacOS/EMLAttachmentRemover");
-            } else {
-                assert!(artifact.name.starts_with(&artifact.root));
-                assert_eq!(
-                    artifact.executable,
-                    if artifact.platform.starts_with("windows-") {
-                        "remove-eml-attachments.exe"
-                    } else {
-                        "remove-eml-attachments"
-                    }
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn alternate_cargo_metadata_version_changes_every_expected_archive() {
-        let value = metadata("7.2.1-rc.2+build.5");
-        let plan = Distribution::parse(TABLE)
-            .unwrap()
-            .plan(version(&value).unwrap())
-            .unwrap();
-        assert_eq!(plan.version, "7.2.1-rc.2+build.5");
-        assert!(
-            plan.expected_artifacts
-                .iter()
-                .all(|row| row.name.contains("-7.2.1-rc.2+build.5-"))
-        );
-        assert!(
-            plan.native_targets
-                .iter()
-                .all(|row| row.platform_text.contains(&row.runner))
-        );
-        let bytes = serde_json::to_vec(&plan).unwrap();
-        assert!(bytes.len() + 1 < MAX_PLAN_BYTES);
-        assert_eq!(bytes, serde_json::to_vec(&plan).unwrap());
-    }
-
-    #[test]
-    fn unknown_missing_duplicate_and_unsafe_distribution_inputs_are_rejected() {
-        let missing_last = TABLE.rsplit_once("\n[[targets]]").unwrap().0.to_owned();
-        for input in [
-            format!("unknown = true\n{TABLE}"),
-            format!("{TABLE}\nunknown = true\n"),
-            TABLE.replace("[policy]", "[policy]\nunknown = true"),
-            TABLE.replace("[policy]", "[policy]\nmacos_minimum = \"15.0\""),
-            TABLE.replace("target = \"aarch64-apple-darwin\"\n", ""),
-            TABLE.replace("macos_minimum = \"15.0\"\n", ""),
-            TABLE.replace("runner = \"macos-26\"", "runner = 1"),
-            TABLE.replace("app_smoke_runner = \"macos-15\"\n", ""),
-            TABLE.replace(
-                "app_smoke_runner = \"macos-15\"",
-                "app_smoke_runner = \"../unsafe\"",
-            ),
-            TABLE.replace("macos-aarch64", "macos-universal"),
-            TABLE.replace("macos-aarch64", "other-aarch64"),
-            TABLE.replace("aarch64-apple-darwin", "x86_64-apple-darwin"),
-            TABLE.replace("unknown-linux-gnu", "unknown-linux-musl"),
-            TABLE.replace("runner = \"macos-26\"", "runner = \"../unsafe\""),
-            TABLE.replace("runner = \"macos-26\"", "runner = \"line\\nunsafe\""),
-            TABLE.replace("runner = \"macos-26\"", "runner = \"\""),
-            TABLE.replace("macos_minimum = \"15.0\"", "macos_minimum = \"15..0\""),
-            TABLE.replace(
-                "linux_glibc_maximum = \"2.35\"",
-                "linux_glibc_maximum = \"0.35\"",
-            ),
-            missing_last,
-        ] {
-            assert!(Distribution::parse(&input).is_err());
-        }
-        let duplicate = TABLE
-            .replace("windows-aarch64", "windows-x86_64")
-            .replace("aarch64-pc-windows-gnullvm", "x86_64-pc-windows-gnullvm");
-        assert!(
-            Distribution::parse(&duplicate)
-                .err()
-                .unwrap()
-                .to_string()
-                .contains("Duplicate")
-        );
-    }
-
-    #[test]
-    fn archive_identity_rejects_unsafe_or_overlong_version_components() {
-        for value in ["", "../other", "1/2", "1\\2", "1\n2", "1\0", "1 2"] {
-            assert!(
-                Distribution::parse(TABLE)
-                    .unwrap()
-                    .plan(value.into())
-                    .is_err()
-            );
-        }
-        let overlong = format!("1.0.0-{}", "a".repeat(255));
-        assert!(Distribution::parse(TABLE).unwrap().plan(overlong).is_err());
-    }
-
-    #[test]
-    fn metadata_must_identify_the_actual_local_workspace_cli() {
-        let valid = metadata("6.0.0");
-        assert_eq!(version(&valid).unwrap(), "6.0.0");
-        for mutation in [
-            "workspace",
-            "membership",
-            "member_id",
-            "source",
-            "path",
-            "name",
-            "empty",
-            "duplicate",
-            "missing_version",
-            "missing_source",
-        ] {
-            let mut value = valid.clone();
-            match mutation {
-                "workspace" => {
-                    value["workspace_root"] = serde_json::json!(source_root().join("xtask"))
-                }
-                "membership" => value["workspace_members"] = serde_json::json!([]),
-                "member_id" => value["packages"][0]["id"] = serde_json::json!("different-id"),
-                "source" => {
-                    value["packages"][0]["source"] =
-                        serde_json::json!("registry+https://example.invalid")
-                }
-                "path" => {
-                    value["packages"][0]["manifest_path"] =
-                        serde_json::json!(source_root().join("xtask/Cargo.toml"))
-                }
-                "name" => value["packages"][0]["name"] = serde_json::json!("other-package"),
-                "empty" => value["packages"] = serde_json::json!([]),
-                "duplicate" => {
-                    value["packages"]
-                        .as_array_mut()
-                        .unwrap()
-                        .push(valid["packages"][0].clone());
-                }
-                "missing_version" => {
-                    value["packages"][0]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove("version");
-                }
-                "missing_source" => {
-                    value["packages"][0]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove("source");
-                }
-                _ => unreachable!(),
-            }
-            assert!(version(&value).is_err(), "{mutation}");
-        }
-        for bytes in [&b"{}"[..], b"null", b"[]", b"invalid"] {
-            assert!(workspace_version(&source_root(), bytes).is_err());
-        }
-        let positional = serde_json::json!([
-            valid["packages"],
-            valid["workspace_members"],
-            valid["workspace_root"]
-        ]);
-        assert!(version(&positional).is_err());
-    }
-}
+mod tests;

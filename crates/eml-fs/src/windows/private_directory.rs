@@ -97,6 +97,7 @@ impl Sid {
             return Err(invalid("Invalid native SID"));
         }
         let mut words = vec![0u32; bytes.div_ceil(4)];
+        // SAFETY: validated source SID extent and disjoint owned destination cover bytes.
         unsafe {
             ptr::copy_nonoverlapping(pointer.cast::<u8>(), words.as_mut_ptr().cast(), bytes);
         }
@@ -281,6 +282,7 @@ unsafe fn inspect_aces(
                     .cast::<u32>(),
             )
         };
+        // SAFETY: validated complete ACE extent includes its native SidStart field.
         let pointer = unsafe {
             ace.cast::<u8>()
                 .add(offset_of!(ACCESS_ALLOWED_ACE, SidStart))
@@ -425,6 +427,7 @@ fn private_acl(trusted: &[Sid]) -> io::Result<Vec<u32>> {
         checked(InitializeAcl(acl, (words.len() * 4) as u32, ACL_REVISION))?;
     }
     for sid in trusted {
+        // SAFETY: ACL allocation includes every validated owned SID and native ACE extent.
         unsafe {
             checked(AddAccessAllowedAceEx(
                 acl,

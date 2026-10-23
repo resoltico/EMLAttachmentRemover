@@ -88,7 +88,7 @@ jobs:
     permissions:
       pull-requests: read
     if: ${{ always() && github.event_name == 'pull_request' && needs.identity.result == 'success' }}
-    needs: [identity, native, integration]
+    needs: [identity, native, integration, assembly]
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
@@ -101,9 +101,51 @@ jobs:
           BASE_SHA: ${{ needs.identity.outputs.base }}
         run: |
           gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" | jq -e --arg head "$HEAD_SHA" --arg base "$BASE_SHA" '.state == "open" and .head.sha == $head and .base.sha == $base'
+  assembly:
+    needs: [identity, native]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.identity.outputs.source }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: native-products-${{ needs.identity.outputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/qualified-products
+          merge-multiple: false
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: floor-smoke-${{ needs.identity.outputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/desktop-qualification
+          merge-multiple: false
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: picker-qualification-${{ needs.identity.outputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/picker-qualification
+          merge-multiple: false
+          digest-mismatch: error
+      - name: Admit current-run native consumers and assemble reviewable candidate bytes
+        run: |
+          cargo xtask verify-release-inputs --products target/qualified-products --desktop target/desktop-qualification --picker target/picker-qualification --out target/candidate-inputs
+          cargo xtask stage-release-assets --inputs target/candidate-inputs/verified-inputs.json --out target/candidate-assembly
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: candidate-assembly-${{ needs.identity.outputs.source }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/candidate-inputs/verified-inputs.json
+            target/candidate-assembly/**
+          if-no-files-found: error
   ci-ok:
     if: ${{ always() }}
-    needs: [identity, native, integration, freshness]
+    needs: [identity, native, integration, freshness, assembly]
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:

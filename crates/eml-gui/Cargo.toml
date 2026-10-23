@@ -21,7 +21,7 @@ base64 = { workspace = true, optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 fontique = { version = "=0.11.1", optional = true, default-features = false, features = ["system"] }
 objc2 = { version = "0.6.5", optional = true }
-objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "block2", "NSApplication", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSView", "NSResponder", "NSAppearance", "NSFont", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSColor", "NSColorSpace", "NSWorkspace", "NSAccessibility", "NSPasteboard", "NSPasteboardItem"] }
+objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "block2", "NSApplication", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSView", "NSResponder", "NSAppearance", "NSFont", "NSWorkspace", "NSAccessibility", "NSPasteboard", "NSPasteboardItem"] }
 objc2-foundation = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSArray", "NSData", "NSString", "NSURL", "NSValue", "NSObject", "NSUserDefaults", "NSDictionary"] }
 block2 = { version = "0.6.2", optional = true }
 raw-window-handle = { version = "0.6.2", optional = true }

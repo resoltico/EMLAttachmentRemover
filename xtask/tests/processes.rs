@@ -441,7 +441,7 @@ fn parent_sigint_cancels_and_reaps_its_nested_worker() {
 #[allow(
     dead_code,
     unreachable_pub,
-    reason = "quality:shared-controller-fixture"
+    reason = "The private fixture module includes the exact production controller source to exercise its crate-private kernel pin boundary with the real built helper; public production entry points become unreachable and unrelated entry points are unused in this compilation unit. Exposing private kernel hooks as shipping API or copying their logic would weaken that boundary."
 )]
 #[path = "../src/process/mod.rs"]
 mod controller_source;

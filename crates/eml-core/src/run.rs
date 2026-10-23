@@ -265,7 +265,11 @@ fn emit_item(
     let source_display = plan.sources().display_path(index).expect("known source");
     let destination_display = plan.display_path(index);
     let event = ItemEvent {
-        index,
+        index: outcome.counts.created
+            + outcome.counts.up_to_date
+            + outcome.counts.planned
+            + outcome.counts.failed
+            - 1,
         source: ReportPath {
             native: plan.sources().items()[index].native_path(),
             display: &source_display,

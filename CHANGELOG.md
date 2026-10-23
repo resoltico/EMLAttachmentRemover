@@ -4,6 +4,23 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking copy naming/layout/order:** output filenames now include a 26-character token of the complete logical destination route, and generated mirrored folders end in `.eml-dir`. There is no old-name lookup, renaming or migration. Overlapping source entries prefer explicit files, then the deepest selected root; complete planning assigns deterministic order and contiguous result indices. Known destination conflicts refuse every contender before writes. Integrators should use reported native destinations and indices; see [filesystem behavior](docs/filesystem.md).
+- **Breaking MIME behavior:** valid non-inline extension dispositions on ordinary parts now remove the whole attachment. Retained-body `multipart/report` refuses conversion with `UNSUPPORTED_MIME` rather than dropping its required machine-readable part. Attached and nonselected related reports remain opaque removable entities; originals remain unchanged. See [MIME behavior](docs/mime.md).
+- Matching existing copies acquire only their actual synchronization capabilities. Creation policy applies to each immediate mutation parent, preserving real synchronization/access failures and no-replace publication. Unsupported new-name profiles can refuse read-only planning with `DESTINATION_UNSUPPORTED` at admission.
+- The macOS app offers **Check only / Create copies**, defaulting to Create. A Create from a completed Check receives fresh identities and repeats every authoritative check. CLI and GUI share core outcome/removal meanings, including simultaneous publication, address, durability and cleanup consequences; public protocol 1 retains its field shape.
+- Report export runs in an owned child lane alongside processing. A folder picker plus filename form replaces the occupancy-checking Save panel. Existing reports are never replaced. Cancellation, Force Stop and Quit retain actual settlement and possible-publication uncertainty; two full-report reservations still bound processing capacity.
+- **Breaking private transport/report format:** bundled desktop operations use strict protocol 2; old private worker modes are removed. Metadata exports use app-owned `eml-technical-report` schema 1 with required explicit nullable lifecycle observations and derived terminal kind. Historical unversioned exports are not imported.
+- macOS lifecycle and open-URL delivery use source-defined callbacks in the retained Winit fork. Standard native About replaces the custom panel; Help exposes the actual AboutSlint widget and complete licenses, plus Project Website. Finder navigation is advisory without a parent existence probe.
+- **Native qualification prerequisites:** finite owned-volume naming and existing-copy fixtures now require Python 3.9+, native filesystem utilities and disposable storage privileges; Windows additionally uses PowerShell 7. Qualification records actual case/ownership/8.3 behavior and cleanup, and refuses missing profile coverage.
+- Contributor/release tools use one typed distribution plan and verified current-run inputs. `verify-release-inputs` precedes `stage-release-assets --inputs`; exact product/checksum sets and same-byte consumers govern admission. Healthy picker qualification is independent of incident policy; only the exact recognized failure may admit the expiring reviewed intervention. Final modified-host admission rechecks original policy identity/expiry after server readback.
+
+### Internal
+
+- Contributor checks use `cargo xtask check-config` for Cargo ownership and lint inheritance. The source-coordinate exception registry, custom Rust/Swift scanners and structural metric gates are removed; compiler/lint/formatter/native checks remain, with local exception rationales and Clippy unsafe-block documentation checks.
+- MIME preparation uses a forward physical parser with active ancestor-boundary matching and an independent retained-span proof. Candidate and fixed-point verification no longer reconstruct payloads at each container ancestor; private deterministic tests cover work bounds and cancellation across preparation phases.
+
 ## [6.0.0] - 2026-10-21
 
 ### Changed

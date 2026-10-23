@@ -1,9 +1,8 @@
-//! Known-image host actions and read-only bracketing verification.
+//! Independent native picker qualification and consumed incident intervention.
 use super::{
     observations::{self, Observer},
     *,
 };
-use crate::macos::MacBuild;
 use serde_json::json;
 use std::{
     fs,
@@ -82,183 +81,428 @@ fn write_final(path: &Path, record: &impl Serialize) -> Result<()> {
     file.sync_all()?;
     Ok(())
 }
-pub(crate) fn prepare(
-    root: &Path,
-    build: &MacBuild,
-    archive: &Path,
-    reference: &Path,
-    out: &Path,
-) -> Result<Preparation> {
-    require_context(root)?;
-    let mut attempt = Attempt::new(out)?;
-    let result = prepare_observed(root, build, archive, reference, &mut attempt);
-    attempt.finish(result)
+
+// Neither this owner nor its monotonic deadline can be deserialized or cloned.
+// Its constructor verifies current native proof; consuming it admits one flow.
+struct IncidentAdmission {
+    binding: Binding,
+    host: Host,
+    caller: Caller,
+    service_before: ServiceObservation,
+    crash_reports: Vec<CrashReport>,
+    identity: crate::host_incidents::IncidentIdentity,
+    policy: crate::host_incidents::IncidentRecord,
+    deadline: crate::host_incidents::ActionDeadline,
+    admitted_at: u64,
+    admitted_subsec_ns: u32,
+    action_deadline_wall: u64,
 }
-fn prepare_observed(
-    root: &Path,
-    build: &MacBuild,
+fn clock_seconds(time: std::time::SystemTime) -> Result<u64> {
+    Ok(time.duration_since(std::time::UNIX_EPOCH)?.as_secs())
+}
+fn host_policy(host: &Host) -> crate::host_incidents::IncidentHost {
+    crate::host_incidents::IncidentHost {
+        image_os: host.image_os.clone(),
+        image_version: host.image_version.clone(),
+        product_version: host.product_version.clone(),
+        build_version: host.build_version.clone(),
+    }
+}
+fn snapshot(
+    observer: &Observer<'_>,
+    plan: &crate::distribution::BuildPlan,
+    binding: &Binding,
+) -> Result<crate::picker_evidence::NormalHostSnapshot> {
+    let host = observer.host(&binding.target)?;
+    let caller = observer.caller()?;
+    let disabled_override = observer.disabled(caller.uid)?;
+    let value = crate::picker_evidence::NormalHostSnapshot {
+        host,
+        caller,
+        disabled_override,
+    };
+    crate::picker_evidence::validate_snapshot(plan, binding, &value)?;
+    Ok(value)
+}
+fn admit_incident(
+    observer: &Observer<'_>,
     archive: &Path,
     reference: &Path,
+    before: &crate::picker_evidence::NormalHostSnapshot,
+    panel: &crate::picker_evidence::PanelReceipt,
     attempt: &mut Attempt,
-) -> Result<Preparation> {
-    let out = attempt.out.clone();
-    let observer = Observer {
-        root,
-        build,
-        out: &out,
-    };
-    attempt.phase("binding")?;
+) -> Result<IncidentAdmission> {
+    crate::picker_evidence::validate_panel(panel, false)?;
+    require_context(observer.root)?;
     let binding = observer.binding(archive, reference)?;
-    attempt.record("binding", &binding)?;
-    let picker_host = crate::distribution::picker_host_policy(root)?;
-    attempt.record("picker_host", &picker_host)?;
-    attempt.phase("host")?;
     let host = observer.host(&binding.target)?;
-    attempt.record("host", &host)?;
-    evidence::validate_host(&host, &picker_host, &binding.target)?;
-    attempt.phase("caller")?;
     let caller = observer.caller()?;
-    attempt.record("caller", &caller)?;
     evidence::validate_caller(&caller)?;
-    attempt.phase("service_before")?;
-    let service_before = observer.service(caller.uid)?;
-    attempt.record("service_before", &service_before)?;
-    evidence::loaded(&service_before, caller.uid)?;
-    attempt.phase("crash_reports")?;
-    let crash_reports = capture_crashes(&out, attempt)?;
-    attempt.record("crash_reports", &crash_reports)?;
-    crashes::require_known(&crash_reports, &host, caller.uid)?;
-    let setup = provision_service(&observer, attempt, caller.uid)?;
-    if observer.binding(archive, reference)? != binding {
-        return Err("Picker input/source binding changed during preparation".into());
+    if host != before.host || caller != before.caller {
+        return Err("Native host or caller changed before incident admission".into());
     }
-    let prepared = Preparation {
-        stage: "picker_host_preparation".into(),
+    // This is the first policy, loaded-service or crash access in the flow.
+    let registry = crate::host_incidents::Registry::load(observer.root)?;
+    let (identity, policy) = registry.select(
+        &host_policy(&host),
+        &host.process_architecture,
+        &binding.source,
+        std::time::SystemTime::now(),
+    )?;
+    evidence::validate_host(&host, &policy.host, &binding.target)?;
+    attempt.record("incident_identity", &identity)?;
+    let service_before = observer.service(caller.uid)?;
+    evidence::loaded(&service_before, caller.uid)?;
+    if service_before.disabled.r#override == Some(true) {
+        return Err("Pre-disabled host cannot admit incident intervention".into());
+    }
+    attempt.record("service_before", &service_before)?;
+    let crash_reports = capture_crashes(observer.out, attempt)?;
+    crashes::require_known(&crash_reports, &host, caller.uid)?;
+    attempt.record("crash_reports", &crash_reports)?;
+    let monotonic = std::time::Instant::now();
+    let wall = std::time::SystemTime::now();
+    let admitted_subsec_ns = wall.duration_since(std::time::UNIX_EPOCH)?.subsec_nanos();
+    let admitted_at = clock_seconds(wall)?;
+    let deadline = crate::host_incidents::ActionDeadline::admit(&policy, wall, monotonic)?;
+    let action_deadline_wall = admitted_at
+        .checked_add(
+            policy
+                .expires_at
+                .checked_sub(admitted_at)
+                .ok_or("Incident lifetime elapsed")?
+                .min(600),
+        )
+        .ok_or("Incident wall deadline overflow")?;
+    Ok(IncidentAdmission {
         binding,
-        picker_host,
         host,
         caller,
         service_before,
         crash_reports,
-        bootout: setup.bootout,
-        bootout_absence: setup.bootout_absence,
-        disable: setup.disable,
-        service_after: setup.service_after,
-    };
-    evidence::validate_preparation(&prepared)?;
-    write_final(&out.join("preparation.json"), &prepared)?;
-    Ok(prepared)
+        identity,
+        policy,
+        deadline,
+        admitted_at,
+        admitted_subsec_ns,
+        action_deadline_wall,
+    })
 }
-struct ServiceSetup {
-    bootout: CommandObservation,
-    bootout_absence: Option<PrintObservation>,
-    disable: CommandObservation,
-    service_after: ServiceObservation,
+impl IncidentAdmission {
+    fn check_clock_policy(
+        &self,
+        root: &Path,
+    ) -> Result<crate::picker_evidence::ActionGuardObservation> {
+        let wall = std::time::SystemTime::now();
+        self.deadline.check(wall, std::time::Instant::now())?;
+        crate::host_incidents::Registry::load(root)?.recheck(&self.identity, &self.policy, wall)?;
+        let wall = std::time::SystemTime::now();
+        let monotonic = std::time::Instant::now();
+        self.deadline.check(wall, monotonic)?;
+        Ok(crate::picker_evidence::ActionGuardObservation {
+            wall_at: clock_seconds(wall)?,
+            monotonic_elapsed_ns: self.deadline.elapsed_ns(monotonic)?,
+        })
+    }
+    fn revalidate(&self, observer: &Observer<'_>, archive: &Path, reference: &Path) -> Result<()> {
+        require_context(observer.root)?;
+        if observer.binding(archive, reference)? != self.binding
+            || observer.host(&self.binding.target)? != self.host
+            || observer.caller()? != self.caller
+        {
+            return Err("Incident host/caller/boot/source/workflow/run/archive/reference binding changed before action".into());
+        }
+        evidence::validate_caller(&self.caller)?;
+        self.check_clock_policy(observer.root).map(|_| ())
+    }
 }
-fn provision_service(
+fn prepare_owned(
     observer: &Observer<'_>,
+    archive: &Path,
+    reference: &Path,
+    admission: IncidentAdmission,
     attempt: &mut Attempt,
-    uid: u32,
-) -> Result<ServiceSetup> {
+) -> Result<(
+    Preparation,
+    crate::picker_evidence::IncidentAdmissionReceipt,
+)> {
     attempt.phase("bootout")?;
-    let bootout = observer.action("bootout", uid)?;
+    admission.revalidate(observer, archive, reference)?;
+    let bootout = observer.action("bootout", admission.caller.uid, || {
+        admission.check_clock_policy(observer.root)
+    })?;
     attempt.record("bootout", &bootout)?;
-    let code = evidence::action(&bootout, "bootout", uid)?;
+    let code = evidence::action(&bootout, "bootout", admission.caller.uid)?;
     let bootout_absence = if code > 0 {
-        attempt.phase("bootout_absence")?;
-        let observation = observer.print(uid)?;
+        let observation = observer.print(admission.caller.uid)?;
         attempt.record("bootout_absence", &observation)?;
-        evidence::absent(&observation, uid)?;
+        evidence::absent(&observation, admission.caller.uid)?;
         Some(observation)
     } else {
         None
     };
     attempt.phase("disable")?;
-    let disable = observer.action("disable", uid)?;
+    admission.revalidate(observer, archive, reference)?;
+    let disable = observer.action("disable", admission.caller.uid, || {
+        admission.check_clock_policy(observer.root)
+    })?;
     attempt.record("disable", &disable)?;
-    if evidence::action(&disable, "disable", uid)? != 0 {
-        return Err("Exact disable operation failed".into());
+    if evidence::action(&disable, "disable", admission.caller.uid)? != 0 {
+        return Err("Exact incident disable action failed".into());
     }
-    attempt.phase("service_after")?;
-    let service_after = observer.service(uid)?;
+    let service_after = observer.service(admission.caller.uid)?;
     attempt.record("service_after", &service_after)?;
-    evidence::provisioned(&service_after, uid)?;
-    Ok(ServiceSetup {
+    evidence::provisioned(&service_after, admission.caller.uid)?;
+    let receipt = crate::picker_evidence::IncidentAdmissionReceipt {
+        identity: admission.identity,
+        policy: admission.policy.clone(),
+        admitted_at: admission.admitted_at,
+        admitted_subsec_ns: admission.admitted_subsec_ns,
+        action_deadline_wall: admission.action_deadline_wall,
+    };
+    let prepared = Preparation {
+        stage: "picker_host_preparation".into(),
+        binding: admission.binding,
+        picker_host: admission.policy.host,
+        host: admission.host,
+        caller: admission.caller,
+        service_before: admission.service_before,
+        crash_reports: admission.crash_reports,
         bootout,
         bootout_absence,
         disable,
         service_after,
-    })
-}
-pub(crate) fn verify(
-    root: &Path,
-    build: &MacBuild,
-    archive: &Path,
-    reference: &Path,
-    preparation: &Path,
-    out: &Path,
-) -> Result<Postverification> {
-    require_context(root)?;
-    let mut attempt = Attempt::new(out)?;
-    let result = verify_observed(root, build, archive, reference, preparation, &mut attempt);
-    attempt.finish(result)
-}
-fn verify_observed(
-    root: &Path,
-    build: &MacBuild,
-    archive: &Path,
-    reference: &Path,
-    preparation: &Path,
-    attempt: &mut Attempt,
-) -> Result<Postverification> {
-    let out = attempt.out.clone();
-    let observer = Observer {
-        root,
-        build,
-        out: &out,
     };
-    attempt.phase("preparation_readback")?;
-    let bytes = observations::read(preparation, DOCUMENT_LIMIT)?;
-    let prepared = evidence::parse_preparation(&bytes)?;
+    evidence::validate_preparation(&prepared)?;
+    write_final(&observer.out.join("preparation.json"), &prepared)?;
+    Ok((prepared, receipt))
+}
+fn verify_after(
+    observer: &Observer<'_>,
+    archive: &Path,
+    reference: &Path,
+    prepared: &Preparation,
+    admission: &crate::picker_evidence::IncidentAdmissionReceipt,
+) -> Result<Postverification> {
+    require_context(observer.root)?;
+    crate::host_incidents::Registry::load(observer.root)?.recheck(
+        &admission.identity,
+        &admission.policy,
+        std::time::SystemTime::now(),
+    )?;
     let binding = observer.binding(archive, reference)?;
-    let picker_host = crate::distribution::picker_host_policy(root)?;
-    attempt.record("binding", &binding)?;
-    attempt.record("picker_host", &picker_host)?;
-    if binding != prepared.binding || picker_host != prepared.picker_host {
-        return Err(
-            "Postverification inputs, source, workflow or policy differ from preparation".into(),
-        );
-    }
-    attempt.phase("host_readback")?;
     let host = observer.host(&binding.target)?;
-    attempt.record("host", &host)?;
-    evidence::validate_host(&host, &picker_host, &binding.target)?;
-    attempt.phase("caller_readback")?;
     let caller = observer.caller()?;
-    attempt.record("caller", &caller)?;
     evidence::validate_caller(&caller)?;
-    if host != prepared.host || caller != prepared.caller {
-        return Err("Host boot/image/native identity or caller security context changed across product execution".into());
-    }
-    attempt.phase("service_readback")?;
     let service = observer.service(caller.uid)?;
-    attempt.record("service", &service)?;
-    evidence::provisioned(&service, caller.uid)?;
-    if observer.binding(archive, reference)? != binding {
-        return Err("Postverification input binding changed during readback".into());
-    }
     let verified = Postverification {
         stage: "picker_host_verification".into(),
         binding,
-        picker_host,
+        picker_host: admission.policy.host.clone(),
         host,
         caller,
         service,
     };
-    evidence::validate_post(&prepared, &verified)?;
-    write_final(&out.join("verification.json"), &verified)?;
+    evidence::validate_post(prepared, &verified)?;
+    write_final(&observer.out.join("verification.json"), &verified)?;
     Ok(verified)
 }
+fn probe_identity(value: &Value) -> Result<crate::picker_evidence::ProbeIdentity> {
+    use crate::picker_evidence::{ProbeFiles, ProbeIdentity};
+    let text = |name: &str| -> Result<String> {
+        value[name]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| format!("Probe identity field is absent: {name}").into())
+    };
+    let files = &value["files"];
+    Ok(ProbeIdentity {
+        path: text("path")?,
+        files: ProbeFiles {
+            info: serde_json::from_value(files["Contents/Info.plist"].clone())?,
+            executable: serde_json::from_value(
+                files["Contents/MacOS/NativePanelDiagnostic"].clone(),
+            )?,
+            resources: serde_json::from_value(
+                files["Contents/_CodeSignature/CodeResources"].clone(),
+            )?,
+        },
+        signature_display: text("signature_display")?,
+        scope: text("scope")?,
+    })
+}
+fn panel(value: Value) -> Result<crate::picker_evidence::PanelReceipt> {
+    use crate::picker_evidence::{PanelObservation, PanelReceipt, ProcessObservation};
+    let observation = match value["observation"].as_str() {
+        Some("healthy") => PanelObservation::Healthy,
+        Some("known_panel_failure") => PanelObservation::KnownFailure,
+        _ => return Err("Unclassified native probe cannot admit qualification".into()),
+    };
+    let receipt = PanelReceipt {
+        identity: probe_identity(&value["identity"])?,
+        identity_after: probe_identity(&value["identity_after"])?,
+        process: serde_json::from_value::<ProcessObservation>(value["process"].clone())?,
+        phases: serde_json::from_value(value["phases"].clone())?,
+        observation,
+    };
+    crate::picker_evidence::validate_panel(&receipt, observation == PanelObservation::Healthy)?;
+    Ok(receipt)
+}
+fn qualified_output_path(root: &Path, out: &Path) -> Result<PathBuf> {
+    if !root.is_absolute() {
+        return Err("Picker qualification needs an absolute repository root".into());
+    }
+    Ok(root.join(out))
+}
+pub(crate) fn qualify(
+    root: &Path,
+    plan: &crate::distribution::BuildPlan,
+    archive: &Path,
+    reference: &Path,
+    out: &Path,
+) -> Result<()> {
+    require_context(root)?;
+    let output = qualified_output_path(root, out)?;
+    let out = output.as_path();
+    let build = crate::macos::load(root, plan)?;
+    let mut attempt = Attempt::new(out)?;
+    let result = (|| -> Result<()> {
+        let observer = Observer {
+            root,
+            build: &build,
+            out,
+        };
+        attempt.phase("binding")?;
+        let binding = observer.binding(archive, reference)?;
+        attempt.record("binding", &binding)?;
+        let before = snapshot(&observer, plan, &binding)?;
+        attempt.record("before", &before)?;
+        let probe = crate::macos_panel::build_probe(root, &build, &out.join("probe"))?;
+        attempt.phase("independent_probe")?;
+        let first_panel = panel(crate::macos_panel::run_probe(
+            root,
+            &build,
+            &probe,
+            &out.join("panel-before"),
+        )?)?;
+        attempt.record("panel_before", &first_panel)?;
+        let intervention =
+            if first_panel.observation == crate::picker_evidence::PanelObservation::KnownFailure {
+                let incident_out = out.join("incident");
+                let mut incident_attempt = Attempt::new(&incident_out)?;
+                let incident_observer = Observer {
+                    root,
+                    build: &build,
+                    out: &incident_out,
+                };
+                let prepared = (|| -> Result<_> {
+                    let admission = admit_incident(
+                        &incident_observer,
+                        archive,
+                        reference,
+                        &before,
+                        &first_panel,
+                        &mut incident_attempt,
+                    )?;
+                    prepare_owned(
+                        &incident_observer,
+                        archive,
+                        reference,
+                        admission,
+                        &mut incident_attempt,
+                    )
+                })();
+                let (prepared, admission) = incident_attempt.finish(prepared)?;
+                let recovered = panel(crate::macos_panel::run_probe(
+                    root,
+                    &build,
+                    &probe,
+                    &out.join("panel-recovered"),
+                )?)?;
+                crate::picker_evidence::validate_panel(&recovered, true)?;
+                attempt.record("recovered_panel", &recovered)?;
+                Some((prepared, admission, recovered))
+            } else {
+                None
+            };
+        // Exactly one actual product call. Every failure is terminal in either route.
+        attempt.phase("actual_frozen_product")?;
+        if observer.binding(archive, reference)? != binding {
+            return Err("Frozen input changed before product execution".into());
+        }
+        let product_path = crate::macos_archive::picker_receipt(root, plan, archive, reference)?;
+        let product_bytes = observations::read(&product_path, DOCUMENT_LIMIT)?;
+        let product =
+            crate::picker_evidence::project_product(&product_bytes, &binding, &before.host)?;
+        let mut product_file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(out.join("product-result.json"))?;
+        product_file.write_all(&product_bytes)?;
+        product_file.sync_all()?;
+        if observations::read(&out.join("product-result.json"), DOCUMENT_LIMIT)? != product_bytes {
+            return Err("Preserved product evidence differs from observed native bytes".into());
+        }
+        attempt.record("product_identity", &product.raw_product_identity)?;
+        attempt.phase("postverification")?;
+        let qualification = if let Some((prepared, admission, recovered_panel)) = intervention {
+            let verified_out = out.join("postverification");
+            fs::create_dir(&verified_out)?;
+            let verified_observer = Observer {
+                root,
+                build: &build,
+                out: &verified_out,
+            };
+            let postverification = verify_after(
+                &verified_observer,
+                archive,
+                reference,
+                &prepared,
+                &admission,
+            )?;
+            crate::picker_evidence::PickerQualification::IncidentModifiedHost(Box::new(
+                crate::picker_evidence::IncidentModifiedHostReceipt {
+                    binding: binding.clone(),
+                    failed_panel: first_panel,
+                    admission,
+                    preparation: prepared,
+                    recovered_panel,
+                    product,
+                    postverification,
+                },
+            ))
+        } else {
+            let after = snapshot(&observer, plan, &binding)?;
+            attempt.record("after", &after)?;
+            crate::picker_evidence::PickerQualification::UnmodifiedHost(Box::new(
+                crate::picker_evidence::UnmodifiedHostReceipt {
+                    binding: binding.clone(),
+                    before,
+                    panel: first_panel,
+                    product,
+                    after,
+                    actions: Vec::new(),
+                },
+            ))
+        };
+        if observer.binding(archive, reference)? != binding {
+            return Err("Frozen input/source changed after product execution".into());
+        }
+        let bytes = serde_json::to_vec_pretty(&qualification)?;
+        crate::picker_evidence::verify_receipt(
+            root,
+            plan,
+            &bytes,
+            &binding,
+            std::time::SystemTime::now(),
+        )?;
+        write_final(&out.join("result.json"), &qualification)?;
+        attempt.phase("qualified")?;
+        Ok(())
+    })();
+    attempt.finish(result)
+}
+
 fn capture_crashes(out: &Path, attempt: &mut Attempt) -> Result<Vec<CrashReport>> {
     let directory = PathBuf::from(std::env::var_os("HOME").ok_or("Caller home is unavailable")?)
         .join("Library/Logs/DiagnosticReports");
@@ -310,3 +554,6 @@ fn capture_report(path: &Path, name: &str, destination: &Path) -> Result<CrashRe
     file.sync_all()?;
     crashes::parse(name, &bytes)
 }
+
+#[cfg(test)]
+mod tests;

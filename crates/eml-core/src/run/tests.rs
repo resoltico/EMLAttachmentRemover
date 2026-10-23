@@ -117,12 +117,12 @@ fn modeled_failed_creation_residue_requires_namespace_work_before_a_later_real_c
     let plan = plan_destinations(collect_sources(&request, &control).unwrap(), &control);
     // Actual owned layout models the residue; the failure receipt is a
     // classifier input, not a claim of an injected native mkdir failure.
-    fs::create_dir(root.path().join("out/Inbox")).unwrap();
+    fs::create_dir(root.path().join("out/Inbox.eml-dir")).unwrap();
     let parent = plan.rebind_root(0, &control).unwrap();
     let mut context = RunContext::new(plan.sources());
     context.pending_layout.failed_creation(
         parent.identity(),
-        std::ffi::OsStr::new("Inbox"),
+        std::ffi::OsStr::new("Inbox.eml-dir"),
         &CleanupReceipt {
             state: CleanupState::Residual,
             residual_name: None,
@@ -138,7 +138,11 @@ fn modeled_failed_creation_residue_requires_namespace_work_before_a_later_real_c
     assert_eq!(copy.publication().namespace_sync().required_edges, 3);
     assert_eq!(copy.publication().namespace_sync().completed_edges, 3);
     assert_eq!(
-        fs::read(root.path().join("out/Inbox/a.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("out/Inbox.eml-dir/a.jqp3zjytiqvs4hdhcvxvgec6qa.no-attachments.eml")
+        )
+        .unwrap(),
         golden
     );
     assert_eq!(fs::read(root.path().join("Inbox/a.eml")).unwrap(), input);
@@ -170,12 +174,18 @@ fn real_held_publication_witness_survives_modeled_ambiguity_and_changed_requeste
         .unwrap_or_else(|error| panic!("Owned source failed: {error:?}"));
     let frame = plan.read_parent(0, &control).unwrap();
     let mut pending = crate::binding::PendingLayout::default();
-    let mut binding =
-        crate::binding::DestinationBinding::acquire(&plan, 0, &frame, &control, &mut pending)
-            .unwrap_or_else(|_| panic!("Owned destination failed"));
+    let mut binding = crate::binding::PublicationBinding::acquire_for_create(
+        &plan,
+        0,
+        &frame,
+        &control,
+        &mut pending,
+    )
+    .unwrap_or_else(|_| panic!("Owned destination failed"));
     let info = plan.records()[0].destination().unwrap();
     let ready = binding
-        .directory()
+        .creation_directory()
+        .unwrap()
         .stage_bytes(source.message().as_bytes(), || Ok(()))
         .unwrap();
     let identity = ready.identity();
@@ -201,7 +211,11 @@ fn real_held_publication_witness_survives_modeled_ambiguity_and_changed_requeste
     assert_eq!(error.code(), ErrorCode::AddressChanged);
     assert!(confirmed);
     assert_eq!(
-        fs::read(root.path().join("moved/a.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("moved/a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+        )
+        .unwrap(),
         golden
     );
     assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 0);
@@ -245,7 +259,11 @@ fn controlled_stop_before_and_after_the_real_edge_preserves_actual_effect() {
         if after {
             assert!(matches!(result, ItemResult::Created(..)), "{result:?}");
             assert_eq!(
-                fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+                fs::read(
+                    root.path()
+                        .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+                )
+                .unwrap(),
                 golden
             );
         } else {
@@ -264,7 +282,12 @@ fn controlled_stop_before_and_after_the_real_edge_preserves_actual_effect() {
             };
             assert_eq!(file_sync.unwrap().state, eml_fs::SyncState::Succeeded);
             assert_eq!(cleanup.state, CleanupState::Complete);
-            assert!(!root.path().join("a.no-attachments.eml").exists());
+            assert!(
+                !root
+                    .path()
+                    .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+                    .exists()
+            );
         }
         assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), input);
         assert_eq!(
@@ -321,7 +344,11 @@ fn controlled_source_change_before_and_after_edge_keeps_publication_truth() {
         if after {
             assert!(matches!(failure.effect(), FailureEffect::Published(_)));
             assert_eq!(
-                fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+                fs::read(
+                    root.path()
+                        .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+                )
+                .unwrap(),
                 golden
             );
         } else {
@@ -329,7 +356,12 @@ fn controlled_source_change_before_and_after_edge_keeps_publication_truth() {
                 failure.effect(),
                 FailureEffect::NotPublished { .. }
             ));
-            assert!(!root.path().join("a.no-attachments.eml").exists());
+            assert!(
+                !root
+                    .path()
+                    .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+                    .exists()
+            );
         }
         assert_eq!(
             fs::read(&source_path).unwrap(),
@@ -383,7 +415,7 @@ fn controlled_requested_output_move_after_edge_keeps_complete_published_copy() {
         eml_fs::SyncState::Succeeded
     );
     assert_eq!(
-        fs::read(moved.join("a.no-attachments.eml")).unwrap(),
+        fs::read(moved.join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")).unwrap(),
         golden
     );
     assert_eq!(fs::read_dir(&output).unwrap().count(), 0);
@@ -405,7 +437,9 @@ fn controlled_resync_gap_distinguishes_file_replacement_and_same_id_change() {
         let golden =
             include_bytes!("../../../../tests/contract/mime/golden/01-gmail-attachment.eml");
         fs::write(root.path().join("a.eml"), input).unwrap();
-        let copy = root.path().join("a.no-attachments.eml");
+        let copy = root
+            .path()
+            .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml");
         fs::write(&copy, golden).unwrap();
         let request = RunRequest {
             paths: vec!["a.eml".into()],
@@ -464,5 +498,97 @@ fn controlled_resync_gap_distinguishes_file_replacement_and_same_id_change() {
         drop(source);
         drop(plan);
         root.close().unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn matching_existing_copy_pays_known_current_run_mirror_debt_without_creation_admission() {
+    use std::os::unix::fs::PermissionsExt;
+    for resolve_before_sync in [false, true] {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/run-tests");
+        fs::create_dir_all(&base).unwrap();
+        let root = tempfile::tempdir_in(base).unwrap();
+        fs::create_dir(root.path().join("Inbox")).unwrap();
+        fs::create_dir(root.path().join("out")).unwrap();
+        let input =
+            include_bytes!("../../../../tests/contract/mime/inputs/01-gmail-attachment.eml");
+        let golden =
+            include_bytes!("../../../../tests/contract/mime/golden/01-gmail-attachment.eml");
+        for name in ["a.eml", "b.eml"] {
+            fs::write(root.path().join("Inbox").join(name), input).unwrap();
+        }
+        let request = RunRequest {
+            paths: vec!["Inbox".into()],
+            working_directory: root.path().to_owned(),
+            output: crate::OutputLocation::Directory("out".into()),
+            mode: RunMode::Create,
+        };
+        let control = RunControl::default();
+        let plan = plan_destinations(collect_sources(&request, &control).unwrap(), &control);
+        // Real nonempty residual layout plus modeled prior failed creation/sync
+        // receipt. This does not pretend the host returned an injected I/O error.
+        fs::create_dir(root.path().join("out/Inbox.eml-dir")).unwrap();
+        for copy in [
+            "a.jqp3zjytiqvs4hdhcvxvgec6qa.no-attachments.eml",
+            "b.3c5guam7a2rnoynep4jenzeama.no-attachments.eml",
+        ] {
+            fs::write(root.path().join("out/Inbox.eml-dir").join(copy), golden).unwrap();
+        }
+        let parent = plan.rebind_root(0, &control).unwrap();
+        let mut context = RunContext::new(plan.sources());
+        context.pending_layout.failed_creation(
+            parent.identity(),
+            std::ffi::OsStr::new("Inbox.eml-dir"),
+            &CleanupReceipt {
+                state: CleanupState::Residual,
+                residual_name: None,
+                native_code: Some(5),
+            },
+        );
+        fs::set_permissions(root.path().join("out"), fs::Permissions::from_mode(0o777)).unwrap();
+        if resolve_before_sync {
+            let frame = plan.read_parent(0, &control).unwrap();
+            let binding = crate::binding::ExistingSyncBinding::acquire_existing(
+                &plan,
+                0,
+                &frame,
+                &control,
+                &mut context.pending_layout,
+            )
+            .unwrap();
+            assert_eq!(binding.namespace().required_edges, 3);
+            drop(binding); // Resolving debt alone did not pay it or create layout.
+        }
+        for (index, required) in [(0, 3), (1, 1)] {
+            let source = bind_source(&plan, index, &control)
+                .unwrap_or_else(|error| panic!("Source fixture: {error:?}"));
+            let result = execute_prepared(&plan, index, &source, &mut context, &control);
+            let ItemResult::UpToDate(copy, _) = result else {
+                panic!("Existing copy failed: {result:?}")
+            };
+            let observed = copy.observation();
+            assert_eq!(observed.namespace_sync.required_edges, required);
+            assert_eq!(observed.namespace_sync.completed_edges, required);
+            assert_eq!(
+                observed.namespace_sync.receipt.unwrap().state,
+                eml_fs::SyncState::Succeeded
+            );
+            context.output_candidates.insert(observed.identity.unwrap());
+        }
+        assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 1);
+        assert_eq!(
+            fs::read_dir(root.path().join("out/Inbox.eml-dir"))
+                .unwrap()
+                .count(),
+            2
+        );
+        for name in ["a.eml", "b.eml"] {
+            assert_eq!(
+                fs::read(root.path().join("Inbox").join(name)).unwrap(),
+                input
+            );
+        }
+        fs::set_permissions(root.path().join("out"), fs::Permissions::from_mode(0o700)).unwrap();
     }
 }

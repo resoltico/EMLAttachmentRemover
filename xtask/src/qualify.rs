@@ -1,4 +1,5 @@
 //! Native release build/package orchestration; incomplete platform gates fail.
+use crate::distribution::BuildPlan;
 use crate::{Result, archive_verify, capture, cli_build, controller, notices};
 use serde_json::{Value, json};
 use std::{
@@ -55,13 +56,17 @@ fn test_names(text: &str, listing: bool) -> std::collections::BTreeMap<String, u
 }
 pub(crate) fn checked_tests(
     root: &Path,
+    plan: &BuildPlan,
     target: Option<&str>,
     release: bool,
     out: &Path,
 ) -> Result<Value> {
+    if let Some(target) = target {
+        plan.lookup_target(target)?;
+    }
     #[cfg(target_os = "macos")]
     let mac = if release {
-        Some(crate::macos::load(root)?)
+        Some(crate::macos::load(root, plan)?)
     } else {
         None
     };
@@ -202,6 +207,7 @@ pub(crate) struct PublishedCliArchive {
 
 pub(crate) fn staged_cli(
     root: &Path,
+    plan: &BuildPlan,
     cli: &cli_build::FrozenCli,
     checked: &notices::CheckedTargetMaterials,
     out: &Path,
@@ -212,23 +218,11 @@ pub(crate) fn staged_cli(
     {
         return Err("CLI legal materials do not match frozen build identity".into());
     }
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(root)
-            .arg("distribution"),
-    )?)?;
-    let artifact = plan["expected_artifacts"]
-        .as_array()
-        .ok_or("Missing artifact table")?
-        .iter()
-        .find(|artifact| artifact["platform"] == cli.platform() && artifact["role"] == "cli")
-        .ok_or("Missing native CLI archive identity")?;
-    let row = plan["native_targets"]
-        .as_array()
-        .ok_or("Missing target table")?
-        .iter()
-        .find(|row| row["target"] == cli.target())
-        .ok_or("Missing target identity")?;
+    let row = plan.lookup_target(cli.target())?;
+    if row.platform().to_string() != cli.platform() {
+        return Err("Frozen CLI platform differs from the build plan".into());
+    }
+    let artifact = plan.lookup_artifact(row.platform(), crate::distribution::ProductRole::Cli)?;
     let mut materials = checked.files().clone();
     if let Some(evidence) = cli.windows_evidence() {
         materials.insert(
@@ -238,38 +232,28 @@ pub(crate) fn staged_cli(
     }
     materials.insert(
         "README.txt".into(),
-        archive_verify::cli_readme(
-            cli.version(),
-            row["platform_text"]
-                .as_str()
-                .ok_or("Missing platform text")?,
-        )
-        .into_bytes(),
+        archive_verify::cli_readme(cli.version(), row.platform_text()).into_bytes(),
     );
     let stage = xtask::archive::create_artifact_directory(out)?;
-    let name = artifact["name"].as_str().ok_or("Missing archive name")?;
+    let name = artifact.basename();
     let path = stage.path().join(name);
     let writer = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&path)?;
-    let writer = if row["os"] == "linux" {
+    let writer = if row.platform().family() == crate::distribution::OsFamily::Linux {
         xtask::archive::encode_cli_tar_gz(
             writer,
-            artifact["root"].as_str().ok_or("Missing CLI root")?,
-            artifact["executable"]
-                .as_str()
-                .ok_or("Missing CLI executable")?,
+            artifact.root(),
+            artifact.executable(),
             cli.bytes(),
             &materials,
         )?
     } else {
         xtask::archive::encode_cli_zip(
             writer,
-            artifact["root"].as_str().ok_or("Missing CLI root")?,
-            artifact["executable"]
-                .as_str()
-                .ok_or("Missing CLI executable")?,
+            artifact.root(),
+            artifact.executable(),
             cli.bytes(),
             &materials,
         )?
@@ -281,7 +265,7 @@ pub(crate) fn staged_cli(
     }
     writer.sync_all()?;
     drop(writer);
-    let verified = archive_verify::expected(root, &path, cli.target(), cli.identity())?;
+    let verified = archive_verify::expected(root, plan, &path, cli.target(), cli.identity())?;
     let output = stage
         .path()
         .parent()
@@ -290,7 +274,13 @@ pub(crate) fn staged_cli(
     publish_verified_cli(&path, output, verified)
 }
 
-pub(crate) fn run(root: &Path, target: &str, out: &Path, icons: Option<&Path>) -> Result<()> {
+pub(crate) fn run(
+    root: &Path,
+    plan: &BuildPlan,
+    target: &str,
+    out: &Path,
+    icons: Option<&Path>,
+) -> Result<()> {
     crate::campaign::require_stock_topology(root)?;
     #[cfg(target_os = "macos")]
     let icons = icons
@@ -313,7 +303,7 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path, icons: Option<&Path>) -
     if !changes.is_empty() {
         return Err("Native qualification requires a clean committed checkout; preserve/commit intended work first".into());
     }
-    crate::native_host::inspect_target(root, target)?;
+    crate::native_host::inspect_target(root, plan, target)?;
     let source = String::from_utf8(capture(
         Command::new("git")
             .current_dir(root)
@@ -322,19 +312,56 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path, icons: Option<&Path>) -
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let result: Result<()> = (|| {
-        let tests = checked_tests(root, Some(target), true, &out)?;
+        let tests = checked_tests(root, plan, Some(target), true, &out)?;
         #[cfg(not(target_os = "macos"))]
         let primitives = native_primitives(root, target, &out)?;
-        let cli = cli_build::build(root, target, &out.join("cli-build"))?;
+        let cli = cli_build::build(root, plan, target, &out.join("cli-build"))?;
         #[cfg(windows)]
-        cli_build::unknown_input_control(root, target, &cli, &out.join("unknown-input-control"))?;
-        let materials = notices::checked_target(root, cli.platform())?;
-        let archive = staged_cli(root, &cli, &materials, &out)?;
+        cli_build::unknown_input_control(
+            root,
+            plan,
+            target,
+            &cli,
+            &out.join("unknown-input-control"),
+        )?;
+        let materials = notices::checked_target(root, plan, cli.platform())?;
+        let archive = staged_cli(root, plan, &cli, &materials, &out)?;
+        let name_profile_attempt = crate::name_profiles::run(
+            root,
+            &cli,
+            &out.join("name-profiles"),
+            plan.lookup_target(target)?.platform(),
+        );
+        let mut qualification_failures = Vec::new();
+        let name_profiles = match name_profile_attempt {
+            Ok(observed) => observed,
+            Err(error) => {
+                qualification_failures.push(format!("Native naming profiles: {error}"));
+                fs::read(out.join("name-profiles/result.json"))
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                    .unwrap_or_else(|| json!({"failure":error.to_string()}))
+            }
+        };
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        let resources =
+            match crate::preparation_resources::run(root, &cli, &out.join("preparation-resources"))
+            {
+                Ok(observed) => Some(observed),
+                Err(error) => {
+                    qualification_failures.push(format!("Preparation resources: {error}"));
+                    fs::read(out.join("preparation-resources/result.json"))
+                        .ok()
+                        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                }
+            };
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        let resources: Option<Value> = None;
         fs::write(
             out.join("cli-result.json"),
             serde_json::to_vec_pretty(
-                &json!({"source":source.trim(),"target":target,"host":cli.host(),"release_tests":tests,
-            "frozen_cli":cli.identity(),"verified_cli_archive":archive,"scope":"CLI build/archive behavior only; required remaining platform/source gates are not waived"}),
+                &json!({"source":source.trim(),"target":target,"workflow":crate::release_inputs::workflow_identity()?,"host":cli.host(),"release_tests":tests,
+            "frozen_cli":cli.identity(),"verified_cli_archive":archive,"preparation_resources":resources,"name_profiles":name_profiles,"qualification_failures":qualification_failures,"scope":"CLI build/archive behavior only; required remaining platform/source gates are not waived"}),
             )?,
         )?;
         #[cfg(target_os = "macos")]
@@ -342,29 +369,37 @@ pub(crate) fn run(root: &Path, target: &str, out: &Path, icons: Option<&Path>) -
             let app_stage = out.join("app-build");
             let volume = out.join("owned-exfat-observation");
             crate::macos_volume::run(root, &volume)?;
-            crate::macos_archive::build(root, &app_stage, icons)?;
+            crate::macos_archive::build(root, plan, &app_stage, icons)?;
             let app: Value = serde_json::from_slice(&fs::read(app_stage.join("app-result.json"))?)?;
             fs::write(
                 out.join("qualification.json"),
                 serde_json::to_vec_pretty(&json!({
-                    "stage":"native_candidate","source":source.trim(),"target":target,"host":cli.host(),"release_tests":tests,
-                    "cli_image":cli.identity(),"archive":archive,"app":app,"volume_evidence":volume,
+                    "stage":"native_candidate","source":source.trim(),"target":target,"workflow":crate::release_inputs::workflow_identity()?,"host":cli.host(),"release_tests":tests,
+                    "cli_image":cli.identity(),"archive":archive,"app":app,"volume_evidence":volume,"name_profiles":name_profiles,"qualification_failures":qualification_failures,
                     "scope":"native release tests, owned exFAT observations, frozen CLI and native app candidate structure/signature/worker verification; desktop and picker compatibility are separate required consumers"
                 }))?,
             )?;
-            Ok(())
+            if qualification_failures.is_empty() {
+                Ok(())
+            } else {
+                Err(qualification_failures.join("; ").into())
+            }
         }
         #[cfg(not(target_os = "macos"))]
         {
             fs::write(
                 out.join("qualification.json"),
                 serde_json::to_vec_pretty(&json!({
-                    "source":source.trim(),"target":target,"host":cli.host(),"release_tests":tests,
-                    "native_primitives":primitives,"cli_image":cli.identity(),"archive":archive,
+                    "source":source.trim(),"target":target,"workflow":crate::release_inputs::workflow_identity()?,"host":cli.host(),"release_tests":tests,
+                    "native_primitives":primitives,"cli_image":cli.identity(),"archive":archive,"preparation_resources":resources,"name_profiles":name_profiles,"qualification_failures":qualification_failures,
                     "scope":"native CLI release tests, real namespace/filesystem controls, final executable/runtime inspection and extracted archive behavior; repository-wide and other-platform qualification is separate"
                 }))?,
             )?;
-            Ok(())
+            if qualification_failures.is_empty() {
+                Ok(())
+            } else {
+                Err(qualification_failures.join("; ").into())
+            }
         }
     })();
     if let Err(error) = result {

@@ -1207,7 +1207,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
 name = "eml-app"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "eml-core",
@@ -1216,11 +1216,12 @@ dependencies = [
  "eml-protocol",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
 name = "eml-core"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "eml-fs",
@@ -1228,12 +1229,13 @@ dependencies = [
  "mail-parser",
  "memchr",
  "proptest",
+ "sha2",
  "tempfile",
 ]
 
 [[package]]
 name = "eml-fs"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "getrandom 0.4.3",
  "libc",
@@ -1244,7 +1246,7 @@ dependencies = [
 
 [[package]]
 name = "eml-gui"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "block2 0.6.2",
@@ -1265,7 +1267,7 @@ dependencies = [
 
 [[package]]
 name = "eml-macos"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "libc",
  "rustix 1.1.5",
@@ -1274,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "eml-protocol"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "eml-core",
@@ -1285,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "eml-windows"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "tempfile",
  "windows-sys 0.61.2",
@@ -1293,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "eml-worker"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "ctrlc",
@@ -3840,7 +3842,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "remove-eml-attachments"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "clap",
@@ -5736,7 +5738,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "clap",
@@ -5750,13 +5752,10 @@ dependencies = [
  "flate2",
  "getrandom 0.4.3",
  "object",
- "proc-macro2",
- "quote",
  "rustix 1.1.5",
  "serde",
  "serde_json",
  "sha2",
- "syn 3.0.9",
  "tar",
  "tempfile",
  "toml",

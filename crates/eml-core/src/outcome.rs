@@ -365,10 +365,10 @@ pub struct RunStart {
     /// Actual discovery completeness, independent of later stop.
     pub collection_complete: bool,
 }
-/// One final current-item observation with a position in the known inventory.
+/// One final current-item observation in frozen canonical execution order.
 #[derive(Debug)]
 pub struct ItemEvent<'a> {
-    /// Zero-based known work position; admission failures can leave gaps.
+    /// Zero-based contiguous terminal report ordinal; never an argument index.
     pub index: usize,
     /// Source native and display facts.
     pub source: ReportPath<'a>,

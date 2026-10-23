@@ -23,7 +23,7 @@ bench = false
 [workspace]
 members = ["."]
 
-# Checked against the root workspace lint policy by cargo xtask check-quality.
+# Checked against the root workspace lint policy by cargo xtask check-config.
 [lints.rust]
 warnings = "deny"
 unsafe_code = "deny"
@@ -39,5 +39,4 @@ private_intra_doc_links = "deny"
 [lints.clippy]
 all = { level = "deny", priority = -1 }
 allow_attributes_without_reason = "deny"
-too_many_lines = "deny"
-cognitive_complexity = "deny"
+undocumented_unsafe_blocks = "deny"

@@ -15,13 +15,19 @@ impl EventSink for Sink {
         if let Event::Item(item) = event {
             self.items.push(match item.result {
             ItemResult::Created(ref copy,_)=>{let copy=copy.publication();json!({"status":"created","publication":"published","address":format!("{:?}",copy.address()),"file_sync":format!("{:?}",copy.file_sync()),"namespace_sync":format!("{:?}",copy.namespace_sync()),"cleanup":format!("{:?}",copy.cleanup())})},
-            ItemResult::UpToDate(_,_)=>json!({"status":"up_to_date"}),
-            ItemResult::Failed(ref failure)=>json!({"status":"failed","code":format!("{:?}",failure.error().code()),"phase":format!("{:?}",failure.error().phase()),"detail":failure.error().detail(),"native_code":failure.error().native_error().and_then(std::io::Error::raw_os_error),"publication":match failure.effect(){FailureEffect::NotPublished{..}=>"not_published",FailureEffect::Published(_)=>"published",FailureEffect::Unknown(_)=>"unknown"},"effect":format!("{:?}",failure.effect())}),
+            ItemResult::UpToDate(ref copy,_)=>json!({"status":"up_to_date","existing":existing_facts(copy.observation())}),
+            ItemResult::Failed(ref failure)=>json!({"status":"failed","code":failure.error().code().as_str(),"phase":failure.error().phase().as_str(),"detail":failure.error().detail(),"native_code":failure.error().native_error().and_then(std::io::Error::raw_os_error),"publication":match failure.effect(){FailureEffect::NotPublished{..}=>"not_published",FailureEffect::Published(_)=>"published",FailureEffect::Unknown(_)=>"unknown"},"existing":failure.existing().map(existing_facts),"effect":format!("{:?}",failure.effect())}),
             ItemResult::Planned(_)=>json!({"status":"unexpected_plan"}),
         });
         }
         Ok(())
     }
+}
+fn existing_facts(observed: &eml_core::ExistingObservation) -> Value {
+    let receipt = |receipt: Option<eml_fs::SyncReceipt>| {
+        receipt.map(|receipt|json!({"method":format!("{:?}",receipt.method),"state":format!("{:?}",receipt.state),"native_code":receipt.native_code}))
+    };
+    json!({"bytes_equal":observed.bytes_equal,"stable":observed.stable,"address":format!("{:?}",observed.address),"file_sync":receipt(observed.file_sync),"namespace_sync":{"receipt":receipt(observed.namespace_sync.receipt),"required_edges":observed.namespace_sync.required_edges,"completed_edges":observed.namespace_sync.completed_edges,"failed_edge_index":observed.namespace_sync.failed_edge_index}})
 }
 fn plist(root: &Path, out: &Path, args: &[&std::ffi::OsStr], label: &str) -> Result<Value> {
     let path = out.join(format!("{label}.plist"));
@@ -196,34 +202,33 @@ fn core(root: &Path, mount: &Path) -> Result<Value> {
     if fs::read(&source)? != input {
         return Err("exFAT Core probe changed its original".into());
     }
-    let copy = mount.join("message.no-attachments.eml");
-    let present = copy.try_exists()?;
-    if present && fs::read(&copy)? != golden {
-        return Err("exFAT Core produced a partial or wrong final copy".into());
-    }
-    if result.counts().created() == 1 {
-        if !present || sink.items[0]["status"] != "created" {
-            return Err("exFAT Created lacks its complete physical copy".into());
-        }
-        let mut again = Sink::default();
-        if eml_core::run(&request, &RunControl::default(), &mut again)?
-            .counts()
-            .up_to_date()
-            != 1
-        {
-            return Err("Supported exFAT copy failed actual UpToDate resynchronization".into());
-        }
-    } else if result.counts().created() != 0
-        || (present
-            && !sink
-                .items
-                .iter()
-                .any(|item| item["publication"] == "published" || item["publication"] == "unknown"))
+    let copy = mount.join("message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml");
+    if result.counts().created() != 0
+        || result.counts().failed() != 1
+        || copy.try_exists()?
+        || sink.items.len() != 1
+        || sink.items[0]["code"] != "DESTINATION_UNSUPPORTED"
+        || sink.items[0]["publication"] != "not_published"
     {
-        return Err("exFAT refusal disagrees with observed physical publication".into());
+        return Err("exFAT new-name profile refusal was missing or had namespace effects".into());
+    }
+    // Independent fixture setup, not production creation admission: test the
+    // existing-only path using known complete golden bytes on this same volume.
+    fs::write(&copy, golden)?;
+    let mut existing = Sink::default();
+    let observed = eml_core::run(&request, &RunControl::default(), &mut existing)?;
+    let genuine_sync_failure = observed.counts().failed() == 1
+        && existing.items.len() == 1
+        && existing.items[0]["code"] == "EXISTING_SYNC_FAILED"
+        && existing.items[0]["existing"]["bytes_equal"] == true;
+    if !(observed.counts().up_to_date() == 1 || genuine_sync_failure)
+        || fs::read(&copy)? != golden
+        || fs::read(&source)? != input
+    {
+        return Err("exFAT existing-only qualification neither synchronized nor retained a genuine required-sync failure".into());
     }
     Ok(
-        json!({"created":result.counts().created(),"failed":result.counts().failed(),"physical_final_present":present,"physical_complete_copy":present,"original_unchanged":true,"items":sink.items,"scope":"actual reusable Core workflow, independent golden and physical effects; no predetermined unsupported result"}),
+        json!({"creation":{"created":result.counts().created(),"failed":result.counts().failed(),"items":sink.items,"physical_final_present":false},"existing":{"up_to_date":observed.counts().up_to_date(),"failed":observed.counts().failed(),"items":existing.items},"original_unchanged":true,"golden_unchanged":true,"scope":"unsupported new-name profile refuses before writes; independently preseeded complete existing copy attempts actual required synchronization and retains its native result"}),
     )
 }
 pub(crate) fn run(root: &Path, out: &Path) -> Result<()> {

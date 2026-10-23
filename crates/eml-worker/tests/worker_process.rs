@@ -50,6 +50,22 @@ fn invoke(root: &Path, args: &[&str], input: &[u8]) -> Output {
     invoke_command(command, input)
 }
 fn invoke_command(mut command: Command, input: &[u8]) -> Output {
+    let framed;
+    let input = if command.get_args().next().is_none() {
+        command.arg("--desktop-operation");
+        let header = eml_protocol::desktop::Header {
+            operation_id: eml_protocol::desktop::OperationId::new(1).unwrap(),
+            operation: eml_protocol::desktop::Operation::Processing,
+        };
+        let mut bytes = Vec::new();
+        let mut writer = eml_protocol::desktop::BodyWriter::new(&mut bytes, &header).unwrap();
+        writer.write_all(input).unwrap();
+        writer.finish().unwrap();
+        framed = bytes;
+        &framed[..]
+    } else {
+        input
+    };
     let mut child = OwnedChild(
         command
             .stdin(Stdio::piped())
@@ -152,7 +168,11 @@ fn gui_request_calls_core_and_retains_byte_exact_create_and_existing_outcomes() 
         assert_eq!(events[2]["exit_code"], 0);
         assert_eq!(fs::read(&source).unwrap(), INPUT);
         assert_eq!(
-            fs::read(root.path().join("message.no-attachments.eml")).unwrap(),
+            fs::read(
+                root.path()
+                    .join("message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml")
+            )
+            .unwrap(),
             GOLDEN
         );
     }
@@ -164,11 +184,9 @@ fn private_worker_identity_and_malformed_input_do_not_invoke_another_product() {
     assert!(version.status.success());
     assert_eq!(
         version.stdout,
-        format!(
-            "eml-worker {} {}-{}\n",
+        eml_protocol::desktop::identity_line(
             env!("CARGO_PKG_VERSION"),
-            std::env::consts::ARCH,
-            std::env::consts::OS
+            &eml_core::product::BUILD_NUMBER.to_string()
         )
         .as_bytes()
     );
@@ -202,10 +220,9 @@ fn fixture_configuration_is_ignored_by_identity_probe_and_invalid_processing_fai
         if version {
             assert_eq!(
                 output.stdout,
-                format!(
-                    "eml-worker {} {}-macos\n",
+                eml_protocol::desktop::identity_line(
                     env!("CARGO_PKG_VERSION"),
-                    std::env::consts::ARCH
+                    &eml_core::product::BUILD_NUMBER.to_string()
                 )
                 .as_bytes()
             );
@@ -245,7 +262,11 @@ fn shipping_worker_ignores_publication_observation_configuration() {
         assert!(output.stderr.is_empty());
     }
     assert_eq!(
-        fs::read(root.path().join("message.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml")
+        )
+        .unwrap(),
         GOLDEN
     );
     assert_eq!(fs::read(source).unwrap(), INPUT);
@@ -286,7 +307,8 @@ fn observed_worker_processes_real_message_and_reports_real_post_publication_addr
                 thread::sleep(Duration::from_millis(5));
             }
             assert_eq!(
-                fs::read(destination.join("message.no-attachments.eml")).unwrap(),
+                fs::read(destination.join("message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml"))
+                    .unwrap(),
                 GOLDEN
             );
             fs::rename(&destination, &moved).unwrap();
@@ -322,8 +344,55 @@ fn observed_worker_processes_real_message_and_reports_real_post_publication_addr
     assert_eq!(events[2]["exit_code"], 1);
     assert_eq!(fs::read(source).unwrap(), INPUT);
     assert_eq!(
-        fs::read(moved.join("message.no-attachments.eml")).unwrap(),
+        fs::read(moved.join("message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml")).unwrap(),
         GOLDEN
     );
     assert_eq!(fs::read_dir(destination).unwrap().count(), 0);
+}
+
+#[test]
+fn removed_private_routes_and_incomplete_desktop_frames_never_touch_targets() {
+    use eml_protocol::desktop::{BodyWriter, Header, Operation, OperationId};
+    let root = root();
+    let source = root.path().join("untouched.eml");
+    fs::write(&source, INPUT).unwrap();
+    let request = eml_app::RequestSnapshot::new(vec![source.clone()], None).unwrap();
+    let mut framed = Vec::new();
+    let mut w = BodyWriter::new(
+        &mut framed,
+        &Header {
+            operation_id: OperationId::new(42).unwrap(),
+            operation: Operation::Processing,
+        },
+    )
+    .unwrap();
+    w.write_all(request.encoded()).unwrap();
+    w.finish().unwrap();
+    for prefix in [
+        0,
+        1,
+        eml_protocol::desktop::MAGIC.len(),
+        framed.len() - 4,
+        framed.len() - 1,
+    ] {
+        let output = invoke(root.path(), &["--desktop-operation"], &framed[..prefix]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+    let mut extra = framed.clone();
+    extra.push(b'x');
+    let output = invoke(root.path(), &["--desktop-operation"], &extra);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    for args in [vec!["--desktop-control"], vec!["--format", "json"]] {
+        let output = invoke(root.path(), &args, request.encoded());
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+    }
+    let output = Command::new(BIN).current_dir(root.path()).output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(fs::read(&source).unwrap(), INPUT);
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
 }

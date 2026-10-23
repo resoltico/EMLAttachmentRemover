@@ -1,7 +1,7 @@
 //! Current-item destination ownership, mirror policy and ordered namespace work.
 use crate::{
     DestinationPlan, ErrorCode, ErrorPhase, NamespaceObservation, OperationFailure, RunControl,
-    destination::ReadOnlyParent,
+    destination::ObservedRoute,
 };
 use eml_fs::{
     CleanupReceipt, CleanupState, EntryKind, Identity, SyncMethod, SyncReceipt, SyncState,
@@ -15,10 +15,7 @@ use std::{
 type MirrorCreation = eml_fs::CreatedDirectory;
 #[cfg(windows)]
 type MirrorCreation = eml_fs::DirectoryCreation;
-#[cfg(unix)]
 type Directory = eml_fs::BoundDirectory;
-#[cfg(windows)]
-type Directory = eml_fs::WritableDirectory;
 #[cfg(unix)]
 type Root = eml_fs::BoundDirectory;
 #[cfg(windows)]
@@ -91,14 +88,16 @@ impl Mirror {
     fn directory(&self) -> &Directory {
         match self {
             Self::Existing(directory) => directory,
+            #[cfg(unix)]
             Self::Added(created) => created.directory(),
+            #[cfg(windows)]
+            Self::Added(created) => created.directory().observed(),
         }
     }
 }
 /// Ownership is separate from whether a newly observed edge needs synchronization.
-pub(super) struct DestinationBinding {
-    root: Root,
-    mirrors: Vec<Mirror>,
+pub(super) struct PublicationBinding {
+    route: HeldRoute,
     namespace: NamespaceProgress,
 }
 pub(super) struct BindingFailure {
@@ -192,8 +191,6 @@ fn root_from(read: eml_fs::BoundDirectory, control: &RunControl) -> Result<Root,
     checkpoint(control)?;
     #[cfg(unix)]
     {
-        read.admit_namespace()
-            .map_err(|error| native("Destination namespace cannot admit mutation", error))?;
         Ok(read)
     }
     #[cfg(windows)]
@@ -224,30 +221,27 @@ fn open_existing(parent: &Directory, name: &OsStr, expected: Identity) -> io::Re
                 "Opened mirror differs from observed identity",
             ));
         }
-        child.admit_namespace()?;
         Ok(child)
     }
     #[cfg(windows)]
     {
-        parent.open_existing_child(name, expected)
+        parent.pin_directory(name, expected)
     }
 }
 fn create(parent: &Directory, name: &OsStr) -> Result<MirrorCreation, eml_fs::CreationFailure> {
-    #[cfg(unix)]
-    {
-        parent.create_private_child(name)
-    }
-    #[cfg(windows)]
-    {
-        parent.create_child(name)
-    }
+    let creation =
+        eml_fs::CreationDirectory::acquire(parent).map_err(|error| eml_fs::CreationFailure {
+            error,
+            cleanup: not_needed(),
+        })?;
+    creation.create_child(name)
 }
 
-impl DestinationBinding {
-    pub(super) fn acquire(
+impl PublicationBinding {
+    pub(super) fn acquire_for_create(
         plan: &DestinationPlan<'_>,
         index: usize,
-        inspected: &ReadOnlyParent,
+        inspected: &ObservedRoute,
         control: &RunControl,
         pending: &mut PendingLayout,
     ) -> Result<Self, Box<BindingFailure>> {
@@ -264,8 +258,10 @@ impl DestinationBinding {
         }
         let root = root_from(read, control).map_err(empty)?;
         let mut binding = Self {
-            root,
-            mirrors: Vec::new(),
+            route: HeldRoute {
+                root,
+                mirrors: Vec::new(),
+            },
             namespace: NamespaceProgress::new(),
         };
         let mut uncertain_cleanup = not_needed();
@@ -281,6 +277,16 @@ impl DestinationBinding {
                 let Component::Normal(name) = part else {
                     unreachable!("frozen ordinary mirror names");
                 };
+                let actual_limit = binding
+                    .directory()
+                    .name_limit()
+                    .map_err(|error| native("Mirror name limit cannot be revalidated", error))?;
+                if actual_limit != info.mirror_limits()[offset] {
+                    return Err(native(
+                        "Mirror invalidates frozen name budget",
+                        io::Error::from(io::ErrorKind::InvalidInput),
+                    ));
+                }
                 let expected = inspected.prefix.get(offset + 1).copied();
                 let observed = binding
                     .directory()
@@ -296,10 +302,10 @@ impl DestinationBinding {
                 )?;
                 // Windows also flushes a possibly-new unowned edge. POSIX keeps
                 // its narrower run-created-only namespace contract.
-                let parent = if binding.mirrors.len() == 1 {
-                    root_directory(&binding.root)
+                let parent = if binding.route.mirrors.len() == 1 {
+                    root_directory(&binding.route.root)
                 } else {
-                    binding.mirrors[binding.mirrors.len() - 2].directory()
+                    binding.route.mirrors[binding.route.mirrors.len() - 2].directory()
                 };
                 let child_identity = binding.directory().identity();
                 let needs_sync = created
@@ -308,15 +314,15 @@ impl DestinationBinding {
                 if needs_sync {
                     binding.namespace.mirror_edge();
                     checkpoint(control)?;
-                    let receipt = binding.directory().sync_namespace();
+                    let receipt = sync_directory(binding.directory())?;
                     binding.namespace.record(receipt)?;
                     checkpoint(control)?;
-                    let parent = if binding.mirrors.len() == 1 {
-                        root_directory(&binding.root)
+                    let parent = if binding.route.mirrors.len() == 1 {
+                        root_directory(&binding.route.root)
                     } else {
-                        binding.mirrors[binding.mirrors.len() - 2].directory()
+                        binding.route.mirrors[binding.route.mirrors.len() - 2].directory()
                     };
-                    let receipt = parent.sync_namespace();
+                    let receipt = sync_directory(parent)?;
                     binding.namespace.record(receipt)?;
                     pending.completed(parent_identity, child_identity);
                 }
@@ -419,32 +425,35 @@ impl DestinationBinding {
                 Err(error) => {
                     pending.failed_creation(parent_identity, name, &error.cleanup);
                     *uncertain_cleanup = error.cleanup;
-                    return Err(native("Mirror creation could not be admitted", error.error));
+                    return Err(namespace_failure(
+                        "Mirror creation could not be admitted",
+                        error.error,
+                    ));
                 }
             },
         };
-        self.mirrors.push(mirror);
+        self.route.mirrors.push(mirror);
         Ok(created)
     }
+    pub(super) fn creation_directory(&self) -> Result<eml_fs::CreationDirectory, OperationFailure> {
+        eml_fs::CreationDirectory::acquire(self.directory()).map_err(|error| {
+            namespace_failure(
+                "Destination immediate mutation parent cannot admit creation",
+                error,
+            )
+        })
+    }
     pub(super) fn directory(&self) -> &Directory {
-        self.mirrors
-            .last()
-            .map_or_else(|| root_directory(&self.root), Mirror::directory)
+        self.route.directory()
     }
     pub(super) fn identities(&self) -> Vec<Identity> {
-        std::iter::once(root_directory(&self.root).identity())
-            .chain(
-                self.mirrors
-                    .iter()
-                    .map(|mirror| mirror.directory().identity()),
-            )
-            .collect()
+        self.route.identities()
     }
     pub(super) fn namespace(&self) -> NamespaceObservation {
         self.namespace.0
     }
     pub(super) fn final_sync(&mut self) -> Result<(), OperationFailure> {
-        let receipt = self.directory().sync_namespace();
+        let receipt = sync_directory(self.directory())?;
         self.namespace.record(receipt)
     }
     pub(super) fn check_held(
@@ -452,39 +461,7 @@ impl DestinationBinding {
         control: &RunControl,
         after_edge: bool,
     ) -> Result<(), OperationFailure> {
-        #[cfg(windows)]
-        self.root
-            .check_held(|| !after_edge && control.is_stopped())
-            .map_err(|error| match error {
-                eml_fs::RootBindingError::Interrupted => OperationFailure::new(
-                    ErrorCode::Interrupted,
-                    ErrorPhase::Stage,
-                    "Destination binding interrupted",
-                ),
-                eml_fs::RootBindingError::Native(error) => {
-                    native("Held destination ancestry cannot be verified", error)
-                }
-            })?;
-        #[cfg(unix)]
-        self.root
-            .admit_namespace()
-            .map_err(|error| native("Held destination root cannot admit mutation", error))?;
-        for mirror in &self.mirrors {
-            if !after_edge {
-                checkpoint(control)?;
-            }
-            #[cfg(unix)]
-            mirror
-                .directory()
-                .admit_namespace()
-                .map_err(|error| native("Held mirror cannot admit mutation", error))?;
-            #[cfg(windows)]
-            mirror
-                .directory()
-                .check_held()
-                .map_err(|error| native("Held ordinary mirror cannot be verified", error))?;
-        }
-        Ok(())
+        self.route.check_held(control, after_edge)
     }
     pub(super) fn cleanup_before_publication(
         mut self,
@@ -492,7 +469,7 @@ impl DestinationBinding {
         pending: &mut PendingLayout,
     ) -> CleanupReceipt {
         let mut aggregate = candidate;
-        while let Some(mirror) = self.mirrors.pop() {
+        while let Some(mirror) = self.route.mirrors.pop() {
             if let Mirror::Added(created) = mirror {
                 let identity = created.directory().identity();
                 #[cfg(unix)]
@@ -506,6 +483,197 @@ impl DestinationBinding {
             }
         }
         aggregate
+    }
+}
+fn namespace_failure(detail: &'static str, error: io::Error) -> OperationFailure {
+    let code = if error.kind() == io::ErrorKind::Unsupported {
+        ErrorCode::DestinationUnsupported
+    } else {
+        ErrorCode::BindFailed
+    };
+    OperationFailure::io(code, ErrorPhase::Stage, detail, error)
+}
+fn sync_directory(directory: &Directory) -> Result<SyncReceipt, OperationFailure> {
+    eml_fs::SyncDirectory::acquire(directory)
+        .map(|sync| sync.sync_namespace())
+        .map_err(|error| native("Directory synchronization access cannot be acquired", error))
+}
+/// Complete held ordinary route; this owner has no stage, mirror creation or cleanup surface.
+struct HeldRoute {
+    root: Root,
+    mirrors: Vec<Mirror>,
+}
+impl HeldRoute {
+    fn directory(&self) -> &Directory {
+        self.mirrors
+            .last()
+            .map_or_else(|| root_directory(&self.root), Mirror::directory)
+    }
+    fn identities(&self) -> Vec<Identity> {
+        std::iter::once(root_directory(&self.root).identity())
+            .chain(
+                self.mirrors
+                    .iter()
+                    .map(|mirror| mirror.directory().identity()),
+            )
+            .collect()
+    }
+    fn check_held(&self, control: &RunControl, after_edge: bool) -> Result<(), OperationFailure> {
+        #[cfg(windows)]
+        self.root
+            .check_held(|| !after_edge && control.is_stopped())
+            .map_err(|error| match error {
+                eml_fs::RootBindingError::Interrupted => OperationFailure::new(
+                    ErrorCode::Interrupted,
+                    ErrorPhase::Existing,
+                    "Held route verification interrupted",
+                ),
+                eml_fs::RootBindingError::Native(error) => {
+                    native("Held route ancestry changed", error)
+                }
+            })?;
+        #[cfg(unix)]
+        self.root
+            .check_held()
+            .map_err(|error| native("Held route root changed", error))?;
+        for mirror in &self.mirrors {
+            if !after_edge {
+                checkpoint(control)?;
+            }
+            mirror
+                .directory()
+                .check_held()
+                .map_err(|error| native("Held route mirror changed", error))?;
+        }
+        Ok(())
+    }
+}
+fn existing_binding_error(error: OperationFailure) -> OperationFailure {
+    if error.code() == ErrorCode::Interrupted {
+        error.with_context(
+            ErrorCode::Interrupted,
+            ErrorPhase::Existing,
+            "Existing-copy route binding interrupted",
+        )
+    } else {
+        error
+    }
+}
+/// Existing-only synchronization owner. Missing routes fail; construction cannot repair layout.
+pub(super) struct ExistingSyncBinding {
+    route: HeldRoute,
+    endpoint: eml_fs::SyncDirectory,
+    debt_edges: Vec<usize>,
+    namespace: NamespaceProgress,
+}
+impl ExistingSyncBinding {
+    pub(super) fn acquire_existing(
+        plan: &DestinationPlan<'_>,
+        index: usize,
+        inspected: &ObservedRoute,
+        control: &RunControl,
+        pending: &mut PendingLayout,
+    ) -> Result<Self, OperationFailure> {
+        if !inspected.complete {
+            return Err(changed("Existing route is incomplete"));
+        }
+        let read = plan.rebind_root(index, control)?;
+        if read.identity() != inspected.prefix[0] {
+            return Err(changed("Existing root changed since comparison"));
+        }
+        let root = root_from(read, control).map_err(existing_binding_error)?;
+        let mut route = HeldRoute {
+            root,
+            mirrors: Vec::new(),
+        };
+        for (offset, part) in plan.mirror_route(index).components().enumerate() {
+            checkpoint(control).map_err(existing_binding_error)?;
+            let expected = inspected
+                .prefix
+                .get(offset + 1)
+                .copied()
+                .ok_or_else(|| changed("Existing route became incomplete"))?;
+            let child = open_existing(route.directory(), part.as_os_str(), expected)
+                .map_err(|error| native("Existing mirror cannot be retained", error))?;
+            route.mirrors.push(Mirror::Existing(child));
+        }
+        let current = plan.read_parent(index, control)?;
+        if !current.complete || current.prefix != route.identities() {
+            return Err(changed("Existing route changed during acquisition"));
+        }
+        route
+            .check_held(control, false)
+            .map_err(existing_binding_error)?;
+        let mut namespace = NamespaceProgress::new();
+        let mut debt_edges = Vec::new();
+        for (offset, mirror) in route.mirrors.iter().enumerate() {
+            let parent = if offset == 0 {
+                root_directory(&route.root)
+            } else {
+                route.mirrors[offset - 1].directory()
+            };
+            if pending
+                .requires(parent, mirror.directory().identity(), control)
+                .map_err(existing_binding_error)?
+            {
+                namespace.mirror_edge();
+                debt_edges.push(offset);
+            }
+        }
+        let endpoint = eml_fs::SyncDirectory::acquire(route.directory()).map_err(|error| {
+            native(
+                "Existing endpoint synchronization access unavailable",
+                error,
+            )
+        })?;
+        Ok(Self {
+            route,
+            endpoint,
+            debt_edges,
+            namespace,
+        })
+    }
+    #[cfg(windows)]
+    pub(super) fn directory(&self) -> &Directory {
+        self.route.directory()
+    }
+    pub(super) fn identities(&self) -> Vec<Identity> {
+        self.route.identities()
+    }
+    pub(super) fn namespace(&self) -> NamespaceObservation {
+        self.namespace.0
+    }
+    pub(super) fn check_held(
+        &self,
+        control: &RunControl,
+        _after_edge: bool,
+    ) -> Result<(), OperationFailure> {
+        self.route
+            .check_held(control, false)
+            .map_err(existing_binding_error)
+    }
+    pub(super) fn final_sync(
+        &mut self,
+        pending: &mut PendingLayout,
+        control: &RunControl,
+    ) -> Result<(), OperationFailure> {
+        for &offset in &self.debt_edges {
+            checkpoint(control).map_err(existing_binding_error)?;
+            let child = self.route.mirrors[offset].directory();
+            let parent = if offset == 0 {
+                root_directory(&self.route.root)
+            } else {
+                self.route.mirrors[offset - 1].directory()
+            };
+            self.namespace
+                .record(sync_directory(child).map_err(existing_binding_error)?)?;
+            checkpoint(control).map_err(existing_binding_error)?;
+            self.namespace
+                .record(sync_directory(parent).map_err(existing_binding_error)?)?;
+            pending.completed(parent.identity(), child.identity());
+        }
+        checkpoint(control).map_err(existing_binding_error)?;
+        self.namespace.record(self.endpoint.sync_namespace())
     }
 }
 fn merge_cleanup(mut candidate: CleanupReceipt, layout: CleanupReceipt) -> CleanupReceipt {

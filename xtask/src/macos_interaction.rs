@@ -36,52 +36,7 @@ fn preference_snapshot(
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DesktopCase {
-    Workflow,
-    Picker,
-    Pagination,
-    Appearance,
-    Stop,
-    ForceStop,
-    ActiveQuit,
-    PublishedError,
-}
-impl DesktopCase {
-    fn uses_native_pickers(self) -> bool {
-        matches!(self, Self::Workflow | Self::Picker)
-    }
-    pub(crate) fn is_publication(self) -> bool {
-        matches!(
-            self,
-            Self::Stop | Self::ForceStop | Self::ActiveQuit | Self::PublishedError
-        )
-    }
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Workflow => "workflow",
-            Self::Picker => "picker",
-            Self::Pagination => "pagination",
-            Self::Appearance => "appearance",
-            Self::Stop => "stop",
-            Self::ForceStop => "force-stop",
-            Self::ActiveQuit => "active-quit",
-            Self::PublishedError => "published-error",
-        }
-    }
-    fn method(self) -> &'static str {
-        match self {
-            Self::Workflow => "testOwnedDesktopWorkflowAndNativeIngress",
-            Self::Picker => "testOwnedNativePickerCompatibility",
-            Self::Pagination => "testOwnedPagination",
-            Self::Appearance => "testOwnedNativeAppearance",
-            Self::Stop => "testOwnedCoreStop",
-            Self::ForceStop => "testOwnedCoreForceStop",
-            Self::ActiveQuit => "testOwnedCoreActiveQuit",
-            Self::PublishedError => "testOwnedCorePublishedError",
-        }
-    }
-}
+pub(crate) use crate::desktop_evidence::DesktopCase;
 
 pub(crate) fn run_case(
     root: &Path,
@@ -89,6 +44,7 @@ pub(crate) fn run_case(
     build: &MacBuild,
     out: &Path,
     case: DesktopCase,
+    source_archive: &xtask::archive::ByteIdentity,
 ) -> Result<Value> {
     if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
         || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
@@ -112,7 +68,7 @@ pub(crate) fn run_case(
     if case.is_publication() {
         let actor = crate::macos_publication_ui::finish(root, build, fixture.path(), &out, case)?;
         let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
-        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"actor":actor,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"nonshipping real-Core publication synchronization with actual native GUI lifecycle/presentation; unchanged shipping archive qualification remains separate"});
+        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"test_method":case.method(),"source_archive":source_archive,"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"actor":actor,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"nonshipping real-Core publication synchronization with actual native GUI lifecycle/presentation; unchanged shipping archive qualification remains separate"});
         fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
         return Ok(result);
     }
@@ -120,14 +76,14 @@ pub(crate) fn run_case(
     if case == DesktopCase::Pagination {
         let observation = pagination_observation(&attachments, &manifest, &ownership)?;
         let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
-        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"summary":summary,"lifetime_owner":ownership,"observation":observation,"persistent_preferences":{"before":before,"after":after,"comparison":preferences}});
+        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"test_method":case.method(),"source_archive":source_archive,"app":app,"process":process.evidence(),"summary":summary,"lifetime_owner":ownership,"observation":observation,"persistent_preferences":{"before":before,"after":after,"comparison":preferences}});
         fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
         return Ok(result);
     }
     if case == DesktopCase::Appearance {
         let observation = appearance_observation(&attachments, &manifest, &ownership)?;
         let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
-        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"appearance":observation,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"actual extracted shipping app under native light/dark/Increase Contrast changes in a final disposable-host phase; original selectors restored through native Settings UI"});
+        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"test_method":case.method(),"source_archive":source_archive,"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"appearance":observation,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"actual extracted shipping app under native light/dark/Increase Contrast changes in a final disposable-host phase; original selectors restored through native Settings UI"});
         fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
         return Ok(result);
     }
@@ -149,7 +105,7 @@ pub(crate) fn run_case(
     } else {
         "actual extracted app full workflow: owned launch, About/license/close/reopen/Open With prelude, native pickers, Services, queue8/refusal9/removal, Save/readback/collision, missing-copy restoration, Finder reveal/selection/move/drag, queued destination, independent golden/original checks, settled worker presentation, screenshots, exact preference guard and hidden-window normal Quit"
     };
-    let result = json!({"case":case.name(),"test_method":case.method(),"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"host_intervention":"not_requested_by_consumer","app":app,"process":process.evidence(),"lifetime_controls":lifetime_controls,"lifetime_owner":ownership,"summary":summary,"ownership_receipt":receipt,"picker_observation":picker,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"comparison":preferences,"argument_only_controls":control_preferences},"scope":scope});
+    let result = json!({"case":case.name(),"test_method":case.method(),"source_archive":source_archive,"source":crate::git(root,&["rev-parse","HEAD"])?,"host":build.host,"host_intervention":"not_requested_by_consumer","app":app,"process":process.evidence(),"lifetime_controls":lifetime_controls,"lifetime_owner":ownership,"summary":summary,"ownership_receipt":receipt,"picker_observation":picker,"persistent_preferences":{"fresh_process_before":before,"fresh_process_after":after,"comparison":preferences,"argument_only_controls":control_preferences},"scope":scope});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     Ok(result)
 }
@@ -299,12 +255,7 @@ fn qualify_owner_receipt(ownership: &Value, case: DesktopCase) -> Result<()> {
         || ownership["owned_app_terminated"] != true
         || ownership["forced_app_cleanup"] != false
         || ownership["originals_unchanged"] != true
-        || ownership["originals_captured"]
-            != if case == DesktopCase::Pagination {
-                69
-            } else {
-                4
-            }
+        || ownership["originals_captured"] != case.originals()
         || ownership.get("source_check_failure") != Some(&Value::Null)
         || ownership["owned_pasteboard_released"] != true
         || ownership["unexpected_application_pids"] != json!([])
@@ -516,16 +467,7 @@ fn attachment_name<'a>(
     Ok(matches[0])
 }
 
-fn native_display_settings_match(observation: &Value) -> bool {
-    let states = &observation["native_settings_observations"];
-    observation["original_contrast"].is_boolean()
-        && observation["original_reduce_transparency"].is_boolean()
-        && states["before"]["increase_contrast"] == observation["original_contrast"]
-        && states["before"]["reduce_transparency"] == observation["original_reduce_transparency"]
-        && states["increased_contrast"]["increase_contrast"] == true
-        && states["increased_contrast"]["reduce_transparency"].is_boolean()
-        && states["restored"] == states["before"]
-}
+use crate::desktop_evidence::native_display_settings_match;
 
 #[cfg(test)]
 mod tests {

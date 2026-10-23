@@ -2,10 +2,13 @@
 use super::*;
 
 pub(super) const MAX_REPORTS: usize = 12;
+#[cfg(any(target_os = "macos", test))]
 pub(super) const REPORT_LIMIT: u64 = 8 * 1024 * 1024;
+#[cfg(any(target_os = "macos", test))]
 const FRAME_LIMIT: usize = 256;
 const METAL_SYMBOL: &str = "MTLLoader sliceIDForDevice:";
 
+#[cfg(any(target_os = "macos", test))]
 fn text(value: &Value, key: &str) -> Result<String> {
     value
         .get(key)
@@ -14,6 +17,7 @@ fn text(value: &Value, key: &str) -> Result<String> {
         .map(str::to_owned)
         .ok_or_else(|| format!("Missing/invalid native crash string: {key}").into())
 }
+#[cfg(any(target_os = "macos", test))]
 fn number(value: &Value, key: &str) -> Result<u32> {
     value
         .get(key)
@@ -21,6 +25,7 @@ fn number(value: &Value, key: &str) -> Result<u32> {
         .and_then(|n| u32::try_from(n).ok())
         .ok_or_else(|| format!("Missing/invalid native crash integer: {key}").into())
 }
+#[cfg(any(target_os = "macos", test))]
 fn array<'a>(value: &'a Value, key: &str) -> Result<&'a [Value]> {
     value
         .get(key)
@@ -28,6 +33,7 @@ fn array<'a>(value: &'a Value, key: &str) -> Result<&'a [Value]> {
         .map(Vec::as_slice)
         .ok_or_else(|| format!("Missing/invalid native crash array: {key}").into())
 }
+#[cfg(any(target_os = "macos", test))]
 fn frame(value: &Value, images: &[Value]) -> Result<FaultFrame> {
     let index = usize::try_from(number(value, "imageIndex")?)?;
     let image = images
@@ -44,6 +50,7 @@ fn frame(value: &Value, images: &[Value]) -> Result<FaultFrame> {
         image_path: text(image, "path")?,
     })
 }
+#[cfg(any(target_os = "macos", test))]
 fn fault_thread(report: &Value) -> Result<FaultThread> {
     let index = usize::try_from(number(report, "faultingThread")?)?;
     let thread = array(report, "threads")?
@@ -58,7 +65,7 @@ fn fault_thread(report: &Value) -> Result<FaultThread> {
     }
     let images = array(report, "usedImages")?;
     Ok(FaultThread {
-        index,
+        index: index.try_into()?,
         triggered: true,
         frames: frames
             .iter()
@@ -66,6 +73,7 @@ fn fault_thread(report: &Value) -> Result<FaultThread> {
             .collect::<Result<_>>()?,
     })
 }
+#[cfg(any(target_os = "macos", test))]
 pub(super) fn parse(file_name: &str, bytes: &[u8]) -> Result<CrashReport> {
     if !file_name.starts_with("iconservicesagent-")
         || !file_name.ends_with(".ips")
@@ -129,7 +137,10 @@ pub(super) fn known(report: &CrashReport, host: &Host, uid: u32) -> bool {
                 && f.image_path == RENDERBOX
         })
 }
-pub(super) fn require_known(reports: &[CrashReport], host: &Host, uid: u32) -> Result<()> {
+pub(crate) fn require_known(reports: &[CrashReport], host: &Host, uid: u32) -> Result<()> {
+    for report in reports {
+        crate::picker_evidence::validate_crash(report)?;
+    }
     if reports.is_empty()
         || reports.len() > MAX_REPORTS
         || !reports.iter().any(|r| known(r, host, uid))

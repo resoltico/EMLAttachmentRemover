@@ -19,7 +19,10 @@ use windows_sys::Win32::{
 };
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-#[allow(unsafe_code, reason = "quality:filesystem-probe-restricted-token")]
+#[allow(
+    unsafe_code,
+    reason = "The isolated Windows primitive probe includes the shared owned-token ABI adapter to establish real restricted credentials; only the private token adapter, not the probe scenarios, permits unsafe calls."
+)]
 mod actor {
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -31,7 +34,10 @@ use actor::RestrictedToken;
 fn wide(path: &OsStr) -> Vec<u16> {
     path.encode_wide().chain(Some(0)).collect()
 }
-#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-directory")]
+#[allow(
+    unsafe_code,
+    reason = "Only this independent probe adapter opens and validates ordinary Win32 directory handles; all buffers are initialized and successful handles become uniquely owned."
+)]
 fn directory(path: &Path, writable: bool) -> Result<OwnedHandle> {
     let path = wide(path.as_os_str());
     let access = if writable {
@@ -75,7 +81,10 @@ fn directory(path: &Path, writable: bool) -> Result<OwnedHandle> {
     }
     Ok(handle)
 }
-#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-identity")]
+#[allow(
+    unsafe_code,
+    reason = "Only this independent probe adapter reads native file identity through a borrowed live handle into a fixed-size initialized output."
+)]
 fn identity(handle: HANDLE) -> Result<(u64, [u8; 16])> {
     let mut id = FILE_ID_INFO::default();
     // SAFETY: caller retains a live handle for this call, generated output type is aligned/sized.
@@ -109,7 +118,10 @@ fn candidate(path: &Path, bytes: &[u8]) -> Result<std::fs::File> {
     Ok(file)
 }
 
-#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-rename")]
+#[allow(
+    unsafe_code,
+    reason = "Only this independent native rename adapter constructs the validated Win32 rename buffer and calls the kernel API on a borrowed live candidate handle."
+)]
 fn rename_absolute_no_replace(
     file: &std::fs::File,
     parent: &Path,
@@ -170,7 +182,10 @@ fn rename_absolute_no_replace(
     }
     Ok(())
 }
-#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-flush")]
+#[allow(
+    unsafe_code,
+    reason = "Only this borrowed-handle adapter calls the native file synchronization ABI and retains its OS error."
+)]
 fn flush(handle: &OwnedHandle, label: &str) -> Result<()> {
     // SAFETY: live write-capable directory handle, retained for the whole call.
     if unsafe { FlushFileBuffers(handle.as_raw_handle()) } == 0 {
@@ -179,7 +194,10 @@ fn flush(handle: &OwnedHandle, label: &str) -> Result<()> {
     println!("PASS: {label}");
     Ok(())
 }
-#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-delete-check")]
+#[allow(
+    unsafe_code,
+    reason = "Only this independent probe adapter tests DELETE sharing with a native open, closes successful handles and retains the actual sharing error."
+)]
 fn delete_excluded(path: &Path) -> Result<bool> {
     let name = wide(path.as_os_str());
     // SAFETY: terminated live path; successful handle (which means the guard failed)
@@ -296,7 +314,10 @@ pub(super) fn run() -> Result<()> {
     Ok(())
 }
 
-#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-machine")]
+#[allow(
+    unsafe_code,
+    reason = "Only this process-machine observation calls the native ABI with the current process pseudo-handle and initialized outputs; emulation is explicitly refused."
+)]
 fn require_native_machine() -> Result<()> {
     let mut process_machine = 0;
     let mut native_machine = 0;
@@ -327,7 +348,10 @@ fn require_native_machine() -> Result<()> {
     Ok(())
 }
 
-#[allow(unsafe_code, reason = "quality:filesystem-probe-windows-volume")]
+#[allow(
+    unsafe_code,
+    reason = "Only this volume observation calls the native ABI on a borrowed directory handle with initialized capacity-bounded outputs; the actual volume must be NTFS."
+)]
 fn require_ntfs_volume(parent: &OwnedHandle) -> Result<u32> {
     let mut fs_name = [0u16; 32];
     let mut max_component = 0;

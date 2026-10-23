@@ -1,6 +1,55 @@
 //! Owned child transport and endpoint settlement.
 use super::*;
 
+pub(super) enum OperationInput {
+    Processing {
+        operation_id: eml_protocol::desktop::OperationId,
+        bytes: Vec<u8>,
+    },
+    Export {
+        operation_id: eml_protocol::desktop::OperationId,
+        destination: PathBuf,
+        report: crate::TerminalReport,
+    },
+}
+impl OperationInput {
+    fn write(self, writer: impl Write) -> io::Result<()> {
+        use eml_protocol::desktop::{BodyWriter, Header, Operation};
+        match self {
+            Self::Processing {
+                operation_id,
+                bytes,
+            } => {
+                let mut body = BodyWriter::new(
+                    writer,
+                    &Header {
+                        operation_id,
+                        operation: Operation::Processing,
+                    },
+                )?;
+                body.write_all(&bytes)?;
+                body.finish()?;
+            }
+            Self::Export {
+                operation_id,
+                destination,
+                report,
+            } => {
+                let mut body = BodyWriter::new(
+                    writer,
+                    &Header {
+                        operation_id,
+                        operation: Operation::Export { destination },
+                    },
+                )?;
+                report.write_document(&mut body)?;
+                body.finish()?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Default)]
 pub(super) struct ReadResult {
     pub(super) total_bytes: usize,
@@ -13,6 +62,7 @@ pub(super) struct ReadResult {
 }
 #[derive(Default)]
 pub(super) struct WriteResult {
+    pub(super) report_too_large: bool,
     pub(super) broken_pipe: bool,
     pub(super) closed: bool,
     pub(super) error: Option<String>,
@@ -74,7 +124,11 @@ pub(super) fn capture(mut reader: &io::PipeReader, limit: usize) -> ReadResult {
                 break;
             }
             Ok(count) => {
-                result.total_bytes = result.total_bytes.saturating_add(count);
+                let Some(total) = result.total_bytes.checked_add(count) else {
+                    result.error = Some("Transport byte counter overflow".into());
+                    break;
+                };
+                result.total_bytes = total;
                 let retain = count.min(limit.saturating_sub(result.bytes.len()));
                 result.bytes.extend_from_slice(&buffer[..retain]);
                 result.truncated |= retain != count;
@@ -105,7 +159,11 @@ pub(super) fn outcomes(
                 break;
             }
             Ok(count) => {
-                result.total_bytes = result.total_bytes.saturating_add(count);
+                let Some(total) = result.total_bytes.checked_add(count) else {
+                    result.error = Some("Transport byte counter overflow".into());
+                    break;
+                };
+                result.total_bytes = total;
                 if accepting {
                     let accepted = framing.append::<ProtocolFailure>(&buffer[..count], |frame| {
                         report
@@ -150,7 +208,11 @@ pub(super) fn control_reader(
                 break;
             }
             Ok(count) => {
-                result.total_bytes = result.total_bytes.saturating_add(count);
+                let Some(total) = result.total_bytes.checked_add(count) else {
+                    result.error = Some("Transport byte counter overflow".into());
+                    break;
+                };
+                result.total_bytes = total;
                 if accepting {
                     let mut invalid = false;
                     match facts.lock() {
@@ -289,7 +351,7 @@ impl WriteRole {
             reported: false,
         }
     }
-    fn start(&mut self, bytes: Vec<u8>, token: WorkerControl) {
+    fn start(&mut self, bytes: OperationInput, token: WorkerControl) {
         let slot = Arc::clone(&self.slot);
         match thread::Builder::new()
             .name("worker-request".into())
@@ -300,7 +362,13 @@ impl WriteRole {
                 let mut result = WriteResult::default();
                 match (held.as_ref(), token.begin_feeding()) {
                     (Some(mut writer), Ok(true)) => {
-                        if let Err(error) = writer.write_all(&bytes) {
+                        if let Err(error) = bytes.write(&mut writer) {
+                            result.report_too_large = matches!(
+                                error.get_ref().and_then(|e| {
+                                    e.downcast_ref::<crate::report_document::ReportWriteError>()
+                                }),
+                                Some(crate::report_document::ReportWriteError::ReportTooLarge)
+                            );
                             result.broken_pipe = error.kind() == io::ErrorKind::BrokenPipe;
                             result.error = Some(error.to_string());
                         }
@@ -373,7 +441,7 @@ pub(super) struct OwnedTransportScope {
     errors: ReadRole,
     control: ReadRole,
     input: WriteRole,
-    request: Option<Vec<u8>>,
+    request: Option<OperationInput>,
     processing: bool,
     token: WorkerControl,
     report: Option<Arc<Mutex<RunReport>>>,
@@ -409,6 +477,10 @@ impl OwnedTransportScope {
             let broken = Arc::clone(&self.broken);
             self.output.start("worker-outcomes", move |reader| {
                 outcomes(reader, report, token, broken)
+            });
+        } else if self.processing {
+            self.output.start("export-receipt", |reader| {
+                capture(reader, eml_protocol::desktop::MAX_RECEIPT_BYTES)
             });
         } else {
             self.output
@@ -703,14 +775,14 @@ impl OwnedTransportScope {
 }
 pub(super) fn observe(
     helper: &std::path::Path,
-    request: Option<Vec<u8>>,
+    request: Option<OperationInput>,
     token: &WorkerControl,
     report: Option<Arc<Mutex<RunReport>>>,
     health: Health,
 ) -> Result<Observed, String> {
     let processing = request.is_some();
     let observation = if processing {
-        eml_macos::spawn_with_control_pipe(helper, &[OsStr::new("--desktop-control")])
+        eml_macos::spawn_with_control_pipe(helper, &[OsStr::new("--desktop-operation")])
     } else {
         eml_macos::spawn(helper, &[OsStr::new("--version")])
     }

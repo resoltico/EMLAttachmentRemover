@@ -48,13 +48,62 @@ macro_rules! vocabulary {
 
 /// An explicitly present nullable wire member. This is not Serde's missing-key
 /// default for Option: the untagged boundary requires an actual JSON value.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub enum Nullable<T> {
     /// Explicit JSON null.
     Null(()),
     /// A present value with its ordinary strict wire representation.
     Value(T),
+}
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Nullable<T> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Explicit<T>(std::marker::PhantomData<T>);
+        impl<'de, T: Deserialize<'de>> Visitor<'de> for Explicit<T> {
+            type Value = Nullable<T>;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("an explicit nullable observation")
+            }
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+                Ok(Nullable::Null(()))
+            }
+            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Self::Value, E> {
+                T::deserialize(serde::de::value::BoolDeserializer::new(v)).map(Nullable::Value)
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                T::deserialize(serde::de::value::I64Deserializer::new(v)).map(Nullable::Value)
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                T::deserialize(serde::de::value::U64Deserializer::new(v)).map(Nullable::Value)
+            }
+            fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Self::Value, E> {
+                T::deserialize(serde::de::value::F64Deserializer::new(v)).map(Nullable::Value)
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                T::deserialize(serde::de::value::StrDeserializer::new(v)).map(Nullable::Value)
+            }
+            fn visit_borrowed_str<E: serde::de::Error>(
+                self,
+                v: &'de str,
+            ) -> Result<Self::Value, E> {
+                T::deserialize(serde::de::value::BorrowedStrDeserializer::new(v))
+                    .map(Nullable::Value)
+            }
+            fn visit_string<E: serde::de::Error>(self, v: String) -> Result<Self::Value, E> {
+                T::deserialize(serde::de::value::StringDeserializer::new(v)).map(Nullable::Value)
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                a: A,
+            ) -> Result<Self::Value, A::Error> {
+                T::deserialize(serde::de::value::SeqAccessDeserializer::new(a)).map(Nullable::Value)
+            }
+            fn visit_map<A: MapAccess<'de>>(self, a: A) -> Result<Self::Value, A::Error> {
+                T::deserialize(MapAccessDeserializer::new(a)).map(Nullable::Value)
+            }
+        }
+        d.deserialize_any(Explicit(std::marker::PhantomData))
+    }
 }
 impl<T> Nullable<T> {
     /// Borrow the present value, retaining explicit-null semantics on the wire.
@@ -125,7 +174,7 @@ vocabulary! { /// Closed protocol item outcomes.
 vocabulary! { /// Read-only plan which never qualifies an existing copy.
     Plan {Create=>"create",VerifyExisting=>"verify_existing"}
 }
-record! { /// One terminal item observation; index may have gaps.
+record! { /// One terminal item observation; indices are contiguous in emitted execution order.
     ItemRecord {index:u32,source:ReportPathRecord,status:ItemStatus,destination:Nullable<ReportPathRecord>,source_bytes:Nullable<u64>,copy_bytes:Nullable<u64>,removed:Vec<RemovedRecord>,stripped_fields:Vec<String>,plan:Nullable<Plan>,publication:PublicationRecord,existing_observation:Nullable<ExistingRecord>,error:Nullable<ErrorRecord>}
 }
 record! { /// Start facts emitted after core collection/admission.

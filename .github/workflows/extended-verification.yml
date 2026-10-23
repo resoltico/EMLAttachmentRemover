@@ -12,6 +12,38 @@ concurrency:
   group: extended-verification-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  mutations:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: policy
+        name: Read the pinned mutation tool from the source plan
+        run: |
+          mkdir -p target
+          cargo xtask distribution --github-output "$GITHUB_OUTPUT" > target/mutation-distribution.json
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+        with:
+          tool: cargo-mutants@${{ steps.policy.outputs.cargo_mutants }}
+          checksum: true
+          fallback: none
+      - name: Execute the complete initial selection of both authorization guards
+        run: cargo xtask mutants --initial
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: mutations-${{ github.sha }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/mutation-distribution.json
+            target/mutations/*/result.json
+            target/mutations/*/discovery.json
+            target/mutations/*/campaign.log
+            target/mutations/*/*.control.json
+            target/mutations/*/output/mutants.out/**
+          if-no-files-found: error
   extended:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
@@ -23,11 +55,8 @@ jobs:
         name: Derive tools from the checked source
         run: |
           mkdir -p target
-          cargo xtask distribution > target/extended-distribution.json
+          cargo xtask distribution --github-output "$GITHUB_OUTPUT" > target/extended-distribution.json
           git show -s --format='Source: %H; parents: %P' > target/extended-source.txt
-          for key in cargo_deny cargo_fuzz fuzz_compiler; do
-            printf '%s=%s\n' "$key" "$(jq -er --arg key "$key" '.tools[$key]' target/extended-distribution.json)" >> "$GITHUB_OUTPUT"
-          done
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
         with:
           tool: cargo-deny@${{ steps.policy.outputs.cargo_deny }}
@@ -49,7 +78,12 @@ jobs:
           FUZZ_COMPILER: ${{ steps.policy.outputs.fuzz_compiler }}
         run: rustup toolchain install "$FUZZ_COMPILER" --profile minimal
       - name: Fresh advisory and source policy across supported graphs
-        run: bash .github/scripts/check-dependencies.sh
+        run: cargo xtask check-dependencies --out target/dependency-checks
+      - name: Independently maintain host incident policy validity
+        if: ${{ !cancelled() && steps.policy.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: cargo xtask check-host-incidents --out target/host-incident-checks
       - name: Extended independent semantic properties
         if: ${{ !cancelled() && steps.policy.outcome == 'success' }}
         env:
@@ -64,6 +98,8 @@ jobs:
           name: extended-${{ github.sha }}-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: |
             target/extended-*
+            target/dependency-checks/**
+            target/host-incident-checks/**
             target/proptest/**
             target/fuzz/*/result.json
             target/fuzz/*/metadata-before.json

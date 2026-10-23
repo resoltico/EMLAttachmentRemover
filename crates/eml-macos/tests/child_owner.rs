@@ -99,7 +99,10 @@ fn stop_waiting(signal: StopSignal, expected: i32) {
     );
     assert!(!child.0.signal(StopSignal::Kill).unwrap());
 }
-#[allow(unsafe_code, reason = "quality:fixture-thread-signal-mask")]
+#[allow(
+    unsafe_code,
+    reason = "Block/restore only this owned test thread's signal mask"
+)]
 mod spawning_thread_mask {
     pub(crate) fn blocked<T>(observe: impl FnOnce() -> T) -> T {
         struct Restore(libc::sigset_t);

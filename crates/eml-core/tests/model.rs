@@ -5,6 +5,26 @@ use eml_core::{
 };
 use proptest::prelude::*;
 use std::collections::BTreeSet;
+#[derive(Clone, Copy, Debug)]
+enum Disposition {
+    Absent,
+    Inline,
+    Attachment,
+    Extension,
+}
+impl Disposition {
+    fn is_attachment(self) -> bool {
+        matches!(self, Self::Attachment | Self::Extension)
+    }
+}
+fn dispositions() -> impl Strategy<Value = Disposition> {
+    prop::sample::select(vec![
+        Disposition::Absent,
+        Disposition::Inline,
+        Disposition::Attachment,
+        Disposition::Extension,
+    ])
+}
 #[derive(Clone, Debug)]
 enum Shape {
     Leaf(u8, Vec<u8>),
@@ -14,7 +34,7 @@ enum Shape {
 #[derive(Clone, Debug)]
 struct Model {
     shape: Shape,
-    attachment: bool,
+    disposition: Disposition,
     stale: bool,
     transport: u8,
 }
@@ -23,10 +43,10 @@ fn models() -> BoxedStrategy<Model> {
         prop::sample::select(vec![0, 255, b'a', b'=', b'<', b'>', 0xc3, 0x85]),
         0..24,
     );
-    let leaf = (0u8..7, payload, any::<bool>(), any::<bool>(), 0u8..3).prop_map(
-        |(kind, payload, attachment, stale, transport)| Model {
+    let leaf = (0u8..7, payload, dispositions(), any::<bool>(), 0u8..3).prop_map(
+        |(kind, payload, disposition, stale, transport)| Model {
             shape: Shape::Leaf(kind, payload),
-            attachment,
+            disposition,
             stale,
             transport,
         },
@@ -37,22 +57,22 @@ fn models() -> BoxedStrategy<Model> {
                 0u8..6,
                 any::<bool>(),
                 prop::collection::vec(inner.clone(), 1..4),
-                any::<bool>(),
+                dispositions(),
                 any::<bool>(),
                 0u8..3
             )
-                .prop_map(|(kind, last, children, attachment, stale, transport)| {
+                .prop_map(|(kind, last, children, disposition, stale, transport)| {
                     Model {
                         shape: Shape::Multipart(kind, last, children),
-                        attachment,
+                        disposition,
                         stale,
                         transport,
                     }
                 }),
-            (any::<bool>(), inner, any::<bool>(), any::<bool>(), 0u8..3).prop_map(
-                |(identity, child, attachment, stale, transport)| Model {
+            (any::<bool>(), inner, dispositions(), any::<bool>(), 0u8..3).prop_map(
+                |(identity, child, disposition, stale, transport)| Model {
                     shape: Shape::Forward(identity, Box::new(child)),
-                    attachment,
+                    disposition,
                     stale,
                     transport
                 }
@@ -66,7 +86,7 @@ struct Rendered {
     fields: Vec<(&'static str, Vec<u8>)>,
     separator: Vec<u8>,
     media: &'static str,
-    attachment: bool,
+    disposition: Disposition,
     root: bool,
     section: String,
     kind: RenderedKind,
@@ -198,7 +218,7 @@ fn render(
         fields,
         separator: ending.to_vec(),
         media,
-        attachment: model.attachment,
+        disposition: model.disposition,
         root,
         section,
         kind,
@@ -228,11 +248,14 @@ fn render_fields(
     if !omit_type {
         add("Content-Type", content_type);
     }
-    if model.attachment {
-        add(
-            "Content-Disposition",
-            "attachment; filename=part.bin".into(),
-        );
+    if !matches!(model.disposition, Disposition::Absent) {
+        let token = match model.disposition {
+            Disposition::Inline => "inline",
+            Disposition::Attachment => "attachment",
+            Disposition::Extension => "x-unknown",
+            Disposition::Absent => unreachable!(),
+        };
+        add("Content-Disposition", format!("{token}; filename=part.bin"));
     }
     if let Some(cid) = cid {
         add("Content-ID", format!("<{cid}>"));
@@ -273,7 +296,7 @@ fn removal(node: &Rendered, reason: RemovalReason) -> Expected {
         removals: vec![RemovedPart {
             section: node.section.clone(),
             content_type: node.media.into(),
-            filename: node.attachment.then(|| "part.bin".into()),
+            filename: (!matches!(node.disposition, Disposition::Absent)).then(|| "part.bin".into()),
             bytes: node.wire.len() as u64,
             reason,
         }],
@@ -281,11 +304,14 @@ fn removal(node: &Rendered, reason: RemovalReason) -> Expected {
     }
 }
 fn expected(node: &Rendered) -> Result<Expected, Refusal> {
-    if node.attachment && !node.root {
+    if node.disposition.is_attachment() && !node.root {
         return Ok(removal(node, RemovalReason::Attachment));
     }
     if ["multipart/signed", "application/pkcs7-mime"].contains(&node.media) {
         return Err(Refusal::Protected);
+    }
+    if node.media == "multipart/report" {
+        return Err(Refusal::UnsupportedMime);
     }
     if ["text/plain", "text/html"].contains(&node.media) {
         return Ok(Expected {

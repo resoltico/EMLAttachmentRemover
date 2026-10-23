@@ -424,3 +424,92 @@ fn windows_unpaired_surrogates_are_lossless_and_odd_bytes_are_rejected() {
         })
     );
 }
+
+#[test]
+fn shared_encoder_preserves_explicit_cwd_mode_destination_and_required_null() {
+    use eml_core::RunRequest;
+    use eml_protocol::encode_request;
+    for mode in [RunMode::Create, RunMode::DryRun] {
+        for output in [
+            OutputLocation::BesideSource,
+            OutputLocation::Directory("copies".into()),
+        ] {
+            let request = RunRequest {
+                paths: vec!["alias/../message.eml".into()],
+                working_directory: root(),
+                output,
+                mode,
+            };
+            let bytes = encode_request(&request).unwrap();
+            assert_eq!(decode_request(&bytes, root()).unwrap(), request);
+            if request.output == OutputLocation::BesideSource {
+                assert!(
+                    std::str::from_utf8(&bytes)
+                        .unwrap()
+                        .contains("\"output_directory\":null")
+                );
+            }
+            assert_eq!(
+                decode_request(&bytes, root().join("other"))
+                    .unwrap()
+                    .working_directory,
+                root().join("other")
+            );
+        }
+    }
+}
+#[test]
+fn encoder_refuses_raw_native_and_count_limits_before_serialization() {
+    use eml_core::RunRequest;
+    use eml_protocol::{RequestEncodeError, encode_request};
+    let mut request = RunRequest {
+        paths: vec![PathBuf::new(); MAX_INPUT_PATHS + 1],
+        working_directory: root(),
+        output: OutputLocation::BesideSource,
+        mode: RunMode::Create,
+    };
+    assert_eq!(
+        encode_request(&request),
+        Err(RequestEncodeError::InvalidRequest(
+            RequestPathError::TooManyInputs
+        ))
+    );
+    request.paths = vec![PathBuf::from("a\0b")];
+    assert_eq!(
+        encode_request(&request),
+        Err(RequestEncodeError::InvalidRequest(
+            RequestPathError::InvalidPath {
+                path: RequestPath::Input(0),
+                violation: PathViolation::EmbeddedNul
+            }
+        ))
+    );
+}
+#[cfg(unix)]
+#[test]
+fn encoder_preserves_invalid_unix_bytes_without_display_conversion() {
+    use std::os::unix::ffi::OsStringExt;
+    let request = eml_core::RunRequest {
+        paths: vec![std::ffi::OsString::from_vec(b"a\xff.eml".to_vec()).into()],
+        working_directory: root(),
+        output: OutputLocation::BesideSource,
+        mode: RunMode::DryRun,
+    };
+    let bytes = eml_protocol::encode_request(&request).unwrap();
+    assert!(std::str::from_utf8(&bytes).unwrap().contains("Yf8uZW1s"));
+    assert_eq!(decode_request(&bytes, root()).unwrap(), request);
+}
+#[cfg(windows)]
+#[test]
+fn encoder_preserves_unpaired_windows_units() {
+    use std::os::windows::ffi::OsStringExt;
+    let request = eml_core::RunRequest {
+        paths: vec![std::ffi::OsString::from_wide(&[0xd800]).into()],
+        working_directory: root(),
+        output: OutputLocation::BesideSource,
+        mode: RunMode::Create,
+    };
+    let bytes = eml_protocol::encode_request(&request).unwrap();
+    assert!(std::str::from_utf8(&bytes).unwrap().contains("ANg="));
+    assert_eq!(decode_request(&bytes, root()).unwrap(), request);
+}

@@ -19,70 +19,11 @@
 //! [#2087]: https://github.com/rust-windowing/winit/issues/2087
 //! [`ApplicationHandler::resumed`]: crate::application::ApplicationHandler::resumed
 //!
-//! ## Custom `NSApplicationDelegate`
+//! ## Application lifecycle callback
 //!
-//! Winit usually handles everything related to the lifecycle events of the application. Sometimes,
-//! though, you might want to do more niche stuff, such as [handle when the user re-activates the
-//! application][reopen]. Such functionality is not exposed directly in Winit, since it would
-//! increase the API surface by quite a lot.
-//!
-//! [reopen]: https://developer.apple.com/documentation/appkit/nsapplicationdelegate/1428638-applicationshouldhandlereopen?language=objc
-//!
-//! Instead, Winit guarantees that it will not register an application delegate, so the solution is
-//! to register your own application delegate, as outlined in the following example (see
-//! `objc2-app-kit` for more detailed information).
-#![cfg_attr(target_os = "macos", doc = "```")]
-#![cfg_attr(not(target_os = "macos"), doc = "```ignore")]
-//! use objc2::rc::Retained;
-//! use objc2::runtime::ProtocolObject;
-//! use objc2::{declare_class, msg_send_id, mutability, ClassType, DeclaredClass};
-//! use objc2_app_kit::{NSApplication, NSApplicationDelegate};
-//! use objc2_foundation::{NSArray, NSURL, MainThreadMarker, NSObject, NSObjectProtocol};
-//! use winit::event_loop::EventLoop;
-//!
-//! declare_class!(
-//!     struct AppDelegate;
-//!
-//!     unsafe impl ClassType for AppDelegate {
-//!         type Super = NSObject;
-//!         type Mutability = mutability::MainThreadOnly;
-//!         const NAME: &'static str = "MyAppDelegate";
-//!     }
-//!
-//!     impl DeclaredClass for AppDelegate {}
-//!
-//!     unsafe impl NSObjectProtocol for AppDelegate {}
-//!
-//!     unsafe impl NSApplicationDelegate for AppDelegate {
-//!         #[method(application:openURLs:)]
-//!         fn application_openURLs(&self, application: &NSApplication, urls: &NSArray<NSURL>) {
-//!             // Note: To specifically get `application:openURLs:` to work, you _might_
-//!             // have to bundle your application. This is not done in this example.
-//!             println!("open urls: {application:?}, {urls:?}");
-//!         }
-//!     }
-//! );
-//!
-//! impl AppDelegate {
-//!     fn new(mtm: MainThreadMarker) -> Retained<Self> {
-//!         unsafe { msg_send_id![super(mtm.alloc().set_ivars(())), init] }
-//!     }
-//! }
-//!
-//! fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let event_loop = EventLoop::new()?;
-//!
-//!     let mtm = MainThreadMarker::new().unwrap();
-//!     let delegate = AppDelegate::new(mtm);
-//!     // Important: Call `sharedApplication` after `EventLoop::new`,
-//!     // doing it before is not yet supported.
-//!     let app = NSApplication::sharedApplication(mtm);
-//!     app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-//!
-//!     // event_loop.run_app(&mut my_app);
-//!     Ok(())
-//! }
-//! ```
+//! This fork retains Winit's application delegate. Register the narrow callback
+//! through [`EventLoopBuilderExtMacOS::with_application_callback`] before build.
+//! Replacing the delegate is unsupported by the pinned implementation.
 
 use std::os::raw::c_void;
 
@@ -92,6 +33,51 @@ use serde::{Deserialize, Serialize};
 use crate::event_loop::{ActiveEventLoop, EventLoopBuilder};
 use crate::monitor::MonitorHandle;
 use crate::window::{Window, WindowAttributes};
+
+/// Native URL array borrowed for one synchronous main-thread callback.
+///
+/// The private constructor ties this value to the retained array. It cannot be
+/// sent between threads or retained beyond the callback through safe Rust.
+///
+/// ```compile_fail
+/// use winit::platform::macos::BorrowedFileUrls;
+/// fn retain<'a>(batch: BorrowedFileUrls<'a>) -> BorrowedFileUrls<'static> { batch }
+/// ```
+/// ```compile_fail
+/// use winit::platform::macos::BorrowedFileUrls;
+/// fn require_send<T: Send>() {}
+/// require_send::<BorrowedFileUrls<'static>>();
+/// ```
+/// ```compile_fail
+/// use winit::platform::macos::BorrowedFileUrls;
+/// fn require_sync<T: Sync>() {}
+/// require_sync::<BorrowedFileUrls<'static>>();
+/// ```
+pub struct BorrowedFileUrls<'a> {
+    pub(crate) urls: &'a objc2_foundation::NSArray<objc2_foundation::NSURL>,
+    pub(crate) main_thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+impl BorrowedFileUrls<'_> {
+    /// Borrow the native NSArray pointer for conversion using the application's
+    /// objc2 version. The pointer is valid only for this value's callback lifetime,
+    /// on the main thread; it must never escape that scope.
+    pub fn as_ptr(&self) -> *const c_void {
+        (self.urls as *const objc2_foundation::NSArray<objc2_foundation::NSURL>).cast()
+    }
+}
+/// Intents delivered by Winit's owned application delegate.
+pub enum ApplicationEvent<'a> {
+    /// Cancel native termination while the application confirms and settles.
+    QuitRequested,
+    /// Restore the application's main window.
+    ReopenRequested,
+    /// One complete native open operation, never split into per-file events.
+    OpenUrls(BorrowedFileUrls<'a>),
+    /// The adapter panicked. The delegate contained the unwind.
+    CallbackPanicked,
+}
+/// A callback valid for every borrowed native batch lifetime.
+pub type ApplicationCallback = for<'a> fn(ApplicationEvent<'a>);
 
 /// Additional methods on [`Window`] that are specific to MacOS.
 pub trait WindowExtMacOS {
@@ -182,7 +168,8 @@ impl WindowExtMacOS for Window {
 
     #[inline]
     fn set_simple_fullscreen(&self, fullscreen: bool) -> bool {
-        self.window.maybe_wait_on_main(move |w| w.set_simple_fullscreen(fullscreen))
+        self.window
+            .maybe_wait_on_main(move |w| w.set_simple_fullscreen(fullscreen))
     }
 
     #[inline]
@@ -192,12 +179,14 @@ impl WindowExtMacOS for Window {
 
     #[inline]
     fn set_has_shadow(&self, has_shadow: bool) {
-        self.window.maybe_queue_on_main(move |w| w.set_has_shadow(has_shadow))
+        self.window
+            .maybe_queue_on_main(move |w| w.set_has_shadow(has_shadow))
     }
 
     #[inline]
     fn set_tabbing_identifier(&self, identifier: &str) {
-        self.window.maybe_wait_on_main(|w| w.set_tabbing_identifier(identifier))
+        self.window
+            .maybe_wait_on_main(|w| w.set_tabbing_identifier(identifier))
     }
 
     #[inline]
@@ -217,7 +206,8 @@ impl WindowExtMacOS for Window {
 
     #[inline]
     fn select_tab_at_index(&self, index: usize) {
-        self.window.maybe_queue_on_main(move |w| w.select_tab_at_index(index))
+        self.window
+            .maybe_queue_on_main(move |w| w.select_tab_at_index(index))
     }
 
     #[inline]
@@ -232,12 +222,14 @@ impl WindowExtMacOS for Window {
 
     #[inline]
     fn set_document_edited(&self, edited: bool) {
-        self.window.maybe_queue_on_main(move |w| w.set_document_edited(edited))
+        self.window
+            .maybe_queue_on_main(move |w| w.set_document_edited(edited))
     }
 
     #[inline]
     fn set_option_as_alt(&self, option_as_alt: OptionAsAlt) {
-        self.window.maybe_queue_on_main(move |w| w.set_option_as_alt(option_as_alt))
+        self.window
+            .maybe_queue_on_main(move |w| w.set_option_as_alt(option_as_alt))
     }
 
     #[inline]
@@ -247,7 +239,8 @@ impl WindowExtMacOS for Window {
 
     #[inline]
     fn set_borderless_game(&self, borderless_game: bool) {
-        self.window.maybe_wait_on_main(|w| w.set_borderless_game(borderless_game))
+        self.window
+            .maybe_wait_on_main(|w| w.set_borderless_game(borderless_game))
     }
 
     #[inline]
@@ -287,7 +280,8 @@ pub trait WindowAttributesExtMacOS {
     /// for delivery of one complete drop batch. It must not unwind or retain the
     /// pointer. Returning false refuses the operation. No per-file events or
     /// filename-string fallback are emitted. Only Copy operations are accepted.
-    fn with_file_url_drop_receiver(self, receiver: fn(*mut std::ffi::c_void, bool) -> bool) -> Self;
+    fn with_file_url_drop_receiver(self, receiver: fn(*mut std::ffi::c_void, bool) -> bool)
+        -> Self;
 
     /// Enables click-and-drag behavior for the entire window, not just the titlebar.
     fn with_movable_by_window_background(self, movable_by_window_background: bool) -> Self;
@@ -318,7 +312,10 @@ pub trait WindowAttributesExtMacOS {
 }
 
 impl WindowAttributesExtMacOS for WindowAttributes {
-    fn with_file_url_drop_receiver(mut self, receiver: fn(*mut std::ffi::c_void, bool) -> bool) -> Self {
+    fn with_file_url_drop_receiver(
+        mut self,
+        receiver: fn(*mut std::ffi::c_void, bool) -> bool,
+    ) -> Self {
         self.platform_specific.file_url_drop_receiver = Some(receiver);
         self
     }
@@ -379,7 +376,9 @@ impl WindowAttributesExtMacOS for WindowAttributes {
 
     #[inline]
     fn with_tabbing_identifier(mut self, tabbing_identifier: &str) -> Self {
-        self.platform_specific.tabbing_identifier.replace(tabbing_identifier.to_string());
+        self.platform_specific
+            .tabbing_identifier
+            .replace(tabbing_identifier.to_string());
         self
     }
 
@@ -397,6 +396,10 @@ impl WindowAttributesExtMacOS for WindowAttributes {
 }
 
 pub trait EventLoopBuilderExtMacOS {
+    /// Register a synchronous lifecycle adapter before delegate creation. The
+    /// callback must not retain native pointers or unwind across AppKit.
+    fn with_application_callback(&mut self, callback: ApplicationCallback) -> &mut Self;
+
     /// Sets the activation policy for the application. If used, this will override
     /// any relevant settings provided in the package manifest.
     /// For instance, `with_activation_policy(ActivationPolicy::Regular)` will prevent
@@ -452,6 +455,11 @@ pub trait EventLoopBuilderExtMacOS {
 }
 
 impl<T> EventLoopBuilderExtMacOS for EventLoopBuilder<T> {
+    fn with_application_callback(&mut self, callback: ApplicationCallback) -> &mut Self {
+        self.platform_specific.application_callback = Some(callback);
+        self
+    }
+
     #[inline]
     fn with_activation_policy(&mut self, activation_policy: ActivationPolicy) -> &mut Self {
         self.platform_specific.activation_policy = Some(activation_policy);
@@ -488,7 +496,9 @@ impl MonitorHandleExtMacOS for MonitorHandle {
     fn ns_screen(&self) -> Option<*mut c_void> {
         // SAFETY: We only use the marker to get a pointer
         let mtm = unsafe { objc2_foundation::MainThreadMarker::new_unchecked() };
-        self.inner.ns_screen(mtm).map(|s| objc2::rc::Retained::as_ptr(&s) as _)
+        self.inner
+            .ns_screen(mtm)
+            .map(|s| objc2::rc::Retained::as_ptr(&s) as _)
     }
 }
 

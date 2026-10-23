@@ -55,6 +55,6 @@ revision; its declaration accompanies the identified standard text.
 cargo-about0.9.2 omits the selected LicenseRef text groups for Slint1.18.1 despite
 including those packages in its graph. The generator requires an explicit
 reviewed supplement from every exact package's complete royalty-free license.
-An unreviewed omission fails. The app's top-level About screen displays AboutSlint.
+An unreviewed omission fails. Help → About Slint and Licenses… displays the actual AboutSlint widget.
 This supplements the selected source materials; generator success, checksums and
 license policy do not establish legal assurance or native product qualification.

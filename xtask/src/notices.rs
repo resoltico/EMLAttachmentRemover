@@ -1,4 +1,5 @@
 //! Target-specific legal materials from independently reviewed package bindings.
+use crate::distribution::BuildPlan;
 use crate::{Result, campaign, capture};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -242,39 +243,29 @@ use tree::*;
 
 fn generated_materials(
     root: &Path,
+    plan: &BuildPlan,
     selected: Option<(&str, NoticeComponent)>,
 ) -> Result<(PathBuf, Files)> {
     campaign::require_stock_topology(root)?;
-    let tool = campaign::tool_version(root, "about", "cargo_about")?;
+    let tool = plan.tools().version("cargo_about")?;
+    let about = crate::tools::path_pinned(root, "about", tool)?;
     let root = root.canonicalize()?;
-    let review = checked_review(&root, &tool)?;
+    let review = checked_review(&root, tool)?;
     let lock: Lock = toml::from_str(&String::from_utf8(read(
         &root.join("Cargo.lock"),
         MAX_LEGAL_BYTES,
     )?)?)?;
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(&root)
-            .arg("distribution"),
-    )?)?;
-    let version = plan["version"]
-        .as_str()
-        .ok_or("Missing Cargo-derived version")?;
+    let version = plan.version();
     let compiler = String::from_utf8(capture(
         Command::new("rustc").current_dir(&root).arg("-vV"),
     )?)?;
-    let targets = plan["native_targets"]
-        .as_array()
-        .ok_or("Missing native target table")?;
+    let targets: Vec<_> = plan.targets().collect();
     let expected: BTreeSet<_> = review
         .targets
         .iter()
         .map(|entry| entry.target.as_str())
         .collect();
-    let actual: BTreeSet<_> = targets
-        .iter()
-        .map(|entry| entry["target"].as_str().ok_or("Missing target identity"))
-        .collect::<std::result::Result<_, _>>()?;
+    let actual: BTreeSet<_> = targets.iter().map(|entry| entry.rust_target()).collect();
     if actual != expected || targets.len() != expected.len() {
         return Err("Notice target set differs from reviewed native policy".into());
     }
@@ -297,22 +288,22 @@ fn generated_materials(
             continue;
         }
         let config = read(&root.join(component.config()), MAX_LEGAL_BYTES)?;
-        for target in targets {
-            let platform = target["platform"]
-                .as_str()
-                .ok_or("Missing platform identity")?;
+        for target in &targets {
+            let platform_name = target.platform().to_string();
+            let platform = platform_name.as_str();
             if selected.is_some_and(|(selected, _)| selected != platform)
-                || !component.applies_to(platform)
+                || !component.applies_to(target)
             {
                 continue;
             }
-            let target = target["target"].as_str().ok_or("Missing target identity")?;
+            let target = target.rust_target();
             eprintln!(
                 "Generating {} legal materials: {platform} ({target})",
                 component.name()
             );
             for (path, bytes) in target_materials(
                 &root,
+                &about,
                 NoticeTarget {
                     target,
                     platform,
@@ -339,17 +330,17 @@ fn generated_materials(
     Ok((root, all))
 }
 
-pub(crate) fn run(root: &Path, output: &Path) -> Result<()> {
+pub(crate) fn run(root: &Path, plan: &BuildPlan, output: &Path) -> Result<()> {
     match fs::symlink_metadata(output) {
         Ok(_) => return Err("Notice writing requires a new output directory; use --check to inspect existing materials".into()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
         Err(error) => return Err(error.into()),
     }
-    let (_, all) = generated_materials(root, None)?;
+    let (_, all) = generated_materials(root, plan, None)?;
     write_new_tree(output, &all)
 }
 
-pub(crate) fn check(root: &Path, output: Option<&Path>) -> Result<Value> {
+pub(crate) fn check(root: &Path, plan: &BuildPlan, output: Option<&Path>) -> Result<Value> {
     campaign::require_stock_topology(root)?;
     let (all, mode) = if let Some(directory) = std::env::var_os("EML_GENERATED_LEGAL_MATERIALS") {
         (
@@ -358,16 +349,11 @@ pub(crate) fn check(root: &Path, output: Option<&Path>) -> Result<Value> {
         )
     } else {
         (
-            generated_materials(root, None)?.1,
+            generated_materials(root, plan, None)?.1,
             "generated_source_material_validation",
         )
     };
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(root)
-            .arg("distribution"),
-    )?)?;
-    let pairs = checked_pairs(&all, &plan)?;
+    let pairs = checked_pairs(&all, plan)?;
     if let Some(output) = output {
         matches_tree(output, &all)?;
     }
@@ -403,12 +389,17 @@ impl CheckedTargetMaterials {
     }
 }
 
-pub(crate) fn checked_target(root: &Path, platform: &str) -> Result<CheckedTargetMaterials> {
-    checked_component(root, platform, NoticeComponent::Cli)
+pub(crate) fn checked_target(
+    root: &Path,
+    plan: &BuildPlan,
+    platform: &str,
+) -> Result<CheckedTargetMaterials> {
+    checked_component(root, plan, platform, NoticeComponent::Cli)
 }
 
 pub(crate) fn checked_component(
     root: &Path,
+    plan: &BuildPlan,
     platform: &str,
     component: NoticeComponent,
 ) -> Result<CheckedTargetMaterials> {
@@ -421,7 +412,7 @@ pub(crate) fn checked_component(
     let all = if let Some(directory) = std::env::var_os("EML_GENERATED_LEGAL_MATERIALS") {
         checked_generated_input(root, Path::new(&directory))?
     } else {
-        generated_materials(root, Some((platform, component)))?.1
+        generated_materials(root, plan, Some((platform, component)))?.1
     };
     let prefix = component.prefix(platform);
     let selected: Files = all

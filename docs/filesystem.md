@@ -46,6 +46,57 @@ workflow performs the required source checks before/after its edge.
 This capability creates no output, syncs no file, applies no run metadata budget,
 emits no events and supplies no snapshot or permanent-stability guarantee.
 
+## Deterministic generated destinations
+
+A file is `<human-stem>.<route-token>.no-attachments.eml`; generated mirrored
+folders are `<human-label>.eml-dir`. The route token is the first 16 bytes of
+SHA-256 rendered as 26 lowercase RFC 4648 base32 characters without padding.
+It distinguishes complete raw logical routes, including folders whose native
+case/normalization/truncation spellings converge on a destination. It is not a
+content checksum or proof of identity. Native no-replace publication and exact
+byte/binding qualification remain authoritative. There is no old-name lookup,
+numeric collision search, dual writing, migration or automatic rewrite.
+
+The seed begins with `eml-attachment-remover:destination-route:v1` and NUL, then a
+little-endian u32 component count. Each component has a mirror/file kind byte
+(1/2), encoding byte, little-endian u32 payload byte length and exact payload.
+Valid Unicode is UTF-8 (encoding 0); invalid Unix bytes use encoding 1; unpaired
+Windows UTF-16 units use encoding 2 with little-endian code units. Raw mirror
+labels omit `.eml-dir`; the unshortened final component is the human source stem
+plus `.no-attachments.eml`. Output-root addresses, file identity/content,
+argument positions, component limits and existing-prefix length are excluded.
+
+Only human prefixes shorten, at Unicode-scalar/native-byte or UTF-16-pair
+boundaries. Files retain all 46 fixed ASCII units and at least one complete human
+character; mirrors retain eight fixed units and a human character. Every actual
+parent rechecks its frozen component budget before the edge. A changed budget
+refuses the item rather than changing a checked name. Rendered paths count against
+the native and 8 MiB report bounds.
+
+New names require a supported local name-domain profile: Linux ext2/3/4, tmpfs,
+XFS or Btrfs; local macOS APFS or HFS+; local Windows NTFS. Filesystem naming modes
+must preserve unequal lowercase ASCII base32 terminal tokens and the distinct
+`.eml-dir`/`.no-attachments.eml` domains. Production does not emulate Unicode
+collation, derive a child case mode, or generate short aliases. Existing entries
+are always resolved natively. Windows queries generated SDK device information
+and requires exact completed success, exactly sized information, disk device type and
+no remote-device characteristic. Unexpected pending retains its exclusive query
+handle and buffers until actual settlement, then refuses creation; failed waits
+and elapsed time do not release outstanding kernel storage or qualify a profile.
+The native Windows pending-retention fixture uses an owned kernel event, an
+actual failed wait and a completing thread through the same retention loop. It
+checks the live handle and stable heap owners until event observation and thread
+join; its controlled locality data does not claim that a synchronous volume
+query actually returned pending or that a remote filesystem was mounted.
+Actual APFS/NTFS case-mode/8.3/native-CPU qualification is separate evidence.
+
+Full seed equality is checked whenever tokens match. Different seeds sharing a
+token fail the entire group with a route-token collision reason. Rows execute in
+raw logical-route order, then absolute scope/source and selected-origin order;
+rows without a logical route follow, with stable semantic/native diagnostic tie
+breaks. Report indices are contiguous in that frozen order. A Check is read-only
+and confers no authority on a later Create, which binds everything afresh.
+
 ## POSIX namespace admission before creating an entry
 
 A pathname identity check followed by rmdir/unlinkat is not an atomic
@@ -90,7 +141,8 @@ publication stays descriptor-bound and requested-address changes are reported.
 An unsafe first missing mirrored edge refuses before mkdir. Identical-existing
 verification needs no staging namespace mutation and is not blocked solely by
 this creation predicate. Dry run performs available admission checks without writes.
-Refusal uses DESTINATION_UNSUPPORTED/stage and actionable private-folder guidance.
+Read-only planning refusal uses DESTINATION_UNSUPPORTED/admission; an actual
+creation-edge refusal uses DESTINATION_UNSUPPORTED/stage and actionable private-folder guidance.
 
 Required cross-UID, ACL/mask, mirrored-edge, substitution, residue, synchronization
 and native-platform checks remain obligations. Same-UID interleavings or source
@@ -116,11 +168,28 @@ aliases is not proved by stat/fstatfs. Idmapped mounts have not been adversarial
 qualified. macOS refuses held volumes with MNT_IGNORE_OWNERSHIP. No mount setting
 or saved owner preference is changed.
 
-Source reads and existing-only comparisons do not require namespace creation
-admission. Local APFS currently rejects invalid UTF-8 names with EILSEQ, so those
+Source reads and existing-only comparison/synchronization do not require namespace
+creation admission. Existing synchronization still requires actual file and endpoint
+directory flush access and successful native calls; it never repairs missing layout.
+Known current-run namespace debt on that exact retained route also requires flushing
+the affected child and its actual mutation parent before success. Local APFS currently rejects invalid UTF-8 names with EILSEQ, so those
 tests record that volume refusal separately from representable-name checks;
 Linux must execute the invalid-byte round trip. Unit cases for model constants
 or ownership flags do not establish a real mount's behavior.
+
+The Linux native profile campaign also runs independently preseeded existing-copy
+fixtures on an owned ordinary ext4 image and an OverlayFS mount whose lower,
+upper and work directories belong to another owned ext4 image. Root and mirror
+mode0777 deliberately refuse creation policy. Matching, unequal, missing-route and
+non-directory replacement cases retain exact before/after namespace, native
+identity, permissions, hashes and CLI receipts. Ordinary ext4 requires actual
+file/endpoint synchronization success. OverlayFS can report an unsupported flush
+only when its native errno agrees with an independent flush of the same retained
+file/endpoint; other failures leave the profile unqualified. No stage/layout
+repair or permission changes are accepted. Missing/replaced cases are controlled
+admission-time states, not evidence of an in-flight race. The driver detaches the
+owned overlay before its backing image, retaining the backing mount if overlay
+detach fails; it never changes an existing mount or forces detach.
 
 Model references: [Linux VFS deletion](https://github.com/torvalds/linux/blob/v6.8/fs/namei.c#L2931-L3004),
 [POSIX ACL permissions](https://github.com/torvalds/linux/blob/v6.8/fs/posix_acl.c#L375-L443),
@@ -237,7 +306,7 @@ read-only getter before write capability, compares a direct independent SDK
 DWORD, and uses the public staging/rename path for exact/max+1 controls. Metadata
 availability supplies no write-admission or confinement authority.
 
-The Windows `WritableDirectory`/`DirectoryCreation` boundary uses the
+The Windows `CreationDirectory`/`DirectoryCreation` boundary uses the
 [detect-before-bytes contract](windows-publication.md). A zero-byte owned file
 first proves containment and keeps its parent nonempty while CreateDirectoryW
 and the later no-follow mirror open/binding occur. The guard is checked-cleaned
@@ -259,9 +328,9 @@ Native contracts: [GetFileInformationByHandleEx](https://learn.microsoft.com/en-
 
 An explicitly selected file link keeps the selected entry's basename and parent
 for default output. `/links/alias.eml -> /target/original.eml` creates
-`/links/alias.no-attachments.eml`; final-link following supplies read identity,
+`/links/alias.<route-token>.no-attachments.eml`; final-link following supplies read identity,
 not a new naming parent. A selected directory link uses its admitted label for
-mirrored output: O/InboxLink/relative-parent/copy-name. Default beside-source
+mirrored output: O/InboxLink.eml-dir/relative-parent.eml-dir/copy-name. Default beside-source
 walks use held directories behind the alias, qualifying the reported alias
 address separately. Retargeting cannot redirect a bound output.
 
@@ -281,9 +350,14 @@ directories are not fabricated items, so directory-only overlap can have total0.
 It is distinct from NO_INPUTS and from invalid missing/non-directory output-root
 requests, which remain pre-stream exit2. These rules also apply to dry run.
 
-Admission-only root metadata does not establish logical collection precedence.
-Normal retention follows request order and DFS, so [directory D, explicit D/a]
-keeps the walked first encounter and its layout. If root admission fails before
+Entry ownership uses observed parent identity, exact native basename and the same
+full file signature. Equal file identity alone does not merge hard-link names.
+A signature disagreement for one parent/basename is SOURCE_CHANGED. Explicit file
+selection owns a proven same entry; otherwise fewer traversal edges from the
+selected root to the source parent wins, followed by raw native source/root/suffix
+ordering. Every selected directory view is walked; root inode equality does not
+suppress a mounted view. All observed source identities stay reserved.
+If root admission fails before
 walking, materialize known explicit file/failure roots in request order without
 folder expansion. Stop/limit during logical collection retains its committed
 bounded prefix without backfilling later admission metadata and emits no items.
@@ -360,7 +434,7 @@ the whole run with their actual admission cause. Beside-source keeps descendant
 per-item failures. No message bodies, output creation, flushes, global cwd changes,
 signals or frontend policy occur here.
 
-Local real-file tests cover ordering/first encounter, root gaps and exact causes,
+Local real-file tests cover deterministic ownership, root gaps and exact causes,
 hidden/generated overlap, native-unit ordering, distinct aliases, real4096/4097
 work and64/65-depth boundaries, and actual100000/100001 entry totals. Private
 hash injection exercises true collisions and deterministic RunControl/owned-empty-
@@ -379,13 +453,15 @@ Scripted state tests prove this mapping, not native late signals or OS failures.
 
 Read-only destination planning consumes the inventory and retains one structural
 record per known source position. It freezes copy names and mirrored layout,
-checks observed parent identities, and reserves exact native tails under the
-closest positively observed parent. All contenders for a known destination fail
-with DESTINATION_COLLISION, including a contender with another leaf error.
-Source identities and selected source paths remain reserved. An incompatible or
-unverified existing mirror parent produces no destination name or reservation;
-only positively missing parent tails may use the closest existing parent's name
-limit, which execution must revalidate. Completed planning is not MIME validation,
+checks observed parent identities, and reserves full logical routes and tokens
+within the actual output-root/beside-source scope. Known physical destination
+aliases also form complete conflict groups. Every contender fails before any
+mirror/stage/flush/publication, including a contender with another leaf error.
+Source identities and selected entries remain reserved. An incompatible or
+unverified mirror parent produces no address capability; its raw logical route
+still participates in known collision grouping. Only positively missing tails
+may borrow the closest observed parent's provisional component budget.
+Completed planning is not MIME validation,
 existing-byte comparison, write admission or a terminal PlannedCopy outcome.
 
 Optional child observation treats only native ENOENT (Unix) or
@@ -441,8 +517,15 @@ bounded comparison, then performs actual file/namespace/address checks. Private
 success constructors reject incomplete receipts; publication evidence can still
 be retained in a failed result.
 
-One current-item DestinationBinding retains the root and all existing/new mirror
-owners. It never rebaselines a component bound at planning or first inspection.
+Current-item PublicationBinding retains the held root and existing/new mirror
+owners. Separate ExistingSyncBinding retains only a complete HeldRoute and an
+endpoint SyncDirectory, plus indices of known current-run debt edges on that route.
+It has no mirror/stage creation or layout-cleanup API.
+BoundDirectory is observation/traversal; CreationDirectory acquires only the
+actual immediate mutation parent. Windows route ancestors and existing mirrors
+use metadata/traverse pins. The endpoint obtains GENERIC_WRITE flush access; a
+known debt edge additionally acquires only synchronization access to its child and
+actual mutation parent. Actual creation/deletion rechecks its native parent requirements. It never rebaselines a component bound at planning or first inspection.
 Still-unbound tails allow one exclusive creation attempt, or one exact native
 collision reobserve/open of an ordinary other-creator directory. Ownership and
 synchronization debt are separate. Windows conservatively flushes child and
@@ -451,7 +534,13 @@ A per-run bounded pending set retains known parent/child pairs and unresolved
 parent/native-component attempts after failed creation/sync. Native lookup can
 resolve an attempted address without granting ownership; missing/error lookup
 cannot erase it. Only both successful edge operations or confirmed owned removal
-retire the matching debt. Upper pins not modified by this workflow are not flushed.
+retire the matching debt. Existing-only success also pays known debt on its route:
+a failed earlier creation/sync can leave a nonempty mirror after another actor adds
+a matching output, so endpoint-only synchronization would otherwise forget the
+unsynchronized parent edge. Debt is retired only after both successful edge calls;
+failure retains partial receipts and debt. This requires no namespace creation
+admission and grants no deletion ownership. Upper pins not modified by this
+workflow are not flushed.
 
 Cleanup is candidate-first. POSIX then removes provably owned empty layout in
 reverse order, only before publication. Windows releases unowned mirror bindings

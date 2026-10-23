@@ -1,12 +1,15 @@
 //! One release CLI build and frozen owned artifact for archive/app consumers.
-use crate::{Result, capture};
+use crate::Result;
+use crate::distribution::BuildPlan;
 use serde_json::{Value, json};
 use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::Command,
 };
+
+#[cfg(not(target_os = "macos"))]
+use std::process::Command;
 
 pub(crate) struct FrozenCli {
     bytes: Vec<u8>,
@@ -41,12 +44,13 @@ impl FrozenCli {
     }
 }
 
-pub(crate) fn build(root: &Path, target: &str, out: &Path) -> Result<FrozenCli> {
-    build_inner(root, target, out, None)
+pub(crate) fn build(root: &Path, plan: &BuildPlan, target: &str, out: &Path) -> Result<FrozenCli> {
+    build_inner(root, plan, target, out, None)
 }
 
 fn build_inner(
     root: &Path,
+    plan: &BuildPlan,
     target: &str,
     out: &Path,
     additional_input: Option<&Path>,
@@ -55,23 +59,13 @@ fn build_inner(
         return Err("Additional native-input control requires Windows".into());
     }
     crate::campaign::require_stock_topology(root)?;
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(root)
-            .arg("distribution"),
-    )?)?;
-    let row = plan["native_targets"]
-        .as_array()
-        .ok_or("Missing native target table")?
-        .iter()
-        .find(|row| row["target"] == target)
-        .ok_or("Unsupported native CLI target")?;
-    let platform = row["platform"].as_str().ok_or("Missing native platform")?;
-    let os = row["os"].as_str().ok_or("Missing native OS")?;
-    let architecture = row["architecture"].as_str().ok_or("Missing native CPU")?;
+    let row = plan.lookup_target(target)?;
+    let platform = row.platform().to_string();
+    let os = row.platform().family().as_str();
+    let architecture = row.platform().architecture().as_str();
     let host = crate::native_host::inspect(root, target, os, architecture)?;
     #[cfg(target_os = "macos")]
-    let mac = crate::macos::load(root)?;
+    let mac = crate::macos::load(root, plan)?;
     check_compiler_identity(root, &host)?;
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
@@ -114,10 +108,7 @@ fn build_inner(
         &mac,
     )?;
     let identity = xtask::archive::ByteIdentity::of(&bytes);
-    let version = plan["version"]
-        .as_str()
-        .ok_or("Missing Cargo-derived version")?
-        .to_owned();
+    let version = plan.version().to_owned();
     let artifact = FrozenCli {
         bytes,
         identity,
@@ -155,6 +146,7 @@ fn build_inner(
 #[cfg(windows)]
 pub(crate) fn unknown_input_control(
     root: &Path,
+    plan: &BuildPlan,
     target: &str,
     baseline: &FrozenCli,
     out: &Path,
@@ -195,7 +187,7 @@ pub(crate) fn unknown_input_control(
     compiled.require_success(&log)?;
     let object_identity = xtask::archive::ByteIdentity::of(&fs::read(&object)?);
     let attempt = out.join("with-unknown-input");
-    let rejection = match build_inner(root, target, &attempt, Some(&object)) {
+    let rejection = match build_inner(root, plan, target, &attempt, Some(&object)) {
         Ok(_) => return Err("Actual unreviewed native object was accepted".into()),
         Err(error)
             if error

@@ -6,10 +6,13 @@ mod check;
 mod ci;
 mod cli_build;
 mod commands;
+mod dependencies;
+mod desktop_evidence;
 #[cfg(any(target_os = "macos", test))]
 mod desktop_preferences;
 mod distribution;
 mod fuzz;
+mod host_incidents;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -22,20 +25,26 @@ mod macos_icon;
 mod macos_interaction;
 #[cfg(target_os = "macos")]
 mod macos_panel;
-#[cfg(any(target_os = "macos", test))]
 mod macos_picker_host;
 #[cfg(target_os = "macos")]
 mod macos_publication_ui;
 #[cfg(target_os = "macos")]
 mod macos_volume;
 mod mutants;
+mod name_profiles;
 mod native_host;
 mod notices;
+mod picker_evidence;
+mod preparation_evidence;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod preparation_resources;
 mod qualify;
-mod quality;
 mod release_assets;
 mod release_check;
+mod release_inputs;
+mod repository_config;
 mod smoke;
+mod source_files;
 mod tools;
 #[cfg(any(windows, test))]
 mod windows_evidence;
@@ -101,15 +110,17 @@ enum Task {
         #[arg(long)]
         version: String,
     },
-    /// Assemble exactly eight archive bytes and SHA256SUMS; no qualification or publication.
+    /// Assemble admitted archive bytes and SHA256SUMS; no qualification or publication.
     StageReleaseAssets {
         #[arg(long)]
-        archives: PathBuf,
+        inputs: PathBuf,
         #[arg(long)]
         out: PathBuf,
     },
     /// Compare actual local asset bytes with a retained unpublished GitHub draft response.
     CheckReleaseServer {
+        #[arg(long)]
+        inputs: PathBuf,
         #[arg(long)]
         assets: PathBuf,
         #[arg(long)]
@@ -125,8 +136,8 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Prepare the exact affected hosted Intel picker environment; never product acceptance.
-    PrepareMacosPickerHost {
+    /// Qualify the frozen picker product once in the admitted native host state.
+    QualifyMacosPicker {
         #[arg(long)]
         archive: PathBuf,
         #[arg(long)]
@@ -134,14 +145,8 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Read back the unchanged picker inputs, caller and host state after the real product.
-    VerifyMacosPickerHost {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        reference: PathBuf,
-        #[arg(long)]
-        preparation: PathBuf,
+    /// Independently inspect incident policy validity without mutating host services.
+    CheckHostIncidents {
         #[arg(long)]
         out: PathBuf,
     },
@@ -161,8 +166,8 @@ enum Task {
     },
     /// Run independent repository checks, retaining every failed section.
     Check,
-    /// Validate authored-source structure and centrally justified lint exceptions.
-    CheckQuality,
+    /// Check Cargo manifest ownership and complete lint inheritance.
+    CheckConfig,
     /// Strictly check all discovered authored shell scripts, including shebang files.
     CheckShell,
     /// Build and verify one native CLI archive; remaining qualification is separate.
@@ -247,7 +252,26 @@ enum Task {
         reference: PathBuf,
     },
     /// Print native target policy and expected archive identities; build nothing.
-    Distribution,
+    Distribution {
+        #[arg(long)]
+        github_output: Option<PathBuf>,
+    },
+    /// Check every authored and declared desktop dependency graph using pinned tools.
+    CheckDependencies {
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Admit current-run frozen products and required native consumer evidence.
+    VerifyReleaseInputs {
+        #[arg(long)]
+        products: PathBuf,
+        #[arg(long)]
+        desktop: PathBuf,
+        #[arg(long)]
+        picker: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Run one bounded pure-preparation fuzz campaign with owned corpus storage.
     Fuzz {
         #[arg(long,default_value_t=60,value_parser=clap::value_parser!(u64).range(1..=900))]

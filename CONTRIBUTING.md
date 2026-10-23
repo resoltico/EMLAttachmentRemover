@@ -51,7 +51,7 @@ This produces a `native_candidate` receipt after structure, signature, CPU,
 minimum-OS and actual extracted-worker checks. On each matching macOS15 host,
 `cargo xtask smoke-macos-app --archive ARCHIVE --reference REFERENCE` requires the
 complete desktop case set against those frozen bytes. On macOS26 Intel,
-`cargo xtask check-macos-picker --archive ARCHIVE --reference REFERENCE` separately
+`cargo xtask qualify-macos-picker --archive ARCHIVE --reference REFERENCE --out NEW_DIR` separately
 requires the dedicated picker case with the original startup/interaction
 prelude, actual message/folder/keyboard pickers, independent copy checks,
 scenario-bound preferences and normal Quit. Full Finder and broader desktop
@@ -60,7 +60,7 @@ shipping app, and candidate success alone does not qualify the desktop product.
 A settled actool failure may use the approved macOS15 Intel producer; timeout,
 uncertain cleanup, missing pinned Xcode or invalid outputs do not permit fallback.
 Keep each app ZIP's frozen `.reference.json` receipt for `smoke-macos-app` and
-`check-macos-picker`; it binds producer bytes, not review quality. Ad hoc signing is
+`qualify-macos-picker`; it binds producer bytes, not review quality. Ad hoc signing is
 the only supported signing mode; no Apple developer account is required.
 
 `ci.yml` sends exact PR head H, main source S or merge-queue source Q through
@@ -69,17 +69,17 @@ checks its ordered base/H parents. A final API observation rejects stale head/ba
 pairings. Native jobs retain compiler/host identities, strict Slint fixtures,
 real different-UID controls, complete legal generation, native archives and
 matching macOS15 desktop qualification and macOS26 Intel picker compatibility.
-Intel26 uses one dedicated modified-host job. Preparation requires the exact
-configured hosted image, a non-root console user with a graphical Security
-session, the fixed Apple GUI-user agent and recognized current-boot crash
-evidence. Only then may it boot out and disable that agent. The actual same
-frozen product must pass with normal cleanup and preferences; read-only final
-checks verify host/context identity and the absent, disabled service. See
-[picker admission](docs/verification.md) for exact guards and limits. The private
-`prepare-macos-picker-host` and `verify-macos-picker-host` commands are confined
-to that hosted job and refuse owner-desktop execution. Unknown images or failure
-signatures stop qualification. The standalone panel diagnostic remains manual
-only.
+Intel26 uses one dedicated fresh-host picker job. A complete read-only native
+caller/boot/no-disabled-override baseline precedes one independent AppKit probe.
+A healthy probe proceeds directly to one actual frozen-product case without
+loading incident policy, service-print history or crashes. Only the exact known
+probe failure can lazily admit the single current incident in
+`xtask/host-incidents.toml`. Each fixed service action rechecks source, workflow,
+run/attempt, archive/reference, caller/boot, original policy identity and both
+wall/monotonic deadlines. Unknown evidence fails; product failures are terminal.
+The old separate prepare/verify commands and weaker diagnostic mutation route
+are removed. Standalone panel observation is read-only. See
+[picker admission](docs/verification.md) for exact scope and evidence limits.
 `ci-ok` always runs and rejects failed, missing and
 unexpectedly skipped jobs; only non-PR events omit merge integration/freshness.
 Full product acceptance requires every registered native role and its matching
@@ -102,7 +102,7 @@ and the original failure evidence.
 ```sh
 # Install exact tool versions from xtask/tools.toml on PATH
 cargo xtask check
-cargo xtask check-quality
+cargo xtask check-config
 cargo xtask check-shell
 cargo xtask notices --check
 cargo xtask notices --write --out target/legal-materials
@@ -149,13 +149,13 @@ bridge/test source using the selected Xcode's default formatter configuration.
 are captured from the pinned tool and passed explicitly, so ancestor/owner
 formatter settings are not inputs. A newer local formatter is supplementary.
 
-Rust compiler, rustdoc and Clippy levels are authoritative in [Cargo.toml](Cargo.toml); all authored members inherit them. Excluded Rust workspaces carry checked-equivalent rules and run Clippy too. [clippy.toml](clippy.toml) defines structural review limits. These tripwires support responsibility-based design review; a small file or function alone does not establish good architecture.
+Rust compiler, rustdoc and Clippy levels are authoritative in [Cargo.toml](Cargo.toml). Authored workspace members inherit the complete table; excluded authored workspaces carry checked-equivalent tables. Unsafe code is denied by default. Necessary native or generated exceptions state their complete reason at the narrow source boundary, and authored unsafe blocks carry concrete `SAFETY:` arguments checked by Clippy.
 
-[quality.toml](quality.toml) centrally records every necessary authored lint exception by stable identifier, exact file, named syntax scope, lint set and rationale. Source attributes reference `reason = "quality:IDENTIFIER"`; do not copy rationales into independent inventories. `check-quality` rejects unregistered, stale, duplicated or widened exceptions, conditional and opaque macro suppressions, formatter skips, divergent package rules and undocumented literal lint-weakening options. Safe crates retain their stronger unsafe-code prohibition. Mutation lint capping is confined to the explicitly registered experiment command; it does not qualify product sources.
+`check-config` checks locked Cargo membership, lint inheritance, standalone table equality, contained path-patch ownership and classification of tracked/pending manifests. Compilers resolve source; there is no separate Rust/Swift syntax scanner, source-coordinate exception registry or physical-line/complexity gate. Responsibility and changeability remain review obligations.
 
-Source discovery includes tracked and pending nonignored files, extensionless shell shebangs and referenced Rust sources. Vendored upstream packages are explicitly classified ownership boundaries, rather than authored style exemptions. The physical source-file limit is a navigation/review tripwire and applies to tests and checking tools too; split responsibilities rather than arbitrary text chunks.
+Native qualification fixtures require Python 3.9 or later. The Windows owned-volume fixture also requires PowerShell 7 and elevated disposable-host storage privileges. Linux profile qualification uses the workflow-installed filesystem utilities and passwordless sudo on an owned runner; macOS uses ordinary-user hdiutil images with ownership enforcement. These are qualification-host prerequisites; record unavailable profiles as unqualified. Standard unittest discovery under tools/ runs the authored ownership/cleanup controls; the POSIX image controls explicitly report nonapplicability on Windows.
 
-Native Swift checks compile the syntax checker using the selected Xcode's matching SwiftParser/SwiftSyntax host modules. Missing modules or parse errors fail visibly. Callable code-line and parameter limits follow the corresponding Clippy thresholds; Swift branch complexity uses the same numeric threshold but a distinct metric: one plus conditionals, loops, catches, nondefault switch cases, ternaries, additional comma-separated conditions and boolean conjunction/disjunction. Nested callable bodies, closures and accessors are measured separately. Negative controls accompany both Rust policy checks and Swift structure checks.
+Shell and Swift discovery includes ordinary contained tracked and pending nonignored files, including extensionless shell shebangs; vendor roots come from Cargo path patches. Each actual language tool checks its own configuration. Swift formatting uses the selected Xcode's captured default formatter configuration; real Swift 6 compilation with warnings as errors remains in native build/test owners. Formatting does not establish compilation or packaged GUI behavior.
 
 macOS `qualify` produces a native app candidate; separate same-byte desktop and
 picker consumers establish GUI qualification. Final acceptance on every platform

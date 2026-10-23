@@ -119,7 +119,11 @@ fn actual_created_and_up_to_date_wire_fields_come_from_qualified_core_results() 
         #[cfg(unix)]
         assert_unix_result_golden(&events, status);
         assert_eq!(
-            fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+            fs::read(
+                root.path()
+                    .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+            )
+            .unwrap(),
             golden
         );
         assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), input);

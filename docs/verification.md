@@ -18,7 +18,7 @@ notices. On macOS it also requires the selected Xcode for Swift formatting and
 the native desktop source checks. Tool and compiler pins are authoritative in
 `xtask/tools.toml` and `rust-toolchain.toml`.
 
-`cargo xtask check-quality` separately validates shared strict lint configuration, centrally registered exceptions, authored source discovery and structural file limits. `cargo xtask check-shell` uses the same tracked/pending/shebang discovery and root strict ShellCheck policy as the complete check command. Both excluded Rust workspaces receive Clippy checks. See the [quality policy and exceptions](../CONTRIBUTING.md#checks-and-evidence) for ownership boundaries, structural limits and the distinct Swift branch metric.
+`cargo xtask check-config` checks Cargo manifest ownership and lint inheritance. `cargo xtask check-shell` runs the real ShellCheck on contained tracked/pending/shebang sources; the selected Xcode supplies Swift formatting and real native compiler checks. Both excluded Rust workspaces receive Clippy checks. Exceptions carry source-local reasons and authored unsafe blocks retain concrete `SAFETY:` arguments. See [checks and evidence](../CONTRIBUTING.md#checks-and-evidence).
 
 Native Swift verification includes syntax-aware callable metrics and positive/negative controls using the selected Xcode's matching SwiftParser/SwiftSyntax modules. Missing modules, malformed syntax or unexpectedly empty discovery fail the check; another local Xcode does not establish pinned-toolchain qualification.
 
@@ -30,12 +30,15 @@ Windows selections include filesystem, Job and console fixtures. Debug tests
 remain required independently. A passing selection establishes only the tested
 profile on that host.
 
-`cargo xtask stage-release-assets --archives DIR --out NEW_DIR` requires exactly
-the eight policy-derived ordinary archives, takes bounded immutable snapshots,
-checks copied bytes and writes sorted `SHA256SUMS`. Its identity record lives
-outside the nine-asset set. `assembly_source` identifies the assembling checkout,
-not archive build provenance. Assembly cannot qualify package contents or native
-behavior; the [release workflow](release.md) binds products to qualification.
+`cargo xtask verify-release-inputs --products DIR --desktop DIR --picker DIR --out NEW_DIR`
+admits exact current-run/current-attempt product and consumer records, freezing
+archive/reference/receipt bytes. `cargo xtask stage-release-assets --inputs
+VERIFIED_INPUTS --out NEW_DIR` assembles those bytes and sorted `SHA256SUMS`.
+The exact set comes from the typed build plan; assembly is not behavioral
+qualification. The final server checker receives the same verified manifest,
+compares actual server bytes, then rechecks any original incident identity and
+expiry immediately before the owner-only publication edge. See [release
+workflow](release.md).
 
 ## Native picker preference observations
 
@@ -118,6 +121,8 @@ failure, cancellation and unexpected skips; negative controls exercise each
 required role. Failed app prerequisites fail the floor consumers and aggregate. Workflow wiring
 alone establishes neither product qualification nor publication behavior.
 
+CI admits the actual current-run product, floor-consumer and picker records through `verify-release-inputs`, then runs `stage-release-assets --inputs` to retain the exact candidate assets and checksums as a review artifact. This job has read-only repository permissions and performs no release, tag, attestation or publication operation. Missing or failed native roles prevent assembly and fail the aggregate.
+
 On Linux and Windows, `qualify` orchestrates strict release-profile discovery
 and execution, the standalone real filesystem probe, native CLI build, complete
 materials, final-runtime review, extraction and behavioral smoke. Linux also runs
@@ -152,7 +157,7 @@ and exact restoration remain required. A test-runner-local NSWorkspace getter is
 not used as an additional system-wide oracle; process-local observations may
 differ. Missing, contradictory or
 unrestored native Settings records fail receipt admission.
-The macOS26 Intel `check-macos-picker` consumer separately
+The macOS26 Intel `qualify-macos-picker` consumer separately
 executes `testOwnedNativePickerCompatibility`, the dedicated `picker` case. It
 shares the full workflow's original About/license/reopen/Open With prelude and
 actual message/folder/keyboard picker interactions, then verifies independent
@@ -167,48 +172,53 @@ the same source/target/archive snapshot and actual host. CI and release
 preparation require these distinct stages; candidate success cannot promote
 itself to desktop qualification.
 
-Intel26 picker admission uses one `app_picker` job on a fresh hosted VM. Its
-`picker_host` policy comes from `xtask/distribution.toml`; unknown image/OS/build
-coordinates fail before any service action. `prepare-macos-picker-host` admits
-only the exact CI/owner-release workflow file and job, actual native Intel26,
-same source/run/attempt/archive/reference, and a non-root current console user
-with a graphical Security session. It checks the fixed Apple GUI-user
-`com.apple.iconservices.iconservicesagent` identity and bounded native crash
-reports. Every selected report must have a recognized schema; at least one must
-identify this user's current boot/build, the Apple executable, SIGABRT and the
-known Metal/RenderBox fault. See the [runner-image issue](https://github.com/actions/runner-images/issues/14751).
+Intel26 picker admission uses one `app_picker` job on a fresh hosted VM.
+`qualify-macos-picker` first captures complete native CPU/OS/image/boot,
+non-root console/graphical-session caller and sanitized `print-disabled` facts.
+The parser requires a complete bounded map; empty or unknown output never means
+an absent override. A true pre-disabled override or uncertain baseline refuses.
 
-Only after these guards does preparation boot out and disable that exact
-GUI-user agent. Console-user identity is rechecked immediately before each
-mutation. A nonzero ordinary bootout status is admitted only with immediate,
-exact service-absence readback; timeout, signal or uncertain cleanup fails.
-Disable must succeed, and readback must show both the absent service and its
-explicit disabled override. Environment-bearing launchctl output stays in
-private temporary storage; retained observations contain selected fields and
-command statuses. Unknown, partial or malformed evidence cannot qualify.
+One bounded independent signed AppKit probe runs on that unmodified host. Healthy
+phases lead to exactly one frozen-product picker case, followed by a complete
+unchanged caller/boot/no-disabled-override snapshot and an empty action list.
+The `unmodified_host` receipt never loads the incident registry, reads crashes or
+requires a historical service at a fixed path. A later healthy image, absent
+historical service or irrelevant expired/malformed incident file cannot block
+that route.
 
-The same frozen app must then pass the full dedicated picker case, including
-preferences, original/golden bytes, normal Quit and complete settlement.
-`verify-macos-picker-host` performs read-only checks afterward. The final
-`picker_qualification` envelope has `mode: modified_host` and retains
-`preparation`, `product` and `postverification`. Policy, source/bytes, host boot,
-console user and opaque Security-session identity must agree before and after;
-Security-session identifiers are not equated with POSIX session IDs. The product
-must observe the same OS/build and CPU. Its receipt has no boot UUID: same-job
-before/after observations bracket execution rather than directly proving its
-boot identity. This qualifies the actual product on the configured modified
-host; it establishes neither general unmodified-host compatibility nor that the
-service action caused recovery. Earlier failed runs retain their failed status.
+Only the exact known probe failure can lazily load the unique matching incident
+from `xtask/host-incidents.toml`, requiring current-boot/build/user native crash
+proof, exact Apple executable/SIGABRT/Metal/RenderBox frames and the original
+loaded service. It constructs a private non-cloneable/non-deserializable
+admission owner. Preparation consumes it once. Each fixed bootout/disable edge
+rechecks caller/session, boot, clean source/workflow/run/attempt/archive/reference
+and original policy digest. Its monotonic deadline is exactly the earlier of ten
+minutes and the remaining wall-clock incident lifetime, including fractional
+admission time; a rollback cannot extend it. Each action retains actual wall and
+elapsed-monotonic guard observations. A failed later guard retains preceding
+partial action facts and permits no further mutation.
 
-The shared [.github/scripts/picker-evidence.jq](../.github/scripts/picker-evidence.jq)
-predicates also govern release, rejecting missing/mixed source, policy, workflow,
-run, attempt, reference, bytes, method, host, preference or settlement evidence.
-The workflow file SHA is recorded separately from tested source S, as required
-for owner release dispatch W. [GitHub's reusable-workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context)
-belongs to the caller. No default GitHub context is overridden. All six native
-rows and both full macOS15 desktop suites remain required. The separate manual
-native-panel diagnostic retains its probe and controlled experiments; probe
-success cannot substitute for actual-product qualification.
+Successful preparation requires absent/disabled service readback, then one
+healthy rerun of the same frozen independent probe. The actual product case runs
+exactly once in the chosen state; every product failure is terminal. The
+`incident_modified_host` receipt retains the original failed probe, exact policy
+identity/dates, admission/actions, recovered probe, complete product projection
+and preserved raw product bytes, plus final caller/boot/service readback. It
+establishes modified-host coverage without claiming causation or unmodified-host
+compatibility. Disposable VM lifetime ends the intervention; no owner-host restore
+or service mutation is attempted.
+
+The shared strict Rust `picker_evidence` consumer runs on Linux and macOS. It
+rejects missing/duplicate/unknown/object/nullable/mode fields and mismatched
+source/run/attempt/workflow/archive/reference/raw-product/method/count/preference/
+owner facts. Original receipt bytes remain bound rather than reserialized as a
+substitute identity. After server readback, final admission rechecks exact
+incident identity and the current exclusive expiry only for modified receipts;
+ordinary receipts never consult it. Read-only weekly `check-host-incidents`
+maintenance records expired/malformed/closed/unverified upstream state without
+renewing policy or retroactively invalidating a normal pass. Standalone panel
+diagnostics perform no intervention or product retry. All declared native CLI
+and complete macOS15 consumer roles remain mandatory.
 
 `cargo xtask distribution` prints the native target policy and expected archive
 identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.
@@ -276,6 +286,8 @@ not proof of fuzz execution or review; the actual execution summary is separate.
 See [pinned cargo-fuzz source](https://github.com/rust-fuzz/cargo-fuzz/blob/984c861c8dfea28055254c5f1d2659ab2cd63f76/src/project.rs).
 
 ## Scoped mutation selection
+
+A manual dispatch of the Extended verification workflow runs `cargo xtask mutants --initial` in its own bounded Linux job and retains discovery, per-mutant outcomes and compiler logs.
 
 Only eml-core authorize_deletions and check_edit_ranges are selected. Discovery
 must be positive in both, with at most 400 total. Initial execution covers the
@@ -377,3 +389,25 @@ replace exact-head six-platform or GUI qualification. No mutation campaign or
 publication is scheduled. Workflow implementation does not establish execution; inspect the
 [workflow runs](https://github.com/resoltico/EMLAttachmentRemover/actions/workflows/extended-verification.yml)
 for scheduled results.
+
+## Owned native filesystem profiles
+
+Each native CLI qualifier runs the frozen shipping bytes through finite owned-volume naming fixtures. Linux uses exclusive loop images for ext2/3/4, ext4 casefold, XFS, XFS ASCII-CI and Btrfs, plus an owned tmpfs mount. It separately tests existing-only behavior on ordinary ext4 and an owned OverlayFS whose backing storage is another exclusive ext4 image. The workflow installs the filesystem utilities and records their package versions. Both Linux CPUs require actual execution; a missing formatter, unavailable kernel feature, mount failure or unsettled cleanup remains an unqualified profile.
+
+macOS uses exclusive APFS and HFS+ images in both observed case modes. Windows uses an exclusive NTFS image and both per-directory case modes with volume-scoped 8.3 creation. These fixtures never change an existing volume's settings. Every naming profile checks independent complete-route tokens and bytes, native source/destination expressions, ordinary entry identities, permission/ownership inventories, Check, Create, reversed repeat and a fresh reversed layout. Actual normalization and mirror coalescing are observed through identities, without a second normalization policy. Missing profiles and cleanup uncertainty fail completeness; a workspace filesystem or another CPU cannot substitute.
+
+The `name-profiles` records and raw transcripts are retained with the native candidate. Product failure and unavailable prerequisites remain failures. Independently runnable resource and app work continues when the process controller still admits work; the qualifier preserves every failed required gate and returns failure.
+
+## Controlled preparation resources
+
+The native Linux x86_64 qualifier measures the exact frozen shipping CLI with
+five interleaved 32 MiB shallow/deep runs and one exact-total 256 MiB/63-wrapper
+run. Independently generated byte-identical existing targets supply a full-byte
+candidate oracle; the read-only operation performs no publication or sync, so
+those costs are outside this MIME comparison. Deep median must be at most three
+times shallow median plus 0.2 seconds; maximum-size RSS must be at most twice raw
+bytes plus 96 MiB. Raw GNU-time wall/CPU/RSS, source/binary/fixture hashes,
+CPU/OS/filesystem/case mode and complete protocol records are retained under
+`preparation-resources`. The enclosing xtask controller owns process-group
+settlement and the deadline. These finite measurements supplement the private
+actual-work/cancellation tests; v6 observations remain historical baseline only.

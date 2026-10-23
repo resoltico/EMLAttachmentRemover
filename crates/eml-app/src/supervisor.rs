@@ -1,6 +1,7 @@
 //! One native owner polls/signals independently of pipe/model/UI backpressure.
 use crate::{
-    FrameError, FrameSplitter, ProtocolFailure, RequestSnapshot, RunReport, WorkerControl,
+    FrameError, FrameSplitter, ProtocolFailure, RequestSnapshot, RunReport, WorkerCompletion,
+    WorkerControl, WorkerFailure,
 };
 use eml_macos::{
     ChildExit, ChildState, OwnedChild, PipeEndpoints, StopSignal, close_reader, close_writer,
@@ -18,33 +19,32 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// A desktop lifecycle/transport failure; Core's per-item outcomes stay separate.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkerFailure {
-    /// Core refused the captured output before any helper launch.
-    Request,
-    /// The exact bundled executable could not be started or set up.
-    Launch,
-    /// Exact private worker version/compiled CPU/OS did not match.
-    Identity,
-    /// A pipe, framing, decoder or owned-thread operation failed.
-    Transport,
-    /// Native ownership or complete reader/writer settlement is unverified.
-    Unverified,
-}
-impl std::fmt::Display for WorkerFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Desktop worker {self:?}")
-    }
-}
-impl std::error::Error for WorkerFailure {}
 /// Read-only access to accepted report facts; no mutable decoder escapes.
 #[derive(Clone)]
 pub struct ReportHandle(Arc<Mutex<RunReport>>);
 impl ReportHandle {
     pub(crate) fn new(version: String) -> Self {
-        Self(Arc::new(Mutex::new(RunReport::for_native_worker(version))))
+        Self(Arc::new(Mutex::new(RunReport::for_native_mode(
+            version,
+            eml_core::RunMode::Create,
+        ))))
+    }
+    pub(crate) fn for_mode(version: String, mode: eml_core::RunMode) -> Self {
+        Self(Arc::new(Mutex::new(RunReport::for_native_mode(
+            version, mode,
+        ))))
+    }
+    pub(crate) fn write_document(
+        &self,
+        id: crate::RunId,
+        completion: &WorkerCompletion,
+        writer: impl Write,
+    ) -> io::Result<()> {
+        self.0
+            .lock()
+            .map_err(|_| io::Error::other("Report ownership is unverified"))?
+            .write_document(id, completion, writer)
+            .map_err(io::Error::other)
     }
     pub(crate) fn has_external_readers(&self) -> bool {
         Arc::strong_count(&self.0) > 1
@@ -61,62 +61,6 @@ impl ReportHandle {
             Err(TryLockError::Poisoned(_)) => Err(WorkerFailure::Unverified),
         }
     }
-    /// Serialize on an explicitly owned background export task, never the UI thread.
-    pub fn export_bytes(&self) -> io::Result<Vec<u8>> {
-        self.0
-            .try_lock()
-            .map_err(|error| match error {
-                TryLockError::WouldBlock => {
-                    io::Error::new(io::ErrorKind::WouldBlock, "Report is busy")
-                }
-                TryLockError::Poisoned(_) => io::Error::other("Report ownership is unverified"),
-            })?
-            .technical_report()
-            .map_err(io::Error::other)
-    }
-    pub(crate) fn export_terminal_bytes(
-        &self,
-        id: crate::RunId,
-        completion: &WorkerCompletion,
-    ) -> io::Result<Vec<u8>> {
-        self.0
-            .try_lock()
-            .map_err(|error| match error {
-                TryLockError::WouldBlock => {
-                    io::Error::new(io::ErrorKind::WouldBlock, "Report is busy")
-                }
-                TryLockError::Poisoned(_) => io::Error::other("Report ownership is unverified"),
-            })?
-            .technical_report_with_lifecycle(id, completion)
-            .map_err(io::Error::other)
-    }
-}
-/// Actual completed lifecycle observations. A valid Core failure is not a broken
-/// transport, and Stop intent never changes a received terminal item/summary.
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct WorkerCompletion {
-    /// Processing child's actual normal exit; absent if no processing child or signalled.
-    pub exit_code: Option<i32>,
-    /// Processing child's actual terminating signal.
-    pub signal: Option<i32>,
-    /// A complete processing request might have started delivery.
-    pub input_may_have_been_sent: bool,
-    /// Actual process/reader/writer/control settlement was observed.
-    pub settled: bool,
-    /// A later queued request can safely be admitted after final UI application.
-    pub reusable: bool,
-    /// First lifecycle failure, separate from Core's typed item errors.
-    pub failure: Option<WorkerFailure>,
-    /// Bounded authored/native diagnostics, excluding raw stdout/message bytes.
-    pub faults: Vec<String>,
-    /// At most64KiB of separately drained stderr for explicit failure inspection.
-    pub stderr: Vec<u8>,
-    /// Retained stderr reached its cap; the reader still drained to EOF.
-    pub stderr_truncated: bool,
-    /// Actual successful native interrupt calls, not inferred handler delivery.
-    pub interrupt_calls_succeeded: u8,
-    /// The private first-interrupt observation byte was actually received.
-    pub first_interrupt_observed: bool,
 }
 /// Nonblocking observation. A warning retains the live run/keeper and must not
 /// cause callers to drop ownership, start another run or approve Quit.
@@ -165,7 +109,7 @@ impl WorkerRun {
         request: RequestSnapshot,
         control: WorkerControl,
     ) -> io::Result<Self> {
-        let report = ReportHandle::new(version.clone());
+        let report = ReportHandle::for_mode(version.clone(), request.mode());
         let completion = Arc::new(Mutex::new(None));
         let health = Arc::new(Mutex::new(None));
         let warnings = Arc::clone(&health);
@@ -282,6 +226,7 @@ fn execute_inner(
     health: Health,
 ) -> WorkerCompletion {
     let mut completion = WorkerCompletion {
+        operation_id: token.operation_id(),
         exit_code: None,
         signal: None,
         input_may_have_been_sent: false,
@@ -311,21 +256,6 @@ fn execute_inner(
         }
         _ => {}
     }
-    // This owner thread may block in native filesystem I/O. No UI thread waits
-    // on it, and its lifetime remains owned until it actually settles. Core
-    // repeats the binding during processing; this is never publication authority.
-    if let Err(error) = eml_core::check_output_location(request.request()) {
-        completion.failure = Some(WorkerFailure::Request);
-        completion.settled = true;
-        completion.reusable = true;
-        issue(
-            &mut completion.faults,
-            format!(
-                "Selection not started: {error}. Choose an existing copy destination or Beside originals. Originals are unchanged."
-            ),
-        );
-        return completion;
-    }
     let probe = observe(&helper, None, &token, None, Arc::clone(&health));
     let probe = match probe {
         Ok(value) => value,
@@ -340,7 +270,10 @@ fn execute_inner(
     }
     let observed = observe(
         &helper,
-        Some(request.encoded().to_vec()),
+        Some(OperationInput::Processing {
+            operation_id: token.operation_id(),
+            bytes: request.encoded().to_vec(),
+        }),
         &token,
         Some(Arc::clone(&report)),
         Arc::clone(&health),
@@ -501,6 +434,236 @@ impl WorkerCompletion {
             self.failure = Some(WorkerFailure::Unverified);
         } else if !self.reusable {
             self.failure = Some(WorkerFailure::Transport);
+        }
+    }
+}
+
+/// Accepted export receipt and independent actual child/transport completion.
+#[derive(Clone, Debug)]
+pub struct ExportCompletion {
+    /// Exact operation that owns these receipt facts.
+    pub operation_id: eml_protocol::desktop::OperationId,
+    /// Immutable source processing report identity.
+    pub run_id: crate::RunId,
+    /// Exact requested report address.
+    pub destination: PathBuf,
+    /// Accepted bounded receipt, absent when outcome is unobserved.
+    pub receipt: Option<Box<eml_protocol::desktop::ExportReceipt>>,
+    /// Actual process, control and transport observations.
+    pub worker: WorkerCompletion,
+    /// Parent serialization exceeded its explicit report budget before the body terminator.
+    pub report_too_large: bool,
+}
+impl ExportCompletion {
+    /// Qualified receipt and clean, matching process completion.
+    pub fn usable(&self) -> bool {
+        !self.report_too_large
+            && self.worker.operation_id == self.operation_id
+            && self
+                .receipt
+                .as_ref()
+                .is_some_and(|r| r.operation_id == self.operation_id && r.qualified())
+            && self.worker.settled
+            && self.worker.failure.is_none()
+            && self.worker.exit_code == Some(0)
+            && self.worker.signal.is_none()
+    }
+    /// Shared conservative export explanation.
+    pub fn outcome_message(&self) -> &'static str {
+        if self.report_too_large {
+            "Report exceeds the 256 MiB export limit. The report is retained."
+        } else if self.usable() {
+            "Report exported and verified. Existing files are never replaced."
+        } else if self
+            .receipt
+            .as_ref()
+            .is_some_and(|r| r.publication == "published")
+        {
+            "A complete report was published; additional export qualification failed. Inspect the retained receipt."
+        } else if self
+            .receipt
+            .as_ref()
+            .is_some_and(|r| r.publication == "not_published")
+        {
+            "Report was not published. Existing files are never replaced."
+        } else if !self.worker.input_may_have_been_sent {
+            "Export not started."
+        } else {
+            "Export outcome unknown; a complete report may exist. Force termination can leave temporary artifacts when cleanup could not be observed."
+        }
+    }
+}
+#[derive(Clone, Debug)]
+/// Nonblocking independent export-lane lifecycle observation.
+pub enum ExportObservation {
+    /// Actual owners remain pending; a warning does not establish settlement.
+    Pending {
+        /// First retained owner warning.
+        warning: Option<String>,
+    },
+    /// All actual owners have settled; retain receipt and lifecycle facts.
+    Settled(ExportCompletion),
+}
+/// One explicitly owned export child using the shared concrete child transport.
+pub struct ExportRun {
+    control: WorkerControl,
+    completion: Arc<Mutex<Option<ExportCompletion>>>,
+    health: Health,
+    owner: Option<JoinHandle<()>>,
+}
+impl ExportRun {
+    /// Start the exact export operation with a pinned terminal source report.
+    pub fn start(
+        helper: PathBuf,
+        version: String,
+        report: crate::TerminalReport,
+        destination: PathBuf,
+        control: WorkerControl,
+    ) -> io::Result<Self> {
+        let completion = Arc::new(Mutex::new(None));
+        let published = Arc::clone(&completion);
+        let health = Arc::new(Mutex::new(None));
+        let warnings = Arc::clone(&health);
+        let token = control.clone();
+        let owner = thread::Builder::new()
+            .name("desktop-export-owner".into())
+            .spawn(move || {
+                let operation_id = token.operation_id();
+                let run_id = report.id();
+                let mut worker = WorkerCompletion::empty(operation_id);
+                let mut receipt = None;
+                let mut report_too_large = false;
+                let model = Mutex::new(RunReport::new(version.clone()));
+                if token
+                    .intent(Instant::now())
+                    .is_ok_and(|i| !i.aborted && (i.interrupts > 0 || i.closing))
+                {
+                    worker.settled = true;
+                    worker.reusable = true;
+                } else {
+                    match observe(&helper, None, &token, None, Arc::clone(&warnings)) {
+                        Err(error) => {
+                            worker.failure = Some(WorkerFailure::Launch);
+                            worker.settled = true;
+                            issue(&mut worker.faults, error);
+                        }
+                        Ok(probe) => {
+                            if worker.admit_identity(&probe, &version, &token, &model, &warnings) {
+                                match observe(
+                                    &helper,
+                                    Some(OperationInput::Export {
+                                        operation_id,
+                                        destination: destination.clone(),
+                                        report,
+                                    }),
+                                    &token,
+                                    None,
+                                    Arc::clone(&warnings),
+                                ) {
+                                    Err(error) => {
+                                        worker.failure = Some(WorkerFailure::Launch);
+                                        worker.settled = true;
+                                        issue(&mut worker.faults, error);
+                                    }
+                                    Ok(observed) => {
+                                        worker.exit_code = observed.exit.and_then(|e| e.code);
+                                        worker.signal = observed.exit.and_then(|e| e.signal);
+                                        worker.settled = settled(&observed);
+                                        worker.input_may_have_been_sent = token
+                                            .intent(Instant::now())
+                                            .map_or(true, |i| i.input_may_have_been_sent);
+                                        worker.faults = observed.faults;
+                                        worker.stderr = observed.stderr.bytes;
+                                        worker.stderr_truncated = observed.stderr.truncated;
+                                        worker.interrupt_calls_succeeded = observed.interrupts;
+                                        worker.first_interrupt_observed = observed.first;
+                                        let mut receipt_complete=false;
+                                        match eml_protocol::desktop::observe_receipt(&observed.stdout.bytes,operation_id) {
+                                            Ok((accepted,complete))=>{receipt=Some(Box::new(accepted));receipt_complete=complete && !observed.stdout.truncated;if !receipt_complete {issue(&mut worker.faults,"Export receipt was followed by invalid or excessive stdout");}},
+                                            Err(error)=>issue(&mut worker.faults,error.to_string()),
+                                        }
+                                        report_too_large = observed.writer.report_too_large;
+                                        let stopped=token.intent(Instant::now()).is_ok_and(|i|i.interrupts>0||i.closing);
+                                        let interrupted_without_receipt=stopped && receipt.is_none() && observed.stdout.total_bytes==0 && (worker.exit_code==Some(130)||(worker.signal==Some(9)&&observed.killed));
+                                        worker.reusable=worker.settled && ((observed.transport_ok && (receipt_complete||interrupted_without_receipt))||report_too_large);
+                                        if !worker.settled {
+                                            worker.failure = Some(WorkerFailure::Unverified);
+                                        } else if !observed.transport_ok || !receipt_complete {
+                                            worker.failure = Some(WorkerFailure::Transport);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(warning) = warnings.lock().ok().and_then(|w| w.clone()) {
+                    worker.reusable = false;
+                    worker.failure.get_or_insert(WorkerFailure::Unverified);
+                    issue(&mut worker.faults, warning);
+                }
+                if let Ok(mut slot) = published.lock() {
+                    *slot = Some(ExportCompletion {
+                        operation_id,
+                        run_id,
+                        destination,
+                        receipt,
+                        worker,
+                        report_too_large,
+                    });
+                }
+            })?;
+        Ok(Self {
+            control,
+            completion,
+            health,
+            owner: Some(owner),
+        })
+    }
+    /// Exact-operation control intent; never a numeric process ID.
+    pub fn control(&self) -> &WorkerControl {
+        &self.control
+    }
+    /// Observe actual actor settlement without joining a running owner.
+    pub fn poll(&mut self) -> ExportObservation {
+        if self.owner.as_ref().is_some_and(|o| !o.is_finished()) {
+            return ExportObservation::Pending {
+                warning: self.health.lock().ok().and_then(|w| w.clone()),
+            };
+        }
+        if let Some(owner) = self.owner.take()
+            && owner.join().is_err()
+        {
+            warn(
+                &self.health,
+                "Export owner ended unexpectedly; ownership is unverified",
+            );
+        }
+        if let Ok(slot) = self.completion.lock()
+            && let Some(result) = slot.as_ref()
+        {
+            return ExportObservation::Settled(result.clone());
+        }
+        ExportObservation::Pending {
+            warning: self.health.lock().ok().and_then(|w| w.clone()),
+        }
+    }
+}
+impl WorkerCompletion {
+    fn empty(operation_id: eml_protocol::desktop::OperationId) -> Self {
+        Self {
+            operation_id,
+            exit_code: None,
+            signal: None,
+            input_may_have_been_sent: false,
+            settled: false,
+            reusable: false,
+            failure: None,
+            faults: Vec::new(),
+            stderr: Vec::new(),
+            stderr_truncated: false,
+            interrupt_calls_succeeded: 0,
+            first_interrupt_observed: false,
         }
     }
 }

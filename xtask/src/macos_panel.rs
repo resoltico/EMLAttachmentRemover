@@ -24,75 +24,68 @@ fn authorized_job(workflow: &str, job: &str) -> bool {
     workflow == "Native AppKit panel observation" && job == "panel"
 }
 
-pub(crate) fn observe(root: &Path, build: &MacBuild, out: &Path) -> Result<Value> {
+pub(crate) struct ProbeOwner {
+    app: std::path::PathBuf,
+    identity: Value,
+}
+fn fresh_host() -> Result<()> {
     if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
         || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
     {
-        return Err("Native panel observation requires a fresh hosted Mac; owner desktop/preferences are protected".into());
+        return Err("Native panel probe requires a fresh hosted Mac; owner desktop/preferences are protected".into());
     }
-    let host = crate::native_host::inspect_target(root, &build.host)?;
+    Ok(())
+}
+pub(crate) fn build_probe(root: &Path, build: &MacBuild, out: &Path) -> Result<ProbeOwner> {
+    fresh_host()?;
     fs::create_dir(out)?;
     let app = build_panel_diagnostic(root, build, out)?;
-    let executable = app.join("Contents/MacOS/NativePanelDiagnostic");
-    let source = crate::git(root, &["rev-parse", "HEAD"])?;
-    let identity = probe_identity(root, build, out, &app, "baseline")?;
+    let identity = probe_identity(root, build, out, &app, "frozen")?;
+    Ok(ProbeOwner { app, identity })
+}
+pub(crate) fn run_probe(
+    root: &Path,
+    build: &MacBuild,
+    probe: &ProbeOwner,
+    out: &Path,
+) -> Result<Value> {
+    fresh_host()?;
+    fs::create_dir(out)?;
+    let before = probe_identity(root, build, out, &probe.app, "before")?;
+    if before != probe.identity {
+        return Err("Frozen native probe changed before execution".into());
+    }
     let log = out.join("panel.log");
     let process = controller()?.run(
-        build.command(root, &executable),
+        build.command(root, probe.app.join("Contents/MacOS/NativePanelDiagnostic")),
         &log,
         Duration::from_secs(90),
     )?;
-    let after = probe_identity(root, build, out, &app, "baseline-after");
-    let mut result = json!({"scope":"non-product native AppKit boundary observation; does not qualify product picker", "host":host,"build":build,"entitlements":null,"identity":identity,"source":source,"run":std::env::var("GITHUB_RUN_ID").ok(),"attempt":std::env::var("GITHUB_RUN_ATTEMPT").ok(),"runner_image":std::env::var("ImageOS").ok(),"runner_image_version":std::env::var("ImageVersion").ok()});
-    let observation = record_probe_result(&mut result, &process, &log, after, &identity);
+    let after = probe_identity(root, build, out, &probe.app, "after");
+    let mut result = json!({"identity":before,"identity_after":null,"process":null,"phases":[],"observation":null});
+    let observed = record_probe_result(&mut result, &process, &log, after, &probe.identity);
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
-    let observation = observation?;
-    let versions: Vec<_> = host["actual_os"]
-        .as_str()
-        .ok_or("Missing actual host OS observation")?
-        .lines()
-        .filter_map(|line| line.strip_prefix("ProductVersion:").map(str::trim))
-        .collect();
-    let [version] = versions.as_slice() else {
-        return Err("Ambiguous actual host OS version; no preparation admitted".into());
-    };
-    if build.architecture == "x86_64" && version.split('.').next() == Some("26") {
-        let prepared = observe_preparation(root, build, out, &app, &result, observation);
-        if let Err(error) = &prepared {
-            eprintln!(
-                "Panel preparation stopped: {error}. Original panel result remains authoritative at {}",
-                out.join("result.json").display()
-            );
-        }
-    }
-    // Standalone diagnostics retain the original baseline's authority even if a repeat recovers.
+    observed?;
     Ok(result)
 }
-
-fn observe_preparation(
-    root: &Path,
-    build: &MacBuild,
-    out: &Path,
-    app: &Path,
-    baseline: &Value,
-    observation: PanelObservation,
-) -> Result<()> {
-    let experiment = out.join("icon-service-experiment");
-    fs::create_dir(&experiment)?;
-    let mut receipt = json!({"scope":"authorized disposable-host panel preparation; never product qualification or a healthy unmodified-host compatibility claim", "baseline":baseline,"stage":"admission"});
-    if observation == PanelObservation::KnownPanelFailure {
-        receipt["original_failure_remains_authoritative"] = json!(true);
+pub(crate) fn observe(root: &Path, build: &MacBuild, out: &Path) -> Result<Value> {
+    fresh_host()?;
+    if !authorized_job(
+        &std::env::var("GITHUB_WORKFLOW").unwrap_or_default(),
+        &std::env::var("GITHUB_JOB").unwrap_or_default(),
+    ) {
+        return Err("Standalone panel observation requires its own diagnostic job".into());
     }
-    receipt["purpose"] = json!("standalone_diagnostic");
-    let prepared = prepare_observed_host(root, build, app, &experiment, &mut receipt, observation);
-    if let Err(error) = &prepared {
-        receipt["failure"] = json!(error.to_string());
-    }
-    fs::write(
-        experiment.join("result.json"),
-        serde_json::to_vec_pretty(&receipt)?,
-    )?;
-    prepared
+    fs::create_dir(out)?;
+    let host = crate::native_host::inspect(root, &build.host, "macos", &build.architecture)?;
+    let probe = build_probe(root, build, &out.join("probe"))?;
+    let mut result = run_probe(root, build, &probe, &out.join("observation"))?;
+    result["host"] = host;
+    result["scope"] = json!(
+        "Nonmutating standalone AppKit observation; original probe result is authoritative and no service action or product test was run"
+    );
+    fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
+    Ok(result)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
@@ -264,222 +257,6 @@ fn probe_identity(
     Ok(
         json!({"path":app,"files":files,"signature_display":signature,"scope":"exact signed probe identity; no behavioral qualification"}),
     )
-}
-
-fn service_observation(root: &Path, build: &MacBuild, target: &str) -> Result<Value> {
-    // Keep raw launchctl output outside uploaded evidence: it can include an
-    // inherited environment. Retain only targeted state fields and exit facts.
-    let temporary = tempfile::tempdir()?;
-    let mut command = build.command(root, "/bin/launchctl");
-    command.args(["print", target]);
-    let process = match controller()?.run(
-        command,
-        &temporary.path().join("service.log"),
-        Duration::from_secs(15),
-    ) {
-        Ok(process) => process,
-        Err(error) => {
-            let _ = temporary.keep();
-            return Err(error);
-        }
-    };
-    if !settled(&process) {
-        let log = temporary.keep().join("service.log");
-        process.require_success(&log)?;
-        return Err("Service observation did not settle; raw private diagnostic retained".into());
-    }
-    let text = fs::read_to_string(temporary.path().join("service.log"))?;
-    let facts: Vec<_> = text
-        .lines()
-        .map(str::trim)
-        .filter(|line| {
-            [
-                "state = ",
-                "pid = ",
-                "runs = ",
-                "successive crashes = ",
-                "last terminating signal = ",
-                "last exit code = ",
-            ]
-            .iter()
-            .any(|key| line.starts_with(key))
-        })
-        .map(str::to_owned)
-        .collect();
-    Ok(
-        json!({"target":target,"process":process.evidence(),"entry_observed":process.status.success(),"selected_state_fields":facts,"scope":"single targeted launchctl observation; no continuous availability, service ownership or restoration claim"}),
-    )
-}
-
-fn prepare_observed_host(
-    root: &Path,
-    build: &MacBuild,
-    app: &Path,
-    out: &Path,
-    receipt: &mut Value,
-    observation: PanelObservation,
-) -> Result<()> {
-    let uid = require_preparation_authority()?;
-    receipt["gui_uid"] = json!(uid);
-    let identity = receipt["baseline"]["identity"].clone();
-    if observation == PanelObservation::Healthy {
-        return finish_unmodified_preparation(receipt, uid);
-    }
-    if unchanged_probe_repeat(root, build, app, &identity, out, receipt)?
-        == PanelObservation::Healthy
-    {
-        return finish_unmodified_preparation(receipt, uid);
-    }
-    service_intervention(root, build, app, out, receipt, &identity, uid)
-}
-
-fn require_preparation_authority() -> Result<u32> {
-    if !authorized_job(
-        &std::env::var("GITHUB_WORKFLOW").unwrap_or_default(),
-        &std::env::var("GITHUB_JOB").unwrap_or_default(),
-    ) || [
-        "GITHUB_RUN_ID",
-        "GITHUB_RUN_ATTEMPT",
-        "ImageOS",
-        "ImageVersion",
-    ]
-    .iter()
-    .any(|key| !matches!(std::env::var(key), Ok(value) if !value.is_empty()))
-        || !controller()?.admits_work()
-    {
-        return Err(
-            "Panel preparation requires its exact authorized job and healthy controller".into(),
-        );
-    }
-    let uid = rustix::process::getuid().as_raw();
-    require_gui_owner(uid)?;
-    Ok(uid)
-}
-
-fn require_gui_owner(uid: u32) -> Result<()> {
-    use std::os::unix::fs::MetadataExt;
-    let actual = rustix::process::getuid();
-    if actual.is_root()
-        || actual.as_raw() != uid
-        || rustix::process::geteuid() != actual
-        || fs::metadata("/dev/console")?.uid() != uid
-    {
-        return Err("Current process is not the observed non-root GUI user; no alternate domain is authorized".into());
-    }
-    Ok(())
-}
-
-fn service_intervention(
-    root: &Path,
-    build: &MacBuild,
-    app: &Path,
-    out: &Path,
-    receipt: &mut Value,
-    identity: &Value,
-    uid: u32,
-) -> Result<()> {
-    receipt["restoration"] = json!("not attempted; disposable VM disposal ends environment");
-    receipt["causal_limit"] = json!(
-        "same-VM retry, time and state confound the result; bootout alone differs from the upstream bootout-plus-disable report"
-    );
-    receipt["service_observation_scope"] = json!(
-        "targeted service-state fields only; no Metal assertion or blocking request-chain observation in this experiment"
-    );
-    let target = format!("gui/{uid}/com.apple.iconservices.iconservicesagent");
-    receipt["target"] = json!(target);
-    let executable = app.join("Contents/MacOS/NativePanelDiagnostic");
-    receipt["stage"] = json!("service-before");
-    receipt["service_before"] = service_observation(root, build, &target)?;
-    if receipt["service_before"]["entry_observed"] != true || !controller()?.admits_work() {
-        return Err(
-            "Targeted GUI-user service entry was not observed; no intervention admitted".into(),
-        );
-    }
-    receipt["stage"] = json!("bootout");
-    require_gui_owner(uid)?;
-    if !controller()?.admits_work() {
-        return Err(
-            "GUI-user ownership or controller admission changed; no intervention admitted".into(),
-        );
-    }
-    let mut command = build.command(root, "/bin/launchctl");
-    command.args(["bootout", &target]);
-    let log = out.join("bootout.log");
-    let process = controller()?.run(command, &log, Duration::from_secs(20))?;
-    receipt["bootout"] = json!({"program":"/bin/launchctl","arguments":["bootout",target],"process":process.evidence(),"scope":"controller owns launchctl invocation, not the OS service"});
-    process.require_success(&log)?;
-    receipt["stage"] = json!("service-after");
-    receipt["service_after"] = service_observation(root, build, &target)?;
-    let before = probe_identity(root, build, out, app, "intervention-before")?;
-    if before != *identity || !controller()?.admits_work() {
-        return Err("Unchanged probe or healthy controller unavailable after intervention".into());
-    }
-    receipt["stage"] = json!("intervention-probe");
-    let process = controller()?.run(
-        build.command(root, &executable),
-        &out.join("intervention-probe.log"),
-        Duration::from_secs(90),
-    )?;
-    receipt["intervention_probe"] = json!({"identity":before});
-    let after = probe_identity(root, build, out, app, "intervention-after");
-    let observed = record_probe_result(
-        &mut receipt["intervention_probe"],
-        &process,
-        &out.join("intervention-probe.log"),
-        after,
-        identity,
-    )?;
-    if observed != PanelObservation::Healthy || !controller()?.admits_work() {
-        return Err("Intervention probe did not demonstrate clean visible cancellation; no product admitted".into());
-    }
-    receipt["outcome"] = json!("service_intervention");
-    receipt["stage"] = json!("observed");
-    Ok(())
-}
-
-fn finish_unmodified_preparation(receipt: &mut Value, uid: u32) -> Result<()> {
-    require_gui_owner(uid)?;
-    if !controller()?.admits_work() {
-        return Err("Controller admission closed before unmodified preparation completed".into());
-    }
-    receipt["outcome"] = json!("unmodified");
-    receipt["restoration"] =
-        json!("not applicable; no service observation or intervention performed");
-    receipt["stage"] = json!("observed");
-    Ok(())
-}
-
-fn unchanged_probe_repeat(
-    root: &Path,
-    build: &MacBuild,
-    app: &Path,
-    identity: &Value,
-    out: &Path,
-    receipt: &mut Value,
-) -> Result<PanelObservation> {
-    receipt["stage"] = json!("unchanged-repeat");
-    let before = probe_identity(root, build, out, app, "repeat-before")?;
-    receipt["unchanged_repeat"] = json!({"identity":before});
-    if before != *identity {
-        return Err("Probe identity changed before unchanged repeat".into());
-    }
-    let process = controller()?.run(
-        build.command(root, app.join("Contents/MacOS/NativePanelDiagnostic")),
-        &out.join("unchanged-repeat.log"),
-        Duration::from_secs(90),
-    )?;
-    let after = probe_identity(root, build, out, app, "repeat-after");
-    let observation = record_probe_result(
-        &mut receipt["unchanged_repeat"],
-        &process,
-        &out.join("unchanged-repeat.log"),
-        after,
-        identity,
-    )?;
-    if !controller()?.admits_work() {
-        return Err("Unchanged repeat did not retain healthy controller admission".into());
-    }
-    Ok(observation)
 }
 
 #[cfg(test)]

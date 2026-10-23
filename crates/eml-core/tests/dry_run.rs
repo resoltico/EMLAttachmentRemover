@@ -176,7 +176,9 @@ fn library_plans_actual_mime_and_mirrored_layout_without_creating_entries() {
     assert_eq!(sink.items[0].removals, Some(1));
     assert_eq!(
         sink.items[0].destination.as_deref(),
-        Some(Path::new("out/Inbox/nested/a.no-attachments.eml"))
+        Some(Path::new(
+            "out/Inbox.eml-dir/nested.eml-dir/a.qyqmpnih3gdhexhynw5htnu4ky.no-attachments.eml"
+        ))
     );
     assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 0);
     assert_eq!(
@@ -190,7 +192,9 @@ fn library_plans_actual_mime_and_mirrored_layout_without_creating_entries() {
 fn matching_readonly_existing_copy_is_a_verify_plan_without_sync() {
     let root = root();
     let source = root.path().join("a.eml");
-    let existing = root.path().join("a.no-attachments.eml");
+    let existing = root
+        .path()
+        .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml");
     fs::write(&source, INPUT).unwrap();
     fs::write(&existing, GOLDEN).unwrap();
     let permissions = fs::metadata(&existing).unwrap().permissions();
@@ -219,7 +223,8 @@ fn differing_existing_bytes_keep_the_comparison_and_fail_without_overwrite() {
     let root = root();
     fs::write(root.path().join("a.eml"), INPUT).unwrap();
     fs::write(
-        root.path().join("a.no-attachments.eml"),
+        root.path()
+            .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
         b"different owned copy",
     )
     .unwrap();
@@ -239,13 +244,17 @@ fn differing_existing_bytes_keep_the_comparison_and_fail_without_overwrite() {
     assert_eq!(sink.items[0].existing, Some((Some(false), true)));
     assert_eq!(sink.items[0].removals, Some(1));
     assert_eq!(
-        fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+        )
+        .unwrap(),
         b"different owned copy"
     );
     root.close().unwrap();
 }
 #[test]
-fn failed_explicit_root_emits_only_its_gapped_known_position() {
+fn failed_explicit_root_emits_only_its_contiguous_report_ordinal() {
     let root = root();
     fs::write(root.path().join("a.eml"), INPUT).unwrap();
     fs::write(root.path().join("b.eml"), INPUT).unwrap();
@@ -265,7 +274,7 @@ fn failed_explicit_root_emits_only_its_gapped_known_position() {
     assert_eq!(outcome.counts().failed(), 1);
     assert_eq!(outcome.counts().not_processed(), 2);
     assert_eq!(sink.items.len(), 1);
-    assert_eq!(sink.items[0].index, 1);
+    assert_eq!(sink.items[0].index, 0);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
     root.close().unwrap();
 }
@@ -434,7 +443,9 @@ fn current_existing_identity_is_checked_again_after_start() {
     let root = root();
     let input = root.path().join("a.eml");
     let other = root.path().join("b.eml");
-    let alias = root.path().join("a.no-attachments.eml");
+    let alias = root
+        .path()
+        .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml");
     fs::write(&input, INPUT).unwrap();
     fs::write(&other, INPUT).unwrap();
     let source_for_action = other.clone();
@@ -508,7 +519,8 @@ fn exact_run_removal_budget_includes_reported_failures_and_refuses_the_next_entr
     }
     fs::write(root.path().join("e.eml"), multipart(1)).unwrap();
     fs::write(
-        root.path().join("a.no-attachments.eml"),
+        root.path()
+            .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
         b"different owned copy",
     )
     .unwrap();
@@ -656,11 +668,11 @@ fn actual_mime_refusals_are_started_failures_and_do_not_hide_later_plans() {
     assert_eq!(outcome.counts().planned(), 1);
     assert_eq!(outcome.counts().not_processed(), 0);
     assert_eq!(
-        sink.items[0].error,
+        sink.items[1].error,
         Some((ErrorCode::Protected, ErrorPhase::Prepare))
     );
     assert_eq!(
-        sink.items[1].error,
+        sink.items[0].error,
         Some((ErrorCode::NoBody, ErrorPhase::Prepare))
     );
     assert_eq!(sink.items[2].action, Some(PlanAction::Create));
@@ -676,13 +688,13 @@ fn native_filename_units_survive_actual_serial_preparation_and_destination_repor
         use std::os::unix::ffi::OsStringExt;
         (
             OsString::from_vec(b"a\xff.eml".to_vec()),
-            OsString::from_vec(b"a\xff.no-attachments.eml".to_vec()),
+            OsString::from_vec(b"a\xff.bod3ea5ctjje5wa7lnehrgaasa.no-attachments.eml".to_vec()),
         )
     };
     #[cfg(target_os = "macos")]
     let (name, expected) = (
         OsString::from("e\u{301}.eml"),
-        OsString::from("e\u{301}.no-attachments.eml"),
+        OsString::from("e\u{301}.w7nepcjblfyamzt2pfw3uib3xi.no-attachments.eml"),
     );
     #[cfg(windows)]
     let (name, expected) = {
@@ -690,7 +702,7 @@ fn native_filename_units_survive_actual_serial_preparation_and_destination_repor
         let mut input = vec![0x61, 0xd800];
         input.extend(".eml".encode_utf16());
         let mut output = vec![0x61, 0xd800];
-        output.extend(".no-attachments.eml".encode_utf16());
+        output.extend(".ofjkr56ahszcp5k56rkifw36xi.no-attachments.eml".encode_utf16());
         (OsString::from_wide(&input), OsString::from_wide(&output))
     };
     let root = root();
@@ -772,7 +784,11 @@ fn selected_directory_alias_keeps_reported_spelling_through_preparation_and_comp
         fs::create_dir(&target).unwrap();
         fs::create_dir(root.path().join("out")).unwrap();
         fs::write(target.join("a.eml"), INPUT).unwrap();
-        fs::write(target.join("a.no-attachments.eml"), GOLDEN).unwrap();
+        fs::write(
+            target.join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
+            GOLDEN,
+        )
+        .unwrap();
         directory_alias::create(&target, &alias);
         let mut sink = Sink::default();
         let outcome = dry_run(
@@ -785,9 +801,9 @@ fn selected_directory_alias_keeps_reported_spelling_through_preparation_and_comp
         assert_eq!(outcome.total(), 1);
         assert!(sink.items[0].source_native.ends_with("alias/a.eml"));
         let expected = if output.is_some() {
-            "out/alias/a.no-attachments.eml"
+            "out/alias.eml-dir/a.qk7agux3h6qbo3hcinfmncoeiq.no-attachments.eml"
         } else {
-            "alias/a.no-attachments.eml"
+            "alias/a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"
         };
         assert_eq!(
             sink.items[0].destination.as_deref(),
@@ -811,10 +827,42 @@ fn selected_directory_alias_keeps_reported_spelling_through_preparation_and_comp
         assert_eq!(sink.items[0].removals, Some(1));
         assert_eq!(fs::read(target.join("a.eml")).unwrap(), INPUT);
         assert_eq!(
-            fs::read(target.join("a.no-attachments.eml")).unwrap(),
+            fs::read(target.join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")).unwrap(),
             GOLDEN
         );
         assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 0);
         root.close().unwrap();
+    }
+}
+
+#[test]
+fn failed_root_diagnostics_have_canonical_sources_and_contiguous_indices() {
+    let root = root();
+    fs::write(root.path().join("known.eml"), INPUT).unwrap();
+    let mut expected = None;
+    for paths in [
+        ["z-missing.eml", "known.eml", "a-missing.eml"],
+        ["a-missing.eml", "z-missing.eml", "known.eml"],
+    ] {
+        let mut sink = Sink::default();
+        let outcome = dry_run(
+            &request(root.path(), &paths, None),
+            &RunControl::default(),
+            &mut sink,
+        )
+        .unwrap();
+        assert_eq!(outcome.counts().failed(), 2);
+        assert_eq!(outcome.counts().not_processed(), 1);
+        let rows: Vec<_> = sink
+            .items
+            .iter()
+            .map(|row| (row.index, row.source_native.clone(), row.error))
+            .collect();
+        assert_eq!(rows.iter().map(|row| row.0).collect::<Vec<_>>(), vec![0, 1]);
+        if let Some(expected) = &expected {
+            assert_eq!(&rows, expected);
+        } else {
+            expected = Some(rows);
+        }
     }
 }

@@ -2,7 +2,10 @@
 #[cfg(not(target_os = "macos"))]
 compile_error!("Native macOS child fixtures require a macOS host");
 #[cfg(target_os = "macos")]
-#[allow(unsafe_code, reason = "quality:fixture-signal-mask-observation")]
+#[allow(
+    unsafe_code,
+    reason = "Read only this fixture's own process signal mask"
+)]
 fn main() {
     use std::io::{Read, Write};
     let argument = std::env::args_os().nth(1).unwrap_or_default();
@@ -70,22 +73,26 @@ fn main() {
 }
 
 #[cfg(target_os = "macos")]
-#[allow(unsafe_code, reason = "quality:fixture-sigpipe-default")]
+#[allow(
+    unsafe_code,
+    reason = "Set SIGPIPE default only in this isolated nonshipping fixture process"
+)]
 fn default_sigpipe() {
     // SAFETY: this single-threaded fixture owns its entire process; no parent
     // or test-runner signal disposition changes. Remove Rust startup's ignored
     // SIGPIPE as a possible explanation for a successful EPIPE observation.
-    assert_ne!(
-        unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) },
-        libc::SIG_ERR
-    );
+    let previous = unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
+    assert_ne!(previous, libc::SIG_ERR);
 }
 
 #[cfg(target_os = "macos")]
 #[path = "../../../../tests/support/native_child.rs"]
 mod native_child;
 #[cfg(target_os = "macos")]
-#[allow(unsafe_code, reason = "quality:fixture-close-stdio")]
+#[allow(
+    unsafe_code,
+    reason = "Close only this nonshipping owned fixture's own standard descriptors"
+)]
 mod closed_stdio {
     use std::{ffi::OsStr, io::Write, os::fd::FromRawFd, time::Duration};
     pub(crate) fn run() {
@@ -94,6 +101,8 @@ mod closed_stdio {
         // above the collision range, transferring that unique copy to File.
         let descriptor = unsafe { libc::fcntl(1, libc::F_DUPFD_CLOEXEC, 10) };
         assert!(descriptor >= 10);
+        // SAFETY: F_DUPFD_CLOEXEC returned this fresh owned descriptor; no other
+        // File owns it, and this conversion transfers its one close obligation.
         let mut log = unsafe { std::fs::File::from_raw_fd(descriptor) };
         for descriptor in 0..=3 {
             // SAFETY: this isolated fixture has no IO threads and exclusively

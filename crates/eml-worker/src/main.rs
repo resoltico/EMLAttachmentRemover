@@ -3,9 +3,10 @@
 #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
 mod publication_observation;
 use eml_core::RunControl;
-use eml_protocol::{JsonSink, MAX_REQUEST_BYTES, decode_request};
+use eml_protocol::desktop::{Header, Operation};
+use eml_protocol::{JsonSink, decode_request};
 use std::{
-    io::{self, Read, Write},
+    io::{self, Write},
     sync::mpsc,
     time::Duration,
 };
@@ -16,10 +17,10 @@ fn main() -> std::process::ExitCode {
 fn entry() -> u8 {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let version = args == [std::ffi::OsString::from("--version")];
-    let desktop = args == [std::ffi::OsString::from("--desktop-control")];
-    if !args.is_empty() && !version && !desktop {
+    let desktop = args == [std::ffi::OsString::from("--desktop-operation")];
+    if !version && !desktop {
         return failure(
-            "Private worker accepts a protocol-1 stdin request or exact private control/version invocation",
+            "Private worker requires --desktop-operation or --version",
             2,
         );
     }
@@ -34,16 +35,11 @@ fn entry() -> u8 {
     };
     #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
     let signal_observation = observation.clone();
-    #[cfg(not(target_os = "macos"))]
-    if desktop {
-        return failure("Desktop control requires the native macOS worker", 2);
-    }
     #[cfg(target_os = "macos")]
     let control_pipe = if desktop {
-        match eml_macos::InheritedControlWriter::duplicate() {
-            Ok(writer) => Some(std::sync::Arc::new(writer)),
-            Err(_) => return failure("Worker private control pipe is unavailable", 1),
-        }
+        eml_macos::InheritedControlWriter::duplicate()
+            .ok()
+            .map(std::sync::Arc::new)
     } else {
         None
     };
@@ -101,17 +97,22 @@ fn entry() -> u8 {
             return pre_stream_failure("Worker readiness could not be delivered", 1, &control);
         }
     }
-    let bytes = match receive_request(&receiver, &control) {
+    let (header, bytes) = match receive_request(&receiver, &control) {
         Ok(bytes) => bytes,
         Err(code) => return code,
     };
-    execute_request(
-        &bytes,
-        working,
-        &control,
-        #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
-        observation,
-    )
+    match header.operation {
+        Operation::Processing => execute_request(
+            &bytes,
+            working,
+            &control,
+            #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+            observation,
+        ),
+        Operation::Export { destination } => {
+            execute_export(header.operation_id, &bytes, &destination, &control)
+        }
+    }
 }
 
 #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
@@ -174,6 +175,53 @@ fn execute_request(
         }
     }
 }
+fn execute_export(
+    operation_id: eml_protocol::desktop::OperationId,
+    bytes: &[u8],
+    destination: &std::path::Path,
+    control: &RunControl,
+) -> u8 {
+    if eml_app::report_document::validate(bytes).is_err()
+        || eml_app::validate_destination(destination).is_err()
+    {
+        return pre_stream_failure(
+            "Worker export document or destination is invalid",
+            2,
+            control,
+        );
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let outcome = eml_app::export_report(bytes, destination, control);
+        let receipt = match outcome
+            .receipt(operation_id)
+            .and_then(|r| eml_protocol::desktop::encode_receipt(&r))
+        {
+            Ok(bytes) => bytes,
+            Err(_) => return failure("Worker export receipt could not be encoded", 1),
+        };
+        if io::stdout().lock().write_all(&receipt).is_err() {
+            return 1;
+        }
+        if outcome.usable() {
+            0
+        } else if control.is_stopped() {
+            130
+        } else {
+            1
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = operation_id;
+        pre_stream_failure(
+            "Desktop report export requires native macOS namespace services",
+            2,
+            control,
+        )
+    }
+}
+
 fn pre_stream_failure(message: &str, code: u8, control: &RunControl) -> u8 {
     pre_stream_failure_to(io::stderr().lock(), message, code, control)
 }
@@ -246,7 +294,7 @@ fn install_termination_handler(
     })
 }
 
-type RequestReceiver = mpsc::Receiver<io::Result<Vec<u8>>>;
+type RequestReceiver = mpsc::Receiver<io::Result<(Header, Vec<u8>)>>;
 
 fn start_request_reader() -> io::Result<RequestReceiver> {
     // This single transport reader never processes messages or publishes copies.
@@ -256,18 +304,16 @@ fn start_request_reader() -> io::Result<RequestReceiver> {
     std::thread::Builder::new()
         .name("desktop-request".into())
         .spawn(move || {
-            let mut bytes = Vec::new();
-            let result = io::stdin()
-                .lock()
-                .take((MAX_REQUEST_BYTES + 1) as u64)
-                .read_to_end(&mut bytes)
-                .map(|_| bytes);
+            let result = eml_protocol::desktop::read_operation(io::stdin().lock());
             drop(sender.send(result));
         })?;
     Ok(receiver)
 }
 
-fn receive_request(receiver: &RequestReceiver, control: &RunControl) -> Result<Vec<u8>, u8> {
+fn receive_request(
+    receiver: &RequestReceiver,
+    control: &RunControl,
+) -> Result<(Header, Vec<u8>), u8> {
     loop {
         if control.is_stopped() {
             return Err(130);

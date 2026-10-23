@@ -1,5 +1,5 @@
 //! Current-item ownership of a resolved root's ordinary ancestor pins.
-use super::{child, handle, path, writable::WritableDirectory};
+use super::{child, handle, path};
 use crate::{BoundDirectory, Identity};
 use std::{
     ffi::OsStr,
@@ -39,20 +39,20 @@ impl std::error::Error for RootBindingError {
         }
     }
 }
-/// One writable endpoint and all its ordinary existing ancestor pins.
+/// One metadata/traverse endpoint and all its ordinary existing ancestor pins.
 ///
 /// Core must keep this owner live through the current item's namespace work,
 /// candidate close/final reopen and requested-address qualification. Child and
 /// candidate values retain only immediate physical parents, not this ancestry.
 /// No original selected expression, mirror policy or whole-batch pins are stored.
 pub struct PinnedRoot {
-    directory: WritableDirectory,
+    directory: BoundDirectory,
     ancestors: Vec<BoundDirectory>,
 }
 impl PinnedRoot {
     /// Bind an already resolved absolute extended DOS/UNC root top-down. Every
     /// ancestor is metadata/traverse-only, no-follow, read/write sharing and no delete sharing; the endpoint
-    /// opens directly with its fixed writable profile and earlier full identity.
+    /// opens with metadata/traverse access and earlier full identity.
     ///
     /// The validated native representation bounds the chain, including expansion
     /// beyond the raw request's component count. Never creates, flushes or changes
@@ -67,7 +67,17 @@ impl PinnedRoot {
         let (root, mut names) = root_and_names(resolved)?;
         checkpoint(&mut is_stopped)?;
         let Some(endpoint) = names.pop() else {
-            let directory = WritableDirectory::bind_resolved(&root, expected)?;
+            let file = handle::open(
+                &root,
+                child::ANCESTOR_PIN_ACCESS,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            )?;
+            let identity = handle::directory_identity(&file)?;
+            if identity != expected {
+                return Err(io::Error::other("Root identity changed").into());
+            }
+            let directory = BoundDirectory { file, identity };
             checkpoint(&mut is_stopped)?;
             return Ok(Self {
                 directory,
@@ -92,8 +102,15 @@ impl PinnedRoot {
             ancestors.push(BoundDirectory { file, identity });
         }
         checkpoint(&mut is_stopped)?;
-        let directory =
-            WritableDirectory::open_under(ancestors.last().expect("root pin"), endpoint, expected)?;
+        let directory = {
+            let parent = ancestors.last().expect("root pin");
+            let file = child::ancestor_pin(&parent.file, endpoint)?;
+            let identity = handle::directory_identity(&file)?;
+            if identity != expected {
+                return Err(io::Error::other("Root identity changed").into());
+            }
+            BoundDirectory { file, identity }
+        };
         let bound = Self {
             directory,
             ancestors,
@@ -103,7 +120,7 @@ impl PinnedRoot {
     }
     /// Borrow only the physical endpoint. No detached endpoint is advertised as
     /// retaining this owner's ancestry or as qualifying an original address.
-    pub fn directory(&self) -> &WritableDirectory {
+    pub fn directory(&self) -> &BoundDirectory {
         &self.directory
     }
     /// Reobserve every held ordinary-directory/full-ID fact. Success is a current
@@ -244,10 +261,12 @@ mod tests {
         bound.check_held(|| false).unwrap();
         let denied = delete_access(&upper_operand).unwrap_err();
         assert_eq!(denied.raw_os_error(), Some(32));
-        let receipt = bound.directory().sync_namespace();
+        let receipt = crate::SyncDirectory::acquire(bound.directory())
+            .unwrap()
+            .sync_namespace();
         assert_eq!(receipt.state, crate::SyncState::Succeeded, "{receipt:?}");
-        let candidate = bound
-            .directory()
+        let candidate = crate::CreationDirectory::acquire(bound.directory())
+            .unwrap()
             .stage_bytes(b"owned complete storage", || Ok(()))
             .unwrap();
         assert_eq!(candidate.length(), 22);
@@ -262,7 +281,7 @@ mod tests {
         fixture.close().unwrap();
     }
     #[test]
-    fn native_existing_writable_child_is_relative_ordinary_and_identity_checked() {
+    fn native_existing_pinned_child_is_relative_ordinary_and_identity_checked() {
         let fixture = fixture();
         let selected = fixture.path().join("selected");
         fs::create_dir_all(selected.join("existing")).unwrap();
@@ -276,34 +295,40 @@ mod tests {
                 .unwrap();
         let existing = bound
             .directory()
-            .open_existing_child(OsStr::new("existing"), child.identity)
+            .pin_directory(OsStr::new("existing"), child.identity)
             .unwrap();
         assert_eq!(existing.identity(), child.identity);
         existing.check_held().unwrap();
-        assert_eq!(existing.sync_namespace().state, crate::SyncState::Succeeded);
+        assert_eq!(
+            crate::SyncDirectory::acquire(&existing)
+                .unwrap()
+                .sync_namespace()
+                .state,
+            crate::SyncState::Succeeded
+        );
         drop(existing);
         let mismatch = bound
             .directory()
-            .open_existing_child(OsStr::new("existing"), read.identity())
+            .pin_directory(OsStr::new("existing"), read.identity())
             .err()
             .unwrap();
         assert_eq!(mismatch.kind(), io::ErrorKind::InvalidData);
         assert!(
             bound
                 .directory()
-                .open_existing_child(OsStr::new("ordinary-file"), file.identity)
+                .pin_directory(OsStr::new("ordinary-file"), file.identity)
                 .is_err()
         );
         assert!(
             bound
                 .directory()
-                .open_existing_child(OsStr::new("missing"), child.identity)
+                .pin_directory(OsStr::new("missing"), child.identity)
                 .is_err()
         );
         assert_eq!(
             bound
                 .directory()
-                .open_existing_child(OsStr::new(r"existing\other"), child.identity)
+                .pin_directory(OsStr::new(r"existing\other"), child.identity)
                 .err()
                 .unwrap()
                 .kind(),

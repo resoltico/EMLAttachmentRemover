@@ -48,7 +48,7 @@ pub(super) fn source_before_publication(source: &PreparedSource) -> Result<(), O
     })
 }
 pub(super) fn destination_still_absent(
-    binding: &crate::binding::DestinationBinding,
+    binding: &crate::binding::PublicationBinding,
     info: &crate::DestinationInfo,
     ids: &HashSet<Identity>,
     reserved: &HashSet<Identity>,
@@ -109,7 +109,7 @@ pub(super) fn stage_failure(
 }
 pub(super) fn reconcile_held_effect(
     state: eml_fs::PublicationState,
-    binding: &crate::binding::DestinationBinding,
+    binding: &crate::binding::PublicationBinding,
     identity: Identity,
     name: &std::ffi::OsStr,
 ) -> eml_fs::PublicationState {
@@ -154,7 +154,7 @@ pub(super) fn record_publication_address(
 pub(super) fn verify_published_address(
     plan: &DestinationPlan<'_>,
     index: usize,
-    binding: &crate::binding::DestinationBinding,
+    binding: &crate::binding::PublicationBinding,
     identity: Identity,
     source: &PreparedSource,
     confirmed: &mut bool,
@@ -251,7 +251,7 @@ pub(super) fn publish_item<'a>(
     plan: &DestinationPlan<'_>,
     index: usize,
     source: &'a PreparedSource,
-    frame: crate::destination::ReadOnlyParent,
+    frame: crate::destination::ObservedRoute,
     context: &mut RunContext,
     control: &RunControl,
     data: MessageMetadata<'a>,
@@ -334,7 +334,7 @@ pub(super) fn publish_item<'a>(
 }
 
 fn qualify_published_file(
-    frame: &crate::destination::ReadOnlyParent,
+    frame: &crate::destination::ObservedRoute,
     info: &crate::DestinationInfo,
     identity: Identity,
     source: &PreparedSource,
@@ -397,12 +397,12 @@ fn prepare_candidate<'a>(
     plan: &DestinationPlan<'_>,
     index: usize,
     source: &'a PreparedSource,
-    frame: crate::destination::ReadOnlyParent,
+    frame: crate::destination::ObservedRoute,
     context: &mut RunContext,
     control: &RunControl,
     data: MessageMetadata<'a>,
-) -> Result<(crate::binding::DestinationBinding, eml_fs::ReadyCandidate), Box<ItemFailure<'a>>> {
-    let binding = match crate::binding::DestinationBinding::acquire(
+) -> Result<(crate::binding::PublicationBinding, eml_fs::ReadyCandidate), Box<ItemFailure<'a>>> {
+    let binding = match crate::binding::PublicationBinding::acquire_for_create(
         plan,
         index,
         &frame,
@@ -441,17 +441,26 @@ fn prepare_candidate<'a>(
             error, data, None, None, namespace, cleanup,
         ));
     }
+    let creation = match binding.creation_directory() {
+        Ok(creation) => creation,
+        Err(error) => {
+            let namespace = binding.namespace();
+            let cleanup =
+                binding.cleanup_before_publication(no_cleanup(), &mut context.pending_layout);
+            return Err(new_copy_failure(
+                error, data, None, None, namespace, cleanup,
+            ));
+        }
+    };
     let mut checkpoint_stopped = false;
-    let ready = match binding
-        .directory()
-        .stage_bytes(source.message().as_bytes(), || {
-            if control.is_stopped() {
-                checkpoint_stopped = true;
-                Err(std::io::Error::from(std::io::ErrorKind::Interrupted))
-            } else {
-                Ok(())
-            }
-        }) {
+    let ready = match creation.stage_bytes(source.message().as_bytes(), || {
+        if control.is_stopped() {
+            checkpoint_stopped = true;
+            Err(std::io::Error::from(std::io::ErrorKind::Interrupted))
+        } else {
+            Ok(())
+        }
+    }) {
         Ok(value) => value,
         Err(error) => {
             let (error, sync, cleanup) = stage_failure(error, checkpoint_stopped);
@@ -469,7 +478,7 @@ fn check_publication_edge(
     plan: &DestinationPlan<'_>,
     index: usize,
     source: &PreparedSource,
-    binding: &crate::binding::DestinationBinding,
+    binding: &crate::binding::PublicationBinding,
     identity: Identity,
     context: &RunContext,
     control: &RunControl,
@@ -518,7 +527,7 @@ struct PublicationEvidence {
 impl PublicationEvidence {
     fn from_attempt(
         attempt: eml_fs::PublishAttempt,
-        binding: &crate::binding::DestinationBinding,
+        binding: &crate::binding::PublicationBinding,
         info: &crate::DestinationInfo,
     ) -> (Self, eml_fs::PublicationCandidate) {
         let collision = attempt.is_name_collision();
@@ -568,7 +577,7 @@ impl PublicationEvidence {
     fn observe_effect(
         &mut self,
         source: &PreparedSource,
-        binding: &mut crate::binding::DestinationBinding,
+        binding: &mut crate::binding::PublicationBinding,
         context: &mut RunContext,
     ) {
         if self.state != eml_fs::PublicationState::NotPublished {
@@ -589,7 +598,7 @@ impl PublicationEvidence {
         &mut self,
         plan: &DestinationPlan<'_>,
         index: usize,
-        binding: &crate::binding::DestinationBinding,
+        binding: &crate::binding::PublicationBinding,
         source: &PreparedSource,
     ) {
         self.address = record_publication_address(
@@ -608,7 +617,7 @@ impl PublicationEvidence {
     #[cfg(windows)]
     fn pin_identity(
         &mut self,
-        binding: &crate::binding::DestinationBinding,
+        binding: &crate::binding::PublicationBinding,
         info: &crate::DestinationInfo,
     ) -> Option<eml_fs::EntryPin> {
         if self.state != eml_fs::PublicationState::NotPublished {
@@ -662,7 +671,7 @@ impl PublicationEvidence {
         pin: eml_fs::EntryPin,
         plan: &DestinationPlan<'_>,
         index: usize,
-        binding: &crate::binding::DestinationBinding,
+        binding: &crate::binding::PublicationBinding,
         source: &PreparedSource,
     ) {
         let observed = pin.observation();

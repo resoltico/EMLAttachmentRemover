@@ -12,7 +12,7 @@ rustix = { version = "=1.1.5", features = ["fs"] }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_IO"] }
 
-# Checked against the root workspace lint policy by cargo xtask check-quality.
+# Checked against the root workspace lint policy by cargo xtask check-config.
 [lints.rust]
 warnings = "deny"
 unsafe_code = "deny"
@@ -28,5 +28,4 @@ private_intra_doc_links = "deny"
 [lints.clippy]
 all = { level = "deny", priority = -1 }
 allow_attributes_without_reason = "deny"
-too_many_lines = "deny"
-cognitive_complexity = "deny"
+undocumented_unsafe_blocks = "deny"

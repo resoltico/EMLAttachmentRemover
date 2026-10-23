@@ -38,9 +38,9 @@ fn explicit_files_are_flat_and_walked_files_keep_root_and_relative_layout() {
     assert_eq!(plan.state(), DestinationPlanState::Complete);
     assert_eq!(plan.records().len(), 3);
     let expected = [
-        "out/file.BIN.no-attachments.eml",
-        "out/Inbox/a.no-attachments.eml",
-        "out/Inbox/nested/b.no-attachments.eml",
+        "out/Inbox.eml-dir/a.jqp3zjytiqvs4hdhcvxvgec6qa.no-attachments.eml",
+        "out/Inbox.eml-dir/nested.eml-dir/b.6bygukm4ll2wnnucyuby6ydq2q.no-attachments.eml",
+        "out/file.BIN.b7evpv4zhqpz2fthdcg5vw7ldu.no-attachments.eml",
     ]
     .map(PathBuf::from);
     assert_eq!(
@@ -51,7 +51,7 @@ fn explicit_files_are_flat_and_walked_files_keep_root_and_relative_layout() {
     );
     assert!(plan.records().iter().all(|row| row.failure().is_none()));
     assert_eq!(
-        plan.records()[0].destination().unwrap().observation(),
+        plan.records()[2].destination().unwrap().observation(),
         DestinationObservation::Missing
     );
     assert_eq!(
@@ -73,7 +73,11 @@ fn collisions_mark_all_contenders_even_when_existing_type_already_failed() {
     let root = scratch();
     fs::create_dir(root.path().join("left")).unwrap();
     fs::create_dir(root.path().join("right")).unwrap();
-    fs::create_dir_all(root.path().join("out/a.no-attachments.eml")).unwrap();
+    fs::create_dir_all(
+        root.path()
+            .join("out/a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
+    )
+    .unwrap();
     fs::write(root.path().join("left/a.eml"), b"left").unwrap();
     fs::write(root.path().join("right/a.eml"), b"right").unwrap();
     let req = request(root.path(), &["left/a.eml", "right/a.eml"], Some("out"));
@@ -92,7 +96,11 @@ fn collisions_mark_all_contenders_even_when_existing_type_already_failed() {
             matches!(record.destination().unwrap().observation(), DestinationObservation::Present(value) if value.kind == eml_fs::EntryKind::Directory)
         );
     }
-    assert!(root.path().join("out/a.no-attachments.eml").is_dir());
+    assert!(
+        root.path()
+            .join("out/a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+            .is_dir()
+    );
     drop(plan);
     root.close().unwrap();
 }
@@ -123,10 +131,10 @@ fn missing_mirror_tail_reservations_use_the_bound_prefix_for_all_contenders() {
         );
         assert_eq!(
             plan.display_path(index).unwrap().as_ref(),
-            Path::new("out/Inbox/a.no-attachments.eml")
+            Path::new("out/Inbox.eml-dir/a.jqp3zjytiqvs4hdhcvxvgec6qa.no-attachments.eml")
         );
     }
-    assert!(!root.path().join("out/Inbox").exists());
+    assert!(!root.path().join("out/Inbox.eml-dir").exists());
     drop(plan);
     root.close().unwrap();
 }
@@ -136,11 +144,16 @@ fn source_reservations_include_explicit_generated_names_and_hardlink_identities(
     let root = scratch();
     fs::write(root.path().join("a.eml"), b"a").unwrap();
     fs::write(
-        root.path().join("a.no-attachments.eml"),
+        root.path()
+            .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
         b"selected generated name",
     )
     .unwrap();
-    let req = request(root.path(), &["a.eml", "a.no-attachments.eml"], None);
+    let req = request(
+        root.path(),
+        &["a.eml", "a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"],
+        None,
+    );
     let plan = plan_destinations(
         collect_sources(&req, &RunControl::default()).unwrap(),
         &RunControl::default(),
@@ -151,11 +164,16 @@ fn source_reservations_include_explicit_generated_names_and_hardlink_identities(
     );
     assert!(plan.records()[1].failure().is_none());
     drop(plan);
-    fs::remove_file(root.path().join("a.no-attachments.eml")).unwrap();
+    fs::remove_file(
+        root.path()
+            .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
+    )
+    .unwrap();
     fs::write(root.path().join("other.eml"), b"other selected source").unwrap();
     fs::hard_link(
         root.path().join("other.eml"),
-        root.path().join("a.no-attachments.eml"),
+        root.path()
+            .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
     )
     .unwrap();
     let req = request(root.path(), &["a.eml", "other.eml"], None);
@@ -168,7 +186,11 @@ fn source_reservations_include_explicit_generated_names_and_hardlink_identities(
         ErrorCode::SourceDestinationAlias
     );
     assert_eq!(
-        fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+        )
+        .unwrap(),
         b"other selected source"
     );
     drop(plan);
@@ -176,7 +198,7 @@ fn source_reservations_include_explicit_generated_names_and_hardlink_identities(
 }
 
 #[test]
-fn truncated_copy_names_collide_without_counter_or_hash_retries() {
+fn truncated_human_stems_keep_distinct_full_route_tokens() {
     let root = scratch();
     fs::create_dir(root.path().join("out")).unwrap();
     let a = format!("{}A.eml", "x".repeat(250));
@@ -189,13 +211,12 @@ fn truncated_copy_names_collide_without_counter_or_hash_retries() {
         &RunControl::default(),
     );
     assert_eq!(plan.state(), DestinationPlanState::Complete);
-    for record in plan.records() {
-        assert_eq!(
-            record.failure().unwrap().code(),
-            ErrorCode::DestinationCollision
-        );
-    }
-    assert_eq!(
+    assert!(
+        plan.records()
+            .iter()
+            .all(|record| record.failure().is_none())
+    );
+    assert_ne!(
         plan.records()[0].destination().unwrap().basename(),
         plan.records()[1].destination().unwrap().basename()
     );
@@ -286,7 +307,8 @@ fn selected_dot_uses_captured_working_label_without_creating_the_mirror() {
     assert!(plan.records()[0].failure().is_none());
     assert_eq!(
         plan.display_path(0).unwrap().as_ref(),
-        root.path().join("out/working-label/a.no-attachments.eml")
+        root.path()
+            .join("out/working-label.eml-dir/a.onqh7ryqoe526hgwrt67tmyhxu.no-attachments.eml")
     );
     assert!(!root.path().join("out/working-label").exists());
     drop(plan);
@@ -309,7 +331,7 @@ fn nameless_nonroot_selection_keeps_selected_folder_label_after_normalization() 
     assert!(plan.records()[0].failure().is_none());
     assert_eq!(
         plan.display_path(0).unwrap().as_ref(),
-        Path::new("out/selected-folder/a.no-attachments.eml")
+        Path::new("out/selected-folder.eml-dir/a.e5ztshwilncrqadm4lqjqkxrgu.no-attachments.eml")
     );
     assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 0);
     drop(plan);
@@ -322,7 +344,11 @@ fn blocked_existing_mirror_does_not_mint_a_name_or_reservation_from_ancestor_lim
     fs::create_dir(root.path().join("Inbox")).unwrap();
     fs::create_dir(root.path().join("out")).unwrap();
     fs::write(root.path().join("Inbox/a.eml"), b"owned").unwrap();
-    fs::write(root.path().join("out/Inbox"), b"owned incompatible parent").unwrap();
+    fs::write(
+        root.path().join("out/Inbox.eml-dir"),
+        b"owned incompatible parent",
+    )
+    .unwrap();
     let req = request(root.path(), &["Inbox"], Some("out"));
     let plan = plan_destinations(
         collect_sources(&req, &RunControl::default()).unwrap(),
@@ -337,7 +363,7 @@ fn blocked_existing_mirror_does_not_mint_a_name_or_reservation_from_ancestor_lim
     assert!(plan.records()[0].destination().is_none());
     assert!(plan.display_path(0).is_none());
     assert_eq!(
-        fs::read(root.path().join("out/Inbox")).unwrap(),
+        fs::read(root.path().join("out/Inbox.eml-dir")).unwrap(),
         b"owned incompatible parent"
     );
     drop(plan);
@@ -392,7 +418,7 @@ fn actual_combined_path_budget_retains_all_source_positions_and_only_admitted_de
     assert!(plan.sources().collection_complete());
     assert_eq!(plan.sources().items().len(), count);
     assert_eq!(plan.records().len(), count);
-    let destination_charge = 1035 * factor;
+    let destination_charge = 1062 * factor;
     let admitted = (8_388_608 - source_charge) / destination_charge;
     assert!(admitted < count);
     assert_eq!(
@@ -414,4 +440,111 @@ fn actual_combined_path_budget_retains_all_source_positions_and_only_admitted_de
     assert_eq!(fs::read_dir(&output).unwrap().count(), 0);
     drop(plan);
     root.close().unwrap();
+}
+
+#[test]
+fn ownership_names_and_execution_order_are_independent_of_argument_permutation() {
+    let root = scratch();
+    fs::create_dir_all(root.path().join("Inbox/deep")).unwrap();
+    fs::create_dir(root.path().join("out")).unwrap();
+    for file in ["Inbox/a.eml", "Inbox/deep/b.eml", "Inbox/deep/c.eml"] {
+        fs::write(root.path().join(file), b"owned source").unwrap();
+    }
+    let selections = ["Inbox", "Inbox/deep", "Inbox/deep/b.eml"];
+    let mut expected = None;
+    for indices in [
+        [0, 1, 2],
+        [2, 1, 0],
+        [1, 0, 2],
+        [1, 2, 0],
+        [0, 2, 1],
+        [2, 0, 1],
+    ] {
+        let choices = indices.map(|index| selections[index]);
+        let request = request(root.path(), &choices, Some("out"));
+        let control = RunControl::default();
+        let plan = plan_destinations(collect_sources(&request, &control).unwrap(), &control);
+        let facts: Vec<_> = plan
+            .records()
+            .iter()
+            .enumerate()
+            .map(|(index, row)| {
+                (
+                    plan.sources().display_path(index).unwrap().into_owned(),
+                    plan.display_path(index).unwrap().into_owned(),
+                    plan.sources().items()[index].origin(),
+                    row.failure().map(|error| error.code()),
+                )
+            })
+            .collect();
+        assert_eq!(facts.len(), 3);
+        assert_eq!(
+            facts
+                .iter()
+                .filter(|(_, _, origin, _)| *origin == eml_core::SourceOrigin::Explicit)
+                .count(),
+            1
+        );
+        if let Some(expected) = &expected {
+            assert_eq!(&facts, expected);
+        } else {
+            expected = Some(facts);
+        }
+    }
+    assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 0);
+}
+
+#[test]
+fn native_hardlinked_destinations_refuse_the_whole_identity_group_before_work() {
+    let root = scratch();
+    fs::create_dir(root.path().join("out")).unwrap();
+    for name in ["a.eml", "b.eml"] {
+        fs::write(root.path().join(name), b"selected source").unwrap();
+    }
+    let a = root
+        .path()
+        .join("out/a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml");
+    let b = root
+        .path()
+        .join("out/b.rsdsaffec2pcixjwzvef2ljmuu.no-attachments.eml");
+    fs::write(&a, b"independent existing winner").unwrap();
+    fs::hard_link(&a, &b).unwrap();
+    for choices in [["a.eml", "b.eml"], ["b.eml", "a.eml"]] {
+        let request = request(root.path(), &choices, Some("out"));
+        let control = RunControl::default();
+        let plan = plan_destinations(collect_sources(&request, &control).unwrap(), &control);
+        assert!(plan.records().iter().all(|row| {
+            row.failure().is_some_and(|error| {
+                error.code() == ErrorCode::DestinationCollision
+                    && error.detail().contains("existing destination identity")
+            })
+        }));
+    }
+    assert_eq!(fs::read(&a).unwrap(), b"independent existing winner");
+    assert_eq!(fs::read(&b).unwrap(), b"independent existing winner");
+    assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 2);
+}
+
+#[test]
+fn a_file_at_a_shared_mirror_refuses_every_dependent_route_without_writes() {
+    let root = scratch();
+    fs::create_dir(root.path().join("Inbox")).unwrap();
+    fs::create_dir(root.path().join("out")).unwrap();
+    for name in ["a.eml", "b.eml"] {
+        fs::write(root.path().join("Inbox").join(name), b"selected source").unwrap();
+    }
+    let blocker = root.path().join("out/Inbox.eml-dir");
+    fs::write(&blocker, b"independent prefix winner").unwrap();
+    let request = request(root.path(), &["Inbox"], Some("out"));
+    let control = RunControl::default();
+    let plan = plan_destinations(collect_sources(&request, &control).unwrap(), &control);
+    assert_eq!(plan.records().len(), 2);
+    assert!(plan.records().iter().all(|row| {
+        row.failure().is_some_and(|error| {
+            error.code() == ErrorCode::DestinationCollision
+                && error.detail().contains("file-versus-mirror prefix")
+        })
+    }));
+    assert_eq!(fs::read(&blocker).unwrap(), b"independent prefix winner");
+    assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 1);
 }

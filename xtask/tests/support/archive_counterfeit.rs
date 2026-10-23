@@ -11,7 +11,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if args == ["--version"] {
         println!(
             "remove-eml-attachments {}",
-            eml_protocol::product::VERSION_WITH_BUILD.as_str()
+            eml_core::product::VERSION_WITH_BUILD.as_str()
         );
         return Ok(());
     }
@@ -42,7 +42,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let mut output = fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
-                .open("a.no-attachments.eml")?;
+                .open("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")?;
             output.write_all(INPUT)?;
             output.flush()?;
             trace

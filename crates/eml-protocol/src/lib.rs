@@ -8,16 +8,18 @@
 /// It identifies the wire contract; it does not imply invoking the CLI binary.
 pub const PROGRAM_ID: &str = "remove-eml-attachments";
 
+pub mod desktop;
 mod event;
+pub mod meaning;
 mod output;
 mod output_buffer;
 mod path;
-pub mod product;
 pub mod records;
 mod request;
-pub mod user_messages;
 pub mod worker_control;
 pub use output::{JsonSink, MAX_LINE_BYTES, MAX_RUN_BYTES};
 pub use output_buffer::BoundedEventBuffer;
 pub use path::{DisplayText, NativePathValue, PathValue, TerminalPath};
-pub use request::{MAX_REQUEST_BYTES, RequestDecodeError, decode_request};
+pub use request::{
+    MAX_REQUEST_BYTES, RequestDecodeError, RequestEncodeError, decode_request, encode_request,
+};

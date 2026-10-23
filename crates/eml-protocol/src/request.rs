@@ -1,7 +1,7 @@
 //! Strict bounded protocol-1 input; JSON never enters the business library.
-use crate::path::NativePath;
+use crate::path::{NativePath, NativePathValue};
 use eml_core::{OutputLocation, RequestPath, RequestPathError, RunMode, RunRequest};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
 
 /// Maximum complete request bytes, including leading/trailing whitespace.
@@ -61,21 +61,21 @@ impl std::fmt::Display for RequestDecodeError {
 }
 impl std::error::Error for RequestDecodeError {}
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RequestDocument {
+struct RequestDocument<P> {
     protocol: u64,
-    paths: Vec<Object<NativePath>>,
+    paths: Vec<P>,
     // deserialize_with makes omission an error even though explicit null is
     // supported. A plain Option would silently accept a missing required field.
     #[serde(deserialize_with = "required_output")]
-    output_directory: Option<Object<NativePath>>,
+    output_directory: Option<P>,
     dry_run: bool,
 }
 
-fn required_output<'de, D: Deserializer<'de>>(
+fn required_output<'de, D: Deserializer<'de>, P: Deserialize<'de>>(
     value: D,
-) -> Result<Option<Object<NativePath>>, D::Error> {
+) -> Result<Option<P>, D::Error> {
     Option::deserialize(value)
 }
 
@@ -114,7 +114,7 @@ pub fn decode_request(
     if bytes.len() > MAX_REQUEST_BYTES {
         return Err(RequestDecodeError::TooLarge);
     }
-    let Object(document): Object<RequestDocument> =
+    let Object(document): Object<RequestDocument<Object<NativePath>>> =
         serde_json::from_slice(bytes).map_err(|error| RequestDecodeError::InvalidDocument {
             line: error.line(),
             column: error.column(),
@@ -146,4 +146,53 @@ pub fn decode_request(
         .validate_path_limits()
         .map_err(RequestDecodeError::InvalidRequest)?;
     Ok(request)
+}
+
+/// Failure to encode a request; no filesystem admission has occurred.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequestEncodeError {
+    /// Core native path/count/aggregate admission refused the request.
+    InvalidRequest(RequestPathError),
+    /// The complete encoded document exceeds the transport budget.
+    TooLarge,
+    /// JSON serialization could not complete.
+    Serialization,
+}
+impl std::fmt::Display for RequestEncodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidRequest(error) => std::fmt::Display::fmt(error, f),
+            Self::TooLarge => write!(f, "Request exceeds {MAX_REQUEST_BYTES} bytes"),
+            Self::Serialization => f.write_str("Request serialization failed"),
+        }
+    }
+}
+impl std::error::Error for RequestEncodeError {}
+
+/// Encode the single protocol-1 envelope after pure native-path admission.
+///
+/// Working-directory context is supplied separately to the decoder. Encoding
+/// never resolves paths or grants authority to create a destination.
+pub fn encode_request(request: &RunRequest) -> Result<Vec<u8>, RequestEncodeError> {
+    request
+        .validate_path_limits()
+        .map_err(RequestEncodeError::InvalidRequest)?;
+    let document = RequestDocument {
+        protocol: 1,
+        paths: request
+            .paths
+            .iter()
+            .map(|path| NativePathValue::new(path))
+            .collect(),
+        output_directory: match &request.output {
+            OutputLocation::BesideSource => None,
+            OutputLocation::Directory(path) => Some(NativePathValue::new(path)),
+        },
+        dry_run: request.mode == RunMode::DryRun,
+    };
+    let bytes = serde_json::to_vec(&document).map_err(|_| RequestEncodeError::Serialization)?;
+    if bytes.len() > MAX_REQUEST_BYTES {
+        return Err(RequestEncodeError::TooLarge);
+    }
+    Ok(bytes)
 }

@@ -2,6 +2,7 @@ import Darwin
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
 import Foundation
+import CryptoKit
 
 enum DesktopFixtureRequest: String, CaseIterable, Sendable {
   case pickerBaseline = "EML_NATIVE_PICKER_BASELINE"
@@ -101,4 +102,31 @@ final class DesktopFixtureOutput: @unchecked Sendable {
       }
     }
   }
+}
+
+// Independent fixture implementation of storage-design.md's route seed. These
+// short Unicode fixtures have an empty logical directory route; no production
+// naming function or generated report is used as the expected-path oracle.
+func expectedCopy(for source: URL, directory: URL? = nil) -> URL {
+  let basename = source.lastPathComponent
+  let stem = basename.lowercased().hasSuffix(".eml") ? String(basename.dropLast(4)) : basename
+  let human = stem.isEmpty ? "message" : stem
+  let logical = Data((human + ".no-attachments.eml").utf8)
+  var seed = Data("eml-attachment-remover:destination-route:v1\0".utf8)
+  seed.append(contentsOf: [1, 0, 0, 0, 2, 0])
+  let count = UInt32(logical.count)
+  seed.append(contentsOf: (0..<4).map { UInt8((count >> ($0 * 8)) & 255) })
+  seed.append(logical)
+  let digest = SHA256.hash(data: seed).prefix(16)
+  let bits = digest.map { String($0, radix: 2).leftPadded(to: 8) }.joined() + "00"
+  let alphabet = Array("abcdefghijklmnopqrstuvwxyz234567")
+  let binary = Array(bits)
+  let token = stride(from: 0, to: binary.count, by: 5).map { index in
+    alphabet[Int(String(binary[index..<index + 5]), radix: 2)!]
+  }
+  return (directory ?? source.deletingLastPathComponent()).appendingPathComponent(
+    human + "." + String(token) + ".no-attachments.eml")
+}
+private extension String {
+  func leftPadded(to length: Int) -> String { String(repeating: "0", count: max(0, length - count)) + self }
 }

@@ -33,15 +33,20 @@ Use `--` before filenames that begin with a dash.
 The selected output root must already exist; the program creates only the
 required mirrored directories beneath it.
 
-A copy of `message.eml` is named `message.no-attachments.eml`. The final `.eml`
-extension is recognized without regard to case. A long stem is shortened to the
-actual destination component limit; this can cause a refused collision. There
-is no numeric collision search or name digest. Directory walks skip recognized
-copy suffixes; an explicitly selected file is still an input.
+A copy of `message.eml` is named
+`message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml`. Its 26-character token
+encodes the full logical destination route, so filesystem case/normalization
+aliases do not merge distinct route names. It is not a message checksum or
+identity proof. Generated mirrored folders end in `.eml-dir`. Long human prefixes
+shorten under actual native limits; the token and fixed suffix never shorten.
+There is no numeric retry, old-name lookup or migration. Directory walks skip
+recognized copy suffixes; explicitly selected copies remain inputs.
 
 Without `--output-dir`, copies go beside each source. With it, explicitly selected
 files go directly into that folder and selected directories mirror their relative
-tree under a root label. Multiple inputs that reserve the same destination fail;
+tree under a root label. Overlapping occurrences of a proven identical source
+entry prefer explicit files, then the deepest selected root; complete planning
+sets deterministic execution order. Distinct hard-link names remain distinct. Multiple inputs that reserve the same destination fail;
 choose distinct destinations rather than expecting automatic renaming. An
 identical existing copy is checked and resynchronized as up to date. A different
 existing file remains untouched. Output overlapping selected source trees and
@@ -68,7 +73,10 @@ A missing summary or truncated stream is incomplete evidence.
 Preparation removes authorized source spans; it does not decode and regenerate
 retained message content. It keeps supported text body alternatives, selects the
 related body root and removes non-root related resources, including inline images.
-Other non-body leaves, including inline images outside related containers,
+Any valid non-inline disposition on an ordinary part, including an extension
+token, removes that whole part. A retained-body `multipart/report` refuses the
+conversion with `UNSUPPORTED_MIME`; attached reports remain removable opaque
+entities. Other non-body leaves, including inline images outside related containers,
 calendar payloads and opaque encoded forwarded messages, are removed even without
 an attachment disposition. At least one supported text body must remain. It
 handles embedded messages conservatively and refuses protected or structurally
@@ -107,14 +115,15 @@ Privacy & Security. No Gatekeeper configuration change is part of this project.
 The desktop workflow has one main window with queued runs, source/destination
 selection, per-file results and technical reports. [App details](docs/macos-app.md)
 describe the interface and its native qualification requirements.
-Intel macOS26 picker qualification runs on the exact hosted image declared in
-`xtask/distribution.toml`. It requires recognized current-boot Apple
-IconServices crash evidence before disabling that GUI user's affected agent,
-then tests the actual unchanged app. [Qualification records](docs/verification.md)
-retain preparation, product results and service readback. This establishes
-modified-host coverage, not general unmodified-host compatibility or proof that
-the service change caused recovery. Both complete macOS15 desktop suites remain
-required.
+Intel macOS26 picker qualification first observes the unmodified host with an
+independent bounded AppKit probe, then runs the actual frozen product exactly
+once. Healthy hosts do not depend on an incident file, an old image or crash
+reports. Only the exact recognized probe failure may admit the expiring reviewed
+incident in `xtask/host-incidents.toml`, with native caller/boot/crash/source and
+archive proof before either fixed service action. Original probe failures stay
+failed evidence. Both complete macOS15 desktop suites remain required. See
+[qualification records](docs/verification.md) for ordinary/modified scope and
+actual native evidence obligations.
 
 Linux targets Ubuntu 22.04+ with GNU/glibc, with required GLIBC symbols capped at
 2.35. Other distributions are unqualified. Windows targets system UCRT; native

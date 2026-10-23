@@ -15,6 +15,7 @@ extension DesktopInteractionTests {
     try await exerciseMissingCopyReveal(session)
     try await exerciseFinderDrop(session)
     try await exerciseCapturedDestination(session)
+    try await exerciseCheckThenIndependentCreate(session)
     try await finishNativePickerSession(session)
   }
 
@@ -54,7 +55,7 @@ extension DesktopInteractionTests {
     try await requireText(app, containing: "Queue paused: dismiss a retained report to make room.")
     XCTAssertFalse(
       FileManager.default.fileExists(
-        atPath: serviceSource.deletingPathExtension().appendingPathExtension("no-attachments.eml")
+        atPath: expectedCopy(for: serviceSource)
           .path))
     app.buttons["Dismiss report"].click()
     try await requireRun(
@@ -63,8 +64,7 @@ extension DesktopInteractionTests {
     try await requireText(app, containing: serviceDisplayName)
     XCTAssertEqual(
       try Data(
-        contentsOf: serviceSource.deletingPathExtension().appendingPathExtension(
-          "no-attachments.eml")), golden)
+        contentsOf: expectedCopy(for: serviceSource)), golden)
     let serviceInstances = NSRunningApplication.runningApplications(
       withBundleIdentifier: identifier
     ).map(\.processIdentifier)
@@ -137,7 +137,7 @@ extension DesktopInteractionTests {
     for source in allSources {
       XCTAssertEqual(
         try Data(
-          contentsOf: source.deletingPathExtension().appendingPathExtension("no-attachments.eml")),
+          contentsOf: expectedCopy(for: source)),
         golden)
     }
     snapshot(app, "waiting-requests-removed")
@@ -152,9 +152,11 @@ extension DesktopInteractionTests {
     let exportURL = root.appendingPathComponent("service-report.json")
     XCTAssertFalse(FileManager.default.fileExists(atPath: exportURL.path))
     try await saveReport(app, to: exportURL, expectNameCollision: false)
-    try await requireText(app, containing: "Run 4 report: Saved and read back successfully.")
+    try await requireText(app, containing: "Run 4 report: Report exported and verified.")
     let exported = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(contentsOf: exportURL)) as? [String: Any])
+    XCTAssertEqual(exported["schema"] as? String, "eml-technical-report")
+    XCTAssertEqual(exported["schema_version"] as? Int, 1)
     let items = try XCTUnwrap(exported["items"] as? [[String: Any]])
     XCTAssertEqual(items.count, 1)
     let item = try XCTUnwrap(items.first)
@@ -187,14 +189,14 @@ extension DesktopInteractionTests {
     let sentinel = Data("Owned report collision sentinel\n".utf8)
     XCTAssertEqual(try Data(contentsOf: collisionURL), sentinel)
     try await saveReport(app, to: collisionURL, expectNameCollision: true)
-    XCTAssertFalse(app.buttons["Cancel export"].isEnabled)
+    XCTAssertFalse(app.buttons["Cancel Export"].isEnabled)
     XCTAssertTrue(app.buttons["Export Report…"].isEnabled)
     XCTAssertEqual(try Data(contentsOf: collisionURL), sentinel)
     snapshot(app, "report-export-collision-cancelled")
     let retryURL = root.appendingPathComponent("service-report-after-cancel.json")
     XCTAssertFalse(FileManager.default.fileExists(atPath: retryURL.path))
     try await saveReport(app, to: retryURL, expectNameCollision: false)
-    try await requireText(app, containing: "Run 4 report: Saved and read back successfully.")
+    try await requireText(app, containing: "Run 4 report: Report exported and verified.")
     let retry = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(contentsOf: retryURL)) as? [String: Any])
     let retryItems = try XCTUnwrap(retry["items"] as? [[String: Any]])
@@ -216,8 +218,7 @@ extension DesktopInteractionTests {
     let original = session.original
     // The external owner moves only this synthetic output. The receipt remains valid
     // historical evidence, while actual navigation must report its missing path.
-    let serviceCopy = serviceSource.deletingPathExtension().appendingPathExtension(
-      "no-attachments.eml")
+    let serviceCopy = expectedCopy(for: serviceSource)
     let heldCopy = root.appendingPathComponent("held-service-copy.eml")
     XCTAssertFalse(FileManager.default.fileExists(atPath: heldCopy.path))
     try DesktopFixtureRequest.holdCopy.send()
@@ -295,7 +296,7 @@ extension DesktopInteractionTests {
     addTeardownBlock { @MainActor in
       try await self.closeOwnedFinderWindow(finder, title: folderTitle)
     }
-    let firstCopy = sources[0].deletingPathExtension().appendingPathExtension("no-attachments.eml")
+    let firstCopy = expectedCopy(for: sources[0])
     _ = try finderEntry(folder, file: firstCopy, selected: true)
     snapshot(folder, "native-finder-revealed-exact-copy")
 
@@ -343,7 +344,7 @@ extension DesktopInteractionTests {
     let delivery = session.delivery
     let owned = session.owned
     let golden = session.golden
-    let firstCopy = sources[0].deletingPathExtension().appendingPathExtension("no-attachments.eml")
+    let firstCopy = expectedCopy(for: sources[0])
     // Both report reservations are occupied. Capture a changed destination in
     // a queued request, then change the current choice before freeing its slot.
     let chosenDestination = root.appendingPathComponent("chosen-destination")
@@ -355,7 +356,7 @@ extension DesktopInteractionTests {
       throw InteractionFailure.expectedPresentation
     }
     try await requireWaiting(app, count: 1)
-    let destinationCopy = chosenDestination.appendingPathComponent("one.no-attachments.eml")
+    let destinationCopy = expectedCopy(for: sources[0], directory: chosenDestination)
     XCTAssertFalse(FileManager.default.fileExists(atPath: destinationCopy.path))
     app.buttons["Beside originals"].click()
     try await requireAccessibleText(app, prefix: "Copy destination: Beside each original")
@@ -366,6 +367,92 @@ extension DesktopInteractionTests {
     XCTAssertEqual(try Data(contentsOf: firstCopy), golden)
     try await requireWaiting(app, count: 0)
     snapshot(app, "queued-run-retains-chosen-destination")
+  }
+
+  @MainActor
+  private func chooseMode(_ app: XCUIApplication, label: String) async throws {
+    let mode = app.popUpButtons["Operation mode"]
+    guard mode.waitForExistence(timeout: 5), mode.isEnabled else {
+      XCTFail("Operation selector is unavailable: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    mode.click()
+    let choice = app.descendants(matching: .any).matching(
+      NSPredicate(format: "label == %@ OR title == %@", label, label)).firstMatch
+    guard choice.waitForExistence(timeout: 5), choice.isHittable else {
+      XCTFail("Operation choice is inaccessible: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
+    choice.click()
+  }
+
+  @MainActor
+  private func selectedIdentities(_ app: XCUIApplication) throws -> (String, String) {
+    let texts = app.descendants(matching: .any).allElementsBoundByIndex.map {
+      $0.label + "\n" + (($0.value as? String) ?? "")
+    }
+    let summary = try XCTUnwrap(texts.first { $0.contains("Run summary: Run ") })
+    let runPattern = try NSRegularExpression(pattern: "Run summary: Run ([0-9]+)")
+    let runMatch = try XCTUnwrap(runPattern.firstMatch(in: summary, range: NSRange(summary.startIndex..., in: summary)))
+    let runRange = try XCTUnwrap(Range(runMatch.range(at: 1), in: summary))
+    let technical = try XCTUnwrap(texts.first { $0.contains("Processing operation: ") })
+    let operationPattern = try NSRegularExpression(pattern: "Processing operation: ([0-9]+)")
+    let operationMatch = try XCTUnwrap(operationPattern.firstMatch(in: technical, range: NSRange(technical.startIndex..., in: technical)))
+    let operationRange = try XCTUnwrap(Range(operationMatch.range(at: 1), in: technical))
+    return (String(summary[runRange]), String(technical[operationRange]))
+  }
+
+  @MainActor
+  private func exerciseCheckThenIndependentCreate(_ session: NativePickerSession) async throws {
+    let app = session.app
+    let source = session.sources[1]
+    let destination = session.root.appendingPathComponent("chosen-destination")
+    let exactCopy = expectedCopy(for: source, directory: destination)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: exactCopy.path))
+    // Explicit dismissal frees both existing report slots without evicting facts.
+    for _ in 0..<2 {
+      let dismiss = app.buttons["Dismiss report"]
+      guard dismiss.isEnabled else { throw InteractionFailure.expectedPresentation }
+      dismiss.click()
+    }
+    try await choose(app, fixture: session.root, path: destination, folder: true, destination: true)
+    try await chooseMode(app, label: "Check only")
+    let before = try FileManager.default.contentsOfDirectory(atPath: destination.path).sorted()
+    let sourceBefore = try Data(contentsOf: source)
+    try await choose(app, fixture: session.root, path: source, folder: false)
+    try await requireText(app, containing: "1 planned · Check only")
+    try await requireText(app, containing: "Prepared only")
+    try await requireText(app, containing: "Copy: " + exactCopy.path)
+    let canCreate = NSPredicate { _, _ in app.buttons["Create from this check"].isEnabled }
+    let checked = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: canCreate, object: nil)], timeout: 20)
+    guard checked == .completed else { throw InteractionFailure.expectedPresentation }
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path).sorted(), before)
+    XCTAssertEqual(try Data(contentsOf: source), sourceBefore)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: exactCopy.path))
+    let technical = app.checkBoxes["Technical details"]
+    let checkedValue = (technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue
+    if checkedValue != "1" { technical.click() }
+    let checkIdentity = try selectedIdentities(app)
+    snapshot(app, "check-only-exact-destination-without-publication")
+
+    // An external entry appears after Check. Create from this check captures
+    // the earlier destination and starts fresh authorization, despite these
+    // changes to the current controls and the destination namespace.
+    let sentinel = Data("Owned entry created after Check; never replace.\n".utf8)
+    try sentinel.write(to: exactCopy, options: .withoutOverwriting)
+    app.buttons["Beside originals"].click()
+    try await chooseMode(app, label: "Create copies")
+    app.buttons["Create from this check"].click()
+    try await requireText(app, containing: "DESTINATION_EXISTS")
+    try await requireText(app, containing: "Finished with errors")
+    try await requireText(app, containing: "Copy: " + exactCopy.path)
+    let createIdentity = try selectedIdentities(app)
+    XCTAssertNotEqual(checkIdentity.0, createIdentity.0, "Create requires a fresh RunId")
+    XCTAssertNotEqual(checkIdentity.1, createIdentity.1, "Create requires a fresh OperationId")
+    XCTAssertEqual(try Data(contentsOf: exactCopy), sentinel)
+    XCTAssertEqual(try Data(contentsOf: source), sourceBefore)
+    snapshot(app, "create-from-check-revalidates-changed-occupancy")
   }
 
 }

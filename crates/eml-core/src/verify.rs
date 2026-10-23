@@ -1,28 +1,20 @@
-//! Independent source policy and expected-byte reconstruction. This module does not
-//! call the planner, consume its eligibility flags, edits or ancestor bookkeeping.
+//! Independent retained-tree authorization and forward source-span proof.
+//! Planner edits and retention decisions are never inputs to this derivation.
 use crate::{
     PreparationError, Refusal, RemovalReason, RunControl, error, grammar,
-    message::{Kind, Message, PROTECTED},
+    message::{Kind, Message, PROTECTED, Span, UNSUPPORTED_BODY_MEDIA},
     plan::{CONTAINER_STALE, Claim, ROOT_STALE},
 };
 use std::collections::BTreeSet;
-struct Proof {
-    id: usize,
+struct RetainedNode {
     changed: bool,
-    children: Vec<Proof>,
+    children: Vec<usize>,
 }
-struct Evaluated {
-    bytes: Option<Vec<u8>>,
-    proof: Option<Proof>,
-    claims: Vec<Claim>,
-    stripped: BTreeSet<String>,
-}
-// No identity-free Default exists: bytes and the retained-structure proof must
-// be independently derived from this message. The generated FnValue mutation
-// Ok(Default::default()) is therefore compiler-unviable, not caught by tests.
+// No identity-free Default exists. This proof is derived only from source facts.
 pub(crate) struct Authorization {
-    bytes: Vec<u8>,
-    proof: Proof,
+    nodes: Vec<Option<RetainedNode>>,
+    claims: Vec<Claim>,
+    expected_length: usize,
     pub(crate) stripped: BTreeSet<String>,
 }
 fn internal() -> PreparationError {
@@ -31,147 +23,372 @@ fn internal() -> PreparationError {
         "Independent MIME authorization or byte/structure verification failed",
     )
 }
-fn removed(id: usize, reason: RemovalReason) -> Evaluated {
-    Evaluated {
-        bytes: None,
-        proof: None,
-        claims: vec![Claim { id, reason }],
-        stripped: BTreeSet::new(),
-    }
+fn stale(message: &Message<'_>, id: usize, changed: bool, name: &str) -> bool {
+    changed
+        && (CONTAINER_STALE.contains(&name)
+            || (message.nodes[id].root && ROOT_STALE.contains(&name)))
+}
+enum Evaluation {
+    Visit(usize, Option<RemovalReason>),
+    Finish(usize),
 }
 fn independent(
     message: &Message<'_>,
-    id: usize,
     control: &RunControl,
-) -> Result<Evaluated, PreparationError> {
-    control.checkpoint()?;
-    let node = &message.nodes[id];
-    // Deliberately rederive eligibility from immutable facts, not planner actions.
-    if node.disposition.as_deref() == Some("attachment") && !node.root {
-        return Ok(removed(id, RemovalReason::Attachment));
-    }
-    if PROTECTED.iter().any(|media| *media == node.media) {
-        return Err(internal());
-    }
-    if node.media == "text/plain" || node.media == "text/html" {
-        return Ok(Evaluated {
-            bytes: Some(message.input[node.span.clone()].to_vec()),
-            proof: Some(Proof {
-                id,
-                changed: false,
-                children: Vec::new(),
-            }),
-            claims: Vec::new(),
-            stripped: BTreeSet::new(),
-        });
-    }
-    let mut claims = Vec::new();
-    let mut stripped = BTreeSet::new();
-    let mut proofs = Vec::new();
-    let mut body = Vec::new();
-    let mut changed = false;
-    if node.media.starts_with("multipart/") {
-        let Kind::Multipart {
-            prefix,
-            children,
-            suffix,
-        } = &node.kind
-        else {
-            return Err(internal());
-        };
-        let root = if node.media == "multipart/related" {
-            related_root(message, node, children)?
-        } else {
-            usize::MAX
-        };
-        body.extend_from_slice(&message.input[prefix.clone()]);
-        for child in children {
-            let result = if node.media == "multipart/related" && root != child.id {
-                removed(child.id, RemovalReason::RelatedResource)
-            } else {
-                independent(message, child.id, control)?
-            };
-            claims.extend(result.claims);
-            stripped.extend(result.stripped);
-            if let Some(bytes) = result.bytes {
-                let proof = result.proof.ok_or_else(internal)?;
-                changed |= proof.changed;
-                body.extend_from_slice(&message.input[child.opening.clone()]);
-                body.extend(bytes);
-                body.extend_from_slice(&message.input[child.framing.clone()]);
-                proofs.push(proof);
-            } else {
-                changed = true;
+) -> Result<Authorization, PreparationError> {
+    let mut proof = Authorization {
+        nodes: (0..message.nodes.len()).map(|_| None).collect(),
+        claims: Vec::new(),
+        stripped: BTreeSet::new(),
+        expected_length: 0,
+    };
+    let mut stack = vec![Evaluation::Visit(0, None)];
+    while let Some(task) = stack.pop() {
+        control.checkpoint()?;
+        #[cfg(test)]
+        crate::work_bounds::record(crate::work_bounds::Work::Node, 1, control)?;
+        match task {
+            Evaluation::Visit(id, forced) => {
+                let node = &message.nodes[id];
+                let reason = forced.or_else(|| {
+                    (!node.root
+                        && node
+                            .disposition
+                            .as_deref()
+                            .is_some_and(|token| token != "inline"))
+                    .then_some(RemovalReason::Attachment)
+                });
+                if let Some(reason) = reason {
+                    proof.claims.push(Claim { id, reason });
+                    continue;
+                }
+                if PROTECTED.contains(&node.media.as_str())
+                    || UNSUPPORTED_BODY_MEDIA.contains(&node.media.as_str())
+                {
+                    return Err(internal());
+                }
+                if matches!(node.media.as_str(), "text/plain" | "text/html") {
+                    proof.nodes[id] = Some(RetainedNode {
+                        changed: false,
+                        children: Vec::new(),
+                    });
+                    continue;
+                }
+                match &node.kind {
+                    Kind::Multipart { children, .. } if node.media.starts_with("multipart/") => {
+                        let selected = if node.media == "multipart/related" {
+                            Some(related_root(message, node, children)?)
+                        } else {
+                            None
+                        };
+                        stack.push(Evaluation::Finish(id));
+                        for child in children.iter().rev() {
+                            stack.push(Evaluation::Visit(
+                                child.id,
+                                selected
+                                    .filter(|selected| *selected != child.id)
+                                    .map(|_| RemovalReason::RelatedResource),
+                            ));
+                        }
+                    }
+                    Kind::Message(child)
+                        if matches!(node.media.as_str(), "message/rfc822" | "message/global")
+                            && node.encoding.as_deref().is_some_and(|encoding| {
+                                ["7bit", "8bit", "binary"].contains(&encoding)
+                            }) =>
+                    {
+                        stack.push(Evaluation::Finish(id));
+                        stack.push(Evaluation::Visit(*child, None));
+                    }
+                    _ => proof.claims.push(Claim {
+                        id,
+                        reason: RemovalReason::NonBodyPart,
+                    }),
+                }
+            }
+            Evaluation::Finish(id) => {
+                let children: Vec<_> = match &message.nodes[id].kind {
+                    Kind::Multipart { children, .. } => {
+                        children.iter().map(|child| child.id).collect()
+                    }
+                    Kind::Message(child) => vec![*child],
+                    _ => return Err(internal()),
+                };
+                let changed = children
+                    .iter()
+                    .any(|child| proof.nodes[*child].as_ref().is_none_or(|p| p.changed));
+                let retained: Vec<_> = children
+                    .into_iter()
+                    .filter(|child| proof.nodes[*child].is_some())
+                    .collect();
+                if !retained.is_empty() {
+                    proof.nodes[id] = Some(RetainedNode {
+                        changed,
+                        children: retained,
+                    });
+                }
             }
         }
-        body.extend_from_slice(&message.input[suffix.clone()]);
-    } else if (node.media == "message/rfc822" || node.media == "message/global")
-        && node
-            .encoding
-            .as_deref()
-            .is_some_and(|encoding| ["7bit", "8bit", "binary"].contains(&encoding))
-    {
-        let Kind::Message(child) = node.kind else {
+    }
+    if proof.nodes.first().is_none_or(Option::is_none) {
+        return Err(internal());
+    }
+    // Only retained ancestors contribute stripped fields. Collapsed containers
+    // retain descendant removal claims without retaining their stale-field claims.
+    let mut pending = vec![0];
+    while let Some(id) = pending.pop() {
+        control.checkpoint()?;
+        let retained = proof.nodes[id].as_ref().ok_or_else(internal)?;
+        for field in &message.nodes[id].fields {
+            if stale(message, id, retained.changed, &field.name) {
+                proof.stripped.insert(field.name.clone());
+            }
+        }
+        pending.extend(retained.children.iter().rev().copied());
+    }
+    let mut end = 0;
+    let mut length = 0usize;
+    for span in RetainedSpans::new(message, &proof) {
+        control.checkpoint()?;
+        let span = span?;
+        if span.start < end || span.end < span.start || span.end > message.input.len() {
             return Err(internal());
-        };
-        let result = independent(message, child, control)?;
-        claims.extend(result.claims);
-        stripped.extend(result.stripped);
-        if let Some(bytes) = result.bytes {
-            let proof = result.proof.ok_or_else(internal)?;
-            changed |= proof.changed;
-            body = bytes;
-            proofs.push(proof);
         }
-    } else {
-        return Ok(removed(id, RemovalReason::NonBodyPart));
+        length = length.checked_add(span.len()).ok_or_else(internal)?;
+        end = span.end;
     }
-    if proofs.is_empty() {
-        return Ok(Evaluated {
-            bytes: None,
-            proof: None,
-            claims,
-            stripped: BTreeSet::new(),
-        });
+    if length > message.input.len() {
+        return Err(internal());
     }
-    rebuild_retained_node(message, id, changed, body, proofs, claims, stripped)
+    proof.expected_length = length;
+    Ok(proof)
 }
-
-fn rebuild_retained_node(
-    message: &Message<'_>,
+struct Frame {
     id: usize,
-    changed: bool,
-    body: Vec<u8>,
-    proofs: Vec<Proof>,
-    claims: Vec<Claim>,
-    mut stripped: BTreeSet<String>,
-) -> Result<Evaluated, PreparationError> {
-    let node = &message.nodes[id];
-    let mut output = Vec::new();
-    output.extend_from_slice(&message.input[node.envelope.clone()]);
-    for field in &node.fields {
-        // Independently derive this node's affected ancestor state from surviving results.
-        let stale = changed
-            && (CONTAINER_STALE.iter().any(|name| *name == field.name)
-                || (node.root && ROOT_STALE.iter().any(|name| *name == field.name)));
-        if stale {
-            stripped.insert(field.name.clone());
-        } else {
-            output.extend_from_slice(&message.input[field.span.clone()]);
+    stage: u8,
+    field: usize,
+    kept: usize,
+    source_child: usize,
+}
+impl Frame {
+    fn new(id: usize) -> Self {
+        Self {
+            id,
+            stage: 0,
+            field: 0,
+            kept: 0,
+            source_child: 0,
         }
     }
-    output.extend_from_slice(&message.input[node.separator.clone()]);
-    output.extend(body);
-    Ok(Evaluated {
-        bytes: Some(output),
-        proof: Some(Proof {
-            id,
-            changed,
-            children: proofs,
-        }),
-        claims,
-        stripped,
-    })
+}
+// One frame per retained ancestor. Siblings are visited on demand, never copied
+// into a work stack or reconstructed into message-sized byte buffers.
+struct RetainedSpans<'a, 'input> {
+    source: &'a Message<'input>,
+    proof: &'a Authorization,
+    stack: Vec<Frame>,
+}
+impl<'a, 'input> RetainedSpans<'a, 'input> {
+    fn new(source: &'a Message<'input>, proof: &'a Authorization) -> Self {
+        Self {
+            source,
+            proof,
+            stack: vec![Frame::new(0)],
+        }
+    }
+}
+impl Iterator for RetainedSpans<'_, '_> {
+    type Item = Result<Span, PreparationError>;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let frame = self.stack.last_mut()?;
+            let node = &self.source.nodes[frame.id];
+            let Some(proof) = &self.proof.nodes[frame.id] else {
+                self.stack.clear();
+                return Some(Err(internal()));
+            };
+            let span = match frame.stage {
+                0 => {
+                    frame.stage = 1;
+                    node.envelope.clone()
+                }
+                1 => {
+                    if let Some(field) = node.fields.get(frame.field) {
+                        frame.field += 1;
+                        if stale(self.source, frame.id, proof.changed, &field.name) {
+                            continue;
+                        }
+                        field.span.clone()
+                    } else {
+                        frame.stage = 2;
+                        continue;
+                    }
+                }
+                2 => {
+                    frame.stage = 3;
+                    node.separator.clone()
+                }
+                3 => match &node.kind {
+                    Kind::Leaf => {
+                        frame.stage = 7;
+                        node.body.clone()
+                    }
+                    Kind::Message(_) => {
+                        frame.stage = 7;
+                        let Some(child) = proof.children.first() else {
+                            self.stack.clear();
+                            return Some(Err(internal()));
+                        };
+                        self.stack.push(Frame::new(*child));
+                        continue;
+                    }
+                    Kind::Multipart { prefix, .. } => {
+                        frame.stage = 4;
+                        prefix.clone()
+                    }
+                },
+                4..=6 => {
+                    let Kind::Multipart {
+                        children, suffix, ..
+                    } = &node.kind
+                    else {
+                        self.stack.clear();
+                        return Some(Err(internal()));
+                    };
+                    if frame.kept == proof.children.len() {
+                        frame.stage = 7;
+                        suffix.clone()
+                    } else {
+                        let id = proof.children[frame.kept];
+                        while children
+                            .get(frame.source_child)
+                            .is_some_and(|child| child.id != id)
+                        {
+                            frame.source_child += 1;
+                        }
+                        let Some(child) = children.get(frame.source_child) else {
+                            self.stack.clear();
+                            return Some(Err(internal()));
+                        };
+                        match frame.stage {
+                            4 => {
+                                frame.stage = 5;
+                                child.opening.clone()
+                            }
+                            5 => {
+                                frame.stage = 6;
+                                self.stack.push(Frame::new(id));
+                                continue;
+                            }
+                            _ => {
+                                frame.stage = 4;
+                                frame.kept += 1;
+                                frame.source_child += 1;
+                                child.framing.clone()
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    self.stack.pop();
+                    continue;
+                }
+            };
+            if !span.is_empty() {
+                return Some(Ok(span));
+            }
+        }
+    }
+}
+/// Actual authorization guard, targeted by the bounded mutation selection.
+pub(crate) fn authorize_deletions(
+    message: &Message<'_>,
+    claims: &[Claim],
+    control: &RunControl,
+) -> Result<Authorization, PreparationError> {
+    let permitted = independent(message, control)?;
+    if permitted.claims != claims {
+        return Err(internal());
+    }
+    Ok(permitted)
+}
+fn equal(left: &[u8], right: &[u8], control: &RunControl) -> Result<bool, PreparationError> {
+    if left.len() != right.len() {
+        return Ok(false);
+    }
+    for (a, b) in left
+        .chunks(crate::PREPARATION_CHUNK_BYTES)
+        .zip(right.chunks(crate::PREPARATION_CHUNK_BYTES))
+    {
+        control.checkpoint()?;
+        #[cfg(test)]
+        crate::work_bounds::record(crate::work_bounds::Work::Comparison, a.len(), control)?;
+        if a != b {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+pub(crate) fn verify_candidate(
+    source: &Message<'_>,
+    authorization: &Authorization,
+    bytes: &[u8],
+    control: &RunControl,
+) -> Result<(), PreparationError> {
+    #[cfg(test)]
+    crate::work_bounds::stage(crate::work_bounds::Stage::ExactComparison);
+    if authorization.expected_length != bytes.len() {
+        return Err(internal());
+    }
+    let mut offset = 0usize;
+    for span in RetainedSpans::new(source, authorization) {
+        control.checkpoint()?;
+        let span = span?;
+        let end = offset.checked_add(span.len()).ok_or_else(internal)?;
+        let expected = source.input.get(span).ok_or_else(internal)?;
+        let actual = bytes.get(offset..end).ok_or_else(internal)?;
+        if !equal(expected, actual, control)? {
+            return Err(internal());
+        }
+        offset = end;
+    }
+    if offset != bytes.len() {
+        return Err(internal());
+    }
+    #[cfg(test)]
+    crate::work_bounds::stage(crate::work_bounds::Stage::CandidateParse);
+    let output = crate::message::parse(bytes, control).map_err(|e| {
+        if e == PreparationError::Interrupted {
+            e
+        } else {
+            internal()
+        }
+    })?;
+    #[cfg(test)]
+    crate::work_bounds::stage(crate::work_bounds::Stage::StructureComparison);
+    compare(source, authorization, 0, &output, 0, control)?;
+    #[cfg(test)]
+    crate::work_bounds::stage(crate::work_bounds::Stage::FixedPoint);
+    let fixed = independent(&output, control)?;
+    if !fixed.claims.is_empty()
+        || !fixed.stripped.is_empty()
+        || fixed.expected_length != bytes.len()
+    {
+        return Err(internal());
+    }
+    let mut cursor = 0;
+    for span in RetainedSpans::new(&output, &fixed) {
+        control.checkpoint()?;
+        let span = span?;
+        if span.start != cursor {
+            return Err(internal());
+        }
+        cursor = span.end;
+    }
+    if cursor != bytes.len() {
+        return Err(internal());
+    }
+    Ok(())
 }
 fn related_root(
     message: &Message<'_>,
@@ -210,142 +427,129 @@ fn related_root(
         },
     )
 }
-/// Actual authorization guard, targeted by the bounded mutation selection.
-pub(crate) fn authorize_deletions(
-    message: &Message<'_>,
-    claims: &[Claim],
-    control: &RunControl,
-) -> Result<Authorization, PreparationError> {
-    let permitted = independent(message, 0, control)?;
-    if claims.len() != permitted.claims.len() {
-        return Err(internal());
-    }
-    for (claim, expected) in claims.iter().zip(&permitted.claims) {
-        if claim.id != expected.id || claim.reason != expected.reason {
-            return Err(internal());
-        }
-    }
-    let bytes = permitted.bytes.ok_or_else(internal)?;
-    let proof = permitted.proof.ok_or_else(internal)?;
-    Ok(Authorization {
-        bytes,
-        proof,
-        stripped: permitted.stripped,
-    })
-}
+
 fn compare(
     source: &Message<'_>,
-    proof: &Proof,
+    authorization: &Authorization,
+    source_id: usize,
     output: &Message<'_>,
     output_id: usize,
     control: &RunControl,
 ) -> Result<(), PreparationError> {
-    control.checkpoint()?;
-    let original = &source.nodes[proof.id];
-    let candidate = &output.nodes[output_id];
-    if original.media != candidate.media
-        || original.root != candidate.root
-        || source.input[original.envelope.clone()] != output.input[candidate.envelope.clone()]
-        || source.input[original.separator.clone()] != output.input[candidate.separator.clone()]
-    {
-        return Err(internal());
-    }
-    let fields: Vec<_> = original
-        .fields
-        .iter()
-        .filter(|field| {
-            !(proof.changed
-                && (CONTAINER_STALE.contains(&field.name.as_str())
-                    || (original.root && ROOT_STALE.contains(&field.name.as_str()))))
-        })
-        .collect();
-    if fields.len() != candidate.fields.len() {
-        return Err(internal());
-    }
-    for (expected, actual) in fields.iter().zip(&candidate.fields) {
-        if source.input[expected.span.clone()] != output.input[actual.span.clone()] {
+    let mut pending = vec![(source_id, output_id)];
+    while let Some((source_id, output_id)) = pending.pop() {
+        control.checkpoint()?;
+        let proof = authorization.nodes[source_id]
+            .as_ref()
+            .ok_or_else(internal)?;
+        let original = &source.nodes[source_id];
+        let candidate = &output.nodes[output_id];
+        if original.media != candidate.media
+            || original.root != candidate.root
+            || !equal(
+                &source.input[original.envelope.clone()],
+                &output.input[candidate.envelope.clone()],
+                control,
+            )?
+            || !equal(
+                &source.input[original.separator.clone()],
+                &output.input[candidate.separator.clone()],
+                control,
+            )?
+        {
             return Err(internal());
         }
-    }
-    match (&original.kind, &candidate.kind) {
-        (Kind::Leaf, Kind::Leaf) => {
-            if source.input[original.body.clone()] != output.input[candidate.body.clone()] {
+        let fields: Vec<_> = original
+            .fields
+            .iter()
+            .filter(|field| {
+                !(proof.changed
+                    && (CONTAINER_STALE.contains(&field.name.as_str())
+                        || (original.root && ROOT_STALE.contains(&field.name.as_str()))))
+            })
+            .collect();
+        if fields.len() != candidate.fields.len() {
+            return Err(internal());
+        }
+        for (expected, actual) in fields.iter().zip(&candidate.fields) {
+            if !equal(
+                &source.input[expected.span.clone()],
+                &output.input[actual.span.clone()],
+                control,
+            )? {
                 return Err(internal());
             }
         }
-        (Kind::Message(_), Kind::Message(child)) => {
-            if proof.children.len() != 1 {
-                return Err(internal());
+        match (&original.kind, &candidate.kind) {
+            (Kind::Leaf, Kind::Leaf) => {
+                if !equal(
+                    &source.input[original.body.clone()],
+                    &output.input[candidate.body.clone()],
+                    control,
+                )? {
+                    return Err(internal());
+                }
             }
-            compare(source, &proof.children[0], output, *child, control)?;
-        }
-        (
-            Kind::Multipart {
-                prefix,
-                children,
-                suffix,
-            },
-            Kind::Multipart {
-                prefix: out_prefix,
-                children: out_children,
-                suffix: out_suffix,
-            },
-        ) => {
-            if source.input[prefix.clone()] != output.input[out_prefix.clone()]
-                || source.input[suffix.clone()] != output.input[out_suffix.clone()]
-                || proof.children.len() != out_children.len()
-            {
-                return Err(internal());
+            (Kind::Message(_), Kind::Message(child)) => {
+                if proof.children.len() != 1 {
+                    return Err(internal());
+                }
+                pending.push((proof.children[0], *child));
             }
-            let mut source_frames = children.iter();
-            for (kept, actual) in proof.children.iter().zip(out_children) {
-                let expected = source_frames
-                    .by_ref()
-                    .find(|frame| frame.id == kept.id)
-                    .ok_or_else(internal)?;
-                if source.input[expected.opening.clone()] != output.input[actual.opening.clone()]
-                    || source.input[expected.framing.clone()]
-                        != output.input[actual.framing.clone()]
+            (
+                Kind::Multipart {
+                    prefix,
+                    children,
+                    suffix,
+                },
+                Kind::Multipart {
+                    prefix: out_prefix,
+                    children: out_children,
+                    suffix: out_suffix,
+                },
+            ) => {
+                if !equal(
+                    &source.input[prefix.clone()],
+                    &output.input[out_prefix.clone()],
+                    control,
+                )? || !equal(
+                    &source.input[suffix.clone()],
+                    &output.input[out_suffix.clone()],
+                    control,
+                )? || proof.children.len() != out_children.len()
                 {
                     return Err(internal());
                 }
-                compare(source, kept, output, actual.id, control)?;
+                let mut source_frames = children.iter();
+                for (kept, actual) in proof.children.iter().zip(out_children) {
+                    let expected = source_frames
+                        .by_ref()
+                        .find(|frame| frame.id == *kept)
+                        .ok_or_else(internal)?;
+                    if !equal(
+                        &source.input[expected.opening.clone()],
+                        &output.input[actual.opening.clone()],
+                        control,
+                    )? || !equal(
+                        &source.input[expected.framing.clone()],
+                        &output.input[actual.framing.clone()],
+                        control,
+                    )? {
+                        return Err(internal());
+                    }
+                    pending.push((*kept, actual.id));
+                }
             }
+            _ => return Err(internal()),
         }
-        _ => return Err(internal()),
     }
     Ok(())
 }
-pub(crate) fn verify_candidate(
-    source: &Message<'_>,
-    authorization: &Authorization,
-    bytes: &[u8],
-    control: &RunControl,
-) -> Result<(), PreparationError> {
-    if authorization.bytes != bytes {
-        return Err(internal());
-    }
-    let output = crate::message::parse(bytes, control).map_err(|failure| {
-        if failure == PreparationError::Interrupted {
-            failure
-        } else {
-            internal()
-        }
-    })?;
-    compare(source, &authorization.proof, &output, 0, control)?;
-    let resulting_policy = independent(&output, 0, control)?;
-    if !resulting_policy.claims.is_empty()
-        || !resulting_policy.stripped.is_empty()
-        || resulting_policy.bytes.as_deref() != Some(bytes)
-    {
-        return Err(internal());
-    }
-    Ok(())
-}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn source(control: &RunControl) -> Message<'static> {
+    pub(super) fn source(control: &RunControl) -> Message<'static> {
         crate::message::parse(b"Content-Type: multipart/alternative; boundary=B\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\nplain\r\n--B\r\nContent-Type: text/html\r\n\r\n<p>html</p>\r\n--B--\r\n", control).unwrap()
     }
     #[test]
@@ -425,6 +629,38 @@ mod claim_tests {
                 authorize_deletions(&message, &claims, &control).is_err(),
                 "{claims:?}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod span_tests {
+    use super::*;
+    #[test]
+    fn corrupt_retained_sequences_cannot_authorize_missing_duplicate_or_reordered_bytes() {
+        let control = RunControl::default();
+        let message = super::tests::source(&control);
+        for mutation in 0..4 {
+            let mut proof = authorize_deletions(&message, &[], &control).unwrap();
+            let children = &mut proof.nodes[0].as_mut().unwrap().children;
+            match mutation {
+                0 => {
+                    children.remove(0);
+                }
+                1 => children.push(children[0]),
+                2 => children.swap(0, 1),
+                _ => {
+                    proof.expected_length += 1;
+                }
+            }
+            assert!(verify_candidate(&message, &proof, message.input, &control).is_err());
+        }
+        let proof = authorize_deletions(&message, &[], &control).unwrap();
+        for changed in [
+            message.input[..message.input.len() - 1].to_vec(),
+            [message.input, b"extra"].concat(),
+        ] {
+            assert!(verify_candidate(&message, &proof, &changed, &control).is_err());
         }
     }
 }

@@ -6,7 +6,10 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-#[allow(dead_code, reason = "quality:shared-child-cleanup")]
+#[allow(
+    dead_code,
+    reason = "Shared test support: ordinary harnesses use stderr; the closed-stdio fixture uses its preserved log"
+)]
 pub(crate) struct Settle(pub OwnedChild);
 impl Drop for Settle {
     fn drop(&mut self) {
@@ -17,7 +20,10 @@ impl Drop for Settle {
     }
 }
 /// The descriptor-collision fixture preserves its diagnostic writer above fd3.
-#[allow(dead_code, reason = "quality:shared-child-cleanup-log")]
+#[allow(
+    dead_code,
+    reason = "Only the separate closed-stdio fixture target needs a preserved diagnostic descriptor"
+)]
 pub(crate) struct SettleWithLog<'a>(pub OwnedChild, pub &'a mut dyn Write);
 impl Drop for SettleWithLog<'_> {
     fn drop(&mut self) {

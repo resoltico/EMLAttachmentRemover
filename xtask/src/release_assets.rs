@@ -1,7 +1,13 @@
 //! Exact release asset assembly; native qualification/provenance remain separate.
-use crate::{Result, capture};
+use crate::Result;
+use crate::distribution::BuildPlan;
 use serde_json::{Value, json};
-use std::{collections::BTreeSet, fs, io::Write, path::Path, process::Command};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    io::Write,
+    path::Path,
+};
 use xtask::archive::{ArchiveSnapshot, ByteIdentity};
 
 fn verify_copy(path: &Path, identity: &ByteIdentity) -> Result<()> {
@@ -12,7 +18,7 @@ fn verify_copy(path: &Path, identity: &ByteIdentity) -> Result<()> {
 }
 
 fn check_server(
-    names: &BTreeSet<String>,
+    admitted: &BTreeMap<String, ByteIdentity>,
     assets: &Path,
     release: &Value,
     source: &str,
@@ -28,8 +34,13 @@ fn check_server(
     if !fs::symlink_metadata(assets)?.is_dir() {
         return Err("Release assets must be an ordinary directory".into());
     }
+    let names = admitted.keys().cloned().collect::<BTreeSet<_>>();
     let mut expected = names.clone();
-    expected.insert("SHA256SUMS".into());
+    expected.insert(
+        crate::distribution::AuxiliaryAsset::ChecksumManifest
+            .basename()
+            .into(),
+    );
     let mut local = BTreeSet::new();
     for entry in fs::read_dir(assets)? {
         let entry = entry?;
@@ -43,29 +54,37 @@ fn check_server(
                 .map_err(|_| "Invalid asset name")?,
         );
     }
-    if names.len() != 8 || local != expected {
-        return Err("Local release assets differ from the exact nine-file set".into());
+    if names.is_empty() || local != expected {
+        return Err("Local release assets differ from the exact planned asset set".into());
     }
     let mut identities = serde_json::Map::new();
     let mut sums = String::new();
-    for name in names {
-        let identity = ArchiveSnapshot::read(&assets.join(name))?.identity();
+    for name in &names {
+        let snapshot = ArchiveSnapshot::read(&assets.join(name))?;
+        let identity = snapshot.identity();
+        if identity != admitted[name] {
+            return Err("Local release archive differs from the verified input identity".into());
+        }
         sums.push_str(&format!("{}  {name}\n", identity.sha256));
         identities.insert(name.clone(), serde_json::to_value(identity)?);
     }
-    let manifest = ArchiveSnapshot::read(&assets.join("SHA256SUMS"))?;
+    let manifest = ArchiveSnapshot::read(
+        &assets.join(crate::distribution::AuxiliaryAsset::ChecksumManifest.basename()),
+    )?;
     if manifest.bytes() != sums.as_bytes() {
         return Err("Local checksum manifest differs from actual archive bytes".into());
     }
     identities.insert(
-        "SHA256SUMS".into(),
+        crate::distribution::AuxiliaryAsset::ChecksumManifest
+            .basename()
+            .into(),
         serde_json::to_value(manifest.identity())?,
     );
     let server = release["assets"]
         .as_array()
         .ok_or("Missing server asset array")?;
     if server.len() != expected.len() {
-        return Err("Server asset count differs from the exact nine-file set".into());
+        return Err("Server asset count differs from the exact planned asset set".into());
     }
     let mut observed = BTreeSet::new();
     let mut asset_ids = BTreeSet::new();
@@ -99,26 +118,18 @@ fn check_server(
     )
 }
 
-pub(crate) fn server(root: &Path, assets: &Path, release: &Path) -> Result<()> {
+pub(crate) fn server(
+    root: &Path,
+    plan: &BuildPlan,
+    assets: &Path,
+    release: &Path,
+    inputs: &Path,
+) -> Result<()> {
     if !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty() {
         return Err("Release server checking requires a clean committed checkout".into());
     }
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(root)
-            .arg("distribution"),
-    )?)?;
-    let names = plan["expected_artifacts"]
-        .as_array()
-        .ok_or("Missing archive policy")?
-        .iter()
-        .map(|artifact| {
-            artifact["name"]
-                .as_str()
-                .map(str::to_owned)
-                .ok_or("Missing archive name")
-        })
-        .collect::<std::result::Result<BTreeSet<_>, _>>()?;
+    let admitted = crate::release_inputs::load(root, plan, inputs)?;
+    let identities = admitted.archive_identities();
     let metadata = fs::symlink_metadata(release)?;
     if !metadata.is_file() || metadata.len() > 1024 * 1024 {
         return Err("Server release JSON must be an ordinary bounded file".into());
@@ -128,28 +139,28 @@ pub(crate) fn server(root: &Path, assets: &Path, release: &Path) -> Result<()> {
         return Err("Server release JSON grew beyond its bound".into());
     }
     let result = check_server(
-        &names,
+        &identities,
         assets,
         &serde_json::from_slice(&bytes)?,
         &crate::git(root, &["rev-parse", "HEAD"])?,
-        plan["version"].as_str().ok_or("Missing version")?,
+        plan.version(),
     )?;
+    admitted.recheck_pickers(root, plan, std::time::SystemTime::now())?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
 }
 
-fn assemble(names: &BTreeSet<String>, archives: &Path, out: &Path) -> Result<Value> {
-    if names.len() != 8
-        || names.iter().any(|name| {
-            name.is_empty()
-                || name == "."
-                || name == ".."
-                || !name
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
-        })
-    {
-        return Err("Release assembly requires eight distinct plain archive basenames".into());
+fn assemble(
+    admitted: &BTreeMap<String, ByteIdentity>,
+    archives: &Path,
+    out: &Path,
+) -> Result<Value> {
+    let names = admitted.keys().cloned().collect::<BTreeSet<_>>();
+    if names.is_empty() {
+        return Err("Release assembly requires a nonempty planned archive set".into());
+    }
+    for name in &names {
+        crate::distribution::ArchiveBasename::parse(name.to_owned())?;
     }
     if !fs::symlink_metadata(archives)?.is_dir() {
         return Err("Release archive input must be an ordinary directory".into());
@@ -167,17 +178,20 @@ fn assemble(names: &BTreeSet<String>, archives: &Path, out: &Path) -> Result<Val
                 .map_err(|_| "Non-UTF8 release asset name")?,
         );
     }
-    if &observed != names {
-        return Err("Release input set differs from the exact eight expected archives".into());
+    if observed != names {
+        return Err("Release input set differs from the exact planned archives".into());
     }
     fs::create_dir(out)?;
     let enclosure = xtask::archive::create_artifact_directory(out)?;
     let mut identities = serde_json::Map::new();
     let mut sums = String::new();
-    for name in names {
+    for name in &names {
         // One bounded immutable snapshot supplies both copied bytes and digest.
         let snapshot = ArchiveSnapshot::read(&archives.join(name))?;
         let identity = snapshot.identity();
+        if identity != admitted[name] {
+            return Err("Assembly archive differs from the verified input identity".into());
+        }
         let destination = enclosure.path().join(name);
         let mut output = fs::OpenOptions::new()
             .write(true)
@@ -190,49 +204,38 @@ fn assemble(names: &BTreeSet<String>, archives: &Path, out: &Path) -> Result<Val
         sums.push_str(&format!("{}  {name}\n", identity.sha256));
         identities.insert(name.clone(), serde_json::to_value(identity)?);
     }
-    let mut manifest = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(enclosure.path().join("SHA256SUMS"))?;
+    let mut manifest = fs::OpenOptions::new().write(true).create_new(true).open(
+        enclosure
+            .path()
+            .join(crate::distribution::AuxiliaryAsset::ChecksumManifest.basename()),
+    )?;
     manifest.write_all(sums.as_bytes())?;
     manifest.sync_all()?;
     drop(manifest);
-    if fs::read(enclosure.path().join("SHA256SUMS"))? != sums.as_bytes() {
+    if fs::read(
+        enclosure
+            .path()
+            .join(crate::distribution::AuxiliaryAsset::ChecksumManifest.basename()),
+    )? != sums.as_bytes()
+    {
         return Err("Checksum manifest differs from assembled archive identities".into());
     }
     Ok(
         json!({"assets_directory":enclosure.path(),"archives":identities,"checksum_manifest":ByteIdentity::of(sums.as_bytes()),
-        "scope":"exact eight-archive byte assembly and sorted checksum manifest only; no archive content, build provenance, native execution, attestation or publication qualification"}),
+        "scope":"exact planned archive byte assembly and sorted checksum manifest only; no archive content, build provenance, native execution, attestation or publication qualification"}),
     )
 }
 
-pub(crate) fn run(root: &Path, archives: &Path, out: &Path) -> Result<()> {
+pub(crate) fn run(root: &Path, plan: &BuildPlan, inputs: &Path, out: &Path) -> Result<()> {
     if !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty() {
         return Err("Release asset assembly requires a clean committed checkout".into());
     }
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(root)
-            .arg("distribution"),
-    )?)?;
-    let artifacts = plan["expected_artifacts"]
-        .as_array()
-        .ok_or("Missing artifact policy")?;
-    let names = artifacts
-        .iter()
-        .map(|artifact| {
-            artifact["name"]
-                .as_str()
-                .map(str::to_owned)
-                .ok_or("Missing archive name")
-        })
-        .collect::<std::result::Result<BTreeSet<_>, _>>()?;
-    if artifacts.len() != 8 {
-        return Err("Release policy must specify exactly eight archives".into());
-    }
-    let mut result = assemble(&names, archives, out)?;
+    let admitted = crate::release_inputs::load(root, plan, inputs)?;
+    let archives = admitted.archive_directory()?;
+    let identities = admitted.archive_identities();
+    let mut result = assemble(&identities, archives, out)?;
     result["assembly_source"] = json!(crate::git(root, &["rev-parse", "HEAD"])?);
-    result["version"] = plan["version"].clone();
+    result["version"] = json!(plan.version());
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
@@ -242,17 +245,23 @@ pub(crate) fn run(root: &Path, archives: &Path, out: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn inputs(root: &Path) -> (std::path::PathBuf, BTreeSet<String>) {
+    fn inputs(root: &Path) -> (std::path::PathBuf, BTreeMap<String, ByteIdentity>) {
         let input = root.join("inputs");
         fs::create_dir(&input).unwrap();
-        let names = (0..8)
+        let names = (0..3)
             .map(|n| format!("owned-{n}.zip"))
             .collect::<BTreeSet<_>>();
         // Synthetic identity-assembly inputs, not package/native test evidence.
         for name in &names {
             fs::write(input.join(name), b"abc").unwrap();
         }
-        (input, names)
+        (
+            input,
+            names
+                .into_iter()
+                .map(|name| (name, ByteIdentity::of(b"abc")))
+                .collect(),
+        )
     }
 
     #[test]
@@ -262,9 +271,9 @@ mod tests {
         let output = root.path().join("assembled");
         let result = assemble(&names, &input, &output).unwrap();
         let assets = Path::new(result["assets_directory"].as_str().unwrap());
-        assert_eq!(fs::read_dir(assets).unwrap().count(), 9);
+        assert_eq!(fs::read_dir(assets).unwrap().count(), names.len() + 1);
         let expected = names
-            .iter()
+            .keys()
             .map(|name| {
                 format!(
                     "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  {name}\n"
@@ -275,7 +284,7 @@ mod tests {
             fs::read_to_string(assets.join("SHA256SUMS")).unwrap(),
             expected
         );
-        for name in &names {
+        for name in names.keys() {
             assert_eq!(fs::read(assets.join(name)).unwrap(), b"abc");
         }
         assert!(assemble(&names, &input, &output).is_err());
@@ -292,7 +301,7 @@ mod tests {
         let assembly = assemble(&names, &input, &root.path().join("assembled")).unwrap();
         let assets = Path::new(assembly["assets_directory"].as_str().unwrap());
         let mut rows = names
-            .iter()
+            .keys()
             .enumerate()
             .map(|(index, name)| {
                 json!({"id":index+1,"name":name,"size":3,"state":"uploaded",
@@ -301,7 +310,7 @@ mod tests {
             .collect::<Vec<_>>();
         let checksum = fs::read(assets.join("SHA256SUMS")).unwrap();
         rows.push(
-            json!({"id":9,"name":"SHA256SUMS","size":checksum.len(),"state":"uploaded",
+            json!({"id":names.len()+1,"name":"SHA256SUMS","size":checksum.len(),"state":"uploaded",
             "digest":format!("sha256:{}",ByteIdentity::of(&checksum).sha256)}),
         );
         let good = json!({"id":42,"draft":true,"tag_name":"v6.0.0","target_commitish":"source","assets":rows});
@@ -345,6 +354,32 @@ mod tests {
     }
 
     #[test]
+    fn changed_inputs_and_self_consistent_unqualified_server_bytes_are_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let (input, admitted) = inputs(root.path());
+        fs::write(input.join("owned-0.zip"), b"xyz").unwrap();
+        assert!(assemble(&admitted, &input, &root.path().join("refused")).is_err());
+        fs::write(input.join("owned-0.zip"), b"abc").unwrap();
+        let result = assemble(&admitted, &input, &root.path().join("assembled")).unwrap();
+        let assets = Path::new(result["assets_directory"].as_str().unwrap());
+        let changed = ByteIdentity::of(b"xyz");
+        let mut rows = Vec::new();
+        let mut sums = String::new();
+        for (index, name) in admitted.keys().enumerate() {
+            fs::write(assets.join(name), b"xyz").unwrap();
+            sums.push_str(&format!("{}  {name}\n", changed.sha256));
+            rows.push(json!({"id":index+1,"name":name,"size":3,"state":"uploaded",
+                "digest":format!("sha256:{}",changed.sha256)}));
+        }
+        fs::write(assets.join("SHA256SUMS"), &sums).unwrap();
+        rows.push(json!({"id":admitted.len()+1,"name":"SHA256SUMS","size":sums.len(),
+            "state":"uploaded","digest":format!("sha256:{}",ByteIdentity::of(sums.as_bytes()).sha256)}));
+        let server = json!({"id":42,"draft":true,"tag_name":"v7.0.0",
+            "target_commitish":"source","assets":rows});
+        assert!(check_server(&admitted, assets, &server, "source", "7.0.0").is_err());
+    }
+
+    #[test]
     fn missing_extra_empty_and_nonordinary_inputs_cannot_assemble() {
         for case in ["missing", "extra", "empty", "directory"] {
             let root = tempfile::tempdir().unwrap();
@@ -353,7 +388,7 @@ mod tests {
                 "missing" => fs::remove_file(input.join("owned-0.zip")).unwrap(),
                 "extra" => fs::write(input.join("unreviewed.zip"), b"extra").unwrap(),
                 "empty" => {
-                    for name in &names {
+                    for name in names.keys() {
                         fs::remove_file(input.join(name)).unwrap();
                     }
                 }

@@ -41,7 +41,8 @@ impl Observer<'_> {
             .to_owned())
     }
     pub(super) fn host(&self, target: &str) -> Result<Host> {
-        let observed = crate::native_host::inspect_target(self.root, target)?;
+        let observed =
+            crate::native_host::inspect(self.root, target, "macos", &self.build.architecture)?;
         let field = |name: &str| -> Result<String> {
             observed[name]
                 .as_str()
@@ -97,6 +98,12 @@ impl Observer<'_> {
                 "Picker archive reference differs from current source/native target".into(),
             );
         }
+        if declared["schema"] != 2
+            || declared["workflow"]
+                != serde_json::json!({"run":std::env::var("GITHUB_RUN_ID")?,"attempt":std::env::var("GITHUB_RUN_ATTEMPT")?,"workflow_ref":std::env::var("GITHUB_WORKFLOW_REF")?,"workflow_sha":std::env::var("GITHUB_WORKFLOW_SHA")?})
+        {
+            return Err("Frozen picker reference lacks exact current-run workflow identity".into());
+        }
         Ok(Binding {
             source,
             target,
@@ -134,7 +141,7 @@ impl Observer<'_> {
         let command = self.build.command(self.root, &executable);
         let log = self.out.join("caller-session.log");
         let process = controller()?.run_separate_output(command, &log, Duration::from_secs(20))?;
-        if evidence::clean(&process.evidence())? != 0 {
+        if evidence::clean(&ProcessObservation::from_process(&process)?)? != 0 {
             return Err("Caller security-session observer did not exit successfully".into());
         }
         let (uid, euid, console_uid) = unix_identity()?;
@@ -152,57 +159,75 @@ impl Observer<'_> {
                 program: LAUNCHCTL.into(),
                 arguments: vec!["print".into(), exact.clone()],
                 process,
-                selected_fields: evidence::parse_fields(stdout)?,
+                selected_fields: evidence::parse_fields(stdout)?.into(),
                 absence_diagnostic: evidence::parse_absence(stderr, uid)?,
             })
         })
     }
-    pub(super) fn service(&self, uid: u32) -> Result<ServiceObservation> {
-        let print = self.print(uid)?;
+    pub(super) fn disabled(&self, uid: u32) -> Result<DisabledObservation> {
         let domain = format!("gui/{uid}");
-        let disabled =
-            private_observation(self, "print-disabled", &domain, |process, stdout, _| {
-                Ok(DisabledObservation {
-                    program: LAUNCHCTL.into(),
-                    arguments: vec!["print-disabled".into(), domain.clone()],
-                    process,
-                    r#override: evidence::parse_disabled(stdout)?,
-                })
-            })?;
-        Ok(ServiceObservation {
-            target: evidence::target(uid),
-            print,
-            disabled,
+        private_observation(self, "print-disabled", &domain, |process, stdout, _| {
+            Ok(DisabledObservation {
+                program: LAUNCHCTL.into(),
+                arguments: vec!["print-disabled".into(), domain.clone()],
+                process,
+                r#override: evidence::parse_disabled(stdout)?,
+            })
         })
     }
-    pub(super) fn action(&self, operation: &str, uid: u32) -> Result<CommandObservation> {
+    pub(super) fn service(&self, uid: u32) -> Result<ServiceObservation> {
+        Ok(ServiceObservation {
+            target: evidence::target(uid),
+            print: self.print(uid)?,
+            disabled: self.disabled(uid)?,
+        })
+    }
+    pub(super) fn action(
+        &self,
+        operation: &str,
+        uid: u32,
+        guard: impl FnOnce() -> Result<crate::picker_evidence::ActionGuardObservation>,
+    ) -> Result<CommandObservation> {
         check_unix_identity(uid)?;
         let exact = evidence::target(uid);
         let mut command = self.build.command(self.root, LAUNCHCTL);
         command.args([operation, &exact]);
         let log = self.out.join(format!("{operation}.log"));
-        let process = controller()?.run_separate_output(command, &log, Duration::from_secs(20))?;
-        // Bound readback without forwarding potentially unexpected native output.
-        read(&log, 1024 * 1024)?;
-        read(&log.with_extension("stderr"), 1024 * 1024)?;
-        Ok(CommandObservation {
-            program: LAUNCHCTL.into(),
-            arguments: vec![operation.into(), exact],
-            process: process.evidence(),
-            stdout_path: log.to_str().ok_or("Non-UTF8 host evidence path")?.into(),
-            stderr_path: log
-                .with_extension("stderr")
-                .to_str()
-                .ok_or("Non-UTF8 host evidence path")?
-                .into(),
+        guarded_service_action(guard, |guard| {
+            let process =
+                controller()?.run_separate_output(command, &log, Duration::from_secs(20))?;
+            // Bound readback without forwarding potentially unexpected native output.
+            read(&log, 1024 * 1024)?;
+            read(&log.with_extension("stderr"), 1024 * 1024)?;
+            Ok(CommandObservation {
+                guard,
+                program: LAUNCHCTL.into(),
+                arguments: vec![operation.into(), exact],
+                process: ProcessObservation::from_process(&process)?,
+                stdout_path: log.to_str().ok_or("Non-UTF8 host evidence path")?.into(),
+                stderr_path: log
+                    .with_extension("stderr")
+                    .to_str()
+                    .ok_or("Non-UTF8 host evidence path")?
+                    .into(),
+            })
         })
     }
+}
+// This is the actual service-spawn edge. A failed fresh admission guard must
+// prevent execution, not merely change the receipt after a command ran.
+pub(super) fn guarded_service_action(
+    guard: impl FnOnce() -> Result<crate::picker_evidence::ActionGuardObservation>,
+    execute: impl FnOnce(crate::picker_evidence::ActionGuardObservation) -> Result<CommandObservation>,
+) -> Result<CommandObservation> {
+    let observation = guard()?;
+    execute(observation)
 }
 fn private_observation<T>(
     observer: &Observer<'_>,
     operation: &str,
     target: &str,
-    parse: impl FnOnce(Value, &str, &str) -> Result<T>,
+    parse: impl FnOnce(ProcessObservation, &str, &str) -> Result<T>,
 ) -> Result<T> {
     let private = tempfile::Builder::new()
         .prefix("eml-picker-private-")
@@ -215,7 +240,7 @@ fn private_observation<T>(
         retain_private_status(observer.out, operation, target, &process)?;
         let process = process?;
         parse(
-            process.evidence(),
+            ProcessObservation::from_process(&process)?,
             std::str::from_utf8(&read(&log, 1024 * 1024)?)?,
             std::str::from_utf8(&read(&log.with_extension("stderr"), 1024 * 1024)?)?,
         )

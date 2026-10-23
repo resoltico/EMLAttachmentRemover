@@ -115,6 +115,7 @@ error_codes! {
     Malformed => "MALFORMED", [Prepare], "MIME syntax or structure is ambiguous or damaged.", "This message's MIME structure is damaged or incomplete. Export it again from your mail app and retry with that copy.";
     LimitExceeded => "LIMIT_EXCEEDED", [Prepare], "Message or retained metadata exceeds a preparation bound.";
     Protected => "PROTECTED", [Prepare], "Protected content occurred in a retained body context.", "Protected content would need to change in the retained message body. Obtain an unprotected export if appropriate.";
+    UnsupportedMime => "UNSUPPORTED_MIME", [Prepare], "A retained MIME container is outside the supported profile.", "This report cannot be converted to a body-only copy. Keep the original report.";
     NoBody => "NO_BODY", [Prepare], "No supported text body would remain.", "No supported plain-text or HTML message body would remain. Choose a message that contains a text body.";
     Internal => "INTERNAL", [Prepare], "Independent preparation verification detected a defect.";
     InputAdmissionFailed => "INPUT_ADMISSION_FAILED", [Admission, Collection], "At least one explicit source root could not bind.";
@@ -124,7 +125,7 @@ error_codes! {
     DestinationCollision => "DESTINATION_COLLISION", [Admission, Existing, Publish], "Distinct inputs contend for one output.", "Split colliding messages into separate runs and destination folders so each copy has its own path.";
     DestinationExists => "DESTINATION_EXISTS", [Admission, Existing, Publish], "An existing entry cannot qualify as the requested copy.", "Choose another copy folder, or move the existing destination before retrying. Existing entries will not be overwritten.";
     SourceDestinationAlias => "SOURCE_DESTINATION_ALIAS", [Admission, Existing, Publish], "An output aliases a collected source.";
-    DestinationUnsupported => "DESTINATION_UNSUPPORTED", [Stage, Publish], "The required destination primitive is unsupported.";
+    DestinationUnsupported => "DESTINATION_UNSUPPORTED", [Admission, Stage, Publish], "The required destination primitive is unsupported.";
     BindFailed => "BIND_FAILED", [Admission, Read, Stage, Address], "A required native object or address binding failed.";
     StageFailed => "STAGE_FAILED", [Stage], "Owned private candidate resources could not be established.", "Check destination write permissions and available disk space, or choose another copy folder.";
     WriteFailed => "WRITE_FAILED", [Write, Publish], "Candidate storage or publication failed.";

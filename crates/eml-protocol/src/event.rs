@@ -89,11 +89,11 @@ fn bounded_detail<'a>(detail: &'a str, suffix: &str) -> Cow<'a, str> {
     }
 }
 #[derive(Serialize)]
-struct IdentityFields {
+pub(super) struct IdentityFields {
     kind: &'static str,
     value: String,
 }
-fn identity(value: Identity) -> IdentityFields {
+pub(super) fn identity(value: Identity) -> IdentityFields {
     match value {
         Identity::Posix { device, inode } => IdentityFields {
             kind: "posix",
@@ -113,12 +113,12 @@ fn identity(value: Identity) -> IdentityFields {
     }
 }
 #[derive(Serialize)]
-struct SyncFields {
+pub(super) struct SyncFields {
     method: &'static str,
     state: &'static str,
     native_code: Option<i64>,
 }
-fn sync(value: Option<SyncReceipt>) -> SyncFields {
+pub(super) fn sync(value: Option<SyncReceipt>) -> SyncFields {
     let Some(value) = value else {
         return SyncFields {
             method: "not_requested",
@@ -158,7 +158,7 @@ fn namespace(value: NamespaceObservation) -> NamespaceFields {
     }
 }
 #[derive(Serialize)]
-struct CleanupFields {
+pub(super) struct CleanupFields {
     state: &'static str,
     residual_name: Option<NativeComponent>,
     native_code: Option<i64>,
@@ -170,7 +170,7 @@ impl Serialize for NativeComponent {
         crate::path::NativePath::encode(&self.0).serialize(serializer)
     }
 }
-fn cleanup(value: &CleanupReceipt) -> CleanupFields {
+pub(super) fn cleanup(value: &CleanupReceipt) -> CleanupFields {
     CleanupFields {
         state: match value.state {
             CleanupState::NotNeeded => "not_needed",

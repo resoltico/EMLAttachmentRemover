@@ -359,9 +359,9 @@ fn run_redirect_profile(profile: Profile) {
         );
         assert!(sink.items[0].created);
         let copy = if tree {
-            destination.join("input/message.no-attachments.eml")
+            destination.join("input.eml-dir/message.zyfuhqa2jklehicoxfjsn2u54y.no-attachments.eml")
         } else {
-            destination.join("message.no-attachments.eml")
+            destination.join("message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml")
         };
         assert_eq!(fs::read(&copy).unwrap(), GOLDEN);
         if profile == Profile::OccupiedMirror {

@@ -1,7 +1,13 @@
 //! Nonshipping real Foundation preferences in a marker-owned fresh suite.
-#![allow(unsafe_code, reason = "quality:native-preference-fixture")]
+#![allow(
+    unsafe_code,
+    reason = "Typed property-list fixture values and the shared Foundation preference boundary"
+)]
 #[path = "../../src/preferences.rs"]
-#[allow(dead_code, reason = "quality:shared-preference-fixture")]
+#[allow(
+    dead_code,
+    reason = "The probe uses an owned suite; production load uses the standard application domain"
+)]
 mod preferences;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use objc2::{AnyThread, rc::Retained};
@@ -91,10 +97,14 @@ fn main() {
             if argument(&arguments, "--action") == "seed-string" {
                 let value = argument(&arguments, "--value");
                 assert!(value.len() <= 512);
+                // SAFETY: immutable NSString/key live through the setter, which
+                // retains the property-list value only in this marked test suite.
                 unsafe {
                     defaults.setObject_forKey(Some(&NSString::from_str(value)), &key);
                 }
             } else {
+                // SAFETY: immutable NSNumber/key live through the setter and are
+                // valid property-list values in this exclusively owned suite.
                 unsafe {
                     defaults.setObject_forKey(Some(&NSNumber::new_i32(7)), &key);
                 }

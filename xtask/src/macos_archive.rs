@@ -1,5 +1,6 @@
 //! Native app assembly, frozen-input ditto readback and extracted execution.
-use crate::{Result, capture, controller, macos, macos_app, notices};
+use crate::distribution::BuildPlan;
+use crate::{Result, controller, macos, macos_app, notices};
 use eml_app::{RequestSnapshot, RunQueue, WorkerControl, WorkerObservation, WorkerRun};
 use eml_macos::{ChildState, StopSignal};
 use serde::{Deserialize, Serialize};
@@ -10,7 +11,6 @@ use std::{
     io::{Read, Write},
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
-    process::Command,
     thread,
     time::{Duration, Instant},
 };
@@ -18,38 +18,21 @@ use xtask::archive::{ArchiveSnapshot, ByteIdentity};
 const MAIN: &str = "Contents/MacOS/EMLAttachmentRemover";
 const WORKER: &str = "Contents/Helpers/eml-worker";
 type Files = BTreeMap<String, (ByteIdentity, u32)>;
-fn artifact(root: &Path, target: &str) -> Result<(String, String, String)> {
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(root)
-            .arg("distribution"),
-    )?)?;
-    let row = plan["native_targets"]
-        .as_array()
-        .ok_or("Missing native target policy")?
-        .iter()
-        .find(|row| row["target"] == target && row["app"] == true)
-        .ok_or("Target has no native app artifact")?;
-    let platform = row["platform"].as_str().ok_or("Missing app platform")?;
-    let app = plan["expected_artifacts"]
-        .as_array()
-        .ok_or("Missing artifact policy")?
-        .iter()
-        .find(|app| app["platform"] == platform && app["role"] == "app")
-        .ok_or("Missing expected app archive")?;
+fn artifact(plan: &BuildPlan, target: &str) -> Result<(String, String, String)> {
+    let row = plan.lookup_target(target)?;
+    let artifact =
+        plan.lookup_artifact(row.platform(), crate::distribution::ProductRole::DesktopApp)?;
     Ok((
-        platform.to_owned(),
-        app["name"]
-            .as_str()
-            .ok_or("Missing app archive name")?
-            .to_owned(),
-        app["root"].as_str().ok_or("Missing app root")?.to_owned(),
+        row.platform().to_string(),
+        artifact.basename().to_owned(),
+        artifact.root().to_owned(),
     ))
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Reference {
     schema: u8,
+    workflow: Option<crate::release_inputs::WorkflowIdentity>,
     source: String,
     version: String,
     target: String,
@@ -251,7 +234,6 @@ fn worker_smoke(worker: &Path, version: &str, out: &Path) -> Result<Value> {
             request,
             WorkerControl::new(id),
         )?;
-        let report = run.report();
         let deadline = Instant::now() + Duration::from_secs(15);
         let completion = loop {
             if let WorkerObservation::Settled(result) = run.poll() {
@@ -260,7 +242,6 @@ fn worker_smoke(worker: &Path, version: &str, out: &Path) -> Result<Value> {
             if Instant::now() >= deadline || !controller()?.admits_work() {
                 run.control()
                     .confirm_shutdown(Instant::now() - Duration::from_secs(12))?;
-                let cleanup = Instant::now() + Duration::from_secs(5);
                 loop {
                     if let WorkerObservation::Settled(result) = run.poll() {
                         if !result.settled {
@@ -270,9 +251,6 @@ fn worker_smoke(worker: &Path, version: &str, out: &Path) -> Result<Value> {
                             );
                         }
                         break;
-                    }
-                    if Instant::now() >= cleanup {
-                        return Err("Extracted worker lifetime remains unverified; preserve owned resources and abort later work".into());
                     }
                     thread::sleep(Duration::from_millis(5));
                 }
@@ -290,12 +268,54 @@ fn worker_smoke(worker: &Path, version: &str, out: &Path) -> Result<Value> {
         {
             return Err(format!("Extracted worker did not qualify: {completion:?}").into());
         }
-        let exported: Value = serde_json::from_slice(&report.export_bytes()?)?;
+        let snapshot = run
+            .export_snapshot()
+            .ok_or("Settled worker has no terminal export snapshot")?;
+        let destination = out.join(format!("report-{expected}.json"));
+        let operation = eml_protocol::desktop::OperationId::new(if expected == "created" {
+            1001
+        } else {
+            1002
+        })
+        .ok_or("Invalid fixed export fixture operation")?;
+        let control = WorkerControl::for_operation(operation, snapshot.id());
+        let mut export = eml_app::ExportRun::start(
+            worker.to_owned(),
+            version.to_owned(),
+            snapshot,
+            destination.clone(),
+            control,
+        )?;
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut cancelled = false;
+        let receipt = loop {
+            if let eml_app::ExportObservation::Settled(completion) = export.poll() {
+                break completion;
+            }
+            if !cancelled && (Instant::now() >= deadline || !controller()?.admits_work()) {
+                cancelled = true;
+                export
+                    .control()
+                    .confirm_shutdown(Instant::now() - Duration::from_secs(12))?;
+            }
+            // Keep the actual owner until settlement even after force intent.
+            // The enclosing repository process owner enforces its own hard bound.
+            thread::sleep(Duration::from_millis(5));
+        };
+        if cancelled || !receipt.usable() {
+            return Err(format!("Extracted report export did not qualify: {receipt:?}").into());
+        }
+        let report_bytes = read(&destination, 40 * 1024 * 1024)?;
+        eml_app::report_document::validate(&report_bytes)?;
+        let exported: Value = serde_json::from_slice(&report_bytes)?;
         if exported["items"][0]["status"] != expected
             || exported["summary"]["exit_code"] != 0
             || !exported["protocol_failure"].is_null()
             || read(&source, 4 * 1024 * 1024)? != input
-            || read(&out.join("message.no-attachments.eml"), 4 * 1024 * 1024)? != golden
+            || read(
+                &out.join("message.eudtfo5quf3d2hlohgknt7qpaa.no-attachments.eml"),
+                4 * 1024 * 1024,
+            )? != golden
         {
             return Err("Extracted private worker outcome/golden/original check failed".into());
         }
@@ -490,16 +510,14 @@ impl AppChecks {
         }
     }
 }
-fn require_host_version(version: &str, checks: AppChecks, minimum: u32) -> Result<()> {
+fn require_host_version(version: &str, checks: AppChecks, expected: Option<u32>) -> Result<()> {
     let major: u32 = version
         .split('.')
         .next()
         .ok_or("Missing host OS version")?
         .parse()?;
-    let expected = if checks == AppChecks::Desktop {
-        minimum >> 16
-    } else {
-        26
+    let Some(expected) = expected else {
+        return Ok(());
     };
     if major != expected {
         return Err(format!(
@@ -510,7 +528,12 @@ fn require_host_version(version: &str, checks: AppChecks, minimum: u32) -> Resul
     }
     Ok(())
 }
-fn app_host(root: &Path, build: &macos::MacBuild, checks: AppChecks) -> Result<Value> {
+fn app_host(
+    root: &Path,
+    plan: &BuildPlan,
+    build: &macos::MacBuild,
+    checks: AppChecks,
+) -> Result<Value> {
     let mut host = crate::native_host::inspect(root, &build.host, "macos", &build.architecture)?;
     let versions: Vec<_> = host["actual_os"]
         .as_str()
@@ -521,7 +544,21 @@ fn app_host(root: &Path, build: &macos::MacBuild, checks: AppChecks) -> Result<V
     let [version] = versions.as_slice() else {
         return Err("Ambiguous actual macOS version".into());
     };
-    require_host_version(version, checks, build.minimum)?;
+    let desktop = plan
+        .lookup_target(&build.host)?
+        .desktop()
+        .ok_or("Native app target has no desktop role")?;
+    let expected = match checks {
+        AppChecks::Candidate => None,
+        AppChecks::Desktop => Some(desktop.floor_major()),
+        AppChecks::Picker => Some(
+            desktop
+                .picker()
+                .ok_or("Native app target has no picker role")?
+                .os_major(),
+        ),
+    };
+    require_host_version(version, checks, expected)?;
     let version = (*version).to_owned();
     host["product_version"] = json!(version);
     Ok(host)
@@ -529,6 +566,7 @@ fn app_host(root: &Path, build: &macos::MacBuild, checks: AppChecks) -> Result<V
 
 fn verify_snapshot(
     root: &Path,
+    plan: &BuildPlan,
     snapshot: &ArchiveSnapshot,
     reference: &Reference,
     build: &macos::MacBuild,
@@ -541,8 +579,10 @@ fn verify_snapshot(
     {
         return Err("Desktop qualification requires a fresh hosted Mac; owner desktop/preferences are protected".into());
     }
-    let (_, _, app_root) = artifact(root, &build.host)?;
-    if reference.schema != 1
+    let source_archive = snapshot.identity();
+    let (_, _, app_root) = artifact(plan, &build.host)?;
+    if reference.schema != 2
+        || reference.workflow != crate::release_inputs::workflow_identity()?
         || reference.source != crate::git(root, &["rev-parse", "HEAD"])?
         || reference.version != build.version
         || reference.target != build.host
@@ -585,6 +625,7 @@ fn verify_snapshot(
             build,
             &out.join("gui-interaction"),
             DesktopCase::Workflow,
+            &source_archive,
         )?;
         let pagination = run_case(
             root,
@@ -592,9 +633,15 @@ fn verify_snapshot(
             build,
             &out.join("gui-interaction/pagination"),
             DesktopCase::Pagination,
+            &source_archive,
         )?;
-        let publication =
-            crate::macos_publication_ui::run(root, &app, build, &out.join("gui-publication"))?;
+        let publication = crate::macos_publication_ui::run(
+            root,
+            &app,
+            build,
+            &out.join("gui-publication"),
+            &source_archive,
+        )?;
         // Native Settings changes belong to the final phase on this disposable
         // host. Failure stops qualification with restoration uncertainty retained.
         let appearance = run_case(
@@ -603,6 +650,7 @@ fn verify_snapshot(
             build,
             &out.join("gui-interaction/appearance"),
             DesktopCase::Appearance,
+            &source_archive,
         )?;
         verification["gui_startup"] = gui;
         verification["gui_interaction"] = json!({"workflow":workflow,"pagination":pagination,"publication":publication,"appearance":appearance});
@@ -614,6 +662,7 @@ fn verify_snapshot(
             build,
             &out.join("gui-picker"),
             crate::macos_interaction::DesktopCase::Picker,
+            &source_archive,
         )?;
     }
     if tree(&app, false)? != reference.files {
@@ -621,21 +670,21 @@ fn verify_snapshot(
     }
     Ok(verification)
 }
-pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {
+pub(crate) fn build(root: &Path, plan: &BuildPlan, out: &Path, icons: &Path) -> Result<()> {
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
-    let build = macos::load(root)?;
-    let host = app_host(root, &build, AppChecks::Candidate)?;
+    let build = macos::load(root, plan)?;
+    let host = app_host(root, plan, &build, AppChecks::Candidate)?;
     if !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty() {
         return Err("App artifacts require a clean committed source checkout".into());
     }
     let source = crate::git(root, &["rev-parse", "HEAD"])?;
     let (icon_dir, partial) = checked_icon_inputs(root, &build, icons, &source)?;
-    let (platform, name, app_root) = artifact(root, &build.host)?;
+    let (platform, name, app_root) = artifact(plan, &build.host)?;
     let stage = xtask::archive::create_artifact_directory(&out)?;
-    let (gui, worker) = checked_app_materials(root, &platform, &build)?;
+    let (gui, worker) = checked_app_materials(root, plan, &platform, &build)?;
     let sources = out.join("sources");
-    macos_app::build_sources(root, &sources)?;
+    macos_app::build_sources(root, plan, &sources)?;
     let app = stage.path().join(&app_root);
     let worker_bytes = read(&sources.join("eml-worker"), 256 * 1024 * 1024)?;
     write(
@@ -663,7 +712,8 @@ pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {
     }
     let images = inspect_images(root, &app, &build, &out.join("producer-images"))?;
     let reference = Reference {
-        schema: 1,
+        schema: 2,
+        workflow: crate::release_inputs::workflow_identity()?,
         source,
         version: build.version.clone(),
         target: build.host.clone(),
@@ -689,6 +739,7 @@ pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {
     let snapshot = ArchiveSnapshot::read(&staged)?;
     let verification = verify_snapshot(
         root,
+        plan,
         &snapshot,
         &reference,
         &build,
@@ -706,15 +757,16 @@ pub(crate) fn build(root: &Path, out: &Path, icons: &Path) -> Result<()> {
     if ArchiveSnapshot::read(&destination)?.identity() != snapshot.identity() {
         return Err("Published app archive differs from the verified snapshot".into());
     }
+    let reference_bytes = serde_json::to_vec_pretty(&reference)?;
     write(
         &out.join(format!("{name}.reference.json")),
-        &serde_json::to_vec_pretty(&reference)?,
+        &reference_bytes,
         0o644,
     )?;
     fs::write(
         out.join("app-result.json"),
         serde_json::to_vec_pretty(
-            &json!({"stage":"native_candidate","host":host,"archive":destination,"identity":snapshot.identity(),"producer_images":images,"verification":verification,"source":reference.source,"target":reference.target,"scope":"native candidate structure/signatures/CPU/minimum and actual extracted Core-backed worker; desktop and picker compatibility qualification are separate required consumers"}),
+            &json!({"stage":"native_candidate","workflow":crate::release_inputs::workflow_identity()?,"host":host,"archive":destination,"identity":snapshot.identity(),"reference":ByteIdentity::of(&reference_bytes),"producer_images":images,"verification":verification,"source":reference.source,"target":reference.target,"scope":"native candidate structure/signatures/CPU/minimum and actual extracted Core-backed worker; desktop and picker compatibility qualification are separate required consumers"}),
         )?,
     )?;
     Ok(())
@@ -736,6 +788,11 @@ fn write_bundle_resources(
     }
     let resources = app.join("Contents/Resources");
     write(
+        &resources.join("Credits.html"),
+        macos_app::about_credits(&build.version).as_bytes(),
+        0o644,
+    )?;
+    write(
         &resources.join("LICENSE"),
         &read(&root.join("LICENSE"), 1024 * 1024)?,
         0o644,
@@ -750,23 +807,48 @@ fn write_bundle_resources(
         }
     }
     write(&resources.join("THIRD-PARTY-NOTICES.txt"),b"Complete macOS app interface legal materials: licenses/gui/THIRD-PARTY-NOTICES.txt and its accompanying licenses/.\nComplete private Core-backed worker legal materials: licenses/worker/THIRD-PARTY-NOTICES.txt and its accompanying licenses/.\nEach component's paths are relative to its own directory. Software and owner artwork terms: LICENSE.\n",0o644)?;
-    write(&resources.join("README.txt"),format!("EML Attachment Remover {}\nmacOS {}+, native {}.\nGUI and CLI are separate products using the same Rust business libraries. This app uses its private same-CPU worker.\nAd hoc signed only; no Developer ID or notarization. First launch may require macOS app-specific Open Anyway approval.\nSource: https://github.com/resoltico/EMLAttachmentRemover/tree/{}\n",build.version,build.minimum_text,build.architecture,source).as_bytes(),0o644)?;
+    write(&resources.join("README.txt"),format!("{} {}\nmacOS {}+, native {}.\nGUI and CLI are separate products using the same Rust business libraries. This app uses its private same-CPU worker.\nAd hoc signed only; no Developer ID or notarization. First launch may require macOS app-specific Open Anyway approval.\nSource: https://github.com/resoltico/EMLAttachmentRemover/tree/{}\n",eml_core::product::DISPLAY_NAME,build.version,build.minimum_text,build.architecture,source).as_bytes(),0o644)?;
     Ok(())
 }
 
-pub(crate) fn smoke(root: &Path, archive: &Path, reference_path: &Path) -> Result<()> {
-    consume(root, archive, reference_path, AppChecks::Desktop)
+pub(crate) fn smoke(
+    root: &Path,
+    plan: &BuildPlan,
+    archive: &Path,
+    reference_path: &Path,
+) -> Result<()> {
+    consume(root, plan, archive, reference_path, AppChecks::Desktop).map(|_| ())
 }
-pub(crate) fn picker(root: &Path, archive: &Path, reference_path: &Path) -> Result<()> {
-    consume(root, archive, reference_path, AppChecks::Picker)
+pub(crate) fn picker(
+    root: &Path,
+    plan: &BuildPlan,
+    archive: &Path,
+    reference_path: &Path,
+) -> Result<()> {
+    consume(root, plan, archive, reference_path, AppChecks::Picker).map(|_| ())
 }
-fn consume(root: &Path, archive: &Path, reference_path: &Path, checks: AppChecks) -> Result<()> {
-    let build = macos::load(root)?;
-    let (_, name, _) = artifact(root, &build.host)?;
+pub(crate) fn picker_receipt(
+    root: &Path,
+    plan: &BuildPlan,
+    archive: &Path,
+    reference: &Path,
+) -> Result<std::path::PathBuf> {
+    consume(root, plan, archive, reference, AppChecks::Picker)
+}
+fn consume(
+    root: &Path,
+    plan: &BuildPlan,
+    archive: &Path,
+    reference_path: &Path,
+    checks: AppChecks,
+) -> Result<std::path::PathBuf> {
+    let build = macos::load(root, plan)?;
+    let (_, name, _) = artifact(plan, &build.host)?;
     if archive.file_name() != Some(std::ffi::OsStr::new(&name)) {
         return Err("App archive basename does not match its native target/version".into());
     }
-    let reference: Reference = serde_json::from_slice(&read(reference_path, 4 * 1024 * 1024)?)?;
+    let reference_bytes = read(reference_path, 4 * 1024 * 1024)?;
+    let reference: Reference = serde_json::from_slice(&reference_bytes)?;
     let parent = root.join(match checks {
         AppChecks::Desktop => "target/app-archive-smoke",
         AppChecks::Picker => "target/app-picker-compatibility",
@@ -779,16 +861,16 @@ fn consume(root: &Path, archive: &Path, reference_path: &Path, checks: AppChecks
         .prefix("native-")
         .tempdir_in(parent)?
         .keep();
-    let host = app_host(root, &build, checks)?;
+    let host = app_host(root, plan, &build, checks)?;
     let snapshot = ArchiveSnapshot::read(archive)?;
-    let verification = verify_snapshot(root, &snapshot, &reference, &build, &out, checks)?;
+    let verification = verify_snapshot(root, plan, &snapshot, &reference, &build, &out, checks)?;
     fs::write(
         out.join("result.json"),
         serde_json::to_vec_pretty(
-            &json!({"stage":checks.stage(),"host":host,"source":reference.source,"target":reference.target,"verification":verification}),
+            &json!({"stage":checks.stage(),"workflow":crate::release_inputs::workflow_identity()?,"host":host,"source":reference.source,"target":reference.target,"reference":ByteIdentity::of(&reference_bytes),"verification":verification}),
         )?,
     )?;
-    Ok(())
+    Ok(out.join("result.json"))
 }
 
 fn write_bundle_metadata(
@@ -840,14 +922,16 @@ fn checked_icon_inputs(
 
 fn checked_app_materials(
     root: &Path,
+    plan: &BuildPlan,
     platform: &str,
     build: &macos::MacBuild,
 ) -> Result<(
     notices::CheckedTargetMaterials,
     notices::CheckedTargetMaterials,
 )> {
-    let gui = notices::checked_component(root, platform, notices::NoticeComponent::Gui)?;
-    let worker = notices::checked_component(root, platform, notices::NoticeComponent::Worker)?;
+    let gui = notices::checked_component(root, plan, platform, notices::NoticeComponent::Gui)?;
+    let worker =
+        notices::checked_component(root, plan, platform, notices::NoticeComponent::Worker)?;
     for materials in [&gui, &worker] {
         if materials.target() != build.host || materials.version() != build.version {
             return Err("App legal material identity differs from native build".into());
@@ -861,17 +945,15 @@ mod tests {
     use super::*;
     #[test]
     fn desktop_and_compatibility_receipts_require_their_actual_os_generation() {
-        let minimum = 15 << 16;
         for version in ["15.0", "15.7.1"] {
-            assert!(require_host_version(version, AppChecks::Desktop, minimum).is_ok());
-            assert!(require_host_version(version, AppChecks::Candidate, minimum).is_err());
-            assert!(require_host_version(version, AppChecks::Picker, minimum).is_err());
+            assert!(require_host_version(version, AppChecks::Desktop, Some(15)).is_ok());
+            assert!(require_host_version(version, AppChecks::Candidate, None).is_ok());
+            assert!(require_host_version(version, AppChecks::Picker, Some(26)).is_err());
         }
-        for checks in [AppChecks::Candidate, AppChecks::Picker] {
-            assert!(require_host_version("26.6.1", checks, minimum).is_ok());
-            assert!(require_host_version("27.0", checks, minimum).is_err());
-        }
-        assert!(require_host_version("26.6.1", AppChecks::Desktop, minimum).is_err());
-        assert!(require_host_version("", AppChecks::Desktop, minimum).is_err());
+        assert!(require_host_version("26.6.1", AppChecks::Picker, Some(26)).is_ok());
+        assert!(require_host_version("27.0", AppChecks::Picker, Some(26)).is_err());
+        assert!(require_host_version("27.0", AppChecks::Candidate, None).is_ok());
+        assert!(require_host_version("26.6.1", AppChecks::Desktop, Some(15)).is_err());
+        assert!(require_host_version("", AppChecks::Desktop, Some(15)).is_err());
     }
 }

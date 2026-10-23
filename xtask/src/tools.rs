@@ -30,6 +30,12 @@ pub(crate) fn path(root: &Path, name: &str) -> Result<PathBuf> {
         .ok_or("Unknown repository tool")?
         .1;
     let expected = campaign::pin(root, pin)?;
+    path_pinned(root, name, &expected)
+}
+pub(crate) fn path_pinned(root: &Path, name: &str, expected: &str) -> Result<PathBuf> {
+    if !CARGO_TOOLS.iter().any(|(tool, _)| *tool == name) {
+        return Err("Unknown pinned repository tool".into());
+    }
     let filename = format!("cargo-{name}{}", std::env::consts::EXE_SUFFIX);
     let search = std::env::var_os("PATH").ok_or("PATH is missing")?;
     let candidate = std::env::split_paths(&search)

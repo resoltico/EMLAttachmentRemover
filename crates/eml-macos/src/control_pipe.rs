@@ -42,14 +42,18 @@ impl InheritedControlWriter {
         // SAFETY: this pipe's open-file-description IO policy is changed, shared
         // with original3; CLOEXEC above is descriptor-local. There is no global
         // signal change. Nonblocking one-byte writes cannot strand ctrlc.
-        if unsafe { libc::fcntl(descriptor.as_raw_fd(), libc::F_SETNOSIGPIPE, 1) } < 0
-            || unsafe {
-                libc::fcntl(
-                    descriptor.as_raw_fd(),
-                    libc::F_SETFL,
-                    flags | libc::O_NONBLOCK,
-                )
-            } < 0
+        if unsafe { libc::fcntl(descriptor.as_raw_fd(), libc::F_SETNOSIGPIPE, 1) } < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: this is the same live owned pipe descriptor. Preserve all
+        // existing status flags while adding nonblocking writes; no ownership moves.
+        if unsafe {
+            libc::fcntl(
+                descriptor.as_raw_fd(),
+                libc::F_SETFL,
+                flags | libc::O_NONBLOCK,
+            )
+        } < 0
         {
             return Err(io::Error::last_os_error());
         }

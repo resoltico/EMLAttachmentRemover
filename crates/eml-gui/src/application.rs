@@ -1,26 +1,34 @@
 //! Necessary application lifecycle, file-open batches and Services; preserves Winit's delegate.
 use crate::native::{self, NativeError};
 use objc2::rc::Retained;
-use objc2::{
-    Encode, MainThreadMarker, ffi, msg_send,
-    runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel},
-    sel,
-};
-use objc2_app_kit::{NSApplication, NSApplicationDelegate, NSPasteboard};
-use objc2_foundation::{NSArray, NSString, ns_string};
+use objc2::{ClassType, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2_app_kit::{NSApplication, NSPasteboard};
+use objc2_foundation::{NSArray, NSObject, NSObjectProtocol, NSString, ns_string};
+use slint::winit_030::winit::platform::macos::ApplicationEvent;
 use std::{
     cell::RefCell,
     collections::VecDeque,
-    ffi::CString,
     path::PathBuf,
-    sync::atomic::{AtomicU8, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 const QUIT: u8 = 1;
 const REOPEN: u8 = 2;
 const BROKEN: u8 = 4;
-const ABOUT: u8 = 8;
 static EVENTS: AtomicU8 = AtomicU8::new(0);
+static WAKE_READY: AtomicBool = AtomicBool::new(false);
+fn drain_control(events: &AtomicU8, collecting: bool) -> u8 {
+    if collecting {
+        events.fetch_and(QUIT | REOPEN, Ordering::AcqRel) & BROKEN
+    } else {
+        events.swap(0, Ordering::AcqRel)
+    }
+}
 fn wake_event_loop() {
+    // Delegate creation precedes Slint platform installation. Startup intents
+    // remain queued until the pump is installed; missing startup wake is normal.
+    if !WAKE_READY.load(Ordering::Acquire) {
+        return;
+    }
     // Native application callbacks can arrive with every window hidden. Post a
     // real backend event rather than relying only on a pending polling timer.
     // Keep a platform/library failure inside the native ABI boundary.
@@ -35,12 +43,13 @@ struct PendingIngress {
     // Native callbacks retain at most the waiting-selection limit before the
     // next UI turn. Only DesktopSession can admit a request/start a worker.
     batches: VecDeque<Result<Vec<PathBuf>, NativeError>>,
+    closed: bool,
     collecting: bool,
     refusal: Option<NativeError>,
 }
 impl PendingIngress {
     fn begin(&mut self) -> Result<(), NativeError> {
-        let refusal = if self.collecting {
+        let refusal = if self.closed || self.collecting {
             Some(NativeError::IngressUnavailable)
         } else if self.batches.len() >= eml_app::MAX_WAITING_REQUESTS {
             Some(NativeError::SelectionLimit)
@@ -125,297 +134,176 @@ pub(crate) fn receive_drop(board: *mut std::ffi::c_void, commit: bool) -> bool {
     }
 }
 
-extern "C" fn show_about(_: &AnyObject, _: Sel, _: Option<&AnyObject>) {
-    EVENTS.fetch_or(ABOUT, Ordering::Release);
-    wake_event_loop();
+/// The only conversion between the fork's and application's objc2 versions.
+/// No native pointer or URL borrow escapes this synchronous callback.
+fn paths_from_borrowed(
+    urls: &slint::winit_030::winit::platform::macos::BorrowedFileUrls<'_>,
+) -> Result<Vec<PathBuf>, NativeError> {
+    // SAFETY: the fork retains the NSArray for the callback lifetime on the main
+    // thread. paths_from_objects checks each actual NSURL type before conversion.
+    let objects = unsafe { &*urls.as_ptr().cast::<NSArray<objc2::runtime::AnyObject>>() };
+    native::paths_from_objects(objects)
 }
-extern "C" fn should_terminate(_: &AnyObject, _: Sel, _: &NSApplication) -> usize {
-    native::lifecycle_observation("Native termination requested; awaiting confirmation");
-    EVENTS.fetch_or(QUIT, Ordering::Release);
-    wake_event_loop();
-    // Native termination is cancelled until the Slint controller confirms
-    // intent, settles its actors, and exits the event loop.
-    0
-}
-extern "C" fn should_reopen(_: &AnyObject, _: Sel, _: &NSApplication, _: Bool) -> Bool {
-    EVENTS.fetch_or(REOPEN, Ordering::Release);
-    wake_event_loop();
-    Bool::NO
-}
-extern "C" fn terminate_after_close(_: &AnyObject, _: Sel, _: &NSApplication) -> Bool {
-    Bool::NO
-}
-extern "C" fn open_urls(
-    _: &AnyObject,
-    _: Sel,
-    _: &NSApplication,
-    urls: Option<&NSArray<AnyObject>>,
-) {
-    let _ = deliver(|| native::paths_from_objects(urls.ok_or(NativeError::LocalFilesRequired)?));
-}
-extern "C" fn create_copies(
-    _: &AnyObject,
-    _: Sel,
-    board: Option<&NSPasteboard>,
-    _: Option<&NSString>,
-    error: *mut *const NSString,
-) {
-    if deliver(|| native::paths_from_pasteboard(board.ok_or(NativeError::LocalFilesRequired)?))
-        .is_err()
-        && !error.is_null()
-    {
-        // SAFETY: Services supplies an optional writable NSString* error slot.
-        // The immutable constant has process lifetime; no borrowed String escapes.
-        unsafe {
-            error.write(ns_string!("Choose only local file URLs within the supported selection limits. Open EML Attachment Remover to inspect the refusal."));
+pub(crate) fn receive_application(event: ApplicationEvent<'_>) {
+    match event {
+        ApplicationEvent::QuitRequested => {
+            EVENTS.fetch_or(QUIT, Ordering::Release);
+        }
+        ApplicationEvent::ReopenRequested => {
+            EVENTS.fetch_or(REOPEN, Ordering::Release);
+        }
+        ApplicationEvent::OpenUrls(urls) => {
+            let _ = deliver(|| paths_from_borrowed(&urls));
+        }
+        ApplicationEvent::CallbackPanicked => {
+            EVENTS.fetch_or(BROKEN, Ordering::Release);
         }
     }
+    wake_event_loop();
 }
-fn delegate_implementations() -> [Imp; 6] {
-    // SAFETY: these C function signatures match the documented delegate /
-    // Services ABI. Native BOOL encodings derive from objc2 for each CPU.
-    unsafe {
-        [
-            std::mem::transmute::<extern "C" fn(&AnyObject, Sel, &NSApplication) -> usize, Imp>(
-                should_terminate,
-            ),
-            std::mem::transmute::<extern "C" fn(&AnyObject, Sel, &NSApplication, Bool) -> Bool, Imp>(
-                should_reopen,
-            ),
-            std::mem::transmute::<extern "C" fn(&AnyObject, Sel, &NSApplication) -> Bool, Imp>(
-                terminate_after_close,
-            ),
-            std::mem::transmute::<
-                extern "C" fn(&AnyObject, Sel, &NSApplication, Option<&NSArray<AnyObject>>),
-                Imp,
-            >(open_urls),
-            std::mem::transmute::<
-                extern "C" fn(
-                    &AnyObject,
-                    Sel,
-                    Option<&NSPasteboard>,
-                    Option<&NSString>,
-                    *mut *const NSString,
-                ),
-                Imp,
-            >(create_copies),
-            std::mem::transmute::<extern "C" fn(&AnyObject, Sel, Option<&AnyObject>), Imp>(
-                show_about,
-            ),
-        ]
+
+define_class!(
+    #[unsafe(super = NSObject)]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = ()]
+    struct ServicesProvider;
+    unsafe impl NSObjectProtocol for ServicesProvider {}
+    impl ServicesProvider {
+        #[unsafe(method(createEMLCopies:userData:error:))]
+        fn create_copies(&self, board: Option<&NSPasteboard>, _user_data: Option<&NSString>, error: *mut *const NSString) {
+            let accepted = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+                deliver(|| native::paths_from_pasteboard(board.ok_or(NativeError::LocalFilesRequired)?))
+            )) {
+                Ok(result) => result.is_ok(),
+                Err(_) => { EVENTS.fetch_or(BROKEN, Ordering::Release); false }
+            };
+            if !accepted && !error.is_null() {
+                // SAFETY: AppKit's optional error slot is writable for this call;
+                // the immutable NSString constant has process lifetime.
+                unsafe { error.write(ns_string!("Choose only local file URLs within the supported selection limits. Open EML Attachment Remover to inspect the refusal.")); }
+            }
+        }
     }
-}
+);
 pub(crate) struct ApplicationHooks {
-    delegate: Retained<ProtocolObject<dyn NSApplicationDelegate>>,
+    provider: Retained<ServicesProvider>,
     main: MainThreadMarker,
 }
 pub(crate) struct ApplicationEvents {
-    pub(crate) about: bool,
     pub(crate) quit: bool,
     pub(crate) reopen: bool,
     pub(crate) selections: VecDeque<Result<Vec<PathBuf>, NativeError>>,
+    pub(crate) diagnostics: Vec<&'static str>,
 }
 impl ApplicationHooks {
     pub(crate) fn install() -> Result<Self, Box<dyn std::error::Error>> {
         let main = MainThreadMarker::new().ok_or("Application hooks need the main thread")?;
         let app = NSApplication::sharedApplication(main);
-        let delegate = app
-            .delegate()
-            .ok_or("Winit application delegate is absent")?;
-        let object: &AnyObject = (*delegate).as_ref();
-        let class = object.class();
-        if class.name() != c"WinitApplicationDelegate" {
-            return Err("Unexpected application delegate class".into());
-        }
-        let selectors = [
-            sel!(applicationShouldTerminate:),
-            sel!(applicationShouldHandleReopen:hasVisibleWindows:),
-            sel!(applicationShouldTerminateAfterLastWindowClosed:),
-            sel!(application:openURLs:),
-            sel!(createEMLCopies:userData:error:),
-            sel!(showEMLAbout:),
-        ];
-        // Check all slots first, including inherited implementations. Installation
-        // adds only absent methods; no implementation or delegate is replaced.
-        if selectors
-            .iter()
-            .any(|selector| class.instance_method(*selector).is_some())
-        {
-            return Err("Application integration selector already has an implementation".into());
-        }
-        let implementations = delegate_implementations();
-        let native_bool = Bool::ENCODING.to_string();
-        let returns = [
-            usize::ENCODING.to_string(),
-            native_bool.clone(),
-            native_bool.clone(),
-            "v".into(),
-            "v".into(),
-            "v".into(),
-        ];
-        let arguments = [
-            vec!["@", ":", "@"],
-            vec!["@", ":", "@", &native_bool],
-            vec!["@", ":", "@"],
-            vec!["@", ":", "@", "@"],
-            vec!["@", ":", "@", "@", "^@"],
-            vec!["@", ":", "@"],
-        ];
-        for index in 0..selectors.len() {
-            let types = CString::new(format!("{}{}", returns[index], arguments[index].join("")))?;
-            // SAFETY: verified actual delegate class on its main thread, before
-            // file ingress/processing. class_addMethod refuses an occupied slot.
-            if !unsafe {
-                ffi::class_addMethod(
-                    class as *const AnyClass as *mut AnyClass,
-                    selectors[index],
-                    implementations[index],
-                    types.as_ptr(),
-                )
-            }
-            .as_bool()
-            {
-                return Err("Could not add an absent application integration selector".into());
-            }
-            let method = class
-                .instance_method(selectors[index])
-                .ok_or("Installed integration selector disappeared")?;
-            if method.return_type().to_bytes() != returns[index].as_bytes()
-                || method.arguments_count() != arguments[index].len()
-                || arguments[index]
-                    .iter()
-                    .enumerate()
-                    .any(|(index, expected)| {
-                        method
-                            .argument_type(index)
-                            .is_none_or(|actual| actual.to_bytes() != expected.as_bytes())
-                    })
-                || !std::ptr::fn_addr_eq(method.implementation(), implementations[index])
-            {
-                return Err(
-                    "Application integration implementation or ABI readback differs".into(),
-                );
-            }
-        }
         if app.servicesProvider().is_some() {
             return Err("Application Services provider is already occupied".into());
         }
-        // SAFETY: this retained object implements the exact checked Services
-        // entry point above and remains owned through the application event loop.
+        let allocated = ServicesProvider::alloc(main).set_ivars(());
+        // SAFETY: initialize the allocated main-thread NSObject subclass.
+        let provider: Retained<ServicesProvider> = unsafe { msg_send![super(allocated), init] };
+        // SAFETY: this retained, declared NSObject subclass implements the Services
+        // selector on the main thread and outlives its application registration.
         unsafe {
-            app.setServicesProvider(Some(object));
+            app.setServicesProvider(Some(provider.as_super()));
         }
+        WAKE_READY.store(true, Ordering::Release);
+        Ok(Self { provider, main })
+    }
+    pub(crate) fn take_events(&self) -> ApplicationEvents {
+        let mut diagnostics = Vec::new();
+        let app = NSApplication::sharedApplication(self.main);
         if !app
             .servicesProvider()
-            .is_some_and(|provider| std::ptr::eq(&*provider, object))
+            .is_some_and(|current| std::ptr::eq(&*current, self.provider.as_super().as_ref()))
         {
-            return Err("Application Services provider readback differs".into());
+            diagnostics
+                .push("Application Services ownership changed; further native ingress is closed");
+            EVENTS.fetch_or(BROKEN, Ordering::Release);
         }
-        Ok(Self { delegate, main })
-    }
-    fn route_about_menu(&self, app: &NSApplication) -> Result<(), &'static str> {
-        // Slint rebuilds each window's native menu as its enabled state changes.
-        // Route its existing application-menu item, including after a rebuild;
-        // do not replace AppKit methods, the application menu or Muda's delegate.
-        // SAFETY: these fixed NSMenu/NSMenuItem selectors use their documented
-        // object, nullable SEL and NSInteger signatures on the main thread.
-        unsafe {
-            let menu: Option<Retained<AnyObject>> = msg_send![app, mainMenu];
-            let Some(menu) = menu else { return Ok(()) };
-            let count: isize = msg_send![&menu, numberOfItems];
-            if count == 0 {
-                return Ok(());
-            }
-            let root: Option<Retained<AnyObject>> = msg_send![&menu, itemAtIndex: 0_isize];
-            let root = root.ok_or("Application menu is absent")?;
-            let submenu: Option<Retained<AnyObject>> = msg_send![&root, submenu];
-            let submenu = submenu.ok_or("Application submenu is absent")?;
-            let count: isize = msg_send![&submenu, numberOfItems];
-            if count == 0 {
-                return Ok(());
-            }
-            let item: Option<Retained<AnyObject>> = msg_send![&submenu, itemAtIndex: 0_isize];
-            let item = item.ok_or("Application About item is absent")?;
-            let title: Retained<NSString> = msg_send![&item, title];
-            if !title.isEqualToString(ns_string!("About EML Attachment Remover")) {
-                return Err("Unexpected application About item");
-            }
-            let action: Option<Sel> = msg_send![&item, action];
-            let object: &AnyObject = (*self.delegate).as_ref();
-            if action != Some(sel!(showEMLAbout:)) {
-                if !matches!(action, Some(action) if action == sel!(fireMenuItemAction:) || action == sel!(orderFrontStandardAboutPanel:))
-                {
-                    return Err("Application About action is already occupied");
-                }
-                let _: () = msg_send![&item, setTarget: object];
-                let _: () = msg_send![&item, setAction: sel!(showEMLAbout:)];
-            }
-            let actual_action: Option<Sel> = msg_send![&item, action];
-            let target: Option<Retained<AnyObject>> = msg_send![&item, target];
-            if actual_action != Some(sel!(showEMLAbout:))
-                || !target.is_some_and(|target| std::ptr::eq(&*target, object))
-            {
-                return Err("Application About routing readback differs");
-            }
-        }
-        Ok(())
-    }
-    pub(crate) fn take_events(&self) -> Result<ApplicationEvents, &'static str> {
-        // Native pasteboard providers may run a nested event loop. Keep delivery
-        // and Quit/reopen intent pending until the one collector has returned.
-        if INGRESS.with(|pending| {
+        // A native collector may run a nested event loop. Preserve controls until
+        // its reservation unwinds, then drain controls independently of diagnostics.
+        let collecting = INGRESS.with(|pending| {
             pending
                 .try_borrow()
-                .map(|pending| pending.collecting)
-                .unwrap_or(true)
-        }) {
-            return Ok(ApplicationEvents {
-                about: false,
-                quit: false,
-                reopen: false,
-                selections: VecDeque::new(),
+                .map_or(true, |pending| pending.collecting)
+        });
+        let events = drain_control(&EVENTS, collecting);
+        if events & BROKEN != 0 {
+            diagnostics
+                .push("Native application integration failed; further native ingress is closed");
+            INGRESS.with(|pending| {
+                if let Ok(mut pending) = pending.try_borrow_mut() {
+                    pending.closed = true;
+                }
             });
         }
-        let app = NSApplication::sharedApplication(self.main);
-        let object: &AnyObject = (*self.delegate).as_ref();
-        if !app
-            .delegate()
-            .is_some_and(|current| std::ptr::eq(&*current, &*self.delegate))
-            || !app
-                .servicesProvider()
-                .is_some_and(|current| std::ptr::eq(&*current, object))
-        {
-            return Err("Application delegate or Services ownership changed");
-        }
-        self.route_about_menu(&app)?;
-        let events = EVENTS.swap(0, Ordering::AcqRel);
-        if events & BROKEN != 0 {
-            return Err(
-                "Native application integration failed at the platform boundary; further admission is closed",
-            );
-        }
         let selections = INGRESS.with(|pending| {
-            let mut pending = pending
-                .try_borrow_mut()
-                .map_err(|_| "Native file delivery is reentrant")?;
+            let Ok(mut pending) = pending.try_borrow_mut() else {
+                return VecDeque::new();
+            };
+            if pending.collecting {
+                return VecDeque::new();
+            }
             let mut batches = std::mem::take(&mut pending.batches);
             if let Some(error) = pending.refusal.take() {
                 batches.push_back(Err(error));
             }
-            Ok::<_, &'static str>(batches)
-        })?;
-        Ok(ApplicationEvents {
-            about: events & ABOUT != 0,
+            batches
+        });
+        ApplicationEvents {
             quit: events & QUIT != 0,
             reopen: events & REOPEN != 0,
             selections,
-        })
+            diagnostics,
+        }
+    }
+}
+impl Drop for ApplicationHooks {
+    fn drop(&mut self) {
+        WAKE_READY.store(false, Ordering::Release);
+        let app = NSApplication::sharedApplication(self.main);
+        if app
+            .servicesProvider()
+            .is_some_and(|current| std::ptr::eq(&*current, self.provider.as_super().as_ref()))
+        {
+            // SAFETY: main-thread teardown removes only our own still-retained
+            // provider after verifying its exact Objective-C object identity.
+            unsafe {
+                app.setServicesProvider(None);
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn controls_survive_reentrant_collection_and_drain_with_failure() {
+        let events = AtomicU8::new(QUIT | REOPEN | BROKEN);
+        assert_eq!(drain_control(&events, true), BROKEN);
+        assert_eq!(events.load(Ordering::Acquire), QUIT | REOPEN);
+        events.fetch_or(BROKEN, Ordering::Release);
+        assert_eq!(drain_control(&events, false), QUIT | REOPEN | BROKEN);
+        assert_eq!(drain_control(&events, false), 0);
+    }
+    #[test]
+    fn failed_ingress_closes_only_native_collection() {
+        let mut ingress = PendingIngress {
+            closed: true,
+            ..PendingIngress::default()
+        };
+        assert!(matches!(
+            ingress.begin(),
+            Err(NativeError::IngressUnavailable)
+        ));
+        assert!(!ingress.collecting);
+        assert!(ingress.batches.is_empty());
+    }
     #[test]
     fn collector_reserves_before_payload_and_refuses_reentrancy_and_full_queue() {
         let mut ingress = PendingIngress::default();

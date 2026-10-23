@@ -149,20 +149,19 @@ pub(super) fn checked_generated_input(root: &Path, directory: &Path) -> Result<F
     Ok(all)
 }
 
-pub(super) fn checked_pairs(all: &Files, plan: &Value) -> Result<usize> {
-    let targets = plan["native_targets"]
-        .as_array()
-        .ok_or("Missing native notice policy")?;
-    let version = plan["version"].as_str().ok_or("Missing notice version")?;
+pub(super) fn checked_pairs(all: &Files, plan: &BuildPlan) -> Result<usize> {
+    let targets = plan.targets();
+    let version = plan.version();
     let mut prefixes = BTreeSet::new();
     for row in targets {
-        let platform = row["platform"].as_str().ok_or("Missing notice platform")?;
+        let platform_name = row.platform().to_string();
+        let platform = platform_name.as_str();
         for component in [
             NoticeComponent::Cli,
             NoticeComponent::Gui,
             NoticeComponent::Worker,
         ] {
-            if !component.applies_to(platform) {
+            if !component.applies_to(row) {
                 continue;
             }
             let prefix = component.prefix(platform);
@@ -171,7 +170,7 @@ pub(super) fn checked_pairs(all: &Files, plan: &Value) -> Result<usize> {
                     .ok_or("Missing required notice component")?,
             )?;
             if identity["platform"] != platform
-                || identity["target"] != row["target"]
+                || identity["target"] != row.rust_target()
                 || identity["component"] != component.name()
                 || identity["version"] != version
             {

@@ -67,11 +67,11 @@ pub(crate) fn execute(
                         == Some(b"real publication boundary\n");
                     if ready && !released && case == DesktopCase::PublishedError {
                         let output = fixture.join("publication-output");
-                        if fs::read(output.join("one.no-attachments.eml"))?
-                            != include_bytes!(
-                                "../../tests/contract/mime/golden/01-gmail-attachment.eml"
-                            )
-                        {
+                        if fs::read(
+                            output.join("one.7wxqoa2jifs7cdaqt2anqogulu.no-attachments.eml"),
+                        )? != include_bytes!(
+                            "../../tests/contract/mime/golden/01-gmail-attachment.eml"
+                        ) {
                             return Err(
                                 "Real published candidate differs from independent golden".into()
                             );
@@ -192,10 +192,13 @@ pub(crate) fn finish(
     } else {
         "publication-output"
     });
-    if fs::read(output.join("one.no-attachments.eml"))? != golden {
+    if fs::read(output.join("one.7wxqoa2jifs7cdaqt2anqogulu.no-attachments.eml"))? != golden {
         return Err("Completed controlled output differs from independent golden".into());
     }
-    if output.join("two.no-attachments.eml").exists() {
+    if output
+        .join("two.ctpjzw7urreuwuroqgjcbuwt3m.no-attachments.eml")
+        .exists()
+    {
         return Err("Held second item unexpectedly published".into());
     }
     if case == DesktopCase::PublishedError
@@ -210,7 +213,13 @@ pub(crate) fn finish(
     )
 }
 
-pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Result<Value> {
+pub(crate) fn run(
+    root: &Path,
+    app: &Path,
+    build: &MacBuild,
+    out: &Path,
+    source_archive: &xtask::archive::ByteIdentity,
+) -> Result<Value> {
     if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
         || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
     {
@@ -240,6 +249,7 @@ pub(crate) fn run(root: &Path, app: &Path, build: &MacBuild, out: &Path) -> Resu
                 build,
                 &out.join(case.name()),
                 case,
+                source_archive,
             )?);
         }
         Ok(cases)

@@ -1,7 +1,7 @@
 //! Desktop queue/lifecycle orchestration; views explicitly acknowledge final application.
 use crate::{
-    QueueError, ReportHandle, RequestSnapshot, RunId, RunQueue, WorkerCompletion, WorkerControl,
-    WorkerFailure, WorkerObservation, WorkerRun,
+    ExportCompletion, ExportObservation, QueueError, ReportHandle, RequestSnapshot, RunId,
+    RunQueue, WorkerCompletion, WorkerControl, WorkerFailure, WorkerObservation, WorkerRun,
 };
 use std::{path::PathBuf, time::Instant};
 /// A session admission or lifecycle refusal, before any additional work is started.
@@ -17,6 +17,12 @@ pub enum SessionError {
     InactiveRun,
     /// Actual settlement and a terminal observation are still required.
     Unsettled,
+    /// An export child is still owned; there is no export queue.
+    ExportBusy,
+    /// Pure exact-address validation refused the report draft.
+    InvalidExportDraft,
+    /// The export owner thread could not start.
+    ExportLaunch(std::io::Error),
 }
 impl std::fmt::Display for SessionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -35,13 +41,23 @@ impl From<QueueError> for SessionError {
 /// One reserved report, never silently evicted by a later selection.
 pub struct SessionReport {
     id: RunId,
+    operation_id: eml_protocol::desktop::OperationId,
     report: ReportHandle,
     completion: Option<WorkerCompletion>,
+    request: RequestSnapshot,
 }
 impl SessionReport {
     /// Stable session-local identity.
     pub fn id(&self) -> RunId {
         self.id
+    }
+    /// Exact child operation retained alongside its processing report.
+    pub fn operation_id(&self) -> eml_protocol::desktop::OperationId {
+        self.operation_id
+    }
+    /// Captured immutable processing request, including mode and destination.
+    pub fn request(&self) -> &RequestSnapshot {
+        &self.request
     }
     /// Bounded accepted Core observations, including observations before failure.
     pub fn report(&self) -> ReportHandle {
@@ -86,6 +102,10 @@ pub enum SessionActivity {
 /// Serial desktop runs using the reusable core-backed worker. Native sheets,
 /// preferences, selection and rendering remain the frontend's responsibility.
 pub struct DesktopSession {
+    operation_sequence: u64,
+    export: Option<crate::supervisor::ExportRun>,
+    export_completion: Option<ExportCompletion>,
+    export_reserved: Option<RunId>,
     helper: PathBuf,
     version: String,
     queue: RunQueue,
@@ -98,6 +118,10 @@ impl DesktopSession {
     /// Bind the exact bundled helper and version, without launching any process.
     pub fn new(helper: PathBuf, version: String) -> Self {
         Self {
+            operation_sequence: 0,
+            export: None,
+            export_completion: None,
+            export_reserved: None,
             helper,
             version,
             queue: RunQueue::default(),
@@ -106,6 +130,14 @@ impl DesktopSession {
             closing: false,
             blocked: false,
         }
+    }
+    fn next_operation(&mut self) -> Result<eml_protocol::desktop::OperationId, SessionError> {
+        let next = self
+            .operation_sequence
+            .checked_add(1)
+            .ok_or(QueueError::IdentityLimit)?;
+        self.operation_sequence = next;
+        Ok(eml_protocol::desktop::OperationId::new(next).expect("checked nonzero operation"))
     }
     /// Enqueue an immutable Core-admitted selection; no automatic eviction.
     pub fn enqueue(&mut self, request: RequestSnapshot) -> Result<RunId, SessionError> {
@@ -129,10 +161,15 @@ impl DesktopSession {
         if self.active.is_some() {
             return Ok(false);
         }
+        if self.queue.waiting() == 0 {
+            return Ok(false);
+        }
+        let operation_id = self.next_operation()?;
         let Some((id, request)) = self.queue.start_next()? else {
             return Ok(false);
         };
-        let control = WorkerControl::new(id);
+        let captured_request = request.clone();
+        let control = WorkerControl::for_operation(operation_id, id);
         let (worker, report, completion) =
             match WorkerRun::start(self.helper.clone(), self.version.clone(), request, control) {
                 Ok(worker) => {
@@ -147,6 +184,7 @@ impl DesktopSession {
                         None,
                         ReportHandle::new(self.version.clone()),
                         Some(WorkerCompletion {
+                            operation_id,
                             exit_code: None,
                             signal: None,
                             input_may_have_been_sent: false,
@@ -164,8 +202,10 @@ impl DesktopSession {
             };
         self.reports.push(SessionReport {
             id,
+            operation_id,
             report,
             completion,
+            request: captured_request,
         });
         self.active = Some(ActiveRun { id, worker });
         Ok(true)
@@ -293,6 +333,9 @@ impl DesktopSession {
     /// external read/export handles are released. A pending export keeps its
     /// full report reservation, so dismissal cannot admit a third retained report.
     pub fn dismiss(&mut self, id: RunId) -> bool {
+        if self.export_reserved == Some(id) {
+            return false;
+        }
         if !self
             .reports
             .iter()
@@ -319,14 +362,96 @@ impl DesktopSession {
         if let Some(control) = self.control() {
             control.confirm_shutdown(now)?;
         }
+        if let Some(export) = &self.export {
+            export.control().confirm_shutdown(now)?;
+        }
         Ok(())
     }
     /// Confirmed shutdown has no active worker or final rendering left to apply.
     pub fn worker_shutdown_settled(&self) -> bool {
-        self.closing && self.active.is_none()
+        self.closing && self.active.is_none() && self.export.is_none()
     }
     /// Earlier lifecycle failure permanently closed further processing admission.
     pub fn blocked(&self) -> bool {
         self.blocked
+    }
+    /// Admit one terminal-report export; reservation lasts through actual actor settlement.
+    pub fn start_export(
+        &mut self,
+        run_id: RunId,
+        destination: PathBuf,
+    ) -> Result<eml_protocol::desktop::OperationId, SessionError> {
+        if self.closing {
+            return Err(SessionError::Closing);
+        }
+        if self.blocked {
+            return Err(SessionError::Blocked);
+        }
+        if self.export.is_some() {
+            return Err(SessionError::ExportBusy);
+        }
+        crate::validate_destination(&destination).map_err(|_| SessionError::InvalidExportDraft)?;
+        let report = self
+            .reports
+            .iter()
+            .find(|r| r.id == run_id)
+            .and_then(SessionReport::export_snapshot)
+            .ok_or(SessionError::Unsettled)?;
+        let operation_id = self.next_operation()?;
+        let control = WorkerControl::for_operation(operation_id, run_id);
+        let export = crate::supervisor::ExportRun::start(
+            self.helper.clone(),
+            self.version.clone(),
+            report,
+            destination,
+            control,
+        )
+        .map_err(SessionError::ExportLaunch)?;
+        self.export = Some(export);
+        self.export_completion = None;
+        self.export_reserved = Some(run_id);
+        Ok(operation_id)
+    }
+    /// Exact currently owned export child identity.
+    pub fn active_export(&self) -> Option<eml_protocol::desktop::OperationId> {
+        self.export.as_ref().map(|e| e.control().operation_id())
+    }
+    /// Report pinned until the export child and all transport actors settle.
+    pub fn export_reserved_run(&self) -> Option<RunId> {
+        self.export_reserved
+    }
+    /// Control only the exact active export operation; stale callbacks refuse.
+    pub fn export_control_for(
+        &self,
+        id: eml_protocol::desktop::OperationId,
+    ) -> Option<&WorkerControl> {
+        self.export
+            .as_ref()
+            .filter(|e| e.control().operation_id() == id)
+            .map(|e| e.control())
+    }
+    /// Compact terminal export observations retained independently of report slots.
+    pub fn export_completion(&self) -> Option<&ExportCompletion> {
+        self.export_completion.as_ref()
+    }
+    /// Nonblocking export settlement; release the report only after all owners settle.
+    pub fn poll_export(&mut self) -> Option<ExportObservation> {
+        let observation = self.export.as_mut()?.poll();
+        if matches!(
+            &observation,
+            ExportObservation::Pending { warning: Some(_) }
+        ) {
+            self.blocked = true;
+        }
+        if let ExportObservation::Settled(completion) = &observation {
+            if !completion.worker.settled {
+                return Some(observation);
+            }
+            self.blocked |= !completion.worker.reusable;
+            self.export_completion = Some(completion.clone());
+            self.export = None;
+            self.export_reserved = None;
+        }
+        Some(observation)
     }
 }

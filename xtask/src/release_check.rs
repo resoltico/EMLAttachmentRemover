@@ -1,7 +1,8 @@
 //! Read-only admission for a later, explicitly authorized owner release.
+use crate::distribution::BuildPlan;
 use crate::{Result, capture, controller, git};
 use serde_json::{Value, json};
-use std::{collections::BTreeSet, fs, path::Path, process::Command, time::Duration};
+use std::{fs, path::Path, process::Command, time::Duration};
 
 fn source_id(source: &str) -> Result<()> {
     if source.len() != 40
@@ -159,7 +160,7 @@ fn github_read(root: &Path, out: &Path, label: &str, args: &[String]) -> Result<
     response_json(&bytes)
 }
 
-pub(crate) fn run(root: &Path, source: &str, version: &str) -> Result<()> {
+pub(crate) fn run(root: &Path, plan: &BuildPlan, source: &str, version: &str) -> Result<()> {
     // Design: validate immutable source and local release text before remote
     // reads. Absence requires a successful draft-aware lookup with push-capable
     // credentials; an HTTP/CLI error or inaccessible ID cannot prove it. Never mutate
@@ -170,12 +171,7 @@ pub(crate) fn run(root: &Path, source: &str, version: &str) -> Result<()> {
     {
         return Err("Release checks require the exact clean source checkout".into());
     }
-    let plan: Value = serde_json::from_slice(&capture(
-        Command::new(std::env::current_exe()?)
-            .current_dir(root)
-            .arg("distribution"),
-    )?)?;
-    if plan["version"] != version {
+    if plan.version() != version {
         return Err("Release version differs from the authoritative Cargo workspace".into());
     }
     let changelog = fs::read_to_string(root.join("CHANGELOG.md"))?;
@@ -203,20 +199,7 @@ pub(crate) fn run(root: &Path, source: &str, version: &str) -> Result<()> {
     {
         return Err("Release tag already exists; it must not be replaced or retargeted".into());
     }
-    let expected = plan["expected_artifacts"]
-        .as_array()
-        .ok_or("Missing artifact policy")?;
-    let names = expected
-        .iter()
-        .map(|item| {
-            item["name"]
-                .as_str()
-                .ok_or("Missing expected artifact name")
-        })
-        .collect::<std::result::Result<BTreeSet<_>, _>>()?;
-    if expected.len() != 8 || names.len() != 8 {
-        return Err("Release requires exactly eight distinct product archives".into());
-    }
+    let names = plan.archive_names();
     let parent = root.join("target/release-check");
     fs::create_dir_all(&parent)?;
     let out = tempfile::Builder::new()

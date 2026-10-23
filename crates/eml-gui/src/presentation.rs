@@ -10,61 +10,13 @@ pub(crate) fn display_lines(text: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
-pub(crate) fn terminal_label(completion: &eml_app::WorkerCompletion) -> &'static str {
-    use eml_app::WorkerFailure;
-    match completion.failure {
-        Some(WorkerFailure::Request) => {
-            "Selection not started. Choose an existing copy destination or Beside originals. Originals are unchanged."
-        }
-        Some(WorkerFailure::Launch) => {
-            "The bundled worker could not start. Reinstall the app and try again."
-        }
-        Some(WorkerFailure::Identity) => {
-            "The bundled worker identity differs. Reinstall the app before processing."
-        }
-        Some(WorkerFailure::Transport) => {
-            "Worker results could not be fully verified. Earlier observations are retained."
-        }
-        Some(WorkerFailure::Unverified) => {
-            "Processing could not be fully verified. Further processing is closed."
-        }
-        None if completion.signal.is_some() || completion.exit_code == Some(130) => {
-            "Stopped. Completed results are retained."
-        }
-        None if completion.exit_code == Some(0) => "Finished.",
-        None if completion.exit_code.is_some() => {
-            "Finished with errors. Originals are unchanged; inspect the results."
-        }
-        None => "Stopped before processing.",
-    }
+fn item_meaning(item: &ItemRecord) -> Option<eml_core::meaning::OutcomeMeaning> {
+    eml_protocol::meaning::outcome_facts(item).map(|facts| eml_core::meaning::classify(&facts))
 }
-fn item_label(item: &eml_protocol::records::ItemRecord) -> String {
-    use eml_protocol::records::{ItemStatus, Publication};
-    match item.status {
-        ItemStatus::Created => format!(
-            "Created copy · Removed {} {}",
-            item.removed.len(),
-            if item.removed.len() == 1 {
-                "part"
-            } else {
-                "parts"
-            }
-        ),
-        ItemStatus::UpToDate => "Already up to date".into(),
-        ItemStatus::Planned => "Planned".into(),
-        ItemStatus::Failed => match item.publication.state {
-            Publication::Published => "Copy published with an error".into(),
-            Publication::Unknown => "Publication unconfirmed".into(),
-            Publication::NotPublished if item.existing_observation.value().is_some() => {
-                "Existing copy could not be verified".into()
-            }
-            Publication::NotPublished => "Could not create copy".into(),
-        },
-    }
-}
-fn copy_was_materialized(item: &eml_protocol::records::ItemRecord) -> bool {
-    item.publication.state == eml_protocol::records::Publication::Published
-        || item.status == eml_protocol::records::ItemStatus::UpToDate
+fn item_label(item: &ItemRecord) -> String {
+    item_meaning(item)
+        .map_or("Outcome cannot be established", |meaning| meaning.label())
+        .into()
 }
 fn size_comparison(item: &eml_protocol::records::ItemRecord, smaller_by: u64) -> Option<String> {
     let bytes = item.copy_bytes.value()?;
@@ -75,21 +27,13 @@ fn size_comparison(item: &eml_protocol::records::ItemRecord, smaller_by: u64) ->
 fn run_problem(summary: Option<&eml_protocol::records::SummaryRecord>) -> Option<String> {
     let error = summary?.run_error.value()?;
     let mut text = DisplayText::new(&error.detail).to_string();
-    if let Some(hint) = eml_protocol::user_messages::recovery_hint(&error.code) {
+    if let Some(hint) = eml_core::meaning::recovery_hint(&error.code) {
         text.push('\n');
         text.push_str(hint);
     }
     Some(text)
 }
 
-fn removal_label(reason: eml_protocol::records::Removal) -> &'static str {
-    use eml_protocol::records::Removal;
-    match reason {
-        Removal::Attachment => "Attachment",
-        Removal::RelatedResource => "Related image or resource",
-        Removal::NonBodyPart => "Other non-body content",
-    }
-}
 fn report_artwork(
     facts: &eml_app::RunReport,
     completion: Option<&eml_app::WorkerCompletion>,
@@ -98,33 +42,18 @@ fn report_artwork(
     let Some(completion) = completion else {
         return ArtworkState::Processing;
     };
-    if facts.failure().is_some() || completion.failure.is_some() {
-        return ArtworkState::Failure;
-    }
-    if facts.summary().is_some_and(|summary| summary.interrupted)
-        || completion.signal.is_some()
-        || completion.exit_code == Some(130)
-        || completion.exit_code.is_none()
-    {
-        return ArtworkState::Stopped;
-    }
-    if completion.exit_code != Some(0)
-        || facts.summary().is_some_and(|summary| {
-            summary.counts.failed > 0
-                || summary.run_error.value().is_some()
-                || !summary.collection_complete
-        })
-    {
-        return if facts
-            .summary()
-            .is_some_and(|summary| summary.counts.created > 0 || summary.counts.up_to_date > 0)
-        {
+    match facts.terminal_meaning(completion) {
+        eml_app::RunMeaning::Completed => ArtworkState::Success,
+        eml_app::RunMeaning::CompletedWithMixedResults | eml_app::RunMeaning::ResultsIncomplete => {
             ArtworkState::Attention
-        } else {
-            ArtworkState::Failure
-        };
+        }
+        eml_app::RunMeaning::Stopped | eml_app::RunMeaning::NotStarted => ArtworkState::Stopped,
+        eml_app::RunMeaning::LaunchFailed
+        | eml_app::RunMeaning::IdentityMismatch
+        | eml_app::RunMeaning::TransportFailed
+        | eml_app::RunMeaning::OwnershipUnverified
+        | eml_app::RunMeaning::CompletedWithErrors => ArtworkState::Failure,
     }
-    ArtworkState::Success
 }
 
 #[derive(Clone, Copy, Default)]
@@ -248,6 +177,13 @@ fn report_summary(
             "\n{} created · {} up to date · {} failed · {} not processed",
             c.created, c.up_to_date, c.failed, c.not_processed
         ));
+        if facts.start().is_some_and(|start| start.dry_run) {
+            text.push_str(&format!(
+                "\n{} planned · {}",
+                c.planned,
+                eml_core::RunMode::DryRun.label()
+            ));
+        }
     }
     if let Some(problem) = run_problem(facts.summary()) {
         text.push_str(&format!("\n{problem}"));
@@ -257,7 +193,7 @@ fn report_summary(
             if missing == 1 { "item has" } else { "items have" }));
     }
     if let Some(completion) = completion {
-        text.push_str(&format!("\n{}", terminal_label(completion)));
+        text.push_str(&format!("\n{}", facts.terminal_meaning(completion).label()));
     }
     if !facts.items().is_empty() {
         text.push_str(&format!("\nItems page {} of {pages}", page + 1));
@@ -276,29 +212,26 @@ fn item_detail(item: &ItemRecord, part_page: usize, smaller_by: Option<u64>) -> 
     if let Some(comparison) = smaller_by.and_then(|delta| size_comparison(item, delta)) {
         text.push_str(&format!("{comparison}\n"));
     }
+    let meaning = item_meaning(item);
     if let Some(error) = item.error.value() {
         text.push_str(&format!("{}\n", DisplayText::new(&error.detail)));
-        if let Some(hint) = eml_protocol::user_messages::recovery_hint(&error.code) {
+        if let Some(hint) = eml_core::meaning::recovery_hint(&error.code) {
             text.push_str(&format!("{hint}\n"));
         }
         text.push_str("Original message unchanged.\n");
-        use eml_protocol::records::Publication;
-        text.push_str(match item.publication.state {
-            Publication::Published => {
-                "A complete copy was published. Inspect the destination before retrying.\n"
-            }
-            Publication::Unknown => {
-                "A complete copy may exist. Inspect the destination before retrying.\n"
-            }
-            Publication::NotPublished => "No new copy was published.\n",
-        });
+    }
+    if let Some(meaning) = &meaning {
+        for consequence in &meaning.consequences {
+            text.push_str(consequence.text());
+            text.push('\n');
+        }
+    } else {
+        text.push_str("Outcome cannot be established.\n");
     }
     if !item.removed.is_empty() {
-        let heading = if copy_was_materialized(item) {
-            "Removed parts"
-        } else {
-            "Parts selected for removal"
-        };
+        let heading = meaning
+            .as_ref()
+            .map_or("Parts selected for removal", |m| m.removal_mode.parts());
         let pages = item.removed.len().div_ceil(PAGE_SIZE).max(1);
         text.push_str(&format!("{heading} · page {} of {pages}\n", part_page + 1));
         for part in item
@@ -312,31 +245,21 @@ fn item_detail(item: &ItemRecord, part_page: usize, smaller_by: Option<u64>) -> 
                 DisplayText::new(part.filename.value().map_or("Unnamed part", String::as_str)),
                 DisplayText::new(&part.content_type),
                 part.bytes,
-                removal_label(part.reason),
+                eml_protocol::meaning::removal_reason(part.reason).label(),
                 DisplayText::new(&part.section)
             ));
         }
     }
-    if item
-        .removed
-        .iter()
-        .any(|p| p.reason == eml_protocol::records::Removal::RelatedResource)
-    {
-        text.push_str(if copy_was_materialized(item) {
-            eml_protocol::user_messages::RELATED_RESOURCE_NOTICE
-        } else {
-            eml_protocol::user_messages::PREPARED_RELATED_RESOURCE_NOTICE
-        });
+    if let Some(notice) = meaning.as_ref().and_then(|m| m.related_notice) {
+        text.push_str(notice);
         text.push('\n');
     }
     if !item.stripped_fields.is_empty() {
         text.push_str(&format!(
             "{}: {}\n",
-            if copy_was_materialized(item) {
-                "Removed stale fields"
-            } else {
-                "Fields selected for removal"
-            },
+            meaning
+                .as_ref()
+                .map_or("Fields selected for removal", |m| m.removal_mode.fields()),
             DisplayText::new(&item.stripped_fields.join(", "))
         ));
     }
@@ -387,7 +310,11 @@ pub(crate) fn unavailable_report_page(
     failure: eml_app::WorkerFailure,
     appearance: Option<(bool, bool)>,
 ) -> ReportPage {
-    let status = completion.map_or("Waiting for owned processing to stop.", terminal_label);
+    let status = if completion.is_some_and(|completion| completion.settled) {
+        "Processing child settled; inspect the retained report."
+    } else {
+        "Waiting for owned processing to stop."
+    };
     ReportPage {
         summary: format!("Run {id} · Report unavailable.\n{status}"),
         rows: Vec::new(),
@@ -402,16 +329,8 @@ pub(crate) fn run_row(
     facts: &RunReport,
     completion: Option<&WorkerCompletion>,
 ) -> String {
-    let state = completion.map_or("Running", |c| {
-        if c.failure.is_some() {
-            "Needs attention"
-        } else if c.signal.is_some() || c.exit_code == Some(130) {
-            "Stopped"
-        } else if c.exit_code == Some(0) {
-            "Finished"
-        } else {
-            "Finished with errors"
-        }
+    let state = completion.map_or("Running", |completion| {
+        facts.terminal_meaning(completion).label()
     });
     let counts = facts.summary().map_or_else(
         || {
@@ -423,10 +342,14 @@ pub(crate) fn run_row(
         },
         |summary| {
             let c = &summary.counts;
-            format!(
+            let mut text = format!(
                 "{} created · {} up to date\n{} failed · {} not processed",
                 c.created, c.up_to_date, c.failed, c.not_processed
-            )
+            );
+            if facts.start().is_some_and(|start| start.dry_run) {
+                text.push_str(&format!("\n{} planned", c.planned));
+            }
+            text
         },
     );
     format!("Run {id}\n{state}\n{counts}")
@@ -439,7 +362,8 @@ pub(crate) fn waiting_row(id: RunId, request: &eml_app::RequestSnapshot) -> Stri
         }
     };
     format!(
-        "Run {id}: Not started\nSelected paths: {}\nSave copies: {destination}",
+        "Run {id}: Not started\nMode: {}\nSelected paths: {}\nSave copies: {destination}",
+        request.mode().label(),
         request.request().paths.len()
     )
 }
@@ -457,57 +381,23 @@ impl UserNotice {
         }
     }
 }
-pub(crate) fn export_notice(id: RunId, outcome: &eml_app::ReportExportOutcome) -> UserNotice {
-    use eml_app::PublicationState;
-    let mut message = if outcome.usable() {
-        "Saved and read back successfully.".to_owned()
-    } else {
-        match outcome.publication {
-        PublicationState::Published => "A complete report was published, but export did not finish cleanly. Inspect the destination before retrying.".to_owned(),
-        PublicationState::Unknown => "A complete report may exist. Inspect the destination before retrying.".to_owned(),
-        PublicationState::NotPublished => export_recovery(outcome),
-    }
-    };
-    if matches!(
-        outcome.cleanup.state,
-        eml_core::CleanupState::Residual | eml_core::CleanupState::Unknown
-    ) {
-        message.push_str(" Temporary files may remain; see Technical details.");
-    }
-    let mut details = format!(
-        "Report export for run {id}\nPublication: {:?}\nAddress: {:?}\nFinal verification: {:?}\nFile sync: {:?}\nNamespace sync: {:?}\nCleanup: {:?}\n",
-        outcome.publication,
-        outcome.address_verified,
-        outcome.final_file_verified,
-        outcome.file_sync,
-        outcome.namespace_sync,
-        outcome.cleanup
+pub(crate) fn export_notice(completion: &eml_app::ExportCompletion) -> UserNotice {
+    let details = format!(
+        "Report export operation {} for run {}\nDestination: {}\nAccepted receipt: {:?}\nWorker lifecycle: {:?}",
+        completion.operation_id.get(),
+        completion.run_id,
+        DisplayText::new(&completion.destination.to_string_lossy()),
+        completion.receipt,
+        completion.worker
     );
-    for failure in &outcome.failures {
-        details.push_str(&format!(
-            "{:?}: kind {:?}; native {:?}; {}\n",
-            failure.stage,
-            failure.kind,
-            failure.native_code,
-            DisplayText::new(&failure.detail)
-        ));
-    }
     UserNotice {
-        message: format!("Run {id} report: {message}"),
+        message: format!(
+            "Run {} report: {}",
+            completion.run_id,
+            completion.outcome_message()
+        ),
         details,
     }
-}
-fn export_recovery(outcome: &eml_app::ReportExportOutcome) -> String {
-    use std::io::ErrorKind;
-    let failure = outcome.failures.first();
-    match failure.and_then(|f| f.kind) {
-        Some(ErrorKind::AlreadyExists) => "No new report was published. That name is already in use; choose an unused filename.",
-        Some(ErrorKind::PermissionDenied) => "No new report was published. Choose a folder you can access and write to.",
-        Some(ErrorKind::Interrupted) => "Report export was cancelled. No new report was published.",
-        Some(ErrorKind::WouldBlock) => "No new report was published. The report is busy; wait for the current operation to finish and try exporting again.",
-        _ if failure.is_some_and(|f| f.stage == eml_app::ReportExportStage::Serialization) => "Report data could not be read safely. No new report was published; see Technical details.",
-        _ => "No new report was published. Check the destination and choose an unused filename in a writable folder; see Technical details.",
-    }.into()
 }
 
 #[cfg(test)]
@@ -521,6 +411,7 @@ mod tests {
     }
     fn completion(exit: i32) -> WorkerCompletion {
         WorkerCompletion {
+            operation_id: eml_protocol::desktop::OperationId::new(1).unwrap(),
             exit_code: Some(exit),
             signal: None,
             input_may_have_been_sent: true,
@@ -568,6 +459,32 @@ mod tests {
         }
     }
     #[test]
+    fn check_renders_the_received_exact_destination_and_planned_count() {
+        let wire = include_str!("../../../tests/contract/protocol/planned-create-unix.jsonl")
+            .replace("@VERSION@", "test-version");
+        let mut facts = RunReport::for_native_mode("test-version", eml_core::RunMode::DryRun);
+        for line in wire.lines() {
+            facts.accept_frame(line.as_bytes()).unwrap();
+        }
+        facts.finish(Some(0), false).unwrap();
+        let done = completion(0);
+        let page = report_page(
+            run_id(),
+            &facts,
+            Some(&done),
+            ReportPosition::default(),
+            None,
+        );
+        assert!(page.summary.contains("1 planned · Check only"));
+        assert!(page.summary.contains("0 created"));
+        assert!(
+            page.detail
+                .contains("Copy: a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+        );
+        assert!(page.detail.starts_with("Prepared only"));
+        assert!(!page.detail.contains("Saved and read back"));
+    }
+    #[test]
     fn stream_finalization_invalidates_cached_missing_result_knowledge() {
         let wire = include_str!("../../../tests/contract/protocol/created-attachment.jsonl")
             .replace("@VERSION@", "test-version");
@@ -588,25 +505,6 @@ mod tests {
             view_key(id, &facts, false, ReportPosition::default(), None)
         );
     }
-    #[test]
-    fn serialization_failures_do_not_suggest_changing_a_healthy_destination() {
-        let mut outcome = export_outcome(eml_app::PublicationState::NotPublished);
-        outcome.failures[0].stage = eml_app::ReportExportStage::Serialization;
-        outcome.failures[0].kind = Some(std::io::ErrorKind::Other);
-        let notice = export_notice(run_id(), &outcome);
-        assert!(
-            notice
-                .message
-                .contains("Report data could not be read safely")
-        );
-        assert!(!notice.message.contains("choose an unused filename"));
-        outcome.failures[0].kind = Some(std::io::ErrorKind::WouldBlock);
-        assert!(
-            export_notice(run_id(), &outcome)
-                .message
-                .contains("report is busy")
-        );
-    }
     fn fixture_item(bytes: &[u8]) -> Box<eml_protocol::records::ItemRecord> {
         bytes
             .split(|b| *b == b'\n')
@@ -619,65 +517,21 @@ mod tests {
             )
             .unwrap()
     }
-    fn export_outcome(publication: eml_app::PublicationState) -> eml_app::ReportExportOutcome {
-        eml_app::ReportExportOutcome {
-            publication,
-            file_sync: None,
-            namespace_sync: None,
-            address_verified: None,
-            candidate_identity: None,
-            final_file_verified: None,
-            cleanup: eml_core::CleanupReceipt {
-                state: eml_core::CleanupState::NotNeeded,
-                residual_name: None,
-                native_code: None,
-            },
-            failures: vec![eml_app::ReportExportFailure {
-                stage: eml_app::ReportExportStage::Publication,
-                kind: Some(std::io::ErrorKind::AlreadyExists),
-                native_code: Some(17),
-                detail: "Exact OS cause\nnot a forged line".into(),
-            }],
-        }
-    }
     #[test]
-    fn export_notices_keep_publication_cleanup_and_exact_failure_distinct() {
-        use eml_app::PublicationState;
-        let request =
-            eml_app::RequestSnapshot::new(vec![std::env::temp_dir().join("message.eml")], None)
-                .unwrap();
-        let id = eml_app::RunQueue::default().enqueue(request).unwrap();
-        for (publication, expected) in [
-            (
-                PublicationState::NotPublished,
-                "No new report was published.",
-            ),
-            (
-                PublicationState::Published,
-                "A complete report was published",
-            ),
-            (PublicationState::Unknown, "A complete report may exist."),
-        ] {
-            let mut outcome = export_outcome(publication);
-            let notice = export_notice(id, &outcome);
-            assert!(notice.message.contains(expected), "{}", notice.message);
-            assert!(!notice.message.contains("AlreadyExists"));
-            assert!(
-                notice
-                    .details
-                    .contains("Exact OS cause\\nnot a forged line")
-            );
-            assert!(notice.details.contains("native Some(17)"));
-            for cleanup in [
-                eml_core::CleanupState::Residual,
-                eml_core::CleanupState::Unknown,
-            ] {
-                outcome.cleanup.state = cleanup;
-                let notice = export_notice(id, &outcome);
-                assert!(notice.message.contains("Temporary files may remain"));
-                assert!(notice.details.contains(&format!("{cleanup:?}")));
-            }
-        }
+    fn missing_export_receipt_never_claims_absence_or_success() {
+        let completion = eml_app::ExportCompletion {
+            operation_id: eml_protocol::desktop::OperationId::new(1).unwrap(),
+            run_id: run_id(),
+            destination: std::env::temp_dir().join("report.json"),
+            receipt: None,
+            report_too_large: false,
+            worker: completion(1),
+        };
+        let notice = export_notice(&completion);
+        assert!(notice.message.contains("unknown"));
+        assert!(notice.message.contains("may exist"));
+        assert!(!notice.message.contains("success"));
+        assert!(notice.details.contains("Accepted receipt: None"));
     }
     #[test]
     fn prepared_parts_and_related_resource_notices_follow_publication() {
@@ -696,12 +550,12 @@ mod tests {
         item.removed[0].reason = eml_protocol::records::Removal::RelatedResource;
         let text = item_detail(&item, 0, Some(165));
         assert!(text.contains("Related image or resource"));
-        assert!(text.contains(eml_protocol::user_messages::PREPARED_RELATED_RESOURCE_NOTICE));
+        assert!(text.contains(eml_core::meaning::PREPARED_RELATED_RESOURCE_NOTICE));
         item.publication.state = eml_protocol::records::Publication::Published;
         let text = item_detail(&item, 0, Some(165));
         assert!(text.contains("Removed parts"));
         assert!(text.contains("Removed stale fields: Content-MD5"));
-        assert!(text.contains(eml_protocol::user_messages::RELATED_RESOURCE_NOTICE));
+        assert!(text.contains(eml_core::meaning::RELATED_RESOURCE_NOTICE));
     }
     #[test]
     fn unpublished_and_unknown_copies_do_not_claim_realized_savings() {
@@ -717,7 +571,10 @@ mod tests {
         item.status = ItemStatus::Failed;
         for state in [Publication::NotPublished, Publication::Unknown] {
             item.publication.state = state;
-            assert!(!copy_was_materialized(&item));
+            assert_eq!(
+                item_meaning(&item).unwrap().removal_mode,
+                eml_core::meaning::RemovalMode::Selected
+            );
             assert!(
                 size_comparison(&item, 165)
                     .unwrap()
@@ -725,7 +582,10 @@ mod tests {
             );
         }
         item.publication.state = Publication::Published;
-        assert!(copy_was_materialized(&item));
+        assert_eq!(
+            item_meaning(&item).unwrap().removal_mode,
+            eml_core::meaning::RemovalMode::Removed
+        );
         assert!(
             size_comparison(&item, 165)
                 .unwrap()
@@ -766,7 +626,7 @@ mod tests {
             );
         }
         assert!(run_problem(None).is_none());
-        assert!(eml_protocol::user_messages::recovery_hint("FUTURE_CODE").is_none());
+        assert!(eml_core::meaning::recovery_hint("FUTURE_CODE").is_none());
     }
     #[test]
     fn run_errors_without_failed_items_are_not_presented_as_success() {
@@ -804,17 +664,17 @@ mod tests {
             (
                 include_bytes!("../../../tests/contract/protocol/prepublication-failure.jsonl")
                     .as_slice(),
-                "Could not create copy",
+                "No new copy published",
             ),
             (
                 include_bytes!("../../../tests/contract/protocol/published-with-error.jsonl")
                     .as_slice(),
-                "Copy published with an error",
+                "Complete copy published; qualification incomplete",
             ),
             (
                 include_bytes!("../../../tests/contract/protocol/unknown-publication.jsonl")
                     .as_slice(),
-                "Publication unconfirmed",
+                "Publication uncertain",
             ),
         ] {
             let item = fixture

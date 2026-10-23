@@ -22,7 +22,11 @@ fn every_code_and_allowed_or_disallowed_phase_matches_the_contract_table() {
             "Duplicate documented code"
         );
     }
-    assert_eq!(expected.len(), 27, "Protocol1 has exactly27 semantic codes");
+    assert_eq!(
+        expected.len(),
+        28,
+        "Protocol 1 has exactly 28 semantic codes"
+    );
     assert_eq!(ErrorCode::ALL.len(), expected.len());
     assert_eq!(ErrorPhase::ALL.len(), 12);
     let phase_names: BTreeSet<_> = ErrorPhase::ALL.iter().map(|phase| phase.as_str()).collect();
@@ -52,6 +56,7 @@ fn preparation_classification_is_exhaustive_and_preserves_domain_diagnostics() {
         (Refusal::Malformed, ErrorCode::Malformed),
         (Refusal::LimitExceeded, ErrorCode::LimitExceeded),
         (Refusal::Protected, ErrorCode::Protected),
+        (Refusal::UnsupportedMime, ErrorCode::UnsupportedMime),
         (Refusal::NoBody, ErrorCode::NoBody),
         (Refusal::Internal, ErrorCode::Internal),
     ] {

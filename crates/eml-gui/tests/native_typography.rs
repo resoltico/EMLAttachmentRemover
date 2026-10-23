@@ -14,7 +14,7 @@ use std::{
     rc::Rc,
 };
 
-#[allow(unsafe_code, reason = "quality:slint-generated-font-fixture")]
+#[allow(unsafe_code, reason = "Slint-generated component vtables")]
 mod view {
     slint::slint! {
         export component FontObservation inherits Window {

@@ -2652,13 +2652,15 @@
     },
     {
       "name": "eml-app",
-      "version": "6.0.0",
+      "version": "7.0.0",
       "source": null,
       "checksum": null,
       "license_expression": "MPL-2.0",
       "scopes": [
         "gui@aarch64-apple-darwin",
-        "gui@x86_64-apple-darwin"
+        "gui@x86_64-apple-darwin",
+        "worker@aarch64-apple-darwin",
+        "worker@x86_64-apple-darwin"
       ],
       "bindings": [
         {
@@ -2683,13 +2685,16 @@
           },
           "scopes": [
             "gui@aarch64-apple-darwin",
-            "gui@x86_64-apple-darwin"
+            "gui@x86_64-apple-darwin",
+            "worker@aarch64-apple-darwin",
+            "worker@x86_64-apple-darwin"
           ]
         }
       ],
       "provenance": {
         "kind": "workspace",
-        "manifest_path": "crates/eml-app/Cargo.toml"
+        "manifest_path": "crates/eml-app/Cargo.toml",
+        "manifest_sha256": "0fb2b769f732f3c4d8034f853c0aa7a103ae0785bd6718cf7e5388ac1e8986ae"
       }
     },
     {
@@ -2735,7 +2740,7 @@
         "checksum_basis": "No registry archive checksum for a workspace package.",
         "kind": "workspace",
         "manifest_path": "crates/eml-core/Cargo.toml",
-        "manifest_sha256": "76a22fc16fa9b5e3b50c0ec579e19a67a0a58caca876bc5a5a78fc9da74b707d"
+        "manifest_sha256": "6c907f9e93fee371b8a570f9febf5277778130f202edbdb37dbad8a4328fd373"
       },
       "source": null,
       "scopes": [
@@ -2750,7 +2755,7 @@
         "worker@aarch64-apple-darwin",
         "worker@x86_64-apple-darwin"
       ],
-      "version": "6.0.0"
+      "version": "7.0.0"
     },
     {
       "bindings": [
@@ -2795,7 +2800,7 @@
         "checksum_basis": "No registry archive checksum for a workspace package.",
         "kind": "workspace",
         "manifest_path": "crates/eml-fs/Cargo.toml",
-        "manifest_sha256": "30a2d5e98106a1e53cc40ac7270c34648ca43ab0859c5ba731d446c0687ee435"
+        "manifest_sha256": "596ef767e0d96a576ed64fb0c5537449abf42a39210deee1e8e6f4bce9425872"
       },
       "source": null,
       "scopes": [
@@ -2810,11 +2815,11 @@
         "worker@aarch64-apple-darwin",
         "worker@x86_64-apple-darwin"
       ],
-      "version": "6.0.0"
+      "version": "7.0.0"
     },
     {
       "name": "eml-gui",
-      "version": "6.0.0",
+      "version": "7.0.0",
       "source": null,
       "checksum": null,
       "license_expression": "MPL-2.0",
@@ -2851,12 +2856,13 @@
       ],
       "provenance": {
         "kind": "workspace",
-        "manifest_path": "crates/eml-gui/Cargo.toml"
+        "manifest_path": "crates/eml-gui/Cargo.toml",
+        "manifest_sha256": "93ad753ba78c9b7ca11745f2da22554954930539ba5d6afd6f64c012ddc93f1c"
       }
     },
     {
       "name": "eml-macos",
-      "version": "6.0.0",
+      "version": "7.0.0",
       "source": null,
       "checksum": null,
       "license_expression": "MPL-2.0",
@@ -2897,7 +2903,8 @@
       ],
       "provenance": {
         "kind": "workspace",
-        "manifest_path": "crates/eml-macos/Cargo.toml"
+        "manifest_path": "crates/eml-macos/Cargo.toml",
+        "manifest_sha256": "2807061061c054479ec77dc0e91315b64800f3d45c792ff7e559b51a42b26dd1"
       }
     },
     {
@@ -2958,11 +2965,11 @@
         "worker@aarch64-apple-darwin",
         "worker@x86_64-apple-darwin"
       ],
-      "version": "6.0.0"
+      "version": "7.0.0"
     },
     {
       "name": "eml-worker",
-      "version": "6.0.0",
+      "version": "7.0.0",
       "source": null,
       "checksum": null,
       "license_expression": "MPL-2.0",
@@ -2999,7 +3006,8 @@
       ],
       "provenance": {
         "kind": "workspace",
-        "manifest_path": "crates/eml-worker/Cargo.toml"
+        "manifest_path": "crates/eml-worker/Cargo.toml",
+        "manifest_sha256": "2fa0571fe0b0304e8f050d88e8b8c7fedc604ae5eeb4cef86ea5a87f64fbb4ab"
       }
     },
     {
@@ -8322,7 +8330,7 @@
         "checksum_basis": "No registry archive checksum for a workspace package.",
         "kind": "workspace",
         "manifest_path": "crates/eml-cli/Cargo.toml",
-        "manifest_sha256": "f1272667caa6d9efa2df55defe00806cdb7dcf8c287b1fa79b165ad75f03a751"
+        "manifest_sha256": "e811c9092d3f916449a6017a661500810134bcc6ead2521d4cad41b7f0a8b7a3"
       },
       "source": null,
       "scopes": [
@@ -8333,7 +8341,7 @@
         "cli@x86_64-pc-windows-gnullvm",
         "cli@x86_64-unknown-linux-gnu"
       ],
-      "version": "6.0.0"
+      "version": "7.0.0"
     },
     {
       "name": "resvg",
@@ -11913,8 +11921,8 @@
             {
               "kind": "package_file",
               "path": "EML-PATCH.md",
-              "bytes": 1718,
-              "sha256": "96f8c645bc3b39e7e8c8418c2df0d9feded2676cb7595412a8ed1d856ba214be"
+              "bytes": 3435,
+              "sha256": "c3c67efd33bf90b6226de073ee98c5e36766b59e963a2834cb8dd6958d65fa38"
             }
           ]
         }
@@ -11922,7 +11930,7 @@
       "provenance": {
         "kind": "vendored",
         "repository": "https://github.com/rust-windowing/winit",
-        "checksum_basis": "The retained published archive identity is historical upstream provenance. Current patched source is supplied in this checkout; Cargo.lock correctly has no registry checksum for it. LICENSE bytes and the two modified upstream source files were reviewed separately.",
+        "checksum_basis": "The retained published archive identifies upstream winit0.30.13; the current source-defined lifecycle and retained drag changes are listed in EML-PATCH.md. Original LICENSE and source copyright headers remain unchanged. Cargo.lock has no registry checksum for retained source. Native integration qualification is separate.",
         "declared_vcs": {
           "git": {
             "sha1": "e9809ef54b18499bb4f2cac945719ecc2a61061b"
@@ -12571,21 +12579,477 @@
           "path_in_vcs": "crates/zune-jpeg"
         }
       }
+    },
+    {
+      "name": "block-buffer",
+      "version": "0.12.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa",
+      "license_expression": "MIT OR Apache-2.0",
+      "scopes": [
+        "cli@aarch64-apple-darwin",
+        "cli@aarch64-pc-windows-gnullvm",
+        "cli@aarch64-unknown-linux-gnu",
+        "cli@x86_64-apple-darwin",
+        "cli@x86_64-pc-windows-gnullvm",
+        "cli@x86_64-unknown-linux-gnu",
+        "gui@aarch64-apple-darwin",
+        "gui@x86_64-apple-darwin",
+        "worker@aarch64-apple-darwin",
+        "worker@x86_64-apple-darwin"
+      ],
+      "bindings": [
+        {
+          "license_id": "MIT",
+          "generator_text_sha256": "98181e7249d0c01737645ec982499ce99a0f07eb8f7d625b8840d799d10dbc01",
+          "generator_text_bytes": 1082,
+          "mapping": "exact_per_package_legal_file",
+          "scopes": [
+            "cli@aarch64-apple-darwin",
+            "cli@aarch64-pc-windows-gnullvm",
+            "cli@aarch64-unknown-linux-gnu",
+            "cli@x86_64-apple-darwin",
+            "cli@x86_64-pc-windows-gnullvm",
+            "cli@x86_64-unknown-linux-gnu",
+            "gui@aarch64-apple-darwin",
+            "gui@x86_64-apple-darwin",
+            "worker@aarch64-apple-darwin",
+            "worker@x86_64-apple-darwin"
+          ],
+          "materials": [
+            {
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "bytes": 1082,
+              "sha256": "98181e7249d0c01737645ec982499ce99a0f07eb8f7d625b8840d799d10dbc01"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "registry",
+        "checksum_basis": "Locked registry archive independently rehashed and selected LICENSE-MIT compared with its exact archive member during v7 source-material review.",
+        "declared_vcs": {
+          "git": {
+            "sha1": "cbd0963c685df025c42bed31f78c50d1bada3805"
+          },
+          "path_in_vcs": "block-buffer"
+        }
+      }
+    },
+    {
+      "name": "const-oid",
+      "version": "0.10.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c",
+      "license_expression": "Apache-2.0 OR MIT",
+      "scopes": [
+        "cli@aarch64-apple-darwin",
+        "cli@aarch64-pc-windows-gnullvm",
+        "cli@aarch64-unknown-linux-gnu",
+        "cli@x86_64-apple-darwin",
+        "cli@x86_64-pc-windows-gnullvm",
+        "cli@x86_64-unknown-linux-gnu",
+        "gui@aarch64-apple-darwin",
+        "gui@x86_64-apple-darwin",
+        "worker@aarch64-apple-darwin",
+        "worker@x86_64-apple-darwin"
+      ],
+      "bindings": [
+        {
+          "license_id": "MIT",
+          "generator_text_sha256": "73b9dc2e79c7308998dd30296e073aefaefb944a68fb89aa412c23c0edcabcaa",
+          "generator_text_bytes": 1082,
+          "mapping": "exact_per_package_legal_file",
+          "scopes": [
+            "cli@aarch64-apple-darwin",
+            "cli@aarch64-pc-windows-gnullvm",
+            "cli@aarch64-unknown-linux-gnu",
+            "cli@x86_64-apple-darwin",
+            "cli@x86_64-pc-windows-gnullvm",
+            "cli@x86_64-unknown-linux-gnu",
+            "gui@aarch64-apple-darwin",
+            "gui@x86_64-apple-darwin",
+            "worker@aarch64-apple-darwin",
+            "worker@x86_64-apple-darwin"
+          ],
+          "materials": [
+            {
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "bytes": 1082,
+              "sha256": "73b9dc2e79c7308998dd30296e073aefaefb944a68fb89aa412c23c0edcabcaa"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "registry",
+        "checksum_basis": "Locked registry archive independently rehashed and selected LICENSE-MIT compared with its exact archive member during v7 source-material review.",
+        "declared_vcs": {
+          "git": {
+            "sha1": "385ef739bcec785472c7c971c57f26f87caca3b8"
+          },
+          "path_in_vcs": "const-oid"
+        }
+      }
+    },
+    {
+      "name": "cpufeatures",
+      "version": "0.3.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "5ca28b0ae3115b884660db4118d803791fd6756b6e88f39c0f3f7859060d7566",
+      "license_expression": "MIT OR Apache-2.0",
+      "scopes": [
+        "cli@aarch64-apple-darwin",
+        "cli@aarch64-pc-windows-gnullvm",
+        "cli@aarch64-unknown-linux-gnu",
+        "cli@x86_64-apple-darwin",
+        "cli@x86_64-pc-windows-gnullvm",
+        "cli@x86_64-unknown-linux-gnu",
+        "gui@aarch64-apple-darwin",
+        "gui@x86_64-apple-darwin",
+        "worker@aarch64-apple-darwin",
+        "worker@x86_64-apple-darwin"
+      ],
+      "bindings": [
+        {
+          "license_id": "MIT",
+          "generator_text_sha256": "73b9dc2e79c7308998dd30296e073aefaefb944a68fb89aa412c23c0edcabcaa",
+          "generator_text_bytes": 1082,
+          "mapping": "exact_per_package_legal_file",
+          "scopes": [
+            "cli@aarch64-apple-darwin",
+            "cli@aarch64-pc-windows-gnullvm",
+            "cli@aarch64-unknown-linux-gnu",
+            "cli@x86_64-apple-darwin",
+            "cli@x86_64-pc-windows-gnullvm",
+            "cli@x86_64-unknown-linux-gnu",
+            "gui@aarch64-apple-darwin",
+            "gui@x86_64-apple-darwin",
+            "worker@aarch64-apple-darwin",
+            "worker@x86_64-apple-darwin"
+          ],
+          "materials": [
+            {
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "bytes": 1082,
+              "sha256": "73b9dc2e79c7308998dd30296e073aefaefb944a68fb89aa412c23c0edcabcaa"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "registry",
+        "checksum_basis": "Locked registry archive independently rehashed and selected LICENSE-MIT compared with its exact archive member during v7 source-material review.",
+        "declared_vcs": {
+          "git": {
+            "sha1": "e3ac92bfd33051e146025baa2d0ce79891b7fc73"
+          },
+          "path_in_vcs": "cpufeatures"
+        }
+      }
+    },
+    {
+      "name": "crypto-common",
+      "version": "0.2.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453",
+      "license_expression": "MIT OR Apache-2.0",
+      "scopes": [
+        "cli@aarch64-apple-darwin",
+        "cli@aarch64-pc-windows-gnullvm",
+        "cli@aarch64-unknown-linux-gnu",
+        "cli@x86_64-apple-darwin",
+        "cli@x86_64-pc-windows-gnullvm",
+        "cli@x86_64-unknown-linux-gnu",
+        "gui@aarch64-apple-darwin",
+        "gui@x86_64-apple-darwin",
+        "worker@aarch64-apple-darwin",
+        "worker@x86_64-apple-darwin"
+      ],
+      "bindings": [
+        {
+          "license_id": "MIT",
+          "generator_text_sha256": "d2e7ec5355c96eeade56b09187ceb48a6a30299da3ce7531a66d3d11405ab963",
+          "generator_text_bytes": 1070,
+          "mapping": "exact_per_package_legal_file",
+          "scopes": [
+            "cli@aarch64-apple-darwin",
+            "cli@aarch64-pc-windows-gnullvm",
+            "cli@aarch64-unknown-linux-gnu",
+            "cli@x86_64-apple-darwin",
+            "cli@x86_64-pc-windows-gnullvm",
+            "cli@x86_64-unknown-linux-gnu",
+            "gui@aarch64-apple-darwin",
+            "gui@x86_64-apple-darwin",
+            "worker@aarch64-apple-darwin",
+            "worker@x86_64-apple-darwin"
+          ],
+          "materials": [
+            {
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "bytes": 1070,
+              "sha256": "d2e7ec5355c96eeade56b09187ceb48a6a30299da3ce7531a66d3d11405ab963"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "registry",
+        "checksum_basis": "Locked registry archive independently rehashed and selected LICENSE-MIT compared with its exact archive member during v7 source-material review.",
+        "declared_vcs": {
+          "git": {
+            "sha1": "93dee26c6bde3741a197f1c5f6b7baac277705f3"
+          },
+          "path_in_vcs": "crypto-common"
+        }
+      }
+    },
+    {
+      "name": "digest",
+      "version": "0.11.3",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2",
+      "license_expression": "MIT OR Apache-2.0",
+      "scopes": [
+        "cli@aarch64-apple-darwin",
+        "cli@aarch64-pc-windows-gnullvm",
+        "cli@aarch64-unknown-linux-gnu",
+        "cli@x86_64-apple-darwin",
+        "cli@x86_64-pc-windows-gnullvm",
+        "cli@x86_64-unknown-linux-gnu",
+        "gui@aarch64-apple-darwin",
+        "gui@x86_64-apple-darwin",
+        "worker@aarch64-apple-darwin",
+        "worker@x86_64-apple-darwin"
+      ],
+      "bindings": [
+        {
+          "license_id": "MIT",
+          "generator_text_sha256": "af59cea35d7f5e2777a713b8d155d65efa2c339eb43f3c14e868c6ac8506edad",
+          "generator_text_bytes": 1103,
+          "mapping": "exact_per_package_legal_file",
+          "scopes": [
+            "cli@aarch64-apple-darwin",
+            "cli@aarch64-pc-windows-gnullvm",
+            "cli@aarch64-unknown-linux-gnu",
+            "cli@x86_64-apple-darwin",
+            "cli@x86_64-pc-windows-gnullvm",
+            "cli@x86_64-unknown-linux-gnu",
+            "gui@aarch64-apple-darwin",
+            "gui@x86_64-apple-darwin",
+            "worker@aarch64-apple-darwin",
+            "worker@x86_64-apple-darwin"
+          ],
+          "materials": [
+            {
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "bytes": 1103,
+              "sha256": "af59cea35d7f5e2777a713b8d155d65efa2c339eb43f3c14e868c6ac8506edad"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "registry",
+        "checksum_basis": "Locked registry archive independently rehashed and selected LICENSE-MIT compared with its exact archive member during v7 source-material review.",
+        "declared_vcs": {
+          "git": {
+            "sha1": "2fb9ed8922e244117040bb037a7d141a6a2b8228"
+          },
+          "path_in_vcs": "digest"
+        }
+      }
+    },
+    {
+      "name": "hybrid-array",
+      "version": "0.4.15",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17",
+      "license_expression": "MIT OR Apache-2.0",
+      "scopes": [
+        "cli@aarch64-apple-darwin",
+        "cli@aarch64-pc-windows-gnullvm",
+        "cli@aarch64-unknown-linux-gnu",
+        "cli@x86_64-apple-darwin",
+        "cli@x86_64-pc-windows-gnullvm",
+        "cli@x86_64-unknown-linux-gnu",
+        "gui@aarch64-apple-darwin",
+        "gui@x86_64-apple-darwin",
+        "worker@aarch64-apple-darwin",
+        "worker@x86_64-apple-darwin"
+      ],
+      "bindings": [
+        {
+          "license_id": "MIT",
+          "generator_text_sha256": "70c9d40f1f9545c3f133b8a67206e89da850f6468eed072281bb3701514114a9",
+          "generator_text_bytes": 1082,
+          "mapping": "exact_per_package_legal_file",
+          "scopes": [
+            "cli@aarch64-apple-darwin",
+            "cli@aarch64-pc-windows-gnullvm",
+            "cli@aarch64-unknown-linux-gnu",
+            "cli@x86_64-apple-darwin",
+            "cli@x86_64-pc-windows-gnullvm",
+            "cli@x86_64-unknown-linux-gnu",
+            "gui@aarch64-apple-darwin",
+            "gui@x86_64-apple-darwin",
+            "worker@aarch64-apple-darwin",
+            "worker@x86_64-apple-darwin"
+          ],
+          "materials": [
+            {
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "bytes": 1082,
+              "sha256": "70c9d40f1f9545c3f133b8a67206e89da850f6468eed072281bb3701514114a9"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "registry",
+        "checksum_basis": "Locked registry archive independently rehashed and selected LICENSE-MIT compared with its exact archive member during v7 source-material review.",
+        "declared_vcs": {
+          "git": {
+            "sha1": "09310c55b75e2cd408951c7e2e86dba16c63fc68"
+          },
+          "path_in_vcs": ""
+        }
+      }
+    },
+    {
+      "name": "sha2",
+      "version": "0.11.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19",
+      "license_expression": "MIT OR Apache-2.0",
+      "scopes": [
+        "cli@aarch64-apple-darwin",
+        "cli@aarch64-pc-windows-gnullvm",
+        "cli@aarch64-unknown-linux-gnu",
+        "cli@x86_64-apple-darwin",
+        "cli@x86_64-pc-windows-gnullvm",
+        "cli@x86_64-unknown-linux-gnu",
+        "gui@aarch64-apple-darwin",
+        "gui@x86_64-apple-darwin",
+        "worker@aarch64-apple-darwin",
+        "worker@x86_64-apple-darwin"
+      ],
+      "bindings": [
+        {
+          "license_id": "MIT",
+          "generator_text_sha256": "831e0f43ad0bf014c1c4fec5767aae470434c1d66d6e671be2d823e729063e25",
+          "generator_text_bytes": 1196,
+          "mapping": "exact_per_package_legal_file",
+          "scopes": [
+            "cli@aarch64-apple-darwin",
+            "cli@aarch64-pc-windows-gnullvm",
+            "cli@aarch64-unknown-linux-gnu",
+            "cli@x86_64-apple-darwin",
+            "cli@x86_64-pc-windows-gnullvm",
+            "cli@x86_64-unknown-linux-gnu",
+            "gui@aarch64-apple-darwin",
+            "gui@x86_64-apple-darwin",
+            "worker@aarch64-apple-darwin",
+            "worker@x86_64-apple-darwin"
+          ],
+          "materials": [
+            {
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "bytes": 1196,
+              "sha256": "831e0f43ad0bf014c1c4fec5767aae470434c1d66d6e671be2d823e729063e25"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "registry",
+        "checksum_basis": "Locked registry archive independently rehashed and selected LICENSE-MIT compared with its exact archive member during v7 source-material review.",
+        "declared_vcs": {
+          "git": {
+            "sha1": "138dc5a05b93f8e49cda177fc6cfd7cc43673e5d"
+          },
+          "path_in_vcs": "sha2"
+        }
+      }
+    },
+    {
+      "name": "typenum",
+      "version": "1.20.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20",
+      "license_expression": "MIT OR Apache-2.0",
+      "scopes": [
+        "cli@aarch64-apple-darwin",
+        "cli@aarch64-pc-windows-gnullvm",
+        "cli@aarch64-unknown-linux-gnu",
+        "cli@x86_64-apple-darwin",
+        "cli@x86_64-pc-windows-gnullvm",
+        "cli@x86_64-unknown-linux-gnu",
+        "gui@aarch64-apple-darwin",
+        "gui@x86_64-apple-darwin",
+        "worker@aarch64-apple-darwin",
+        "worker@x86_64-apple-darwin"
+      ],
+      "bindings": [
+        {
+          "license_id": "MIT",
+          "generator_text_sha256": "a825bd853ab71619a4923d7b4311221427848070ff44d990da39b0b274c1683f",
+          "generator_text_bytes": 1083,
+          "mapping": "exact_per_package_legal_file",
+          "scopes": [
+            "cli@aarch64-apple-darwin",
+            "cli@aarch64-pc-windows-gnullvm",
+            "cli@aarch64-unknown-linux-gnu",
+            "cli@x86_64-apple-darwin",
+            "cli@x86_64-pc-windows-gnullvm",
+            "cli@x86_64-unknown-linux-gnu",
+            "gui@aarch64-apple-darwin",
+            "gui@x86_64-apple-darwin",
+            "worker@aarch64-apple-darwin",
+            "worker@x86_64-apple-darwin"
+          ],
+          "materials": [
+            {
+              "kind": "package_file",
+              "path": "LICENSE-MIT",
+              "bytes": 1083,
+              "sha256": "a825bd853ab71619a4923d7b4311221427848070ff44d990da39b0b274c1683f"
+            }
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "registry",
+        "checksum_basis": "Locked registry archive independently rehashed and selected LICENSE-MIT compared with its exact archive member during v7 source-material review.",
+        "declared_vcs": {
+          "git": {
+            "sha1": "0db9a0f731981f29266b63586c29fa07e4477b1a"
+          },
+          "path_in_vcs": ""
+        }
+      }
     }
   ],
   "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
   "source_inputs": [
     {
-      "bytes": 148258,
+      "bytes": 148240,
       "kind": "review_input",
       "path": "Cargo.lock",
-      "sha256": "321a0d8ee1c1c5a8f03ed79bb65f071837e0c28375f9e68c76e27df3b64b303f"
+      "sha256": "6a2c62814ae6a86acf6b620cdb8730b117a9a104b49d460456fc2c2d00a8c456"
     },
     {
-      "bytes": 1382,
+      "bytes": 1380,
       "kind": "review_input",
       "path": "Cargo.toml",
-      "sha256": "0cefcb9924d5473335f79f0becfd873590a084f6548f62e44431e55cd0a2379f"
+      "sha256": "e17cc1dc6624c055f61b7bd46d9723bbc74c2ea42a211f4332932d26adb359aa"
     },
     {
       "bytes": 839,
@@ -12594,16 +13058,16 @@
       "sha256": "e811c9092d3f916449a6017a661500810134bcc6ead2521d4cad41b7f0a8b7a3"
     },
     {
-      "bytes": 455,
+      "bytes": 477,
       "kind": "review_input",
       "path": "crates/eml-core/Cargo.toml",
-      "sha256": "52c21442a62c86d82331f740bd623d3508182a3a9aaf003fd3bfb1819c5ea61f"
+      "sha256": "6c907f9e93fee371b8a570f9febf5277778130f202edbdb37dbad8a4328fd373"
     },
     {
-      "bytes": 1111,
+      "bytes": 1140,
       "kind": "review_input",
       "path": "crates/eml-fs/Cargo.toml",
-      "sha256": "ea235f1a94486075d2860dea0720f5edbe5666ca1f3c2180bc5f9d85a6d23360"
+      "sha256": "596ef767e0d96a576ed64fb0c5537449abf42a39210deee1e8e6f4bce9425872"
     },
     {
       "bytes": 308,
@@ -12612,10 +13076,10 @@
       "sha256": "5b6f4b955b911d32fecd9392147abbbab5a9a35b99b6ea61fc29c6443a6f2c9c"
     },
     {
-      "bytes": 1127,
+      "bytes": 1121,
       "kind": "review_input",
       "path": "xtask/distribution.toml",
-      "sha256": "a073a3a48c0969f635c0262ccf752f8c95c4b1ab1974202f35c06de7ce6a1d9b"
+      "sha256": "da5c4066ad2845959d70460688de12c62d8b57e93affa2bf791ddd80c83aa2dc"
     },
     {
       "bytes": 19327,
@@ -12644,20 +13108,20 @@
     {
       "path": "crates/eml-app/Cargo.toml",
       "kind": "review_input",
-      "bytes": 474,
-      "sha256": "3630060ccd90a6a7fe013b191603de3468effd55cccc852cb42f85bc98cc93f8"
+      "bytes": 552,
+      "sha256": "0fb2b769f732f3c4d8034f853c0aa7a103ae0785bd6718cf7e5388ac1e8986ae"
     },
     {
       "path": "crates/eml-gui/Cargo.toml",
       "kind": "review_input",
-      "bytes": 2228,
-      "sha256": "13538a350a6a714fa0720788a61f423025e0f98d110f4abda9bf5b1a28852abd"
+      "bytes": 2156,
+      "sha256": "93ad753ba78c9b7ca11745f2da22554954930539ba5d6afd6f64c012ddc93f1c"
     },
     {
       "path": "crates/eml-worker/Cargo.toml",
       "kind": "review_input",
       "bytes": 859,
-      "sha256": "2d40ce76eb42cdb8074885edae5432760e751f5a688739ffe38819b9d2a7176b"
+      "sha256": "2fa0571fe0b0304e8f050d88e8b8c7fedc604ae5eeb4cef86ea5a87f64fbb4ab"
     },
     {
       "path": "crates/eml-macos/Cargo.toml",
@@ -12680,8 +13144,8 @@
     {
       "path": "vendor/winit/EML-PATCH.md",
       "kind": "review_input",
-      "bytes": 1718,
-      "sha256": "96f8c645bc3b39e7e8c8418c2df0d9feded2676cb7595412a8ed1d856ba214be"
+      "bytes": 3435,
+      "sha256": "c3c67efd33bf90b6226de073ee98c5e36766b59e963a2834cb8dd6958d65fa38"
     },
     {
       "path": "vendor/i-slint-core/Cargo.toml",
@@ -12888,6 +13352,10 @@
     {
       "basis_head": "0a61569a10c4d75775b9e1c76a5315d637392e3c",
       "scope": "Reviewed the dependency update against ten independently captured normal/build product feature trees: only base64, libc, annotate-snippets, crc32fast, lyon_algorithms, lyon_geom and smol_str change shipping identities. The two base64 records consolidate into the already-reviewed 0.23.1 MIT binding with the complete union of component scopes; its actual copyright names Alice Maz and Marshall Pierce. Every changed registry archive was downloaded and SHA-256 checked against Cargo.lock. Selected package MIT texts match retained bindings; annotate-snippets changes only its unselected Apache appendix attribution. Both Lyon packages omit license files; their newly declared VCS revision supplies the exact retained upstream MIT bytes. An independent pass checked changed material hashes, lengths, scope consolidation and Lyon revision bindings. Current package scopes exactly match all ten product trees. Syn, Object and other changed tooling identities do not enter those shipping graphs. Rust 1.99.1 standard-library legal members were independently byte-compared with the official checksum-verified compiler component and are unchanged; Windows runtime component identities and references are renewed separately. Manifest, lockfile, tool and distribution input identities below reflect this review, including the guarded hosted picker policy, which adds no shipping dependency. Generator execution, selected native link inputs, native qualification and legal assurance remain separate."
+    },
+    {
+      "basis_head": "aeb6c6340aed18605ea443817efac2f1fe91ce34",
+      "scope": "v7/Build36 working-tree material review. Core adds the already-locked SHA2 normal dependency, introducing exactly block-buffer0.12.1,const-oid0.10.2,cpufeatures0.3.1,crypto-common0.2.2,digest0.11.3,hybrid-array0.4.15,sha2 0.11.1,typenum1.20.1 to all ten shipping component/target scopes. Read complete selected MIT texts, preserving each copyright/permission/disclaimer; independently rehashed each exact cached archive against Cargo.lock and byte-compared its LICENSE-MIT member. Compared all ten actual selected graphs: no other registry identities added/removed; worker additionally owns the existing local eml-app report codec. Local workspace version becomes7.0.0 with unchanged MPL LICENSE. GUI removes custom About image features; actual AboutSlint is in Help. Winit source-defined lifecycle changes preserve original LICENSE/headers and renew the explanatory EML-PATCH material. Current source input identities are renewed. Hashes and generator reports do not establish review quality, legal assurance or native qualification."
     }
   ],
   "product_material_review": {

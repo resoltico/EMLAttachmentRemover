@@ -125,7 +125,12 @@ fn windows_first_console_interrupt_cancels_unfinished_request_after_actual_reade
     assert!(fs::read(root.path().join("stdout")).unwrap().is_empty());
     assert!(fs::read(root.path().join("stderr")).unwrap().is_empty());
     assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), original);
-    assert!(!root.path().join("a.no-attachments.eml").exists());
+    assert!(
+        !root
+            .path()
+            .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+            .exists()
+    );
     root.close().unwrap();
 }
 
@@ -179,7 +184,11 @@ fn windows_distinct_console_events_force_cli_after_real_partial_report() {
     assert!(String::from_utf8_lossy(&prefix).contains("\"removed\":["));
     assert!(process.exit_code().unwrap().is_none());
     assert_eq!(
-        fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+        )
+        .unwrap(),
         golden
     );
     send(&process, ConsoleEvent::Interrupt, root.path(), "first");
@@ -195,7 +204,11 @@ fn windows_distinct_console_events_force_cli_after_real_partial_report() {
     assert!(fs::read(root.path().join("stderr")).unwrap().is_empty());
     assert_eq!(fs::read(&source).unwrap(), input);
     assert_eq!(
-        fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+        fs::read(
+            root.path()
+                .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")
+        )
+        .unwrap(),
         golden
     );
     root.close().unwrap();

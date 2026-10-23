@@ -1,5 +1,11 @@
 # Coding-agent instructions
 
+## Project boundaries
+
+Core owns MIME policy, exact destination naming, semantic outcomes and shared terminology. CLI and Slint capture intent and render accepted facts. Application child owners control actual process/pipe/thread settlement; native adapters preserve held source identity and no-replace publication. Check observations never authorize a later Create.
+
+Use Cargo lint inheritance and source-local explanations for necessary native/generated exceptions. Real compilers, Clippy, rustfmt, rustdoc, ShellCheck, actionlint and the selected Swift tools own their checks. Manifest ownership comes from Cargo members, exclusions and path patches. See docs/architecture.md and docs/verification.md for current contracts and evidence scope.
+
 Apply these principles within the authorized task and governing instructions; resolve conflicts by instruction precedence and flag unresolved conflicts.
 
 ## Name by meaning, not incidental development history

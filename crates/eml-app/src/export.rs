@@ -26,37 +26,14 @@ impl TerminalReport {
             completion,
         })
     }
+    /// Stream this exact terminal report on an explicitly owned writer actor.
+    pub fn write_document(&self, writer: impl io::Write) -> io::Result<()> {
+        self.report
+            .write_document(self.id, &self.completion, writer)
+    }
     /// Exact session-local run captured before opening the save dialog.
     pub fn id(&self) -> RunId {
         self.id
-    }
-}
-/// Advisory inspection of the exact proposed report filename. It neither reserves
-/// the name nor establishes writability; publication still uses atomic no-replace.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReportNameAvailability {
-    /// No final entry was observed at this instant.
-    Unused,
-    /// An entry exists, including a directory or a dangling symlink.
-    Occupied,
-}
-fn validate_report_path(destination: &Path) -> io::Result<()> {
-    if !destination.is_absolute() || destination.file_name().is_none() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Choose an absolute report filename",
-        ));
-    }
-    Ok(())
-}
-/// Inspect a proposed name without following its final symlink. Unknown failures
-/// are errors, never evidence that the name is unused.
-pub fn inspect_report_destination(destination: &Path) -> io::Result<ReportNameAvailability> {
-    validate_report_path(destination)?;
-    match std::fs::symlink_metadata(destination) {
-        Ok(_) => Ok(ReportNameAvailability::Occupied),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(ReportNameAvailability::Unused),
-        Err(error) => Err(error),
     }
 }
 /// Operation responsible for an actual report-export failure.
@@ -190,43 +167,46 @@ fn checkpoint(control: &RunControl) -> io::Result<()> {
     }
 }
 fn prepare_export(
-    report: &TerminalReport,
+    bytes: &[u8],
     destination: &Path,
     control: &RunControl,
-) -> Result<(BoundDirectory, Vec<u8>), ReportExportFailure> {
+) -> Result<BoundDirectory, ReportExportFailure> {
     use ReportExportStage::{BeforePublication, Destination, Serialization};
     checkpoint(control).map_err(|e| ReportExportFailure::native(BeforePublication, &e))?;
-    validate_report_path(destination).map_err(|e| ReportExportFailure::native(Destination, &e))?;
-    let parent_path = destination.parent().expect("validated absolute filename");
-    let parent = BoundDirectory::open(parent_path)
-        .map_err(|e| ReportExportFailure::native(Destination, &e))?;
-    parent
-        .admit_namespace()
-        .map_err(|e| ReportExportFailure::native(Destination, &e))?;
-    let bytes = report
-        .report
-        .export_terminal_bytes(report.id, &report.completion)
-        .map_err(|e| ReportExportFailure::native(Serialization, &e))?;
-    checkpoint(control).map_err(|e| ReportExportFailure::native(BeforePublication, &e))?;
-    Ok((parent, bytes))
+    crate::validate_destination(destination)
+        .map_err(|e| ReportExportFailure::invariant(Destination, e))?;
+    crate::report_document::validate(bytes)
+        .map_err(|e| ReportExportFailure::invariant(Serialization, e))?;
+    BoundDirectory::open(destination.parent().expect("validated absolute filename"))
+        .map_err(|e| ReportExportFailure::native(Destination, &e))
 }
 /// Run only on an explicitly owned background task. Existing final entries are
 /// never replaced, including original messages. Advisory inspection grants no
 /// publication authority; the held no-replace edge remains authoritative.
 pub fn export_report(
-    report: &TerminalReport,
+    bytes: &[u8],
     destination: &Path,
     control: &RunControl,
 ) -> ReportExportOutcome {
     let mut result = ReportExportOutcome::empty();
-    let (parent, bytes) = match prepare_export(report, destination, control) {
+    let parent = match prepare_export(bytes, destination, control) {
         Ok(value) => value,
         Err(error) => {
             result.fail(error);
             return result;
         }
     };
-    let candidate = match parent.stage_bytes(&bytes, || checkpoint(control)) {
+    let creation = match eml_fs::CreationDirectory::acquire(&parent) {
+        Ok(value) => value,
+        Err(error) => {
+            result.fail(ReportExportFailure::native(
+                ReportExportStage::Destination,
+                &error,
+            ));
+            return result;
+        }
+    };
+    let candidate = match creation.stage_bytes(bytes, || checkpoint(control)) {
         Ok(candidate) => candidate,
         Err(error) => {
             result.file_sync = error.file_sync;
@@ -259,7 +239,7 @@ pub fn export_report(
         &parent,
         candidate,
         destination.file_name().expect("validated report filename"),
-        &bytes,
+        bytes,
         &mut result,
     );
     result
@@ -336,7 +316,16 @@ fn qualify_export(
     bytes: &[u8],
     result: &mut ReportExportOutcome,
 ) {
-    result.namespace_sync = Some(parent.sync_namespace());
+    result.namespace_sync = Some(match eml_fs::SyncDirectory::acquire(parent) {
+        Ok(sync) => sync.sync_namespace(),
+        Err(error) => {
+            result.fail(ReportExportFailure::native(
+                ReportExportStage::NamespaceSync,
+                &error,
+            ));
+            return;
+        }
+    });
     if result
         .namespace_sync
         .is_some_and(|sync| sync.state == SyncState::Failed)
@@ -426,4 +415,55 @@ fn verify_final(file: &BoundFile, bytes: &[u8]) -> Result<bool, ReportExportFail
     file.check_binding()
         .map_err(|e| ReportExportFailure::binding(ReportExportStage::Verification, e))?;
     Ok(true)
+}
+
+impl ReportExportOutcome {
+    /// Project exact native observations into the bounded private receipt schema.
+    pub fn receipt(
+        &self,
+        operation_id: eml_protocol::desktop::OperationId,
+    ) -> io::Result<eml_protocol::desktop::ExportReceipt> {
+        use eml_protocol::{desktop::ExportFailure, records::Nullable};
+        fn nullable<T>(v: Option<T>) -> Nullable<T> {
+            v.map_or(Nullable::Null(()), Nullable::Value)
+        }
+        let failures = self
+            .failures
+            .iter()
+            .map(|f| ExportFailure {
+                stage: match f.stage {
+                    ReportExportStage::Destination => "destination",
+                    ReportExportStage::Serialization => "serialization",
+                    ReportExportStage::Staging => "staging",
+                    ReportExportStage::BeforePublication => "before_publication",
+                    ReportExportStage::Publication => "publication",
+                    ReportExportStage::Verification => "verification",
+                    ReportExportStage::Cleanup => "cleanup",
+                    ReportExportStage::NamespaceSync => "namespace_sync",
+                    ReportExportStage::Address => "address",
+                }
+                .into(),
+                kind: nullable(f.kind.map(|kind| format!("{kind:?}"))),
+                native_code: nullable(f.native_code),
+                detail: f.detail.clone(),
+            })
+            .collect();
+        eml_protocol::desktop::export_receipt(
+            operation_id,
+            eml_protocol::desktop::ExportObservations {
+                publication: match self.publication {
+                    PublicationState::NotPublished => "not_published",
+                    PublicationState::Published => "published",
+                    PublicationState::Unknown => "unknown",
+                },
+                file_sync: self.file_sync,
+                namespace_sync: self.namespace_sync,
+                address_verified: self.address_verified,
+                candidate_identity: self.candidate_identity,
+                final_file_verified: self.final_file_verified,
+                cleanup: &self.cleanup,
+            },
+            failures,
+        )
+    }
 }

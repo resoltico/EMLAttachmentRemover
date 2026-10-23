@@ -345,7 +345,7 @@ fn verify(
     required(
         item,
         &json!({"type":"item","index":0,"status":status,"source":native_path(directory,"a.eml")?,
-        "destination":native_path(directory,"a.no-attachments.eml")?,"stripped_fields":[]}),
+        "destination":native_path(directory,"a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")?,"stripped_fields":[]}),
     )?;
     let source_after = observe(&directory.join("a.eml"))?;
     if source_after.signature != source_before.signature
@@ -421,14 +421,16 @@ pub(crate) fn run(
             )?;
             if matches!(case, Case::Conflict) {
                 fs::write(
-                    directory.join("a.no-attachments.eml"),
+                    directory.join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
                     b"owned existing copy must remain unchanged\n",
                 )?;
             }
         }
         let source = observe(&directory.join("a.eml"))?;
         let before = if matches!(case, Case::UpToDate | Case::Conflict) {
-            Some(observe(&directory.join("a.no-attachments.eml"))?)
+            Some(observe(
+                &directory.join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
+            )?)
         } else {
             None
         };
@@ -537,7 +539,7 @@ fn counterfeit_controls(
             || document(&log)?
                 != format!(
                     "{program} {version} (Build {})\n",
-                    eml_protocol::product::BUILD_NUMBER
+                    eml_core::product::BUILD_NUMBER
                 )
                 .as_bytes()
             || !document(&log.with_extension("stderr"))?.is_empty()
@@ -590,7 +592,8 @@ fn counterfeit_trace(bytes: &[u8], directory: &Path) -> Result<Vec<u8>> {
     // outcome/receipt while binding only the two path fields to this separate
     // owned case, so the identity-copy control reaches the independent byte oracle.
     events[1]["source"] = native_path(directory, "a.eml")?;
-    events[1]["destination"] = native_path(directory, "a.no-attachments.eml")?;
+    events[1]["destination"] =
+        native_path(directory, "a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")?;
     let mut result = Vec::new();
     for event in events {
         serde_json::to_writer(&mut result, &event)?;
@@ -606,7 +609,7 @@ fn verify_copy_files(
 ) -> Result<Option<ObservedFile>> {
     let expected_names: BTreeSet<_> =
         if matches!(case, Case::Created | Case::UpToDate | Case::Conflict) {
-            ["a.eml", "a.no-attachments.eml"]
+            ["a.eml", "a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"]
                 .into_iter()
                 .map(str::to_owned)
                 .collect()
@@ -630,7 +633,9 @@ fn verify_copy_files(
         ));
     }
     let copy = if matches!(case, Case::Created | Case::UpToDate | Case::Conflict) {
-        Some(observe(&directory.join("a.no-attachments.eml"))?)
+        Some(observe(
+            &directory.join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
+        )?)
     } else {
         None
     };
@@ -740,7 +745,7 @@ fn verify_version(
         || document(&version_log)?
             != format!(
                 "{program} {version} (Build {})\n",
-                eml_protocol::product::BUILD_NUMBER
+                eml_core::product::BUILD_NUMBER
             )
             .as_bytes()
         || !document(&version_log.with_extension("stderr"))?.is_empty()
@@ -768,9 +773,14 @@ mod tests {
     }
     fn created(directory: &Path) -> (ObservedFile, Vec<Value>) {
         fs::write(directory.join("a.eml"), INPUT).unwrap();
-        fs::write(directory.join("a.no-attachments.eml"), GOLDEN).unwrap();
+        fs::write(
+            directory.join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
+            GOLDEN,
+        )
+        .unwrap();
         let source = observe(&directory.join("a.eml")).unwrap();
-        let copy = observe(&directory.join("a.no-attachments.eml")).unwrap();
+        let copy =
+            observe(&directory.join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml")).unwrap();
         let mut events = frames(
             include_str!("../../tests/contract/protocol/created-attachment.jsonl")
                 .replace("@VERSION@", "6.0.0")
@@ -778,7 +788,8 @@ mod tests {
         )
         .unwrap();
         events[1]["source"] = native_path(directory, "a.eml").unwrap();
-        events[1]["destination"] = native_path(directory, "a.no-attachments.eml").unwrap();
+        events[1]["destination"] =
+            native_path(directory, "a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml").unwrap();
         events[1]["publication"]["candidate_identity"] = copy.identity;
         #[cfg(target_os = "macos")]
         {
@@ -853,7 +864,13 @@ mod tests {
             )
             .is_ok()
         );
-        fs::write(owned.path().join("a.no-attachments.eml"), INPUT).unwrap();
+        fs::write(
+            owned
+                .path()
+                .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
+            INPUT,
+        )
+        .unwrap();
         assert_eq!(
             kind(verify(
                 owned.path(),
@@ -874,7 +891,13 @@ mod tests {
         let (_, events) = created(producer.path());
         let counterfeit = tempfile::tempdir().unwrap();
         fs::write(counterfeit.path().join("a.eml"), INPUT).unwrap();
-        fs::write(counterfeit.path().join("a.no-attachments.eml"), INPUT).unwrap();
+        fs::write(
+            counterfeit
+                .path()
+                .join("a.ulaixrqur2pkcd3knlgxwbxf6i.no-attachments.eml"),
+            INPUT,
+        )
+        .unwrap();
         let source = observe(&counterfeit.path().join("a.eml")).unwrap();
         let trace = counterfeit_trace(&encode(&events), counterfeit.path()).unwrap();
         assert_eq!(

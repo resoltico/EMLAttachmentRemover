@@ -65,6 +65,7 @@ jobs:
           path: |
             target/release-admission.json
             target/release-check/**
+            target/release-inputs/verified-inputs.json
           if-no-files-found: error
   qualification:
     permissions:
@@ -120,66 +121,15 @@ jobs:
         run: |
           cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission.json
           cargo xtask distribution > target/release-distribution.json
-          mkdir target/release-input
-          : > target/release-desktop-records.jsonl
-          mapfile -t files < <(find target/qualified-products -type f \( -name '*.zip' -o -name '*.tar.gz' \) | sort)
-          test "${#files[@]}" = 8
-          for file in "${files[@]}"; do
-            name="$(basename "$file")"
-            jq -e --arg name "$name" '[.expected_artifacts[]|select(.name==$name)]|length==1' target/release-distribution.json
-            platform=$(jq -er --arg name "$name" '.expected_artifacts[]|select(.name==$name)|.platform' target/release-distribution.json)
-            role=$(jq -er --arg name "$name" '.expected_artifacts[]|select(.name==$name)|.role' target/release-distribution.json)
-            target=$(jq -er --arg platform "$platform" '.native_targets[]|select(.platform==$platform)|.target' target/release-distribution.json)
-            directory="target/qualified-products/native-products-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
-            [[ "$file" == "$directory/"* ]]
-            digest=$(sha256sum "$file" | cut -d ' ' -f 1)
-            size=$(stat -c %s "$file")
-            if [ "$role" = app ]; then
-              mapfile -t records < <(find "$directory" -type f -name app-result.json)
-              test "${#records[@]}" = 1
-              jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" 'def on_host($major): .host.target==$t and .host.process_os=="macos" and .host.process_architecture==(if $t=="x86_64-apple-darwin" then "x86_64" else "aarch64" end) and .host.kernel_machine==(if $t=="x86_64-apple-darwin" then "x86_64" else "arm64" end) and (.host.product_version|split(".")[0])==$major; .stage=="native_candidate" and .source==$s and .target==$t and .identity.sha256==$digest and .identity.byte_length==$size and .verification.stage=="native_candidate" and on_host("26")' "${records[0]}"
-              mapfile -t references < <(find "$directory" -type f -name "$name.reference.json")
-              test "${#references[@]}" = 1
-              jq -e --arg s "$SOURCE" --arg t "$target" --arg v "$VERSION" '.source==$s and .target==$t and .version==$v' "${references[0]}"
-              floor="target/desktop-qualification/floor-smoke-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT/app-archive-smoke"
-              mapfile -t desktop_records < <(find "$floor" -mindepth 2 -maxdepth 2 -type f -name result.json)
-              test "${#desktop_records[@]}" = 1
-              jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" 'def on_host($major): .host.target==$t and .host.process_os=="macos" and .host.process_architecture==(if $t=="x86_64-apple-darwin" then "x86_64" else "aarch64" end) and .host.kernel_machine==(if $t=="x86_64-apple-darwin" then "x86_64" else "arm64" end) and (.host.product_version|split(".")[0])==$major; def passed: .totalTestCount==1 and .passedTests==1 and .failedTests==0 and .skippedTests==0; .stage=="desktop_qualification" and .source==$s and .target==$t and .verification.stage=="desktop_qualification" and .verification.snapshot.sha256==$digest and .verification.snapshot.byte_length==$size and (.verification.gui_interaction.workflow.summary|passed) and (.verification.gui_interaction.pagination.summary|passed) and (.verification.gui_interaction.appearance.summary|passed) and all(.verification.gui_interaction.publication.cases[]; .summary|passed) and ([.verification.gui_interaction.publication.cases[].case]|sort)==["active-quit","force-stop","published-error","stop"] and on_host("15")' "${desktop_records[0]}"
-              jq -c --arg artifact "$floor" '{stage,source,target,host,archive:.verification.snapshot,artifact:$artifact,workflow:.verification.gui_interaction.workflow.summary,pagination:.verification.gui_interaction.pagination.summary,appearance:.verification.gui_interaction.appearance.summary,publication_cases:[.verification.gui_interaction.publication.cases[]|{case,summary}]}' "${desktop_records[0]}" >> target/release-desktop-records.jsonl
-              if [ "$platform" = macos-x86_64 ]; then
-                picker="target/picker-qualification/picker-qualification-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
-                test -f "$picker/result.json" || { printf 'Missing exact-run picker qualification receipt: %s\n' "$picker/result.json" >&2; exit 1; }
-                test "$(stat -c %s "$picker/result.json")" -le 16777216
-                ref_digest=$(sha256sum "${references[0]}" | cut -d ' ' -f 1)
-                ref_size=$(stat -c %s "${references[0]}")
-                jq -n --arg s "$SOURCE" --arg t "$target" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg digest "$digest" --argjson size "$size" --arg rd "$ref_digest" --argjson rs "$ref_size" --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" --slurpfile distribution target/release-distribution.json '{source:$s,target:$t,run:$run,attempt:$attempt,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,archive:{sha256:$digest,byte_length:$size},reference:{sha256:$rd,byte_length:$rs},picker_host:$distribution[0].picker_host}' > target/release-picker-expected.json
-                jq -e -L .github/scripts --slurpfile e target/release-picker-expected.json 'include "picker-evidence"; qualification($e[0])' "$picker/result.json"
-                jq -c --arg artifact "$picker" '.+{artifact:$artifact}' "$picker/result.json" >> target/release-desktop-records.jsonl
-              fi
-            else
-              mapfile -t records < <(find "$directory" -type f \( -name cli-result.json -o -name qualification.json \))
-              test "${#records[@]}" = 1
-              jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" '.source==$s and .target==$t and .archive.identity.sha256==$digest and .archive.identity.byte_length==$size' "${records[0]}"
-            fi
-            cp --no-clobber -- "$file" "target/release-input/$name"
-          done
-          for platform in $(jq -er '.native_targets[].platform' target/release-distribution.json); do
-            directory="target/qualified-products/native-products-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
-            test -d "$directory"
-            mapfile -t records < <(find "$directory" -type f \( -name qualification.json -o -name cli-result.json -o -name app-result.json \))
-            test "${#records[@]}" -gt 0
-            for record in "${records[@]}"; do
-              jq -e --arg source "$SOURCE" '.source==$source' "$record"
-            done
-          done
-          cargo xtask stage-release-assets --archives target/release-input --out target/release-assembly > target/release-assembly.json
+          cargo xtask verify-release-inputs --products target/qualified-products --desktop target/desktop-qualification --picker target/picker-qualification --out target/release-inputs > target/release-inputs.json
+          cargo xtask stage-release-assets --inputs target/release-inputs/verified-inputs.json --out target/release-assembly > target/release-assembly.json
           assets="$(jq -er .assets_directory target/release-assembly.json)"
           printf 'RELEASE_ASSETS=%s\n' "$assets" >> "$GITHUB_ENV"
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" > target/release-native-jobs.json
           jq -n --arg source "$SOURCE" --arg dispatch "$DISPATCH_SHA" --arg workflow "$WORKFLOW_REF" --arg workflow_sha "$WORKFLOW_SHA" \
             --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
-            --slurpfile policy target/release-distribution.json --slurpfile assembly target/release-assembly.json --slurpfile desktop target/release-desktop-records.jsonl \
-            '{source:$source,dispatch_sha:$dispatch,workflow_ref:$workflow,workflow_sha:$workflow_sha,qualification_run:$run,policy:$policy[0],assembly:$assembly[0],desktop_qualification:$desktop,scope:"native candidate production, same-archive desktop/picker qualification and exact asset assembly; dispatch workflow identity and artifact source are distinct"}' > target/release-predicate.json
+            --slurpfile policy target/release-distribution.json --slurpfile assembly target/release-assembly.json --slurpfile inputs target/release-inputs/verified-inputs.json \
+            '{source:$source,dispatch_sha:$dispatch,workflow_ref:$workflow,workflow_sha:$workflow_sha,qualification_run:$run,policy:$policy[0],assembly:$assembly[0],verified_inputs:$inputs[0],scope:"native candidate production, same-archive desktop/picker qualification and exact asset assembly; dispatch workflow identity and artifact source are distinct"}' > target/release-predicate.json
           awk -v version="$VERSION" 'index($0,"## [" version "] - ")==1 {selected=1; next} selected && /^## / {exit} selected {print}' CHANGELOG.md > target/release-notes.md
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2; explicit qualification/source predicate
         with:
@@ -199,7 +149,7 @@ jobs:
           [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
           gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > target/release-server-before-publish.json
           jq -e --argjson id "$release_id" '.id==$id' target/release-server-before-publish.json
-          cargo xtask check-release-server --assets "$RELEASE_ASSETS" --release target/release-server-before-publish.json > target/release-server-checked.json
+          cargo xtask check-release-server --inputs target/release-inputs/verified-inputs.json --assets "$RELEASE_ASSETS" --release target/release-server-before-publish.json > target/release-server-checked.json
           gh release edit "$tag" --draft=false --latest
       - name: Observe server state after success or failure without deleting anything
         if: ${{ always() }}
@@ -219,4 +169,5 @@ jobs:
             target/release-*.txt
             target/release-*.md
             target/release-check/**
+            target/release-inputs/verified-inputs.json
           if-no-files-found: error
