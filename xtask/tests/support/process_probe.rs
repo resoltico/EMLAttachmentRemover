@@ -96,10 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         std::fs::write(
             root.join("worker-group"),
-            rustix::process::getpgrp()
-                .as_raw_nonzero()
-                .get()
-                .to_string(),
+            format!("{}\n", rustix::process::getpgrp().as_raw_nonzero().get()),
         )?;
         std::thread::sleep(Duration::from_millis(800));
         std::fs::write(root.join("invoked"), b"not terminated")?;
@@ -129,7 +126,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else if mode == "ignore-term" {
         ctrlc::set_handler(|| {})?;
-        std::fs::write(root.join("worker-ready"), std::process::id().to_string())?;
+        std::fs::write(
+            root.join("worker-ready"),
+            format!("{}\n", std::process::id()),
+        )?;
         std::thread::sleep(Duration::from_secs(5));
         std::fs::write(root.join("invoked"), b"not terminated")?;
     } else if mode == "supervise" {

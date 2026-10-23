@@ -257,7 +257,7 @@ fn worker_dead(root: &Path) {
         path.is_file(),
         "Expected the nested worker to have actually started"
     );
-    let pid: i32 = fs::read_to_string(path).unwrap().parse().unwrap();
+    let pid = wait_pid_marker(&path);
     assert!(pid > 0);
     let began = std::time::Instant::now();
     loop {
@@ -294,6 +294,111 @@ fn wait_file(path: &Path) {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+fn read_pid_marker(path: &Path) -> std::io::Result<Option<i32>> {
+    use std::{io::Read, os::unix::fs::OpenOptionsExt};
+    let mut options = fs::OpenOptions::new();
+    options
+        .read(true)
+        .custom_flags((rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::NOFOLLOW).bits() as i32);
+    let file = match options.open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let invalid = || std::io::Error::other("Invalid complete numeric process marker");
+    if !file.metadata()?.is_file() {
+        return Err(invalid());
+    }
+    let mut bytes = Vec::new();
+    // Ten decimal i32 digits plus LF, with one extra byte to reject overflow.
+    file.take(12).read_to_end(&mut bytes)?;
+    if bytes.last() != Some(&b'\n') {
+        return if bytes.len() <= 10 && bytes.iter().all(u8::is_ascii_digit) {
+            Ok(None)
+        } else {
+            Err(invalid())
+        };
+    }
+    let digits = &bytes[..bytes.len() - 1];
+    if digits.is_empty()
+        || digits.len() > 10
+        || digits[0] == b'0'
+        || !digits.iter().all(u8::is_ascii_digit)
+    {
+        return Err(invalid());
+    }
+    let pid: i32 = std::str::from_utf8(digits)
+        .map_err(|_| invalid())?
+        .parse()
+        .map_err(|_| invalid())?;
+    Ok(Some(pid))
+}
+
+fn wait_pid_marker(path: &Path) -> i32 {
+    let began = std::time::Instant::now();
+    loop {
+        match read_pid_marker(path) {
+            Ok(Some(pid)) => return pid,
+            Ok(None) => (),
+            Err(error) => panic!("{}: {error}", path.display()),
+        }
+        assert!(
+            began.elapsed() < Duration::from_secs(5),
+            "{}",
+            path.display()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn numeric_process_marker_waits_for_complete_frame_and_rejects_bad_frames() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let root = scratch();
+    let marker = root.path().join("pid-marker");
+    let returned = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let reader = scope.spawn(|| {
+            let pid = wait_pid_marker(&marker);
+            returned.store(true, Ordering::SeqCst);
+            pid
+        });
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&marker)
+            .unwrap();
+        assert_eq!(read_pid_marker(&marker).unwrap(), None);
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            !returned.load(Ordering::SeqCst),
+            "Empty file is not a PID frame"
+        );
+        file.write_all(b"12").unwrap();
+        assert_eq!(read_pid_marker(&marker).unwrap(), None);
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            !returned.load(Ordering::SeqCst),
+            "A positive decimal prefix is not a complete PID"
+        );
+        file.write_all(b"345\n").unwrap();
+        assert_eq!(reader.join().unwrap(), 12345);
+    });
+    fs::write(&marker, b"2147483647\n").unwrap();
+    assert_eq!(read_pid_marker(&marker).unwrap(), Some(2_147_483_647));
+    for bytes in [
+        b"0\n".as_slice(),
+        b"-1\n",
+        b"01\n",
+        b"2147483648\n",
+        b"1\nextra",
+        b"1\n\n",
+        b"123456789012",
+    ] {
+        fs::write(&marker, bytes).unwrap();
+        assert!(read_pid_marker(&marker).is_err(), "{bytes:?}");
+    }
+}
 #[test]
 fn parent_sigterm_uses_control_eof_and_leaves_no_marker_writer() {
     let _scenario = scenario();
@@ -304,7 +409,7 @@ fn parent_sigterm_uses_control_eof_and_leaves_no_marker_writer() {
         .arg(env!("CARGO_BIN_EXE_xtask"))
         .spawn()
         .unwrap();
-    wait_file(&root.path().join("worker-ready"));
+    wait_pid_marker(&root.path().join("worker-ready"));
     rustix::process::kill_process(
         rustix::process::Pid::from_child(&parent),
         rustix::process::Signal::TERM,
@@ -325,7 +430,7 @@ fn parent_sigkill_closes_its_only_control_writer() {
         .arg(env!("CARGO_BIN_EXE_xtask"))
         .spawn()
         .unwrap();
-    wait_file(&root.path().join("worker-ready"));
+    wait_pid_marker(&root.path().join("worker-ready"));
     rustix::process::kill_process(
         rustix::process::Pid::from_child(&parent),
         rustix::process::Signal::KILL,
@@ -433,7 +538,7 @@ fn parent_sigint_cancels_and_reaps_its_nested_worker() {
         .arg(env!("CARGO_BIN_EXE_xtask"))
         .spawn()
         .unwrap();
-    wait_file(&root.path().join("worker-ready"));
+    wait_pid_marker(&root.path().join("worker-ready"));
     rustix::process::kill_process(
         rustix::process::Pid::from_child(&parent),
         rustix::process::Signal::INT,
@@ -616,7 +721,11 @@ fn exited_inspector_with_inherited_stdout_cannot_bypass_eof_deadline() {
     // Observe the finite descendant's natural exit even if a regression admits
     // the worker. No guessed-PID signal or unowned cleanup is used.
     let descendant = fs::read(root.path().join("inspect.descendant")).unwrap();
-    fs::write(root.path().join("worker-ready"), descendant).unwrap();
+    fs::write(
+        root.path().join("worker-ready"),
+        [descendant, b"\n".to_vec()].concat(),
+    )
+    .unwrap();
     worker_dead(root.path());
     let error = outcome
         .err()
@@ -750,11 +859,7 @@ fn a_group_in_another_owned_session_is_not_signal_authority() {
     let root = scratch();
     let (mut helper, writer, mut reader) =
         raw_session(root.path(), "marker", Path::new("/bin/ps"), 5000);
-    wait_file(&root.path().join("worker-group"));
-    let group: i32 = fs::read_to_string(root.path().join("worker-group"))
-        .unwrap()
-        .parse()
-        .unwrap();
+    let group = wait_pid_marker(&root.path().join("worker-group"));
     let error = controller_source::unix::pin(
         Path::new(env!("CARGO_BIN_EXE_xtask")),
         rustix::process::getsid(None).unwrap(),
@@ -852,7 +957,7 @@ fn supervisor_death_during_frozen_nested_groups_uses_eof_hup_cont_cascade() {
     fs::write(&script,b"#!/bin/sh\nn=0\nif [ -f \"$0.count\" ]; then read -r n < \"$0.count\"; fi\nn=$((n+1))\nprintf '%s\\n' \"$n\" > \"$0.count\"\nif [ \"$n\" -ge 3 ]; then : > \"$0.frozen\"; sleep 0.3; fi\nexec /bin/ps \"$@\"\n").unwrap();
     fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
     let (mut helper, writer, _reader) = raw_session(root.path(), "nested-wait", &script, 300);
-    wait_file(&root.path().join("worker-ready"));
+    wait_pid_marker(&root.path().join("worker-ready"));
     wait_file(&root.path().join("inspect.frozen"));
     rustix::process::kill_process(
         rustix::process::Pid::from_child(&helper),
