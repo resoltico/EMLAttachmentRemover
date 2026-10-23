@@ -9,6 +9,8 @@ enum DesktopFixtureRequest: String, CaseIterable, Sendable {
   case picker = "EML_NATIVE_PICKER_REQUESTED"
   case holdCopy = "EML_OWNED_COPY_HOLD"
   case restoreCopy = "EML_OWNED_COPY_RESTORE"
+  case preparePanelPath = "EML_NATIVE_PANEL_PATH_PREPARE"
+  case restorePanelClipboard = "EML_NATIVE_PANEL_CLIPBOARD_RESTORE"
   func send() throws {
     // Bypass stdio buffering: the owner must observe this before the UI waits
     // for an acknowledgment or enters the native panel operation.
@@ -44,6 +46,11 @@ final class DesktopFixtureOutput: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return ended
+  }
+  func observedEOF() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return ended && relayFailure == nil
   }
   func observe(_ bytes: Data) {
     lock.lock()

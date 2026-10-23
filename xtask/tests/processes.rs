@@ -922,3 +922,68 @@ fn settled_helper_copy_is_removed_but_identity_and_process_receipts_remain() {
             .is_err()
     );
 }
+
+#[test]
+fn clipboard_abort_waits_for_complete_ack_and_rejects_malformed_bytes() {
+    use std::io::Write;
+    use std::os::unix::process::ExitStatusExt;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let _scenario = scenario();
+    let root = scratch();
+    let finished = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let publication = scope.spawn(|| {
+            let began = std::time::Instant::now();
+            while !root.path().join("panel-path-1.request").is_file() {
+                assert!(began.elapsed() < Duration::from_secs(8));
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let mut marker = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(root.path().join("panel-path-1.ready"))
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(150));
+            assert!(
+                !finished.load(Ordering::Relaxed),
+                "An empty marker is not readiness"
+            );
+            marker.write_all(b"owned panel").unwrap();
+            std::thread::sleep(Duration::from_millis(150));
+            assert!(
+                !finished.load(Ordering::Relaxed),
+                "A partial marker is not readiness"
+            );
+            marker.write_all(b" path ready 1\n").unwrap();
+        });
+        let result = controller(root.path())
+            .run(
+                worker(root.path(), "clipboard-abort"),
+                &root.path().join("clipboard-partial.log"),
+                Duration::from_secs(10),
+            )
+            .unwrap();
+        finished.store(true, Ordering::Relaxed);
+        publication.join().unwrap();
+        assert_eq!(result.status.signal(), Some(6));
+        assert!(result.cleanup_complete && result.unexpected_survivors == 0);
+        assert!(!result.timed_out && !result.cancelled);
+    });
+    for bytes in [
+        b"wrong".as_slice(),
+        b"owned panel path ready 1\nextra".as_slice(),
+    ] {
+        let root = scratch();
+        fs::write(root.path().join("panel-path-1.ready"), bytes).unwrap();
+        let result = controller(root.path())
+            .run(
+                worker(root.path(), "clipboard-abort"),
+                &root.path().join("clipboard-malformed.log"),
+                Duration::from_secs(10),
+            )
+            .unwrap();
+        assert_eq!(result.status.code(), Some(1));
+        assert!(result.cleanup_complete && result.unexpected_survivors == 0);
+        assert!(!result.timed_out && !result.cancelled);
+    }
+}

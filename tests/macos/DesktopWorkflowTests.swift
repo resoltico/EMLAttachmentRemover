@@ -180,7 +180,7 @@ extension DesktopInteractionTests {
     let serviceSource = session.serviceSource
     let exportURL = root.appendingPathComponent("service-report.json")
     XCTAssertFalse(FileManager.default.fileExists(atPath: exportURL.path))
-    try await saveReport(app, to: exportURL, expectNameCollision: false)
+    try await saveReport(app, fixture: root, to: exportURL, expectNameCollision: false)
     try await requireText(app, containing: "Run 4 report: Report exported and verified.")
     let exported = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(contentsOf: exportURL)) as? [String: Any])
@@ -217,14 +217,14 @@ extension DesktopInteractionTests {
     let collisionURL = root.appendingPathComponent("report-collision.json")
     let sentinel = Data("Owned report collision sentinel\n".utf8)
     XCTAssertEqual(try Data(contentsOf: collisionURL), sentinel)
-    try await saveReport(app, to: collisionURL, expectNameCollision: true)
+    try await saveReport(app, fixture: root, to: collisionURL, expectNameCollision: true)
     XCTAssertFalse(app.buttons["Cancel Export"].isEnabled)
     XCTAssertTrue(app.buttons["Export Report…"].isEnabled)
     XCTAssertEqual(try Data(contentsOf: collisionURL), sentinel)
     snapshot(app, "report-export-collision-cancelled")
     let retryURL = root.appendingPathComponent("service-report-after-cancel.json")
     XCTAssertFalse(FileManager.default.fileExists(atPath: retryURL.path))
-    try await saveReport(app, to: retryURL, expectNameCollision: false)
+    try await saveReport(app, fixture: root, to: retryURL, expectNameCollision: false)
     try await requireText(app, containing: "Run 4 report: Report exported and verified.")
     let retry = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(contentsOf: retryURL)) as? [String: Any])
@@ -357,6 +357,7 @@ extension DesktopInteractionTests {
     try await focusOwnedWindow(owned, window: window, avoiding: folder)
     try await showRunControls(app)
     app.buttons["Dismiss report"].click()
+    try await showReportDetails(app)
     var snapshotFailure: String?
     let room = NSPredicate { _, _ in
       do {

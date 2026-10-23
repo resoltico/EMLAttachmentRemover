@@ -68,6 +68,9 @@ final class DesktopInteractionOwner {
   private let executionDeadline = ProcessInfo.processInfo.systemUptime + 1800
   private let cancellation = Cancellation()
   private let arguments = CommandLine.arguments
+  private var panelClipboard: PanelPathClipboardLease?
+  private var nextPanelPathSequence = 1
+  private var activePanelPathSequence: Int?
   private var resultURL: URL?
   private var fixtureFilesystem: [String: Any]?
 
@@ -117,6 +120,9 @@ final class DesktopInteractionOwner {
     // sampleFirstFailure includes its entire eight-second settlement budget;
     // an unsettled sampler remains recorded for the outer process owner.
     await settleProcesses()
+    if panelClipboard?.hasActiveLease == true {
+      do { try await drainRunnerOutput() } catch { failure = failure ?? String(describing: error) }
+    }
     do {
       try restoreAndWriteObservation()
     } catch { failure = failure ?? String(describing: error) }
@@ -409,6 +415,7 @@ final class DesktopInteractionOwner {
       }
       let request = fixtureOutput.take()
       try handleCopyRequest(request, fixture: config.fixture)
+      try handlePanelPathRequest(request, fixture: config.fixture)
       try await samplePicker(request, config: config, launched: launched, date: date)
       let runnerReady =
         input["runner_ready"].map { FileManager.default.fileExists(atPath: $0) } ?? true
@@ -454,6 +461,73 @@ final class DesktopInteractionOwner {
     if child.terminationReason != .exit || child.terminationStatus != 0 {
       failure =
         "Interaction runner failed: reason=\(child.terminationReason.rawValue), status=\(child.terminationStatus)"
+    }
+  }
+
+  static func readPanelPath(_ url: URL) throws -> String {
+    let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+    guard fd >= 0 else { throw Failure.invalidInput }
+    defer { close(fd) }
+    var before = stat()
+    guard fstat(fd, &before) == 0, before.st_mode & S_IFMT == S_IFREG,
+      before.st_uid == geteuid(), before.st_nlink == 1, before.st_size > 0,
+      before.st_size <= 4096
+    else { throw Failure.invalidInput }
+    var bytes = Data()
+    var buffer = [UInt8](repeating: 0, count: 4097)
+    while true {
+      let count = Darwin.read(fd, &buffer, min(buffer.count, 4097 - bytes.count))
+      if count < 0 && errno == EINTR { continue }
+      guard count >= 0 else { throw Failure.invalidInput }
+      if count == 0 { break }
+      bytes.append(contentsOf: buffer.prefix(count))
+      guard bytes.count <= 4096 else { throw Failure.invalidInput }
+    }
+    var after = stat()
+    guard fstat(fd, &after) == 0, before.st_dev == after.st_dev,
+      before.st_ino == after.st_ino, before.st_size == after.st_size,
+      before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec,
+      before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec,
+      before.st_ctimespec.tv_sec == after.st_ctimespec.tv_sec,
+      before.st_ctimespec.tv_nsec == after.st_ctimespec.tv_nsec,
+      bytes.count == before.st_size, let path = String(data: bytes, encoding: .utf8),
+      (path as NSString).isAbsolutePath, !bytes.contains(0)
+    else { throw Failure.invalidInput }
+    return path
+  }
+
+  private func handlePanelPathRequest(_ request: DesktopFixtureRequest?, fixture: URL) throws {
+    guard request == .preparePanelPath || request == .restorePanelClipboard else { return }
+    do {
+      if request == .preparePanelPath {
+        guard activePanelPathSequence == nil, nextPanelPathSequence <= 32 else {
+          throw Failure.invalidInput
+        }
+        let sequence = nextPanelPathSequence
+        let path = try Self.readPanelPath(
+          fixture.appendingPathComponent("panel-path-\(sequence).request"))
+        // configuration() already admitted this disposable hosted runner before
+        // any general-pasteboard access. The product and XCTest never write it.
+        if panelClipboard == nil { panelClipboard = PanelPathClipboardLease(pasteboard: .general) }
+        activePanelPathSequence = sequence
+        try panelClipboard!.prepare(path: path, sequence: sequence)
+        try Data("owned panel path ready \(sequence)\n".utf8).write(
+          to: fixture.appendingPathComponent("panel-path-\(sequence).ready"),
+          options: .withoutOverwriting)
+        nextPanelPathSequence += 1
+      } else {
+        guard let sequence = activePanelPathSequence, let clipboard = panelClipboard,
+          clipboard.hasActiveLease
+        else { throw Failure.invalidInput }
+        try clipboard.restore(phase: .requested)
+        try Data("owned panel clipboard restored \(sequence)\n".utf8).write(
+          to: fixture.appendingPathComponent("panel-path-\(sequence).restored"),
+          options: .withoutOverwriting)
+        activePanelPathSequence = nil
+      }
+    } catch {
+      panelClipboard?.recordFailure(error)
+      throw error
     }
   }
 
@@ -551,7 +625,7 @@ final class DesktopInteractionOwner {
       while !fixtureOutput.hasEnded() && ProcessInfo.processInfo.systemUptime < drainDeadline {
         try await Task.sleep(for: .milliseconds(50))
       }
-      outputDrainComplete = fixtureOutput.hasEnded()
+      outputDrainComplete = fixtureOutput.observedEOF()
       if !fixtureOutput.hasEnded() {
         failure = failure ?? "Interaction output drain did not settle"
       }
@@ -826,6 +900,16 @@ final class DesktopInteractionOwner {
   }
 
   private func restoreAndWriteObservation() throws {
+    if let clipboard = panelClipboard, clipboard.hasActiveLease {
+      if childReaped && outputDrainComplete == true && fixtureOutput.observedEOF() {
+        do { try clipboard.restore(phase: .runnerSettled) } catch {
+          failure = failure ?? "Panel clipboard restoration failed: \(error)"
+        }
+      } else {
+        clipboard.recordFailure(Failure.invalidInput)
+        failure = failure ?? "Panel clipboard restoration unverified: runner/output not settled"
+      }
+    }
     let appTerminated = app?.isTerminated == true
     let settingsTerminated = settings?.isTerminated ?? true
     if let held = heldCopy {
@@ -875,6 +959,8 @@ final class DesktopInteractionOwner {
       "source_check_failure": originalsUnchanged
         ? NSNull() : "Owned original fixture bytes changed or could not be read",
       "owned_pasteboard_released": hadBoard,
+      "panel_path_clipboard": panelClipboard?.observation
+        ?? PanelPathClipboardLease.unusedObservation,
       "first_failure_owned_app_sample": firstFailureSample ?? NSNull(),
       "native_picker_stack_samples": stackSamples,
       "native_picker_owned_process_log": pickerLogObservation ?? NSNull(),
@@ -888,7 +974,7 @@ final class DesktopInteractionOwner {
       ],
       "fixture_output_relay": [
         "enabled": outputPipe != nil,
-        "eof_observed": fixtureOutput.hasEnded(),
+        "eof_observed": fixtureOutput.observedEOF(),
         "drain_within_deadline": outputDrainComplete.map { $0 as Any } ?? NSNull(),
         "failure": fixtureOutput.observedRelayFailure().map { $0 as Any } ?? NSNull(),
       ],

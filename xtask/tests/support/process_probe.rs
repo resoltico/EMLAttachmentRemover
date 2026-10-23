@@ -11,6 +11,67 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let root = PathBuf::from(args.next().ok_or("root")?);
+    if mode == "clipboard-abort" {
+        use std::io::{Read, Write};
+        let path = root.join("one.eml");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(root.join("panel-path-1.request"))?
+            .write_all(
+                path.to_str()
+                    .ok_or("native clipboard fixture path is not UTF8")?
+                    .as_bytes(),
+            )?;
+        std::io::stdout().write_all(b"EML_NATIVE_PANEL_PATH_PREPARE\n")?;
+        std::io::stdout().flush()?;
+        let began = std::time::Instant::now();
+        let expected = b"owned panel path ready 1\n";
+        loop {
+            let mut options = std::fs::OpenOptions::new();
+            options.read(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.custom_flags(
+                    (rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::NOFOLLOW).bits() as i32,
+                );
+            }
+            match options.open(root.join("panel-path-1.ready")) {
+                Ok(file) => {
+                    if !file.metadata()?.is_file() {
+                        return Err(
+                            "parent clipboard acknowledgment is not an ordinary file".into()
+                        );
+                    }
+                    let mut bytes = Vec::new();
+                    file.take(expected.len() as u64 + 1)
+                        .read_to_end(&mut bytes)?;
+                    if bytes == expected {
+                        break;
+                    }
+                    if bytes.len() >= expected.len() || !expected.starts_with(&bytes) {
+                        return Err("parent clipboard acknowledgment differs".into());
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error.into()),
+            }
+            if began.elapsed() > Duration::from_secs(10) {
+                return Err("parent did not prepare the owned clipboard lease".into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        #[cfg(unix)]
+        rustix::process::setrlimit(
+            rustix::process::Resource::Core,
+            rustix::process::Rlimit {
+                current: Some(0),
+                maximum: Some(0),
+            },
+        )?;
+        std::process::abort();
+    }
     if mode == "abort" {
         #[cfg(unix)]
         rustix::process::setrlimit(

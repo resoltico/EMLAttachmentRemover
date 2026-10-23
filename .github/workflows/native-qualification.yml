@@ -273,6 +273,7 @@ jobs:
           EML_GENERATED_LEGAL_MATERIALS: ${{ github.workspace }}/target/legal-input
         run: cargo xtask qualify --target '${{ matrix.target }}' --out target/native-cli-build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: products
         if: ${{ runner.os != 'macOS' }}
         with:
           name: native-products-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
@@ -333,6 +334,8 @@ jobs:
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/cargo/**
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/native-test-build/**
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/native-primitives-build/**
+            ${{ steps.products.outcome == 'success' && format('!{0}/target/native-cli-build/*.tar.gz', steps.private_workspace.outputs.path || github.workspace) || '' }}
+            ${{ steps.products.outcome == 'success' && format('!{0}/target/windows-link-observation/*.zip', steps.private_workspace.outputs.path || github.workspace) || '' }}
           if-no-files-found: error
   icon:
     needs: plan
@@ -372,7 +375,7 @@ jobs:
           path: target/icon-produced/**
           if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ always() }}
+        if: ${{ always() && steps.upload.outcome != 'success' }}
         with:
           name: icon-observations-${{ inputs.source }}-macos-26-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: target/icon-produced/**
@@ -395,6 +398,12 @@ jobs:
         id: upload
         with:
           name: icon-${{ inputs.source }}-macos-15-intel-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: target/icon-produced/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() && steps.upload.outcome != 'success' }}
+        with:
+          name: icon-observations-${{ inputs.source }}-macos-15-intel-r${{ github.run_id }}-a${{ github.run_attempt }}
           path: target/icon-produced/**
           if-no-files-found: error
   app:
@@ -457,6 +466,7 @@ jobs:
             ~/.cargo/registry/cache
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: products
         if: ${{ !cancelled() && hashFiles('target/native-app-build/app-build/app-result.json') != '' }}
         with:
           name: native-products-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
@@ -494,6 +504,8 @@ jobs:
             !target/native-app-build/**/gui-operation-controls/**/build/**
             !target/native-app-build/**/gui-operation-controls/cargo/**
             target/archive-verification/**
+            ${{ steps.products.outcome == 'success' && '!target/native-app-build/*.tar.gz' || '' }}
+            ${{ steps.products.outcome == 'success' && '!target/native-app-build/app-build/*.zip' || '' }}
           if-no-files-found: error
   app_smoke:
     permissions:

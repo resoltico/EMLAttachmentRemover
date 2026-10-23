@@ -309,7 +309,79 @@ pub(crate) fn check_fixture_filesystem(value: &serde_json::Value) -> Result<()> 
 pub(crate) fn fixture_filesystem_test_value() -> serde_json::Value {
     serde_json::json!({"phase":"prelaunch","state":"observed","fixture_path":"/owned/fixture","filesystem_type":"fixturefs","root":{"device":7,"inode":10,"mode":16832},"one":{"device":7,"inode":11,"mode":33152},"upper":{"device":7,"inode":11,"mode":33152},"upper_errno":null,"ascii_alias_relation":"same_identity","descriptor_closed":true,"errors":[]})
 }
-record!(LifetimeOwner {fixture_filesystem:FixtureFilesystem,failure:Option<String>,source_check_failure:Option<String>,timed_out:bool,cancelled:bool,runner_reaped:bool,runner_status:Option<i32>,owned_app_terminated:bool,forced_app_cleanup:bool,originals_captured:u32,originals_unchanged:bool,owned_pasteboard_released:bool,unexpected_application_pids:Vec<u32>,ownership_receipt:OwnershipReceipt});
+record!(PanelPathClipboardOperation {sequence:u32,original_items:u32,original_types:u32,original_bytes:u64,capture_change_count:i64,clear_change_count:Option<i64>,prepared_change_count:Option<i64>,restore_change_count:Option<i64>,restore_phase:Option<String>,state:String,failure:Option<String>});
+record!(PanelPathClipboard {state:String,operations:Vec<PanelPathClipboardOperation>,failure:Option<String>});
+impl PanelPathClipboard {
+    pub(crate) fn check(&self, require_used: bool, restore_phase: &str) -> Result<()> {
+        if !matches!(restore_phase, "requested" | "runner_settled")
+            || self.failure.is_some()
+            || self.operations.len() > 32
+        {
+            return Err("Panel path clipboard restoration is unverified".into());
+        }
+        if self.operations.is_empty() {
+            return if self.state == "unused" && !require_used {
+                Ok(())
+            } else {
+                Err("Required panel path clipboard observation is missing".into())
+            };
+        }
+        if self.state != "restored" {
+            return Err("Prepared panel path clipboard was not restored".into());
+        }
+        for (index, operation) in self.operations.iter().enumerate() {
+            let clear = operation
+                .clear_change_count
+                .ok_or("Missing clipboard clear observation")?;
+            let prepared = operation
+                .prepared_change_count
+                .ok_or("Missing prepared clipboard observation")?;
+            let restored = operation
+                .restore_change_count
+                .ok_or("Missing clipboard restoration observation")?;
+            let coherent_original = if operation.original_items == 0 {
+                operation.original_types == 0 && operation.original_bytes == 0
+            } else {
+                operation.original_types >= operation.original_items
+                    && operation.original_bytes >= u64::from(operation.original_types)
+            };
+            if operation.sequence as usize != index + 1
+                || operation.original_items > 64
+                || operation.original_types > 256
+                || operation.original_bytes > 1024 * 1024
+                || !coherent_original
+                || operation.capture_change_count == clear
+                || prepared == restored
+                || operation.restore_phase.as_deref() != Some(restore_phase)
+                || operation.state != "restored"
+                || operation.failure.is_some()
+            {
+                return Err(
+                    "Panel path clipboard operation has incomplete restoration facts".into(),
+                );
+            }
+        }
+        Ok(())
+    }
+}
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn check_panel_path_clipboard(
+    value: &serde_json::Value,
+    require_used: bool,
+    restore_phase: &str,
+) -> Result<()> {
+    let observation: PanelPathClipboard = serde_json::from_value(value.clone())?;
+    observation.check(require_used, restore_phase)
+}
+#[cfg(test)]
+pub(crate) fn panel_path_clipboard_test_value(used: bool) -> serde_json::Value {
+    if used {
+        serde_json::json!({"state":"restored","operations":[{"sequence":1,"original_items":1,"original_types":2,"original_bytes":24,"capture_change_count":10,"clear_change_count":11,"prepared_change_count":11,"restore_change_count":12,"restore_phase":"requested","state":"restored","failure":null}],"failure":null})
+    } else {
+        serde_json::json!({"state":"unused","operations":[],"failure":null})
+    }
+}
+record!(LifetimeOwner {fixture_filesystem:FixtureFilesystem,panel_path_clipboard:PanelPathClipboard,failure:Option<String>,source_check_failure:Option<String>,timed_out:bool,cancelled:bool,runner_reaped:bool,runner_status:Option<i32>,owned_app_terminated:bool,forced_app_cleanup:bool,originals_captured:u32,originals_unchanged:bool,owned_pasteboard_released:bool,unexpected_application_pids:Vec<u32>,ownership_receipt:OwnershipReceipt});
 record!(PickerObservation {
     schema: u8,
     scenario: String,
@@ -590,6 +662,7 @@ fn product(
     )?;
     let owner = &value.lifetime_owner;
     owner.fixture_filesystem.check()?;
+    owner.panel_path_clipboard.check(true, "requested")?;
     require(
         owner.failure.is_none()
             && owner.source_check_failure.is_none()
@@ -1010,7 +1083,7 @@ pub(crate) fn project_lifetime_owner(raw: &serde_json::Value) -> Result<Lifetime
     // scenario's separate proof; these are the common actual app-owner facts.
     let app_identity = json!({"pid":observed_field(identity,"pid")?,"launch_date":observed_field(identity,"launch_date")?,"bundle_path":observed_field(identity,"bundle_path")?,"pasteboard":observed_field(identity,"pasteboard")?});
     Ok(serde_json::from_value(
-        json!({"fixture_filesystem":observed_field(raw,"fixture_filesystem")?,"failure":observed_field(raw,"failure")?,"source_check_failure":observed_field(raw,"source_check_failure")?,"timed_out":observed_field(raw,"timed_out")?,"cancelled":observed_field(raw,"cancelled")?,"runner_reaped":observed_field(raw,"runner_reaped")?,"runner_status":observed_field(raw,"runner_status")?,"owned_app_terminated":observed_field(raw,"owned_app_terminated")?,"forced_app_cleanup":observed_field(raw,"forced_app_cleanup")?,"originals_captured":observed_field(raw,"originals_captured")?,"originals_unchanged":observed_field(raw,"originals_unchanged")?,"owned_pasteboard_released":observed_field(raw,"owned_pasteboard_released")?,"unexpected_application_pids":observed_field(raw,"unexpected_application_pids")?,"ownership_receipt":app_identity}),
+        json!({"fixture_filesystem":observed_field(raw,"fixture_filesystem")?,"panel_path_clipboard":observed_field(raw,"panel_path_clipboard")?,"failure":observed_field(raw,"failure")?,"source_check_failure":observed_field(raw,"source_check_failure")?,"timed_out":observed_field(raw,"timed_out")?,"cancelled":observed_field(raw,"cancelled")?,"runner_reaped":observed_field(raw,"runner_reaped")?,"runner_status":observed_field(raw,"runner_status")?,"owned_app_terminated":observed_field(raw,"owned_app_terminated")?,"forced_app_cleanup":observed_field(raw,"forced_app_cleanup")?,"originals_captured":observed_field(raw,"originals_captured")?,"originals_unchanged":observed_field(raw,"originals_unchanged")?,"owned_pasteboard_released":observed_field(raw,"owned_pasteboard_released")?,"unexpected_application_pids":observed_field(raw,"unexpected_application_pids")?,"ownership_receipt":app_identity}),
     )?)
 }
 pub(crate) fn project_product(

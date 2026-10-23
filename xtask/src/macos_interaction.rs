@@ -249,6 +249,11 @@ fn execute_case(
 }
 fn qualify_owner_receipt(ownership: &Value, case: DesktopCase) -> Result<()> {
     crate::picker_evidence::check_fixture_filesystem(&ownership["fixture_filesystem"])?;
+    crate::picker_evidence::check_panel_path_clipboard(
+        &ownership["panel_path_clipboard"],
+        case.uses_panel_path_clipboard(),
+        "requested",
+    )?;
 
     if ownership.get("failure") != Some(&Value::Null)
         || ownership["timed_out"] != false
@@ -595,7 +600,7 @@ mod tests {
         let clean = json!({"failure":null,"timed_out":false,"cancelled":false,
             "runner_reaped":true,"runner_status":0,"owned_app_terminated":true,
             "forced_app_cleanup":false,"originals_unchanged":true,"originals_captured":4,
-            "source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"owned_pasteboard_released":true,
+            "source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"panel_path_clipboard":crate::picker_evidence::panel_path_clipboard_test_value(true),"owned_pasteboard_released":true,
             "unexpected_application_pids":[]});
         qualify_owner_receipt(&clean, DesktopCase::Workflow).unwrap();
         for field in [

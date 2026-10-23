@@ -115,7 +115,7 @@ fn prepare_control_fixture(app: &Path, case: &str, directory: &Path) -> Result<(
     fs::write(
         &input,
         serde_json::to_vec_pretty(
-            &json!({"app":app,"fixture":directory,"host_scope":"fresh-github-hosted-runner", "owner_control":match case { "deadline"=>"deadline", "force-app"=>"force-app", _=>"normal" }, "runner_ready":directory.join("worker-ready")}),
+            &json!({"app":app,"fixture":directory,"host_scope":"fresh-github-hosted-runner", "fixture_output":if case == "runner-crash" { "true" } else { "false" },"owner_control":match case { "deadline"=>"deadline", "force-app"=>"force-app", _=>"normal" }, "runner_ready":directory.join("worker-ready")}),
         )?,
     )?;
     Ok(())
@@ -139,7 +139,7 @@ fn control_command(
         .arg(&result_file)
         .arg(probe)
         .arg(if case == "runner-crash" {
-            "abort"
+            "clipboard-abort"
         } else {
             "cooperative-resource"
         })
@@ -252,6 +252,24 @@ fn qualify_control(
     directory: &Path,
 ) -> Result<()> {
     crate::picker_evidence::check_fixture_filesystem(&facts["fixture_filesystem"])?;
+    crate::picker_evidence::check_panel_path_clipboard(
+        &facts["panel_path_clipboard"],
+        case == "runner-crash",
+        if case == "runner-crash" {
+            "runner_settled"
+        } else {
+            "requested"
+        },
+    )?;
+    if case == "runner-crash"
+        && facts["panel_path_clipboard"]["operations"]
+            .as_array()
+            .is_none_or(|v| v.len() != 1)
+    {
+        return Err(
+            "Runner crash control must restore exactly one prepared clipboard lease".into(),
+        );
+    }
     if observed.success()
         || !observed.cleanup_complete
         || observed.unexpected_survivors != 0

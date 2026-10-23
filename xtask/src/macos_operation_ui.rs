@@ -318,6 +318,11 @@ fn known_case_settlement(
     }
     let owner = crate::picker_evidence::observation_document(&bytes)?;
     crate::picker_evidence::check_fixture_filesystem(&owner["fixture_filesystem"])?;
+    crate::picker_evidence::check_panel_path_clipboard(
+        &owner["panel_path_clipboard"],
+        case.uses_panel_path_clipboard(),
+        "requested",
+    )?;
 
     if owner["cancelled"] != false
         || owner["timed_out"] != false

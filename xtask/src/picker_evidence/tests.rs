@@ -43,7 +43,7 @@ fn comparison(pickers: bool) -> Value {
     json!({"whole_domain_unchanged":true,"application_and_other_preferences_unchanged":true,"real_pickers_observed":pickers,"permitted_system_changes":[]})
 }
 fn product() -> Value {
-    json!({"stage":"picker_compatibility","source":expected()["source"],"target":expected()["target"],"host":host(),"snapshot":expected()["archive"],"raw_product_identity":identity(),"case":"picker","test_method":"testOwnedNativePickerCompatibility","app":"/owned/EML Attachment Remover.app","summary":{"total":1,"passed":1,"failed":0,"skipped":0,"expected_failures":0},"process":process(0),"ownership_receipt":ownership(),"lifetime_owner":{"failure":null,"source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":4,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":ownership()},"picker_observation":{"schema":1,"scenario":"picker","owned_pid":42,"message":"/owned/one.eml","folder":"/owned/folder-input"},"persistent_preferences":{"fresh_process_before":{},"fresh_process_after":{},"comparison":comparison(true),"argument_only_controls":comparison(false)}})
+    json!({"stage":"picker_compatibility","source":expected()["source"],"target":expected()["target"],"host":host(),"snapshot":expected()["archive"],"raw_product_identity":identity(),"case":"picker","test_method":"testOwnedNativePickerCompatibility","app":"/owned/EML Attachment Remover.app","summary":{"total":1,"passed":1,"failed":0,"skipped":0,"expected_failures":0},"process":process(0),"ownership_receipt":ownership(),"lifetime_owner":{"failure":null,"source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"panel_path_clipboard":crate::picker_evidence::panel_path_clipboard_test_value(true),"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":4,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":ownership()},"picker_observation":{"schema":1,"scenario":"picker","owned_pid":42,"message":"/owned/one.eml","folder":"/owned/folder-input"},"persistent_preferences":{"fresh_process_before":{},"fresh_process_after":{},"comparison":comparison(true),"argument_only_controls":comparison(false)}})
 }
 fn ordinary() -> Value {
     json!({"mode":"unmodified_host","binding":expected(),"before":snapshot(),"panel":panel(true),"product":product(),"after":snapshot(),"actions":[]})
@@ -791,4 +791,138 @@ fn product_projection_cannot_drop_its_prelaunch_filesystem_observation() {
         .unwrap()
         .remove("fixture_filesystem");
     assert!(super::project_lifetime_owner(&product["lifetime_owner"]).is_err());
+}
+
+#[test]
+fn panel_path_clipboard_requires_complete_literal_restoration_and_bounds() {
+    let good = super::panel_path_clipboard_test_value(true);
+    super::check_panel_path_clipboard(&good, true, "requested").unwrap();
+    let unused = json!({"state":"unused","operations":[],"failure":null});
+    super::check_panel_path_clipboard(&unused, false, "requested").unwrap();
+    assert!(super::check_panel_path_clipboard(&unused, true, "requested").is_err());
+    let mut empty = good.clone();
+    empty["operations"][0]["original_items"] = json!(0);
+    empty["operations"][0]["original_types"] = json!(0);
+    empty["operations"][0]["original_bytes"] = json!(0);
+    // Native change counts are observations, not a monotonic clock. A clear and
+    // successful write may have the same count, and signed counts may wrap.
+    empty["operations"][0]["capture_change_count"] = json!(i64::MAX);
+    empty["operations"][0]["clear_change_count"] = json!(i64::MIN);
+    empty["operations"][0]["prepared_change_count"] = json!(i64::MIN);
+    empty["operations"][0]["restore_change_count"] = json!(i64::MIN + 1);
+    super::check_panel_path_clipboard(&empty, true, "requested").unwrap();
+    let mut maximum = good.clone();
+    let mut operation = maximum["operations"][0].clone();
+    operation["original_items"] = json!(64);
+    operation["original_types"] = json!(256);
+    operation["original_bytes"] = json!(1024 * 1024);
+    maximum["operations"] = json!(
+        (1..=32)
+            .map(|sequence| {
+                let mut row = operation.clone();
+                row["sequence"] = json!(sequence);
+                row
+            })
+            .collect::<Vec<_>>()
+    );
+    super::check_panel_path_clipboard(&maximum, true, "requested").unwrap();
+    for (pointer, replacement) in [
+        ("/state", json!("unverified")),
+        ("/failure", json!("restore failed")),
+        ("/operations/0/sequence", json!(0)),
+        ("/operations/0/original_items", json!(65)),
+        ("/operations/0/original_types", json!(257)),
+        ("/operations/0/original_bytes", json!(1048577)),
+        ("/operations/0/original_items", json!(0)),
+        ("/operations/0/original_types", json!(0)),
+        ("/operations/0/original_bytes", json!(1)),
+        ("/operations/0/clear_change_count", json!(10)),
+        ("/operations/0/clear_change_count", Value::Null),
+        ("/operations/0/prepared_change_count", Value::Null),
+        ("/operations/0/restore_change_count", Value::Null),
+        ("/operations/0/restore_change_count", json!(11)),
+        ("/operations/0/restore_phase", Value::Null),
+        ("/operations/0/restore_phase", json!("runner_settled")),
+        ("/operations/0/state", json!("ownership_lost")),
+        ("/operations/0/failure", json!("newer owner")),
+    ] {
+        let mut invalid = good.clone();
+        *invalid.pointer_mut(pointer).unwrap() = replacement;
+        assert!(
+            super::check_panel_path_clipboard(&invalid, true, "requested").is_err(),
+            "{pointer}"
+        );
+    }
+    maximum["operations"]
+        .as_array_mut()
+        .unwrap()
+        .push(operation);
+    assert!(super::check_panel_path_clipboard(&maximum, true, "requested").is_err());
+    let mut crash = good.clone();
+    crash["operations"][0]["restore_phase"] = json!("runner_settled");
+    super::check_panel_path_clipboard(&crash, true, "runner_settled").unwrap();
+    assert!(super::check_panel_path_clipboard(&crash, true, "requested").is_err());
+}
+
+#[test]
+fn clipboard_failure_records_parse_but_missing_duplicate_and_unrestored_facts_never_qualify() {
+    let failed = br#"{"state":"unverified","operations":[{"sequence":1,"original_items":0,"original_types":0,"original_bytes":0,"capture_change_count":7,"clear_change_count":8,"prepared_change_count":null,"restore_change_count":null,"restore_phase":null,"state":"prepared","failure":"write failed"}],"failure":"write failed"}"#;
+    let observation: super::PanelPathClipboard = serde_json::from_slice(failed).unwrap();
+    assert!(observation.check(false, "requested").is_err());
+    let good = super::panel_path_clipboard_test_value(true);
+    for field in ["state", "operations", "failure"] {
+        let mut missing = good.clone();
+        missing.as_object_mut().unwrap().remove(field);
+        assert!(serde_json::from_value::<super::PanelPathClipboard>(missing).is_err());
+    }
+    let duplicate = std::str::from_utf8(failed).unwrap().replace(
+        "\"capture_change_count\":7",
+        "\"capture_change_count\":7,\"capture_change_count\":8",
+    );
+    assert!(serde_json::from_str::<super::PanelPathClipboard>(&duplicate).is_err());
+    for field in [
+        "sequence",
+        "original_items",
+        "original_types",
+        "original_bytes",
+        "capture_change_count",
+        "clear_change_count",
+        "prepared_change_count",
+        "restore_change_count",
+        "restore_phase",
+        "state",
+        "failure",
+    ] {
+        let mut missing = good.clone();
+        missing["operations"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        assert!(
+            serde_json::from_value::<super::PanelPathClipboard>(missing).is_err(),
+            "{field}"
+        );
+    }
+    for raw in [
+        r#"{"state":"unused","state":"restored","operations":[],"failure":null}"#,
+        r#"{"state":"unused","operations":[],"failure":null,"bytes":"private clipboard content"}"#,
+        r#"{"state":"unused","operations":[],"failure":false}"#,
+        r#"["unused",[],null]"#,
+    ] {
+        assert!(serde_json::from_str::<super::PanelPathClipboard>(raw).is_err());
+    }
+    let mut actual = product();
+    let baseline: PickerProductReceipt = serde_json::from_value(actual.clone()).unwrap();
+    let binding: QualificationBinding = serde_json::from_value(expected()).unwrap();
+    super::product(&baseline, &BuildPlan::test_plan(), &binding, &baseline.host).unwrap();
+    actual["lifetime_owner"]["panel_path_clipboard"] =
+        json!({"state":"unused","operations":[],"failure":null});
+    let expected: QualificationBinding = serde_json::from_value(expected()).unwrap();
+    let facts: PickerProductReceipt = serde_json::from_value(actual.clone()).unwrap();
+    assert!(super::product(&facts, &BuildPlan::test_plan(), &expected, &facts.host).is_err());
+    actual["lifetime_owner"]
+        .as_object_mut()
+        .unwrap()
+        .remove("panel_path_clipboard");
+    assert!(super::project_lifetime_owner(&actual["lifetime_owner"]).is_err());
 }

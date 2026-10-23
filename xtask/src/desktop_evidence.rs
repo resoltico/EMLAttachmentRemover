@@ -36,6 +36,9 @@ impl DesktopCase {
     pub(crate) fn uses_native_pickers(self) -> bool {
         matches!(self, Self::Workflow | Self::Picker)
     }
+    pub(crate) fn uses_panel_path_clipboard(self) -> bool {
+        self.uses_native_pickers() || self.uses_export_picker()
+    }
     #[cfg(target_os = "macos")]
     pub(crate) fn is_publication(self) -> bool {
         matches!(
@@ -201,6 +204,9 @@ pub(crate) fn validate_case(
     let owner: LifetimeOwner =
         crate::picker_evidence::project_lifetime_owner(field(value, "lifetime_owner")?)?;
     owner.fixture_filesystem.check()?;
+    owner
+        .panel_path_clipboard
+        .check(case.uses_panel_path_clipboard(), "requested")?;
     if owner.failure.is_some()
         || owner.source_check_failure.is_some()
         || owner.timed_out

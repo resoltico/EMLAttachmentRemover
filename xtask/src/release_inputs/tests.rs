@@ -47,7 +47,7 @@ fn ownership(app: &str) -> Value {
     json!({"pid":42,"launch_date":1.0,"bundle_path":app,"pasteboard":"owned-private-board"})
 }
 fn owner(app: &str, originals: u32) -> Value {
-    json!({"failure":null,"source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":originals,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":ownership(app)})
+    json!({"failure":null,"source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"panel_path_clipboard":crate::picker_evidence::panel_path_clipboard_test_value(true),"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":originals,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":ownership(app)})
 }
 fn host(target: &str, os: &str, arch: &str, major: u8) -> Value {
     json!({"target":target,"process_os":os,"process_architecture":arch,"kernel_machine":if os=="macos"&&arch=="aarch64"{"arm64"}else{arch},"product_version":format!("{major}.1"),"runner_image":"new-image","runner_image_version":"new-version","actual_os":format!("ProductVersion: {major}.1\nBuildVersion: TestBuild\n")})
@@ -216,6 +216,10 @@ fn desktop_case(name: &str, method: &str) -> Value {
         json!({"before":{},"after":{},"comparison":comparison(export_picker)})
     };
     let mut value = json!({"case":name,"test_method":method,"source":SOURCE,"source_archive":identity(),"app":app,"process":process(),"lifetime_owner":owner(app,if name=="pagination"{69}else if name=="export-writer-block"{1028}else{4}),"summary":summary(),"persistent_preferences":preferences});
+    value["lifetime_owner"]["panel_path_clipboard"] =
+        crate::picker_evidence::panel_path_clipboard_test_value(
+            name == "workflow" || export_picker,
+        );
     match name {
         "workflow" => {
             value["ownership_receipt"] = ownership(app);
@@ -992,5 +996,75 @@ fn app_timestamp_observations_cover_the_whole_reference_tree_at_exact_zip_precis
             bundle_timestamps(&base, &bad_reference, &plan).is_err(),
             "{path}"
         );
+    }
+}
+
+#[test]
+fn every_literal_panel_case_requires_used_restored_clipboard_evidence() {
+    let (_, plan, good) = fixture(false);
+    good.validate(&plan, &workflow()).unwrap();
+    // This list is an independent authored-method obligation, not a projection
+    // of the production native-case catalog.
+    for name in [
+        "workflow",
+        "blocked-export-preflight",
+        "blocked-export-readback",
+        "blocked-export-stage-write",
+        "blocked-export-file-sync",
+        "blocked-export-publication",
+        "blocked-export-namespace-sync",
+        "export-publication",
+        "export-writer-block",
+    ] {
+        for failure in ["unused", "lost", "settled_only", "missing"] {
+            let mut bad = clone_inputs(&good);
+            edit(
+                bad.products
+                    .get_mut(MAC_APP)
+                    .unwrap()
+                    .desktop
+                    .as_mut()
+                    .unwrap(),
+                |value| {
+                    let interaction = &mut value["verification"]["gui_interaction"];
+                    let case = if name == "workflow" {
+                        &mut interaction["workflow"]
+                    } else {
+                        interaction["operation_controls"]["cases"]
+                            .as_array_mut()
+                            .unwrap()
+                            .iter_mut()
+                            .find(|v| v["case"] == name)
+                            .unwrap()
+                    };
+                    let owner = &mut case["lifetime_owner"];
+                    match failure {
+                        "unused" => {
+                            owner["panel_path_clipboard"] =
+                                json!({"state":"unused","operations":[],"failure":null})
+                        }
+                        "lost" => {
+                            owner["panel_path_clipboard"]["operations"][0]["state"] =
+                                json!("ownership_lost")
+                        }
+                        "settled_only" => {
+                            owner["panel_path_clipboard"]["operations"][0]["restore_phase"] =
+                                json!("runner_settled")
+                        }
+                        "missing" => {
+                            owner
+                                .as_object_mut()
+                                .unwrap()
+                                .remove("panel_path_clipboard");
+                        }
+                        _ => unreachable!(),
+                    }
+                },
+            );
+            assert!(
+                bad.validate(&plan, &workflow()).is_err(),
+                "{name}: {failure}"
+            );
+        }
     }
 }

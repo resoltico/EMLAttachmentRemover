@@ -6,6 +6,7 @@ import XCTest
 
 final class DesktopInteractionTests: XCTestCase {
   var pickerBaselineSettled = false
+  private var panelPathSequence = 0
   enum InteractionFailure: Error {
     case expectedPresentation
     case selectedReportCount(Int)
@@ -200,7 +201,9 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
-  func saveReport(_ app: XCUIApplication, to destination: URL, expectNameCollision: Bool)
+  func saveReport(
+    _ app: XCUIApplication, fixture: URL, to destination: URL, expectNameCollision: Bool
+  )
     async throws
   {
     try await showRunControls(app)
@@ -217,7 +220,8 @@ final class DesktopInteractionTests: XCTestCase {
       XCTFail("Native report folder panel did not appear: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
-    try await navigateNativePanel(app, panel: panel, to: destination.deletingLastPathComponent())
+    try await navigateNativePanel(
+      app, panel: panel, fixture: fixture, to: destination.deletingLastPathComponent())
     panel.buttons["Open"].click()
     let closed = NSPredicate { _, _ in !panel.exists }
     let result = await XCTWaiter.fulfillment(
@@ -268,7 +272,7 @@ final class DesktopInteractionTests: XCTestCase {
   }
 
   @MainActor
-  func navigateNativePanel(_ app: XCUIApplication, panel: XCUIElement, to path: URL)
+  func navigateNativePanel(_ app: XCUIApplication, panel: XCUIElement, fixture: URL, to path: URL)
     async throws
   {
     app.typeKey("g", modifierFlags: [.command, .shift])
@@ -283,12 +287,35 @@ final class DesktopInteractionTests: XCTestCase {
     }
     field.click()
     field.typeKey("a", modifierFlags: .command)
-    field.typeText(path.path)
+    panelPathSequence += 1
+    guard panelPathSequence <= 32 else { throw InteractionFailure.expectedPresentation }
+    let sequence = panelPathSequence
+    try Data(path.path.utf8).write(
+      to: fixture.appendingPathComponent("panel-path-\(sequence).request"),
+      options: .withoutOverwriting)
+    try DesktopFixtureRequest.preparePanelPath.send()
+    let ready = fixture.appendingPathComponent("panel-path-\(sequence).ready")
+    let readyBytes = Data("owned panel path ready \(sequence)\n".utf8)
+    try await requireObservation(ready, prefix: "owned panel path ready \(sequence)\n")
+    guard try Data(contentsOf: ready) == readyBytes else {
+      throw InteractionFailure.expectedPresentation
+    }
+    field.typeKey("v", modifierFlags: .command)
     let entered = field.value as? String
-    print("Owned native Go To path readback: \(String(describing: entered))")
+    try DesktopFixtureRequest.restorePanelClipboard.send()
+    let restored = fixture.appendingPathComponent("panel-path-\(sequence).restored")
+    let restoredBytes = Data("owned panel clipboard restored \(sequence)\n".utf8)
+    try await requireObservation(restored, prefix: "owned panel clipboard restored \(sequence)\n")
+    guard try Data(contentsOf: restored) == restoredBytes else {
+      throw InteractionFailure.expectedPresentation
+    }
+    print(
+      "Owned native Go To path equality: \(entered == path.path); actual UTF8 bytes: \(String(describing: entered?.utf8.count))"
+    )
     guard entered == path.path else {
       XCTFail(
-        "Native Go To path differs: expected \(path.path), actual \(String(describing: entered))")
+        "Native Go To path differs: expected owned path \(path.path); actual String UTF8 bytes: \(String(describing: entered?.utf8.count))"
+      )
       throw InteractionFailure.expectedPresentation
     }
     field.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
@@ -343,7 +370,7 @@ final class DesktopInteractionTests: XCTestCase {
       XCTFail("Native input panel did not appear: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
-    try await navigateNativePanel(app, panel: panel, to: path)
+    try await navigateNativePanel(app, panel: panel, fixture: fixture, to: path)
     if panel.exists {
       let open = panel.buttons["Open"]
       guard open.waitForExistence(timeout: 5), open.isEnabled else {

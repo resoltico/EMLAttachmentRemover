@@ -42,6 +42,7 @@ undocumented_unsafe_blocks = "deny"
 # debug records in generated GUI dependency intermediates.
 [profile.dev]
 debug = 1
+incremental = false
 
 [profile.release]
 overflow-checks = true

@@ -265,7 +265,8 @@ extension DesktopInteractionTests {
       try await selectReport(app, run: 1)
       try arm(session, recipe: "export:\(phase)")
       try await saveReport(
-        app, to: session.fixture.appendingPathComponent("blocked-report.json"),
+        app, fixture: session.fixture,
+        to: session.fixture.appendingPathComponent("blocked-report.json"),
         expectNameCollision: false)
     } else {
       try arm(session, recipe: "processing:\(phase):0")
@@ -376,7 +377,7 @@ extension DesktopInteractionTests {
     // Measure this immutable retained document before introducing the owned
     // writer interruption. No later request relies on transport reusability.
     let measured = session.fixture.appendingPathComponent("measured-report.json")
-    try await saveReport(app, to: measured, expectNameCollision: false)
+    try await saveReport(app, fixture: session.fixture, to: measured, expectNameCollision: false)
     try await requireText(app, containing: "Run 1 report: Report exported and verified.")
     let bytes = try Data(contentsOf: measured)
     XCTAssertGreaterThan(bytes.count, 1024 * 1024)
@@ -390,7 +391,8 @@ extension DesktopInteractionTests {
     try await selectReport(app, run: 1)
     try arm(session, recipe: "export:request-body")
     try await saveReport(
-      app, to: session.fixture.appendingPathComponent("blocked-report.json"),
+      app, fixture: session.fixture,
+      to: session.fixture.appendingPathComponent("blocked-report.json"),
       expectNameCollision: false)
     let operationID = try await awaitBoundary(session, operation: "export", phase: "request-body")
     XCTAssertFalse(
@@ -542,27 +544,27 @@ extension DesktopInteractionTests {
       to: session.fixture.appendingPathComponent("independent-report.json"),
       options: .withoutOverwriting)
     let ordinary = session.fixture.appendingPathComponent("ordinary-report.json")
-    try await saveReport(app, to: ordinary, expectNameCollision: false)
+    try await saveReport(app, fixture: session.fixture, to: ordinary, expectNameCollision: false)
     try await waitExport(app, text: "Report exported and verified.")
     XCTAssertEqual(try Data(contentsOf: ordinary), expected)
     let sentinel = Data("Independent report occupancy sentinel\n".utf8)
     let occupied = session.fixture.appendingPathComponent("occupied-report.json")
     try sentinel.write(to: occupied, options: .withoutOverwriting)
-    try await saveReport(app, to: occupied, expectNameCollision: true)
+    try await saveReport(app, fixture: session.fixture, to: occupied, expectNameCollision: true)
     XCTAssertEqual(try Data(contentsOf: occupied), sentinel)
     let directory = session.fixture.appendingPathComponent("directory-report.json")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
-    try await saveReport(app, to: directory, expectNameCollision: true)
+    try await saveReport(app, fixture: session.fixture, to: directory, expectNameCollision: true)
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
     let link = session.fixture.appendingPathComponent("symlink-report.json")
     try FileManager.default.createSymbolicLink(at: link, withDestinationURL: occupied)
-    try await saveReport(app, to: link, expectNameCollision: true)
+    try await saveReport(app, fixture: session.fixture, to: link, expectNameCollision: true)
     XCTAssertEqual(
       try FileManager.default.destinationOfSymbolicLink(atPath: link.path), occupied.path)
     XCTAssertEqual(try Data(contentsOf: occupied), sentinel)
     let race = session.fixture.appendingPathComponent("racing-report.json")
     try arm(session, recipe: "export:publication")
-    try await saveReport(app, to: race, expectNameCollision: false)
+    try await saveReport(app, fixture: session.fixture, to: race, expectNameCollision: false)
     _ = try await awaitBoundary(session, operation: "export", phase: "publication")
     try sentinel.write(to: race, options: .withoutOverwriting)
     try releaseChild(session)
@@ -571,7 +573,7 @@ extension DesktopInteractionTests {
     try archiveControl(session, label: "racing-winner")
     let pre = session.fixture.appendingPathComponent("pre-edge-report.json")
     try arm(session, recipe: "export:publication")
-    try await saveReport(app, to: pre, expectNameCollision: false)
+    try await saveReport(app, fixture: session.fixture, to: pre, expectNameCollision: false)
     _ = try await awaitBoundary(session, operation: "export", phase: "publication")
     app.buttons["Cancel Export"].click()
     try await requireObservation(
@@ -582,7 +584,7 @@ extension DesktopInteractionTests {
     try archiveControl(session, label: "pre-edge-stop")
     let post = session.fixture.appendingPathComponent("post-edge-report.json")
     try arm(session, recipe: "export:namespace-sync")
-    try await saveReport(app, to: post, expectNameCollision: false)
+    try await saveReport(app, fixture: session.fixture, to: post, expectNameCollision: false)
     _ = try await awaitBoundary(session, operation: "export", phase: "namespace-sync")
     app.buttons["Cancel Export"].click()
     try await requireObservation(
@@ -593,7 +595,7 @@ extension DesktopInteractionTests {
     try archiveControl(session, label: "post-edge-stop")
     let lost = session.fixture.appendingPathComponent("blocked-report.json")
     try arm(session, recipe: "export:after-publication")
-    try await saveReport(app, to: lost, expectNameCollision: false)
+    try await saveReport(app, fixture: session.fixture, to: lost, expectNameCollision: false)
     let operationID = try await awaitBoundary(
       session, operation: "export", phase: "after-publication")
     XCTAssertEqual(try Data(contentsOf: lost), expected)
@@ -633,7 +635,8 @@ extension DesktopInteractionTests {
     try await selectReport(app, run: 1)
     try arm(session, recipe: "dual-quit")
     try await saveReport(
-      app, to: session.fixture.appendingPathComponent("blocked-report.json"),
+      app, fixture: session.fixture,
+      to: session.fixture.appendingPathComponent("blocked-report.json"),
       expectNameCollision: false)
     let export = ChildSession(
       app: app, owned: session.owned, fixture: session.fixture,

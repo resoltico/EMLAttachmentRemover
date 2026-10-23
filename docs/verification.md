@@ -73,6 +73,24 @@ its actual NSWorkspace-launched app and named pasteboard, executes one selected
 XCTest, verifies original and golden bytes, and requires app/runner/worker/resource
 settlement. Forced app cleanup is a failure and does not establish worker
 settlement. A missing result or uncertain cleanup closes further admission.
+Native Go To path input uses one native Command-V action and exact field readback before
+Return. The admitted parent owns the temporary general-pasteboard lease, captures
+every original item/type/data representation before clearing, and verifies its
+restoration; the independent named Services pasteboard is unchanged. Normal paths
+restore before Return. If the runner fails, restoration waits for its actual reap
+and successful output EOF/drain without a relay error. A newer observed clipboard
+owner, failed capture/restoration, missing acknowledgment or uncertain settlement
+remains a failed fixture. Original clipboard bytes and hashes are not serialized.
+
+This input transport runs only after the existing disposable GitHub-hosted
+admission. Native pasteboards have no atomic compare-and-write primitive, so the
+final ownership check cannot exclude a concurrent writer. The 1 MiB bound covers
+admitted retained representations, not a provider's transient allocation or
+synchronous response time. Parent death can prevent restoration and remains
+unverified. Local API controls use unique named pasteboards, never the user's
+general clipboard; actual hosted scenarios and the real runner-abort control
+must separately qualify general-pasteboard use and parent restoration.
+
 On the first failed normal XCTest execution, the owner may sample only its exact
 PID, launch date and bundle path before cleanup. This read-only diagnostic has
 a two-second sample request, an eight-second process budget and a 5 MiB retained
@@ -87,9 +105,11 @@ CPU. The project test bundle uses native ARCHS and ONLY_ACTIVE_ARCH=YES. No
 survivor rejection or change saved Xcode defaults.
 
 Ordinary development and test builds retain line tables/backtraces
-(`profile.dev.debug=1`) without full local-variable/type debug records. Shipping
-release settings are separate. Fresh per-run test builds disable incremental
-compilation; discovery and execution still reuse normal Cargo artifacts. After
+(`profile.dev.debug=1`) without full local-variable/type debug records. Their
+default also disables incremental compilation, trading repeated local rebuild
+speed for less retained compiler state. Shipping release settings are separate.
+Fresh per-run test builds explicitly disable incremental compilation, including
+excluded manifests; discovery and execution still reuse normal Cargo artifacts. After
 confirmed process settlement, their executable identities and transcripts remain
 while the private compiler tree is removed. A rebound directory or uncertain
 owner prevents deletion. The shared macOS release cache is separate.
@@ -159,6 +179,15 @@ failure, cancellation and unexpected skips; negative controls exercise each
 required role. Missing app artifacts fail their exact consumers, and every failed required producer check fails the aggregate. Available frozen archives still run independent desktop/picker checks when another producer role fails; an app-result file is availability data, never qualification authority. Workflow wiring alone establishes neither product qualification nor publication behavior.
 
 CI admits the actual current-run product, floor-consumer and picker records through `verify-release-inputs`, then runs `stage-release-assets --inputs` to retain the exact candidate assets and checksums as a review artifact. This job has read-only repository permissions and performs no release, tag, attestation or publication operation. Missing or failed native roles prevent assembly and fail the aggregate.
+
+A successful primary product or icon upload owns the produced payload. Evidence
+uploads omit matching top-level archive copies only after that same job's primary
+upload succeeds. Otherwise those files remain selected for diagnostic upload;
+nested reproducers and raw native records remain included. Consumers keep their
+original product artifact names and identifiers. Cross-job inspected-input
+snapshots remain with native evidence because they record the bytes actually
+supplied to that verifier. Artifact expiry follows repository settings; this
+layout is not a storage quota or a claim about peak disk use.
 
 On Linux and Windows, `qualify` orchestrates strict release-profile discovery
 and execution, the standalone real filesystem probe, native CLI build, complete
@@ -252,9 +281,11 @@ source/run/attempt/workflow/archive/reference/raw-product/method/count/preferenc
 owner facts. Original receipt bytes remain bound rather than reserialized as a
 substitute identity. After server readback, final admission rechecks exact
 incident identity and the current exclusive expiry only for modified receipts;
-ordinary receipts never consult it. Read-only weekly `check-host-incidents`
-maintenance records expired/malformed/closed/unverified upstream state without
-renewing policy or retroactively invalidating a normal pass. Standalone panel
+ordinary receipts never consult it. Read-only `check-host-incidents` maintenance
+runs in its own weekly or manually selected Linux job. It records the actual
+parsed upstream response even when closed or unverified, refuses malformed or
+oversize replies, and retains failure results without renewing policy or
+retroactively invalidating a normal pass. Standalone panel
 diagnostics perform no intervention or product retry. All declared native CLI
 and complete macOS15 consumer roles remain mandatory.
 
@@ -349,7 +380,7 @@ See [pinned cargo-fuzz source](https://github.com/rust-fuzz/cargo-fuzz/blob/984c
 
 ## Scoped mutation selection
 
-A manual dispatch of the Extended verification workflow defaults to a 60-second fuzz smoke and omits mutation execution. Selecting `qualification` runs the required 900-second fuzz campaign and `cargo xtask mutants --initial` in its own bounded Linux job, retaining discovery, per-mutant outcomes and compiler logs. A smoke is development feedback and never closes full-campaign acceptance. The property selection remains 4096 cases: its measured execution is about one second, so reducing it would save little. The mutation control host is Ubuntu 24.04 because the pinned GNU tool requires GLIBC 2.39. Native shipping Linux builds retain their declared Ubuntu 22.04 hosts and GLIBC 2.35 limit.
+The Extended verification workflow uses the `scope` input: `maintenance` runs only the read-only Linux incident check; `smoke` is the default and runs the existing 60-second fuzz smoke without mutations; `qualification` runs the required 900-second fuzz campaign and `cargo xtask mutants --initial` in its own bounded Linux job, retaining discovery, per-mutant outcomes and compiler logs. A smoke is development feedback and never closes full-campaign acceptance. The property selection remains 4096 cases: its measured execution is about one second, so reducing it would save little. The mutation control host is Ubuntu 24.04 because the pinned GNU tool requires GLIBC 2.39. Native shipping Linux builds retain their declared Ubuntu 22.04 hosts and GLIBC 2.35 limit.
 
 Only eml-core authorize_deletions and check_edit_ranges are selected. Discovery
 must be positive in both, with at most 400 total. Initial execution covers the
@@ -438,6 +469,10 @@ real guards and their rejection controls. Filesystem-heavy integration suites
 remain required in ordinary/native verification.
 
 ## Scheduled extended checks
+
+Unknown manual scopes fail before any campaign starts. To run only the read-only
+upstream check, use `gh workflow run extended-verification.yml --field scope=maintenance`.
+Maintenance failure remains separate from the independent campaign jobs.
 
 The weekly `Extended verification` workflow checks the current default-branch
 source with fresh advisory data across workspace, excluded fuzz/filesystem and

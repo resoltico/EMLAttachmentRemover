@@ -232,51 +232,73 @@ impl ActionDeadline {
     }
 }
 
-fn upstream_open(record: &IncidentRecord, observation: &serde_json::Value) -> Result<()> {
-    if observation["html_url"] != record.upstream_issue
-        || observation["state"] != "open"
-        || !observation["updated_at"]
-            .as_str()
-            .is_some_and(|v| !v.is_empty() && v.len() <= 64)
+const MAX_UPSTREAM_BYTES: usize = 16 * 1024;
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct UpstreamIssue {
+    state: String,
+    html_url: String,
+    updated_at: String,
+}
+fn upstream_document(bytes: &[u8]) -> Result<UpstreamIssue> {
+    if bytes.len() > MAX_UPSTREAM_BYTES {
+        return Err("Upstream maintenance response exceeds its bound".into());
+    }
+    Ok(serde_json::from_slice(bytes)?)
+}
+fn upstream_open(record: &IncidentRecord, observation: &UpstreamIssue) -> Result<()> {
+    if observation.html_url != record.upstream_issue
+        || observation.state != "open"
+        || observation.updated_at.is_empty()
+        || observation.updated_at.len() > 64
     {
         return Err("Declared upstream incident is closed or its read-only freshness observation is unverified".into());
     }
     Ok(())
 }
 pub(crate) fn check(root: &Path, out: &Path) -> Result<()> {
+    check_with_observation(root, out, SystemTime::now(), |record| {
+        let number = record
+            .upstream_issue
+            .strip_prefix("https://github.com/actions/runner-images/issues/")
+            .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            .ok_or("Incident upstream issue is not the fixed read-only repository")?;
+        crate::capture(std::process::Command::new("gh").current_dir(root).args([
+            "api",
+            &format!("repos/actions/runner-images/issues/{number}"),
+            "--jq",
+            "{state:.state,html_url:.html_url,updated_at:.updated_at}",
+        ]))
+    })
+}
+fn check_with_observation(
+    root: &Path,
+    out: &Path,
+    now: SystemTime,
+    mut observe: impl FnMut(&IncidentRecord) -> Result<Vec<u8>>,
+) -> Result<()> {
     fs::create_dir(out)?;
-    let now = SystemTime::now();
     let mut result = serde_json::json!({"schema":1,"checked_at":timestamp(now)?,"scope":"read-only incident policy/upstream maintenance; no qualification, renewal or service action","policy_sha256":null,"incidents":[],"failure":null});
     let checked = (|| -> Result<()> {
         let registry = Registry::load(root)?;
         result["policy_sha256"] = serde_json::json!(registry.digest());
         let mut failed = false;
         for record in registry.records() {
-            let observation = (|| -> Result<serde_json::Value> {
+            let mut upstream = None;
+            let observation = (|| -> Result<()> {
                 record.current(now)?;
-                let number = record
-                    .upstream_issue
-                    .strip_prefix("https://github.com/actions/runner-images/issues/")
-                    .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
-                    .ok_or("Incident upstream issue is not the fixed read-only repository")?;
-                let bytes =
-                    crate::capture(std::process::Command::new("gh").current_dir(root).args([
-                        "api",
-                        &format!("repos/actions/runner-images/issues/{number}"),
-                        "--jq",
-                        "{state:.state,html_url:.html_url,updated_at:.updated_at}",
-                    ]))?;
-                if bytes.len() > 16 * 1024 {
-                    return Err("Upstream maintenance response exceeds its bound".into());
-                }
-                let value: serde_json::Value = serde_json::from_slice(&bytes)?;
-                upstream_open(record, &value)?;
-                Ok(value)
+                // Retain a parsed response before interpreting its open/closed
+                // state: an actual closed observation is still evidence.
+                upstream = Some(upstream_document(&observe(record)?)?);
+                upstream_open(
+                    record,
+                    upstream.as_ref().expect("observed upstream response"),
+                )
             })();
             if observation.is_err() {
                 failed = true;
             }
-            result["incidents"].as_array_mut().expect("maintenance array").push(serde_json::json!({"id":record.id,"reviewed_at":record.reviewed_at,"expires_at":record.expires_at,"upstream":observation.as_ref().ok(),"failure":observation.as_ref().err().map(ToString::to_string)}));
+            result["incidents"].as_array_mut().expect("maintenance array").push(serde_json::json!({"id":record.id,"reviewed_at":record.reviewed_at,"expires_at":record.expires_at,"upstream":upstream,"failure":observation.as_ref().err().map(ToString::to_string)}));
         }
         if failed {
             return Err("Incident maintenance failed; policy is not renewed or changed".into());
@@ -385,5 +407,204 @@ mod tests {
                 )
                 .is_err()
         );
+    }
+    const MAINTENANCE_POLICY: &[u8] = br#"schema = 1
+[[incidents]]
+id = "intel-iconservices-panel-2026-10"
+architecture = "x86_64"
+classifier = "iconservices-metal-renderbox-panel"
+service = "com.apple.iconservices.iconservicesagent"
+upstream_issue = "https://github.com/actions/runner-images/issues/14751"
+reviewed_at = 100
+expires_at = 1000
+[incidents.host]
+image_os = "macos26"
+image_version = "20260824.0517.1"
+product_version = "26.6.1"
+build_version = "25G76"
+"#;
+    fn maintenance_fixture(policy: &[u8]) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("xtask")).unwrap();
+        fs::write(root.path().join("xtask/host-incidents.toml"), policy).unwrap();
+        root
+    }
+    fn retained_maintenance(root: &Path) -> serde_json::Value {
+        serde_json::from_slice(&fs::read(root.join("observation/result.json")).unwrap()).unwrap()
+    }
+    #[test]
+    fn maintenance_retains_open_closed_and_unverified_literal_upstream_observations() {
+        let cases: &[(&[u8], bool, &str)] = &[
+            (br#"{"state":"open","html_url":"https://github.com/actions/runner-images/issues/14751","updated_at":"2026-10-23T12:00:00Z"}"#, true, "open"),
+            (br#"{"state":"closed","html_url":"https://github.com/actions/runner-images/issues/14751","updated_at":"2026-10-23T12:00:00Z"}"#, false, "closed"),
+            (br#"{"state":"open","html_url":"https://github.com/actions/runner-images/issues/1","updated_at":"2026-10-23T12:00:00Z"}"#, false, "open"),
+            (br#"{"state":"open","html_url":"https://github.com/actions/runner-images/issues/14751","updated_at":""}"#, false, "open"),
+        ];
+        for &(bytes, expected_success, expected_state) in cases {
+            let root = maintenance_fixture(MAINTENANCE_POLICY);
+            let before = fs::read(root.path().join("xtask/host-incidents.toml")).unwrap();
+            let mut calls = 0;
+            let checked = check_with_observation(
+                root.path(),
+                &root.path().join("observation"),
+                UNIX_EPOCH + Duration::from_secs(500),
+                |record| {
+                    calls += 1;
+                    assert_eq!(
+                        record.upstream_issue,
+                        "https://github.com/actions/runner-images/issues/14751"
+                    );
+                    Ok(bytes.to_vec())
+                },
+            );
+            assert_eq!(checked.is_ok(), expected_success);
+            assert_eq!(calls, 1);
+            let result = retained_maintenance(root.path());
+            assert_eq!(result["checked_at"], 500);
+            assert_eq!(result["failure"].is_null(), expected_success);
+            assert_eq!(
+                result["incidents"][0]["failure"].is_null(),
+                expected_success
+            );
+            assert_eq!(result["incidents"][0]["upstream"]["state"], expected_state);
+            assert_eq!(
+                result["policy_sha256"],
+                xtask::archive::ByteIdentity::of(&before).sha256
+            );
+            assert_eq!(
+                fs::read(root.path().join("xtask/host-incidents.toml")).unwrap(),
+                before
+            );
+            assert_eq!(fs::read_dir(root.path().join("xtask")).unwrap().count(), 1);
+        }
+        let root = maintenance_fixture(MAINTENANCE_POLICY);
+        let response = format!(
+            r#"{{"state":"open","html_url":"https://github.com/actions/runner-images/issues/14751","updated_at":"{}"}}"#,
+            "x".repeat(65)
+        );
+        assert!(
+            check_with_observation(
+                root.path(),
+                &root.path().join("observation"),
+                UNIX_EPOCH + Duration::from_secs(500),
+                |_| Ok(response.as_bytes().to_vec())
+            )
+            .is_err()
+        );
+        assert_eq!(
+            retained_maintenance(root.path())["incidents"][0]["upstream"]["updated_at"],
+            "x".repeat(65)
+        );
+    }
+    #[test]
+    fn maintenance_rejects_unavailable_oversize_malformed_duplicate_and_mistyped_responses() {
+        let mut cases = vec![
+            br#"{"state":"open","html_url":"https://github.com/actions/runner-images/issues/14751","updated_at":"now""#.to_vec(),
+            br#"{"state":"closed","state":"open","html_url":"https://github.com/actions/runner-images/issues/14751","updated_at":"now"}"#.to_vec(),
+            br#"{"state":"open","html_url":"https://github.com/actions/runner-images/issues/14751"}"#.to_vec(),
+            br#"{"state":"open","html_url":"https://github.com/actions/runner-images/issues/14751","updated_at":12}"#.to_vec(),
+            br#"{"state":"open","html_url":"https://github.com/actions/runner-images/issues/14751","updated_at":null}"#.to_vec(),
+            br#"{"state":true,"html_url":"https://github.com/actions/runner-images/issues/14751","updated_at":"now"}"#.to_vec(),
+            br#"{"state":"open","html_url":"https://github.com/actions/runner-images/issues/14751","updated_at":"now","unverified":true}"#.to_vec(),
+        ];
+        cases.push(vec![b' '; 16 * 1024 + 1]);
+        for bytes in cases {
+            let root = maintenance_fixture(MAINTENANCE_POLICY);
+            let mut calls = 0;
+            assert!(
+                check_with_observation(
+                    root.path(),
+                    &root.path().join("observation"),
+                    UNIX_EPOCH + Duration::from_secs(500),
+                    |_| {
+                        calls += 1;
+                        Ok(bytes.clone())
+                    }
+                )
+                .is_err()
+            );
+            assert_eq!(calls, 1);
+            let result = retained_maintenance(root.path());
+            assert!(result["failure"].is_string());
+            assert!(result["incidents"][0]["failure"].is_string());
+            assert!(result["incidents"][0]["upstream"].is_null());
+            assert_eq!(
+                fs::read(root.path().join("xtask/host-incidents.toml")).unwrap(),
+                MAINTENANCE_POLICY
+            );
+        }
+        let root = maintenance_fixture(MAINTENANCE_POLICY);
+        let mut calls = 0;
+        assert!(
+            check_with_observation(
+                root.path(),
+                &root.path().join("observation"),
+                UNIX_EPOCH + Duration::from_secs(500),
+                |_| {
+                    calls += 1;
+                    Err("Independent read-only upstream API unavailable".into())
+                }
+            )
+            .is_err()
+        );
+        assert_eq!(calls, 1);
+        let result = retained_maintenance(root.path());
+        assert!(result["incidents"][0]["upstream"].is_null());
+        assert!(
+            result["incidents"][0]["failure"]
+                .as_str()
+                .unwrap()
+                .contains("upstream API unavailable")
+        );
+        assert!(result["failure"].is_string());
+        assert_eq!(
+            fs::read(root.path().join("xtask/host-incidents.toml")).unwrap(),
+            MAINTENANCE_POLICY
+        );
+    }
+    #[test]
+    fn maintenance_never_queries_or_rewrites_expired_or_malformed_policy() {
+        let invalid = [
+            b"schema = [".to_vec(),
+            String::from_utf8(MAINTENANCE_POLICY.to_vec())
+                .unwrap()
+                .replace("schema = 1", "schema = 2")
+                .into_bytes(),
+            String::from_utf8(MAINTENANCE_POLICY.to_vec())
+                .unwrap()
+                .replace("expires_at = 1000", "expires_at = 100")
+                .into_bytes(),
+            String::from_utf8(MAINTENANCE_POLICY.to_vec())
+                .unwrap()
+                .replace("expires_at = 1000", "expires_at = 2592101")
+                .into_bytes(),
+        ];
+        for (policy, now) in invalid
+            .iter()
+            .map(|policy| (policy.as_slice(), 500))
+            .chain([(MAINTENANCE_POLICY, 99), (MAINTENANCE_POLICY, 1000)])
+        {
+            let root = maintenance_fixture(policy);
+            let mut calls = 0;
+            assert!(
+                check_with_observation(
+                    root.path(),
+                    &root.path().join("observation"),
+                    UNIX_EPOCH + Duration::from_secs(now),
+                    |_| {
+                        calls += 1;
+                        Err("An inadmissible policy must not query upstream".into())
+                    }
+                )
+                .is_err()
+            );
+            assert_eq!(calls, 0);
+            assert!(retained_maintenance(root.path())["failure"].is_string());
+            assert_eq!(
+                fs::read(root.path().join("xtask/host-incidents.toml")).unwrap(),
+                policy
+            );
+            assert_eq!(fs::read_dir(root.path().join("xtask")).unwrap().count(), 1);
+        }
     }
 }

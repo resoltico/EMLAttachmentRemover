@@ -69,8 +69,10 @@ pub(super) fn prepare_case_input(
     fs::create_dir(&input)?;
     let mut invocation =
         json!({"app":app,"fixture":fixture,"host_scope":"fresh-github-hosted-runner"});
-    if case.uses_native_pickers() {
+    if case.uses_panel_path_clipboard() {
         invocation["fixture_output"] = json!("true");
+    }
+    if case.uses_native_pickers() {
         invocation["scenario"] = json!(case.name());
     }
     if case == DesktopCase::ExportWriterBlock {
@@ -207,6 +209,7 @@ pub(super) fn compile_interaction_owner(
             ])
             .arg(&build.sdk)
             .arg(root.join("tests/macos/DesktopInteractionOwner.swift"))
+            .arg(root.join("tests/macos/PanelPathClipboard.swift"))
             .arg(root.join("tests/macos/DesktopFixtureOutput.swift"))
             .arg(root.join("tests/macos/DesktopFixtureTests.swift"))
             .arg("-o")
@@ -231,6 +234,7 @@ pub(super) fn compile_interaction_owner(
         ])
         .arg(&build.sdk)
         .arg(root.join("tests/macos/DesktopInteractionOwner.swift"))
+        .arg(root.join("tests/macos/PanelPathClipboard.swift"))
         .arg(root.join("tests/macos/DesktopFixtureOutput.swift"))
         .arg("-o")
         .arg(&owner);
