@@ -142,21 +142,6 @@ impl ReportExportOutcome {
             self.failures.push(failure);
         }
     }
-    /// Complete observed report at the requested address. Inspect synchronization
-    /// separately: an unsupported stronger method is not full durability.
-    pub fn usable(&self) -> bool {
-        self.publication == PublicationState::Published
-            && self.address_verified == Some(true)
-            && self.final_file_verified == Some(true)
-            && self.cleanup.state == CleanupState::Complete
-            && self
-                .file_sync
-                .is_some_and(|sync| sync.state == SyncState::Unsupported || sync.succeeded())
-            && self
-                .namespace_sync
-                .is_some_and(|sync| sync.state == SyncState::Unsupported || sync.succeeded())
-            && self.failures.is_empty()
-    }
 }
 fn checkpoint(control: &RunControl) -> io::Result<()> {
     if control.is_stopped() {
@@ -535,5 +520,57 @@ impl ReportExportOutcome {
             },
             failures,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eml_fs::SyncMethod;
+    fn synthetic_outcome() -> ReportExportOutcome {
+        let synchronized = SyncReceipt {
+            method: SyncMethod::Fsync,
+            state: SyncState::Succeeded,
+            native_code: None,
+        };
+        ReportExportOutcome {
+            publication: PublicationState::Published,
+            file_sync: Some(synchronized),
+            namespace_sync: Some(synchronized),
+            address_verified: Some(true),
+            candidate_identity: Some(Identity::Posix {
+                device: 1,
+                inode: 2,
+            }),
+            final_file_verified: Some(true),
+            cleanup: CleanupReceipt {
+                state: CleanupState::Complete,
+                residual_name: None,
+                native_code: None,
+            },
+            failures: Vec::new(),
+        }
+    }
+    #[test]
+    fn receipt_preserves_operation_identity_and_refuses_incomplete_qualification() {
+        let operation = eml_protocol::desktop::OperationId::new(81).unwrap();
+        assert!(synthetic_outcome().receipt(operation).unwrap().qualified());
+        let mut cleanup_error = synthetic_outcome();
+        cleanup_error.cleanup.native_code = Some(5);
+        let receipt = cleanup_error.receipt(operation).unwrap();
+        assert_eq!(receipt.operation_id, operation);
+        assert!(
+            !receipt.qualified(),
+            "A completed cleanup state cannot erase an actual native error"
+        );
+        let mut residual = synthetic_outcome();
+        residual.cleanup.residual_name = Some("owned-stage".into());
+        assert!(!residual.receipt(operation).unwrap().qualified());
+        let mut missing_identity = synthetic_outcome();
+        missing_identity.candidate_identity = None;
+        assert!(
+            missing_identity.receipt(operation).is_err(),
+            "A claimed verified readback cannot lose its identity"
+        );
     }
 }

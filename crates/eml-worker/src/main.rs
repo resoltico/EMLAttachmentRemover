@@ -215,17 +215,24 @@ fn execute_export(
         };
         #[cfg(not(feature = "native-fixtures"))]
         let outcome = eml_app::export_report(bytes, destination, control);
-        let receipt = match outcome
-            .receipt(operation_id)
-            .and_then(|r| eml_protocol::desktop::encode_receipt(&r))
-        {
+        let receipt = match outcome.receipt(operation_id) {
+            Ok(receipt) => receipt,
+            Err(_) => {
+                return failure(
+                    "Worker export observations could not form a valid receipt",
+                    1,
+                );
+            }
+        };
+        let qualified = receipt.qualified();
+        let encoded = match eml_protocol::desktop::encode_receipt(&receipt) {
             Ok(bytes) => bytes,
             Err(_) => return failure("Worker export receipt could not be encoded", 1),
         };
-        if io::stdout().lock().write_all(&receipt).is_err() {
+        if io::stdout().lock().write_all(&encoded).is_err() {
             return 1;
         }
-        if outcome.usable() {
+        if qualified {
             0
         } else if control.is_stopped() {
             130

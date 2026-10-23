@@ -107,8 +107,10 @@ those bytes. It never reconstructs MIME decisions or imports historical exports.
 
 Export stdout is one strict receipt of at most 64 KiB including the exact operation
 ID, independent publication/address/identity/readback/sync/cleanup facts and bounded
-failures, followed by EOF. A qualified receipt and clean matching process/transport
-completion are both necessary for successful export. No receipt is manufactured
+failures, followed by EOF. The worker derives its exit from that same actual-operation receipt qualification
+predicate before encoding it; no separate producer success predicate exists. A
+qualified receipt and clean matching process/transport completion are both
+necessary for successful export. No receipt is manufactured
 from an exit status. A published receipt followed by failed transport retains both
 facts. A force-killed or lost child without an accepted terminal receipt means
 **export outcome unknown; a complete report may exist**. Pre-execution launch

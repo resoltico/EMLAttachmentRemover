@@ -68,6 +68,11 @@ its actual NSWorkspace-launched app and named pasteboard, executes one selected
 XCTest, verifies original and golden bytes, and requires app/runner/worker/resource
 settlement. Forced app cleanup is a failure and does not establish worker
 settlement. A missing result or uncertain cleanup closes further admission.
+On the first failed normal XCTest execution, the owner may sample only its exact
+PID, launch date and bundle path before cleanup. This read-only diagnostic has
+a two-second sample request, an eight-second process budget and a 5 MiB retained
+output limit. Missing, changed or unsettled identities prevent raw retention;
+the original product failure remains terminal and no product retry occurs.
 
 The no-universal policy applies to every shipping CLI, app and worker. Xcode may
 use `lipo -extract` only on Apple's stock XCTRunner agent for the current native
@@ -391,6 +396,16 @@ publication is scheduled. Workflow implementation does not establish execution; 
 for scheduled results.
 
 ## Owned native filesystem profiles
+
+The Linux resource record retains both the statfs family label and the actual
+`findmnt` mount type/source/options bound to its fixture paths, so the shared
+`ext2/ext3` label does not masquerade as a specific mounted ext-family subtype.
+
+Linux native debug and release test selections enable `eml-core/native-fixtures`
+and require positive, unique discovery and passing execution of the
+[storage boundary controls](../crates/eml-core/tests/storage_observation.rs).
+An empty feature-gated suite cannot close that native obligation. Shipping build
+feature selection remains separate.
 
 Each native CLI qualifier runs the frozen shipping bytes through finite owned-volume naming fixtures. Linux uses exclusive loop images for ext2/3/4, ext4 casefold, XFS, XFS ASCII-CI and Btrfs, plus an owned tmpfs mount. It separately tests existing-only behavior on ordinary ext4 and an owned OverlayFS whose backing storage is another exclusive ext4 image. The workflow installs the filesystem utilities and records their package versions. Both Linux CPUs require actual execution; a missing formatter, unavailable kernel feature, mount failure or unsettled cleanup remains an unqualified profile.
 

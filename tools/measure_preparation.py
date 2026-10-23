@@ -87,6 +87,10 @@ def main():
     binary, directory, source = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(), sys.argv[3]
     directory.mkdir()
     record = {'source': source, 'binary_sha256': digest(binary), 'binary_version': subprocess.check_output([str(binary), '--version'], text=True).strip(), 'host': platform.uname()._asdict(), 'python': sys.version, 'time_version': subprocess.check_output(['/usr/bin/time', '--version'], text=True).splitlines()[0], 'filesystem': subprocess.check_output(['stat', '-f', '-c', '%T', str(directory)], text=True).strip(), 'case_mode': None, 'fixtures': {}, 'runs': [], 'failure': None, 'passed': False, 'scope': 'Five interleaved release CLI shallow/deep preparations plus one exact-limit preparation; independently preseeded matching bytes prove candidate identity, no publication or sync is timed.'}
+    # statfs labels all ext2/3/4 as one family; retain the actual mounted subtype.
+    record['filesystem_mount'] = json.loads(subprocess.check_output(
+        ['findmnt', '--json', '--target', str(directory), '--output', 'TARGET,SOURCE,FSTYPE,OPTIONS'],
+        text=True))
     probe = directory / 'CaseProbe'
     probe.write_bytes(b'')
     try:

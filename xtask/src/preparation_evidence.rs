@@ -28,6 +28,16 @@ fn digest(v: &Value) -> bool {
                 .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
     })
 }
+// These paths describe a Linux campaign even when another OS admits its record.
+fn absolute_linux_path(path: &str) -> bool {
+    path == "/"
+        || path.strip_prefix('/').is_some_and(|tail| {
+            !tail.contains('\0')
+                && tail
+                    .split('/')
+                    .all(|part| !part.is_empty() && part != "." && part != "..")
+        })
+}
 pub(crate) fn validate(value: &Value, source: &str, binary: &ByteIdentity) -> Result<()> {
     let process: ProcessObservation = serde_json::from_value(field(value, "process")?.clone())?;
     if value["source"] != source
@@ -63,8 +73,38 @@ pub(crate) fn validate(value: &Value, source: &str, binary: &ByteIdentity) -> Re
     {
         return Err("Resource fixture set differs".into());
     }
+    let mounts = m["filesystem_mount"]["filesystems"]
+        .as_array()
+        .filter(|mounts| mounts.len() == 1)
+        .ok_or("Resource mount observation is absent or ambiguous")?;
+    let mount = &mounts[0];
+    let mount_target = mount["target"]
+        .as_str()
+        .filter(|path| absolute_linux_path(path))
+        .ok_or("Resource mount target is not an absolute native path")?;
+    for key in ["source", "fstype", "options"] {
+        if !mount[key]
+            .as_str()
+            .is_some_and(|text| !text.is_empty() && text.len() <= 4096 && !text.contains('\0'))
+        {
+            return Err("Resource native mount type/source/options are missing".into());
+        }
+    }
     for (name, wrappers) in [("shallow", 1), ("deep", 63), ("limit", 63)] {
         let f = &fixtures[name];
+        let path = field(f, "path")?
+            .as_str()
+            .ok_or("Resource fixture native path is absent")?;
+        if !absolute_linux_path(path)
+            || !(if mount_target == "/" {
+                path.len() > 1
+            } else {
+                path.strip_prefix(mount_target)
+                    .is_some_and(|tail| tail.starts_with('/'))
+            })
+        {
+            return Err("Resource fixture is not bound to its observed native mount".into());
+        }
         let raw = integer(f, "raw_bytes")?;
         let body = integer(f, "body_bytes")?;
         if integer(f, "wrappers")? != wrappers

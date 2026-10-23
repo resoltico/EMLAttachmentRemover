@@ -11,6 +11,30 @@ use std::{
 #[cfg(target_os = "macos")]
 const MACOS_RELEASE_TEST_FEATURES: &str = "eml-gui/macos-gui,eml-gui/native-fixtures,eml-worker/native-fixtures,eml-macos/native-fixtures,eml-core/native-fixtures";
 
+#[cfg(target_os = "linux")]
+const LINUX_NATIVE_TEST_FEATURES: &str = "eml-core/native-fixtures";
+// These finite AC030 obligations must execute, not merely appear as an empty
+// feature-gated Cargo suite in an otherwise successful ordinary selection.
+#[cfg(any(target_os = "linux", test))]
+fn require_linux_storage_cases(discovery: &str, execution: &str) -> Result<Value> {
+    let discovered = test_names(discovery, true);
+    let executed = test_names(execution, false);
+    let mut observations = Vec::new();
+    for name in [
+        "actual_create_existing_and_check_have_distinct_finite_boundaries",
+        "changed_requested_parent_before_actual_edge_refuses_without_renaming_or_publication",
+        "stop_at_stage_write_or_file_sync_preserves_real_unattempted_storage_receipts",
+    ] {
+        let found = discovered.get(name).copied().unwrap_or(0);
+        let passed = executed.get(name).copied().unwrap_or(0);
+        if found != 1 || passed != 1 {
+            return Err(format!("Required Linux native storage fixture was not discovered and passed exactly once: {name}; discovered={found}, executed={passed}").into());
+        }
+        observations.push(json!({"case":name,"discovered":found,"executed":passed}));
+    }
+    Ok(json!(observations))
+}
+
 fn test_suites(stderr: &str) -> Result<std::collections::BTreeSet<String>> {
     let mut suites = std::collections::BTreeSet::new();
     for raw in stderr.lines() {
@@ -101,6 +125,8 @@ pub(crate) fn checked_tests(
         if release {
             command.args(["--features", MACOS_RELEASE_TEST_FEATURES]);
         }
+        #[cfg(target_os = "linux")]
+        command.args(["--features", LINUX_NATIVE_TEST_FEATURES]);
         #[cfg(windows)]
         {
             command.args([
@@ -129,6 +155,16 @@ pub(crate) fn checked_tests(
     };
     let counts = checked_commands(out, command)?;
     let result = json!({"discovery":counts,"profile":if release {"release"} else {"test"},"target":target,"cargo_target_directory":target_directory,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"});
+    #[cfg(target_os = "linux")]
+    let result = {
+        let mut result = result;
+        // checked_commands settled both processes and bounded these exact logs.
+        let discovery = fs::read_to_string(out.join("native-test-discovery.log"))?;
+        let execution = fs::read_to_string(out.join("native-tests.log"))?;
+        result["requested_features"] = json!(LINUX_NATIVE_TEST_FEATURES);
+        result["linux_storage_cases"] = require_linux_storage_cases(&discovery, &execution)?;
+        result
+    };
     #[cfg(target_os = "macos")]
     let result = {
         let mut result = result;
@@ -577,6 +613,29 @@ mod tests {
                 validate_test_transcripts(&[(discovery.into(), suites.into()), (output, stderr)])
                     .is_err()
             );
+        }
+    }
+    #[test]
+    fn linux_storage_obligations_require_actual_unique_discovery_and_passing_execution() {
+        let discovery = "actual_create_existing_and_check_have_distinct_finite_boundaries: test\nchanged_requested_parent_before_actual_edge_refuses_without_renaming_or_publication: test\nstop_at_stage_write_or_file_sync_preserves_real_unattempted_storage_receipts: test\n";
+        let execution = "test actual_create_existing_and_check_have_distinct_finite_boundaries ... ok\ntest changed_requested_parent_before_actual_edge_refuses_without_renaming_or_publication ... ok\ntest stop_at_stage_write_or_file_sync_preserves_real_unattempted_storage_receipts ... ok\n";
+        assert_eq!(
+            require_linux_storage_cases(discovery, execution)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        for (discovered,executed) in [
+            (String::new(),String::new()),
+            (discovery.replace("changed_requested_parent_before_actual_edge_refuses_without_renaming_or_publication: test\n", ""), execution.to_owned()),
+            (discovery.to_owned(),execution.replace("test changed_requested_parent_before_actual_edge_refuses_without_renaming_or_publication ... ok\n", "")),
+            (format!("{discovery}actual_create_existing_and_check_have_distinct_finite_boundaries: test\n"),execution.to_owned()),
+            (discovery.to_owned(),format!("{execution}test actual_create_existing_and_check_have_distinct_finite_boundaries ... ok\n")),
+            (discovery.to_owned(),execution.replace(" ... ok", " ... ignored")),
+        ] {
+            assert!(require_linux_storage_cases(&discovered,&executed).is_err());
         }
     }
     #[test]

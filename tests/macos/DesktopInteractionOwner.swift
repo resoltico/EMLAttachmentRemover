@@ -31,6 +31,27 @@ final class DesktopInteractionOwner {
   private var unexpected: [pid_t] = []
   private var unexpectedSettings: [pid_t] = []
   private var stackSamples: [[String: Any]] = []
+  private var firstFailureSample: [String: Any]?
+  private var sampleTarget: SampleTarget?
+  private var normalRunner = false
+
+  struct SampleTarget: Equatable {
+    let pid: pid_t
+    let launchDate: Date
+    let bundlePath: String
+
+    var observation: [String: Any] {
+      ["pid": pid, "launch_date": launchDate.timeIntervalSince1970, "bundle_path": bundlePath]
+    }
+  }
+
+  static func mayRetainFailureSample(
+    expected: SampleTarget, before: SampleTarget?, after: SampleTarget?, settled: Bool,
+    bytes: UInt64
+  ) -> Bool {
+    settled && before == expected && after == expected && bytes > 0 && bytes <= 5 * 1024 * 1024
+  }
+
   private var pickerBaselineSettled = false
   private var pickerLogObservation: [String: Any]?
   private var diagnosticProcess: Process?
@@ -76,6 +97,7 @@ final class DesktopInteractionOwner {
     }
     do {
       let config = try configuration()
+      normalRunner = config.control == "normal"
       try captureOriginals(config)
       let (launched, date) = try await launchApplications(config)
       try writeOwnership(config, launched: launched, date: date)
@@ -87,6 +109,11 @@ final class DesktopInteractionOwner {
       }
     } catch { failure = failure ?? String(describing: error) }
     await settleDiagnostic()
+    if normalRunner, childReaped, let childExit, childExit != 0, failure != nil {
+      await sampleFirstFailure()
+    }
+    // sampleFirstFailure includes its entire eight-second settlement budget;
+    // an unsettled sampler remains recorded for the outer process owner.
     await settleProcesses()
     do {
       try restoreAndWriteObservation()
@@ -228,6 +255,9 @@ final class DesktopInteractionOwner {
       ]
     }
     ownershipReceipt = receipt
+    sampleTarget = SampleTarget(
+      pid: launched.processIdentifier, launchDate: date,
+      bundlePath: config.appURL.standardizedFileURL.path)
     try JSONSerialization.data(withJSONObject: receipt).write(
       to: receiptURL, options: .withoutOverwriting)
     guard launched.activate(options: []) else { throw Failure.launchIdentity }
@@ -491,6 +521,118 @@ final class DesktopInteractionOwner {
     ]
   }
 
+  private func currentSampleTarget() -> SampleTarget? {
+    guard let app, !app.isTerminated, let date = app.launchDate, let bundle = app.bundleURL,
+      let current = NSRunningApplication(processIdentifier: app.processIdentifier),
+      !current.isTerminated, current.launchDate == date,
+      current.bundleURL?.standardizedFileURL == bundle.standardizedFileURL
+    else { return nil }
+    return SampleTarget(
+      pid: app.processIdentifier, launchDate: date, bundlePath: bundle.standardizedFileURL.path)
+  }
+
+  private func sampleFirstFailure() async {
+    // This is a single diagnostic on the failed execution, before any app cleanup.
+    // It never retries XCTest or changes the original failure/qualification verdict.
+    guard firstFailureSample == nil else { return }
+    var record: [String: Any] = [
+      "scope": "first failed XCTest runner; diagnostic only, not a product verdict",
+      "request_seconds": 2, "maximum_seconds": 8, "retained_byte_limit": 5 * 1024 * 1024,
+      "raw_retained": false,
+    ]
+    defer { firstFailureSample = record }
+    guard let expected = sampleTarget, let resultURL else {
+      record["failure"] = "Owned launch identity unavailable"
+      return
+    }
+    record["expected_target"] = expected.observation
+    let before = currentSampleTarget()
+    record["before_target"] = before?.observation ?? NSNull()
+    guard before == expected, diagnosticSettled, diagnosticProcess?.isRunning != true else {
+      record["failure"] = "Owned target changed, exited, or previous diagnostic remains active"
+      return
+    }
+    // Private temporary output is never uploaded. Publish only a bounded, fully
+    // settled sample whose exact native launch identity survived the observation.
+    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "eml-owned-failure-sample-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    let raw = temporary.appendingPathComponent("sample.txt")
+    let sample = Process()
+    do {
+      try FileManager.default.createDirectory(
+        at: temporary, withIntermediateDirectories: false,
+        attributes: [.posixPermissions: 0o700])
+      sample.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+      sample.arguments = [String(expected.pid), "2", "-file", raw.path]
+      sample.standardInput = FileHandle.nullDevice
+      sample.standardOutput = FileHandle.nullDevice
+      sample.standardError = FileHandle.nullDevice
+      let started = ProcessInfo.processInfo.systemUptime
+      try sample.run()
+      diagnosticProcess = sample
+      diagnosticSettled = false
+      record["sampler_pid"] = sample.processIdentifier
+      let deadline = started + 8
+      var oversized = false
+      while sample.isRunning && ProcessInfo.processInfo.systemUptime < deadline - 0.5 {
+        let size = (try? FileManager.default.attributesOfItem(atPath: raw.path)[.size]) as? NSNumber
+        if (size?.uint64Value ?? 0) > 5 * 1024 * 1024 {
+          oversized = true
+          break
+        }
+        try? await Task.sleep(for: .milliseconds(25))
+      }
+      let deadlineReached = sample.isRunning && !oversized
+      let terminatedSampler = sample.isRunning
+      if terminatedSampler { sample.terminate() }
+      while sample.isRunning && ProcessInfo.processInfo.systemUptime < deadline {
+        try? await Task.sleep(for: .milliseconds(25))
+      }
+      diagnosticSettled = !sample.isRunning
+      record["elapsed_seconds"] = ProcessInfo.processInfo.systemUptime - started
+      record["deadline_reached"] = deadlineReached
+      record["output_limit_reached"] = oversized
+      record["sampler_termination_requested"] = terminatedSampler
+      record["sampler_settled"] = diagnosticSettled
+      if diagnosticSettled {
+        sample.waitUntilExit()
+        record["status"] = sample.terminationStatus
+        record["reason"] = sample.terminationReason.rawValue
+        diagnosticProcess = nil
+      }
+      let after = currentSampleTarget()
+      record["after_target"] = after?.observation ?? NSNull()
+      let bytes =
+        ((try? FileManager.default.attributesOfItem(atPath: raw.path)[.size]) as? NSNumber)?
+        .uint64Value ?? 0
+      record["bytes"] = bytes
+      if Self.mayRetainFailureSample(
+        expected: expected, before: before, after: after, settled: diagnosticSettled, bytes: bytes)
+      {
+        let published = resultURL.deletingLastPathComponent().appendingPathComponent(
+          "first-failure-owned-app-sample.txt")
+        let descriptor = Darwin.open(raw.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { throw POSIXError(.EIO) }
+        let input = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? input.close() }
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0,
+          metadata.st_mode & S_IFMT == S_IFREG, metadata.st_size == Int64(bytes),
+          let contents = try input.read(upToCount: 5 * 1024 * 1024 + 1),
+          contents.count == Int(bytes)
+        else { throw Failure.invalidInput }
+        try contents.write(to: published, options: .withoutOverwriting)
+        record["path"] = published.path
+        record["raw_retained"] = true
+      } else {
+        record["failure"] = "Sample unsettled, empty, oversized, or target launch identity changed"
+      }
+    } catch {
+      record["failure"] = String(describing: error)
+    }
+  }
+
   private func settleDiagnostic() async {
     // Retain the exact diagnostic child across throwing reads or cancellation.
     // A failure to settle it remains a failed owner result.
@@ -618,6 +760,7 @@ final class DesktopInteractionOwner {
       "source_check_failure": originalsUnchanged
         ? NSNull() : "Owned original fixture bytes changed or could not be read",
       "owned_pasteboard_released": hadBoard,
+      "first_failure_owned_app_sample": firstFailureSample ?? NSNull(),
       "native_picker_stack_samples": stackSamples,
       "native_picker_owned_process_log": pickerLogObservation ?? NSNull(),
       "native_picker_diagnostic_settled": diagnosticSettled,

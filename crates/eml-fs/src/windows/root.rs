@@ -368,6 +368,12 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert_eq!(error.raw_os_error(), None);
         assert_eq!(error.to_string(), "Root identity changed");
+        assert!(
+            error
+                .get_ref()
+                .and_then(|cause| cause.downcast_ref::<crate::NtStatusError>())
+                .is_none()
+        );
         let (volume_root, _) = root_and_names(&read.resolved_path().unwrap()).unwrap();
         let Err(RootBindingError::Native(error)) =
             PinnedRoot::bind_resolved(&volume_root, other.identity(), || false)
@@ -377,15 +383,30 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert_eq!(error.raw_os_error(), None);
         assert_eq!(error.to_string(), "Root identity changed");
+        assert!(
+            error
+                .get_ref()
+                .and_then(|cause| cause.downcast_ref::<crate::NtStatusError>())
+                .is_none()
+        );
         let missing = read.resolved_path().unwrap().join("missing-endpoint");
         let Err(RootBindingError::Native(error)) =
             PinnedRoot::bind_resolved(&missing, read.identity(), || false)
         else {
             panic!("Missing native endpoint must retain its actual failure");
         };
-        assert_eq!(error.kind(), io::ErrorKind::NotFound);
-        assert!(error.raw_os_error().is_some());
         eprintln!("Missing native root endpoint retained actual error: {error:?}");
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        // NtOpenFile's native status is the primary error, not an errno-like
+        // Win32 payload. Its established adapter retains both domains below.
+        assert_eq!(error.raw_os_error(), None);
+        let native = error
+            .get_ref()
+            .unwrap()
+            .downcast_ref::<crate::NtStatusError>()
+            .unwrap();
+        assert_eq!(native.nt_status(), 0xC0000034_u32 as i32); // STATUS_OBJECT_NAME_NOT_FOUND
+        assert_eq!(native.win32_code(), 2); // ERROR_FILE_NOT_FOUND
         handle::close(delete_access(&operation(&upper)).unwrap()).unwrap();
         assert_eq!(fs::read_dir(&selected).unwrap().count(), 0);
         drop(read);

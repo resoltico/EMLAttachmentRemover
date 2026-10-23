@@ -10,6 +10,7 @@ struct DesktopFixtureTests {
   }
   @MainActor
   static func main() throws {
+    checkFailureSampleRetention()
     checkRequestDecoding()
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "eml-fixture-\(UUID().uuidString)")
@@ -24,6 +25,35 @@ struct DesktopFixtureTests {
         "All request splits/order/rejection/EOF/error/overflow and native no-replace/acknowledgment checks passed\n"
           .utf8))
   }
+  @MainActor
+  private static func checkFailureSampleRetention() {
+    let expected = DesktopInteractionOwner.SampleTarget(
+      pid: 42, launchDate: Date(timeIntervalSince1970: 123), bundlePath: "/owned/Fixture.app")
+    func accepted(
+      _ after: DesktopInteractionOwner.SampleTarget?, settled: Bool = true, bytes: UInt64 = 1
+    ) -> Bool {
+      DesktopInteractionOwner.mayRetainFailureSample(
+        expected: expected, before: expected, after: after, settled: settled, bytes: bytes)
+    }
+    precondition(accepted(expected, bytes: 5 * 1024 * 1024))
+    precondition(!accepted(nil))
+    precondition(!accepted(expected, settled: false))
+    precondition(!accepted(expected, bytes: 0))
+    precondition(!accepted(expected, bytes: 5 * 1024 * 1024 + 1))
+    for changed in [
+      DesktopInteractionOwner.SampleTarget(
+        pid: 43, launchDate: expected.launchDate, bundlePath: expected.bundlePath),
+      DesktopInteractionOwner.SampleTarget(
+        pid: expected.pid, launchDate: Date(timeIntervalSince1970: 124),
+        bundlePath: expected.bundlePath),
+      DesktopInteractionOwner.SampleTarget(
+        pid: expected.pid, launchDate: expected.launchDate, bundlePath: "/other/Fixture.app"),
+    ] { precondition(!accepted(changed)) }
+    precondition(
+      !DesktopInteractionOwner.mayRetainFailureSample(
+        expected: expected, before: nil, after: expected, settled: true, bytes: 1))
+  }
+
   private static func checkRequestDecoding() {
     for request in DesktopFixtureRequest.allCases {
       let bytes = Data("\(request.rawValue)\n".utf8)

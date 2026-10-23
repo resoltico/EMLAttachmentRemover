@@ -278,7 +278,7 @@ fn picker(reference: &ByteIdentity) -> (VerifiedPickerReceipt, FrozenRecord) {
     (verified, raw)
 }
 fn resource() -> Value {
-    let fixture = |raw, body, wrappers| json!({"raw_bytes":raw,"body_bytes":body,"wrappers":wrappers,"sha256":"e".repeat(64),"path":"/owned/input.eml","expected":"/owned/output.eml"});
+    let fixture = |name: &str, raw, body, wrappers| json!({"path":format!("/owned/measurement/{name}.eml"),"raw_bytes":raw,"body_bytes":body,"wrappers":wrappers,"sha256":"e".repeat(64),"expected":format!("/owned/measurement/{name}.no-attachments.eml")});
     let mut rows = Vec::new();
     for i in 1..=5 {
         for (name, time) in [("shallow", 0.1), ("deep", 0.3)] {
@@ -286,7 +286,7 @@ fn resource() -> Value {
         }
     }
     rows.push(json!({"name":"limit","fixture":"limit","elapsed_seconds":1.0,"user_seconds":0.5,"system_seconds":0.1,"max_rss_kib":600000,"exit_code":0,"exact_existing_bytes_matched":true}));
-    json!({"source":SOURCE,"binary":identity(),"process":process(),"process_failure":null,"measurement_read_failure":null,"measurements":{"source":SOURCE,"binary_sha256":identity().sha256,"passed":true,"failure":null,"host":{"system":"Linux","machine":"x86_64"},"filesystem":"ext4","case_mode":"case-sensitive","fixtures":{"shallow":fixture(33554560u64,33554432u64,1),"deep":fixture(33558528u64,33554432u64,63),"limit":fixture(268435456u64,268431360u64,63)},"runs":rows,"medians":{"shallow_seconds":0.1,"deep_seconds":0.3,"maximum_deep_seconds":0.5},"rss_limit_bytes":637534208u64}})
+    json!({"source":SOURCE,"binary":identity(),"process":process(),"process_failure":null,"measurement_read_failure":null,"measurements":{"source":SOURCE,"binary_sha256":identity().sha256,"passed":true,"failure":null,"host":{"system":"Linux","machine":"x86_64"},"filesystem":"ext2/ext3","filesystem_mount":{"filesystems":[{"target":"/owned","source":"/dev/loop7","fstype":"ext4","options":"rw,relatime"}]},"case_mode":"case-sensitive","fixtures":{"shallow":fixture("shallow",33554560u64,33554432u64,1),"deep":fixture("deep",33558528u64,33554432u64,63),"limit":fixture("limit",268435456u64,268431360u64,63)},"runs":rows,"medians":{"shallow_seconds":0.1,"deep_seconds":0.3,"maximum_deep_seconds":0.5},"rss_limit_bytes":637534208u64}})
 }
 fn fixture(extra_linux: bool) -> (tempfile::TempDir, BuildPlan, VerifiedInputs) {
     let root = tempfile::tempdir().unwrap();
@@ -613,6 +613,30 @@ fn linux_resource_failure_missing_rows_or_fabricated_metrics_cannot_qualify() {
         ("/preparation_resources", Value::Null),
         ("/preparation_resources/process/signal", json!(9)),
         ("/preparation_resources/measurements/passed", json!(false)),
+        (
+            "/preparation_resources/measurements/filesystem_mount",
+            Value::Null,
+        ),
+        (
+            "/preparation_resources/measurements/filesystem_mount/filesystems",
+            json!([]),
+        ),
+        (
+            "/preparation_resources/measurements/filesystem_mount/filesystems/0/fstype",
+            json!(""),
+        ),
+        (
+            "/preparation_resources/measurements/filesystem_mount/filesystems/0/source",
+            Value::Null,
+        ),
+        (
+            "/preparation_resources/measurements/filesystem_mount/filesystems/0/target",
+            json!("/another-volume"),
+        ),
+        (
+            "/preparation_resources/measurements/fixtures/limit/path",
+            json!("relative.eml"),
+        ),
         ("/preparation_resources/measurements/source", json!("stale")),
         (
             "/preparation_resources/measurements/binary_sha256",

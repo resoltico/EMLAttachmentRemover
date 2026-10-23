@@ -139,6 +139,9 @@ export component MainWindow inherits Window {
         }
     }
     ScrollView {
+    // Controls wrap into bounded logical rows; only vertical overflow scrolls.
+    content-width: self.visible-width;
+    horizontal-scrollbar-policy: always-off;
     VerticalBox {
         padding: 16px; spacing: 10px;
         HorizontalBox {
@@ -147,57 +150,62 @@ export component MainWindow inherits Window {
             VerticalBox {
                 horizontal-stretch: 1; padding: 0px; spacing: root.short-layout ? 0px : 8px;
                 Text { text: "EML Attachment Remover"; font-size: root.short-layout ? 18px : 22px; font-weight: 600; }
-                Text { text: root.short-layout ? "Originals stay untouched." : "Create attachment-stripped copies. Originals stay untouched."; wrap: word-wrap; }
+                Text { text: root.short-layout ? "Originals stay untouched." : "Create attachment-stripped copies. Originals stay untouched."; wrap: word-wrap; min-width: 0px; }
             }
         }
         HorizontalBox {
             Button { text: "Choose messages…"; enabled: root.admission-ready; clicked => { root.select_files(); } }
             Button { text: "Choose folder…"; enabled: root.admission-ready; clicked => { root.select_folder(); } }
+        }
+        HorizontalBox {
             Button { text: "Copy destination…"; enabled: root.destination-editable; clicked => { root.choose_destination(); } }
             Button { text: "Beside originals"; enabled: root.destination-editable; clicked => { root.beside_requested(); } }
         }
         HorizontalBox {
             Text { text: "Operation for later selections:"; }
-            ComboBox { model: ["Check only", "Create copies"]; current-index: 1; enabled: root.admission-ready; accessible-label: "Operation mode"; selected(value) => { root.mode_changed(self.current-index == 0); } }
-            Text { text: "A check grants no authority to create. Filesystem contents can change."; wrap: word-wrap; }
+            ComboBox { min-width: 0px; model: ["Check only", "Create copies"]; current-index: 1; enabled: root.admission-ready; accessible-label: "Operation mode"; selected(value) => { root.mode_changed(self.current-index == 0); } }
         }
-        Text { text: "Save copies: " + root.destination; overflow: elide; accessible-label: "Copy destination: " + root.destination; }
+        Text { text: "A check grants no authority to create. Filesystem contents can change."; wrap: word-wrap; min-width: 0px; }
+
+        Text { text: "Save copies: " + root.destination; overflow: elide; min-width: 0px; accessible-label: "Copy destination: " + root.destination; }
         HorizontalBox {
             padding: 0px;
-            Text { text: root.activity; wrap: word-wrap; horizontal-stretch: 1; accessible-label: "Run status: " + root.activity; }
+            Text { text: root.activity; wrap: word-wrap; min-width: 0px; horizontal-stretch: 1; accessible-label: "Run status: " + root.activity; }
             Text { text: "Waiting requests: " + root.waiting-runs.length; accessible-label: self.text; }
         }
         if root.notice-text != "": HorizontalBox {
-            Text { text: root.notice-text; wrap: word-wrap; horizontal-stretch: 1; accessible-label: root.notice-text; }
+            Text { text: root.notice-text; wrap: word-wrap; min-width: 0px; horizontal-stretch: 1; accessible-label: root.notice-text; }
             Button { text: "Dismiss notice"; clicked => {root.dismiss_notice();} }
         }
         HorizontalBox {
             Button { text: "Stop"; enabled: root.stop-available; clicked => { root.stop_requested(root.processing-operation-id); } }
             Button { text: "Force Stop…"; enabled: root.force-available; clicked => { root.force_requested(root.processing-operation-id); } }
+            Button { text: "Create from this check"; enabled: root.create-from-check-available; clicked => { root.create_from_check(); } }
+        }
+        HorizontalBox {
             Button { text: "Export Report…"; enabled: root.report-selected; clicked => { root.export_requested(); } }
             Button { text: "Dismiss report"; enabled: root.dismiss-available; clicked => { root.dismiss_requested(); } }
             Button { text: "Cancel Export"; enabled: root.export-cancel-available; clicked => { root.cancel_export(root.export-operation-id); } }
             Button { text: "Force Stop Export…"; enabled: root.export-force-available; clicked => { root.force_export(root.export-operation-id); } }
-            Button { text: "Create from this check"; enabled: root.create-from-check-available; clicked => { root.create_from_check(); } }
         }
-        if root.export-reservation != "": Text { text: root.export-reservation; wrap: word-wrap; }
+        if root.export-reservation != "": Text { text: root.export-reservation; wrap: word-wrap; min-width: 0px; }
         if root.export-form-visible: VerticalBox {
             padding: 8px; spacing: 6px; vertical-stretch: 0;
             Text { text: "Export technical report"; font-weight: 600; }
-            LineEdit { text <=> root.export-filename; enabled: !root.export-running; accessible-label: "Report filename"; edited(text) => { root.export_name_changed(text); } }
-            Text { text: root.export-destination; wrap: word-wrap; accessible-label: "Exact report destination: " + root.export-destination; }
-            Text { text: root.export-explanation; }
-            Text { text: root.export-status; wrap: word-wrap; accessible-label: "Export status: " + root.export-status; }
+            LineEdit { min-width: 0px; text <=> root.export-filename; enabled: !root.export-running; accessible-label: "Report filename"; edited(text) => { root.export_name_changed(text); } }
+            Text { text: root.export-destination; wrap: word-wrap; min-width: 0px; accessible-label: "Exact report destination: " + root.export-destination; }
+            Text { text: root.export-explanation; wrap: word-wrap; min-width: 0px; }
+            Text { text: root.export-status; wrap: word-wrap; min-width: 0px; accessible-label: "Export status: " + root.export-status; }
             HorizontalBox {
                 Button { text: "Export Report"; enabled: root.export-start-available; clicked => { root.start_export(); } }
                 Button { text: "Close export form"; enabled: !root.export-running; clicked => { root.close_export_form(); } }
             }
         }
-        if root.compact-layout: ComboBox { model: root.run-picker-labels; current-index: root.selected-run; accessible-label: "Select run"; selected(value) => { root.select_run(self.current-index); } }
+        if root.compact-layout: ComboBox { min-width: 0px; model: root.run-picker-labels; current-index: root.selected-run; accessible-label: "Select run"; selected(value) => { root.select_run(self.current-index); } }
         if root.compact-layout && root.waiting-runs.length > 0: ScrollView {
             max-height: 80px;
             VerticalBox { for run[index] in root.waiting-runs: HorizontalBox {
-                Text { text: run; overflow: elide; }
+                Text { text: run; overflow: elide; min-width: 0px; }
                 Button { text: "Remove waiting run"; clicked => {root.remove_waiting(index);} }
             } }
         }
@@ -209,7 +217,7 @@ export component MainWindow inherits Window {
                     Text { text: "Runs"; font-weight: 600; }
                     for run[index] in root.runs: Button { text: run; height: 76px; clicked => { root.select_run(index); } }
                     for run[index] in root.waiting-runs: VerticalBox {
-                        Text { text: run; wrap: word-wrap; }
+                        Text { text: run; wrap: word-wrap; min-width: 0px; }
                         Button { text: "Remove waiting run"; clicked => { root.remove_waiting(index); } }
                     }
                     Rectangle { vertical-stretch: 1; }
@@ -219,10 +227,10 @@ export component MainWindow inherits Window {
                 padding: 0px; horizontal-stretch: 1;
                 if root.runs.length == 0 && root.waiting-runs.length == 0: Text {
                     text: "Drop EML files or folders here, or choose messages or a folder.";
-                    wrap: word-wrap; horizontal-alignment: center;
+                    wrap: word-wrap; min-width: 0px; horizontal-alignment: center;
                     accessible-label: "Drop local EML files or folders to create copies. You can also use Choose messages or Choose folder.";
                 }
-                Text { text: root.report-text; wrap: word-wrap; accessible-label: "Run summary: " + root.report-text; }
+                Text { text: root.report-text; wrap: word-wrap; min-width: 0px; accessible-label: "Run summary: " + root.report-text; }
                 ScrollView {
                     height: root.items.length == 0 ? 0px : (root.short-layout ? 40px : 100px);
                     VerticalBox { padding: 0px; spacing: 4px; for item[index] in root.items: Button { text: item; height: 32px; clicked => { root.select_item(index); } } }
@@ -265,7 +273,7 @@ export component MainWindow inherits Window {
         VerticalBox {
             padding: 24px; spacing: 16px;
             Text { text: root.confirm-title; font-weight: 600; vertical-stretch: 0; }
-            Text { text: root.confirm-text; wrap: word-wrap; accessible-label: "Confirmation: " + root.confirm-text; }
+            Text { text: root.confirm-text; wrap: word-wrap; min-width: 0px; accessible-label: "Confirmation: " + root.confirm-text; }
             HorizontalBox {
                 alignment: end; vertical-stretch: 0; spacing: 12px; padding: 0px;
                 cancel-confirmation := Button { text: "Cancel"; min-width: 80px; horizontal-stretch: 0; clicked => { root.cancel_confirmation(); } }
