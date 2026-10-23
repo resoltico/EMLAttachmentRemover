@@ -236,6 +236,7 @@ pub(crate) fn check_desktop(root: &Path, plan: &BuildPlan, out: &Path) -> Result
     .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text)
     .env("SLINT_COMPILER_DENY_WARNINGS", "1");
     let lint_result = checked_run(lint, &out.join("slint-profile-clippy.log"), 1200);
+    let borrowed_result = check_borrowed_url_docs(root, &build, &out.join("borrowed-url-docs"));
     let fixture = out.join("child-fixtures");
     fs::create_dir(&fixture)?;
     let tests = crate::qualify::checked_commands(&fixture, |listing| {
@@ -270,10 +271,122 @@ pub(crate) fn check_desktop(root: &Path, plan: &BuildPlan, out: &Path) -> Result
     fs::write(
         out.join("result.json"),
         serde_json::to_vec_pretty(
-            &serde_json::json!({"build":build,"tests":tests,"slint_profile_lint":{"passed":lint_result.is_ok(),"failure":lint_result.as_ref().err().map(ToString::to_string)},"scope":"native Slint profile and owned Darwin child fixtures; no actual GUI/bundle/archive acceptance"}),
+            &serde_json::json!({"build":build,"tests":tests,"borrowed_url_docs":{"passed":borrowed_result.is_ok(),"failure":borrowed_result.as_ref().err().map(ToString::to_string)},"slint_profile_lint":{"passed":lint_result.is_ok(),"failure":lint_result.as_ref().err().map(ToString::to_string)},"scope":"native Slint profile and owned Darwin child fixtures; no actual GUI/bundle/archive acceptance"}),
         )?,
     )?;
-    lint_result
+    lint_result?;
+    borrowed_result
+}
+
+/// Three authored borrowed-batch guards; upstream vendor doctests are deliberately
+/// outside this finite selection. The same desktop gate compiles the application's
+/// actual callback/as_ptr use as its positive import and use control.
+fn check_borrowed_url_docs(root: &Path, build: &MacBuild, out: &Path) -> Result<()> {
+    fs::create_dir(out)?;
+    let mut command = build.command(root, "cargo");
+    command
+        .args([
+            "test",
+            "--manifest-path",
+            "vendor/winit/Cargo.toml",
+            "--locked",
+            "--doc",
+            "--no-default-features",
+            "--features",
+            "rwh_06",
+            "--target",
+            &build.host,
+            "--",
+            "BorrowedFileUrls",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("CARGO_TARGET_DIR", out.join("build"))
+        .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text)
+        .env("CARGO_TERM_COLOR", "never");
+    let log = out.join("rustdoc.log");
+    let process = controller()?.run_separate_output(command, &log, Duration::from_secs(1200))?;
+    let validation = (|| -> Result<()> {
+        process.require_success(&log)?;
+        let stderr = log.with_extension("stderr");
+        if fs::metadata(&log)?.len() > 1024 * 1024
+            || fs::metadata(&stderr)?.len() > 16 * 1024 * 1024
+        {
+            return Err("Borrowed URL rustdoc output exceeds evidence bounds".into());
+        }
+        verify_borrowed_url_docs(&fs::read_to_string(&log)?, &fs::read_to_string(stderr)?)
+    })();
+    fs::write(
+        out.join("result.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "process": process.evidence(), "passed": validation.is_ok(),
+            "failure": validation.as_ref().err().map(ToString::to_string),
+            "required_selection": {"selected": 3, "intentionally_filtered_upstream": 27},
+            "qualified_counts": validation.is_ok().then(|| serde_json::json!({"passed":3,"failed":0,"ignored":0,"intentionally_filtered_upstream":27})),
+            "positive_control": "same desktop gate Slint Clippy compiles actual BorrowedFileUrls callback/as_ptr use",
+            "scope": "three authored lifetime/Send/Sync compile-fail doctests; no GUI execution or complete upstream vendor suite"
+        }))?,
+    )?;
+    validation
+}
+
+fn verify_borrowed_url_docs(stdout: &str, stderr: &str) -> Result<()> {
+    let tests: Vec<_> = stdout
+        .lines()
+        .filter(|line| line.starts_with("test ") && !line.starts_with("test result:"))
+        .collect();
+    let expected = [
+        "test src/platform/macos.rs - platform::macos::BorrowedFileUrls (line 42) - compile fail ... ok",
+        "test src/platform/macos.rs - platform::macos::BorrowedFileUrls (line 46) - compile fail ... ok",
+        "test src/platform/macos.rs - platform::macos::BorrowedFileUrls (line 51) - compile fail ... ok",
+    ];
+    if tests != expected || stdout.lines().filter(|line| *line == "running 3 tests").count() != 1
+        || stdout.lines().filter(|line| line.starts_with("running ")).count() != 1
+        || stdout.lines().filter(|line| line.starts_with("test result:")).count() != 1
+        || stdout.lines().filter(|line| line.starts_with("test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in ")).count() != 1 {
+        return Err("Borrowed URL rustdoc selection/count/result mismatch".into());
+    }
+    let errors: Vec<_> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error"))
+        .collect();
+    if errors
+        != [
+            "error: lifetime may not live long enough",
+            "error: aborting due to 1 previous error",
+            "error[E0277]: `Rc<()>` cannot be sent between threads safely",
+            "error: aborting due to 1 previous error",
+            "error[E0277]: `Rc<()>` cannot be shared between threads safely",
+            "error: aborting due to 1 previous error",
+        ]
+    {
+        return Err(
+            "Borrowed URL doctests did not fail solely for the three required compiler causes"
+                .into(),
+        );
+    }
+    // Match source-bound causal facts, not merely a compile-fail exit. These also
+    // prove that the imported concrete batch type and its lifetime were resolved.
+    for fact in [
+        "--> src/platform/macos.rs:45:75",
+        "fn retain<'a>(batch: BorrowedFileUrls<'a>) -> BorrowedFileUrls<'static> { batch }",
+        "returning this value requires that `'a` must outlive `'static`",
+        "--> src/platform/macos.rs:50:16",
+        "require_send::<BorrowedFileUrls<'static>>();",
+        "the trait `Send` is not implemented for `Rc<()>`",
+        "--> src/platform/macos.rs:49:20",
+        "fn require_send<T: Send>() {}",
+        "--> src/platform/macos.rs:55:16",
+        "require_sync::<BorrowedFileUrls<'static>>();",
+        "the trait `Sync` is not implemented for `Rc<()>`",
+        "--> src/platform/macos.rs:54:20",
+        "fn require_sync<T: Sync>() {}",
+    ] {
+        if stderr.matches(fact).count() != 1 {
+            return Err(format!("Missing or duplicate borrowed URL compiler proof: {fact}").into());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]
@@ -572,6 +685,39 @@ fn selected_xcode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn borrowed_url_docs_require_exact_selection_and_causal_compiler_failures() {
+        let stdout = "running 3 tests\ntest src/platform/macos.rs - platform::macos::BorrowedFileUrls (line 42) - compile fail ... ok\ntest src/platform/macos.rs - platform::macos::BorrowedFileUrls (line 46) - compile fail ... ok\ntest src/platform/macos.rs - platform::macos::BorrowedFileUrls (line 51) - compile fail ... ok\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.21s\n";
+        let diagnostics = include_str!("../tests/fixtures/borrowed-file-urls-diagnostics.txt");
+        verify_borrowed_url_docs(stdout, diagnostics).unwrap();
+        for invalid in [
+            diagnostics.replace(
+                "the trait `Send` is not implemented for `Rc<()>`",
+                "unrelated trait failure",
+            ),
+            diagnostics.replace("src/platform/macos.rs:45:75", "unrelated.rs:45:75"),
+            diagnostics.replace("must outlive `'static`", "must outlive `'a`"),
+            diagnostics.replace(
+                "error[E0277]: `Rc<()>` cannot be shared between threads safely",
+                "error[E0433]: unresolved module",
+            ),
+            format!("{diagnostics}\nerror[E0425]: unrelated missing name\n"),
+            diagnostics.repeat(2),
+            String::new(),
+        ] {
+            assert!(verify_borrowed_url_docs(stdout, &invalid).is_err());
+        }
+        for invalid in [
+            stdout.replace("27 filtered", "26 filtered"),
+            format!("{stdout}test result: FAILED. 1 failed\n"),
+            stdout.replace("line 46", "line 42"),
+            stdout.replace("... ok", "... FAILED"),
+            String::new(),
+        ] {
+            assert!(verify_borrowed_url_docs(&invalid, diagnostics).is_err());
+        }
+    }
+
     #[test]
     fn loader_observation_respects_explicit_removals_and_bounds_before_encoding() {
         use std::os::unix::ffi::OsStringExt;

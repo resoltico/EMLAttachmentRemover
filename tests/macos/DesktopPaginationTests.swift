@@ -141,13 +141,15 @@ extension DesktopInteractionTests {
     XCTAssertTrue(selector.isEnabled && selector.isHittable, app.debugDescription)
     XCTAssertFalse(
       window.buttons.allElementsBoundByIndex.contains { $0.title.hasPrefix("Run 1\n") })
-    try await requireText(app, containing: displayedName ?? source.lastPathComponent)
-    let detail = window.textViews["Selected message, removed parts and technical observations"]
-    // Exercise the actual outer scroll even when AX reports clipped controls as
-    // hittable. The retained frame must show the bottom actions physically.
+    // Scroll before querying the report: AppKit can exclude the clipped
+    // report subtree from accessibility in the compact viewport.
     let topControl = app.buttons["Choose messages…"]
     guard topControl.isHittable else { throw InteractionFailure.expectedPresentation }
     topControl.scroll(byDeltaX: 0, deltaY: -600)
+    try await requireText(app, containing: displayedName ?? source.lastPathComponent)
+    let detail = window.textViews["Selected message, removed parts and technical observations"]
+    // The retained frames must show the detail and bottom actions physically,
+    // even when accessibility reports clipped controls as hittable.
     guard detail.isHittable, detail.frame.height >= 55, window.frame.contains(detail.frame) else {
       XCTFail(
         "Compact selected detail is collapsed or clipped: \(detail.frame); \(app.debugDescription)")

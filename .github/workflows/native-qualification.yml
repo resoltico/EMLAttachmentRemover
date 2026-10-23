@@ -203,8 +203,25 @@ jobs:
         env:
           EML_GENERATED_LEGAL_MATERIALS: ${{ steps.private_workspace.outputs.path }}/target/generated-legal-materials
         run: |
+          $boundaryFailed = $false
+          $boundaryRoot = [IO.Path]::GetFullPath('target/windows-profile-boundary')
+          [void][IO.Directory]::CreateDirectory($boundaryRoot)
+          $ordinaryRoot = if ($boundaryRoot.StartsWith('\\?\')) { $boundaryRoot.Substring(4) } else { $boundaryRoot }
+          $verbatimRoot = '\\?\' + $ordinaryRoot
+          $python = (Get-Command python.exe -CommandType Application -ErrorAction Stop).Source
+          foreach ($entry in @(@{name='ordinary-input';root=$ordinaryRoot}, @{name='verbatim-input';root=$verbatimRoot})) {
+            try {
+              $results = & ./tools/test_qualify_windows_name_profiles.ps1 -Python $python -Out (Join-Path $entry.root $entry.name)
+              [IO.File]::WriteAllText((Join-Path $boundaryRoot ($entry.name + '.json')), ($results -join "`n"), [Text.UTF8Encoding]::new($false))
+            } catch {
+              $boundaryFailed = $true
+              [IO.File]::WriteAllText((Join-Path $boundaryRoot ($entry.name + '.failure.log')), ($_ | Format-List * -Force | Out-String), [Text.UTF8Encoding]::new($false))
+            }
+          }
           cargo xtask qualify --target '${{ matrix.target }}' --out target/windows-link-observation
-          exit $LASTEXITCODE
+          $qualificationCode = $LASTEXITCODE
+          if ($boundaryFailed) { exit 1 }
+          exit $qualificationCode
       - name: Record Unix native source/compiler and check pinned Xcode
         if: ${{ runner.os != 'Windows' }}
         env:
@@ -312,12 +329,14 @@ jobs:
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/archive-verification/**
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-host/**
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-native-workspace.json
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-profile-boundary/**
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.json
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.jsonl
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.stderr
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/*.map
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/name-profiles/**/*.txt
+            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/name-profiles/**/*.stdout
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/*.zip
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/**/cargo/**
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-link-observation/native-test-build/**

@@ -1,0 +1,54 @@
+error: lifetime may not live long enough
+  --> src/platform/macos.rs:45:75
+   |
+45 | fn retain<'a>(batch: BorrowedFileUrls<'a>) -> BorrowedFileUrls<'static> { batch }
+   |           -- lifetime `'a` defined here                                   ^^^^^ returning this value requires that `'a` must outlive `'static`
+
+error: aborting due to 1 previous error
+
+error[E0277]: `Rc<()>` cannot be sent between threads safely
+  --> src/platform/macos.rs:50:16
+   |
+50 | require_send::<BorrowedFileUrls<'static>>();
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<()>` cannot be sent between threads safely
+   |
+   = help: within `BorrowedFileUrls<'static>`, the trait `Send` is not implemented for `Rc<()>`
+note: required because it appears within the type `PhantomData<Rc<()>>`
+  --> /rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library/core/src/marker.rs:811:11
+note: required because it appears within the type `BorrowedFileUrls<'static>`
+  --> src/platform/macos.rs:56:12
+   |
+56 | pub struct BorrowedFileUrls<'a> {
+   |            ^^^^^^^^^^^^^^^^
+note: required by a bound in `require_send`
+  --> src/platform/macos.rs:49:20
+   |
+49 | fn require_send<T: Send>() {}
+   |                    ^^^^ required by this bound in `require_send`
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0277`.
+error[E0277]: `Rc<()>` cannot be shared between threads safely
+  --> src/platform/macos.rs:55:16
+   |
+55 | require_sync::<BorrowedFileUrls<'static>>();
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<()>` cannot be shared between threads safely
+   |
+   = help: within `BorrowedFileUrls<'static>`, the trait `Sync` is not implemented for `Rc<()>`
+note: required because it appears within the type `PhantomData<Rc<()>>`
+  --> /rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library/core/src/marker.rs:811:11
+note: required because it appears within the type `BorrowedFileUrls<'static>`
+  --> src/platform/macos.rs:56:12
+   |
+56 | pub struct BorrowedFileUrls<'a> {
+   |            ^^^^^^^^^^^^^^^^
+note: required by a bound in `require_sync`
+  --> src/platform/macos.rs:54:20
+   |
+54 | fn require_sync<T: Sync>() {}
+   |                    ^^^^ required by this bound in `require_sync`
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0277`.

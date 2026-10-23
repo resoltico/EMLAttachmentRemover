@@ -33,15 +33,89 @@ $result = [ordered]@{
 $volumeOwner = $null
 $image = Join-Path $Out 'owned-name-volume.vhd'
 $commandSequence = 0
+$phase = 'prerequisites'
+function Error-Facts([Management.Automation.ErrorRecord] $Record) {
+    $fields = [ordered]@{
+        message = $Record.Exception.Message; exception_type = $Record.Exception.GetType().FullName
+        hresult = $Record.Exception.HResult; error_id = $Record.FullyQualifiedErrorId
+        category = $Record.CategoryInfo.ToString(); position = $Record.InvocationInfo.PositionMessage
+        script_stack = $Record.ScriptStackTrace; detail = $Record.ToString()
+        native_error_code = $null; inner_exception_type = $null
+    }
+    $inner = $Record.Exception
+    for ($depth = 0; $depth -lt 4 -and $null -ne $inner; $depth++) {
+        if ($inner -is [ComponentModel.Win32Exception]) { $fields.native_error_code = $inner.NativeErrorCode; $fields.inner_exception_type = $inner.GetType().FullName; break }
+        $inner = $inner.InnerException
+    }
+    foreach ($key in @($fields.Keys)) {
+        if ($null -ne $fields[$key] -and $fields[$key] -is [string] -and $fields[$key].Length -gt 8192) { $fields[$key] = $fields[$key].Substring(0,8192) }
+    }
+    return $fields
+}
 function Invoke-Observed([string] $Program, [string[]] $Arguments, [string] $Directory, [string] $Name) {
     $script:commandSequence++
+    $script:phase = "native-command:$Name"
     $stem = Join-Path $Directory ('{0:D3}-{1}' -f $script:commandSequence, $Name)
-    & $Program @Arguments 1> "$stem.stdout" 2> "$stem.stderr"
-    $code = $LASTEXITCODE
-    $observation = [ordered]@{ program = $Program; arguments = $Arguments; exit_code = $code; stdout = [IO.File]::ReadAllText("$stem.stdout"); stderr = [IO.File]::ReadAllText("$stem.stderr") }
-    $observation | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath "$stem.json" -Encoding utf8NoBOM
-    if ($code -ne 0) { throw "$Name failed with exit $code; see $stem.json" }
-    return $observation
+    $observation = [ordered]@{ program = $Program; arguments = $Arguments; phase = 'before-start'; started = $false; process_id = $null; settled = $false; exit_code = $null; stdout = $null; stderr = $null; error = $null; cleanup_error = $null }
+    $process = [Diagnostics.Process]::new()
+    $stdout = $null; $stderr = $null; $stdoutCopy = $null; $stderrCopy = $null
+    try {
+        # Literal streams avoid PowerShell provider wildcard expansion of \?\ paths.
+        $stdout = [IO.File]::Open("$stem.stdout", [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+        $stderr = [IO.File]::Open("$stem.stderr", [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+        $process.StartInfo.FileName = $Program
+        $process.StartInfo.UseShellExecute = $false
+        $process.StartInfo.RedirectStandardOutput = $true
+        $process.StartInfo.RedirectStandardError = $true
+        foreach ($argument in $Arguments) { $process.StartInfo.ArgumentList.Add($argument) }
+        $observation | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath "$stem.json" -Encoding utf8NoBOM
+        if (!$process.Start()) { throw 'Native command did not start.' }
+        $observation.started = $true; $observation.process_id = $process.Id; $observation.phase = 'draining'
+        $stdoutCopy = $process.StandardOutput.BaseStream.CopyToAsync($stdout)
+        $stderrCopy = $process.StandardError.BaseStream.CopyToAsync($stderr)
+        $pending = [Collections.Generic.List[Threading.Tasks.Task]]::new()
+        $pending.Add($stdoutCopy); $pending.Add($stderrCopy); $pending.Add($process.WaitForExitAsync())
+        while ($pending.Count -gt 0) {
+            $completed = [Threading.Tasks.Task]::WhenAny($pending.ToArray()).GetAwaiter().GetResult()
+            [void]$completed.GetAwaiter().GetResult()
+            [void]$pending.Remove($completed)
+        }
+        $process.WaitForExit()
+        $observation.settled = $true; $observation.exit_code = $process.ExitCode
+        $stdout.Dispose(); $stdout = $null; $stderr.Dispose(); $stderr = $null
+        $observation.phase = 'decode'
+        $observation.stdout = [IO.File]::ReadAllText("$stem.stdout", [Text.UTF8Encoding]::new($false,$true))
+        $observation.stderr = [IO.File]::ReadAllText("$stem.stderr", [Text.UTF8Encoding]::new($false,$false))
+        $observation.phase = 'complete'
+        if ($observation.exit_code -ne 0) { throw "$Name failed with exit $($observation.exit_code); see $stem.json" }
+        return $observation
+    } catch {
+        $observation.error = Error-Facts $_
+        throw
+    } finally {
+        try {
+            if ($observation.started) {
+                # The enclosing Rust-owned Job enforces the campaign deadline and owns descendants.
+                # This retained Process terminates only the exact child it started on local failure.
+                if (!$process.HasExited) { $process.Kill() }
+                $process.WaitForExit()
+                $observation.settled = $true; $observation.exit_code = $process.ExitCode
+                foreach ($copy in @($stdoutCopy,$stderrCopy)) {
+                    if ($null -ne $copy) {
+                        try { [void]$copy.GetAwaiter().GetResult() }
+                        catch { if ($null -eq $observation.cleanup_error) { $observation.cleanup_error = Error-Facts $_ } }
+                    }
+                }
+            }
+        } catch { $observation.cleanup_error = Error-Facts $_ }
+        finally {
+            if ($null -ne $stdout) { $stdout.Dispose() }
+            if ($null -ne $stderr) { $stderr.Dispose() }
+            $process.Dispose()
+            $observation | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath "$stem.json" -Encoding utf8NoBOM
+        }
+        if ($null -ne $observation.cleanup_error -and $null -eq $observation.error) { throw 'Native command cleanup failed; see invocation receipt.' }
+    }
 }
 function Namespace-Facts([string] $Root) {
     $paths = @((Get-Item -LiteralPath (Verbatim $Root))) + @(Get-ChildItem -LiteralPath (Verbatim $Root) -Recurse -Force)
@@ -70,6 +144,9 @@ try {
     $python = (Get-Command python.exe -CommandType Application -ErrorAction Stop).Source
     if ($python -like '*WindowsApps*') { throw 'A real Python installation is required, not a Store execution alias.' }
     $fsutil = Join-Path $env:SystemRoot 'System32\fsutil.exe'
+    if (!(Test-Path -LiteralPath $fsutil -PathType Leaf)) { throw 'Native fsutil.exe is missing.' }
+    $result.tools = [ordered]@{ fsutil = $fsutil; fsutil_sha256 = (Get-FileHash -LiteralPath $fsutil -Algorithm SHA256).Hash.ToLowerInvariant(); python = $python; python_sha256 = (Get-FileHash -LiteralPath $python -Algorithm SHA256).Hash.ToLowerInvariant(); process_architecture = [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString(); powershell_home = $PSHOME; current_directory = [IO.Directory]::GetCurrentDirectory() }
+    if (![IO.Directory]::Exists($result.tools.current_directory)) { throw 'Native command current directory is missing.' }
     foreach ($command in @('Get-DiskImage', 'Get-Disk', 'Initialize-Disk', 'New-Partition', 'Format-Volume', 'Get-Volume')) {
         [void](Get-Command $command -ErrorAction Stop)
     }
@@ -159,6 +236,7 @@ public sealed class EmlOwnedNameVolume : IDisposable {
     if ($machine -ne $expectedMachine) { throw 'Frozen CLI image does not match actual native Windows CPU.' }
     $policy = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name NtfsDisable8dot3NameCreation).NtfsDisable8dot3NameCreation
     if ($policy -notin @(0, 2)) { throw "Host global 8.3 policy $policy cannot qualify both profiles without changing host policy." }
+    $phase = 'create-owned-vhd'
     $volumeOwner = [EmlOwnedNameVolume]::new($image)
     $physical = $volumeOwner.PhysicalPath()
     if ($physical -notmatch '^\\\\\.\\PhysicalDrive([0-9]+)$') { throw 'Owned VHD physical path is malformed.' }
@@ -186,8 +264,11 @@ public sealed class EmlOwnedNameVolume : IDisposable {
     $driveRoot = "${letter}:\"
     $nativeVolume = [EmlOwnedNameVolume]::Volume($driveRoot)
     if ($nativeVolume[0] -ne 'NTFS' -or $nativeVolume[2] -ne '255' -or $nativeVolume[4] -ne '3' -or $nativeVolume[5] -ne $label -or $formatted.FileSystem -ne 'NTFS') { throw 'Owned local NTFS volume observations do not match.' }
+    $phase = 'observe-formatted-volume'
     $result.storage = [ordered]@{ image = $image; physical_path = $physical; disk_number = $number; disk_unique_id = $uniqueId; volume_root = $driveRoot; filesystem = $nativeVolume[0]; volume_serial = $nativeVolume[1]; max_component = 255; drive_type = 3; label = $label; global_8dot3_policy = $policy; native_cli_machine = $machine; lifetime = 'kernel-handle-owned' }
+    $phase = 'revalidate-formatted-disk'
     Assert-OwnedDisk
+    $phase = 'bind-formatted-partition'
     $driveBinding = Get-Partition -DriveLetter $letter
     if ($driveBinding.DiskNumber -ne $number -or $driveBinding.PartitionNumber -ne $partition.PartitionNumber) { throw 'Owned drive letter binding changed.' }
     if ($policy -eq 2) { [void](Invoke-Observed $fsutil @('8dot3name','set',"${letter}:",'0') $Out 'owned-volume-enable-8dot3') }
@@ -277,13 +358,14 @@ public sealed class EmlOwnedNameVolume : IDisposable {
             $profile.status = 'passed'; $profile.failure = $null
         } catch {
             $profile.failure = $_.Exception.Message
+            $profile.failure_phase = $phase; $profile.error = Error-Facts $_
             $profile.exit_code = 1
             # Preserve a failed oracle result rather than replacing it with absence.
             $failedResult = Join-Path $directory 'behavior\result.json'
             if ($null -eq $profile.behavior -and (Test-Path -LiteralPath $failedResult)) { $profile.behavior = Get-Content -LiteralPath $failedResult -Raw | ConvertFrom-Json -AsHashtable }
         }
     }
-} catch { $result.failure = $_.Exception.Message }
+} catch { $result.failure = $_.Exception.Message; $result.failure_phase = $phase; $result.error = Error-Facts $_ }
 finally {
     if ($null -ne $volumeOwner) {
         try { $volumeOwner.Detach() }
