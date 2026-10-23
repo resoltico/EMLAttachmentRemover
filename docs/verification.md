@@ -118,8 +118,7 @@ verifies its base/H parents, executes the real Linux workspace selection and
 records all three identities. After both branches finish, an API read rejects a
 changed PR head/base. The Rust `ci-result` admission rejects absent results,
 failure, cancellation and unexpected skips; negative controls exercise each
-required role. Failed app prerequisites fail the floor consumers and aggregate. Workflow wiring
-alone establishes neither product qualification nor publication behavior.
+required role. Missing app artifacts fail their exact consumers, and every failed required producer check fails the aggregate. Available frozen archives still run independent desktop/picker checks when another producer role fails; an app-result file is availability data, never qualification authority. Workflow wiring alone establishes neither product qualification nor publication behavior.
 
 CI admits the actual current-run product, floor-consumer and picker records through `verify-release-inputs`, then runs `stage-release-assets --inputs` to retain the exact candidate assets and checksums as a review artifact. This job has read-only repository permissions and performs no release, tag, attestation or publication operation. Missing or failed native roles prevent assembly and fail the aggregate.
 
@@ -287,7 +286,7 @@ See [pinned cargo-fuzz source](https://github.com/rust-fuzz/cargo-fuzz/blob/984c
 
 ## Scoped mutation selection
 
-A manual dispatch of the Extended verification workflow runs `cargo xtask mutants --initial` in its own bounded Linux job and retains discovery, per-mutant outcomes and compiler logs.
+A manual dispatch of the Extended verification workflow runs `cargo xtask mutants --initial` in its own bounded Linux job and retains discovery, per-mutant outcomes and compiler logs. The mutation control host is Ubuntu 24.04 because the pinned GNU tool requires GLIBC 2.39. Native shipping Linux builds retain their declared Ubuntu 22.04 hosts and GLIBC 2.35 limit.
 
 Only eml-core authorize_deletions and check_edit_ranges are selected. Discovery
 must be positive in both, with at most 400 total. Initial execution covers the

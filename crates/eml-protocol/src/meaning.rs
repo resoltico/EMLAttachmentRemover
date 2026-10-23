@@ -78,8 +78,11 @@ fn cleanup(value: &CleanupRecord) -> Option<eml_core::CleanupReceipt> {
                 }
                 Some(std::ffi::OsString::from_wide(
                     &bytes
-                        .chunks_exact(2)
-                        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .copied()
+                        .map(u16::from_le_bytes)
                         .collect::<Vec<_>>(),
                 ))
             }

@@ -1,8 +1,8 @@
-import Darwin
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import Foundation
 import CryptoKit
+import Darwin
+import Foundation
 
 enum DesktopFixtureRequest: String, CaseIterable, Sendable {
   case pickerBaseline = "EML_NATIVE_PICKER_BASELINE"
@@ -127,6 +127,8 @@ func expectedCopy(for source: URL, directory: URL? = nil) -> URL {
   return (directory ?? source.deletingLastPathComponent()).appendingPathComponent(
     human + "." + String(token) + ".no-attachments.eml")
 }
-private extension String {
-  func leftPadded(to length: Int) -> String { String(repeating: "0", count: max(0, length - count)) + self }
+extension String {
+  fileprivate func leftPadded(to length: Int) -> String {
+    String(repeating: "0", count: max(0, length - count)) + self
+  }
 }

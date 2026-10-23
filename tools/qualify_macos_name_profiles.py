@@ -127,6 +127,73 @@ def same_owned_image(image, held):
     return {'device': identity.st_dev, 'inode': identity.st_ino, 'owner_uid': identity.st_uid, 'byte_length': identity.st_size}
 
 
+def observe_busy_volume(image, mount, directory, held, expected):
+    """Read only this filesystem; retain no unrelated paths or raw inventories."""
+    report = {'scope': 'read-only exact owned filesystem; no retry or holder intervention', 'commands': []}
+    try:
+        same_owned_image(image, held)
+        actual = association(image, mount, directory, 'busy-association')
+        if expected is None or actual != expected:
+            raise RuntimeError('Owned mount association absent or changed; holder observation unavailable')
+    except Exception as error:
+        report['unavailable'] = str(error)
+        write_json(directory / 'busy-volume-observation.json', report)
+        return
+    specifications = [
+        ('volume', ['/usr/sbin/diskutil', 'info', '-plist', actual['volume_device']]),
+        ('holders', ['/usr/sbin/lsof', '-nP', '-Fpcfn', '+f', '--', actual['volume_device']]),
+    ]
+    for label, arguments in specifications:
+        observed = {'observation': label, 'exit_code': None, 'failure': None}
+        # lsof inventories can contain unrelated process names and absolute
+        # paths. Raw output stays private and only exact-volume facts survive.
+        with tempfile.TemporaryDirectory(prefix='eml-private-busy-volume-') as private:
+            private = Path(private)
+            try:
+                if label == 'holders':
+                    same_owned_image(image, held)
+                    if association(image, mount, directory, 'holders-association') != actual:
+                        raise RuntimeError('Owned mount association changed; holder observation unavailable')
+                code, output = command(arguments, private, label, 10)
+                observed['exit_code'] = code
+                observed['process'] = json.loads((private / (label + '.process.json')).read_text())
+                if len(output) > 1024 * 1024:
+                    raise RuntimeError('Owned-volume diagnostic exceeds its finite output bound')
+                if label == 'volume':
+                    value = plistlib.loads(output)
+                    if code or not isinstance(value, dict) or value.get('MountPoint') != str(mount) or value.get('DeviceNode') != actual['volume_device']:
+                        raise RuntimeError('Diagnostic volume does not match the owned mount')
+                    observed['volume'] = {key: value.get(key) for key in ['DeviceNode', 'FilesystemType', 'GlobalPermissionsEnabled']}
+                else:
+                    entries, current = [], None
+                    for line in output.decode('utf-8', errors='strict').splitlines():
+                        if not line:
+                            continue
+                        field, value = line[0], line[1:]
+                        if field == 'p':
+                            if not value.isdecimal():
+                                raise RuntimeError('Unrecognized diagnostic process identifier')
+                            # Stable correlation within this observation; raw PIDs
+                            # do not enter uploaded evidence.
+                            current = {'process_token': hashlib.sha256(value.encode()).hexdigest()[:16], 'files': []}
+                            entries.append(current)
+                        elif field == 'c' and current is not None:
+                            current['command_basename'] = value if len(value) <= 128 and '/' not in value and '\\' not in value else '<redacted>'
+                        elif field == 'n' and current is not None:
+                            prefix = str(mount) + '/'
+                            current['files'].append(value[len(prefix):] if value.startswith(prefix) else '.' if value == str(mount) else '<unrecognized-name-redacted>')
+                        elif field not in ['c', 'f']:
+                            raise RuntimeError('Unrecognized owned-volume holder field')
+                    observed['holders'] = entries
+                    observed['visibility'] = 'ordinary caller visibility only; empty output does not prove no kernel or other-user holder'
+            except Exception as error:
+                observed['failure'] = str(error)
+        report['commands'].append(observed)
+        if observed['failure'] is not None:
+            break
+    write_json(directory / 'busy-volume-observation.json', report)
+
+
 def cleanup_image(image, mount, directory, held, expected):
     identity = same_owned_image(image, held)
     actual = association(image, mount, directory, 'cleanup-association')
@@ -135,6 +202,11 @@ def cleanup_image(image, mount, directory, held, expected):
             raise RuntimeError('Owned image device/mount association changed before cleanup')
         code, _ = command(['/usr/bin/hdiutil', 'detach', str(mount)], directory, 'detach', 60)
         if code:
+            try:
+                observe_busy_volume(image, mount, directory, held, actual)
+            except Exception:
+                # Diagnostic failure cannot replace the original detach result.
+                pass
             raise RuntimeError('Owned image detach failed with exit ' + str(code))
     if association(image, mount, directory, 'detached-association') is not None:
         raise RuntimeError('Owned image remains associated after detach')

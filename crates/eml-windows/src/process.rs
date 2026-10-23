@@ -398,9 +398,11 @@ impl Job {
         }
         // SAFETY: successful CreateProcessW transferred the two unique handles.
         let process = Process {
+            // SAFETY: successful CreateProcessW transferred this unique process handle.
             handle: unsafe { OwnedHandle::from_raw_handle(information.hProcess) },
             _job: self,
         };
+        // SAFETY: successful CreateProcessW separately transferred this unique primary-thread handle.
         let thread = unsafe { OwnedHandle::from_raw_handle(information.hThread) };
         // SAFETY: sole owned primary thread of a contained suspended child.
         if unsafe { ResumeThread(thread.as_raw_handle()) } == u32::MAX {
@@ -466,6 +468,7 @@ impl Process<'_> {
                 0,
             ))?;
         }
+        // SAFETY: successful DuplicateHandle transferred one new process-local handle owner.
         let inherited = unsafe { OwnedHandle::from_raw_handle(raw) };
         let arguments = vec![
             OsString::from("--eml-owned-console-interrupt"),
@@ -503,6 +506,7 @@ impl Process<'_> {
             WAIT_TIMEOUT => Ok(None),
             WAIT_OBJECT_0 => {
                 let mut code = 0;
+                // SAFETY: live held process is signalled; code is a writable native DWORD output.
                 unsafe {
                     native(GetExitCodeProcess(self.handle.as_raw_handle(), &mut code))?;
                 }
@@ -529,7 +533,9 @@ pub fn anonymous_pipe() -> io::Result<(File, File)> {
         ))?;
     }
     Ok((
+        // SAFETY: successful CreatePipe transferred this unique read-end handle.
         File::from(unsafe { OwnedHandle::from_raw_handle(reader) }),
+        // SAFETY: successful CreatePipe separately transferred this unique write-end handle.
         File::from(unsafe { OwnedHandle::from_raw_handle(writer) }),
     ))
 }
@@ -589,6 +595,7 @@ pub fn console_helper_entry() -> Option<std::process::ExitCode> {
         if flags & HANDLE_FLAG_INHERIT == 0 {
             return Err(invalid("Target handle was not inherited"));
         }
+        // SAFETY: this dedicated helper claims the validated live inherited handle exactly once.
         let target = unsafe { OwnedHandle::from_raw_handle(raw) };
         // SAFETY: GetProcessId validates process type; the still-held handle
         // prevents object/ID reuse through the final console operation.
@@ -596,6 +603,7 @@ pub fn console_helper_entry() -> Option<std::process::ExitCode> {
         if pid == 0 {
             return Err(io::Error::last_os_error());
         }
+        // SAFETY: GetProcessId validated the still-held process handle; zero timeout only observes it.
         if unsafe { WaitForSingleObject(target.as_raw_handle(), 0) } != WAIT_TIMEOUT {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -604,9 +612,12 @@ pub fn console_helper_entry() -> Option<std::process::ExitCode> {
         }
         // An accidental call from an existing console fails without changing
         // that console's association.
+        // SAFETY: the held live target prevents PID reuse through this native console attach.
         unsafe {
             native(AttachConsole(pid))?;
         }
+        // SAFETY: static system-ABI callback remains live through process exit; event is validated,
+        // group zero addresses the console just attached by this dedicated sender.
         unsafe {
             native(SetConsoleCtrlHandler(Some(ignore_sender_event), 1))?;
             native(GenerateConsoleCtrlEvent(event, 0))?;

@@ -217,7 +217,8 @@ extension DesktopInteractionTests {
       XCTAssertFalse(app.buttons["Show in Finder"].isEnabled)
       XCTAssertEqual(
         try Data(
-          contentsOf: expectedCopy(for: originals[0], directory: fixture.appendingPathComponent("published-output"))),
+          contentsOf: expectedCopy(
+            for: originals[0], directory: fixture.appendingPathComponent("published-output"))),
         golden)
       snapshot(app, "real-core-published-with-error")
     } else {
@@ -242,11 +243,14 @@ extension DesktopInteractionTests {
       }
       XCTAssertEqual(
         try Data(
-          contentsOf: expectedCopy(for: originals[0], directory: fixture.appendingPathComponent("publication-output"))),
+          contentsOf: expectedCopy(
+            for: originals[0], directory: fixture.appendingPathComponent("publication-output"))),
         golden)
       XCTAssertFalse(
         FileManager.default.fileExists(
-          atPath: expectedCopy(for: originals[1], directory: fixture.appendingPathComponent("publication-output")).path))
+          atPath: expectedCopy(
+            for: originals[1], directory: fixture.appendingPathComponent("publication-output")
+          ).path))
       snapshot(app, "real-core-\(scenario)-settled")
     }
     app.typeKey("q", modifierFlags: .command)

@@ -140,6 +140,7 @@ impl TemporaryAccount {
         let mut domain_length = domain_name.len() as u32;
         let mut use_kind = 0;
         // Resolve the built-in Users alias by SID instead of a localized label.
+        // SAFETY: owned validated SID and live bounded UTF-16 output buffers/counts.
         unsafe {
             checked(LookupAccountSidW(
                 ptr::null(),
@@ -156,6 +157,7 @@ impl TemporaryAccount {
         };
         // Only this newly owned account's membership is added. Deleting its
         // still-matching SID removes that membership without changing any policy.
+        // SAFETY: terminated native group name and one live level-0 member record retain its SID.
         let code = unsafe {
             NetLocalGroupAddMembers(
                 ptr::null(),
@@ -176,6 +178,7 @@ impl TemporaryAccount {
         let mut prior = ptr::null_mut();
         // SAFETY: inspect only this thread; never overwrite existing impersonation.
         if unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut prior) } != 0 {
+            // SAFETY: successful OpenThreadToken transferred this unique query-handle owner.
             drop(unsafe { OwnedHandle::from_raw_handle(prior) });
             return Err(invalid("ACL actor thread was already impersonating"));
         }
@@ -216,6 +219,7 @@ impl TemporaryAccount {
             let effective = std::ptr::without_provenance_mut::<c_void>((-6isize) as usize);
             // SDK effective-token pseudo handle supplies query rights directly;
             // do not reopen the token inside CheckTokenMembership(NULL,...).
+            // SAFETY: documented current effective-token pseudo handle and aligned bounded writable buffer.
             unsafe {
                 checked(GetTokenInformation(
                     effective,
@@ -229,6 +233,7 @@ impl TemporaryAccount {
             if used as usize > size_of_val(words.as_slice()) || (used as usize) < start {
                 return Err(invalid("Unverified effective token-group extent"));
             }
+            // SAFETY: aligned initialized native output covers the checked TOKEN_GROUPS header.
             let count = unsafe { (*words.as_ptr().cast::<TOKEN_GROUPS>()).GroupCount } as usize;
             let extent = start
                 .checked_add(
@@ -241,6 +246,7 @@ impl TemporaryAccount {
                 return Err(invalid("Token groups exceed their allocation"));
             }
             for index in 0..count {
+                // SAFETY: checked complete group-array extent bounds this native entry; unaligned read is explicit.
                 let group = unsafe {
                     ptr::read_unaligned(
                         words
@@ -308,6 +314,7 @@ fn everyone_acl(path: &Path) -> io::Result<()> {
     let bytes = size_of::<ACL>() + offset_of!(ACCESS_ALLOWED_ACE, SidStart) + sid.0.len() * 4;
     let mut words = vec![0u32; bytes.div_ceil(4)];
     let acl = words.as_mut_ptr().cast::<ACL>();
+    // SAFETY: aligned owned allocation includes the ACL and complete validated SID/ACE extent.
     unsafe {
         checked(InitializeAcl(acl, (words.len() * 4) as u32, ACL_REVISION))?;
         checked(AddAccessAllowedAceEx(

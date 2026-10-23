@@ -378,7 +378,8 @@ extension DesktopInteractionTests {
     }
     mode.click()
     let choice = app.descendants(matching: .any).matching(
-      NSPredicate(format: "label == %@ OR title == %@", label, label)).firstMatch
+      NSPredicate(format: "label == %@ OR title == %@", label, label)
+    ).firstMatch
     guard choice.waitForExistence(timeout: 5), choice.isHittable else {
       XCTFail("Operation choice is inaccessible: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
@@ -393,11 +394,14 @@ extension DesktopInteractionTests {
     }
     let summary = try XCTUnwrap(texts.first { $0.contains("Run summary: Run ") })
     let runPattern = try NSRegularExpression(pattern: "Run summary: Run ([0-9]+)")
-    let runMatch = try XCTUnwrap(runPattern.firstMatch(in: summary, range: NSRange(summary.startIndex..., in: summary)))
+    let runMatch = try XCTUnwrap(
+      runPattern.firstMatch(in: summary, range: NSRange(summary.startIndex..., in: summary)))
     let runRange = try XCTUnwrap(Range(runMatch.range(at: 1), in: summary))
     let technical = try XCTUnwrap(texts.first { $0.contains("Processing operation: ") })
     let operationPattern = try NSRegularExpression(pattern: "Processing operation: ([0-9]+)")
-    let operationMatch = try XCTUnwrap(operationPattern.firstMatch(in: technical, range: NSRange(technical.startIndex..., in: technical)))
+    let operationMatch = try XCTUnwrap(
+      operationPattern.firstMatch(
+        in: technical, range: NSRange(technical.startIndex..., in: technical)))
     let operationRange = try XCTUnwrap(Range(operationMatch.range(at: 1), in: technical))
     return (String(summary[runRange]), String(technical[operationRange]))
   }
@@ -427,7 +431,8 @@ extension DesktopInteractionTests {
     let checked = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: canCreate, object: nil)], timeout: 20)
     guard checked == .completed else { throw InteractionFailure.expectedPresentation }
-    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path).sorted(), before)
+    XCTAssertEqual(
+      try FileManager.default.contentsOfDirectory(atPath: destination.path).sorted(), before)
     XCTAssertEqual(try Data(contentsOf: source), sourceBefore)
     XCTAssertFalse(FileManager.default.fileExists(atPath: exactCopy.path))
     let technical = app.checkBoxes["Technical details"]
