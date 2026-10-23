@@ -144,7 +144,7 @@ extension DesktopInteractionTests {
   @MainActor
   private func observedNumber(_ app: XCUIApplication, pattern: String) throws -> UInt64 {
     let expression = try NSRegularExpression(pattern: pattern)
-    let texts = app.descendants(matching: .any).allElementsBoundByIndex.map {
+    let texts = try presentationSnapshots(app).map {
       $0.title + "\n" + $0.label + "\n" + (($0.value as? String) ?? "")
     }.joined(separator: "\n")
     let match = try XCTUnwrap(
@@ -324,7 +324,7 @@ extension DesktopInteractionTests {
       try await requireText(app, containing: "settled: true")
     }
     let settledText =
-      app.descendants(matching: .any).allElementsBoundByIndex.first {
+      try presentationSnapshots(app).first {
         $0.title == "Selected message, removed parts and technical observations"
       }?.value as? String ?? ""
     let facts: [String: Any] = [

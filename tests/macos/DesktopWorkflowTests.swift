@@ -130,8 +130,16 @@ extension DesktopInteractionTests {
       try await showReportDetails(app)
       // Read the actual native title: XCTest's filtered identifier/title query
       // did not resolve these buttons despite their retained AX snapshots.
+      var snapshotFailure: String?
       let available = NSPredicate { _, _ in
-        window.buttons.allElementsBoundByIndex.contains { $0.title == "Remove waiting run" }
+        do {
+          return try self.presentationSnapshots(window).contains {
+            $0.elementType == .button && $0.title == "Remove waiting run"
+          }
+        } catch {
+          snapshotFailure = String(describing: error)
+          return false
+        }
       }
       let visible = await XCTWaiter.fulfillment(
         of: [XCTNSPredicateExpectation(predicate: available, object: nil)], timeout: 10)
@@ -140,7 +148,9 @@ extension DesktopInteractionTests {
           $0.title == "Remove waiting run"
         })
       else {
-        XCTFail("Visible waiting-run removal control is unavailable: \(app.debugDescription)")
+        XCTFail(
+          "Visible waiting-run removal control is unavailable; snapshot error: \(snapshotFailure ?? "none"): \(app.debugDescription)"
+        )
         throw InteractionFailure.expectedPresentation
       }
       print(
@@ -347,12 +357,24 @@ extension DesktopInteractionTests {
     try await focusOwnedWindow(owned, window: window, avoiding: folder)
     try await showRunControls(app)
     app.buttons["Dismiss report"].click()
+    var snapshotFailure: String?
     let room = NSPredicate { _, _ in
-      window.buttons.allElementsBoundByIndex.filter { $0.title.hasPrefix("Run ") }.count == 1
+      do {
+        return try self.presentationSnapshots(window).filter {
+          $0.elementType == .button && $0.title.hasPrefix("Run ")
+        }.count == 1
+      } catch {
+        snapshotFailure = String(describing: error)
+        return false
+      }
     }
     let freed = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: room, object: nil)], timeout: 10)
-    guard freed == .completed else { throw InteractionFailure.expectedPresentation }
+    guard freed == .completed else {
+      XCTFail(
+        "Report reservation did not become available; snapshot error: \(snapshotFailure ?? "none")")
+      throw InteractionFailure.expectedPresentation
+    }
     finder.activate()
     let originalEntry = try finderEntry(folder, file: sources[0], selected: nil)
     originalEntry.click()

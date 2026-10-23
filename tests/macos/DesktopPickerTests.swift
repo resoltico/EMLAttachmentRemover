@@ -167,7 +167,7 @@ extension DesktopInteractionTests {
     XCTAssertTrue(about.descendants(matching: .any)["EML Attachment Remover"].exists)
     // AppKit formats the standard About panel's version label. Inspect the
     // actual text without imposing the removed custom Slint window's format.
-    let aboutText = about.descendants(matching: .any).allElementsBoundByIndex.map {
+    let aboutText = try presentationSnapshots(about).map {
       $0.label + " " + (($0.value as? String) ?? "")
     }.joined(separator: "\n")
     XCTAssertTrue(aboutText.contains(version), aboutText)
@@ -254,29 +254,41 @@ extension DesktopInteractionTests {
     guard recipient.processIdentifier == owned.processIdentifier else {
       throw InteractionFailure.expectedPresentation
     }
+    var snapshotFailure: String?
     let finished = NSPredicate { _, _ in
-      app.buttons.allElementsBoundByIndex.contains { button in
-        let text = button.title + "\n" + button.label + "\n" + (button.value as? String ?? "")
-        return text.contains("2 created") && text.contains("Finished")
+      do {
+        return try self.presentationSnapshots(app).contains { button in
+          guard button.elementType == .button else { return false }
+          let text = button.title + "\n" + button.label + "\n" + (button.value as? String ?? "")
+          return text.contains("2 created") && text.contains("Finished")
+        }
+      } catch {
+        snapshotFailure = String(describing: error)
+        return false
       }
     }
     let finishedObservation = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: finished, object: nil)], timeout: 30)
     guard finishedObservation == .completed else {
-      for button in app.buttons.allElementsBoundByIndex {
-        print(
-          "Observed button title=\(button.title.debugDescription), label=\(button.label.debugDescription), value=\(String(describing: button.value).prefix(2048))"
-        )
-      }
-      for element in app.descendants(matching: .any).allElementsBoundByIndex {
-        if element.title.hasPrefix("Selected message") {
+      do {
+        let diagnostics = try presentationSnapshots(app)
+        for button in diagnostics where button.elementType == .button {
+          print(
+            "Observed button title=\(button.title.debugDescription), label=\(button.label.debugDescription), value=\(String(describing: button.value).prefix(2048))"
+          )
+        }
+        for element in diagnostics where element.title.hasPrefix("Selected message") {
           print("Observed failed-batch detail: \(String(describing: element.value).prefix(16384))")
         }
+      } catch {
+        snapshotFailure = String(describing: error)
       }
-      XCTFail("Native batch did not reach its two-created presentation: \(app.debugDescription)")
+      XCTFail(
+        "Native batch did not reach its two-created presentation; snapshot error: \(snapshotFailure ?? "none"): \(app.debugDescription)"
+      )
       throw InteractionFailure.expectedPresentation
     }
-    for text in window.staticTexts.allElementsBoundByIndex {
+    for text in try presentationSnapshots(window) where text.elementType == .staticText {
       print(
         "Observed static text label=\(text.label.debugDescription), value=\(String(describing: text.value).prefix(2048))"
       )
@@ -291,16 +303,24 @@ extension DesktopInteractionTests {
     print(
       "Observed technical disclosure title=\(technical.title.debugDescription), value=\(String(describing: technical.value))"
     )
+    snapshotFailure = nil
     let completed = NSPredicate { _, _ in
-      app.descendants(matching: .any).allElementsBoundByIndex.contains {
-        $0.title == "Selected message, removed parts and technical observations"
-          && ($0.value as? String)?.contains("settled true; reusable true") == true
+      do {
+        return try self.presentationSnapshots(app).contains {
+          $0.title == "Selected message, removed parts and technical observations"
+            && ($0.value as? String)?.contains("settled true; reusable true") == true
+        }
+      } catch {
+        snapshotFailure = String(describing: error)
+        return false
       }
     }
     let observation = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: completed, object: nil)], timeout: 20)
     XCTAssertEqual(
-      observation, .completed, "Settled native report is unavailable: \(app.debugDescription)")
+      observation, .completed,
+      "Settled native report is unavailable; snapshot error: \(snapshotFailure ?? "none"): \(app.debugDescription)"
+    )
     guard observation == .completed else { throw InteractionFailure.expectedPresentation }
     for source in sources {
       let copy = expectedCopy(for: source)

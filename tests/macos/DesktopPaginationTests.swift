@@ -143,7 +143,9 @@ extension DesktopInteractionTests {
       })
     XCTAssertTrue(selector.isEnabled && selector.isHittable, app.debugDescription)
     XCTAssertFalse(
-      window.buttons.allElementsBoundByIndex.contains { $0.title.hasPrefix("Run 1\n") })
+      try presentationSnapshots(window).contains {
+        $0.elementType == .button && $0.title.hasPrefix("Run 1\n")
+      })
     // Scroll before querying the report: AppKit can exclude the clipped
     // report subtree from accessibility in the compact viewport.
     let topControl = app.buttons["Choose messages…"]
