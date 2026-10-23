@@ -109,6 +109,12 @@ the frozen product archives. Cache reuse reduces crate-archive downloads; the
 registry index and other network prerequisites can still be required. It neither
 retries a failed qualification nor makes a cache hit evidence of product behavior.
 
+The fixed Windows PowerShell script uses an ordinary absolute drive expression;
+script admission can reject verbatim expressions under the native working
+directory. Before launch, the qualifier checks that this spelling resolves to
+the same canonical source file. Binary/output expressions and the native working
+directory retain their existing forms, and execution policy remains inherited.
+
 Windows uses the bounded native controller with discovery/execution comparison,
 separate transcripts, required-name sentinels and ignored-test rejection. Actual
 console tests require the CLI to consume an unfinished request or produce a real

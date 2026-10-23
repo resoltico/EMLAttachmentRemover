@@ -304,9 +304,19 @@ extension DesktopInteractionTests {
       "Observed technical disclosure title=\(technical.title.debugDescription), value=\(String(describing: technical.value))"
     )
     snapshotFailure = nil
+    var lastPredicateSnapshots: [XCUIElementSnapshot]?
+    var lastSnapshotPoll: Int?
+    var lastSnapshotElapsed: TimeInterval?
+    var totalPolls = 0
+    let predicateStarted = ProcessInfo.processInfo.systemUptime
     let completed = NSPredicate { _, _ in
+      totalPolls += 1
       do {
-        return try self.presentationSnapshots(app).contains {
+        let snapshots = try self.presentationSnapshots(app)
+        lastPredicateSnapshots = snapshots
+        lastSnapshotPoll = totalPolls
+        lastSnapshotElapsed = ProcessInfo.processInfo.systemUptime - predicateStarted
+        return snapshots.contains {
           $0.title == "Selected message, removed parts and technical observations"
             && ($0.value as? String)?.contains("settled true; reusable true") == true
         }
@@ -321,7 +331,12 @@ extension DesktopInteractionTests {
       observation, .completed,
       "Settled native report is unavailable; snapshot error: \(snapshotFailure ?? "none"): \(app.debugDescription)"
     )
-    guard observation == .completed else { throw InteractionFailure.expectedPresentation }
+    guard observation == .completed else {
+      recordSettledReportFailure(
+        app, window: window, snapshots: lastPredicateSnapshots, snapshotPoll: lastSnapshotPoll,
+        snapshotElapsed: lastSnapshotElapsed, totalPolls: totalPolls, latestError: snapshotFailure)
+      throw InteractionFailure.expectedPresentation
+    }
     for source in sources {
       let copy = expectedCopy(for: source)
       XCTAssertEqual(try Data(contentsOf: copy), golden)
@@ -451,6 +466,108 @@ extension DesktopInteractionTests {
       UserDefaults.standard.persistentDomain(forName: identifier)?["copyDestinationBytes"]
         as? String, previousDestination,
       "Invocation override must not persist a destination")
+  }
+
+  // Failure evidence only. Neither the retained observation nor the live read
+  // can satisfy or repeat the completed-report assertion above.
+  @MainActor
+  private func recordSettledReportFailure(
+    _ app: XCUIApplication, window: XCUIElement, snapshots: [XCUIElementSnapshot]?,
+    snapshotPoll: Int?, snapshotElapsed: TimeInterval?, totalPolls: Int, latestError: String?
+  ) {
+    let expected = "Selected message, removed parts and technical observations"
+    func bounded(_ value: String, limit: Int) -> [String: Any] {
+      let bytes = value.utf8
+      return [
+        "value": String(decoding: bytes.prefix(limit), as: UTF8.self),
+        "utf8_length": bytes.count, "truncated": bytes.count > limit,
+      ]
+    }
+    func attributes(_ element: XCUIElementAttributes) -> [String: Any] {
+      let value = element.value
+      return [
+        "role": element.elementType.rawValue,
+        "title": bounded(element.title, limit: 2048),
+        "label": bounded(element.label, limit: 2048),
+        "expected_title": element.title == expected, "expected_label": element.label == expected,
+        "value_kind": value.map { String(reflecting: type(of: $0)) } ?? "nil",
+        "string_value": (value as? String).map { bounded($0, limit: 65536) } ?? NSNull(),
+      ]
+    }
+    // Two independently capped attachments stay within 1MiB combined. Persist
+    // the original predicate's immutable observation before another live query.
+    func attach(_ original: [String: Any], name: String) {
+      do {
+        var facts = original
+        var data = try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys])
+        if data.count > 524288 {
+          facts["global_truncated"] = true
+          facts["encoded_bytes_before_global_truncation"] = data.count
+          facts["snapshot_candidates"] = "omitted to retain the diagnostic byte cap"
+          facts["live_candidate"] = "omitted to retain the diagnostic byte cap"
+          data = try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys])
+        }
+        guard data.count <= 524288 else {
+          print(
+            "Report failure diagnostic exceeded its 512KiB attachment cap; no attachment retained")
+          return
+        }
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        print("Failed report diagnostic attachment \(name): bytes=\(data.count)")
+      } catch { print("Report failure diagnostic serialization failed: \(error)") }
+    }
+    var captured: [String: Any] = [
+      "scope":
+        "last successful snapshot acquisition used by the original 20-second predicate; failure evidence only",
+      "maximum_bytes": 524288, "combined_attachment_limit": 1_048_576, "global_truncated": false,
+      "total_polls": totalPolls, "snapshot_poll": snapshotPoll.map { $0 as Any } ?? NSNull(),
+      "snapshot_elapsed_seconds": snapshotElapsed.map { $0 as Any } ?? NSNull(),
+      "latest_acquisition_error": latestError.map { bounded($0, limit: 2048) } ?? NSNull(),
+    ]
+    if let elements = snapshots {
+      captured["snapshot_count"] = elements.count
+      captured["role_histogram"] = Dictionary(
+        grouping: elements, by: { String($0.elementType.rawValue) }
+      ).mapValues(\.count)
+      captured["inventory_truncated"] = elements.count > 256
+      captured["inventory"] = elements.prefix(256).map {
+        [
+          "role": $0.elementType.rawValue,
+          "title": bounded($0.title, limit: 128), "label": bounded($0.label, limit: 128),
+          "value_kind": bounded(
+            $0.value.map { String(reflecting: type(of: $0)) } ?? "nil", limit: 128),
+        ] as [String: Any]
+      }
+      let candidates = elements.filter {
+        $0.elementType == .textView || $0.title == expected || $0.label == expected
+      }
+      captured["snapshot_candidate_count"] = candidates.count
+      captured["snapshot_candidates_truncated"] = candidates.count > 4
+      captured["snapshot_candidates"] = candidates.prefix(4).map { attributes($0) }
+    }
+    attach(captured, name: "failed-report-original-predicate-snapshot")
+    var fresh: [String: Any] = [
+      "scope":
+        "fresh frames and unique live read after original assertion/debugDescription; not the original poll instant",
+      "maximum_bytes": 524288, "combined_attachment_limit": 1_048_576, "global_truncated": false,
+      "window_frame": String(describing: window.frame),
+    ]
+    do { fresh["content_frame"] = String(describing: try contentFrame(window)) } catch {
+      fresh["content_frame_error"] = bounded(String(describing: error), limit: 2048)
+    }
+    // This one exact query belongs to the same owned application. It is read
+    // only, and does not traverse live indices or substitute for the oracle.
+    let live = app.textViews.matching(NSPredicate(format: "title == %@", expected))
+    let liveCount = live.count
+    fresh["live_exact_title_count"] = liveCount
+    if liveCount == 1 { fresh["live_candidate"] = attributes(live.element) }
+    attach(fresh, name: "failed-report-post-assertion-live-attributes")
+    print(
+      "Failed report diagnostic: snapshot poll=\(String(describing: snapshotPoll)); total polls=\(totalPolls); live exact-title count=\(liveCount)"
+    )
   }
 
 }

@@ -1035,11 +1035,25 @@ pub(crate) fn run(root: &Path, cli: &FrozenCli, out: &Path, platform: PlatformId
             command
         }
         OsFamily::Windows => {
-            let mut command = Command::new("pwsh");
-            command
-                .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-File"])
-                .arg(root.join("tools/qualify_windows_name_profiles.ps1"));
-            command
+            #[cfg(not(windows))]
+            return Err("Native Windows naming profiles require a Windows host".into());
+            #[cfg(windows)]
+            {
+                let native_script = root.join("tools").join("qualify_windows_name_profiles.ps1");
+                let script = crate::windows_workspace::ordinary_drive_path(&native_script)?;
+                if script.canonicalize()? != native_script.canonicalize()? {
+                    return Err(
+                        "PowerShell script expression resolves to a different source file".into(),
+                    );
+                }
+                // PowerShell rejects verbatim -File expressions, including a relative
+                // expression resolved beneath the canonical verbatim working directory.
+                let mut command = Command::new("pwsh");
+                command
+                    .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-File"])
+                    .arg(script);
+                command
+            }
         }
     };
     command

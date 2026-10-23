@@ -1,144 +1,123 @@
-name: PowerShell path admission diagnostic
+name: Extended verification
 on:
+  schedule:
+    - cron: '23 4 * * 1'
   workflow_dispatch:
+    inputs:
+      qualification:
+        description: 'Run the required 900-second fuzz campaign and complete selected mutations'
+        type: boolean
+        default: false
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
+concurrency:
+  group: extended-verification-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  observe:
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [windows-2022, windows-11-arm]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
+  mutations:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.qualification }}
+    # The pinned GNU cargo-mutants executable requires GLIBC 2.39.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        id: reference
         with:
-          ref: 34ee43d25c7aa926de2e23af7a5b9a5fe7b0d699
           persist-credentials: false
-      - name: Observe owned script admission without changing policy
-        shell: pwsh
-        env:
-          REFERENCE_CHECKOUT_SHA: ${{ steps.reference.outputs.commit }}
+      - id: policy
+        name: Read the pinned mutation tool from the source plan
         run: |
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $false
-          $out = Join-Path $env:GITHUB_WORKSPACE 'target/powershell-path-diagnostic'
-          [void][IO.Directory]::CreateDirectory($out)
-          $result = [ordered]@{
-              scope = 'Diagnostic script admission with verbatim child CWD only; no product, NTFS profile or qualification execution.'
-              workflow_sha = $env:GITHUB_SHA; reference_checkout_sha = $env:REFERENCE_CHECKOUT_SHA
-              host = [ordered]@{ os = [Runtime.InteropServices.RuntimeInformation]::OSDescription; architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString(); powershell = $PSVersionTable.PSVersion.ToString() }
-              policy = @(Get-ExecutionPolicy -List | ForEach-Object { [ordered]@{ scope = $_.Scope.ToString(); policy = $_.ExecutionPolicy.ToString() } })
-              process_policy_environment = [Environment]::GetEnvironmentVariable('PSExecutionPolicyPreference')
-              scalar = $null; reference_script = $null; cases = @(); children = @()
-              failure = $null; cleanup_complete = $false; retained_owner_root = $null
-          }
-          $owners = [Collections.Generic.List[Diagnostics.Process]]::new()
-          $uncertain = $false; $root = $null
-          function Invoke-DiagnosticChild([string] $Program, [string[]] $Arguments, [string] $Directory) {
-              $process = [Diagnostics.Process]::new()
-              $process.StartInfo = [Diagnostics.ProcessStartInfo]::new()
-              $process.StartInfo.FileName = $Program; $process.StartInfo.WorkingDirectory = $Directory
-              $process.StartInfo.UseShellExecute = $false
-              $process.StartInfo.RedirectStandardOutput = $true; $process.StartInfo.RedirectStandardError = $true
-              foreach ($argument in $Arguments) { [void]$process.StartInfo.ArgumentList.Add($argument) }
-              $record = [ordered]@{ program = $Program; arguments = $Arguments; cwd = $Directory; started = $false; pid = $null; exit_code = $null; elapsed_ms = $null; timed_out = $false; exited = $false; pipes_settled = $false; stdout = $null; stderr = $null; error = $null }
-              $timer = [Diagnostics.Stopwatch]::StartNew(); $stdout = $null; $stderr = $null
-              try {
-                  if (!$process.Start()) { throw 'Diagnostic process did not start.' }
-                  $owners.Add($process); $record.started = $true; $record.pid = $process.Id
-                  $stdout = $process.StandardOutput.ReadToEndAsync(); $stderr = $process.StandardError.ReadToEndAsync()
-                  if (!$process.WaitForExit(10000)) {
-                      $record.timed_out = $true
-                      $process.Kill()
-                      if (!$process.WaitForExit(5000)) { throw 'Diagnostic process did not settle after timeout cleanup.' }
-                  }
-                  $record.exited = $process.HasExited
-                  if (!$record.exited) { throw 'Diagnostic child exit is unobserved.' }
-                  $record.exit_code = $process.ExitCode
-                  if (![Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdout, $stderr), 5000)) { throw 'Diagnostic pipes remain unsettled.' }
-                  $record.pipes_settled = $true
-                  $record.stdout = $stdout.GetAwaiter().GetResult(); $record.stderr = $stderr.GetAwaiter().GetResult()
-                  if ($record.stdout.Length -gt 65536 -or $record.stderr.Length -gt 65536) { throw 'Unexpected diagnostic output exceeds 64KiB.' }
-              } catch {
-                  $record.error = $_.Exception.ToString()
-                  throw
-              } finally {
-                  $timer.Stop(); $record.elapsed_ms = $timer.ElapsedMilliseconds
-                  $result.children += $record
-                  if (!$record.started -or ($record.exited -and $record.pipes_settled)) { [void]$owners.Remove($process); $process.Dispose() }
-                  else { $script:uncertain = $true }
-              }
-              if ($record.timed_out) { throw 'Diagnostic child exceeded its execution budget.' }
-              return $record
-          }
-          function Script-Facts([string] $Path) {
-              $facts = [ordered]@{ path = $Path; bytes = $null; sha256 = $null; streams = $null; zone_identifier = $null; signature = $null; native_file_id = $null; errors = @() }
-              try {
-                  $bytes = [IO.File]::ReadAllBytes($Path); $facts.bytes = $bytes.Length
-                  $facts.sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
-              } catch { $facts.errors += "native-read: $($_.Exception)" }
-              try { $facts.native_file_id = Invoke-DiagnosticChild (Join-Path $env:WINDIR 'System32/fsutil.exe') @('file', 'queryfileid', $Path) $root }
-              catch { $facts.errors += "native-id: $($_.Exception)"; if ($script:uncertain) { throw } }
-              try {
-                  $facts.streams = @(Get-Item -LiteralPath $Path -Stream * | ForEach-Object { [ordered]@{ stream = $_.Stream; bytes = $_.Length } })
-                  if (@($facts.streams | Where-Object stream -eq 'Zone.Identifier').Count -gt 0) { $facts.zone_identifier = [IO.File]::ReadAllText("${Path}:Zone.Identifier") }
-              } catch { $facts.errors += "streams: $($_.Exception)" }
-              try {
-                  $signature = Get-AuthenticodeSignature -LiteralPath $Path
-                  $facts.signature = [ordered]@{ status = $signature.Status.ToString(); message = $signature.StatusMessage }
-              } catch { $facts.signature = [ordered]@{ error = $_.Exception.ToString() } }
-              return $facts
-          }
-          try {
-              $root = [IO.Directory]::CreateTempSubdirectory(('eml-pwsh-path-' + [Guid]::NewGuid().ToString('N') + '-')).FullName
-              if ($root -notmatch '^[Cc]:\\' -or $root.StartsWith('\\?\')) { throw 'Diagnostic requires an ordinary owned C: temporary path.' }
-              $powershell = [Environment]::ProcessPath
-              $result.powershell_image = [ordered]@{ path = $powershell; version = [Diagnostics.FileVersionInfo]::GetVersionInfo($powershell).FileVersion; sha256 = (Get-FileHash -LiteralPath $powershell -Algorithm SHA256).Hash.ToLowerInvariant() }
-              $scalar = Join-Path $root 'scalar.ps1'
-              $body = @'
-          param([string] $Value)
-          [ordered]@{ marker = 'owned-scalar-entered'; value = $Value; powershell = $PSVersionTable.PSVersion.ToString(); script = $PSCommandPath; cwd = [Environment]::CurrentDirectory } | ConvertTo-Json -Compress
-          '@
-              $file = [IO.File]::Open($scalar, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-              try { $bytes = [Text.UTF8Encoding]::new($false).GetBytes($body); $file.Write($bytes, 0, $bytes.Length); $file.Flush($true) } finally { $file.Dispose() }
-              $verbatim = '\\?\' + $scalar
-              $result.scalar = [ordered]@{ ordinary_before = (Script-Facts $scalar); verbatim_before = (Script-Facts $verbatim) }
-              $reference = Join-Path $env:GITHUB_WORKSPACE 'tools/qualify_windows_name_profiles.ps1'
-              $result.reference_script = [ordered]@{ scope = 'Fresh exact-source checkout reference; does not reconstruct the failed source17 private clone ADS/policy state.'; facts = (Script-Facts $reference) }
-              foreach ($case in @(@{name='ordinary';path=$scalar}, @{name='verbatim';path=$verbatim}, @{name='relative';path='.\scalar.ps1'})) {
-                  $arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $case.path, 'scalar value []` é')
-                  $child = Invoke-DiagnosticChild $powershell $arguments ('\\?\' + $root)
-                  $result.cases += [ordered]@{ case = $case.name; script_expression = $case.path; process = $child }
-              }
-              $result.scalar.ordinary_after = Script-Facts $scalar
-              $result.scalar.verbatim_after = Script-Facts $verbatim
-              $nativeIds = @()
-              foreach ($facts in @($result.scalar.ordinary_before, $result.scalar.verbatim_before, $result.scalar.ordinary_after, $result.scalar.verbatim_after)) {
-                  if ($facts.sha256 -ne $result.scalar.ordinary_before.sha256 -or $null -eq $facts.sha256) { throw 'Scalar bytes changed or could not be read.' }
-                  if ($null -eq $facts.native_file_id -or $facts.native_file_id.exit_code -ne 0) { throw 'Native scalar identity query failed.' }
-                  $match = [regex]::Match($facts.native_file_id.stdout, '0x[0-9a-fA-F]+')
-                  if (!$match.Success) { throw 'Native scalar identity is unavailable.' }
-                  $nativeIds += $match.Value.ToLowerInvariant()
-              }
-              $result.scalar.native_ids = $nativeIds
-              if (@($nativeIds | Select-Object -Unique).Count -ne 1) { throw 'Scalar native identities differ.' }
-              $result.policy_after = @(Get-ExecutionPolicy -List | ForEach-Object { [ordered]@{ scope = $_.Scope.ToString(); policy = $_.ExecutionPolicy.ToString() } })
-              if (($result.policy | ConvertTo-Json -Compress) -cne ($result.policy_after | ConvertTo-Json -Compress)) { throw 'Execution policy changed during observation.' }
-          } catch { $result.failure = $_.Exception.ToString() }
-          finally {
-              if ($null -ne $root -and !$uncertain -and $owners.Count -eq 0) {
-                  try { [IO.Directory]::Delete($root, $true); $result.cleanup_complete = ![IO.Directory]::Exists($root) } catch { $result.failure = "$($result.failure)`nCleanup: $($_.Exception)" }
-              }
-              if (!$result.cleanup_complete) { $result.retained_owner_root = $root }
-              [IO.File]::WriteAllText((Join-Path $out 'result.json'), ($result | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false))
-          }
-          if ($null -ne $result.failure -or !$result.cleanup_complete) { exit 1 }
+          mkdir -p target
+          cargo xtask distribution --github-output "$GITHUB_OUTPUT" > target/mutation-distribution.json
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+        with:
+          tool: cargo-mutants@${{ steps.policy.outputs.cargo_mutants }}
+          checksum: true
+          fallback: none
+      - name: Execute the complete initial selection of both authorization guards
+        run: cargo xtask mutants --initial
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
-          name: powershell-path-${{ matrix.runner }}-${{ github.sha }}-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: target/powershell-path-diagnostic/result.json
+          name: mutations-${{ github.sha }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/mutation-distribution.json
+            target/mutations/*/result.json
+            target/mutations/*/discovery.json
+            target/mutations/*/campaign.log
+            target/mutations/*/cleanup.json
+            target/mutations/*/executables/**
+            target/mutations/*/*.control.json
+            target/mutations/*/output/mutants.out/**
+          if-no-files-found: error
+  extended:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: policy
+        name: Derive tools from the checked source
+        run: |
+          mkdir -p target
+          cargo xtask distribution --github-output "$GITHUB_OUTPUT" > target/extended-distribution.json
+          git show -s --format='Source: %H; parents: %P' > target/extended-source.txt
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+        with:
+          tool: cargo-deny@${{ steps.policy.outputs.cargo_deny }}
+          checksum: true
+          fallback: none
+      - name: Install exact upstream prebuilt cargo-fuzz
+        env:
+          VERSION: ${{ steps.policy.outputs.cargo_fuzz }}
+        run: |
+          archive="$RUNNER_TEMP/cargo-fuzz.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --max-time 60 --max-filesize 20000000 "https://github.com/rust-fuzz/cargo-fuzz/releases/download/$VERSION/cargo-fuzz-$VERSION-x86_64-unknown-linux-musl.tar.gz" -o "$archive"
+          printf 'b5b704018b63e0f151c17a057ac53b5111e1db545d1b9f72fee79f08a545931c  %s\n' "$archive" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/cargo-fuzz-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/cargo-fuzz-bin" cargo-fuzz
+          test "$("$RUNNER_TEMP/cargo-fuzz-bin/cargo-fuzz" fuzz --version)" = "cargo-fuzz $VERSION"
+          printf '%s\n' "$RUNNER_TEMP/cargo-fuzz-bin" >> "$GITHUB_PATH"
+      - name: Install separate pinned fuzz compiler
+        env:
+          FUZZ_COMPILER: ${{ steps.policy.outputs.fuzz_compiler }}
+        run: rustup toolchain install "$FUZZ_COMPILER" --profile minimal
+      - name: Fresh advisory and source policy across supported graphs
+        run: cargo xtask check-dependencies --out target/dependency-checks
+      - name: Independently maintain host incident policy validity
+        if: ${{ !cancelled() && steps.policy.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: cargo xtask check-host-incidents --out target/host-incident-checks
+      - name: Extended independent semantic properties
+        if: ${{ !cancelled() && steps.policy.outcome == 'success' }}
+        env:
+          PROPTEST_CASES: '4096'
+        run: cargo test --locked -p eml-core --test model
+      - name: Bounded synthetic-input fuzz campaign (60-second smoke or 900-second qualification)
+        if: ${{ !cancelled() && steps.policy.outcome == 'success' }}
+        env:
+          FUZZ_SECONDS: ${{ (github.event_name == 'schedule' || inputs.qualification) && '900' || '60' }}
+        run: cargo xtask fuzz --seconds "$FUZZ_SECONDS"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: extended-${{ github.sha }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            target/extended-*
+            target/dependency-checks/**
+            target/host-incident-checks/**
+            target/proptest/**
+            target/fuzz/*/result.json
+            target/fuzz/*/cleanup.json
+            target/fuzz/*/executables/**
+            target/fuzz/*/metadata-before.json
+            target/fuzz/*/metadata-after.json
+            target/fuzz/*/*.control.json
+            target/fuzz/*/*.log
+            target/fuzz/*/*.txt
+            target/fuzz/*/artifacts/**
           if-no-files-found: error
