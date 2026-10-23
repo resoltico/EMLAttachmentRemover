@@ -238,8 +238,9 @@ pub(crate) fn application_stem(basename: &str) -> Result<&str> {
     let stem = basename
         .strip_suffix(".exe")
         .ok_or("Linked CLI name lacks its executable suffix")?;
+    let prefix = format!("{}-", eml_core::product::CLI_NAME.replace('-', "_"));
     let hash = stem
-        .strip_prefix("remove_eml_attachments-")
+        .strip_prefix(&prefix)
         .ok_or("Linked CLI name differs from its Cargo binary target")?;
     if hash.len() != 16 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("Linked CLI name lacks a bounded Cargo artifact hash".into());
@@ -479,18 +480,20 @@ mod tests {
     #[test]
     fn application_objects_use_the_linked_deps_name_not_the_public_binary_name() {
         for hash in ["43ccdf81f9fa5803", "babb91a3bf518500"] {
-            let basename = format!("remove_eml_attachments-{hash}.exe");
+            let basename = format!("emlattachmentremover-{hash}.exe");
             let stem = application_stem(&basename).unwrap();
-            let object = format!("{stem}.remove_eml_attachments.2f7a-cgu.0.rcgu.o");
+            let object = format!("{stem}.emlattachmentremover.2f7a-cgu.0.rcgu.o");
             assert!(object.starts_with(&format!("{stem}.")));
             assert!(!object.starts_with("emlattachmentremover."));
         }
         for invalid in [
             "emlattachmentremover.exe",
-            "../remove_eml_attachments-43ccdf81f9fa5803.exe",
-            "C:remove_eml_attachments-43ccdf81f9fa5803.exe",
-            "remove_eml_attachments-43ccdf81f9fa5803/other.exe",
-            "remove_eml_attachments-xyz.exe",
+            // The former Rust crate namespace is intentionally not accepted.
+            "remove_eml_attachments-43ccdf81f9fa5803.exe",
+            "../emlattachmentremover-43ccdf81f9fa5803.exe",
+            "C:emlattachmentremover-43ccdf81f9fa5803.exe",
+            "emlattachmentremover-43ccdf81f9fa5803/other.exe",
+            "emlattachmentremover-xyz.exe",
         ] {
             assert!(application_stem(invalid).is_err(), "{invalid}");
         }

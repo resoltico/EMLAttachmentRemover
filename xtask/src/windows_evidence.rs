@@ -474,15 +474,15 @@ mod tests {
             .find(|package| package.get("source").is_some())
             .unwrap();
         let package_name = package["name"].as_str().unwrap();
-        let stem = "remove_eml_attachments-4707473ea7d9d8bd";
+        let stem = "emlattachmentremover-4707473ea7d9d8bd";
         let deps = format!("$CARGO_TARGET/{target}/release/deps");
         for (name, origin) in [
             (
-                format!("{deps}/{stem}.remove_eml_attachments.165be93e914db964-cgu.00.rcgu.o"),
+                format!("{deps}/{stem}.emlattachmentremover.165be93e914db964-cgu.00.rcgu.o"),
                 "application Rust compiler code generation".into(),
             ),
             (
-                format!("{deps}/{stem}.remove_eml_attachments.165be93e914db964-cgu.01.rcgu.o"),
+                format!("{deps}/{stem}.emlattachmentremover.165be93e914db964-cgu.01.rcgu.o"),
                 "application Rust compiler code generation".into(),
             ),
             (
@@ -550,6 +550,30 @@ mod tests {
             b"owned synthetic image; not an executable",
             &serde_json::to_vec(evidence)?,
         )
+    }
+    #[test]
+    fn former_rust_crate_namespace_cannot_qualify_current_product_link_evidence() {
+        for target in ["x86_64-pc-windows-gnullvm", "aarch64-pc-windows-gnullvm"] {
+            let mut evidence = fixture(target);
+            // Keep the synthetic basename, input records and actual-read trace
+            // mutually consistent; the obsolete product identity must refuse.
+            evidence.linked_basename = evidence
+                .linked_basename
+                .replace("emlattachmentremover", "remove_eml_attachments");
+            for input in &mut evidence.inputs {
+                input.name = input
+                    .name
+                    .replace("emlattachmentremover", "remove_eml_attachments");
+            }
+            evidence.trace = Text::new(
+                evidence
+                    .trace
+                    .bytes
+                    .replace("emlattachmentremover", "remove_eml_attachments"),
+            );
+            let error = check(&evidence).unwrap_err().to_string();
+            assert!(error.contains("Cargo binary target"), "{target}: {error}");
+        }
     }
     #[test]
     fn recorded_link_consistency_rejects_stale_changed_and_unreviewed_inputs() {
