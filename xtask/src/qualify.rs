@@ -655,8 +655,9 @@ fn native_primitives(root: &Path, target: &str, out: &Path) -> Result<Value> {
             .require_success(&log)?;
         let mut ids = Vec::new();
         for flag in ["-u", "-g"] {
-            let value =
-                String::from_utf8(capture(Command::new("id").current_dir(root).arg(flag))?)?;
+            let value = String::from_utf8(crate::capture(
+                Command::new("id").current_dir(root).arg(flag),
+            )?)?;
             ids.push(value.trim().parse::<u32>()?.to_string());
         }
         let mut command = Command::new("sudo");
