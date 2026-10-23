@@ -13046,10 +13046,10 @@
       "sha256": "1852d9893affa66fe4d8304614aa9ee6ab249d70fe8bdc0befcdb924cb564947"
     },
     {
-      "bytes": 1548,
+      "bytes": 1568,
       "kind": "review_input",
       "path": "Cargo.toml",
-      "sha256": "dab355c0ed853dbb356b8d376be2ea81772224de39c7bc6254b8e451bc46d35a"
+      "sha256": "7367598d6c9dbe8b35a1ef40d0fc12d8960a2fb14c62889b4cf65426f87901c8"
     },
     {
       "bytes": 837,
@@ -13368,6 +13368,10 @@
     {
       "basis_head": "95d0404806df6b00ba4488093760b21843c03744",
       "scope": "Reviewed the public CLI workspace package rename from remove-eml-attachments to emlattachmentremover. Independently executed all ten locked offline shipping normal/build package-and-feature trees against the retained resource-review source snapshot; after normalizing only the CLI local package identity and absolute source-root paths, every tree is identical. Cargo.lock changes only that local package identity/order; all registry package records, license selections, material bindings and other workspace package records are unchanged. Renewed the CLI package manifest provenance and the two changed source inputs (CLI manifest and Cargo.lock). The source-bound package epoch/provenance tuple changes archive metadata, not dependency or license graphs. Hashes identify inputs and do not attest review quality, generator execution, legal assurance or native qualification."
+    },
+    {
+      "basis_head": "7d282476da5bd110b5ff83bcb811876c021f2b14",
+      "scope": "Independent profile-only input review compared the complete parsed root Cargo.toml with 4961dbc7bd482b49844161bfb409d8c579e7f5e1: adding profile.dev.incremental=false is the sole semantic difference. Removing that key yields exact equality; package, dependency, feature, license and release declarations are unchanged. Cargo.lock bytes and every other recorded legal source input are unchanged. The complete local check of that commit passed all five dependency graphs but failed notice input validation before generation because this root manifest binding was stale. Renewed only the root manifest byte identity after that review; registry package materials and license bindings are unchanged. This amendment does not attest generator execution, legal assurance or native qualification."
     }
   ],
   "product_material_review": {
