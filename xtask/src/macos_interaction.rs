@@ -248,6 +248,8 @@ fn execute_case(
     Ok((process, ownership))
 }
 fn qualify_owner_receipt(ownership: &Value, case: DesktopCase) -> Result<()> {
+    crate::picker_evidence::check_fixture_filesystem(&ownership["fixture_filesystem"])?;
+
     if ownership.get("failure") != Some(&Value::Null)
         || ownership["timed_out"] != false
         || ownership["cancelled"] != false
@@ -593,7 +595,7 @@ mod tests {
         let clean = json!({"failure":null,"timed_out":false,"cancelled":false,
             "runner_reaped":true,"runner_status":0,"owned_app_terminated":true,
             "forced_app_cleanup":false,"originals_unchanged":true,"originals_captured":4,
-            "source_check_failure":null,"owned_pasteboard_released":true,
+            "source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"owned_pasteboard_released":true,
             "unexpected_application_pids":[]});
         qualify_owner_receipt(&clean, DesktopCase::Workflow).unwrap();
         for field in [

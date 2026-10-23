@@ -142,11 +142,20 @@ extension DesktopInteractionTests {
     return pid
   }
   @MainActor
-  private func observedNumber(_ app: XCUIApplication, pattern: String) throws -> UInt64 {
+  private func observedNumber(
+    _ app: XCUIApplication, pattern: String, requireTechnicalReport: Bool
+  ) throws -> UInt64 {
     let expression = try NSRegularExpression(pattern: pattern)
-    let texts = try presentationSnapshots(app).map {
-      $0.title + "\n" + $0.label + "\n" + (($0.value as? String) ?? "")
-    }.joined(separator: "\n")
+    let texts: String
+    if requireTechnicalReport {
+      let report = try XCTUnwrap(selectedReportText(app))
+      guard report.title == Self.technicalReportTitle else {
+        throw InteractionFailure.selectedReportTitle(report.title)
+      }
+      texts = report.text
+    } else {
+      texts = try presentationTextValues(app).joined(separator: "\n")
+    }
     let match = try XCTUnwrap(
       expression.firstMatch(in: texts, range: NSRange(texts.startIndex..., in: texts)))
     let range = try XCTUnwrap(Range(match.range(at: 1), in: texts))
@@ -266,13 +275,15 @@ extension DesktopInteractionTests {
     try assertBlockedEffect(session, operation: operation, phase: phase)
     let responseBegan = ProcessInfo.processInfo.systemUptime
     try await showReportDetails(app)
-    let runID = try observedNumber(app, pattern: "Run summary: Run ([0-9]+)")
+    let runID = try observedNumber(
+      app, pattern: "Run summary: Run ([0-9]+)", requireTechnicalReport: false)
     try await showRunControls(app)
     XCTAssertEqual(runID, operation == "export" ? 1 : 2)
     if operation == "export" {
       try await requireText(app, containing: "Export operation \(operationID):")
       XCTAssertEqual(
-        try observedNumber(app, pattern: "Export operation ([0-9]+):"), operationID)
+        try observedNumber(
+          app, pattern: "Export operation ([0-9]+):", requireTechnicalReport: false), operationID)
     } else {
       try await showReportDetails(app)
       let technical = app.checkBoxes["Technical details"]
@@ -281,7 +292,9 @@ extension DesktopInteractionTests {
       }
       try await requireText(app, containing: "Processing operation: \(operationID)")
       XCTAssertEqual(
-        try observedNumber(app, pattern: "Processing operation: ([0-9]+)"), operationID)
+        try observedNumber(
+          app, pattern: "Processing operation: ([0-9]+)", requireTechnicalReport: true), operationID
+      )
     }
     if operation == "export" {
       try await selectReport(app, run: 2)
@@ -323,10 +336,11 @@ extension DesktopInteractionTests {
       try await requireText(app, containing: "Report export operation \(operationID) for run 1")
       try await requireText(app, containing: "settled: true")
     }
-    let settledText =
-      try presentationSnapshots(app).first {
-        $0.title == "Selected message, removed parts and technical observations"
-      }?.value as? String ?? ""
+    let settledReport = try XCTUnwrap(selectedReportText(app))
+    guard settledReport.title == Self.technicalReportTitle else {
+      throw InteractionFailure.selectedReportTitle(settledReport.title)
+    }
+    let settledText = settledReport.text
     let facts: [String: Any] = [
       "case": scenario, "operation": operation, "phase": phase,
       "operation_id": operationID, "worker_pid": try observedWorkerPID(session), "run_id": runID,
@@ -641,14 +655,17 @@ extension DesktopInteractionTests {
     let processingID = try await awaitBoundary(
       processing, operation: "processing", phase: "preflight")
     try await showReportDetails(app)
-    let processingRunID = try observedNumber(app, pattern: "Run summary: Run ([0-9]+)")
+    let processingRunID = try observedNumber(
+      app, pattern: "Run summary: Run ([0-9]+)", requireTechnicalReport: false)
     XCTAssertEqual(processingRunID, 3)
     let technical = app.checkBoxes["Technical details"]
     if ((technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue) != "1" {
       technical.click()
     }
     try await requireText(app, containing: "Processing operation: \(processingID)")
-    XCTAssertEqual(try observedNumber(app, pattern: "Processing operation: ([0-9]+)"), processingID)
+    XCTAssertEqual(
+      try observedNumber(
+        app, pattern: "Processing operation: ([0-9]+)", requireTechnicalReport: true), processingID)
     XCTAssertFalse(
       FileManager.default.fileExists(
         atPath: session.fixture.appendingPathComponent("blocked-report.json").path))

@@ -251,6 +251,7 @@ fn qualify_control(
     local: &xtask::process::Controller,
     directory: &Path,
 ) -> Result<()> {
+    crate::picker_evidence::check_fixture_filesystem(&facts["fixture_filesystem"])?;
     if observed.success()
         || !observed.cleanup_complete
         || observed.unexpected_survivors != 0

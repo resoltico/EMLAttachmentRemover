@@ -16,15 +16,74 @@ struct DesktopFixtureTests {
       "eml-fixture-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
     defer { try? FileManager.default.removeItem(at: root) }
+    try checkFixtureFilesystem(root)
     try checkOpenPipeRelay(root)
     try checkNoReplaceAndAcknowledgment(root)
     try FileManager.default.removeItem(at: root)
     precondition(!FileManager.default.fileExists(atPath: root.path))
     try FileHandle.standardOutput.write(
       contentsOf: Data(
-        "All request splits/order/rejection/EOF/error/overflow and native no-replace/acknowledgment checks passed\n"
+        "All request, native no-replace/acknowledgment and prelaunch filesystem observation checks passed\n"
           .utf8))
   }
+  @MainActor
+  private static func checkFixtureFilesystem(_ root: URL) throws {
+    let fixture = root.appendingPathComponent("filesystem")
+    try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: false)
+    let lower = fixture.appendingPathComponent("one.eml")
+    let bytes = Data("owned lowercase source\n".utf8)
+    try bytes.write(to: lower, options: .withoutOverwriting)
+    let before = try FileManager.default.attributesOfItem(atPath: lower.path)
+    let rootBefore = try FileManager.default.attributesOfItem(atPath: fixture.path)
+    let observed = DesktopInteractionOwner.observeFixtureFilesystem(fixture)
+    precondition(observed["state"] as? String == "observed")
+    precondition(observed["phase"] as? String == "prelaunch")
+    precondition(observed["descriptor_closed"] as? Bool == true)
+    precondition(!(observed["filesystem_type"] as? String ?? "").isEmpty)
+    let relation = observed["ascii_alias_relation"] as? String
+    precondition(relation == "same_identity" || relation == "absent_enoent")
+    let originalEntries = try FileManager.default.contentsOfDirectory(atPath: fixture.path)
+    precondition(originalEntries == ["one.eml"])
+    try requireBytes(lower, bytes)
+    let after = try FileManager.default.attributesOfItem(atPath: lower.path)
+    let rootAfter = try FileManager.default.attributesOfItem(atPath: fixture.path)
+    precondition(
+      String(describing: rootBefore[.modificationDate])
+        == String(describing: rootAfter[.modificationDate]))
+    try FileHandle.standardOutput.write(
+      contentsOf: JSONSerialization.data(withJSONObject: observed, options: [.sortedKeys]))
+    try FileHandle.standardOutput.write(contentsOf: Data("\n".utf8))
+    for key in [
+      FileAttributeKey.systemFileNumber, .systemNumber, .posixPermissions, .size, .modificationDate,
+    ] {
+      precondition(String(describing: before[key]) == String(describing: after[key]))
+    }
+    try FileManager.default.removeItem(at: lower)
+    let missing = DesktopInteractionOwner.observeFixtureFilesystem(fixture)
+    precondition(missing["state"] as? String == "unavailable")
+    precondition(missing["filesystem_type"] as? String == observed["filesystem_type"] as? String)
+    precondition(missing["descriptor_closed"] as? Bool == true)
+    precondition(!(missing["errors"] as? [[String: Any]] ?? []).isEmpty)
+    let missingEntries = try FileManager.default.contentsOfDirectory(atPath: fixture.path)
+    precondition(missingEntries.isEmpty)
+    let receipt = root.appendingPathComponent("fixture-filesystem.json")
+    try DesktopInteractionOwner.writeFixtureFilesystem(missing, to: receipt)
+    let retained = try Data(contentsOf: receipt)
+    let decoded = try JSONSerialization.jsonObject(with: retained) as? [String: Any]
+    precondition(decoded?["state"] as? String == "unavailable")
+    do {
+      try DesktopInteractionOwner.writeFixtureFilesystem(observed, to: receipt)
+      preconditionFailure("Prelaunch telemetry must not replace earlier evidence")
+    } catch {}
+    try requireBytes(receipt, retained)
+    let link = root.appendingPathComponent("filesystem-link")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: fixture)
+    let linked = DesktopInteractionOwner.observeFixtureFilesystem(link)
+    precondition(linked["state"] as? String == "unavailable")
+    precondition(linked["filesystem_type"] is NSNull)
+    precondition(!(linked["errors"] as? [[String: Any]] ?? []).isEmpty)
+  }
+
   @MainActor
   private static func checkFailureSampleRetention() {
     let expected = DesktopInteractionOwner.SampleTarget(

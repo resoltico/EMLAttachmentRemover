@@ -47,7 +47,7 @@ fn ownership(app: &str) -> Value {
     json!({"pid":42,"launch_date":1.0,"bundle_path":app,"pasteboard":"owned-private-board"})
 }
 fn owner(app: &str, originals: u32) -> Value {
-    json!({"failure":null,"source_check_failure":null,"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":originals,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":ownership(app)})
+    json!({"failure":null,"source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":originals,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":ownership(app)})
 }
 fn host(target: &str, os: &str, arch: &str, major: u8) -> Value {
     json!({"target":target,"process_os":os,"process_architecture":arch,"kernel_machine":if os=="macos"&&arch=="aarch64"{"arm64"}else{arch},"product_version":format!("{major}.1"),"runner_image":"new-image","runner_image_version":"new-version","actual_os":format!("ProductVersion: {major}.1\nBuildVersion: TestBuild\n")})

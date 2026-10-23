@@ -328,9 +328,9 @@ extension DesktopInteractionTests {
     }
     try await showReportDetails(app)
     app.buttons["Show in Finder"].click()
+    let exactTitle = finder.windows.matching(NSPredicate(format: "title == %@", folderTitle))
     let found = NSPredicate { _, _ in
-      finder.windows.count == finderWindowCount + 1
-        && finder.windows.allElementsBoundByIndex.filter { $0.title == folderTitle }.count == 1
+      finder.windows.count == finderWindowCount + 1 && exactTitle.count == 1
     }
     let revealed = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: found, object: nil)], timeout: 15)
@@ -452,15 +452,17 @@ extension DesktopInteractionTests {
   @MainActor
   private func selectedIdentities(_ app: XCUIApplication) async throws -> (String, String) {
     try await showReportDetails(app)
-    let texts = try presentationSnapshots(app).map {
-      $0.label + "\n" + (($0.value as? String) ?? "")
-    }
+    let texts = try presentationTextValues(app)
     let summary = try XCTUnwrap(texts.first { $0.contains("Run summary: Run ") })
     let runPattern = try NSRegularExpression(pattern: "Run summary: Run ([0-9]+)")
     let runMatch = try XCTUnwrap(
       runPattern.firstMatch(in: summary, range: NSRange(summary.startIndex..., in: summary)))
     let runRange = try XCTUnwrap(Range(runMatch.range(at: 1), in: summary))
-    let technical = try XCTUnwrap(texts.first { $0.contains("Processing operation: ") })
+    let report = try XCTUnwrap(selectedReportText(app))
+    guard report.title == Self.technicalReportTitle else {
+      throw InteractionFailure.selectedReportTitle(report.title)
+    }
+    let technical = report.text
     let operationPattern = try NSRegularExpression(pattern: "Processing operation: ([0-9]+)")
     let operationMatch = try XCTUnwrap(
       operationPattern.firstMatch(

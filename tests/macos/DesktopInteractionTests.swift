@@ -6,7 +6,14 @@ import XCTest
 
 final class DesktopInteractionTests: XCTestCase {
   var pickerBaselineSettled = false
-  enum InteractionFailure: Error { case expectedPresentation }
+  enum InteractionFailure: Error {
+    case expectedPresentation
+    case selectedReportCount(Int)
+    case selectedReportValueType(String)
+    case selectedReportTitle(String)
+  }
+  static let selectedReportTitle = "Selected message and removed parts"
+  static let technicalReportTitle = "Selected message, removed parts and technical observations"
   @MainActor
   func contentFrame(_ window: XCUIElement) throws -> CGRect {
     // A Slint layout Group is observable in the snapshot tree but need not
@@ -30,6 +37,41 @@ final class DesktopInteractionTests: XCTestCase {
       pending.append(contentsOf: snapshot.children.reversed())
     }
     return snapshots
+  }
+
+  // Native snapshots supplied a 512-unit TextView preview in the actual floor
+  // fixture. Read selected-report contents from this one exact live query.
+  @MainActor
+  func selectedReportText(_ app: XCUIApplication) throws -> (title: String, text: String)? {
+    let query = app.textViews.matching(
+      NSPredicate(
+        format: "title == %@ OR title == %@", Self.selectedReportTitle, Self.technicalReportTitle))
+    let count = query.count
+    if count == 0 { return nil }
+    guard count == 1 else { throw InteractionFailure.selectedReportCount(count) }
+    let element = query.element
+    let title = element.title
+    guard title == Self.selectedReportTitle || title == Self.technicalReportTitle else {
+      throw InteractionFailure.selectedReportTitle(title)
+    }
+    let raw = element.value
+    guard let text = raw as? String else {
+      throw InteractionFailure.selectedReportValueType(
+        raw.map { String(reflecting: type(of: $0)) } ?? "nil")
+    }
+    return (title, text)
+  }
+
+  @MainActor
+  func presentationTextValues(_ app: XCUIApplication) throws -> [String] {
+    var texts = try presentationSnapshots(app).map {
+      $0.title + "\n" + $0.label + "\n"
+        + ($0.elementType == .textView ? "" : ($0.value as? String ?? ""))
+    }
+    if let report = try selectedReportText(app) {
+      texts.append(report.title + "\n" + report.text)
+    }
+    return texts
   }
 
   // Always make one bounded gesture to the requested end. A visible endpoint
@@ -115,10 +157,13 @@ final class DesktopInteractionTests: XCTestCase {
       XCTFail("Owned Finder window is ambiguous; refusing to close another window")
       throw InteractionFailure.expectedPresentation
     }
-    ownedWindow.buttons["_XCUI:CloseWindow"].click()
-    let closed = NSPredicate { _, _ in
-      finder.windows.allElementsBoundByIndex.allSatisfy { $0.title != title }
+    let exactTitle = finder.windows.matching(NSPredicate(format: "title == %@", title))
+    guard exactTitle.count == 1 else {
+      XCTFail("Exact-title Finder query did not identify the already-owned window before closing")
+      throw InteractionFailure.expectedPresentation
     }
+    ownedWindow.buttons["_XCUI:CloseWindow"].click()
+    let closed = NSPredicate { _, _ in exactTitle.count == 0 }
     let result = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: closed, object: nil)], timeout: 10)
     guard result == .completed else {
@@ -416,17 +461,25 @@ final class DesktopInteractionTests: XCTestCase {
       ?? (technical.value as? String).flatMap(Int.init)
     guard value == 0 || value == 1 else { throw InteractionFailure.expectedPresentation }
     if value == 0 { technical.click() }
-    let detail = app.textViews["Selected message, removed parts and technical observations"]
+    var reportFailure: String?
     let predicate = NSPredicate { _, _ in
-      guard detail.exists, let value = detail.value as? String else { return false }
-      return value.contains(displayedName ?? source.lastPathComponent)
-        && value.contains("settled true; reusable true")
+      do {
+        guard let report = try self.selectedReportText(app),
+          report.title == Self.technicalReportTitle
+        else { return false }
+        return report.text.contains(displayedName ?? source.lastPathComponent)
+          && report.text.contains("settled true; reusable true")
+      } catch {
+        reportFailure = String(describing: error)
+        return false
+      }
     }
     let selected = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 20)
     XCTAssertEqual(
       selected, .completed,
-      "Expected settled details for \(source.lastPathComponent): \(app.debugDescription)")
+      "Expected settled details for \(source.lastPathComponent); report error: \(reportFailure ?? "none"): \(app.debugDescription)"
+    )
     guard selected == .completed else { throw InteractionFailure.expectedPresentation }
     try await showRunControls(app)
   }
@@ -463,14 +516,12 @@ final class DesktopInteractionTests: XCTestCase {
 
   @MainActor
   func requireText(_ app: XCUIApplication, containing text: String) async throws {
-    var snapshotFailure: String?
+    var presentationFailure: String?
     let predicate = NSPredicate { _, _ in
       do {
-        return try self.presentationSnapshots(app).contains {
-          ($0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")).contains(text)
-        }
+        return try self.presentationTextValues(app).contains { $0.contains(text) }
       } catch {
-        snapshotFailure = String(describing: error)
+        presentationFailure = String(describing: error)
         return false
       }
     }
@@ -478,7 +529,7 @@ final class DesktopInteractionTests: XCTestCase {
       of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 20)
     XCTAssertEqual(
       result, .completed,
-      "Expected presentation \(text); snapshot error: \(snapshotFailure ?? "none"): \(app.debugDescription)"
+      "Expected presentation \(text); presentation error: \(presentationFailure ?? "none"): \(app.debugDescription)"
     )
     guard result == .completed else { throw InteractionFailure.expectedPresentation }
   }

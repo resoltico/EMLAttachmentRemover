@@ -200,6 +200,7 @@ pub(crate) fn validate_case(
         .ok_or("Desktop app is not a path string")?;
     let owner: LifetimeOwner =
         crate::picker_evidence::project_lifetime_owner(field(value, "lifetime_owner")?)?;
+    owner.fixture_filesystem.check()?;
     if owner.failure.is_some()
         || owner.source_check_failure.is_some()
         || owner.timed_out

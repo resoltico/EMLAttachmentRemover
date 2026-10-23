@@ -69,6 +69,7 @@ final class DesktopInteractionOwner {
   private let cancellation = Cancellation()
   private let arguments = CommandLine.arguments
   private var resultURL: URL?
+  private var fixtureFilesystem: [String: Any]?
 
   private struct Configuration {
     let input: [String: String]
@@ -98,6 +99,7 @@ final class DesktopInteractionOwner {
     do {
       let config = try configuration()
       normalRunner = config.control == "normal"
+      try captureFixtureFilesystem(config)
       try captureOriginals(config)
       let (launched, date) = try await launchApplications(config)
       try writeOwnership(config, launched: launched, date: date)
@@ -153,6 +155,118 @@ final class DesktopInteractionOwner {
     return Configuration(
       input: input, appPath: appPath, appURL: appURL, fixture: fixture, identifier: identifier,
       control: control, receiptURL: receiptURL)
+  }
+
+  // A prelaunch observation, not a continuous pin or namespace-creation authority.
+  static func observeFixtureFilesystem(_ fixture: URL) -> [String: Any] {
+    var observation: [String: Any] = [
+      "phase": "prelaunch", "state": "unavailable", "fixture_path": fixture.path,
+      "filesystem_type": NSNull(), "root": NSNull(), "one": NSNull(), "upper": NSNull(),
+      "upper_errno": NSNull(), "ascii_alias_relation": NSNull(),
+      "descriptor_closed": NSNull(), "errors": [],
+    ]
+    var errors: [[String: Any]] = []
+    func failed(_ stage: String, _ code: Int32?, _ detail: String) {
+      errors.append(["stage": stage, "errno": code.map { $0 as Any } ?? NSNull(), "detail": detail])
+    }
+    func entry(_ facts: stat) -> [String: Any] {
+      ["device": Int64(facts.st_dev), "inode": UInt64(facts.st_ino), "mode": UInt32(facts.st_mode)]
+    }
+    let (descriptor, openError) = fixture.withUnsafeFileSystemRepresentation {
+      path -> (Int32, Int32?) in
+      guard let path else { return (-1, nil) }
+      let descriptor = Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+      let code = errno
+      return (descriptor, descriptor < 0 ? code : nil)
+    }
+    func inspect() {
+      guard descriptor >= 0 else {
+        failed("open", openError, "Cannot open the owned fixture directory without following links")
+        return
+      }
+      defer {
+        let status = Darwin.close(descriptor)
+        let code = errno
+        observation["descriptor_closed"] = status == 0
+        if status != 0 { failed("close", code, "Fixture observation descriptor did not close") }
+      }
+      var root = stat()
+      guard Darwin.fstat(descriptor, &root) == 0 else {
+        failed("fstat", errno, "Cannot observe the held fixture directory")
+        return
+      }
+      observation["root"] = entry(root)
+      guard root.st_mode & S_IFMT == S_IFDIR, root.st_ino > 0 else {
+        failed("root-type", nil, "Fixture root is not an ordinary directory")
+        return
+      }
+      var filesystem = statfs()
+      guard Darwin.fstatfs(descriptor, &filesystem) == 0 else {
+        failed("fstatfs", errno, "Cannot observe the held filesystem type")
+        return
+      }
+      let nativeName = withUnsafeBytes(of: filesystem.f_fstypename) { Array($0) }
+      guard let nul = nativeName.firstIndex(of: 0), nul > 0,
+        let name = String(bytes: nativeName[..<nul], encoding: .utf8)
+      else {
+        failed("filesystem-name", nil, "Filesystem type is not bounded NUL-terminated UTF8")
+        return
+      }
+      observation["filesystem_type"] = name
+      var lower = stat()
+      guard Darwin.fstatat(descriptor, "one.eml", &lower, AT_SYMLINK_NOFOLLOW) == 0 else {
+        failed("one", errno, "Cannot observe the existing lowercase fixture entry")
+        return
+      }
+      observation["one"] = entry(lower)
+      guard lower.st_mode & S_IFMT == S_IFREG, lower.st_ino > 0,
+        lower.st_dev == root.st_dev
+      else {
+        failed("one-type-device", nil, "Lowercase fixture must be regular on the held filesystem")
+        return
+      }
+      var upper = stat()
+      let upperStatus = Darwin.fstatat(descriptor, "ONE.EML", &upper, AT_SYMLINK_NOFOLLOW)
+      let upperError = errno
+      if upperStatus == 0 {
+        observation["upper"] = entry(upper)
+        guard upper.st_mode & S_IFMT == S_IFREG,
+          upper.st_dev == lower.st_dev, upper.st_ino == lower.st_ino
+        else {
+          failed(
+            "upper-identity", nil, "Uppercase lookup does not identify the same regular fixture")
+          return
+        }
+        observation["ascii_alias_relation"] = "same_identity"
+      } else {
+        observation["upper_errno"] = upperError
+        guard upperError == ENOENT else {
+          failed("upper", upperError, "Uppercase fixture lookup is unavailable")
+          return
+        }
+        observation["ascii_alias_relation"] = "absent_enoent"
+      }
+    }
+    inspect()
+    observation["errors"] = errors
+    observation["state"] = errors.isEmpty ? "observed" : "unavailable"
+    return observation
+  }
+
+  static func writeFixtureFilesystem(_ observation: [String: Any], to destination: URL) throws {
+    try JSONSerialization.data(withJSONObject: observation, options: [.prettyPrinted, .sortedKeys])
+      .write(to: destination, options: .withoutOverwriting)
+  }
+
+  private func captureFixtureFilesystem(_ config: Configuration) throws {
+    let observation = Self.observeFixtureFilesystem(config.fixture)
+    fixtureFilesystem = observation
+    guard let resultURL else { throw Failure.invalidInput }
+    let preflight = resultURL.deletingLastPathComponent().appendingPathComponent(
+      "fixture-filesystem.json")
+    // Keep partial native facts even if prelaunch admission fails or the owner is lost later.
+    try Self.writeFixtureFilesystem(observation, to: preflight)
+    guard observation["state"] as? String == "observed" else { throw Failure.invalidInput }
   }
 
   private func captureOriginals(_ config: Configuration) throws {
@@ -757,6 +871,7 @@ final class DesktopInteractionOwner {
         : "requires successful XCTest terminal report and normal Quit",
       "unexpected_application_pids": unexpected, "originals_captured": originals.count,
       "originals_unchanged": originalsUnchanged,
+      "fixture_filesystem": fixtureFilesystem ?? NSNull(),
       "source_check_failure": originalsUnchanged
         ? NSNull() : "Owned original fixture bytes changed or could not be read",
       "owned_pasteboard_released": hadBoard,

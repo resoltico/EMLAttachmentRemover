@@ -43,7 +43,7 @@ fn comparison(pickers: bool) -> Value {
     json!({"whole_domain_unchanged":true,"application_and_other_preferences_unchanged":true,"real_pickers_observed":pickers,"permitted_system_changes":[]})
 }
 fn product() -> Value {
-    json!({"stage":"picker_compatibility","source":expected()["source"],"target":expected()["target"],"host":host(),"snapshot":expected()["archive"],"raw_product_identity":identity(),"case":"picker","test_method":"testOwnedNativePickerCompatibility","app":"/owned/EML Attachment Remover.app","summary":{"total":1,"passed":1,"failed":0,"skipped":0,"expected_failures":0},"process":process(0),"ownership_receipt":ownership(),"lifetime_owner":{"failure":null,"source_check_failure":null,"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":4,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":ownership()},"picker_observation":{"schema":1,"scenario":"picker","owned_pid":42,"message":"/owned/one.eml","folder":"/owned/folder-input"},"persistent_preferences":{"fresh_process_before":{},"fresh_process_after":{},"comparison":comparison(true),"argument_only_controls":comparison(false)}})
+    json!({"stage":"picker_compatibility","source":expected()["source"],"target":expected()["target"],"host":host(),"snapshot":expected()["archive"],"raw_product_identity":identity(),"case":"picker","test_method":"testOwnedNativePickerCompatibility","app":"/owned/EML Attachment Remover.app","summary":{"total":1,"passed":1,"failed":0,"skipped":0,"expected_failures":0},"process":process(0),"ownership_receipt":ownership(),"lifetime_owner":{"failure":null,"source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":4,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":ownership()},"picker_observation":{"schema":1,"scenario":"picker","owned_pid":42,"message":"/owned/one.eml","folder":"/owned/folder-input"},"persistent_preferences":{"fresh_process_before":{},"fresh_process_after":{},"comparison":comparison(true),"argument_only_controls":comparison(false)}})
 }
 fn ordinary() -> Value {
     json!({"mode":"unmodified_host","binding":expected(),"before":snapshot(),"panel":panel(true),"product":product(),"after":snapshot(),"actions":[]})
@@ -725,4 +725,70 @@ fn bundle_root_is_the_published_artifact_root_not_the_executable_name() {
         !admits(root.path(), &wrong),
         "Coherent process identities must still belong to the plan's actual app bundle root"
     );
+}
+
+#[test]
+fn fixture_filesystem_requires_literal_native_facts_without_a_family_allowlist() {
+    let good = super::fixture_filesystem_test_value();
+    super::check_fixture_filesystem(&good).unwrap();
+    let mut absent = good.clone();
+    absent["upper"] = Value::Null;
+    absent["upper_errno"] = json!(2);
+    absent["ascii_alias_relation"] = json!("absent_enoent");
+    super::check_fixture_filesystem(&absent).unwrap();
+    for field in [
+        "phase",
+        "state",
+        "fixture_path",
+        "filesystem_type",
+        "root",
+        "one",
+        "upper",
+        "upper_errno",
+        "ascii_alias_relation",
+        "descriptor_closed",
+        "errors",
+    ] {
+        let mut missing = good.clone();
+        missing.as_object_mut().unwrap().remove(field);
+        assert!(
+            super::check_fixture_filesystem(&missing).is_err(),
+            "{field}"
+        );
+    }
+    for (path, value) in [
+        ("/phase", json!("postlaunch")),
+        ("/state", json!("unavailable")),
+        ("/fixture_path", json!("relative")),
+        ("/filesystem_type", json!("")),
+        ("/filesystem_type", json!("1234567890123456")),
+        ("/filesystem_type", json!("apfs\0")),
+        ("/descriptor_closed", json!(false)),
+        ("/root/mode", json!(33152)),
+        ("/one/device", json!(8)),
+        ("/upper/inode", json!(12)),
+        ("/upper/mode", json!(41471)),
+        ("/upper_errno", json!(2)),
+        ("/upper", Value::Null),
+        (
+            "/errors",
+            json!([{"stage":"fstatfs","errno":5,"detail":"independent native failure"}]),
+        ),
+    ] {
+        let mut invalid = good.clone();
+        *invalid.pointer_mut(path).unwrap() = value;
+        assert!(super::check_fixture_filesystem(&invalid).is_err(), "{path}");
+    }
+    absent["upper_errno"] = json!(13);
+    assert!(super::check_fixture_filesystem(&absent).is_err());
+}
+
+#[test]
+fn product_projection_cannot_drop_its_prelaunch_filesystem_observation() {
+    let mut product = product();
+    product["lifetime_owner"]
+        .as_object_mut()
+        .unwrap()
+        .remove("fixture_filesystem");
+    assert!(super::project_lifetime_owner(&product["lifetime_owner"]).is_err());
 }

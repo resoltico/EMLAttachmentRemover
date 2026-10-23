@@ -317,6 +317,8 @@ fn known_case_settlement(
         return Ok(false);
     }
     let owner = crate::picker_evidence::observation_document(&bytes)?;
+    crate::picker_evidence::check_fixture_filesystem(&owner["fixture_filesystem"])?;
+
     if owner["cancelled"] != false
         || owner["timed_out"] != false
         || owner["runner_reaped"] != true

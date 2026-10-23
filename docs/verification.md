@@ -63,6 +63,11 @@ operate on an owner's desktop to manufacture equality.
 
 ## Native test infrastructure
 
+Before GUI launch, the owner persists the fixture’s native filesystem type and
+observed ASCII lookup relationship using read-only queries of existing entries.
+The prelaunch record survives later GUI failures. Core owns each operation’s
+independent filesystem admission.
+
 GUI automation runs only on fresh owned hosted runners. Each scenario retains
 its actual NSWorkspace-launched app and named pasteboard, executes one selected
 XCTest, verifies original and golden bytes, and requires app/runner/worker/resource

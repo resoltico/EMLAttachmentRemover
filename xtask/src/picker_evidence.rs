@@ -245,7 +245,71 @@ record!(OwnershipReceipt {
     bundle_path: String,
     pasteboard: String
 });
-record!(LifetimeOwner {failure:Option<String>,source_check_failure:Option<String>,timed_out:bool,cancelled:bool,runner_reaped:bool,runner_status:Option<i32>,owned_app_terminated:bool,forced_app_cleanup:bool,originals_captured:u32,originals_unchanged:bool,owned_pasteboard_released:bool,unexpected_application_pids:Vec<u32>,ownership_receipt:OwnershipReceipt});
+record!(FixtureEntry {
+    device: i32,
+    inode: u64,
+    mode: u16
+});
+record!(FixtureObservationError {stage:String,errno:Option<i32>,detail:String});
+record!(FixtureFilesystem {phase:String,state:String,fixture_path:String,filesystem_type:Option<String>,root:Option<FixtureEntry>,one:Option<FixtureEntry>,upper:Option<FixtureEntry>,upper_errno:Option<i32>,ascii_alias_relation:Option<String>,descriptor_closed:Option<bool>,errors:Vec<FixtureObservationError>});
+impl FixtureFilesystem {
+    pub(crate) fn check(&self) -> Result<()> {
+        let root = self
+            .root
+            .as_ref()
+            .ok_or("Missing held fixture directory identity")?;
+        let one = self
+            .one
+            .as_ref()
+            .ok_or("Missing lowercase fixture identity")?;
+        let fs = self
+            .filesystem_type
+            .as_deref()
+            .ok_or("Missing observed filesystem type")?;
+        if self.phase != "prelaunch"
+            || self.state != "observed"
+            || !self.fixture_path.starts_with('/')
+            || self.fixture_path.contains('\0')
+            || fs.is_empty()
+            || fs.len() >= 16
+            || fs.contains('\0')
+            || self.descriptor_closed != Some(true)
+            || !self.errors.is_empty()
+            || root.mode & 0o170000 != 0o040000
+            || root.inode == 0
+            || one.mode & 0o170000 != 0o100000
+            || one.inode == 0
+            || one.device != root.device
+        {
+            return Err("Incomplete prelaunch fixture filesystem observation".into());
+        }
+        let coherent = match self.ascii_alias_relation.as_deref() {
+            Some("same_identity") => {
+                self.upper.as_ref().is_some_and(|upper| {
+                    upper.mode & 0o170000 == 0o100000
+                        && upper.device == one.device
+                        && upper.inode == one.inode
+                }) && self.upper_errno.is_none()
+            }
+            Some("absent_enoent") => self.upper.is_none() && self.upper_errno == Some(2),
+            _ => false,
+        };
+        if !coherent {
+            return Err("Contradictory observed ASCII fixture alias relationship".into());
+        }
+        Ok(())
+    }
+}
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn check_fixture_filesystem(value: &serde_json::Value) -> Result<()> {
+    let facts: FixtureFilesystem = serde_json::from_value(value.clone())?;
+    facts.check()
+}
+#[cfg(test)]
+pub(crate) fn fixture_filesystem_test_value() -> serde_json::Value {
+    serde_json::json!({"phase":"prelaunch","state":"observed","fixture_path":"/owned/fixture","filesystem_type":"fixturefs","root":{"device":7,"inode":10,"mode":16832},"one":{"device":7,"inode":11,"mode":33152},"upper":{"device":7,"inode":11,"mode":33152},"upper_errno":null,"ascii_alias_relation":"same_identity","descriptor_closed":true,"errors":[]})
+}
+record!(LifetimeOwner {fixture_filesystem:FixtureFilesystem,failure:Option<String>,source_check_failure:Option<String>,timed_out:bool,cancelled:bool,runner_reaped:bool,runner_status:Option<i32>,owned_app_terminated:bool,forced_app_cleanup:bool,originals_captured:u32,originals_unchanged:bool,owned_pasteboard_released:bool,unexpected_application_pids:Vec<u32>,ownership_receipt:OwnershipReceipt});
 record!(PickerObservation {
     schema: u8,
     scenario: String,
@@ -525,6 +589,7 @@ fn product(
         "Product test discovery/execution/settlement is incomplete",
     )?;
     let owner = &value.lifetime_owner;
+    owner.fixture_filesystem.check()?;
     require(
         owner.failure.is_none()
             && owner.source_check_failure.is_none()
@@ -945,7 +1010,7 @@ pub(crate) fn project_lifetime_owner(raw: &serde_json::Value) -> Result<Lifetime
     // scenario's separate proof; these are the common actual app-owner facts.
     let app_identity = json!({"pid":observed_field(identity,"pid")?,"launch_date":observed_field(identity,"launch_date")?,"bundle_path":observed_field(identity,"bundle_path")?,"pasteboard":observed_field(identity,"pasteboard")?});
     Ok(serde_json::from_value(
-        json!({"failure":observed_field(raw,"failure")?,"source_check_failure":observed_field(raw,"source_check_failure")?,"timed_out":observed_field(raw,"timed_out")?,"cancelled":observed_field(raw,"cancelled")?,"runner_reaped":observed_field(raw,"runner_reaped")?,"runner_status":observed_field(raw,"runner_status")?,"owned_app_terminated":observed_field(raw,"owned_app_terminated")?,"forced_app_cleanup":observed_field(raw,"forced_app_cleanup")?,"originals_captured":observed_field(raw,"originals_captured")?,"originals_unchanged":observed_field(raw,"originals_unchanged")?,"owned_pasteboard_released":observed_field(raw,"owned_pasteboard_released")?,"unexpected_application_pids":observed_field(raw,"unexpected_application_pids")?,"ownership_receipt":app_identity}),
+        json!({"fixture_filesystem":observed_field(raw,"fixture_filesystem")?,"failure":observed_field(raw,"failure")?,"source_check_failure":observed_field(raw,"source_check_failure")?,"timed_out":observed_field(raw,"timed_out")?,"cancelled":observed_field(raw,"cancelled")?,"runner_reaped":observed_field(raw,"runner_reaped")?,"runner_status":observed_field(raw,"runner_status")?,"owned_app_terminated":observed_field(raw,"owned_app_terminated")?,"forced_app_cleanup":observed_field(raw,"forced_app_cleanup")?,"originals_captured":observed_field(raw,"originals_captured")?,"originals_unchanged":observed_field(raw,"originals_unchanged")?,"owned_pasteboard_released":observed_field(raw,"owned_pasteboard_released")?,"unexpected_application_pids":observed_field(raw,"unexpected_application_pids")?,"ownership_receipt":app_identity}),
     )?)
 }
 pub(crate) fn project_product(
