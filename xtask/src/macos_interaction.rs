@@ -65,10 +65,11 @@ pub(crate) fn run_case(
         lifetime_controls,
         control_preferences,
     } = observe_case(root, app, build, &out, fixture.path(), &input, case)?;
-    if case.is_publication() {
-        let actor = crate::macos_publication_ui::finish(root, build, fixture.path(), &out, case)?;
-        let preferences = crate::desktop_preferences::compare(&before, &after, false)?;
-        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"test_method":case.method(),"source_archive":source_archive,"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"actor":actor,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"nonshipping real-Core publication synchronization with actual native GUI lifecycle/presentation; unchanged shipping archive qualification remains separate"});
+    if case.is_controlled() {
+        let actor = crate::macos_operation_ui::finish(root, build, fixture.path(), &out, case)?;
+        let preferences =
+            crate::desktop_preferences::compare(&before, &after, case.uses_export_picker())?;
+        let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"test_method":case.method(),"source_archive":source_archive,"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"actor":actor,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"nonshipping processing and export synchronization with actual native GUI controls and lifecycle; unchanged shipping archive qualification remains separate"});
         fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
         return Ok(result);
     }
@@ -223,7 +224,7 @@ fn execute_case(
     // synchronization. On the native Intel runner individual checks took 60s
     // while the app continued responding. Keep behavior/settlement deadlines in
     // the test unchanged; allow their full sequence to finish before outer cleanup.
-    let process = crate::macos_publication_ui::execute(case, fixture, || {
+    let process = crate::macos_operation_ui::execute(case, fixture, || {
         controller()?.run_with_cooperative_stop(
             command,
             &out.join("xctest.log"),

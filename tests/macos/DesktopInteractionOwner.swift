@@ -137,6 +137,12 @@ final class DesktopInteractionOwner {
       let url = fixture.appendingPathComponent(name)
       originals.append((url, try Data(contentsOf: url)))
     }
+    if input["writer_session"] == "true" {
+      for index in 0..<1024 {
+        let url = fixture.appendingPathComponent(String(format: "writer-input/%04d.eml", index))
+        originals.append((url, try Data(contentsOf: url)))
+      }
+    }
     if input["pagination_session"] == "true" {
       for index in 0..<65 {
         let url = fixture.appendingPathComponent(
@@ -175,12 +181,12 @@ final class DesktopInteractionOwner {
     configuration.arguments = ["-copyDestinationBytes", input["destination"] ?? ""]
     if let observation = input["observation"] {
       guard
-        ["stop", "force-stop", "active-quit", "published-error"].contains(input["scenario"] ?? "")
+        input["child_control"] == "true"
       else {
         throw Failure.invalidInput
       }
       configuration.environment = ProcessInfo.processInfo.environment.merging(
-        ["EML_PUBLICATION_OBSERVATION": observation]) { _, replacement in replacement }
+        ["EML_OPERATION_OBSERVATION": observation]) { _, replacement in replacement }
     }
     if cancellation.requested { throw Failure.cancelled }
     let launched = try await NSWorkspace.shared.openApplication(

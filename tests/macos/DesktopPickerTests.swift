@@ -152,8 +152,13 @@ extension DesktopInteractionTests {
     XCTAssertFalse(app.buttons["About"].exists)
     app.menuBars.menuBarItems["EML Attachment Remover"].click()
     app.menuItems["About EML Attachment Remover"].click()
-    let about = app.windows["About EML Attachment Remover"]
-    XCTAssertTrue(about.waitForExistence(timeout: 10), app.debugDescription)
+    // AppKit exposes its standard About panel as an untitled native Dialog.
+    // The owned app and the content below establish its identity.
+    let about = app.dialogs.firstMatch
+    guard about.waitForExistence(timeout: 10), app.dialogs.count == 1 else {
+      XCTFail("Expected one native About dialog: \(app.debugDescription)")
+      throw InteractionFailure.expectedPresentation
+    }
     let version = try XCTUnwrap(
       bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
     let build = try XCTUnwrap(
@@ -167,17 +172,13 @@ extension DesktopInteractionTests {
     }.joined(separator: "\n")
     XCTAssertTrue(aboutText.contains(version), aboutText)
     XCTAssertTrue(aboutText.contains(build), aboutText)
-    let license = try String(
-      contentsOf: repository.appendingPathComponent("LICENSE"), encoding: .utf8)
     let copyright = try XCTUnwrap(
-      license.components(separatedBy: "\n").first {
-        $0.hasPrefix("Copyright (c) ")
-      }
-    ).replacingOccurrences(of: "Copyright (c) ", with: "© ")
-    XCTAssertTrue(about.descendants(matching: .any)[copyright].exists)
+      bundle.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String)
+    XCTAssertFalse(copyright.isEmpty)
+    XCTAssertTrue(aboutText.contains(copyright), aboutText)
     app.menuBars.menuBarItems["EML Attachment Remover"].click()
     app.menuItems["About EML Attachment Remover"].click()
-    XCTAssertEqual(app.windows.matching(identifier: "About EML Attachment Remover").count, 1)
+    XCTAssertEqual(app.dialogs.count, 1)
     snapshot(app, "about")
     about.buttons["_XCUI:CloseWindow"].click()
     let aboutClosed = NSPredicate { _, _ in !about.exists }

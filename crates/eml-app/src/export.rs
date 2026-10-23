@@ -1,6 +1,8 @@
 //! Explicit metadata export through the same held filesystem primitives as Core.
 use crate::{ReportHandle, RunId, WorkerCompletion};
 use eml_core::RunControl;
+#[cfg(feature = "native-fixtures")]
+pub use eml_fs::StoragePhase;
 use eml_fs::{
     BoundDirectory, BoundFile, CleanupReceipt, CleanupState, Identity, PublicationState,
     SyncReceipt, SyncState,
@@ -149,10 +151,10 @@ impl ReportExportOutcome {
             && self.cleanup.state == CleanupState::Complete
             && self
                 .file_sync
-                .is_some_and(|sync| sync.state != SyncState::Failed)
+                .is_some_and(|sync| sync.state == SyncState::Unsupported || sync.succeeded())
             && self
                 .namespace_sync
-                .is_some_and(|sync| sync.state != SyncState::Failed)
+                .is_some_and(|sync| sync.state == SyncState::Unsupported || sync.succeeded())
             && self.failures.is_empty()
     }
 }
@@ -170,6 +172,7 @@ fn prepare_export(
     bytes: &[u8],
     destination: &Path,
     control: &RunControl,
+    #[cfg(feature = "native-fixtures")] observer: &mut impl FnMut(StoragePhase),
 ) -> Result<BoundDirectory, ReportExportFailure> {
     use ReportExportStage::{BeforePublication, Destination, Serialization};
     checkpoint(control).map_err(|e| ReportExportFailure::native(BeforePublication, &e))?;
@@ -177,6 +180,9 @@ fn prepare_export(
         .map_err(|e| ReportExportFailure::invariant(Destination, e))?;
     crate::report_document::validate(bytes)
         .map_err(|e| ReportExportFailure::invariant(Serialization, e))?;
+    #[cfg(feature = "native-fixtures")]
+    observer(StoragePhase::Preflight);
+    checkpoint(control).map_err(|e| ReportExportFailure::native(BeforePublication, &e))?;
     BoundDirectory::open(destination.parent().expect("validated absolute filename"))
         .map_err(|e| ReportExportFailure::native(Destination, &e))
 }
@@ -188,8 +194,39 @@ pub fn export_report(
     destination: &Path,
     control: &RunControl,
 ) -> ReportExportOutcome {
+    export_report_engine(
+        bytes,
+        destination,
+        control,
+        #[cfg(feature = "native-fixtures")]
+        |_| {},
+    )
+}
+/// Observe finite actual storage boundaries in the same export engine. This
+/// nonshipping adapter does not supply operations, outcomes or native receipts.
+#[cfg(feature = "native-fixtures")]
+pub fn export_report_observed(
+    bytes: &[u8],
+    destination: &Path,
+    control: &RunControl,
+    observer: impl FnMut(StoragePhase),
+) -> ReportExportOutcome {
+    export_report_engine(bytes, destination, control, observer)
+}
+fn export_report_engine(
+    bytes: &[u8],
+    destination: &Path,
+    control: &RunControl,
+    #[cfg(feature = "native-fixtures")] mut observer: impl FnMut(StoragePhase),
+) -> ReportExportOutcome {
     let mut result = ReportExportOutcome::empty();
-    let parent = match prepare_export(bytes, destination, control) {
+    let parent = match prepare_export(
+        bytes,
+        destination,
+        control,
+        #[cfg(feature = "native-fixtures")]
+        &mut observer,
+    ) {
         Ok(value) => value,
         Err(error) => {
             result.fail(error);
@@ -206,7 +243,11 @@ pub fn export_report(
             return result;
         }
     };
-    let candidate = match creation.stage_bytes(bytes, || checkpoint(control)) {
+    #[cfg(feature = "native-fixtures")]
+    let staged = creation.stage_bytes_observed(bytes, || checkpoint(control), &mut observer);
+    #[cfg(not(feature = "native-fixtures"))]
+    let staged = creation.stage_bytes(bytes, || checkpoint(control));
+    let candidate = match staged {
         Ok(candidate) => candidate,
         Err(error) => {
             result.file_sync = error.file_sync;
@@ -220,6 +261,8 @@ pub fn export_report(
     };
     result.file_sync = Some(candidate.file_sync());
     result.candidate_identity = Some(candidate.identity());
+    #[cfg(feature = "native-fixtures")]
+    observer(StoragePhase::Publication);
     let before_edge = checkpoint(control).and_then(|()| {
         if parent.check_requested_address()? {
             Ok(())
@@ -241,6 +284,8 @@ pub fn export_report(
         destination.file_name().expect("validated report filename"),
         bytes,
         &mut result,
+        #[cfg(feature = "native-fixtures")]
+        &mut observer,
     );
     result
 }
@@ -283,10 +328,13 @@ fn publish_export(
     name: &std::ffi::OsStr,
     bytes: &[u8],
     result: &mut ReportExportOutcome,
+    #[cfg(feature = "native-fixtures")] observer: &mut impl FnMut(StoragePhase),
 ) {
     let identity = candidate.identity();
     let attempt = candidate.publish(name);
     result.publication = attempt.state;
+    #[cfg(feature = "native-fixtures")]
+    observer(StoragePhase::AfterPublication);
     let collision = attempt.is_name_collision();
     if let Some(error) = &attempt.error {
         let mut failure = ReportExportFailure::native(ReportExportStage::Publication, error);
@@ -307,7 +355,14 @@ fn publish_export(
         ));
     }
     if result.publication != PublicationState::NotPublished {
-        qualify_export(parent, final_file.as_ref(), bytes, result);
+        qualify_export(
+            parent,
+            final_file.as_ref(),
+            bytes,
+            result,
+            #[cfg(feature = "native-fixtures")]
+            observer,
+        );
     }
 }
 fn qualify_export(
@@ -315,9 +370,10 @@ fn qualify_export(
     file: Option<&BoundFile>,
     bytes: &[u8],
     result: &mut ReportExportOutcome,
+    #[cfg(feature = "native-fixtures")] observer: &mut impl FnMut(StoragePhase),
 ) {
-    result.namespace_sync = Some(match eml_fs::SyncDirectory::acquire(parent) {
-        Ok(sync) => sync.sync_namespace(),
+    let sync = match eml_fs::SyncDirectory::acquire(parent) {
+        Ok(sync) => sync,
         Err(error) => {
             result.fail(ReportExportFailure::native(
                 ReportExportStage::NamespaceSync,
@@ -325,7 +381,10 @@ fn qualify_export(
             ));
             return;
         }
-    });
+    };
+    #[cfg(feature = "native-fixtures")]
+    observer(StoragePhase::NamespaceSync);
+    result.namespace_sync = Some(sync.sync_namespace());
     if result
         .namespace_sync
         .is_some_and(|sync| sync.state == SyncState::Failed)
@@ -336,7 +395,12 @@ fn qualify_export(
         ));
     }
     if let Some(file) = file {
-        match verify_final(file, bytes) {
+        match verify_final(
+            file,
+            bytes,
+            #[cfg(feature = "native-fixtures")]
+            observer,
+        ) {
             Ok(value) => {
                 result.final_file_verified = Some(value);
                 if !value {
@@ -366,13 +430,19 @@ fn qualify_export(
     }
 }
 
-fn verify_final(file: &BoundFile, bytes: &[u8]) -> Result<bool, ReportExportFailure> {
+fn verify_final(
+    file: &BoundFile,
+    bytes: &[u8],
+    #[cfg(feature = "native-fixtures")] observer: &mut impl FnMut(StoragePhase),
+) -> Result<bool, ReportExportFailure> {
     let signature = file.initial_signature();
     if signature.size != bytes.len() as u64 {
         return Ok(false);
     }
     file.check_binding()
         .map_err(|e| ReportExportFailure::binding(ReportExportStage::Verification, e))?;
+    #[cfg(feature = "native-fixtures")]
+    observer(StoragePhase::Readback);
     let mut buffer = [0u8; 64 * 1024];
     let mut offset = 0;
     for expected in bytes.chunks(buffer.len()) {

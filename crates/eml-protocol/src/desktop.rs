@@ -149,7 +149,27 @@ fn length(reader: &mut impl Read) -> io::Result<usize> {
     Ok(u32::from_be_bytes(b) as usize)
 }
 /// Retain exactly one bounded body; no operation may acquire publication authority before this returns.
-pub fn read_operation(mut reader: impl Read) -> io::Result<(Header, Vec<u8>)> {
+pub fn read_operation(reader: impl Read) -> io::Result<(Header, Vec<u8>)> {
+    read_operation_engine(
+        reader,
+        #[cfg(feature = "native-fixtures")]
+        |_| {},
+    )
+}
+/// Observe the already validated strict header before any body read in the same
+/// framing engine. This nonshipping boundary supplies no replacement bytes or
+/// operation authority; all bounded framing and EOF checks still follow.
+#[cfg(feature = "native-fixtures")]
+pub fn read_operation_observed(
+    reader: impl Read,
+    observer: impl FnMut(&Header),
+) -> io::Result<(Header, Vec<u8>)> {
+    read_operation_engine(reader, observer)
+}
+fn read_operation_engine(
+    mut reader: impl Read,
+    #[cfg(feature = "native-fixtures")] mut observer: impl FnMut(&Header),
+) -> io::Result<(Header, Vec<u8>)> {
     let mut magic = [0; 14];
     reader.read_exact(&mut magic)?;
     if magic != MAGIC {
@@ -163,6 +183,8 @@ pub fn read_operation(mut reader: impl Read) -> io::Result<(Header, Vec<u8>)> {
     reader.read_exact(&mut bytes)?;
     let header: Header =
         serde_json::from_slice(&bytes).map_err(|_| invalid("Invalid desktop header"))?;
+    #[cfg(feature = "native-fixtures")]
+    observer(&header);
     let mut body = Vec::new();
     loop {
         let n = length(&mut reader)?;
@@ -313,18 +335,24 @@ impl ExportReceipt {
             && self.cleanup.residual_name.value().is_none()
             && self.cleanup.native_code.value().is_none()
             && self.file_sync.value().is_some_and(|s| {
-                matches!(
+                crate::meaning::synchronization_receipt(
+                    s.method,
                     s.state,
-                    crate::records::Synchronization::Succeeded
-                        | crate::records::Synchronization::Unsupported
+                    s.native_code.value().copied(),
                 )
+                .is_some_and(|receipt| {
+                    receipt.state == eml_core::SyncState::Unsupported || receipt.succeeded()
+                })
             })
             && self.namespace_sync.value().is_some_and(|s| {
-                matches!(
+                crate::meaning::synchronization_receipt(
+                    s.method,
                     s.state,
-                    crate::records::Synchronization::Succeeded
-                        | crate::records::Synchronization::Unsupported
+                    s.native_code.value().copied(),
                 )
+                .is_some_and(|receipt| {
+                    receipt.state == eml_core::SyncState::Unsupported || receipt.succeeded()
+                })
             })
             && self.failures.is_empty()
     }
@@ -424,6 +452,13 @@ pub fn observe_receipt(bytes: &[u8], expected: OperationId) -> io::Result<(Expor
         .any(|s| {
             s.method == crate::records::SynchronizationMethod::NotRequested
                 || s.state == crate::records::Synchronization::NotAttempted
+                || (s.state == crate::records::Synchronization::Succeeded
+                    && !crate::meaning::synchronization_receipt(
+                        s.method,
+                        s.state,
+                        s.native_code.value().copied(),
+                    )
+                    .is_some_and(eml_core::SyncReceipt::succeeded))
         })
     {
         return Err(invalid("Invalid export synchronization receipt"));

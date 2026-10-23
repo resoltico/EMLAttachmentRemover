@@ -220,14 +220,12 @@ pub const NO_REPLACEMENT: &str = "Existing files are never replaced.";
 /// Related resources verified absent from an existing matching copy.
 pub const EXISTING_RELATED_RESOURCE_NOTICE: &str = "Inline images or other related resources are absent from the matching bytes. They may appear missing in the existing copy.";
 fn synced(file: Option<crate::SyncReceipt>, namespace: crate::NamespaceObservation) -> bool {
-    file.is_some_and(|s| s.state == crate::SyncState::Succeeded)
+    file.is_some_and(crate::SyncReceipt::succeeded)
         && namespace.required_edges > 0
         && namespace.required_edges <= 513
         && namespace.completed_edges == namespace.required_edges
         && namespace.failed_edge_index.is_none()
-        && namespace
-            .receipt
-            .is_some_and(|s| s.state == crate::SyncState::Succeeded)
+        && namespace.receipt.is_some_and(crate::SyncReceipt::succeeded)
 }
 /// Classify accepted display facts without granting any filesystem capability.
 pub fn classify(f: &OutcomeFacts) -> OutcomeMeaning {
@@ -502,6 +500,50 @@ mod tests {
             let m = classify(&f);
             assert_eq!(m.kind, MeaningKind::Unestablished);
             assert!(m.consequences.contains(&Consequence::Published));
+        }
+    }
+    #[test]
+    fn contradictory_native_sync_facts_cannot_render_created_or_existing_success() {
+        for existing in [false, true] {
+            for namespace in [false, true] {
+                for code in [Some(0), Some(5)] {
+                    let mut f = facts();
+                    let receipt = SyncReceipt {
+                        native_code: code,
+                        ..f.file_sync.unwrap()
+                    };
+                    if namespace {
+                        f.namespace_sync.receipt = Some(receipt);
+                    } else {
+                        f.file_sync = Some(receipt);
+                    }
+                    if existing {
+                        f.result = ResultKind::Existing;
+                        f.publication = Publication::NotPublished;
+                        f.existing = Some(ExistingFacts {
+                            identity_known: true,
+                            bytes_equal: Some(true),
+                            stable: true,
+                            address: AddressState::Verified,
+                            file_sync: f.file_sync.take(),
+                            namespace_sync: f.namespace_sync,
+                        });
+                        f.namespace_sync = NamespaceObservation::unattempted();
+                    }
+                    assert_eq!(classify(&f).kind, MeaningKind::Unestablished);
+                }
+            }
+        }
+        for code in [22, 45, 102] {
+            let mut f = facts();
+            let limited = SyncReceipt {
+                method: SyncMethod::FsyncFullfsyncUnsupported,
+                state: SyncState::Succeeded,
+                native_code: Some(code),
+            };
+            f.file_sync = Some(limited);
+            f.namespace_sync.receipt = Some(limited);
+            assert_eq!(classify(&f).kind, MeaningKind::Created);
         }
     }
     #[test]

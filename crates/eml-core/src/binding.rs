@@ -3,9 +3,7 @@ use crate::{
     DestinationPlan, ErrorCode, ErrorPhase, NamespaceObservation, OperationFailure, RunControl,
     destination::ObservedRoute,
 };
-use eml_fs::{
-    CleanupReceipt, CleanupState, EntryKind, Identity, SyncMethod, SyncReceipt, SyncState,
-};
+use eml_fs::{CleanupReceipt, CleanupState, EntryKind, Identity, SyncMethod, SyncReceipt};
 use std::{
     ffi::{OsStr, OsString},
     io,
@@ -124,7 +122,7 @@ impl NamespaceProgress {
         );
     }
     fn record(&mut self, receipt: SyncReceipt) -> Result<(), OperationFailure> {
-        if receipt.state != SyncState::Succeeded {
+        if !receipt.succeeded() {
             self.0.failed_edge_index = Some(self.0.completed_edges);
             self.0.receipt = Some(receipt);
             return Err(OperationFailure::new(
@@ -696,6 +694,7 @@ fn merge_cleanup(mut candidate: CleanupReceipt, layout: CleanupReceipt) -> Clean
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eml_fs::SyncState;
     fn receipt(method: SyncMethod) -> SyncReceipt {
         SyncReceipt {
             method,

@@ -377,3 +377,54 @@ fn export_document(report: &RunReport) -> Vec<u8> {
     report.write_document(id, &completion, &mut bytes).unwrap();
     bytes
 }
+
+#[test]
+fn successful_sync_codes_require_consistent_methods_for_new_and_existing_copies() {
+    for name in ["created", "up-to-date"] {
+        let frames: Vec<serde_json::Value> = fixture(name)
+            .split(|b| *b == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice(line).unwrap())
+            .collect();
+        let scope = if name == "created" {
+            "publication"
+        } else {
+            "existing_observation"
+        };
+        for edge in ["file_sync", "namespace_sync"] {
+            for (method, code, accepted) in [
+                ("fsync", Some(0), false),
+                ("fsync", Some(5), false),
+                ("fsync_fullfsync", Some(22), false),
+                ("flush_file_buffers", Some(5), false),
+                ("fsync_fullfsync_unsupported", None, false),
+                ("fsync_fullfsync_unsupported", Some(5), false),
+                ("fsync_fullfsync_unsupported", Some(95), false),
+                ("fsync_fullfsync_unsupported", Some(22), true),
+                ("fsync_fullfsync_unsupported", Some(45), true),
+                ("fsync_fullfsync_unsupported", Some(102), true),
+            ] {
+                let mut item = frames[1].clone();
+                item[scope][edge]["method"] = method.into();
+                item[scope][edge]["native_code"] = serde_json::json!(code);
+                let mut report = RunReport::new("test-version");
+                report
+                    .accept_frame(&serde_json::to_vec(&frames[0]).unwrap())
+                    .unwrap();
+                let result = report.accept_frame(&serde_json::to_vec(&item).unwrap());
+                if accepted {
+                    assert!(
+                        result.is_ok(),
+                        "{name} {edge} {method} {code:?}: {result:?}"
+                    );
+                } else {
+                    assert_eq!(
+                        result,
+                        Err(ProtocolFailure::InvalidReceipt),
+                        "{name} {edge} {method} {code:?}"
+                    );
+                }
+            }
+        }
+    }
+}

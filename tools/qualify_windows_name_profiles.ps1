@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 7.4
 <##
 Run only on an elevated, disposable GitHub-hosted Windows runner. All storage
 changes address a newly created VHD held by this process. In particular this
@@ -46,7 +46,7 @@ function Invoke-Observed([string] $Program, [string[]] $Arguments, [string] $Dir
 function Namespace-Facts([string] $Root) {
     $paths = @((Get-Item -LiteralPath (Verbatim $Root))) + @(Get-ChildItem -LiteralPath (Verbatim $Root) -Recurse -Force)
     return @($paths | Sort-Object FullName -CaseSensitive | ForEach-Object {
-        [ordered]@{ path = $_.FullName; attributes = $_.Attributes.ToString(); last_write_ticks = $_.LastWriteTimeUtc.Ticks; identity = [EmlOwnedNameVolume]::Identity($_.FullName); bytes = if ($_.PSIsContainer) { $null } else { $_.Length }; sha256 = if ($_.PSIsContainer) { $null } else { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } }
+        [ordered]@{ path = $_.FullName; attributes = $_.Attributes.ToString(); last_write_ticks = $_.LastWriteTimeUtc.Ticks; identity = [EmlOwnedNameVolume]::Identity((Verbatim $_.FullName)); bytes = if ($_.PSIsContainer) { $null } else { $_.Length }; sha256 = if ($_.PSIsContainer) { $null } else { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } }
     })
 }
 function Verbatim([string] $Path) {
@@ -215,16 +215,45 @@ public sealed class EmlOwnedNameVolume : IDisposable {
             [void][IO.Directory]::CreateDirectory($destination)
             [void](Invoke-Observed $fsutil @('file','setCaseSensitiveInfo',$destination,$flag) $directory 'set-destination-case')
             [void](Invoke-Observed $fsutil @('file','queryCaseSensitiveInfo',$root) $directory 'query-case')
-            if ([EmlOwnedNameVolume]::CaseSensitive($root) -ne $sensitive -or [EmlOwnedNameVolume]::CaseSensitive($destination) -ne $sensitive) { throw 'Actual directory case mode is not the selected mode.' }
+            $rootCase = [EmlOwnedNameVolume]::CaseSensitive($root)
+            $destinationCaseBefore = [EmlOwnedNameVolume]::CaseSensitive($destination)
+            if ($rootCase -ne $sensitive -or $destinationCaseBefore -ne $sensitive) { throw 'Actual directory case mode is not the selected mode.' }
             $source = Join-Path $root 'sources'
             $behaviorOut = Join-Path $directory 'behavior'
-            $profile.volume = [ordered]@{ filesystem_type = 'ntfs'; case = @{ case_sensitive = $sensitive }; root = $root; short_root = $shortRoot; serial = $profileVolume[1]; label = $profileVolume[5]; drive_type = 3; global_8dot3_policy = $policy }
+            $profile.volume = [ordered]@{ filesystem_type = 'ntfs'; case = @{ case_sensitive = $rootCase; destination_before = $destinationCaseBefore }; root = $root; short_root = $shortRoot; serial = $profileVolume[1]; label = $profileVolume[5]; drive_type = 3; global_8dot3_policy = $policy }
             $profile.executed = $true
             $observed = Invoke-Observed $python @($oracle,'--binary',$Binary,'--source-root',(Verbatim $source),'--destination',(Verbatim $destination),'--out',(Verbatim $behaviorOut)) $directory 'independent-oracle'
             $profile.exit_code = $observed.exit_code
             $profile.behavior = Get-Content -LiteralPath (Join-Path $behaviorOut 'result.json') -Raw | ConvertFrom-Json -AsHashtable
             $mode = if ($sensitive) { 'case-sensitive' } else { 'case-insensitive' }
-            if (!$profile.behavior.passed -or $profile.behavior.binary_sha256 -ne $result.binary_sha256 -or $profile.behavior.case_mode -ne $mode -or [EmlOwnedNameVolume]::CaseSensitive($source) -ne $sensitive) { throw 'Independent oracle or inherited source case mode failed.' }
+            $profile.source_case_sensitive = [EmlOwnedNameVolume]::CaseSensitive($source)
+            $profile.volume.case.destination_after = [EmlOwnedNameVolume]::CaseSensitive($destination)
+            if (!$profile.behavior.passed -or $profile.behavior.binary_sha256 -ne $result.binary_sha256 -or $profile.behavior.case_mode -ne $mode -or $profile.volume.case.destination_after -ne $sensitive) { throw 'Independent oracle or configured destination case mode failed.' }
+            $actualEntries = @(Get-ChildItem -LiteralPath (Verbatim $destination) -Recurse -Force | ForEach-Object {
+                if (($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Generated namespace contains a reparse entry.' }
+                $longPath = Verbatim $_.FullName
+                $shortPath = [EmlOwnedNameVolume]::ShortPath($longPath)
+                $longIdentity = [EmlOwnedNameVolume]::Identity($longPath)
+                $shortIdentity = [EmlOwnedNameVolume]::Identity($shortPath)
+                $directoryCase = if ($_.PSIsContainer) { [EmlOwnedNameVolume]::CaseSensitive($longPath) } else { $null }
+                [ordered]@{ relative = [IO.Path]::GetRelativePath((Verbatim $destination), $longPath); directory = $_.PSIsContainer; case_sensitive = $directoryCase; long_path = $longPath; short_path = $shortPath; long_identity = $longIdentity; short_identity = $shortIdentity }
+            })
+            $profile.native_entries = $actualEntries
+            $entryIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            foreach ($entry in $actualEntries) {
+                if (!$entryIdentities.Add($entry.long_identity)) { throw 'Generated namespace contains a repeated native identity.' }
+                if ($entry.long_identity -cne $entry.short_identity) { throw 'Observed generated short spelling identifies a different native entry.' }
+            }
+            $expectedEntries = @($profile.behavior.entries)
+            $actualSelection = [Collections.Generic.Dictionary[string,bool]]::new([StringComparer]::Ordinal)
+            $expectedSelection = [Collections.Generic.Dictionary[string,bool]]::new([StringComparer]::Ordinal)
+            foreach ($entry in $actualEntries) { $actualSelection.Add($entry.relative, $entry.directory) }
+            foreach ($entry in $expectedEntries) { $expectedSelection.Add($entry.relative, $entry.directory) }
+            if ($actualSelection.Count -ne $expectedSelection.Count) { throw 'Native generated entry count differs from the independent common namespace.' }
+            foreach ($entry in $expectedSelection.GetEnumerator()) {
+                $observedType = $false
+                if (!$actualSelection.TryGetValue($entry.Key, [ref]$observedType) -or $observedType -ne $entry.Value) { throw 'Native long/short entry observations differ from the independent common namespace.' }
+            }
             # Invoke the frozen executable with the actual short root spelling. Python's
             # resolve() canonicalizes aliases, so the common oracle alone cannot prove it.
             $firstSource = Join-Path $source 'file-0\A.eml'

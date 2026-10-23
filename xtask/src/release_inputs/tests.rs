@@ -52,19 +52,170 @@ fn owner(app: &str, originals: u32) -> Value {
 fn host(target: &str, os: &str, arch: &str, major: u8) -> Value {
     json!({"target":target,"process_os":os,"process_architecture":arch,"kernel_machine":if os=="macos"&&arch=="aarch64"{"arm64"}else{arch},"product_version":format!("{major}.1"),"runner_image":"new-image","runner_image_version":"new-version","actual_os":format!("ProductVersion: {major}.1\nBuildVersion: TestBuild\n")})
 }
+// Independent required-case oracle; do not derive this from the production catalog.
+const CONTROLLED_CASES: &[(&str, &str)] = &[
+    ("active-quit", "testOwnedCoreActiveQuit"),
+    ("force-stop", "testOwnedCoreForceStop"),
+    ("published-error", "testOwnedCorePublishedError"),
+    ("stop", "testOwnedCoreStop"),
+    (
+        "blocked-processing-preflight",
+        "testOwnedBlockedProcessingPreflight",
+    ),
+    (
+        "blocked-processing-readback",
+        "testOwnedBlockedProcessingReadback",
+    ),
+    (
+        "blocked-processing-stage-write",
+        "testOwnedBlockedProcessingStageWrite",
+    ),
+    (
+        "blocked-processing-file-sync",
+        "testOwnedBlockedProcessingFileSync",
+    ),
+    (
+        "blocked-processing-publication",
+        "testOwnedBlockedProcessingPublication",
+    ),
+    (
+        "blocked-processing-namespace-sync",
+        "testOwnedBlockedProcessingNamespaceSync",
+    ),
+    (
+        "blocked-export-preflight",
+        "testOwnedBlockedExportPreflight",
+    ),
+    ("blocked-export-readback", "testOwnedBlockedExportReadback"),
+    (
+        "blocked-export-stage-write",
+        "testOwnedBlockedExportStageWrite",
+    ),
+    ("blocked-export-file-sync", "testOwnedBlockedExportFileSync"),
+    (
+        "blocked-export-publication",
+        "testOwnedBlockedExportPublication",
+    ),
+    (
+        "blocked-export-namespace-sync",
+        "testOwnedBlockedExportNamespaceSync",
+    ),
+    ("export-publication", "testOwnedExportPublication"),
+    ("export-writer-block", "testOwnedExportWriterBlock"),
+];
+fn controlled_actor(name: &str) -> Value {
+    let (operation, phase) = name
+        .strip_prefix("blocked-")
+        .and_then(|value| value.split_once('-'))
+        .unwrap_or((
+            "export",
+            if name == "export-writer-block" {
+                "request-body"
+            } else {
+                "after-publication"
+            },
+        ));
+    let mut ui = json!({"case":name,"operation":operation,"phase":phase,"operation_id":6,"worker_pid":44,"run_id":if operation=="processing"{2}else{1}});
+    let mut additional_worker = Value::Null;
+    let mut matrix = Value::Null;
+    let mut writer_document = Value::Null;
+    let mut target_identity = Value::Null;
+    if name.starts_with("blocked-") {
+        for key in [
+            "ui_responsive",
+            "other_report_viewed",
+            "first_stop_observed",
+            "force_stop_observed",
+        ] {
+            ui[key] = true.into();
+        }
+        ui["source_reserved"] = (operation == "export").into();
+        ui["queued_then_processing"] = (operation == "export").into();
+        ui["ui_response_seconds"] = json!(0.5);
+        ui["settled_text"] = if operation == "processing" {
+            "Processing operation: 6; Worker exit None; settled true; reusable true"
+        } else {
+            "Report export operation 6 for run 1; settled: true; reusable: true"
+        }
+        .into();
+        if name == "blocked-export-preflight" {
+            for key in [
+                "dual_quit",
+                "native_panel_seen",
+                "native_panel_cancelled",
+                "quit_cancel_preserved_children",
+                "app_quit_completed",
+            ] {
+                ui[key] = true.into();
+            }
+            ui["pending_requests"] = 8.into();
+            ui["cosmetic_notice"] =
+                "8 requests are already waiting. Remove a waiting run before adding another."
+                    .into();
+            ui["processing_operation_id"] = 7.into();
+            ui["processing_run_id"] = 3.into();
+            ui["processing_worker_pid"] = 45.into();
+            additional_worker = json!({"operation_id":7,"run_id":3,"target":{"path":"/owned/processing-copy.eml","identity":null},"worker_pid":45,"worker_absent":true,"first_interrupt_micros":100,"second_interrupt_micros":10000100});
+        }
+    } else if name == "export-writer-block" {
+        for key in [
+            "writer_busy_observed",
+            "ui_responsive",
+            "other_report_viewed",
+            "source_reserved",
+            "first_stop_observed",
+        ] {
+            ui[key] = true.into();
+        }
+        ui["document_bytes"] = json!(2 * 1024 * 1024);
+        ui["document_sha256"] = "a".repeat(64).into();
+        writer_document = json!({"byte_length":2*1024*1024,"sha256":"a".repeat(64)});
+    } else {
+        ui["cases"] = json!([
+            "ordinary",
+            "occupied",
+            "directory",
+            "symlink",
+            "racing-winner",
+            "pre-edge-stop",
+            "post-edge-stop",
+            "post-edge-loss"
+        ]);
+        ui["no_replace_observed"] = true.into();
+        ui["post_edge_bytes_preserved"] = true.into();
+        ui["expected_bytes"] = 3.into();
+        ui["expected_sha256"] = identity().sha256.into();
+        ui["winner_sha256"] = ByteIdentity::of(b"winner").sha256.into();
+        matrix = json!({"expected_document":identity(),"winner":ByteIdentity::of(b"winner"),"directory_unchanged":true,"symlink_unchanged":true,"pre_edge_absent":true,"controls":[{"case":"racing-winner","phase":"publication","operation_id":7,"worker_pid":47,"worker_absent":true,"first_interrupt_micros":null,"second_interrupt_micros":null},{"case":"pre-edge-stop","phase":"publication","operation_id":8,"worker_pid":48,"worker_absent":true,"first_interrupt_micros":100,"second_interrupt_micros":null},{"case":"post-edge-stop","phase":"namespace-sync","operation_id":9,"worker_pid":49,"worker_absent":true,"first_interrupt_micros":100,"second_interrupt_micros":null}]});
+        target_identity = serde_json::to_value(identity()).unwrap();
+    }
+    if name.starts_with("blocked-") && matches!(phase, "readback" | "namespace-sync") {
+        target_identity = if operation == "processing" {
+            serde_json::to_value(ByteIdentity::of(include_bytes!(
+                "../../../tests/contract/mime/golden/01-gmail-attachment.eml"
+            )))
+            .unwrap()
+        } else {
+            serde_json::to_value(identity()).unwrap()
+        };
+    }
+    let contents = serde_json::to_string(&ui).unwrap();
+    json!({"case":name,"operation":operation,"phase":phase,"operation_id":6,"worker_pid":44,"worker_absent":true,"additional_worker":additional_worker,"matrix":matrix,"writer_document":writer_document,"first_interrupt_micros":100,"second_interrupt_micros":if name=="export-writer-block" {Value::Null}else if name=="blocked-export-preflight"{json!(10000100)}else{json!(200)},"ui_receipt":{"identity":ByteIdentity::of(contents.as_bytes()),"contents":contents},"originals":[{"name":"one.eml","identity":identity()},{"name":"two.eml","identity":identity()},{"name":"folder-input/folder.eml","identity":identity()},{"name":"service-input/日本語-مرحبا-\u{202e}report.eml","identity":identity()}],"target":{"path":"/owned/report.json","identity":target_identity}})
+}
 fn desktop_case(name: &str, method: &str) -> Value {
-    let publication = ["stop", "force-stop", "active-quit", "published-error"].contains(&name);
-    let app = if publication {
-        "/owned/Observed Core.app"
+    let controlled = CONTROLLED_CASES.iter().any(|(case, _)| *case == name);
+    let app = if controlled {
+        "/owned/Observed Operations.app"
     } else {
         "/owned/EML Attachment Remover.app"
     };
+    let export_picker = name.starts_with("blocked-export-") || name.starts_with("export-");
     let preferences = if name == "workflow" {
         json!({"fresh_process_before":{},"fresh_process_after":{},"comparison":comparison(true),"argument_only_controls":comparison(false)})
     } else {
-        json!({"before":{},"after":{},"comparison":comparison(false)})
+        json!({"before":{},"after":{},"comparison":comparison(export_picker)})
     };
-    let mut value = json!({"case":name,"test_method":method,"source":SOURCE,"source_archive":identity(),"app":app,"process":process(),"lifetime_owner":owner(app,if name=="pagination"{69}else{4}),"summary":summary(),"persistent_preferences":preferences});
+    let mut value = json!({"case":name,"test_method":method,"source":SOURCE,"source_archive":identity(),"app":app,"process":process(),"lifetime_owner":owner(app,if name=="pagination"{69}else if name=="export-writer-block"{1028}else{4}),"summary":summary(),"persistent_preferences":preferences});
     match name {
         "workflow" => {
             value["ownership_receipt"] = ownership(app);
@@ -80,6 +231,9 @@ fn desktop_case(name: &str, method: &str) -> Value {
             value["lifetime_owner"]["owned_settings_terminated"] = true.into();
             value["lifetime_owner"]["unexpected_settings_application_pids"] = json!([]);
         }
+        _ if name.starts_with("blocked-") || name.starts_with("export-") => {
+            value["actor"] = controlled_actor(name);
+        }
         _ => {
             value["actor"] = json!({"case":name,"worker_pid":44,"worker_absent":true,"independent_copy_golden":true,"first_interrupt_micros":if name=="published-error"{Value::Null}else{json!(100)},"second_interrupt_micros":match name {"active-quit"=>json!(10000100),"force-stop"=>json!(200),_=>Value::Null}})
         }
@@ -87,7 +241,11 @@ fn desktop_case(name: &str, method: &str) -> Value {
     value
 }
 fn desktop(reference: &ByteIdentity) -> Value {
-    json!({"stage":"desktop_qualification","source":SOURCE,"target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",15),"reference":reference,"verification":{"stage":"desktop_qualification","snapshot":identity(),"gui_interaction":{"workflow":desktop_case("workflow","testOwnedDesktopWorkflowAndNativeIngress"),"pagination":desktop_case("pagination","testOwnedPagination"),"appearance":desktop_case("appearance","testOwnedNativeAppearance"),"publication":{"shipping_bundle_unchanged":true,"cases":[desktop_case("active-quit","testOwnedCoreActiveQuit"),desktop_case("force-stop","testOwnedCoreForceStop"),desktop_case("published-error","testOwnedCorePublishedError"),desktop_case("stop","testOwnedCoreStop")]}}}})
+    let controls: Vec<_> = CONTROLLED_CASES
+        .iter()
+        .map(|(name, method)| desktop_case(name, method))
+        .collect();
+    json!({"stage":"desktop_qualification","source":SOURCE,"target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",15),"reference":reference,"verification":{"stage":"desktop_qualification","snapshot":identity(),"gui_interaction":{"workflow":desktop_case("workflow","testOwnedDesktopWorkflowAndNativeIngress"),"pagination":desktop_case("pagination","testOwnedPagination"),"appearance":desktop_case("appearance","testOwnedNativeAppearance"),"operation_controls":{"shipping_bundle_unchanged":true,"cases":controls}}}})
 }
 fn picker(reference: &ByteIdentity) -> (VerifiedPickerReceipt, FrozenRecord) {
     let binding = binding(
@@ -344,7 +502,7 @@ fn desktop_case_identity_owner_process_and_preference_omissions_fail_composed_ad
             json!(false),
         ),
         (
-            "/verification/gui_interaction/publication/cases/0/test_method",
+            "/verification/gui_interaction/operation_controls/cases/0/test_method",
             json!("unrelated"),
         ),
         (
@@ -356,7 +514,7 @@ fn desktop_case_identity_owner_process_and_preference_omissions_fail_composed_ad
             json!(false),
         ),
         (
-            "/verification/gui_interaction/publication/cases/0/actor/worker_absent",
+            "/verification/gui_interaction/operation_controls/cases/0/actor/worker_absent",
             json!(false),
         ),
         (
@@ -541,4 +699,104 @@ fn required_manifest_nullable_roles_and_duplicate_producer_observations_are_not_
     );
     producer.identity = ByteIdentity::of(producer.contents.as_bytes());
     assert!(bad.validate(&plan, SOURCE, &workflow()).is_err());
+}
+
+#[test]
+fn every_controlled_desktop_case_and_its_bound_raw_observations_are_required() {
+    let (_, plan, good) = fixture(false);
+    good.validate(&plan, SOURCE, &workflow()).unwrap();
+    for (name, _) in CONTROLLED_CASES {
+        let mut omitted = clone_inputs(&good);
+        edit(
+            omitted
+                .products
+                .get_mut(MAC_APP)
+                .unwrap()
+                .desktop
+                .as_mut()
+                .unwrap(),
+            |value| {
+                let cases = value["verification"]["gui_interaction"]["operation_controls"]["cases"]
+                    .as_array_mut()
+                    .unwrap();
+                let previous = cases.len();
+                cases.retain(|case| case["case"] != *name);
+                assert_eq!(cases.len() + 1, previous);
+            },
+        );
+        assert!(
+            omitted.validate(&plan, SOURCE, &workflow()).is_err(),
+            "missing {name}"
+        );
+    }
+    for change in [
+        "duplicate",
+        "unexpected",
+        "changed_raw",
+        "wrong_operation",
+        "wrong_phase",
+        "wrong_run",
+        "missing_response",
+        "wrong_picker",
+        "forced_cleanup",
+    ] {
+        let mut bad = clone_inputs(&good);
+        edit(
+            bad.products
+                .get_mut(MAC_APP)
+                .unwrap()
+                .desktop
+                .as_mut()
+                .unwrap(),
+            |value| {
+                let cases = value["verification"]["gui_interaction"]["operation_controls"]["cases"]
+                    .as_array_mut()
+                    .unwrap();
+                if change == "duplicate" {
+                    cases.push(cases[4].clone());
+                    return;
+                }
+                let case = &mut cases[4];
+                if change == "unexpected" {
+                    case["case"] = "unreviewed-case".into();
+                    return;
+                }
+                if change == "forced_cleanup" {
+                    case["lifetime_owner"]["forced_app_cleanup"] = true.into();
+                    return;
+                }
+                if change == "wrong_picker" {
+                    case["persistent_preferences"]["comparison"]["real_pickers_observed"] =
+                        true.into();
+                    return;
+                }
+                let receipt = &mut case["actor"]["ui_receipt"];
+                let contents = receipt["contents"].as_str().unwrap();
+                if change == "changed_raw" {
+                    receipt["contents"] = format!("{contents} ").into();
+                    return;
+                }
+                let mut document: Value = serde_json::from_str(contents).unwrap();
+                match change {
+                    "wrong_operation" => document["operation"] = "export".into(),
+                    "wrong_phase" => document["phase"] = "file-sync".into(),
+                    "wrong_run" => document["run_id"] = 0.into(),
+                    "missing_response" => {
+                        document
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("ui_response_seconds");
+                    }
+                    _ => unreachable!(),
+                }
+                let contents = serde_json::to_string(&document).unwrap();
+                *receipt =
+                    json!({"identity":ByteIdentity::of(contents.as_bytes()),"contents":contents});
+            },
+        );
+        assert!(
+            bad.validate(&plan, SOURCE, &workflow()).is_err(),
+            "{change}"
+        );
+    }
 }

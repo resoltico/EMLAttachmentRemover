@@ -482,7 +482,7 @@ fn mirror_replacement_and_cancellation_preserve_unowned_entries() {
     assert_eq!(cleanup.state, CleanupState::Unknown);
     assert!(cleanup.residual_name.is_none());
     assert_eq!(
-        fs::read(destination.join("input/replacement-marker")).unwrap(),
+        fs::read(destination.join("input.eml-dir/replacement-marker")).unwrap(),
         b"preserve this replacement"
     );
     assert_eq!(
@@ -494,7 +494,7 @@ fn mirror_replacement_and_cancellation_preserve_unowned_entries() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
         .collect();
-    assert_eq!(names, ["input"]);
+    assert_eq!(names, ["input.eml-dir"]);
     drop(scope);
     root.close().unwrap();
 }

@@ -115,3 +115,27 @@ facts. A force-killed or lost child without an accepted terminal receipt means
 failure means **export not started**. The parent never removes guessed destination
 or temporary paths after killing a child. Force termination can leave temporary
 artifacts when owned cleanup could not be observed.
+
+The `native-fixtures` worker can observe actual operation boundaries through
+`EML_OPERATION_OBSERVATION`, an exclusively owned canonical private directory.
+A missing `observation` recipe is inactive when that worker starts. Present
+recipes are finite: `processing:<phase>:<0|1>` or `export:<phase>`, followed by a
+newline. Storage phases are `preflight`, `readback`, `stage-write`, `file-sync`,
+`publication`, `namespace-sync` and `after-publication`. Export `request-body`
+pauses the request-reader actor after the same strict header decoder succeeds and
+before it reads body bytes. Complete framing and document admission remain
+mandatory before export. Export readback observes only the held published file;
+occupied output never becomes a readback source.
+
+The fixed `dual-quit` recipe, followed by a newline, requires private `processing`
+and `export` subdirectories with exactly `processing:preflight:0` and
+`export:preflight` recipes. It admits the two existing lanes without adding a
+report slot or changing process ownership. Each worker selects one lane only from
+its actual decoded header; identity probes and unrelated operations claim no
+markers. The selected directory receives `worker-pid`, a phase/operation-bound
+`ready`, and actual interrupt markers. Only the first selected phase blocks.
+Release is exactly eight bytes, `release\n`, published complete and without
+replacement from a pending file. A partial or malformed release is refused.
+Stop does not release a storage barrier; native controls, later release or actual
+process termination must settle the operation. None of these controls exist in
+shipping workers, supply substitute receipts, or authorize destination deletion.

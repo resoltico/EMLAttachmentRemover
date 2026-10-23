@@ -1,10 +1,22 @@
 //! Nonshipping synchronization still exercises the real engine and filesystem.
 #![cfg(all(unix, feature = "native-fixtures"))]
 use eml_core::{
-    AddressState, ErrorCode, Event, EventSink, FailureEffect, ItemResult, OutputLocation,
-    PublicationObservation, RunControl, RunMode, RunRequest, run_observed,
+    AddressState, ErrorCode, Event, EventSink, FailureEffect, ItemResult, OperationObservation,
+    OutputLocation, RunControl, RunMode, RunRequest, run_observed,
 };
+use eml_fs::StoragePhase;
 use std::{cell::Cell, fs, io, rc::Rc};
+
+fn once_at(phase: StoragePhase, action: Box<dyn FnOnce()>) -> Box<dyn FnMut(StoragePhase)> {
+    let mut action = Some(action);
+    Box::new(move |observed| {
+        if observed == phase
+            && let Some(action) = action.take()
+        {
+            action();
+        }
+    })
+}
 
 const INPUT: &[u8] = include_bytes!("../../../tests/contract/mime/inputs/01-gmail-attachment.eml");
 const GOLDEN: &[u8] = include_bytes!("../../../tests/contract/mime/golden/01-gmail-attachment.eml");
@@ -80,18 +92,16 @@ fn synchronized_full_run_preserves_real_stop_and_published_error_receipts() {
                 control.request_stop();
             })
         };
-        let observation = if published {
-            PublicationObservation {
-                item_index: 0,
-                before: None,
-                after: Some(action),
-            }
-        } else {
-            PublicationObservation {
-                item_index: 0,
-                before: Some(action),
-                after: None,
-            }
+        let observation = OperationObservation {
+            item_index: 0,
+            callback: once_at(
+                if published {
+                    StoragePhase::AfterPublication
+                } else {
+                    StoragePhase::Publication
+                },
+                action,
+            ),
         };
         let mut sink = Sink {
             published,
@@ -150,16 +160,15 @@ fn refused_selected_item_cannot_pass_unused_observation_to_next_message() {
         mode: RunMode::Create,
     };
     let reached = Rc::new(Cell::new(false));
-    let (before, after) = (Rc::clone(&reached), Rc::clone(&reached));
+    let observed = Rc::clone(&reached);
     let mut sink = Counts::default();
     run_observed(
         &request,
         &RunControl::default(),
         &mut sink,
-        PublicationObservation {
+        OperationObservation {
             item_index: 0,
-            before: Some(Box::new(move || before.set(true))),
-            after: Some(Box::new(move || after.set(true))),
+            callback: Box::new(move |_| observed.set(true)),
         },
     )
     .unwrap();
@@ -222,10 +231,12 @@ fn stopping_second_publication_retains_first_copy_and_actual_interrupted_summary
         },
         &control,
         &mut summary,
-        PublicationObservation {
+        OperationObservation {
             item_index: 1,
-            before: Some(Box::new(move || stop.request_stop())),
-            after: None,
+            callback: once_at(
+                StoragePhase::Publication,
+                Box::new(move || stop.request_stop()),
+            ),
         },
     )
     .unwrap();

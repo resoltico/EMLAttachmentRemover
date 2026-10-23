@@ -20,7 +20,7 @@ def inventory(root):
         info = path.lstat()
         result.append({'name': str(path.relative_to(root)), 'device': info.st_dev,
                        'inode': info.st_ino, 'mode': stat.S_IMODE(info.st_mode),
-                       'kind': stat.S_IFMT(info.st_mode), 'uid': info.st_uid, 'gid': info.st_gid,
+                       'kind': stat.S_IFMT(info.st_mode), 'mtime_ns': info.st_mtime_ns, 'ctime_ns': info.st_ctime_ns, 'uid': info.st_uid, 'gid': info.st_gid,
                        'sha256': hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None})
     return result
 
@@ -77,11 +77,37 @@ def qualify(name, item, exit_code, probe, require_sync_success):
     return 'refused_without_sync'
 
 
+def refuse_new_names(binary, source, destination, out):
+    destination.mkdir(mode=0o700)
+    before = inventory(destination)
+    runs = []
+    for mode in ['check', 'create']:
+        command = [str(binary), '--format', 'json', '--output-dir', str(destination)]
+        if mode == 'check':
+            command.append('--dry-run')
+        command += ['--', str(source)]
+        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        (out / ('unsupported-' + mode + '.jsonl')).write_bytes(process.stdout)
+        (out / ('unsupported-' + mode + '.stderr')).write_bytes(process.stderr)
+        rows = [json.loads(line) for line in process.stdout.splitlines()]
+        if len(rows) != 3 or rows[0].get('type') != 'start' or rows[0].get('total') != 1 or rows[0].get('collection_complete') is not True or rows[1].get('type') != 'item' or rows[-1].get('type') != 'summary' or process.returncode != 1 or rows[-1].get('exit_code') != 1:
+            raise RuntimeError('Nonqualified profile refusal lacks complete Check/Create observation')
+        item = rows[1]
+        if item['status'] != 'failed' or item['error']['code'] != 'DESTINATION_UNSUPPORTED' or item['error']['phase'] != 'admission' or item['existing_observation'] is not None or item['publication']['state'] != 'not_published' or item['publication']['file_sync']['state'] != 'not_attempted' or item['publication']['namespace_sync']['required_edges'] != 0 or item['publication']['cleanup']['state'] != 'not_needed':
+            raise RuntimeError('Nonqualified profile did not refuse before namespace/storage effects')
+        after = inventory(destination)
+        if before != after or len(before) != 1 or before[0]['mode'] != 0o700 or before[0]['uid'] != os.geteuid():
+            raise RuntimeError('Nonqualified profile probe changed its independently safe owned namespace')
+        runs.append({'mode': mode, 'exit_code': process.returncode, 'before': before, 'after': after, 'item': item})
+    return {'profile': 'overlay', 'destination_mode': 0o700, 'owner_uid': os.geteuid(), 'runs': runs, 'passed': True}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for field in ['binary', 'source-root', 'destination', 'out']:
         parser.add_argument('--' + field, type=Path, required=True)
     parser.add_argument('--require-sync-success', action='store_true')
+    parser.add_argument('--refuse-new-names', action='store_true')
     args = parser.parse_args()
     binary, source, destination, out = [p.resolve() for p in [args.binary, args.source_root, args.destination, args.out]]
     source.mkdir(mode=0o700)
@@ -121,8 +147,10 @@ def main():
               'host': platform.uname()._asdict(), 'case_mode': case_mode, 'independent_sync_probe': probe,
               'require_sync_success': args.require_sync_success,
               'independent_leaf': LEAF, 'original_sha256': hashlib.sha256(CONTENT).hexdigest(),
-              'creation_policy_refused': True, 'runs': [], 'failure': None, 'passed': False}
+              'creation_policy_refused': True, 'unsupported_new_name': None, 'runs': [], 'failure': None, 'passed': False}
     try:
+        if args.refuse_new_names:
+            result['unsupported_new_name'] = refuse_new_names(binary, selected, destination.parent / 'new-name-refusal', out)
         for name in ['matching', 'unequal', 'missing-route', 'replaced-route']:
             if name == 'unequal':
                 leaf.write_bytes(b'Independent unequal existing bytes.\n')

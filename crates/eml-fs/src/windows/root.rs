@@ -75,7 +75,9 @@ impl PinnedRoot {
             )?;
             let identity = handle::directory_identity(&file)?;
             if identity != expected {
-                return Err(io::Error::other("Root identity changed").into());
+                return Err(
+                    io::Error::new(io::ErrorKind::InvalidData, "Root identity changed").into(),
+                );
             }
             let directory = BoundDirectory { file, identity };
             checkpoint(&mut is_stopped)?;
@@ -107,7 +109,9 @@ impl PinnedRoot {
             let file = child::ancestor_pin(&parent.file, endpoint)?;
             let identity = handle::directory_identity(&file)?;
             if identity != expected {
-                return Err(io::Error::other("Root identity changed").into());
+                return Err(
+                    io::Error::new(io::ErrorKind::InvalidData, "Root identity changed").into(),
+                );
             }
             BoundDirectory { file, identity }
         };
@@ -362,6 +366,26 @@ mod tests {
             panic!("Wrong root identity must be refused");
         };
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(error.raw_os_error(), None);
+        assert_eq!(error.to_string(), "Root identity changed");
+        let (volume_root, _) = root_and_names(&read.resolved_path().unwrap()).unwrap();
+        let Err(RootBindingError::Native(error)) =
+            PinnedRoot::bind_resolved(&volume_root, other.identity(), || false)
+        else {
+            panic!("Wrong volume-root identity must be refused");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(error.raw_os_error(), None);
+        assert_eq!(error.to_string(), "Root identity changed");
+        let missing = read.resolved_path().unwrap().join("missing-endpoint");
+        let Err(RootBindingError::Native(error)) =
+            PinnedRoot::bind_resolved(&missing, read.identity(), || false)
+        else {
+            panic!("Missing native endpoint must retain its actual failure");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert!(error.raw_os_error().is_some());
+        eprintln!("Missing native root endpoint retained actual error: {error:?}");
         handle::close(delete_access(&operation(&upper)).unwrap()).unwrap();
         assert_eq!(fs::read_dir(&selected).unwrap().count(), 0);
         drop(read);

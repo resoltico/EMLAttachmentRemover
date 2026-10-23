@@ -177,10 +177,32 @@ tests record that volume refusal separately from representable-name checks;
 Linux must execute the invalid-byte round trip. Unit cases for model constants
 or ownership flags do not establish a real mount's behavior.
 
+Nonshipping `native-fixtures` builds expose one finite `StoragePhase` callback
+through `OperationObservation` and the same staging engine. Processing preflight
+is the per-item destination execution check after source preparation/planning;
+readback is the actual held-existing-file comparison. Stage-write/file-sync hooks
+pause before the existing write/flush checkpoints, publication pauses before its
+existing final guards, and namespace/after-publication hooks retain the actual
+post-edge path. They add no cancellation guard, replacement event, errno or sync
+receipt. Check invokes no callback. A fixture pause before a syscall is not
+claimed as a blocked kernel syscall; its nonshipping artifact and actual process
+lifetime remain separate from full shipping-archive qualification.
+
+The held inode's observed name budget cannot ordinarily be changed by a native
+fixture. The budget predicate has an independent mismatch control. A separate
+native pre-edge control replaces the requested owned parent with a different,
+creation-incompatible parent after candidate staging; the actual address guard
+must refuse before publication, preserve both namespaces and clean only the
+retained owned candidate. This proves actual changed-parent refusal, without
+claiming a fabricated mutable `fpathconf` result or renaming a frozen token.
+
 The Linux native profile campaign also runs independently preseeded existing-copy
 fixtures on an owned ordinary ext4 image and an OverlayFS mount whose lower,
 upper and work directories belong to another owned ext4 image. Root and mirror
-mode0777 deliberately refuse creation policy. Matching, unequal, missing-route and
+mode0777 deliberately refuse creation policy. A separate owner0700 empty
+OverlayFS destination must refuse both Check and Create before any witness,
+mirror, candidate, permission change or flush; it cannot borrow the0777 refusal
+as proof that the profile is unsupported. Matching, unequal, missing-route and
 non-directory replacement cases retain exact before/after namespace, native
 identity, permissions, hashes and CLI receipts. Ordinary ext4 requires actual
 file/endpoint synchronization success. OverlayFS can report an unsupported flush

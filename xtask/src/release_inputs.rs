@@ -261,34 +261,29 @@ fn check_desktop(
             app_root,
         )?;
     }
-    if interaction["publication"]["shipping_bundle_unchanged"] != true {
-        return Err("Publication fixture changed the shipping bundle".into());
+    if interaction["operation_controls"]["shipping_bundle_unchanged"] != true {
+        return Err("Operation-control fixture changed the shipping bundle".into());
     }
-    let cases = interaction["publication"]["cases"]
+    let cases = interaction["operation_controls"]["cases"]
         .as_array()
-        .ok_or("Missing publication cases")?;
-    let expected = [
-        DesktopCase::ActiveQuit,
-        DesktopCase::ForceStop,
-        DesktopCase::PublishedError,
-        DesktopCase::Stop,
-    ];
+        .ok_or("Missing operation-control cases")?;
+    let expected = DesktopCase::controlled_cases();
     let mut observed = BTreeSet::new();
     for value in cases {
         let name = value["case"]
             .as_str()
-            .ok_or("Missing publication case name")?;
+            .ok_or("Missing operation-control case name")?;
         let case = expected
             .iter()
             .find(|case| case.name() == name)
-            .ok_or("Unexpected publication case")?;
+            .ok_or("Unexpected operation-control case")?;
         if !observed.insert(name) {
-            return Err("Duplicate publication case".into());
+            return Err("Duplicate operation-control case".into());
         }
         crate::desktop_evidence::validate_case(value, *case, source, archive, app_root)?;
     }
     if observed != expected.iter().map(|case| case.name()).collect() {
-        return Err("Desktop publication case set differs".into());
+        return Err("Desktop operation-control case set differs".into());
     }
     Ok(())
 }

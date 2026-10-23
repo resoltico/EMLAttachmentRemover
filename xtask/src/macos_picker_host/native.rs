@@ -204,7 +204,21 @@ impl IncidentAdmission {
             monotonic_elapsed_ns: self.deadline.elapsed_ns(monotonic)?,
         })
     }
-    fn revalidate(&self, observer: &Observer<'_>, archive: &Path, reference: &Path) -> Result<()> {
+    fn revalidate(
+        &self,
+        observer: &Observer<'_>,
+        archive: &Path,
+        reference: &Path,
+        out: &Path,
+    ) -> Result<()> {
+        // Each pre-action observation is fresh evidence. The process owner
+        // deliberately refuses to overwrite earlier exclusive output files.
+        fs::create_dir(out)?;
+        let observer = Observer {
+            root: observer.root,
+            build: observer.build,
+            out,
+        };
         require_context(observer.root)?;
         if observer.binding(archive, reference)? != self.binding
             || observer.host(&self.binding.target)? != self.host
@@ -227,7 +241,12 @@ fn prepare_owned(
     crate::picker_evidence::IncidentAdmissionReceipt,
 )> {
     attempt.phase("bootout")?;
-    admission.revalidate(observer, archive, reference)?;
+    admission.revalidate(
+        observer,
+        archive,
+        reference,
+        &observer.out.join("before-bootout"),
+    )?;
     let bootout = observer.action("bootout", admission.caller.uid, || {
         admission.check_clock_policy(observer.root)
     })?;
@@ -242,7 +261,12 @@ fn prepare_owned(
         None
     };
     attempt.phase("disable")?;
-    admission.revalidate(observer, archive, reference)?;
+    admission.revalidate(
+        observer,
+        archive,
+        reference,
+        &observer.out.join("before-disable"),
+    )?;
     let disable = observer.action("disable", admission.caller.uid, || {
         admission.check_clock_policy(observer.root)
     })?;

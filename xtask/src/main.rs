@@ -24,10 +24,10 @@ mod macos_icon;
 #[cfg(target_os = "macos")]
 mod macos_interaction;
 #[cfg(target_os = "macos")]
+mod macos_operation_ui;
+#[cfg(target_os = "macos")]
 mod macos_panel;
 mod macos_picker_host;
-#[cfg(target_os = "macos")]
-mod macos_publication_ui;
 #[cfg(target_os = "macos")]
 mod macos_volume;
 mod mutants;

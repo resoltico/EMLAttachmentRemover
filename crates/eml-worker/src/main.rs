@@ -1,7 +1,7 @@
 //! Private desktop worker: native request transport and one reusable core run.
 #![forbid(unsafe_code)]
 #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
-mod publication_observation;
+mod operation_observation;
 use eml_core::RunControl;
 use eml_protocol::desktop::{Header, Operation};
 use eml_protocol::{JsonSink, decode_request};
@@ -76,7 +76,10 @@ fn entry() -> u8 {
             );
         }
     };
-    let receiver = match start_request_reader() {
+    let receiver = match start_request_reader(
+        #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+        observation.clone(),
+    ) {
         Ok(receiver) => receiver,
         Err(_) => {
             return pre_stream_failure("Worker could not start request transport", 1, &control);
@@ -101,6 +104,8 @@ fn entry() -> u8 {
         Ok(bytes) => bytes,
         Err(code) => return code,
     };
+    #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+    let observation = observation.filter(|observer| observer.is_selected());
     match header.operation {
         Operation::Processing => execute_request(
             &bytes,
@@ -109,17 +114,22 @@ fn entry() -> u8 {
             #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
             observation,
         ),
-        Operation::Export { destination } => {
-            execute_export(header.operation_id, &bytes, &destination, &control)
-        }
+        Operation::Export { destination } => execute_export(
+            header.operation_id,
+            &bytes,
+            &destination,
+            &control,
+            #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+            observation,
+        ),
     }
 }
 
 #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
-fn load_observation() -> Result<Option<std::sync::Arc<publication_observation::Observation>>, u8> {
-    publication_observation::load().map_err(|error| {
+fn load_observation() -> Result<Option<std::sync::Arc<operation_observation::Observation>>, u8> {
+    operation_observation::load().map_err(|error| {
         failure(
-            &format!("Nonshipping publication observation refused: {error}"),
+            &format!("Nonshipping operation observation refused: {error}"),
             70,
         )
     })
@@ -139,7 +149,7 @@ fn execute_request(
     working: std::path::PathBuf,
     control: &RunControl,
     #[cfg(all(target_os = "macos", feature = "native-fixtures"))] observation: Option<
-        std::sync::Arc<publication_observation::Observation>,
+        std::sync::Arc<operation_observation::Observation>,
     >,
 ) -> u8 {
     if control.is_stopped() {
@@ -180,6 +190,9 @@ fn execute_export(
     bytes: &[u8],
     destination: &std::path::Path,
     control: &RunControl,
+    #[cfg(all(target_os = "macos", feature = "native-fixtures"))] observation: Option<
+        std::sync::Arc<operation_observation::Observation>,
+    >,
 ) -> u8 {
     if eml_app::report_document::validate(bytes).is_err()
         || eml_app::validate_destination(destination).is_err()
@@ -192,6 +205,15 @@ fn execute_export(
     }
     #[cfg(target_os = "macos")]
     {
+        #[cfg(feature = "native-fixtures")]
+        let outcome = if let Some(observation) = observation {
+            eml_app::export_report_observed(bytes, destination, control, |phase| {
+                observation.observe(phase)
+            })
+        } else {
+            eml_app::export_report(bytes, destination, control)
+        };
+        #[cfg(not(feature = "native-fixtures"))]
         let outcome = eml_app::export_report(bytes, destination, control);
         let receipt = match outcome
             .receipt(operation_id)
@@ -257,7 +279,7 @@ fn install_termination_handler(
     >,
     #[cfg(target_os = "macos")] handler_ready: std::sync::Arc<std::sync::atomic::AtomicBool>,
     #[cfg(all(target_os = "macos", feature = "native-fixtures"))] signal_observation: Option<
-        std::sync::Arc<publication_observation::Observation>,
+        std::sync::Arc<operation_observation::Observation>,
     >,
 ) -> Result<(), ctrlc::Error> {
     let stopped = control.clone();
@@ -296,7 +318,11 @@ fn install_termination_handler(
 
 type RequestReceiver = mpsc::Receiver<io::Result<(Header, Vec<u8>)>>;
 
-fn start_request_reader() -> io::Result<RequestReceiver> {
+fn start_request_reader(
+    #[cfg(all(target_os = "macos", feature = "native-fixtures"))] observation: Option<
+        std::sync::Arc<operation_observation::Observation>,
+    >,
+) -> io::Result<RequestReceiver> {
     // This single transport reader never processes messages or publishes copies.
     // A blocked OS read is not joined after cancellation: this isolated process
     // exits, terminating its reader, and the desktop owner observes actual reap.
@@ -304,6 +330,15 @@ fn start_request_reader() -> io::Result<RequestReceiver> {
     std::thread::Builder::new()
         .name("desktop-request".into())
         .spawn(move || {
+            #[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+            let result =
+                eml_protocol::desktop::read_operation_observed(io::stdin().lock(), |header| {
+                    if let Some(observation) = &observation {
+                        observation.select(&header.operation, header.operation_id);
+                        observation.request_body();
+                    }
+                });
+            #[cfg(not(all(target_os = "macos", feature = "native-fixtures")))]
             let result = eml_protocol::desktop::read_operation(io::stdin().lock());
             drop(sender.send(result));
         })?;

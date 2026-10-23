@@ -125,3 +125,99 @@ fn accepted_receipt_survives_later_stdout_corruption_without_clean_completion() 
     assert!(!complete);
     assert!(decode_receipt(bad.as_bytes(), id).is_err());
 }
+
+#[test]
+fn export_success_rejects_contradictory_codes_and_preserves_limited_sync() {
+    let text = r#"{"operation_id":8,"publication":"published","file_sync":{"method":"fsync","state":"succeeded","native_code":null},"namespace_sync":{"method":"fsync","state":"succeeded","native_code":null},"address_verified":true,"candidate_identity":{"kind":"posix","value":"1:2"},"final_file_verified":true,"cleanup":{"state":"complete","residual_name":null,"native_code":null},"failures":[]}"#;
+    let id = OperationId::new(8).unwrap();
+    for edge in ["file_sync", "namespace_sync"] {
+        for (method, code, accepted) in [
+            ("fsync", Some(5), false),
+            ("fsync", Some(0), false),
+            ("fsync_fullfsync_unsupported", None, false),
+            ("fsync_fullfsync_unsupported", Some(5), false),
+            ("fsync_fullfsync_unsupported", Some(22), true),
+            ("fsync_fullfsync_unsupported", Some(45), true),
+            ("fsync_fullfsync_unsupported", Some(102), true),
+        ] {
+            let mut fields: serde_json::Value = serde_json::from_str(text).unwrap();
+            fields[edge]["method"] = method.into();
+            fields[edge]["native_code"] = serde_json::json!(code);
+            let bytes = serde_json::to_vec(&fields).unwrap();
+            let raw: ExportReceipt = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(raw.qualified(), accepted);
+            assert_eq!(decode_receipt(&bytes, id).is_ok(), accepted);
+        }
+    }
+    // Export retains its separate policy: an explicitly unsupported request is
+    // usable with the actual limitation shown, not full durability.
+    let unsupported = text.replace(
+        "\"state\":\"succeeded\",\"native_code\":null",
+        "\"state\":\"unsupported\",\"native_code\":95",
+    );
+    assert!(
+        decode_receipt(unsupported.as_bytes(), id)
+            .unwrap()
+            .qualified()
+    );
+}
+
+#[cfg(feature = "native-fixtures")]
+#[test]
+fn observed_header_boundary_uses_the_strict_codec_before_any_body_read() {
+    use std::{
+        cell::Cell,
+        io::{self, Read},
+    };
+    let header = r#"{"operation_id":57,"operation":"processing"}"#;
+    let bytes = envelope(header, b"authored-body");
+    let boundary = MAGIC.len() + 4 + header.len();
+    let reached = Cell::new(false);
+    struct Checked<'a> {
+        bytes: &'a [u8],
+        offset: usize,
+        boundary: usize,
+        reached: &'a Cell<bool>,
+    }
+    impl Read for Checked<'_> {
+        fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+            if self.offset >= self.boundary {
+                assert!(
+                    self.reached.get(),
+                    "Body read preceded validated-header observation"
+                );
+            }
+            let count = out.len().min(self.bytes.len() - self.offset);
+            out[..count].copy_from_slice(&self.bytes[self.offset..self.offset + count]);
+            self.offset += count;
+            Ok(count)
+        }
+    }
+    let reader = Checked {
+        bytes: &bytes,
+        offset: 0,
+        boundary,
+        reached: &reached,
+    };
+    let (_, body) = read_operation_observed(reader, |accepted| {
+        assert_eq!(accepted.operation_id.get(), 57);
+        assert_eq!(accepted.operation, Operation::Processing);
+        assert!(!reached.replace(true));
+    })
+    .unwrap();
+    assert_eq!(body, b"authored-body");
+    let mut calls = 0;
+    assert!(
+        read_operation_observed(
+            envelope(r#"{"operation_id":0,"operation":"processing"}"#, b"{}").as_slice(),
+            |_| calls += 1
+        )
+        .is_err()
+    );
+    assert_eq!(calls, 0);
+    assert!(read_operation_observed(&bytes[..boundary], |_| calls += 1).is_err());
+    assert_eq!(
+        calls, 1,
+        "A valid observed header never excuses a truncated body"
+    );
+}

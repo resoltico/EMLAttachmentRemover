@@ -489,8 +489,8 @@ fn validate_sync(
     if (state == Synchronization::NotAttempted) != (method == SynchronizationMethod::NotRequested)
         || (state == Synchronization::NotAttempted && code.is_some())
         || (state == Synchronization::Succeeded
-            && code.is_some()
-            && method != SynchronizationMethod::FsyncFullfsyncUnsupported)
+            && !eml_protocol::meaning::synchronization_receipt(method, state, code.copied())
+                .is_some_and(eml_core::SyncReceipt::succeeded))
     {
         Err(ProtocolFailure::InvalidReceipt)
     } else {

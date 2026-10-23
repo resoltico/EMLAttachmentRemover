@@ -635,11 +635,11 @@ fn verify_snapshot(
             DesktopCase::Pagination,
             &source_archive,
         )?;
-        let publication = crate::macos_publication_ui::run(
+        let operation_controls = crate::macos_operation_ui::run(
             root,
             &app,
             build,
-            &out.join("gui-publication"),
+            &out.join("gui-operation-controls"),
             &source_archive,
         )?;
         // Native Settings changes belong to the final phase on this disposable
@@ -653,7 +653,7 @@ fn verify_snapshot(
             &source_archive,
         )?;
         verification["gui_startup"] = gui;
-        verification["gui_interaction"] = json!({"workflow":workflow,"pagination":pagination,"publication":publication,"appearance":appearance});
+        verification["gui_interaction"] = json!({"workflow":workflow,"pagination":pagination,"operation_controls":operation_controls,"appearance":appearance});
     } else if checks == AppChecks::Picker {
         verification["gui_startup"] = gui_startup(root, &app, build, &out.join("gui-startup"))?;
         verification["picker"] = crate::macos_interaction::run_case(

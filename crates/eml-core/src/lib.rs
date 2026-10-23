@@ -25,7 +25,7 @@ pub use outcome::{
     ReportPath, RunOutcome, RunStart, UnknownPublication,
 };
 #[cfg(any(test, feature = "native-fixtures"))]
-pub use run::PublicationObservation;
+pub use run::OperationObservation;
 #[cfg(feature = "native-fixtures")]
 pub use run::run_observed;
 #[cfg(any(unix, windows))]

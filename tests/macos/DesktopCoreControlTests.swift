@@ -94,7 +94,10 @@ extension DesktopInteractionTests {
       paths, withApplicationAt: appURL, configuration: delivery)
     guard delivered.processIdentifier == pid else { throw InteractionFailure.expectedPresentation }
     try await requireObservation(
-      observation.appendingPathComponent("ready"), prefix: "real publication boundary\n")
+      observation.appendingPathComponent("ready"),
+      prefix:
+        "operation=processing phase=\(scenario == "published-error" ? "after-publication" : "publication") index=\(scenario == "published-error" ? 0 : 1) operation_id="
+    )
 
     return CoreControlSession(
       fixture: fixture, observation: observation, appURL: appURL, originals: originals,

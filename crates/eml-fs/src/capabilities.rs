@@ -74,6 +74,17 @@ impl CreationDirectory {
     ) -> Result<crate::ReadyCandidate, crate::StageFailure> {
         self.directory.stage_bytes(bytes, checkpoint)
     }
+    /// Execute the same staging engine with finite nonshipping boundary observations.
+    #[cfg(feature = "native-fixtures")]
+    pub fn stage_bytes_observed(
+        &self,
+        bytes: &[u8],
+        checkpoint: impl FnMut() -> io::Result<()>,
+        observer: impl FnMut(crate::StoragePhase),
+    ) -> Result<crate::ReadyCandidate, crate::StageFailure> {
+        self.directory
+            .stage_bytes_observed(bytes, checkpoint, observer)
+    }
     /// Synchronize the exact held parent's namespace.
     pub fn sync_namespace(&self) -> SyncReceipt {
         self.directory.sync_namespace()

@@ -25,6 +25,8 @@ pub use eml_fs::PublicationState;
 pub use export::{
     ReportExportFailure, ReportExportOutcome, ReportExportStage, TerminalReport, export_report,
 };
+#[cfg(all(target_os = "macos", feature = "native-fixtures"))]
+pub use export::{StoragePhase, export_report_observed};
 pub use framing::{FrameError, FrameSplitter};
 pub use queue::{MAX_WAITING_REQUESTS, QueueError, RequestSnapshot, RunId, RunQueue};
 pub use report::{ProtocolFailure, RunReport};

@@ -139,7 +139,8 @@ archives. Producer verification ends after extraction, structure, signature,
 CPU/minimum policy, actual Core-backed worker and unchanged-bundle checks; its
 `native_candidate` receipt contains no successful/default GUI fields.
 `smoke-macos-app` on each macOS15 consumer requires the full workflow, pagination,
-real-Core publication/lifecycle cases and final appearance checks before emitting
+finite controlled processing/export I/O and lifecycle cases, export publication
+controls, report-writer backpressure and final appearance checks before emitting
 `desktop_qualification`. Appearance changes use the owned native Settings controls,
 with explicit contrast/transparency values before, during and after the scenario.
 The retained Settings process is navigated through its native View commands and
@@ -393,7 +394,11 @@ for scheduled results.
 
 Each native CLI qualifier runs the frozen shipping bytes through finite owned-volume naming fixtures. Linux uses exclusive loop images for ext2/3/4, ext4 casefold, XFS, XFS ASCII-CI and Btrfs, plus an owned tmpfs mount. It separately tests existing-only behavior on ordinary ext4 and an owned OverlayFS whose backing storage is another exclusive ext4 image. The workflow installs the filesystem utilities and records their package versions. Both Linux CPUs require actual execution; a missing formatter, unavailable kernel feature, mount failure or unsettled cleanup remains an unqualified profile.
 
-macOS uses exclusive APFS and HFS+ images in both observed case modes. Windows uses an exclusive NTFS image and both per-directory case modes with volume-scoped 8.3 creation. These fixtures never change an existing volume's settings. Every naming profile checks independent complete-route tokens and bytes, native source/destination expressions, ordinary entry identities, permission/ownership inventories, Check, Create, reversed repeat and a fresh reversed layout. Actual normalization and mirror coalescing are observed through identities, without a second normalization policy. Missing profiles and cleanup uncertainty fail completeness; a workspace filesystem or another CPU cannot substitute.
+macOS uses exclusive APFS and HFS+ images in both observed case modes. Windows uses an exclusive NTFS image and both per-directory case modes with volume-scoped 8.3 creation. The Linux OverlayFS fixture additionally refuses new-name Check/Create on a
+separate empty owner-private destination, retaining native before/after identities,
+mode and modification/change timestamps. This refusal control is independent of
+the permissive directories used to challenge existing-only capabilities.
+These fixtures never change an existing volume's settings. NTFS evidence records long/short path identity for every generated entry and actual case flags for every generated directory. The configured destination mode must remain stable; descendant modes are observed rather than assumed to inherit. Every naming profile checks independent complete-route tokens and bytes, native source/destination expressions, ordinary entry identities, permission/ownership inventories, Check, Create, reversed repeat and a fresh reversed layout. Actual normalization and mirror coalescing are observed through identities, without a second normalization policy. Missing profiles and cleanup uncertainty fail completeness; a workspace filesystem or another CPU cannot substitute.
 
 The `name-profiles` records and raw transcripts are retained with the native candidate. Product failure and unavailable prerequisites remain failures. Independently runnable resource and app work continues when the process controller still admits work; the qualifier preserves every failed required gate and returns failure.
 

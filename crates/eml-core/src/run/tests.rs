@@ -249,11 +249,14 @@ fn controlled_stop_before_and_after_the_real_edge_preserves_actual_effect() {
         let mut context = RunContext::new(plan.sources());
         let signal = control.clone();
         let hook = Box::new(move || signal.request_stop());
-        if after {
-            context.after_edge = Some(hook);
-        } else {
-            context.before_edge = Some(hook);
-        }
+        context.observation = once_at(
+            if after {
+                eml_fs::StoragePhase::AfterPublication
+            } else {
+                eml_fs::StoragePhase::Publication
+            },
+            hook,
+        );
         let result = execute_prepared(&plan, 0, &source, &mut context, &control);
         assert!(control.is_stopped());
         if after {
@@ -328,11 +331,14 @@ fn controlled_source_change_before_and_after_edge_keeps_publication_truth() {
         let hook = Box::new(move || {
             fs::write(changed, b"controlled changed owned source").unwrap();
         });
-        if after {
-            context.after_edge = Some(hook);
-        } else {
-            context.before_edge = Some(hook);
-        }
+        context.observation = once_at(
+            if after {
+                eml_fs::StoragePhase::AfterPublication
+            } else {
+                eml_fs::StoragePhase::Publication
+            },
+            hook,
+        );
         let result = execute_prepared(&plan, 0, &source, &mut context, &control);
         let ItemResult::Failed(failure) = &result else {
             panic!("Changed source qualified: {result:?}");
@@ -397,10 +403,13 @@ fn controlled_requested_output_move_after_edge_keeps_complete_published_copy() {
         bind_source(&plan, 0, &control).unwrap_or_else(|error| panic!("Source failed: {error:?}"));
     let mut context = RunContext::new(plan.sources());
     let (from, to) = (output.clone(), moved.clone());
-    context.after_edge = Some(Box::new(move || {
-        fs::rename(&from, &to).unwrap();
-        fs::create_dir(from).unwrap();
-    }));
+    context.observation = once_at(
+        eml_fs::StoragePhase::AfterPublication,
+        Box::new(move || {
+            fs::rename(&from, &to).unwrap();
+            fs::create_dir(from).unwrap();
+        }),
+    );
     let result = execute_prepared(&plan, 0, &source, &mut context, &control);
     let ItemResult::Failed(failure) = &result else {
         panic!("Moved address qualified: {result:?}");
@@ -591,4 +600,18 @@ fn matching_existing_copy_pays_known_current_run_mirror_debt_without_creation_ad
         }
         fs::set_permissions(root.path().join("out"), fs::Permissions::from_mode(0o700)).unwrap();
     }
+}
+
+fn once_at(
+    phase: eml_fs::StoragePhase,
+    action: Box<dyn FnOnce()>,
+) -> Option<Box<dyn FnMut(eml_fs::StoragePhase)>> {
+    let mut action = Some(action);
+    Some(Box::new(move |observed| {
+        if observed == phase
+            && let Some(action) = action.take()
+        {
+            action();
+        }
+    }))
 }

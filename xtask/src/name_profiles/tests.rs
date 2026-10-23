@@ -410,3 +410,154 @@ fn remove_member(value: &mut Value, pointer: &str) {
         "test must actually omit {pointer}"
     );
 }
+
+#[test]
+fn windows_generated_case_and_short_spelling_records_are_complete_without_inheritance_assumptions()
+{
+    let image = ByteIdentity::of(b"owned shipping executable");
+    let target = platform(OsFamily::Windows);
+    let mut baseline = valid_fixture("owned-source", &image, OsFamily::Windows);
+    // An observed generated directory may differ from its configured destination.
+    // This fixture also records a file with a distinct short spelling and one with
+    // no distinct alias; both must resolve to their own exact long-path identity.
+    let sensitive = &mut baseline["observations"]["profiles"][1];
+    sensitive["native_entries"][16]["case_sensitive"] = json!(false);
+    sensitive["native_entries"][0]["short_path"] = json!("R:\\EMLQUA~1\\DESTIN~1\\COPY-1");
+    assert_eq!(sensitive["volume"]["case"]["destination_before"], true);
+    assert_eq!(sensitive["source_case_sensitive"], false);
+    validate(&baseline, "owned-source", &image, target).unwrap();
+    for pointer in [
+        "/observations/profiles/1/native_entries",
+        "/observations/profiles/1/native_entries/16/case_sensitive",
+        "/observations/profiles/1/native_entries/0/short_identity",
+        "/observations/profiles/1/native_entries/0/long_path",
+        "/observations/profiles/1/source_case_sensitive",
+        "/observations/profiles/1/volume/case/destination_before",
+        "/observations/profiles/1/volume/case/destination_after",
+    ] {
+        let mut bad = baseline.clone();
+        remove_member(&mut bad, pointer);
+        assert!(
+            validate(&bad, "owned-source", &image, target).is_err(),
+            "missing {pointer}"
+        );
+    }
+    for (pointer, contradiction) in [
+        (
+            "/observations/profiles/1/native_entries/16/case_sensitive",
+            Value::Null,
+        ),
+        (
+            "/observations/profiles/1/native_entries/16/case_sensitive",
+            json!("inherited"),
+        ),
+        (
+            "/observations/profiles/1/native_entries/0/case_sensitive",
+            json!(false),
+        ),
+        (
+            "/observations/profiles/1/native_entries/0/short_identity",
+            json!("00000000000004d2:ffffffffffffffffffffffffffffffff"),
+        ),
+        (
+            "/observations/profiles/1/native_entries/0/short_path",
+            json!("S:\\OTHER~1\\COPY-1"),
+        ),
+        (
+            "/observations/profiles/1/native_entries/0/long_path",
+            json!("R:\\outside\\copy-1"),
+        ),
+        (
+            "/observations/profiles/1/native_entries/0/relative",
+            json!("unexpected-copy"),
+        ),
+        (
+            "/observations/profiles/1/source_case_sensitive",
+            Value::Null,
+        ),
+        (
+            "/observations/profiles/1/volume/case/destination_after",
+            json!(false),
+        ),
+    ] {
+        let mut bad = baseline.clone();
+        *bad.pointer_mut(pointer).unwrap() = contradiction;
+        assert!(
+            validate(&bad, "owned-source", &image, target).is_err(),
+            "{pointer}"
+        );
+    }
+    for mutation in ["missing", "duplicate", "merged-identity"] {
+        let mut bad = baseline.clone();
+        let entries = bad["observations"]["profiles"][1]["native_entries"]
+            .as_array_mut()
+            .unwrap();
+        match mutation {
+            "missing" => {
+                entries.pop();
+            }
+            "duplicate" => {
+                entries.push(entries[0].clone());
+            }
+            "merged-identity" => {
+                entries[1]["long_identity"] = entries[0]["long_identity"].clone();
+                entries[1]["short_identity"] = entries[0]["short_identity"].clone();
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            validate(&bad, "owned-source", &image, target).is_err(),
+            "{mutation}"
+        );
+    }
+}
+
+#[test]
+fn unsupported_linux_new_names_refuse_independently_of_unsafe_creation_modes() {
+    let image = ByteIdentity::of(b"owned shipping executable");
+    let target = platform(OsFamily::Linux);
+    let complete = valid_fixture("owned-source", &image, OsFamily::Linux);
+    validate(&complete, "owned-source", &image, target).unwrap();
+    let base = "/observations/existing_profiles/1/behavior/unsupported_new_name";
+    for (suffix, replacement) in [
+        ("passed", json!(false)),
+        ("profile", json!("ext4")),
+        ("destination_mode", json!(511)),
+        ("owner_uid", json!(1002)),
+        ("runs/0/before/0/mode", json!(511)),
+        ("runs/0/after/0/mtime_ns", json!(101)),
+        ("runs/0/after/0/ctime_ns", json!(101)),
+        (
+            "runs/0/item/existing_observation",
+            json!({"bytes_equal":true}),
+        ),
+        (
+            "runs/0/item/publication/file_sync/state",
+            json!("succeeded"),
+        ),
+        (
+            "runs/1/item/publication/namespace_sync/required_edges",
+            json!(1),
+        ),
+        ("runs/1/item/error/code", json!("DESTINATION_UNSAFE")),
+        ("runs/1/exit_code", json!(0)),
+        ("runs/1/mode", json!("check")),
+    ] {
+        let mut bad = complete.clone();
+        let pointer = format!("{base}/{suffix}");
+        *bad.pointer_mut(&pointer).unwrap() = replacement;
+        assert!(
+            validate(&bad, "owned-source", &image, target).is_err(),
+            "{pointer}"
+        );
+    }
+    for suffix in [
+        "",
+        "/runs/0/item/existing_observation",
+        "/runs/1/item/publication/file_sync/native_code",
+    ] {
+        let mut bad = complete.clone();
+        remove_member(&mut bad, &format!("{base}{suffix}"));
+        assert!(validate(&bad, "owned-source", &image, target).is_err());
+    }
+}

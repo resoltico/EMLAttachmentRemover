@@ -1,7 +1,7 @@
 //! Complete owned file storage, consumed separately by the physical rename edge.
 use super::creation::{Creation, CreationDirectory, flush};
 use crate::{
-    CleanupReceipt, CleanupState, Identity, StageFailure, StageOperation, SyncReceipt, SyncState,
+    CleanupReceipt, CleanupState, Identity, StageFailure, StageOperation, SyncReceipt,
     staging::{NAME_ATTEMPTS, random_name},
 };
 use std::{
@@ -70,11 +70,38 @@ impl CreationDirectory {
     ) -> Result<ReadyCandidate, StageFailure> {
         self.stage_with_names(bytes, checkpoint, random_name)
     }
+    /// Execute the same staging engine with finite nonshipping boundary observations.
+    #[cfg(feature = "native-fixtures")]
+    pub fn stage_bytes_observed(
+        &self,
+        bytes: &[u8],
+        checkpoint: impl FnMut() -> io::Result<()>,
+        mut observer: impl FnMut(crate::StoragePhase),
+    ) -> Result<ReadyCandidate, StageFailure> {
+        self.stage_inner(bytes, checkpoint, random_name, Some(&mut observer))
+    }
     fn stage_with_names(
+        &self,
+        bytes: &[u8],
+        checkpoint: impl FnMut() -> io::Result<()>,
+        next_name: impl FnMut() -> io::Result<OsString>,
+    ) -> Result<ReadyCandidate, StageFailure> {
+        self.stage_inner(
+            bytes,
+            checkpoint,
+            next_name,
+            #[cfg(any(test, feature = "native-fixtures"))]
+            None,
+        )
+    }
+    fn stage_inner(
         &self,
         bytes: &[u8],
         mut checkpoint: impl FnMut() -> io::Result<()>,
         mut next_name: impl FnMut() -> io::Result<OsString>,
+        #[cfg(any(test, feature = "native-fixtures"))] mut observer: Option<
+            &mut dyn FnMut(crate::StoragePhase),
+        >,
     ) -> Result<ReadyCandidate, StageFailure> {
         let mut last_collision = None;
         let mut admitted = None;
@@ -102,6 +129,10 @@ impl CreationDirectory {
         let mut sync = None;
         let mut written = 0u64;
         let result = (|| -> io::Result<()> {
+            #[cfg(any(test, feature = "native-fixtures"))]
+            if let Some(observe) = observer.as_mut() {
+                observe(crate::StoragePhase::StageWrite);
+            }
             for chunk in bytes.chunks(64 * 1024) {
                 let mut remaining = chunk;
                 while !remaining.is_empty() {
@@ -130,10 +161,14 @@ impl CreationDirectory {
             reread_verified_bytes(&mut owned.file, bytes, &mut checkpoint)?;
             owned.validate_file(identity, bytes.len() as u64)?;
             operation = StageOperation::Sync;
+            #[cfg(any(test, feature = "native-fixtures"))]
+            if let Some(observe) = observer.as_mut() {
+                observe(crate::StoragePhase::FileSync);
+            }
             checkpoint()?;
             let receipt = flush(&owned.file);
             sync = Some(receipt);
-            if receipt.state != SyncState::Succeeded {
+            if !receipt.succeeded() {
                 return Err(io::Error::other(
                     "Candidate file synchronization did not succeed",
                 ));
@@ -246,6 +281,7 @@ mod tests {
         test_fixture::{directory, operation},
     };
     use super::*;
+    use crate::SyncState;
     use crate::{BoundDirectory, NtStatusError, SyncMethod};
     use std::{cell::Cell, os::windows::fs::FileExt};
 

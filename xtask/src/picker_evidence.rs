@@ -336,7 +336,7 @@ fn hex(value: &str, length: usize) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn byte_identity(id: &ByteIdentity) -> Result<()> {
+pub(crate) fn byte_identity(id: &ByteIdentity) -> Result<()> {
     require(
         id.byte_length > 0 && hex(&id.sha256, 64),
         "Invalid exact byte identity",

@@ -109,9 +109,7 @@ pub struct CreatedCopy(PublishedCopy);
 impl CreatedCopy {
     pub(super) fn qualify(publication: PublishedCopy) -> Result<Self, Box<PublishedCopy>> {
         if publication.address == AddressState::Verified
-            && publication
-                .file_sync
-                .is_some_and(|receipt| receipt.state == eml_fs::SyncState::Succeeded)
+            && publication.file_sync.is_some_and(SyncReceipt::succeeded)
             && namespace_qualified(publication.namespace_sync)
             && matches!(
                 publication.cleanup.state,
@@ -139,9 +137,7 @@ impl ExistingCopy {
             && observation.bytes_equal == Some(true)
             && observation.stable
             && observation.address == AddressState::Verified
-            && observation
-                .file_sync
-                .is_some_and(|receipt| receipt.state == eml_fs::SyncState::Succeeded)
+            && observation.file_sync.is_some_and(SyncReceipt::succeeded)
             && namespace_qualified(observation.namespace_sync)
         {
             Ok(Self(observation))
@@ -205,9 +201,7 @@ fn namespace_qualified(namespace: NamespaceObservation) -> bool {
         && namespace.required_edges <= 513
         && namespace.completed_edges == namespace.required_edges
         && namespace.failed_edge_index.is_none()
-        && namespace
-            .receipt
-            .is_some_and(|receipt| receipt.state == eml_fs::SyncState::Succeeded)
+        && namespace.receipt.is_some_and(SyncReceipt::succeeded)
 }
 /// Publication effect for a failed item, independent of its intended destination.
 #[derive(Debug)]
@@ -529,7 +523,7 @@ mod tests {
     #[test]
     fn publication_evidence_cannot_qualify_created_with_missing_or_failed_requirements() {
         assert!(CreatedCopy::qualify(published()).is_ok());
-        for missing in 0..6 {
+        for missing in 0..8 {
             let mut publication = published();
             match missing {
                 0 => publication.address = AddressState::Unknown,
@@ -537,7 +531,16 @@ mod tests {
                 2 => publication.namespace_sync.completed_edges = 0,
                 3 => publication.namespace_sync.receipt = None,
                 4 => publication.cleanup.state = eml_fs::CleanupState::Residual,
-                _ => publication.cleanup.native_code = Some(5),
+                5 => publication.cleanup.native_code = Some(5),
+                6 => publication.file_sync.as_mut().unwrap().native_code = Some(5),
+                _ => {
+                    publication
+                        .namespace_sync
+                        .receipt
+                        .as_mut()
+                        .unwrap()
+                        .native_code = Some(5)
+                }
             }
             assert!(CreatedCopy::qualify(publication).is_err());
         }
@@ -568,7 +571,7 @@ mod tests {
             namespace_sync: complete_namespace(),
         };
         assert!(ExistingCopy::qualify(observed.clone()).is_ok());
-        for missing in 0..9 {
+        for missing in 0..11 {
             let mut copy = observed.clone();
             match missing {
                 0 => copy.bytes_equal = None,
@@ -579,6 +582,8 @@ mod tests {
                 5 => copy.namespace_sync.required_edges = 0,
                 6 => copy.identity = None,
                 7 => copy.bytes_equal = Some(false),
+                9 => copy.file_sync.as_mut().unwrap().native_code = Some(5),
+                10 => copy.namespace_sync.receipt.as_mut().unwrap().native_code = Some(5),
                 _ => {
                     copy.namespace_sync.required_edges = 514;
                     copy.namespace_sync.completed_edges = 514;

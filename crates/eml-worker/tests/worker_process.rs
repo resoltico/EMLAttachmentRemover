@@ -211,7 +211,7 @@ fn fixture_configuration_is_ignored_by_identity_probe_and_invalid_processing_fai
         let mut command = Command::new(BIN);
         command
             .current_dir(root.path())
-            .env("EML_PUBLICATION_OBSERVATION", &missing);
+            .env("EML_OPERATION_OBSERVATION", &missing);
         if version {
             command.arg("--version");
         }
@@ -230,7 +230,7 @@ fn fixture_configuration_is_ignored_by_identity_probe_and_invalid_processing_fai
         } else {
             assert!(output.stdout.is_empty());
             assert!(
-                String::from_utf8_lossy(&output.stderr).contains("publication observation refused")
+                String::from_utf8_lossy(&output.stderr).contains("operation observation refused")
             );
         }
     }
@@ -239,7 +239,7 @@ fn fixture_configuration_is_ignored_by_identity_probe_and_invalid_processing_fai
 
 #[cfg(all(target_os = "macos", not(feature = "native-fixtures")))]
 #[test]
-fn shipping_worker_ignores_publication_observation_configuration() {
+fn shipping_worker_ignores_operation_observation_configuration() {
     let root = root();
     let source = root.path().join("message.eml");
     fs::write(&source, INPUT).unwrap();
@@ -249,7 +249,7 @@ fn shipping_worker_ignores_publication_observation_configuration() {
         let mut command = Command::new(BIN);
         command
             .current_dir(root.path())
-            .env("EML_PUBLICATION_OBSERVATION", &missing);
+            .env("EML_OPERATION_OBSERVATION", &missing);
         if version {
             command.arg("--version");
         }
@@ -287,18 +287,22 @@ fn observed_worker_processes_real_message_and_reports_real_post_publication_addr
     fs::create_dir(&observation).unwrap();
     fs::set_permissions(&observation, fs::Permissions::from_mode(0o700)).unwrap();
     let observation = observation.canonicalize().unwrap();
-    fs::write(observation.join("observation"), b"after:0\n").unwrap();
+    fs::write(
+        observation.join("observation"),
+        b"processing:after-publication:0\n",
+    )
+    .unwrap();
     let request =
         eml_app::RequestSnapshot::new(vec![source.clone()], Some(destination.clone())).unwrap();
     let mut command = Command::new(BIN);
     command
         .current_dir(root.path())
-        .env("EML_PUBLICATION_OBSERVATION", &observation);
+        .env("EML_OPERATION_OBSERVATION", &observation);
     let output = thread::scope(|scope| {
         let actor = scope.spawn(|| {
             let deadline = Instant::now() + Duration::from_secs(10);
             while fs::read(observation.join("ready")).ok().as_deref()
-                != Some(b"real publication boundary\n")
+                != Some(b"operation=processing phase=after-publication index=0 operation_id=1\n")
             {
                 assert!(
                     Instant::now() < deadline,

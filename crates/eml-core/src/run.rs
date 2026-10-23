@@ -23,9 +23,7 @@ struct RunContext {
     pending_layout: crate::binding::PendingLayout,
     admitted_removals: usize,
     #[cfg(any(test, feature = "native-fixtures"))]
-    before_edge: Option<Box<dyn FnOnce()>>,
-    #[cfg(any(test, feature = "native-fixtures"))]
-    after_edge: Option<Box<dyn FnOnce()>>,
+    observation: Option<Box<dyn FnMut(eml_fs::StoragePhase)>>,
     #[cfg(all(test, windows))]
     before_sync_reopen: Option<Box<dyn FnOnce()>>,
 }
@@ -37,11 +35,15 @@ impl RunContext {
             pending_layout: crate::binding::PendingLayout::default(),
             admitted_removals: 0,
             #[cfg(any(test, feature = "native-fixtures"))]
-            before_edge: None,
-            #[cfg(any(test, feature = "native-fixtures"))]
-            after_edge: None,
+            observation: None,
             #[cfg(all(test, windows))]
             before_sync_reopen: None,
+        }
+    }
+    #[cfg(any(test, feature = "native-fixtures"))]
+    fn observe(&mut self, phase: eml_fs::StoragePhase) {
+        if let Some(observe) = self.observation.as_mut() {
+            observe(phase);
         }
     }
 }
@@ -213,15 +215,9 @@ fn execute_prepared<'a>(
         Ok(data) => data,
         Err(error) => return ItemResult::Failed(error),
     };
-    let inspection = match inspect_existing(
-        plan,
-        index,
-        source,
-        &context.source_ids,
-        &context.output_candidates,
-        control,
-        data,
-    ) {
+    #[cfg(any(test, feature = "native-fixtures"))]
+    context.observe(eml_fs::StoragePhase::Preflight);
+    let inspection = match inspect_existing(plan, index, source, context, control, data) {
         Ok(value) => value,
         Err(error) => return ItemResult::Failed(error),
     };
@@ -323,25 +319,24 @@ pub fn run(
     )
 }
 
-/// Nonshipping synchronization around an actual selected item's publication.
+/// Nonshipping synchronization around finite actual selected-item storage boundaries.
 /// Hooks observe real operations; they supply no replacement events or receipts.
 #[cfg(any(test, feature = "native-fixtures"))]
-pub struct PublicationObservation {
-    /// Zero-based collected item whose publication is observed.
+pub struct OperationObservation {
+    /// Zero-based collected item whose storage operation is observed.
     pub item_index: usize,
-    /// After real candidate preparation, before the final publication guards.
-    pub before: Option<Box<dyn FnOnce()>>,
-    /// After the native publication attempt, before independent qualification.
-    pub after: Option<Box<dyn FnOnce()>>,
+    /// Invoked at actual operation boundaries; never replaces a result or receipt.
+    pub callback: Box<dyn FnMut(eml_fs::StoragePhase)>,
 }
 
-/// Execute the same real engine with nonshipping publication synchronization.
+/// Execute the same real engine with nonshipping storage synchronization.
+/// DryRun performs its usual read-only engine without invoking observations.
 #[cfg(feature = "native-fixtures")]
 pub fn run_observed(
     request: &RunRequest,
     control: &RunControl,
     sink: &mut impl EventSink,
-    observation: PublicationObservation,
+    observation: OperationObservation,
 ) -> Result<RunOutcome, InvalidRequest> {
     run_inner(request, control, sink, Some(observation))
 }
@@ -350,7 +345,7 @@ fn run_inner(
     request: &RunRequest,
     control: &RunControl,
     sink: &mut impl EventSink,
-    #[cfg(any(test, feature = "native-fixtures"))] mut observation: Option<PublicationObservation>,
+    #[cfg(any(test, feature = "native-fixtures"))] mut observation: Option<OperationObservation>,
 ) -> Result<RunOutcome, InvalidRequest> {
     let sources = collect_sources(request, control)?;
     let plan = plan_destinations(sources, control);
@@ -382,17 +377,16 @@ fn run_inner(
         {
             // A refused/preparation-failed item must not carry its unused
             // publication observation into a later, publishable item.
-            context.before_edge = None;
-            context.after_edge = None;
+            context.observation = None;
         }
         #[cfg(any(test, feature = "native-fixtures"))]
-        if observation
-            .as_ref()
-            .is_some_and(|hook| hook.item_index == index)
+        if request.mode == RunMode::Create
+            && observation
+                .as_ref()
+                .is_some_and(|hook| hook.item_index == index)
         {
-            let hook = observation.take().expect("matched publication observation");
-            context.before_edge = hook.before;
-            context.after_edge = hook.after;
+            let hook = observation.take().expect("matched storage observation");
+            context.observation = Some(hook.callback);
         }
         if control.is_stopped() {
             outcome.interrupted = true;

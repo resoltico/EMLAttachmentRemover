@@ -158,3 +158,24 @@ impl std::fmt::Display for CreationFailure {
     }
 }
 impl std::error::Error for CreationFailure {}
+
+/// Finite nonshipping observation boundaries around actual native storage operations.
+/// A callback pauses before the operation; it supplies no replacement result.
+#[cfg(any(test, feature = "native-fixtures"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StoragePhase {
+    /// Before destination filesystem admission/read operations.
+    Preflight,
+    /// Before actual held-file byte comparison or readback.
+    Readback,
+    /// Before the first candidate write.
+    StageWrite,
+    /// Before the candidate's actual file synchronization.
+    FileSync,
+    /// Before final guards and the actual no-replace publication attempt.
+    Publication,
+    /// Before actual destination namespace synchronization.
+    NamespaceSync,
+    /// After the actual publication attempt, before independent qualification.
+    AfterPublication,
+}

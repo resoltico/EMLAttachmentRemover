@@ -217,7 +217,8 @@ extension DesktopInteractionTests {
     let golden = session.golden
     let original = session.original
     // The external owner moves only this synthetic output. The receipt remains valid
-    // historical evidence, while actual navigation must report its missing path.
+    // historical evidence. Finder navigation is advisory and does not inspect
+    // whether that historical address still names a file.
     let serviceCopy = expectedCopy(for: serviceSource)
     let heldCopy = root.appendingPathComponent("held-service-copy.eml")
     XCTAssertFalse(FileManager.default.fileExists(atPath: heldCopy.path))
@@ -229,9 +230,23 @@ extension DesktopInteractionTests {
       let reveal = app.buttons["Show in Finder"]
       XCTAssertTrue(reveal.isEnabled, "Earlier usable-copy receipt should permit navigation")
       reveal.click()
-      try await requireText(
-        app, containing: "The earlier reported copy is unavailable at that address.")
-      snapshot(app, "finder-missing-copy-reported")
+      // Exercise another actual UI control after dispatch. A returned Finder
+      // request cannot establish current destination presence or absence.
+      let technical = app.checkBoxes["Technical details"]
+      let before = (technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue
+      technical.click()
+      let responsive = NSPredicate { _, _ in
+        let after = (technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue
+        return after != before && reveal.isEnabled
+      }
+      let response = await XCTWaiter.fulfillment(
+        of: [XCTNSPredicateExpectation(predicate: responsive, object: nil)], timeout: 10)
+      guard response == .completed else { throw InteractionFailure.expectedPresentation }
+      technical.click()
+      try await requireRun(
+        app, counts: "1 created · 0 up to date", source: serviceSource,
+        displayedName: session.serviceDisplayName)
+      snapshot(app, "finder-advisory-dispatch-with-retained-copy-facts")
       XCTAssertEqual(try Data(contentsOf: heldCopy), golden)
       XCTAssertEqual(try Data(contentsOf: serviceSource), original)
       try DesktopFixtureRequest.restoreCopy.send()
@@ -252,7 +267,6 @@ extension DesktopInteractionTests {
       throw primaryError
     }
     XCTAssertEqual(try Data(contentsOf: serviceCopy), golden)
-    app.buttons["Dismiss notice"].click()
 
   }
 

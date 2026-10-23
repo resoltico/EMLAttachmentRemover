@@ -86,8 +86,7 @@ pub(super) fn inspect_existing<'a>(
     plan: &DestinationPlan<'_>,
     index: usize,
     source: &'a PreparedSource,
-    ids: &HashSet<Identity>,
-    reserved_outputs: &HashSet<Identity>,
+    context: &mut RunContext,
     control: &RunControl,
     data: MessageMetadata<'a>,
 ) -> Result<Inspection, Box<ItemFailure<'a>>> {
@@ -130,8 +129,16 @@ pub(super) fn inspect_existing<'a>(
         return Ok(Inspection::Missing(frame));
     };
     let initial = Some(observation(entry.identity, None, false));
-    let bound = bind_inspected_existing(&frame, info, entry, ids, reserved_outputs)
-        .map_err(|error| fail(error, initial))?;
+    let bound = bind_inspected_existing(
+        &frame,
+        info,
+        entry,
+        &context.source_ids,
+        &context.output_candidates,
+    )
+    .map_err(|error| fail(error, initial))?;
+    #[cfg(any(test, feature = "native-fixtures"))]
+    context.observe(eml_fs::StoragePhase::Readback);
     let compared = match compare_existing(source, bound, control) {
         Ok(value) => value,
         Err(error) => {
@@ -365,12 +372,16 @@ pub(super) fn resynchronize_item<'a>(
     ) {
         return existing_failure(error, data, observed);
     }
+    #[cfg(any(test, feature = "native-fixtures"))]
+    context.observe(eml_fs::StoragePhase::FileSync);
     if let Err(error) = synchronize_existing_storage(
         &mut binding,
         &compared,
         control,
         &mut observed,
         &mut context.pending_layout,
+        #[cfg(any(test, feature = "native-fixtures"))]
+        &mut context.observation,
     ) {
         return existing_failure(error, data, observed);
     }
@@ -607,11 +618,14 @@ fn synchronize_existing_storage(
     control: &RunControl,
     observed: &mut ExistingObservation,
     pending: &mut crate::binding::PendingLayout,
+    #[cfg(any(test, feature = "native-fixtures"))] observer: &mut Option<
+        Box<dyn FnMut(eml_fs::StoragePhase)>,
+    >,
 ) -> Result<(), OperationFailure> {
     checkpoint(control, ErrorPhase::Existing)?;
     let receipt = compared.sync_file();
     observed.file_sync = Some(receipt);
-    if receipt.state != eml_fs::SyncState::Succeeded {
+    if !receipt.succeeded() {
         return Err(OperationFailure::new(
             ErrorCode::ExistingSyncFailed,
             ErrorPhase::Existing,
@@ -619,6 +633,10 @@ fn synchronize_existing_storage(
         ));
     }
     checkpoint(control, ErrorPhase::Existing)?;
+    #[cfg(any(test, feature = "native-fixtures"))]
+    if let Some(observe) = observer.as_mut() {
+        observe(eml_fs::StoragePhase::NamespaceSync);
+    }
     if let Err(error) = binding.final_sync(pending, control) {
         observed.namespace_sync = binding.namespace();
         return Err(sync_access_error(error));

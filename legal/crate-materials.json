@@ -13058,10 +13058,10 @@
       "sha256": "e811c9092d3f916449a6017a661500810134bcc6ead2521d4cad41b7f0a8b7a3"
     },
     {
-      "bytes": 477,
+      "bytes": 541,
       "kind": "review_input",
       "path": "crates/eml-core/Cargo.toml",
-      "sha256": "6c907f9e93fee371b8a570f9febf5277778130f202edbdb37dbad8a4328fd373"
+      "sha256": "fe1647b2d2b12bedc7661111113c6e6676a7f634cb640fd64aa1626d0d220df4"
     },
     {
       "bytes": 1140,
@@ -13100,16 +13100,16 @@
       "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54"
     },
     {
-      "bytes": 361,
+      "bytes": 394,
       "kind": "review_input",
       "path": "crates/eml-protocol/Cargo.toml",
-      "sha256": "772cf78824d2f36c6763af25dd928bd4299f9f173f2e2acde70e1e37caf115e1"
+      "sha256": "6c7667a991e5aca4bbd8d259ceef338d03d6249d726fbc99dbfdf0d0360529da"
     },
     {
       "path": "crates/eml-app/Cargo.toml",
       "kind": "review_input",
-      "bytes": 552,
-      "sha256": "0fb2b769f732f3c4d8034f853c0aa7a103ae0785bd6718cf7e5388ac1e8986ae"
+      "bytes": 609,
+      "sha256": "e175e17279cf3e65a1c28dd8d10d19f8585ce7dcc5da679c9a8433b2b59a9914"
     },
     {
       "path": "crates/eml-gui/Cargo.toml",
@@ -13120,8 +13120,8 @@
     {
       "path": "crates/eml-worker/Cargo.toml",
       "kind": "review_input",
-      "bytes": 859,
-      "sha256": "2fa0571fe0b0304e8f050d88e8b8c7fedc604ae5eeb4cef86ea5a87f64fbb4ab"
+      "bytes": 947,
+      "sha256": "347f1847f86b03fa87fea5b02b0259b2fd2e46c9cc89b2a29adb2cec343b1c9b"
     },
     {
       "path": "crates/eml-macos/Cargo.toml",
@@ -13356,6 +13356,10 @@
     {
       "basis_head": "aeb6c6340aed18605ea443817efac2f1fe91ce34",
       "scope": "v7/Build36 working-tree material review. Core adds the already-locked SHA2 normal dependency, introducing exactly block-buffer0.12.1,const-oid0.10.2,cpufeatures0.3.1,crypto-common0.2.2,digest0.11.3,hybrid-array0.4.15,sha2 0.11.1,typenum1.20.1 to all ten shipping component/target scopes. Read complete selected MIT texts, preserving each copyright/permission/disclaimer; independently rehashed each exact cached archive against Cargo.lock and byte-compared its LICENSE-MIT member. Compared all ten actual selected graphs: no other registry identities added/removed; worker additionally owns the existing local eml-app report codec. Local workspace version becomes7.0.0 with unchanged MPL LICENSE. GUI removes custom About image features; actual AboutSlint is in Help. Winit source-defined lifecycle changes preserve original LICENSE/headers and renew the explanatory EML-PATCH material. Current source input identities are renewed. Hashes and generator reports do not establish review quality, legal assurance or native qualification."
+    },
+    {
+      "basis_head": "dbbf1157eac5de1cc5dfe2bf8e1c021a020f8cce",
+      "scope": "Reviewed the owned Core/App/Protocol/Worker manifest changes for finite native operation-boundary and request-body observation fixtures. Core adds a development-only FS feature selection; App and Protocol declare opt-in native-fixtures and Worker forwards those fixture features. Default shipping normal/build dependency and feature trees were independently executed and byte-compared after source-root normalization against an isolated exact dbbf1157 source for all six CLI targets and both Darwin GUI and worker targets (ten graphs); all remain identical. Cargo.lock is unchanged. No registry identity, selected license, legal text or shipping feature changed. Renewed only the four reviewed manifest input bindings. These source/graph observations do not attest native execution or notice generation."
     }
   ],
   "product_material_review": {

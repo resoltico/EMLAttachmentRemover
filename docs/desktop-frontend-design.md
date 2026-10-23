@@ -37,13 +37,18 @@ execution, file/Services/drop/picker ingress, queue/report limits,
 Stop/Force Stop/Quit, reveal/export failures and accessibility/appearance checks.
 See [verification](verification.md) for candidate, desktop and picker admission.
 
-## Real publication synchronization fixtures
+## Controlled native operation fixtures
 
-The nonshipping worker feature forwards the existing Core fixture feature. The
-normal engine has one implementation; its shipping entry supplies no observation
-hooks. Fixture-only hooks surround one selected item's real publication boundary.
-They provide no replacement message processor, event, receipt or summary. Unused
-hooks are cleared before the next item, including after a protected-message refusal.
+The nonshipping worker feature enables finite Core, filesystem, export and private
+request-boundary observations. The normal engines have one implementation; their
+shipping entries supply no observation hooks. Selected processing/export children
+can pause at preflight, held-file readback, stage write, file sync, publication or
+namespace sync. A separate export-input pause exercises actual parent pipe
+backpressure and the report serialization lock. These are actual child/UI lifetime
+observations at defined boundaries, not claims that a kernel fsync was forced to
+hang. Released operations execute their ordinary native calls and guards. Hooks
+supply no replacement processor, bytes, events, receipts or summary; unused
+selected-item hooks never transfer to a later item.
 
 A separately copied app receives the native fixture worker and new ad hoc
 signatures. Cargo feature admission excludes this worker from shipping builds.
@@ -64,8 +69,10 @@ old address, then releases Core's independent qualification. Actual
 Published/AddressChanged events and retained golden bytes are required.
 
 Each GUI scenario has its own owner launch, one explicitly selected XCTest,
-unchanged original checks, strict whole-domain preference comparison and actual
-supervisor settlement. A read-only worker-PID absence observation supplements
+unchanged original checks and actual supervisor settlement. Scenarios without a
+native picker require an unchanged preference domain; export folder pickers use
+the same narrow, observed standard-picker preference comparison as shipping
+picker scenarios. A read-only worker-PID absence observation supplements
 settlement; it grants no signal authority and is not sufficient by itself.
 Uncertain ownership stops further cases. These observations establish fixture
 lifecycle/presentation boundaries only when executed; the baseline workflow and

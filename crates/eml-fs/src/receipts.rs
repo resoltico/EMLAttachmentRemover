@@ -34,6 +34,23 @@ pub struct SyncReceipt {
     /// Native error retained for failure or limited-method evidence.
     pub native_code: Option<i64>,
 }
+impl SyncReceipt {
+    /// Whether the complete receipt consistently records successful synchronization.
+    /// This fact alone grants no publication or existing-copy qualification.
+    pub fn succeeded(self) -> bool {
+        if self.state != SyncState::Succeeded {
+            return false;
+        }
+        match self.method {
+            // This method names Darwin's stronger request. Its ABI error values
+            // are EINVAL, ENOTSUP and EOPNOTSUPP even when read on another OS.
+            SyncMethod::FsyncFullfsyncUnsupported => {
+                matches!(self.native_code, Some(22 | 45 | 102))
+            }
+            _ => self.native_code.is_none(),
+        }
+    }
+}
 
 /// Native operation in progress when staging failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,4 +101,62 @@ pub enum PublicationState {
     Published,
     /// An ambiguous native error could not be reconciled.
     Unknown,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn successful_receipts_require_method_specific_native_facts() {
+        for method in [
+            SyncMethod::Fsync,
+            SyncMethod::FsyncFullfsync,
+            SyncMethod::FlushFileBuffers,
+        ] {
+            for code in [None, Some(0), Some(5), Some(22), Some(45), Some(102)] {
+                for state in [
+                    SyncState::Succeeded,
+                    SyncState::Unsupported,
+                    SyncState::Failed,
+                ] {
+                    assert_eq!(
+                        SyncReceipt {
+                            method,
+                            state,
+                            native_code: code
+                        }
+                        .succeeded(),
+                        state == SyncState::Succeeded && code.is_none(),
+                        "{method:?} {state:?} {code:?}"
+                    );
+                }
+            }
+        }
+        for code in [
+            None,
+            Some(0),
+            Some(5),
+            Some(22),
+            Some(45),
+            Some(95),
+            Some(102),
+        ] {
+            for state in [
+                SyncState::Succeeded,
+                SyncState::Unsupported,
+                SyncState::Failed,
+            ] {
+                assert_eq!(
+                    SyncReceipt {
+                        method: SyncMethod::FsyncFullfsyncUnsupported,
+                        state,
+                        native_code: code
+                    }
+                    .succeeded(),
+                    state == SyncState::Succeeded && matches!(code, Some(22 | 45 | 102)),
+                    "{state:?} {code:?}"
+                );
+            }
+        }
+    }
 }

@@ -58,7 +58,14 @@ final class DesktopInteractionTests: XCTestCase {
   func saveReport(_ app: XCUIApplication, to destination: URL, expectNameCollision: Bool)
     async throws
   {
-    app.buttons["Export Report…"].click()
+    let exportButton = app.buttons["Export Report…"]
+    let available = NSPredicate { _, _ in exportButton.isEnabled }
+    guard
+      await XCTWaiter.fulfillment(
+        of: [XCTNSPredicateExpectation(predicate: available, object: nil)], timeout: 20)
+        == .completed
+    else { throw InteractionFailure.expectedPresentation }
+    exportButton.click()
     let panel = app.sheets.firstMatch
     guard panel.waitForExistence(timeout: 10) else {
       XCTFail("Native report folder panel did not appear: \(app.debugDescription)")

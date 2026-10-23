@@ -161,7 +161,10 @@ mod tests {
             },
         };
         use windows_sys::Win32::{
-            Foundation::{GetHandleInformation, INVALID_HANDLE_VALUE, WAIT_FAILED, WAIT_OBJECT_0},
+            Foundation::{
+                ERROR_INVALID_HANDLE, GetHandleInformation, GetLastError, WAIT_FAILED,
+                WAIT_OBJECT_0,
+            },
             System::Threading::{CreateEventW, SetEvent},
         };
 
@@ -227,13 +230,15 @@ mod tests {
                 );
                 *waits.borrow_mut() += 1;
                 if *waits.borrow() == 1 {
-                    // SAFETY: deliberately invalid kernel handle produces a real
-                    // failed wait; it is not the owned query event and is not closed.
-                    assert_eq!(
-                        // SAFETY: deliberate invalid handle has no associated user storage.
-                        unsafe { WaitForSingleObject(INVALID_HANDLE_VALUE, 0) },
-                        WAIT_FAILED
-                    );
+                    // SAFETY: NULL has no associated object or user storage. Unlike
+                    // -1 (the current-process pseudo handle), it is an invalid wait
+                    // target; the owned query event remains held independently.
+                    let failed_wait = unsafe { WaitForSingleObject(ptr::null_mut(), 0) };
+                    // SAFETY: reads this thread's native error immediately after
+                    // the failed wait, before assertions or other native calls.
+                    let failed_wait_error = unsafe { GetLastError() };
+                    assert_eq!(failed_wait, WAIT_FAILED);
+                    assert_eq!(failed_wait_error, ERROR_INVALID_HANDLE);
                     // A failed native wait cannot alter pending status or release
                     // any owner. Release the controlled completer only afterward.
                     // SAFETY: initialized Status arm, confined to this thread.

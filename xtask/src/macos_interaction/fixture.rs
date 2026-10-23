@@ -21,6 +21,13 @@ pub(super) fn prepare_case_fixture(fixture: &Path, case: DesktopCase) -> Result<
     if case == DesktopCase::Workflow {
         fs::create_dir(fixture.join("chosen-destination"))?;
     }
+    if case == DesktopCase::ExportWriterBlock {
+        let directory = fixture.join("writer-input");
+        fs::create_dir(&directory)?;
+        for index in 0..1024 {
+            fs::write(directory.join(format!("{index:04}.eml")), original)?;
+        }
+    }
     if case == DesktopCase::Pagination {
         let directory = fixture.join("pagination-input");
         fs::create_dir(&directory)?;
@@ -66,29 +73,52 @@ pub(super) fn prepare_case_input(
         invocation["fixture_output"] = json!("true");
         invocation["scenario"] = json!(case.name());
     }
+    if case == DesktopCase::ExportWriterBlock {
+        invocation["writer_session"] = json!("true");
+    }
     if case == DesktopCase::Appearance {
         invocation["appearance_session"] = json!("true");
     }
     if case == DesktopCase::Pagination {
         invocation["pagination_session"] = json!("true");
     }
-    if case.is_publication() {
+    if case.is_controlled() {
         use base64::Engine;
         use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
-        let control = fixture.join("publication-control");
+        let control = fixture.join("operation-control");
         fs::create_dir(&control)?;
         fs::set_permissions(&control, fs::Permissions::from_mode(0o700))?;
-        fs::write(
-            control.join("observation"),
-            if case == DesktopCase::PublishedError {
-                b"after:0\n".as_slice()
-            } else {
-                b"before:1\n".as_slice()
-            },
-        )?;
+        if case.is_publication() {
+            fs::write(
+                control.join("observation"),
+                if case == DesktopCase::PublishedError {
+                    b"processing:after-publication:0\n".as_slice()
+                } else {
+                    b"processing:publication:1\n".as_slice()
+                },
+            )?;
+        }
         let destination = fixture.join("publication-output");
         fs::create_dir(&destination)?;
+        if case == DesktopCase::BlockedExportPreflight {
+            for (lane, recipe) in [
+                ("processing", "processing:preflight:0\n"),
+                ("export", "export:preflight\n"),
+            ] {
+                let path = control.join(lane);
+                fs::create_dir(&path)?;
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o700))?;
+                fs::write(path.join("observation"), recipe)?;
+            }
+        }
+        if case == DesktopCase::BlockedProcessingReadback {
+            fs::write(
+                destination.join("two.ctpjzw7urreuwuroqgjcbuwt3m.no-attachments.eml"),
+                include_bytes!("../../../tests/contract/mime/golden/01-gmail-attachment.eml"),
+            )?;
+        }
         invocation["scenario"] = json!(case.name());
+        invocation["child_control"] = json!("true");
         invocation["observation"] = json!(control);
         invocation["destination"] = json!(
             base64::engine::general_purpose::STANDARD.encode(destination.as_os_str().as_bytes())

@@ -267,9 +267,7 @@ pub(super) fn publish_item<'a>(
     let identity = ready.identity();
     let file_sync = ready.file_sync();
     #[cfg(any(test, feature = "native-fixtures"))]
-    if let Some(hook) = context.before_edge.take() {
-        hook();
-    }
+    context.observe(eml_fs::StoragePhase::Publication);
     let before_edge =
         check_publication_edge(plan, index, source, &binding, identity, context, control);
     if let Err(error) = before_edge {
@@ -287,9 +285,7 @@ pub(super) fn publish_item<'a>(
     }
     let attempt = ready.publish(info.basename());
     #[cfg(any(test, feature = "native-fixtures"))]
-    if let Some(hook) = context.after_edge.take() {
-        hook();
-    }
+    context.observe(eml_fs::StoragePhase::AfterPublication);
     let (mut evidence, candidate) = PublicationEvidence::from_attempt(attempt, &binding, info);
     evidence.observe_effect(source, &mut binding, context);
     // Keep the candidate alive through final identity observations. Stop cannot roll back the edge.
@@ -453,14 +449,21 @@ fn prepare_candidate<'a>(
         }
     };
     let mut checkpoint_stopped = false;
-    let ready = match creation.stage_bytes(source.message().as_bytes(), || {
+    let checkpoint = || {
         if control.is_stopped() {
             checkpoint_stopped = true;
             Err(std::io::Error::from(std::io::ErrorKind::Interrupted))
         } else {
             Ok(())
         }
-    }) {
+    };
+    #[cfg(any(test, feature = "native-fixtures"))]
+    let staged = creation.stage_bytes_observed(source.message().as_bytes(), checkpoint, |phase| {
+        context.observe(phase)
+    });
+    #[cfg(not(any(test, feature = "native-fixtures")))]
+    let staged = creation.stage_bytes(source.message().as_bytes(), checkpoint);
+    let ready = match staged {
         Ok(value) => value,
         Err(error) => {
             let (error, sync, cleanup) = stage_failure(error, checkpoint_stopped);
@@ -582,6 +585,8 @@ impl PublicationEvidence {
     ) {
         if self.state != eml_fs::PublicationState::NotPublished {
             context.output_candidates.insert(self.identity);
+            #[cfg(any(test, feature = "native-fixtures"))]
+            context.observe(eml_fs::StoragePhase::NamespaceSync);
             if let Err(failure) = binding.final_sync()
                 && self.error.is_none()
             {

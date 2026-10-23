@@ -44,7 +44,7 @@ pub(crate) fn portable_sync(fd: impl AsFd) -> SyncReceipt {
 }
 pub(crate) fn file_sync(fd: impl AsFd) -> SyncReceipt {
     let portable = portable_sync(fd.as_fd());
-    if portable.state != SyncState::Succeeded {
+    if !portable.succeeded() {
         return portable;
     }
     #[cfg(target_os = "macos")]
@@ -177,7 +177,31 @@ impl BoundDirectory {
     pub(crate) fn stage_bytes(
         &self,
         bytes: &[u8],
+        checkpoint: impl FnMut() -> io::Result<()>,
+    ) -> Result<ReadyCandidate, StageFailure> {
+        self.stage_bytes_inner(
+            bytes,
+            checkpoint,
+            #[cfg(any(test, feature = "native-fixtures"))]
+            None,
+        )
+    }
+    #[cfg(feature = "native-fixtures")]
+    pub(crate) fn stage_bytes_observed(
+        &self,
+        bytes: &[u8],
+        checkpoint: impl FnMut() -> io::Result<()>,
+        mut observer: impl FnMut(crate::StoragePhase),
+    ) -> Result<ReadyCandidate, StageFailure> {
+        self.stage_bytes_inner(bytes, checkpoint, Some(&mut observer))
+    }
+    fn stage_bytes_inner(
+        &self,
+        bytes: &[u8],
         mut checkpoint: impl FnMut() -> io::Result<()>,
+        #[cfg(any(test, feature = "native-fixtures"))] mut observer: Option<
+            &mut dyn FnMut(crate::StoragePhase),
+        >,
     ) -> Result<ReadyCandidate, StageFailure> {
         let plain_failure = |error| StageFailure {
             operation: StageOperation::Create,
@@ -239,6 +263,10 @@ impl BoundDirectory {
             crate::darwin_acl::clear_owned(&file)?;
             validate_file(&file, directory, observed.unwrap(), 0, true)?;
             operation = StageOperation::Write;
+            #[cfg(any(test, feature = "native-fixtures"))]
+            if let Some(observe) = observer.as_mut() {
+                observe(crate::StoragePhase::StageWrite);
+            }
             write_verified_bytes(&mut file, bytes, &mut checkpoint)?;
             validate_file(
                 &file,
@@ -248,10 +276,14 @@ impl BoundDirectory {
                 true,
             )?;
             operation = StageOperation::Sync;
+            #[cfg(any(test, feature = "native-fixtures"))]
+            if let Some(observe) = observer.as_mut() {
+                observe(crate::StoragePhase::FileSync);
+            }
             checkpoint()?;
             let receipt = file_sync(&file);
             sync = Some(receipt);
-            if receipt.state != SyncState::Succeeded {
+            if !receipt.succeeded() {
                 return Err(io::Error::other(
                     "Candidate file synchronization did not succeed",
                 ));

@@ -52,7 +52,7 @@ chunked equality, reparsing, structural comparison and gap-free fixed-point
 coverage establish that retained bytes and structure remain unchanged. It does not regenerate MIME or treat its own removal list as an oracle.
 Real storage observations remain distinct: candidate verification, atomic
 publication knowledge, requested address, file/namespace synchronization and
-cleanup cannot be collapsed into a Boolean success.
+cleanup cannot be collapsed into a Boolean success. A successful synchronization state must also agree with its method and native error facts. Portable success has no error; the Darwin portable-success/stronger-request-unsupported method retains only its actual unsupported error. This shared receipt check applies to core qualification and renderer facts. Report export separately retains its explicit unsupported-request limitation.
 
 A native release CLI is built once into an owned copy, signed on macOS and frozen.
 Its CLI archive consumes those exact bytes. The desktop product builds its own

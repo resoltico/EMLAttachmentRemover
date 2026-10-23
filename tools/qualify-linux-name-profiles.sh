@@ -120,7 +120,7 @@ if [[ "$1" = --profile || "$1" = --existing-profile ]]; then
     if [[ "${profile}" = ordinary-ext4-existing-only ]]; then
       python3 "${existing_oracle}" --require-sync-success --binary "${binary}" --source-root "${directory}/sources" --destination "${endpoint}/copies" --out "${directory}/behavior"
     else
-      python3 "${existing_oracle}" --binary "${binary}" --source-root "${directory}/sources" --destination "${endpoint}/copies" --out "${directory}/behavior"
+      python3 "${existing_oracle}" --refuse-new-names --binary "${binary}" --source-root "${directory}/sources" --destination "${endpoint}/copies" --out "${directory}/behavior"
     fi
     exit 0
   fi

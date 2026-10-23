@@ -19,10 +19,12 @@ fn address(value: Address) -> eml_core::AddressState {
         Address::Unknown => eml_core::AddressState::Unknown,
     }
 }
-fn sync(
+/// Project synchronization observations without validating them or granting I/O authority.
+/// Missing or unrequested observations have no native receipt.
+pub fn synchronization_receipt(
     method: SynchronizationMethod,
     state: Synchronization,
-    code: &Nullable<i64>,
+    code: Option<i64>,
 ) -> Option<eml_core::SyncReceipt> {
     Some(eml_core::SyncReceipt {
         method: match method {
@@ -40,12 +42,16 @@ fn sync(
             Synchronization::Unsupported => eml_core::SyncState::Unsupported,
             Synchronization::Failed => eml_core::SyncState::Failed,
         },
-        native_code: code.value().copied(),
+        native_code: code,
     })
 }
 fn namespace(value: &NamespaceRecord) -> Option<eml_core::NamespaceObservation> {
     Some(eml_core::NamespaceObservation {
-        receipt: sync(value.method, value.state, &value.native_code),
+        receipt: synchronization_receipt(
+            value.method,
+            value.state,
+            value.native_code.value().copied(),
+        ),
         required_edges: value.required_edges.try_into().ok()?,
         completed_edges: value.completed_edges.try_into().ok()?,
         failed_edge_index: value
@@ -127,10 +133,10 @@ pub fn outcome_facts(item: &ItemRecord) -> Option<OutcomeFacts> {
         // A validated Created record carries the producer's full successful
         // qualification contract, including exact readback. Failed records do not.
         final_readback: (item.status == ItemStatus::Created).then_some(true),
-        file_sync: sync(
+        file_sync: synchronization_receipt(
             p.file_sync.method,
             p.file_sync.state,
-            &p.file_sync.native_code,
+            p.file_sync.native_code.value().copied(),
         ),
         namespace_sync: namespace(&p.namespace_sync)?,
         cleanup: cleanup(&p.cleanup)?,
@@ -141,10 +147,10 @@ pub fn outcome_facts(item: &ItemRecord) -> Option<OutcomeFacts> {
                 bytes_equal: e.bytes_equal.value().copied(),
                 stable: e.stable,
                 address: address(e.address),
-                file_sync: sync(
+                file_sync: synchronization_receipt(
                     e.file_sync.method,
                     e.file_sync.state,
-                    &e.file_sync.native_code,
+                    e.file_sync.native_code.value().copied(),
                 ),
                 namespace_sync: namespace(&e.namespace_sync)?,
             }),

@@ -264,6 +264,9 @@ fn validate_windows_profile(
         || profile.get("failure") != Some(&Value::Null)
         || volume["filesystem_type"] != "ntfs"
         || volume["case"]["case_sensitive"] != sensitive
+        || volume["case"]["destination_before"] != sensitive
+        || volume["case"]["destination_after"] != sensitive
+        || !profile["source_case_sensitive"].is_boolean()
         || volume["drive_type"] != 3
         || volume["global_8dot3_policy"] != storage["global_8dot3_policy"]
         || volume["serial"] != storage["volume_serial"]
@@ -288,6 +291,7 @@ fn validate_windows_profile(
                 .into(),
         );
     }
+    validate_windows_entries(profile, root, &storage["volume_root"])?;
     let check = &profile["short_root_check"];
     let events = check["events"]
         .as_array()
@@ -342,6 +346,84 @@ fn validate_windows_profile(
         {
             return Err("Read-only short-root Check requested native synchronization".into());
         }
+    }
+    Ok(())
+}
+
+fn validate_windows_entries(profile: &Value, root: &str, volume: &Value) -> Result<()> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let expected = profile["behavior"]["entries"]
+        .as_array()
+        .ok_or("Common Windows namespace observations are absent")?;
+    let entries = profile["native_entries"]
+        .as_array()
+        .ok_or("Native generated long/short entry observations are absent")?;
+    let volume = volume.as_str().ok_or("Observed Windows volume is absent")?;
+    let mut expected_names = BTreeMap::new();
+    for entry in expected {
+        let name = entry["relative"]
+            .as_str()
+            .ok_or("Common relative entry is absent")?;
+        let directory = entry["directory"]
+            .as_bool()
+            .ok_or("Common entry type is absent")?;
+        if expected_names.insert(name, directory).is_some() {
+            return Err("Common namespace contains a duplicate entry".into());
+        }
+    }
+    let mut names = BTreeMap::new();
+    let mut identities = BTreeSet::new();
+    for entry in entries {
+        let relative = entry["relative"]
+            .as_str()
+            .ok_or("Native relative entry is absent")?;
+        let directory = entry["directory"]
+            .as_bool()
+            .ok_or("Native entry type is absent")?;
+        let long = entry["long_path"]
+            .as_str()
+            .ok_or("Native long spelling is absent")?;
+        let short = entry["short_path"]
+            .as_str()
+            .ok_or("Native short spelling is absent")?;
+        let long = long.strip_prefix("\\\\?\\").unwrap_or(long);
+        let short = short.strip_prefix("\\\\?\\").unwrap_or(short);
+        let identity = entry["long_identity"]
+            .as_str()
+            .ok_or("Native entry identity is absent")?;
+        let identity_shape = identity.split_once(':').is_some_and(|(volume, file)| {
+            volume.len() == 16
+                && file.len() == 32
+                && volume
+                    .bytes()
+                    .chain(file.bytes())
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        });
+        if relative.is_empty()
+            || relative.contains([':', '\0', '/'])
+            || relative
+                .split('\\')
+                .any(|part| part.is_empty() || part == "." || part == "..")
+            || names.insert(relative, directory).is_some()
+            || long != format!("{root}\\destination\\{relative}")
+            || !short.starts_with(volume)
+            || short.contains('\0')
+            || !identity_shape
+            || entry["short_identity"] != identity
+            || !identities.insert(identity)
+            || (directory && !entry["case_sensitive"].is_boolean())
+            || (!directory && !explicit_null(entry, "case_sensitive"))
+        {
+            return Err(
+                "Native generated case/long/short spelling or identity proof is inconsistent"
+                    .into(),
+            );
+        }
+    }
+    if names != expected_names {
+        return Err(
+            "Native generated entry set differs from the independent common namespace".into(),
+        );
     }
     Ok(())
 }
@@ -517,6 +599,57 @@ fn validate_observed_names(behavior: &Value, family: OsFamily) -> Result<()> {
     Ok(())
 }
 
+fn validate_unsupported_new_name(value: &Value) -> Result<()> {
+    let runs = value["runs"]
+        .as_array()
+        .ok_or("Unsupported new-name controls are absent")?;
+    let uid = value["owner_uid"]
+        .as_u64()
+        .ok_or("Unsupported new-name owner is absent")?;
+    if value["profile"] != "overlay"
+        || value["passed"] != true
+        || value["destination_mode"] != 0o700
+        || runs.len() != 2
+    {
+        return Err("Unsupported new-name controlled selection differs".into());
+    }
+    for (run, mode) in runs.iter().zip(["check", "create"]) {
+        let before = run["before"]
+            .as_array()
+            .ok_or("New-name before inventory is absent")?;
+        let item = &run["item"];
+        let publication = &item["publication"];
+        if run["mode"] != mode
+            || run["exit_code"] != 1
+            || before.len() != 1
+            || run["before"] != run["after"]
+            || before[0]["name"] != "."
+            || before[0]["mode"] != 0o700
+            || before[0]["kind"] != 0o040000
+            || before[0]["uid"].as_u64() != Some(uid)
+            || before[0]["device"].as_u64().is_none()
+            || before[0]["mtime_ns"].as_u64().is_none()
+            || before[0]["ctime_ns"].as_u64().is_none()
+            || before[0]["inode"].as_u64().is_none_or(|n| n == 0)
+            || !explicit_null(&before[0], "sha256")
+            || item["status"] != "failed"
+            || item["error"]["code"] != "DESTINATION_UNSUPPORTED"
+            || item["error"]["phase"] != "admission"
+            || !explicit_null(item, "existing_observation")
+            || publication["state"] != "not_published"
+            || publication["file_sync"]
+                != json!({"method":"not_requested","state":"not_attempted","native_code":null})
+            || publication["namespace_sync"]
+                != json!({"method":"not_requested","state":"not_attempted","native_code":null,"required_edges":0,"completed_edges":0,"failed_edge_index":null})
+            || publication["cleanup"]
+                != json!({"state":"not_needed","residual_name":null,"native_code":null})
+        {
+            return Err("Unsupported-profile Check/Create changed or lacked a safe owned namespace, or attempted storage effects".into());
+        }
+    }
+    Ok(())
+}
+
 fn validate_existing_profiles(observation: &Value, binary: &ByteIdentity) -> Result<()> {
     let profiles = observation["existing_profiles"]
         .as_array()
@@ -543,6 +676,15 @@ fn validate_existing_profiles(observation: &Value, binary: &ByteIdentity) -> Res
             return Err(
                 "Existing-only native profile is missing, duplicated or unqualified".into(),
             );
+        }
+        if ordinary {
+            if !explicit_null(behavior, "unsupported_new_name") {
+                return Err(
+                    "Ordinary existing profile has an unexpected unsupported-name claim".into(),
+                );
+            }
+        } else {
+            validate_unsupported_new_name(&behavior["unsupported_new_name"])?;
         }
         let runs = behavior["runs"]
             .as_array()
@@ -927,7 +1069,14 @@ pub(crate) fn valid_fixture(source: &str, binary: &ByteIdentity, family: OsFamil
         for profile in value["observations"]["profiles"].as_array_mut().unwrap() {
             profile["executed"] = json!(true);
             profile["failure"] = Value::Null;
-            profile["volume"] = json!({"filesystem_type":"ntfs","case":{"case_sensitive":profile["behavior"]["case_mode"]=="case-sensitive"},"root":"R:\\EML qualification root","short_root":"R:\\EMLQUA~1","serial":"1234","label":"EML-0123456789ab","drive_type":3,"global_8dot3_policy":2});
+            profile["volume"] = json!({"filesystem_type":"ntfs","case":{"case_sensitive":profile["behavior"]["case_mode"]=="case-sensitive","destination_before":profile["behavior"]["case_mode"]=="case-sensitive","destination_after":profile["behavior"]["case_mode"]=="case-sensitive"},"root":"R:\\EML qualification root","short_root":"R:\\EMLQUA~1","serial":"1234","label":"EML-0123456789ab","drive_type":3,"global_8dot3_policy":2});
+            profile["source_case_sensitive"] = json!(false);
+            profile["native_entries"] = profile["behavior"]["entries"].as_array().unwrap().iter().enumerate().map(|(index, entry)| {
+                let relative = entry["relative"].as_str().unwrap();
+                let long = format!("R:\\EML qualification root\\destination\\{relative}");
+                let identity = format!("00000000000004d2:{:032x}", index + 1);
+                json!({"relative":relative,"directory":entry["directory"],"case_sensitive":if entry["directory"]==true { json!(index % 2 == 0) } else { Value::Null },"long_path":long,"short_path":long,"long_identity":identity,"short_identity":identity})
+            }).collect::<Vec<_>>().into();
             profile["short_root_check"] = json!({"original_identity_before":"independent-native-file-id","original_identity_after":"independent-native-file-id","original_sha256_before":hash,"original_sha256_after":hash,"namespace_unchanged":true,"namespace_before_sha256":hash,"namespace_after_sha256":hash,"events":[{"type":"start","protocol":1,"dry_run":true,"total":1,"collection_complete":true},{"type":"item","index":0,"status":"planned","plan":"verify_existing","error":null,"existing_observation":existing,"publication":publication},{"type":"summary","exit_code":0,"interrupted":false,"collection_complete":true,"run_error":null,"counts":{"created":0,"up_to_date":0,"planned":1,"failed":0,"not_processed":0}}]});
         }
     }
@@ -969,7 +1118,10 @@ fn existing_profile_fixture(binary: &ByteIdentity) -> Value {
         };
         runs.push(json!({"case":case,"outcome":outcome,"exit_code":exit_code,"inventory_unchanged":true,"before":[{"name":".","mode":511}],"after":[{"name":".","mode":511}],"item":{"status":if exit_code==0 {"up_to_date"}else{"failed"},"error":code.map(|code|json!({"code":code,"phase":if case=="unequal"{"existing"}else{"admission"}})),"existing_observation":existing,"publication":{"state":"not_published","file_sync":{"state":"not_attempted"},"namespace_sync":{"required_edges":0},"cleanup":{"state":"not_needed"}}}}));
     }
-    json!([{"profile":"ordinary-ext4-existing-only","status":"passed","exit_code":0,"behavior":{"schema":1,"binary_sha256":binary.sha256,"passed":true,"failure":null,"creation_policy_refused":true,"require_sync_success":true,"independent_sync_probe":{"file_errno":null,"endpoint_errno":null},"runs":runs}},{"profile":"overlay-existing-only","status":"passed","exit_code":0,"behavior":{"schema":1,"binary_sha256":binary.sha256,"passed":true,"failure":null,"creation_policy_refused":true,"require_sync_success":false,"independent_sync_probe":{"file_errno":null,"endpoint_errno":null},"runs":runs}}])
+    let inventory = json!([{"name":".","device":2,"inode":9,"mode":448,"kind":16384,"uid":1001,"gid":1001,"mtime_ns":100,"ctime_ns":100,"sha256":null}]);
+    let refusal_item = json!({"status":"failed","error":{"code":"DESTINATION_UNSUPPORTED","phase":"admission"},"existing_observation":null,"publication":{"state":"not_published","file_sync":{"method":"not_requested","state":"not_attempted","native_code":null},"namespace_sync":{"method":"not_requested","state":"not_attempted","native_code":null,"required_edges":0,"completed_edges":0,"failed_edge_index":null},"cleanup":{"state":"not_needed","residual_name":null,"native_code":null}}});
+    let unsupported = json!({"profile":"overlay","destination_mode":448,"owner_uid":1001,"passed":true,"runs":[{"mode":"check","exit_code":1,"before":inventory,"after":inventory,"item":refusal_item},{"mode":"create","exit_code":1,"before":inventory,"after":inventory,"item":refusal_item}]});
+    json!([{"profile":"ordinary-ext4-existing-only","status":"passed","exit_code":0,"behavior":{"schema":1,"binary_sha256":binary.sha256,"passed":true,"failure":null,"creation_policy_refused":true,"require_sync_success":true,"unsupported_new_name":null,"independent_sync_probe":{"file_errno":null,"endpoint_errno":null},"runs":runs}},{"profile":"overlay-existing-only","status":"passed","exit_code":0,"behavior":{"schema":1,"binary_sha256":binary.sha256,"passed":true,"failure":null,"creation_policy_refused":true,"require_sync_success":false,"unsupported_new_name":unsupported,"independent_sync_probe":{"file_errno":null,"endpoint_errno":null},"runs":runs}}])
 }
 
 #[cfg(test)]

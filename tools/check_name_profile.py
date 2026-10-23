@@ -50,7 +50,7 @@ def inventory(root):
             facts = path.lstat()
             if not (stat.S_ISREG(facts.st_mode) or stat.S_ISDIR(facts.st_mode)):
                 raise RuntimeError('Native profile contains a link or nonordinary entry')
-            entries.append({'relative': str(path.relative_to(root)), 'native_hex': os.fsencode(str(path.relative_to(root))).hex() if os.name != 'nt' else str(path.relative_to(root)).encode('utf-16-le').hex(), 'directory': stat.S_ISDIR(facts.st_mode), 'device': facts.st_dev, 'inode': facts.st_ino, 'bytes': facts.st_size, 'mode': stat.S_IMODE(facts.st_mode), 'uid': facts.st_uid, 'gid': facts.st_gid, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest() if stat.S_ISREG(facts.st_mode) else None})
+            entries.append({'relative': str(path.relative_to(root)), 'native_hex': os.fsencode(str(path.relative_to(root))).hex() if os.name != 'nt' else str(path.relative_to(root)).encode('utf-16-le').hex(), 'directory': stat.S_ISDIR(facts.st_mode), 'device': facts.st_dev, 'inode': facts.st_ino, 'bytes': facts.st_size, 'mode': stat.S_IMODE(facts.st_mode), 'mtime_ns': facts.st_mtime_ns, 'ctime_ns': facts.st_ctime_ns, 'uid': facts.st_uid, 'gid': facts.st_gid, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest() if stat.S_ISREG(facts.st_mode) else None})
     return entries
 
 
@@ -87,7 +87,7 @@ def namespace(root, cases, limit):
 
 def root_facts(root):
     facts = root.lstat()
-    return (facts.st_dev, facts.st_ino, stat.S_IMODE(facts.st_mode), facts.st_uid, facts.st_gid)
+    return (facts.st_dev, facts.st_ino, stat.S_IMODE(facts.st_mode), facts.st_uid, facts.st_gid, facts.st_mtime_ns, facts.st_ctime_ns)
 
 
 def execute(binary, paths, destination, mode, index, out, cases, limit):

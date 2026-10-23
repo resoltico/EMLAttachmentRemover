@@ -115,6 +115,67 @@ struct Outcome {
     cargo_mutants_version: String,
     outcomes: Vec<Value>,
 }
+// Pinned rustc's complete diagnostic block, with only source line numbers and
+// diagnostic gutter padding varying. The location is tied to discovery's exact
+// replacement span; a matching phrase elsewhere in the log is not proof.
+fn authorization_default_diagnostic(log: &str, mutant: &Value) -> bool {
+    let lines: Vec<_> = log.lines().collect();
+    let diagnostic = "error[E0277]: the trait bound `Authorization: Default` is not satisfied";
+    let Some(start) = lines.iter().position(|line| *line == diagnostic) else {
+        return false;
+    };
+    let Some(block) = lines.get(start..start + 14) else {
+        return false;
+    };
+    let Some(line) = mutant["span"]["start"]["line"]
+        .as_u64()
+        .filter(|line| *line > 0)
+    else {
+        return false;
+    };
+    let Some(column) = mutant["span"]["start"]["column"]
+        .as_u64()
+        .filter(|column| *column > 0)
+        .and_then(|column| column.checked_add(3))
+    else {
+        return false;
+    };
+    let Some((derive_line, derive)) = block[8].trim_start().split_once(" + ") else {
+        return false;
+    };
+    let Some((struct_line, declaration)) = block[9].trim_start().split_once(" | ") else {
+        return false;
+    };
+    let adjacent_help = match (derive_line.parse::<u64>(), struct_line.parse::<u64>()) {
+        (Ok(derive), Ok(declaration)) => derive > 0 && derive.checked_add(1) == Some(declaration),
+        _ => false,
+    };
+    block[1].trim_start() == format!("--> crates/eml-core/src/verify.rs:{line}:{column}")
+        && block[3].trim_start()
+            == format!("{line} |     Ok(Default::default()) /* ~ changed by cargo-mutants ~ */")
+        && block[4].trim_start()
+            == "|        ^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `Authorization`"
+        && block[6] == "help: consider annotating `Authorization` with `#[derive(Default)]`"
+        && [2, 5, 7, 10]
+            .iter()
+            .all(|index| block[*index].trim() == "|")
+        && derive == "#[derive(Default)]"
+        && declaration == "pub(crate) struct Authorization {"
+        && adjacent_help
+        && block[11].is_empty()
+        && block[12] == "For more information about this error, try `rustc --explain E0277`."
+        && block[13] == "error: could not compile `eml-core` (lib test) due to 1 previous error"
+        && lines
+            .iter()
+            .filter(|line| line.starts_with("error["))
+            .count()
+            == 1
+        && lines
+            .iter()
+            .filter(|line| line.starts_with("error:"))
+            .count()
+            == 1
+}
 // Independently reviewed structural compiler-invalid case. Authorization cannot
 // have an identity-free Default; this is never counted as caught or equivalent.
 fn reviewed_unviable(result: &Value, selected: &[Value], logs: &Path) -> Result<()> {
@@ -123,6 +184,9 @@ fn reviewed_unviable(result: &Value, selected: &[Value], logs: &Path) -> Result<
         .iter()
         .find(|item| item["name"] == mutant["name"])
         .ok_or("Unviable mutation was not discovered")?;
+    if mutant["span"] != producer["span"] {
+        return Err("Unviable mutation span differs from discovery".into());
+    }
     for value in [mutant, producer] {
         if value["package"] != "eml-core"
             || value["file"] != "crates/eml-core/src/verify.rs"
@@ -158,7 +222,6 @@ fn reviewed_unviable(result: &Value, selected: &[Value], logs: &Path) -> Result<
     fs::File::open(logs.join(path))?
         .take(2 * 1024 * 1024 + 1)
         .read_to_string(&mut log)?;
-    let diagnostic = "error[E0277]: the trait bound `Authorization: Default` is not satisfied";
     let mut causes = log.lines();
     let mut unrelated_cause = false;
     while let Some(line) = causes.next() {
@@ -174,27 +237,7 @@ fn reviewed_unviable(result: &Value, selected: &[Value], logs: &Path) -> Result<
     }
     if log.len() > 2 * 1024 * 1024
         || unrelated_cause
-        || !log.lines().any(|line| line == diagnostic)
-        || !log.lines().any(|line| {
-            line.trim_start()
-                .starts_with("--> crates/eml-core/src/verify.rs:")
-        })
-        || !log.contains("help: the trait `Default` is not implemented for `Authorization`")
-        || !log.contains("Ok(Default::default()) /* ~ changed by cargo-mutants ~ */")
-        || log
-            .lines()
-            .filter(|line| line.starts_with("error["))
-            .any(|line| line != diagnostic)
-        || log
-            .lines()
-            .filter(|line| line.starts_with("error:"))
-            .any(|line| {
-                ![
-                    "error: could not compile `eml-core` (lib) due to 1 previous error",
-                    "error: could not compile `eml-core` (lib test) due to 1 previous error",
-                ]
-                .contains(&line)
-            })
+        || !authorization_default_diagnostic(&log, mutant)
     {
         return Err("Compiler evidence does not establish the reviewed Authorization:Default E0277 case alone".into());
     }
@@ -519,7 +562,7 @@ mod tests {
         let diagnostic = include_str!("../tests/fixtures/authorization-default-diagnostic.txt");
         let log = logs.path().join("log/compiler.log");
         fs::write(&log, diagnostic).unwrap();
-        let producer = serde_json::json!({"name":"reviewed mutation", "package":"eml-core", "file":"crates/eml-core/src/verify.rs", "function":{"function_name":"authorize_deletions", "return_type":"-> Result<Authorization, PreparationError>"}, "genre":"FnValue", "replacement":"Ok(Default::default())"});
+        let producer = serde_json::json!({"name":"reviewed mutation", "package":"eml-core", "file":"crates/eml-core/src/verify.rs", "function":{"function_name":"authorize_deletions", "return_type":"-> Result<Authorization, PreparationError>"}, "genre":"FnValue", "replacement":"Ok(Default::default())", "span":{"start":{"line":309,"column":5},"end":{"line":313,"column":18}}});
         let result = serde_json::json!({"scenario":{"Mutant":producer}, "summary":"Unviable", "log_path":"log/compiler.log", "phase_results":[{"phase":"Build","process_status":{"Failure":101}}]});
         let selected = vec![producer];
         assert!(reviewed_unviable(&result, &selected, logs.path()).is_ok());
@@ -530,6 +573,7 @@ mod tests {
             "/scenario/Mutant/function/return_type",
             "/scenario/Mutant/genre",
             "/scenario/Mutant/replacement",
+            "/scenario/Mutant/span/start/line",
             "/phase_results/0/phase",
             "/log_path",
         ] {
@@ -540,6 +584,10 @@ mod tests {
                 "{pointer}"
             );
         }
+        let mut shifted = result.clone();
+        shifted["scenario"]["Mutant"]["span"]["start"]["line"] = serde_json::json!(310);
+        let shifted_selection = vec![shifted["scenario"]["Mutant"].clone()];
+        assert!(reviewed_unviable(&shifted, &shifted_selection, logs.path()).is_err());
         let mut wrong = result.clone();
         wrong["phase_results"]
             .as_array_mut()
@@ -552,8 +600,18 @@ mod tests {
         for text in [
             diagnostic.replace("Authorization", "Other"),
             diagnostic.replace("E0277", "E0001"),
+            diagnostic
+                .replace(" 14 +", "bad +")
+                .replace(" 15 |", "bad |"),
+            diagnostic.replace(" (lib test) ", " (lib) "),
             format!("{diagnostic}\nerror: linking with cc failed"),
             format!("{diagnostic}\nCaused by:\n  unrelated infrastructure error"),
+            diagnostic.lines().take(13).collect::<Vec<_>>().join("\n"),
+            diagnostic.replace(
+                "the trait `Default` is not implemented for `Authorization`",
+                "unrelated source caret",
+            ),
+            format!("{diagnostic}\n{diagnostic}"),
             String::new(),
         ] {
             fs::write(&log, text).unwrap();
