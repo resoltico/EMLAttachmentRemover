@@ -200,6 +200,7 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
                 None,
                 settled,
                 "Pinned cargo-fuzz did not produce the expected executable".into(),
+                &mut std::io::stdout(),
             );
         }
         Ok(metadata) if metadata.is_file() => {}
@@ -227,6 +228,7 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
                 Some(&retained),
                 settled,
                 error,
+                &mut std::io::stdout(),
             );
         }
     };
@@ -320,17 +322,21 @@ fn post_build_admission_failure(
     retained: Option<&crate::campaign::RetainedExecutable>,
     later_processes_settled: bool,
     error: Box<dyn std::error::Error>,
+    output: &mut impl std::io::Write,
 ) -> Result<()> {
     let cleanup = if later_processes_settled {
         campaign.cleanup_generated(built)
     } else {
         serde_json::json!({"state":"retained","failure":"Later process ownership is uncertain; retain all storage"})
     };
-    if let Err(report) = campaign.report(&serde_json::json!({
-        "source":campaign.sha,"stage":"post_build_admission","failure":error.to_string(),
-        "build_process":built.evidence(),"retained_unexecuted_image":retained,
-        "cleanup":cleanup,"qualified":false
-    })) {
+    if let Err(report) = campaign.report_to(
+        &serde_json::json!({
+            "source":campaign.sha,"stage":"post_build_admission","failure":error.to_string(),
+            "build_process":built.evidence(),"retained_unexecuted_image":retained,
+            "cleanup":cleanup,"qualified":false
+        }),
+        output,
+    ) {
         eprintln!("Post-build admission failure report also failed: {report}");
     }
     Err(error)
@@ -483,12 +489,14 @@ mod tests {
                 elapsed: Duration::ZERO,
                 cleanup_elapsed: Duration::ZERO,
             };
+            let mut output = Vec::new();
             let error = post_build_admission_failure(
                 &campaign,
                 &built,
                 Some(&retained),
                 later_settled,
                 "independent metadata failure".into(),
+                &mut output,
             )
             .unwrap_err();
             assert_eq!(error.to_string(), "independent metadata failure");
@@ -503,9 +511,9 @@ mod tests {
                     uncertain || !later_settled
                 );
             }
-            let report: Value =
-                serde_json::from_slice(&fs::read(campaign.directory.join("result.json")).unwrap())
-                    .unwrap();
+            let saved = fs::read(campaign.directory.join("result.json")).unwrap();
+            assert_eq!(output, [saved.as_slice(), b"\n"].concat());
+            let report: Value = serde_json::from_slice(&saved).unwrap();
             assert_eq!(report["qualified"], false);
             assert_eq!(report["failure"], "independent metadata failure");
             assert_eq!(
@@ -545,12 +553,14 @@ mod tests {
             elapsed: Duration::ZERO,
             cleanup_elapsed: Duration::ZERO,
         };
+        let mut output = Vec::new();
         let error = post_build_admission_failure(
             &campaign,
             &built,
             None,
             true,
             "expected image absent".into(),
+            &mut output,
         )
         .unwrap_err();
         assert_eq!(error.to_string(), "expected image absent");
@@ -560,12 +570,65 @@ mod tests {
             fs::read(campaign.directory.join("build.log")).unwrap(),
             b"compiler observations"
         );
-        let report: Value =
-            serde_json::from_slice(&fs::read(campaign.directory.join("result.json")).unwrap())
-                .unwrap();
+        let saved = fs::read(campaign.directory.join("result.json")).unwrap();
+        assert_eq!(output, [saved.as_slice(), b"\n"].concat());
+        let report: Value = serde_json::from_slice(&saved).unwrap();
         assert_eq!(report["qualified"], false);
         assert_eq!(report["retained_unexecuted_image"], Value::Null);
         assert_eq!(report["cleanup"]["state"], "complete");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn report_output_failure_keeps_primary_admission_error_and_saved_cleanup() {
+        struct RefusingOutput {
+            writes: usize,
+        }
+        impl std::io::Write for RefusingOutput {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                self.writes += 1;
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "independent report output failure",
+                ))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let root = scratch();
+        let campaign = crate::campaign::cleanup_tests::fixture(root.path());
+        let built = crate::campaign::ProcessResult {
+            status: std::process::Command::new("/usr/bin/true")
+                .status()
+                .unwrap(),
+            timed_out: false,
+            cancelled: false,
+            unexpected_survivors: 0,
+            cleanup_complete: true,
+            elapsed: Duration::ZERO,
+            cleanup_elapsed: Duration::ZERO,
+        };
+        let mut output = RefusingOutput { writes: 0 };
+        let error = post_build_admission_failure(
+            &campaign,
+            &built,
+            None,
+            true,
+            "independent admission refusal".into(),
+            &mut output,
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "independent admission refusal");
+        assert_eq!(output.writes, 1);
+        let report: Value =
+            serde_json::from_slice(&fs::read(campaign.directory.join("result.json")).unwrap())
+                .unwrap();
+        assert_eq!(report["failure"], "independent admission refusal");
+        assert_eq!(report["qualified"], false);
+        assert_eq!(report["cleanup"]["state"], "complete");
+        assert!(!campaign.directory.join("build").exists());
+        assert!(!campaign.directory.join("tmp").exists());
     }
 
     #[test]

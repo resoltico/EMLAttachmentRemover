@@ -360,6 +360,10 @@ impl Campaign {
     }
 
     pub(crate) fn report(&self, value: &impl Serialize) -> Result<()> {
+        self.report_to(value, &mut std::io::stdout().lock())
+    }
+
+    pub(crate) fn report_to(&self, value: &impl Serialize, output: &mut impl Write) -> Result<()> {
         let bytes = serde_json::to_vec_pretty(value)?;
         if let Err(error) = self.check_root_address() {
             return Err(format!(
@@ -373,9 +377,8 @@ impl Campaign {
             .create_new(true)
             .open(self.directory.join("result.json"))?
             .write_all(&bytes)?;
-        let mut stdout = std::io::stdout().lock();
-        stdout.write_all(&bytes)?;
-        stdout.write_all(b"\n")?;
+        output.write_all(&bytes)?;
+        output.write_all(b"\n")?;
         Ok(())
     }
 }
