@@ -21,11 +21,22 @@ final class DesktopInteractionTests: XCTestCase {
     return frame
   }
 
+  @MainActor
+  func presentationSnapshots(_ element: XCUIElement) throws -> [XCUIElementSnapshot] {
+    var pending = Array((try element.snapshot()).children.reversed())
+    var snapshots: [XCUIElementSnapshot] = []
+    while let snapshot = pending.popLast() {
+      snapshots.append(snapshot)
+      pending.append(contentsOf: snapshot.children.reversed())
+    }
+    return snapshots
+  }
+
   // Always make one bounded gesture to the requested end. A visible endpoint
   // can coexist with a clipped header/footer; the outer window also includes
   // titlebar space that is not part of the Slint content viewport.
   @MainActor
-  func showReportDetails(_ app: XCUIApplication) throws {
+  func showReportDetails(_ app: XCUIApplication) async throws {
     let window = app.windows["EML Attachment Remover"]
     let before = try contentFrame(window)
     let technical = app.checkBoxes["Technical details"]
@@ -40,15 +51,28 @@ final class DesktopInteractionTests: XCTestCase {
       throw InteractionFailure.expectedPresentation
     }
     anchor.scroll(byDeltaX: 0, deltaY: -1000)
-    let after = try contentFrame(window)
-    guard technical.exists, technical.isHittable, after.contains(technical.frame) else {
-      XCTFail("Report controls remain clipped after the one owned scroll")
+    var snapshotFailure: String?
+    let settled = NSPredicate { _, _ in
+      do {
+        let after = try self.contentFrame(window)
+        return technical.exists && technical.isHittable && after.contains(technical.frame)
+      } catch {
+        snapshotFailure = String(describing: error)
+        return false
+      }
+    }
+    let result = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 5)
+    guard result == .completed else {
+      XCTFail(
+        "Report controls remain clipped after the one owned scroll; snapshot error: \(snapshotFailure ?? "none")"
+      )
       throw InteractionFailure.expectedPresentation
     }
   }
 
   @MainActor
-  func showRunControls(_ app: XCUIApplication) throws {
+  func showRunControls(_ app: XCUIApplication) async throws {
     let window = app.windows["EML Attachment Remover"]
     let before = try contentFrame(window)
     let top = app.buttons["Choose messages…"]
@@ -63,9 +87,22 @@ final class DesktopInteractionTests: XCTestCase {
       throw InteractionFailure.expectedPresentation
     }
     anchor.scroll(byDeltaX: 0, deltaY: 1000)
-    let after = try contentFrame(window)
-    guard top.exists, top.isHittable, after.contains(top.frame) else {
-      XCTFail("Run controls remain clipped after the one owned scroll")
+    var snapshotFailure: String?
+    let settled = NSPredicate { _, _ in
+      do {
+        let after = try self.contentFrame(window)
+        return top.exists && top.isHittable && after.contains(top.frame)
+      } catch {
+        snapshotFailure = String(describing: error)
+        return false
+      }
+    }
+    let result = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 5)
+    guard result == .completed else {
+      XCTFail(
+        "Run controls remain clipped after the one owned scroll; snapshot error: \(snapshotFailure ?? "none")"
+      )
       throw InteractionFailure.expectedPresentation
     }
   }
@@ -121,7 +158,7 @@ final class DesktopInteractionTests: XCTestCase {
   func saveReport(_ app: XCUIApplication, to destination: URL, expectNameCollision: Bool)
     async throws
   {
-    try showRunControls(app)
+    try await showRunControls(app)
     let exportButton = app.buttons["Export Report…"]
     let available = NSPredicate { _, _ in exportButton.isEnabled }
     guard
@@ -182,7 +219,7 @@ final class DesktopInteractionTests: XCTestCase {
       app.windows["EML Attachment Remover"].frame.contains(start.frame)
     else { throw InteractionFailure.expectedPresentation }
     start.scroll(byDeltaX: 0, deltaY: 1000)
-    try showRunControls(app)
+    try await showRunControls(app)
   }
 
   @MainActor
@@ -221,7 +258,7 @@ final class DesktopInteractionTests: XCTestCase {
 
   @MainActor
   func requireWaiting(_ app: XCUIApplication, count: Int) async throws {
-    if !app.sheets.firstMatch.exists { try showRunControls(app) }
+    if !app.sheets.firstMatch.exists { try await showRunControls(app) }
     let label = "Waiting requests: \(count)"
     let predicate = NSPredicate { _, _ in
       app.staticTexts.matching(NSPredicate(format: "value == %@", label)).count == 1
@@ -239,7 +276,7 @@ final class DesktopInteractionTests: XCTestCase {
   )
     async throws
   {
-    try showRunControls(app)
+    try await showRunControls(app)
     if !pickerBaselineSettled {
       let acknowledgment = fixture.appendingPathComponent("picker-baseline-settled")
       try DesktopFixtureRequest.pickerBaseline.send()
@@ -307,9 +344,15 @@ final class DesktopInteractionTests: XCTestCase {
   @MainActor
   func requireAccessibleText(_ app: XCUIApplication, prefix: String) async throws {
     enum Attribute { case title, label, value }
-    var match: (element: XCUIElement, attribute: Attribute)?
+    var match: (element: XCUIElementSnapshot, attribute: Attribute)?
+    var snapshotFailure: String?
     let predicate = NSPredicate { _, _ in
-      for image in app.images.allElementsBoundByIndex {
+      let snapshots: [XCUIElementSnapshot]
+      do { snapshots = try self.presentationSnapshots(app) } catch {
+        snapshotFailure = String(describing: error)
+        return false
+      }
+      for image in snapshots where image.elementType == .image {
         if image.title.hasPrefix(prefix) {
           match = (image, .title)
           return true
@@ -319,7 +362,7 @@ final class DesktopInteractionTests: XCTestCase {
           return true
         }
       }
-      for text in app.staticTexts.allElementsBoundByIndex {
+      for text in snapshots where text.elementType == .staticText {
         if (text.value as? String)?.hasPrefix(prefix) == true {
           match = (text, .value)
           return true
@@ -332,8 +375,11 @@ final class DesktopInteractionTests: XCTestCase {
         of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 10)
         == .completed
     else {
-      XCTFail("Required native accessible text is absent: \(prefix); \(app.debugDescription)")
-      for element in app.staticTexts.allElementsBoundByIndex.prefix(16) {
+      XCTFail(
+        "Required native accessible text is absent: \(prefix); snapshot error: \(snapshotFailure ?? "none"); \(app.debugDescription)"
+      )
+      let diagnostics = (try? presentationSnapshots(app)) ?? []
+      for element in diagnostics.filter({ $0.elementType == .staticText }).prefix(16) {
         let value = element.value
         let kind = value.map { String(reflecting: Swift.type(of: $0)) } ?? "nil"
         print(
@@ -363,7 +409,7 @@ final class DesktopInteractionTests: XCTestCase {
     _ app: XCUIApplication, counts: String, source: URL, displayedName: String? = nil
   ) async throws {
     try await requireRunCounts(app, counts: counts)
-    try showReportDetails(app)
+    try await showReportDetails(app)
     let technical = app.checkBoxes["Technical details"]
     let value =
       (technical.value as? NSNumber)?.intValue
@@ -382,14 +428,20 @@ final class DesktopInteractionTests: XCTestCase {
       selected, .completed,
       "Expected settled details for \(source.lastPathComponent): \(app.debugDescription)")
     guard selected == .completed else { throw InteractionFailure.expectedPresentation }
-    try showRunControls(app)
+    try await showRunControls(app)
   }
 
   @MainActor
   func requireRunCounts(_ app: XCUIApplication, counts: String) async throws {
-    try showReportDetails(app)
+    try await showReportDetails(app)
+    var snapshotFailure: String?
     let predicate = NSPredicate { _, _ in
-      let summaries = app.staticTexts.allElementsBoundByIndex.compactMap { element in
+      let snapshots: [XCUIElementSnapshot]
+      do { snapshots = try self.presentationSnapshots(app) } catch {
+        snapshotFailure = String(describing: error)
+        return false
+      }
+      let summaries = snapshots.filter { $0.elementType == .staticText }.compactMap { element in
         [element.title, element.label, element.value as? String ?? ""].first {
           $0.hasPrefix("Run summary: ")
         }
@@ -403,20 +455,31 @@ final class DesktopInteractionTests: XCTestCase {
     let result = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 30)
     XCTAssertEqual(
-      result, .completed, "Expected terminal run counts \(counts): \(app.debugDescription)")
+      result, .completed,
+      "Expected terminal run counts \(counts); snapshot error: \(snapshotFailure ?? "none"): \(app.debugDescription)"
+    )
     guard result == .completed else { throw InteractionFailure.expectedPresentation }
   }
 
   @MainActor
   func requireText(_ app: XCUIApplication, containing text: String) async throws {
+    var snapshotFailure: String?
     let predicate = NSPredicate { _, _ in
-      app.descendants(matching: .any).allElementsBoundByIndex.contains {
-        ($0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")).contains(text)
+      do {
+        return try self.presentationSnapshots(app).contains {
+          ($0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")).contains(text)
+        }
+      } catch {
+        snapshotFailure = String(describing: error)
+        return false
       }
     }
     let result = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 20)
-    XCTAssertEqual(result, .completed, "Expected presentation \(text): \(app.debugDescription)")
+    XCTAssertEqual(
+      result, .completed,
+      "Expected presentation \(text); snapshot error: \(snapshotFailure ?? "none"): \(app.debugDescription)"
+    )
     guard result == .completed else { throw InteractionFailure.expectedPresentation }
   }
 

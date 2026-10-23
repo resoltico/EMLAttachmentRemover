@@ -537,6 +537,13 @@ jobs:
           artifact-ids: ${{ steps.artifact.outputs.id }}
           path: target/products
           digest-mismatch: error
+      - name: Reuse producer dependencies for consumer bootstrap
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/native-cargo/${{ matrix.target }}
+            ~/.cargo/registry/cache
+          key: macos-build-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'vendor/**', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
       - name: Run the same native CLI and app archive bytes on the floor host
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -599,6 +606,13 @@ jobs:
           artifact-ids: ${{ steps.artifact.outputs.id }}
           path: target/products
           digest-mismatch: error
+      - name: Reuse producer dependencies for consumer bootstrap
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/native-cargo/${{ matrix.target }}
+            ~/.cargo/registry/cache
+          key: macos-build-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'vendor/**', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
       - name: Qualify the frozen picker once in its admitted ordinary or incident host state
         env:
           PLATFORM: ${{ matrix.platform }}

@@ -100,6 +100,15 @@ sources. Cached intermediates are unqualified: current products are built, froze
 signed and subjected to image, archive, extraction, behavior and GUI checks.
 Qualification records and prior test results are never restored as passes.
 
+The macOS15 desktop and macOS26 picker consumers restore this same exact-key
+cache before compiling their tooling, without saving another cache object. This
+transfers about 395 MiB per consumer, including native dependency objects their
+bootstrap does not use, in exchange for reusing the compressed crate archives.
+Consumer tooling still compiles fresh in its ordinary build directory and checks
+the frozen product archives. Cache reuse reduces crate-archive downloads; the
+registry index and other network prerequisites can still be required. It neither
+retries a failed qualification nor makes a cache hit evidence of product behavior.
+
 Windows uses the bounded native controller with discovery/execution comparison,
 separate transcripts, required-name sentinels and ignored-test rejection. Actual
 console tests require the CLI to consume an unfinished request or produce a real

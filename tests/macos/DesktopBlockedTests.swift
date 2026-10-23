@@ -106,12 +106,12 @@ extension DesktopInteractionTests {
     XCTAssertEqual(actual.processIdentifier, session.owned.processIdentifier)
   }
   @MainActor
-  private func selectReport(_ app: XCUIApplication, run: Int) throws {
-    try showReportDetails(app)
+  private func selectReport(_ app: XCUIApplication, run: Int) async throws {
+    try await showReportDetails(app)
     let button = try XCTUnwrap(
       app.buttons.allElementsBoundByIndex.first { $0.title.hasPrefix("Run \(run)\n") })
     button.click()
-    try showRunControls(app)
+    try await showRunControls(app)
   }
   @MainActor
   private func arm(_ session: ChildSession, recipe: String) throws {
@@ -154,7 +154,7 @@ extension DesktopInteractionTests {
   }
   @MainActor
   private func responsive(_ app: XCUIApplication) async throws {
-    try showReportDetails(app)
+    try await showReportDetails(app)
     let technical = app.checkBoxes["Technical details"]
     let before = String(describing: technical.value)
     technical.click()
@@ -166,12 +166,12 @@ extension DesktopInteractionTests {
       throw InteractionFailure.expectedPresentation
     }
     technical.click()
-    try showRunControls(app)
+    try await showRunControls(app)
   }
   @MainActor
   private func stopBlocked(_ session: ChildSession, operation: String) async throws {
     let app = session.app
-    try showRunControls(app)
+    try await showRunControls(app)
     let stop = app.buttons[operation == "processing" ? "Stop" : "Cancel Export"]
     XCTAssertTrue(stop.isEnabled)
     stop.click()
@@ -253,7 +253,7 @@ extension DesktopInteractionTests {
       try await requireRun(
         app, counts: "1 created · 0 up to date",
         source: session.fixture.appendingPathComponent("two.eml"))
-      try selectReport(app, run: 1)
+      try await selectReport(app, run: 1)
       try arm(session, recipe: "export:\(phase)")
       try await saveReport(
         app, to: session.fixture.appendingPathComponent("blocked-report.json"),
@@ -265,16 +265,16 @@ extension DesktopInteractionTests {
     let operationID = try await awaitBoundary(session, operation: operation, phase: phase)
     try assertBlockedEffect(session, operation: operation, phase: phase)
     let responseBegan = ProcessInfo.processInfo.systemUptime
-    try showReportDetails(app)
+    try await showReportDetails(app)
     let runID = try observedNumber(app, pattern: "Run summary: Run ([0-9]+)")
-    try showRunControls(app)
+    try await showRunControls(app)
     XCTAssertEqual(runID, operation == "export" ? 1 : 2)
     if operation == "export" {
       try await requireText(app, containing: "Export operation \(operationID):")
       XCTAssertEqual(
         try observedNumber(app, pattern: "Export operation ([0-9]+):"), operationID)
     } else {
-      try showReportDetails(app)
+      try await showReportDetails(app)
       let technical = app.checkBoxes["Technical details"]
       if ((technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue) != "1" {
         technical.click()
@@ -284,11 +284,11 @@ extension DesktopInteractionTests {
         try observedNumber(app, pattern: "Processing operation: ([0-9]+)"), operationID)
     }
     if operation == "export" {
-      try selectReport(app, run: 2)
+      try await selectReport(app, run: 2)
       try await requireRun(
         app, counts: "1 created · 0 up to date",
         source: session.fixture.appendingPathComponent("two.eml"))
-      try showRunControls(app)
+      try await showRunControls(app)
       XCTAssertTrue(app.buttons["Dismiss report"].isEnabled)
       try await deliver(session, "folder-input/folder.eml")
       try await requireWaiting(app, count: 1)
@@ -298,11 +298,11 @@ extension DesktopInteractionTests {
       try await requireRun(
         app, counts: "1 created · 0 up to date",
         source: session.fixture.appendingPathComponent("folder-input/folder.eml"))
-      try selectReport(app, run: 1)
+      try await selectReport(app, run: 1)
       XCTAssertFalse(app.buttons["Dismiss report"].isEnabled)
       XCTAssertTrue(app.buttons["Cancel Export"].isEnabled)
     } else {
-      try selectReport(app, run: 1)
+      try await selectReport(app, run: 1)
       try await requireRun(
         app, counts: "1 created · 0 up to date",
         source: session.fixture.appendingPathComponent("one.eml"))
@@ -312,8 +312,8 @@ extension DesktopInteractionTests {
     snapshot(app, scenario + "-responsive")
     try await stopBlocked(session, operation: operation)
     try assertBlockedEffect(session, operation: operation, phase: phase)
-    if operation == "processing" { try selectReport(app, run: 2) }
-    try showReportDetails(app)
+    if operation == "processing" { try await selectReport(app, run: 2) }
+    try await showReportDetails(app)
     let technical = app.checkBoxes["Technical details"]
     if ((technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue) != "1" {
       technical.click()
@@ -342,8 +342,8 @@ extension DesktopInteractionTests {
     try await finishChild(session)
   }
   @MainActor
-  private func changeChildMode(_ app: XCUIApplication, check: Bool) throws {
-    try showRunControls(app)
+  private func changeChildMode(_ app: XCUIApplication, check: Bool) async throws {
+    try await showRunControls(app)
     app.popUpButtons["Operation mode"].click()
     let label = check ? "Check only" : "Create copies"
     let choice = app.descendants(matching: .any).matching(
@@ -356,7 +356,7 @@ extension DesktopInteractionTests {
   func testOwnedExportWriterBlock() async throws {
     let session = try childSession("export-writer-block")
     let app = session.app
-    try changeChildMode(app, check: true)
+    try await changeChildMode(app, check: true)
     try await deliver(session, "writer-input")
     try await requireText(app, containing: "1024 planned · Check only")
     // Measure this immutable retained document before introducing the owned
@@ -368,12 +368,12 @@ extension DesktopInteractionTests {
     XCTAssertGreaterThan(bytes.count, 1024 * 1024)
     let document = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
     XCTAssertEqual((document["items"] as? [Any])?.count, 1024)
-    try changeChildMode(app, check: false)
+    try await changeChildMode(app, check: false)
     try await deliver(session, "one.eml")
     try await requireRun(
       app, counts: "1 created · 0 up to date",
       source: session.fixture.appendingPathComponent("one.eml"))
-    try selectReport(app, run: 1)
+    try await selectReport(app, run: 1)
     try arm(session, recipe: "export:request-body")
     try await saveReport(
       app, to: session.fixture.appendingPathComponent("blocked-report.json"),
@@ -385,7 +385,7 @@ extension DesktopInteractionTests {
     // With no body read and a report larger than the pipe, this is the actual
     // parent writer holding its shared report lock, observed by try-inspection.
     try await requireText(app, containing: "Report is busy; waiting for results.")
-    try selectReport(app, run: 2)
+    try await selectReport(app, run: 2)
     try await requireRun(
       app, counts: "1 created · 0 up to date",
       source: session.fixture.appendingPathComponent("one.eml"))
@@ -520,7 +520,7 @@ extension DesktopInteractionTests {
   func testOwnedExportPublication() async throws {
     let session = try childSession("export-publication")
     let app = session.app
-    try changeChildMode(app, check: true)
+    try await changeChildMode(app, check: true)
     try await deliver(session, "one.eml")
     try await requireText(app, containing: "1 planned · Check only")
     let expected = try independentCheckReport(session)
@@ -616,7 +616,7 @@ extension DesktopInteractionTests {
     try await requireRun(
       app, counts: "1 created · 0 up to date",
       source: session.fixture.appendingPathComponent("two.eml"))
-    try selectReport(app, run: 1)
+    try await selectReport(app, run: 1)
     try arm(session, recipe: "dual-quit")
     try await saveReport(
       app, to: session.fixture.appendingPathComponent("blocked-report.json"),
@@ -630,17 +630,17 @@ extension DesktopInteractionTests {
       delivery: session.delivery)
     let exportID = try await awaitBoundary(export, operation: "export", phase: "preflight")
     let responseBegan = ProcessInfo.processInfo.systemUptime
-    try selectReport(app, run: 2)
+    try await selectReport(app, run: 2)
     try await requireRun(
       app, counts: "1 created · 0 up to date",
       source: session.fixture.appendingPathComponent("two.eml"))
     try await deliver(session, "folder-input/folder.eml")
     try await requireWaiting(app, count: 1)
-    try showRunControls(app)
+    try await showRunControls(app)
     app.buttons["Dismiss report"].click()
     let processingID = try await awaitBoundary(
       processing, operation: "processing", phase: "preflight")
-    try showReportDetails(app)
+    try await showReportDetails(app)
     let processingRunID = try observedNumber(app, pattern: "Run summary: Run ([0-9]+)")
     XCTAssertEqual(processingRunID, 3)
     let technical = app.checkBoxes["Technical details"]
@@ -657,7 +657,7 @@ extension DesktopInteractionTests {
       directory: session.fixture.appendingPathComponent("publication-output"))
     XCTAssertFalse(FileManager.default.fileExists(atPath: processingCopy.path))
     XCTAssertNotEqual(exportID, processingID)
-    try selectReport(app, run: 1)
+    try await selectReport(app, run: 1)
     XCTAssertFalse(app.buttons["Dismiss report"].isEnabled)
     XCTAssertTrue(app.buttons["Stop"].isEnabled)
     XCTAssertTrue(app.buttons["Cancel Export"].isEnabled)

@@ -58,7 +58,7 @@ extension DesktopInteractionTests {
       try await switchAppearanceApplication(productOwner, from: settingsOwner)
       let expected =
         "Interface native appearance: \(dark ? "dark" : "light"); increased contrast: false"
-      try showReportDetails(app)
+      try await showReportDetails(app)
       try await requireText(app, containing: expected)
       observations.append(expected)
       snapshot(app, "native-appearance-\(name.lowercased())")
@@ -70,7 +70,7 @@ extension DesktopInteractionTests {
       settings, owner: settingsOwner, contrast: true)
     try await switchAppearanceApplication(productOwner, from: settingsOwner)
     let contrast = "Interface native appearance: dark; increased contrast: true"
-    try showReportDetails(app)
+    try await showReportDetails(app)
     try await requireText(app, containing: contrast)
     observations.append(contrast)
     snapshot(app, "native-appearance-increased-contrast")
@@ -160,7 +160,7 @@ extension DesktopInteractionTests {
       [source], withApplicationAt: appURL, configuration: configuration)
     XCTAssertEqual(recipient.processIdentifier, pid)
     try await requireRunCounts(app, counts: "1 created · 0 up to date")
-    try showReportDetails(app)
+    try await showReportDetails(app)
     let technical = app.checkBoxes["Technical details"]
     guard technical.waitForExistence(timeout: 10) else {
       throw InteractionFailure.expectedPresentation
@@ -385,7 +385,7 @@ extension DesktopInteractionTests {
     let display = try await nativeDisplaySettings(
       settings, owner: owner, contrast: state.contrast, transparency: state.transparency)
     try await switchAppearanceApplication(productOwner, from: owner)
-    try showReportDetails(product)
+    try await showReportDetails(product)
     if state.selection != "Auto" {
       try await requireText(
         product,

@@ -281,7 +281,7 @@ extension DesktopInteractionTests {
         "Observed static text label=\(text.label.debugDescription), value=\(String(describing: text.value).prefix(2048))"
       )
     }
-    try showReportDetails(app)
+    try await showReportDetails(app)
     let technical = app.checkBoxes["Technical details"]
     guard technical.exists else {
       XCTFail("Technical details control is unavailable")
@@ -308,7 +308,7 @@ extension DesktopInteractionTests {
     }
     snapshot(app, "finished")
     try await requireAccessibleText(app, prefix: "Run summary: ")
-    try showRunControls(app)
+    try await showRunControls(app)
     try await requireAccessibleText(app, prefix: "Completed")
     try await checkCompactReport(app, window: window, source: sources[0])
 
