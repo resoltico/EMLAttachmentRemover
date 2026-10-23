@@ -27,7 +27,7 @@ jobs:
           $out = Join-Path $env:GITHUB_WORKSPACE 'target/powershell-path-diagnostic'
           [void][IO.Directory]::CreateDirectory($out)
           $result = [ordered]@{
-              scope = 'Diagnostic script admission only; no product, NTFS profile or qualification execution.'
+              scope = 'Diagnostic script admission with verbatim child CWD only; no product, NTFS profile or qualification execution.'
               workflow_sha = $env:GITHUB_SHA; reference_checkout_sha = $env:REFERENCE_CHECKOUT_SHA
               host = [ordered]@{ os = [Runtime.InteropServices.RuntimeInformation]::OSDescription; architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString(); powershell = $PSVersionTable.PSVersion.ToString() }
               policy = @(Get-ExecutionPolicy -List | ForEach-Object { [ordered]@{ scope = $_.Scope.ToString(); policy = $_.ExecutionPolicy.ToString() } })
@@ -110,7 +110,7 @@ jobs:
               $result.reference_script = [ordered]@{ scope = 'Fresh exact-source checkout reference; does not reconstruct the failed source17 private clone ADS/policy state.'; facts = (Script-Facts $reference) }
               foreach ($case in @(@{name='ordinary';path=$scalar}, @{name='verbatim';path=$verbatim}, @{name='relative';path='.\scalar.ps1'})) {
                   $arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $case.path, 'scalar value []` é')
-                  $child = Invoke-DiagnosticChild $powershell $arguments $root
+                  $child = Invoke-DiagnosticChild $powershell $arguments ('\\?\' + $root)
                   $result.cases += [ordered]@{ case = $case.name; script_expression = $case.path; process = $child }
               }
               $result.scalar.ordinary_after = Script-Facts $scalar
