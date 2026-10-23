@@ -54,19 +54,28 @@ pub(crate) fn panic_observation(info: &std::panic::PanicHookInfo<'_>) {
 
 pub(crate) enum EditAction {
     Copy,
+    Paste,
     SelectAll,
 }
 pub(crate) fn edit(action: EditAction) -> Result<(), NativeError> {
     let main = MainThreadMarker::new().ok_or(NativeError::MainThreadRequired)?;
-    let selector = match action {
-        EditAction::Copy => sel!(copy:),
-        EditAction::SelectAll => sel!(selectAll:),
+    let (selector, observe_paste) = match action {
+        EditAction::Copy => (sel!(copy:), false),
+        EditAction::Paste => (sel!(paste:), true),
+        EditAction::SelectAll => (sel!(selectAll:), false),
     };
     // SAFETY: these fixed AppKit standard actions take one nullable sender.
     // Nil target asks AppKit to resolve the current native first responder.
-    unsafe {
+    let accepted = unsafe {
         objc2_app_kit::NSApplication::sharedApplication(main)
-            .sendAction_to_from(selector, None, None);
+            .sendAction_to_from(selector, None, None)
+    };
+    if observe_paste {
+        lifecycle_observation(if accepted {
+            "Native Paste dispatch accepted"
+        } else {
+            "Native Paste dispatch declined"
+        });
     }
     Ok(())
 }

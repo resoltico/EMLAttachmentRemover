@@ -99,8 +99,10 @@ passes synchronous lifetime-bound native open-URL batches and one borrowed paste
 to the common bounded file-URL reader. Inspection never queues work; a committed drop validates the
 current complete batch again. See the retained [patch notice](../vendor/winit/EML-PATCH.md) for upstream
 identity, changed files and the separate native drag-delivery requirement.
-Read-only report text supports Edit/Copy and Select All through Slint; Window
-commands use Slint's minimize, maximize and macOS bring-to-front APIs.
+Read-only report text supports Edit/Copy and Select All through Slint. While a
+native file or folder dialog is active, Copy, Paste (Command-V) and Select All
+use AppKit's current responder. Window commands use Slint's minimize, maximize
+and macOS bring-to-front APIs.
 Required behavior includes file/folder selection, native URL batch ingress,
 Services/drop/Open With, destination preferences with session-only override,
 serial queued runs, two retained reports, Stop/Force Stop, close/hide/reopen,

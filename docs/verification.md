@@ -73,8 +73,12 @@ its actual NSWorkspace-launched app and named pasteboard, executes one selected
 XCTest, verifies original and golden bytes, and requires app/runner/worker/resource
 settlement. Forced app cleanup is a failure and does not establish worker
 settlement. A missing result or uncertain cleanup closes further admission.
-Native Go To path input uses one native Command-V action and exact field readback before
-Return. XCTest sends the bounded path and sequence through the existing owned
+Native Go To path input uses the native-dialog-only Edit/Paste command (Command-V),
+forwarded through AppKit's current responder. After one Paste, the fixture waits
+up to 10 seconds for exact live field equality, then reads the exact value again
+before restoring the clipboard and pressing Return. A timeout leaves the lease
+active for parent restoration after actual runner settlement. Accepted action
+dispatch is logged without path or clipboard content; it does not prove consumption. XCTest sends the bounded path and sequence through the existing owned
 stdout channel; it does not need filesystem write access. The parent alone
 validates that request, publishes the exclusive acknowledgment, and owns the
 temporary general-pasteboard lease. It captures

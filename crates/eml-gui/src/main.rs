@@ -79,8 +79,8 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn install_native_edit(window: &view::MainWindow) {
-    // Native text editing is synchronous: queuing Select All could let the
-    // next typed character arrive before AppKit changes the selection.
+    // Dispatch standard native actions synchronously to the active responder.
+    // Native controls may finish their visible updates after dispatch returns.
     let weak = window.as_weak();
     window.on_native_copy(move || {
         if weak
@@ -89,6 +89,16 @@ fn install_native_edit(window: &view::MainWindow) {
             && let Err(error) = native::edit(native::EditAction::Copy)
         {
             eprintln!("Native Copy: {error}");
+        }
+    });
+    let weak = window.as_weak();
+    window.on_native_paste(move || {
+        if weak
+            .upgrade()
+            .is_some_and(|window| window.get_native_dialog_active())
+            && let Err(error) = native::edit(native::EditAction::Paste)
+        {
+            eprintln!("Native Paste: {error}");
         }
     });
     let weak = window.as_weak();

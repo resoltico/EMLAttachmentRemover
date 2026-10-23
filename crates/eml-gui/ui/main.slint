@@ -44,6 +44,7 @@ export component MainWindow inherits Window {
     in property <bool> destination-editable;
     in property <bool> native-dialog-active;
     callback native_copy();
+    callback native_paste();
     callback native_select_all();
     in property <string> processing-operation-id;
     in property <string> selected-operation-id;
@@ -126,6 +127,7 @@ export component MainWindow inherits Window {
         }
         Menu { title: "Edit";
             MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: root.native-dialog-active || item-detail.has-focus; activated => { if root.native-dialog-active { root.native_copy(); } else { item-detail.copy(); } } }
+            MenuItem { title: "Paste"; shortcut: @keys(Control + V); enabled: root.native-dialog-active; activated => { root.native_paste(); } }
             MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: root.native-dialog-active || item-detail.has-focus; activated => { if root.native-dialog-active { root.native_select_all(); } else { item-detail.select-all(); } } }
         }
         Menu { title: "Window";

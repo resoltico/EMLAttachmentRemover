@@ -18,6 +18,10 @@ Notable changes to this project are documented in this file. The format is based
 - **Native qualification prerequisites:** finite owned-volume naming and existing-copy fixtures now require Python 3.9+, native filesystem utilities and disposable storage privileges; Windows additionally uses PowerShell 7.4 or newer for native byte-preserving command capture. Qualification records actual case/ownership/8.3 behavior and cleanup, and refuses missing profile coverage.
 - Contributor/release tools use one typed distribution plan and verified current-run inputs. `verify-release-inputs` precedes `stage-release-assets --inputs`; exact product/checksum sets and same-byte consumers govern admission. Healthy picker qualification is independent of incident policy; only the exact recognized failure may admit the expiring reviewed intervention. Final modified-host admission rechecks original policy identity/expiry after server readback.
 
+### Fixed
+
+- Native macOS file and folder dialogs support Edit/Paste (Command-V) through the current AppKit responder. Paste is enabled only while a native dialog is active; report contents remain read-only.
+
 ### Internal
 
 - Contributor checks use `cargo xtask check-config` for Cargo ownership and lint inheritance. The source-coordinate exception registry, custom Rust/Swift scanners and structural metric gates are removed; compiler/lint/formatter/native checks remain, with local exception rationales and Clippy unsafe-block documentation checks.

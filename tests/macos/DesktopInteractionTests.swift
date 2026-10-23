@@ -298,21 +298,26 @@ final class DesktopInteractionTests: XCTestCase {
       throw InteractionFailure.expectedPresentation
     }
     field.typeKey("v", modifierFlags: .command)
+    let exactPath = NSPredicate { _, _ in (field.value as? String) == path.path }
+    let consumed = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: exactPath, object: nil)], timeout: 10)
     let entered = field.value as? String
+    print(
+      "Owned native Go To path equality: \(entered == path.path); actual UTF8 bytes: \(String(describing: entered?.utf8.count))"
+    )
+    guard consumed == .completed, entered == path.path else {
+      XCTFail(
+        "Native Go To path differs: expected owned path \(path.path); actual String UTF8 bytes: \(String(describing: entered?.utf8.count))"
+      )
+      // Keep the original clipboard lease active until the owner has reaped
+      // this failed runner and observed successful output EOF/drain.
+      throw InteractionFailure.expectedPresentation
+    }
     try DesktopFixtureRequest.restorePanelClipboard.send()
     let restored = fixture.appendingPathComponent("panel-path-\(sequence).restored")
     let restoredBytes = Data("owned panel clipboard restored \(sequence)\n".utf8)
     try await requireObservation(restored, prefix: "owned panel clipboard restored \(sequence)\n")
     guard try Data(contentsOf: restored) == restoredBytes else {
-      throw InteractionFailure.expectedPresentation
-    }
-    print(
-      "Owned native Go To path equality: \(entered == path.path); actual UTF8 bytes: \(String(describing: entered?.utf8.count))"
-    )
-    guard entered == path.path else {
-      XCTFail(
-        "Native Go To path differs: expected owned path \(path.path); actual String UTF8 bytes: \(String(describing: entered?.utf8.count))"
-      )
       throw InteractionFailure.expectedPresentation
     }
     field.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
