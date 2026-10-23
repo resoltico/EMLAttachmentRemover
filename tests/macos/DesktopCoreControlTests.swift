@@ -132,7 +132,9 @@ extension DesktopInteractionTests {
     XCTAssertFalse(
       FileManager.default.fileExists(
         atPath: observation.appendingPathComponent("first-interrupt").path))
+    try showReportDetails(app)
     try await requireText(app, containing: originals[0].lastPathComponent)
+    try showRunControls(app)
     try await requireAccessibleText(app, prefix: "Processing")
     snapshot(app, "active-work-retained-after-close-reopen")
   }
@@ -175,6 +177,7 @@ extension DesktopInteractionTests {
     let app = session.app
     let observation = session.observation
 
+    try showRunControls(app)
     snapshot(app, "real-core-running-before-\(scenario)")
     XCTAssertTrue(app.buttons["Stop"].isEnabled)
     app.buttons["Stop"].click()
@@ -204,6 +207,7 @@ extension DesktopInteractionTests {
     let fixture = session.fixture
     let originals = session.originals
     let golden = session.golden
+    try showReportDetails(app)
     let technical = app.checkBoxes["Technical details"]
     technical.click()
     try await requireText(app, containing: "settled true")

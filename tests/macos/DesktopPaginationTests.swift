@@ -51,6 +51,7 @@ extension DesktopInteractionTests {
       [directory], withApplicationAt: appURL, configuration: delivery)
     guard recipient.processIdentifier == pid else { throw InteractionFailure.expectedPresentation }
     try await requireRunCounts(app, counts: "65 created · 0 up to date")
+    try showReportDetails(app)
     let previousItems = app.buttons["Previous items"]
     if previousItems.isEnabled { previousItems.click() }
     var observedFirstItem: XCUIElement?
@@ -67,6 +68,7 @@ extension DesktopInteractionTests {
       throw InteractionFailure.expectedPresentation
     }
     firstItem.click()
+    try showReportDetails(app)
     let technical = app.checkBoxes["Technical details"]
     let technicalValue = try XCTUnwrap(technical.value as? NSNumber)
     XCTAssertTrue(technicalValue == 0 || technicalValue == 1)
@@ -117,6 +119,7 @@ extension DesktopInteractionTests {
   )
     async throws
   {
+    try showRunControls(app)
     let previous = window.frame
     let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
       .withOffset(CGVector(dx: -2, dy: -2))

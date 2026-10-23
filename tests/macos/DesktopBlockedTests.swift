@@ -107,9 +107,11 @@ extension DesktopInteractionTests {
   }
   @MainActor
   private func selectReport(_ app: XCUIApplication, run: Int) throws {
+    try showReportDetails(app)
     let button = try XCTUnwrap(
       app.buttons.allElementsBoundByIndex.first { $0.title.hasPrefix("Run \(run)\n") })
     button.click()
+    try showRunControls(app)
   }
   @MainActor
   private func arm(_ session: ChildSession, recipe: String) throws {
@@ -152,6 +154,7 @@ extension DesktopInteractionTests {
   }
   @MainActor
   private func responsive(_ app: XCUIApplication) async throws {
+    try showReportDetails(app)
     let technical = app.checkBoxes["Technical details"]
     let before = String(describing: technical.value)
     technical.click()
@@ -163,10 +166,12 @@ extension DesktopInteractionTests {
       throw InteractionFailure.expectedPresentation
     }
     technical.click()
+    try showRunControls(app)
   }
   @MainActor
   private func stopBlocked(_ session: ChildSession, operation: String) async throws {
     let app = session.app
+    try showRunControls(app)
     let stop = app.buttons[operation == "processing" ? "Stop" : "Cancel Export"]
     XCTAssertTrue(stop.isEnabled)
     stop.click()
@@ -260,13 +265,16 @@ extension DesktopInteractionTests {
     let operationID = try await awaitBoundary(session, operation: operation, phase: phase)
     try assertBlockedEffect(session, operation: operation, phase: phase)
     let responseBegan = ProcessInfo.processInfo.systemUptime
+    try showReportDetails(app)
     let runID = try observedNumber(app, pattern: "Run summary: Run ([0-9]+)")
+    try showRunControls(app)
     XCTAssertEqual(runID, operation == "export" ? 1 : 2)
     if operation == "export" {
       try await requireText(app, containing: "Export operation \(operationID):")
       XCTAssertEqual(
         try observedNumber(app, pattern: "Export operation ([0-9]+):"), operationID)
     } else {
+      try showReportDetails(app)
       let technical = app.checkBoxes["Technical details"]
       if ((technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue) != "1" {
         technical.click()
@@ -280,6 +288,7 @@ extension DesktopInteractionTests {
       try await requireRun(
         app, counts: "1 created · 0 up to date",
         source: session.fixture.appendingPathComponent("two.eml"))
+      try showRunControls(app)
       XCTAssertTrue(app.buttons["Dismiss report"].isEnabled)
       try await deliver(session, "folder-input/folder.eml")
       try await requireWaiting(app, count: 1)
@@ -304,6 +313,7 @@ extension DesktopInteractionTests {
     try await stopBlocked(session, operation: operation)
     try assertBlockedEffect(session, operation: operation, phase: phase)
     if operation == "processing" { try selectReport(app, run: 2) }
+    try showReportDetails(app)
     let technical = app.checkBoxes["Technical details"]
     if ((technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue) != "1" {
       technical.click()
@@ -333,6 +343,7 @@ extension DesktopInteractionTests {
   }
   @MainActor
   private func changeChildMode(_ app: XCUIApplication, check: Bool) throws {
+    try showRunControls(app)
     app.popUpButtons["Operation mode"].click()
     let label = check ? "Check only" : "Create copies"
     let choice = app.descendants(matching: .any).matching(
@@ -625,9 +636,11 @@ extension DesktopInteractionTests {
       source: session.fixture.appendingPathComponent("two.eml"))
     try await deliver(session, "folder-input/folder.eml")
     try await requireWaiting(app, count: 1)
+    try showRunControls(app)
     app.buttons["Dismiss report"].click()
     let processingID = try await awaitBoundary(
       processing, operation: "processing", phase: "preflight")
+    try showReportDetails(app)
     let processingRunID = try observedNumber(app, pattern: "Run summary: Run ([0-9]+)")
     XCTAssertEqual(processingRunID, 3)
     let technical = app.checkBoxes["Technical details"]

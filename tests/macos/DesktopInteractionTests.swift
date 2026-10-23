@@ -7,6 +7,44 @@ import XCTest
 final class DesktopInteractionTests: XCTestCase {
   var pickerBaselineSettled = false
   enum InteractionFailure: Error { case expectedPresentation }
+  // The fixture uses the real outer scroll, never AX auto-scroll or a retry
+  // search. These two domains have stable controls on opposite ends of it.
+  @MainActor
+  func showReportDetails(_ app: XCUIApplication) throws {
+    let window = app.windows["EML Attachment Remover"]
+    let technical = app.checkBoxes["Technical details"]
+    if technical.exists && technical.isHittable && window.frame.contains(technical.frame) {
+      return
+    }
+    let top = app.buttons["Choose messages…"]
+    guard top.exists, top.isHittable, window.frame.contains(top.frame) else {
+      XCTFail("No physically visible outer-scroll anchor for report details")
+      throw InteractionFailure.expectedPresentation
+    }
+    top.scroll(byDeltaX: 0, deltaY: -1000)
+    guard technical.exists, technical.isHittable, window.frame.contains(technical.frame) else {
+      XCTFail("Report controls remain clipped after the one owned scroll")
+      throw InteractionFailure.expectedPresentation
+    }
+  }
+
+  @MainActor
+  func showRunControls(_ app: XCUIApplication) throws {
+    let window = app.windows["EML Attachment Remover"]
+    let top = app.buttons["Choose messages…"]
+    if top.exists && top.isHittable && window.frame.contains(top.frame) { return }
+    let technical = app.checkBoxes["Technical details"]
+    guard technical.exists, technical.isHittable, window.frame.contains(technical.frame) else {
+      XCTFail("No physically visible outer-scroll anchor for run controls")
+      throw InteractionFailure.expectedPresentation
+    }
+    technical.scroll(byDeltaX: 0, deltaY: 1000)
+    guard top.exists, top.isHittable, window.frame.contains(top.frame) else {
+      XCTFail("Run controls remain clipped after the one owned scroll")
+      throw InteractionFailure.expectedPresentation
+    }
+  }
+
   @MainActor
   func closeOwnedFinderWindow(_ finder: XCUIApplication, title: String) async throws {
     let matches = finder.windows.allElementsBoundByIndex.filter { $0.title == title }
@@ -58,6 +96,7 @@ final class DesktopInteractionTests: XCTestCase {
   func saveReport(_ app: XCUIApplication, to destination: URL, expectNameCollision: Bool)
     async throws
   {
+    try showRunControls(app)
     let exportButton = app.buttons["Export Report…"]
     let available = NSPredicate { _, _ in exportButton.isEnabled }
     guard
@@ -80,11 +119,20 @@ final class DesktopInteractionTests: XCTestCase {
       XCTFail("Native report folder panel did not complete: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
+    // The draft is between run controls and report details. Scroll from the
+    // still-visible export action once before resolving its native AX fields.
+    guard exportButton.isHittable,
+      app.windows["EML Attachment Remover"].frame.contains(exportButton.frame)
+    else { throw InteractionFailure.expectedPresentation }
+    exportButton.scroll(byDeltaX: 0, deltaY: -300)
     let filename = app.textFields["Report filename"]
     guard filename.waitForExistence(timeout: 5) else {
       XCTFail("Report filename form is unavailable: \(app.debugDescription)")
       throw InteractionFailure.expectedPresentation
     }
+    guard filename.isHittable,
+      app.windows["EML Attachment Remover"].frame.contains(filename.frame)
+    else { throw InteractionFailure.expectedPresentation }
     filename.click()
     app.typeKey("a", modifierFlags: .command)
     app.typeText(destination.lastPathComponent)
@@ -92,7 +140,10 @@ final class DesktopInteractionTests: XCTestCase {
     try await requireAccessibleText(app, prefix: "Exact report destination: " + destination.path)
     try await requireText(app, containing: "Existing files are never replaced.")
     XCTAssertFalse(app.buttons["Replace"].exists)
-    app.buttons["Export Report"].click()
+    let start = app.buttons["Export Report"]
+    guard start.isHittable, app.windows["EML Attachment Remover"].frame.contains(start.frame)
+    else { throw InteractionFailure.expectedPresentation }
+    start.click()
     if expectNameCollision {
       // Occupancy is a worker refusal, not a UI filesystem preflight. Keep the
       // exact filename draft available after the owned child settles.
@@ -102,6 +153,11 @@ final class DesktopInteractionTests: XCTestCase {
       XCTAssertFalse(app.sheets.firstMatch.exists)
       XCTAssertFalse(app.buttons["Replace"].exists)
     }
+    guard start.exists, start.isHittable,
+      app.windows["EML Attachment Remover"].frame.contains(start.frame)
+    else { throw InteractionFailure.expectedPresentation }
+    start.scroll(byDeltaX: 0, deltaY: 1000)
+    try showRunControls(app)
   }
 
   @MainActor
@@ -140,6 +196,7 @@ final class DesktopInteractionTests: XCTestCase {
 
   @MainActor
   func requireWaiting(_ app: XCUIApplication, count: Int) async throws {
+    if !app.sheets.firstMatch.exists { try showRunControls(app) }
     let label = "Waiting requests: \(count)"
     let predicate = NSPredicate { _, _ in
       app.staticTexts.matching(NSPredicate(format: "value == %@", label)).count == 1
@@ -157,6 +214,7 @@ final class DesktopInteractionTests: XCTestCase {
   )
     async throws
   {
+    try showRunControls(app)
     if !pickerBaselineSettled {
       let acknowledgment = fixture.appendingPathComponent("picker-baseline-settled")
       try DesktopFixtureRequest.pickerBaseline.send()
@@ -280,6 +338,13 @@ final class DesktopInteractionTests: XCTestCase {
     _ app: XCUIApplication, counts: String, source: URL, displayedName: String? = nil
   ) async throws {
     try await requireRunCounts(app, counts: counts)
+    try showReportDetails(app)
+    let technical = app.checkBoxes["Technical details"]
+    let value =
+      (technical.value as? NSNumber)?.intValue
+      ?? (technical.value as? String).flatMap(Int.init)
+    guard value == 0 || value == 1 else { throw InteractionFailure.expectedPresentation }
+    if value == 0 { technical.click() }
     let detail = app.textViews["Selected message, removed parts and technical observations"]
     let predicate = NSPredicate { _, _ in
       guard detail.exists, let value = detail.value as? String else { return false }
@@ -292,10 +357,12 @@ final class DesktopInteractionTests: XCTestCase {
       selected, .completed,
       "Expected settled details for \(source.lastPathComponent): \(app.debugDescription)")
     guard selected == .completed else { throw InteractionFailure.expectedPresentation }
+    try showRunControls(app)
   }
 
   @MainActor
   func requireRunCounts(_ app: XCUIApplication, counts: String) async throws {
+    try showRunControls(app)
     let predicate = NSPredicate { _, _ in
       app.buttons.allElementsBoundByIndex.contains {
         let text = $0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")

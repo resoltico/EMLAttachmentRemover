@@ -61,6 +61,7 @@ extension DesktopInteractionTests {
     try await requireRun(
       app, counts: "1 created · 0 up to date", source: serviceSource,
       displayedName: serviceDisplayName)
+    try showReportDetails(app)
     try await requireText(app, containing: serviceDisplayName)
     XCTAssertEqual(
       try Data(
@@ -227,11 +228,13 @@ extension DesktopInteractionTests {
     try await requireObservation(heldAcknowledgment, prefix: "owned copy held\n")
     XCTAssertEqual(try Data(contentsOf: heldAcknowledgment), Data("owned copy held\n".utf8))
     do {
+      try showReportDetails(app)
       let reveal = app.buttons["Show in Finder"]
       XCTAssertTrue(reveal.isEnabled, "Earlier usable-copy receipt should permit navigation")
       reveal.click()
       // Exercise another actual UI control after dispatch. A returned Finder
       // request cannot establish current destination presence or absence.
+      try showReportDetails(app)
       let technical = app.checkBoxes["Technical details"]
       let before = (technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue
       technical.click()
@@ -281,6 +284,7 @@ extension DesktopInteractionTests {
     let original = session.original
     // Use the first report's copy in the uniquely named owned fixture root.
     // The Finder window can then be identified without touching another folder.
+    try showReportDetails(app)
     let firstRun = try XCTUnwrap(
       window.buttons.allElementsBoundByIndex.first {
         $0.title.hasPrefix("Run 1\n")
@@ -294,6 +298,7 @@ extension DesktopInteractionTests {
       XCTFail("Owned fixture Finder window already exists; no ambiguous window will be closed")
       throw InteractionFailure.expectedPresentation
     }
+    try showReportDetails(app)
     app.buttons["Show in Finder"].click()
     let found = NSPredicate { _, _ in
       finder.windows.count == finderWindowCount + 1
@@ -322,6 +327,7 @@ extension DesktopInteractionTests {
     titlebar.click(forDuration: 0.3, thenDragTo: position)
     // Free one full-report reservation before a real native file drag.
     try await focusOwnedWindow(owned, window: window, avoiding: folder)
+    try showRunControls(app)
     app.buttons["Dismiss report"].click()
     let room = NSPredicate { _, _ in
       window.buttons.allElementsBoundByIndex.filter { $0.title.hasPrefix("Run ") }.count == 1
@@ -376,6 +382,7 @@ extension DesktopInteractionTests {
     try await requireAccessibleText(app, prefix: "Copy destination: Beside each original")
     app.buttons["Dismiss report"].click()
     try await requireRun(app, counts: "1 created · 0 up to date", source: sources[0])
+    try showReportDetails(app)
     try await requireText(app, containing: "Copy: " + destinationCopy.path)
     XCTAssertEqual(try Data(contentsOf: destinationCopy), golden)
     XCTAssertEqual(try Data(contentsOf: firstCopy), golden)
@@ -385,6 +392,7 @@ extension DesktopInteractionTests {
 
   @MainActor
   private func chooseMode(_ app: XCUIApplication, label: String) async throws {
+    try showRunControls(app)
     let mode = app.popUpButtons["Operation mode"]
     guard mode.waitForExistence(timeout: 5), mode.isEnabled else {
       XCTFail("Operation selector is unavailable: \(app.debugDescription)")
@@ -403,6 +411,7 @@ extension DesktopInteractionTests {
 
   @MainActor
   private func selectedIdentities(_ app: XCUIApplication) throws -> (String, String) {
+    try showReportDetails(app)
     let texts = app.descendants(matching: .any).allElementsBoundByIndex.map {
       $0.label + "\n" + (($0.value as? String) ?? "")
     }
@@ -423,6 +432,7 @@ extension DesktopInteractionTests {
   @MainActor
   private func exerciseCheckThenIndependentCreate(_ session: NativePickerSession) async throws {
     let app = session.app
+    try showRunControls(app)
     let source = session.sources[1]
     let destination = session.root.appendingPathComponent("chosen-destination")
     let exactCopy = expectedCopy(for: source, directory: destination)
@@ -439,8 +449,10 @@ extension DesktopInteractionTests {
     let sourceBefore = try Data(contentsOf: source)
     try await choose(app, fixture: session.root, path: source, folder: false)
     try await requireText(app, containing: "1 planned · Check only")
+    try showReportDetails(app)
     try await requireText(app, containing: "Prepared only")
     try await requireText(app, containing: "Copy: " + exactCopy.path)
+    try showRunControls(app)
     let canCreate = NSPredicate { _, _ in app.buttons["Create from this check"].isEnabled }
     let checked = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: canCreate, object: nil)], timeout: 20)
@@ -449,6 +461,7 @@ extension DesktopInteractionTests {
       try FileManager.default.contentsOfDirectory(atPath: destination.path).sorted(), before)
     XCTAssertEqual(try Data(contentsOf: source), sourceBefore)
     XCTAssertFalse(FileManager.default.fileExists(atPath: exactCopy.path))
+    try showReportDetails(app)
     let technical = app.checkBoxes["Technical details"]
     let checkedValue = (technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue
     if checkedValue != "1" { technical.click() }
@@ -460,11 +473,13 @@ extension DesktopInteractionTests {
     // changes to the current controls and the destination namespace.
     let sentinel = Data("Owned entry created after Check; never replace.\n".utf8)
     try sentinel.write(to: exactCopy, options: .withoutOverwriting)
+    try showRunControls(app)
     app.buttons["Beside originals"].click()
     try await chooseMode(app, label: "Create copies")
     app.buttons["Create from this check"].click()
-    try await requireText(app, containing: "DESTINATION_EXISTS")
     try await requireText(app, containing: "Finished with errors")
+    try showReportDetails(app)
+    try await requireText(app, containing: "DESTINATION_EXISTS")
     try await requireText(app, containing: "Copy: " + exactCopy.path)
     let createIdentity = try selectedIdentities(app)
     XCTAssertNotEqual(checkIdentity.0, createIdentity.0, "Create requires a fresh RunId")
