@@ -599,6 +599,96 @@ fn delayed_admission_inspection_is_reaped_recorded_and_closes_admission() {
 }
 
 #[test]
+fn exited_inspector_with_inherited_stdout_cannot_bypass_eof_deadline() {
+    let _scenario = scenario();
+    let root = scratch();
+    let controller = inspection_controller(
+        root.path(),
+        "#!/bin/sh\n/bin/sleep 3 &\nprintf '%s' \"$!\" > \"$0.descendant\"\nexec /bin/ps \"$@\"\n",
+    );
+    let began = std::time::Instant::now();
+    let outcome = controller.run(
+        worker(root.path(), "marker"),
+        &root.path().join("worker.log"),
+        Duration::from_secs(5),
+    );
+    let elapsed = began.elapsed();
+    // Observe the finite descendant's natural exit even if a regression admits
+    // the worker. No guessed-PID signal or unowned cleanup is used.
+    let descendant = fs::read(root.path().join("inspect.descendant")).unwrap();
+    fs::write(root.path().join("worker-ready"), descendant).unwrap();
+    worker_dead(root.path());
+    let error = outcome
+        .err()
+        .expect("Child exit without output EOF cannot admit a worker");
+    assert!(error.to_string().contains("exceeded its remaining budget"));
+    assert!(elapsed >= Duration::from_secs(2) && elapsed < Duration::from_secs(8));
+    assert!(!root.path().join("invoked").exists());
+    assert!(!controller.admits_work());
+}
+
+#[test]
+fn oversized_inspection_is_bounded_and_its_exact_process_is_reaped() {
+    let _scenario = scenario();
+    let root = scratch();
+    let controller = inspection_controller(
+        root.path(),
+        "#!/bin/sh\nprintf '%s' \"$$\" > \"$0.pid\"\nexec /usr/bin/yes oversized\n",
+    );
+    let error = controller
+        .run(
+            worker(root.path(), "marker"),
+            &root.path().join("worker.log"),
+            Duration::from_secs(5),
+        )
+        .err()
+        .expect("Oversized output cannot authorize worker execution");
+    assert!(error.to_string().contains("output exceeds its bound"));
+    let pid: i32 = fs::read_to_string(root.path().join("inspect.pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        rustix::process::getpgid(rustix::process::Pid::from_raw(pid)).unwrap_err(),
+        rustix::io::Errno::SRCH
+    );
+    assert!(!root.path().join("invoked").exists());
+    assert!(!controller.admits_work());
+}
+
+#[test]
+fn first_inspection_failure_survives_later_cleanup_observation_failure() {
+    let _scenario = scenario();
+    let root = scratch();
+    let controller = inspection_controller(
+        root.path(),
+        "#!/bin/sh\nif [ \"$1\" = -axo ]; then\n if [ ! -f \"$0.once\" ]; then : > \"$0.once\"; exec /bin/sleep 4; fi\n printf 'malformed row\\n'; exit 0\nfi\nexec /bin/ps \"$@\"\n",
+    );
+    let error = controller
+        .run(
+            Command::new("/usr/bin/true"),
+            &root.path().join("worker.log"),
+            Duration::from_secs(5),
+        )
+        .err()
+        .expect("Failed cleanup cannot qualify a successful worker");
+    assert!(error.to_string().contains(
+        "Quiescence inspection failed: Process inspection exceeded its remaining budget"
+    ));
+    let record: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path().join("worker.control.json")).unwrap())
+            .unwrap();
+    assert_eq!(record["raw_status"], 0);
+    assert_eq!(record["cleanup_complete"], false);
+    assert_eq!(
+        record["detail"],
+        "Quiescence inspection failed: Process inspection exceeded its remaining budget"
+    );
+    assert!(root.path().join("inspect.once").exists());
+    assert!(!controller.admits_work());
+}
+
+#[test]
 fn malformed_admission_inspection_refuses_worker_with_terminal_evidence() {
     let _scenario = scenario();
     let root = scratch();
@@ -934,10 +1024,19 @@ fn clipboard_abort_waits_for_complete_ack_and_rejects_malformed_bytes() {
     std::thread::scope(|scope| {
         let publication = scope.spawn(|| {
             let began = std::time::Instant::now();
-            while !root.path().join("panel-path-1.request").is_file() {
+            use base64::Engine;
+            let payload = base64::engine::general_purpose::STANDARD
+                .encode(root.path().join("one.eml").to_str().unwrap().as_bytes());
+            let request = format!("EML_NATIVE_PANEL_PATH_PREPARE 1 {payload}\n");
+            while !fs::read(root.path().join("clipboard-partial.log")).is_ok_and(|bytes| {
+                bytes
+                    .windows(request.len())
+                    .any(|part| part == request.as_bytes())
+            }) {
                 assert!(began.elapsed() < Duration::from_secs(8));
                 std::thread::sleep(Duration::from_millis(10));
             }
+            assert!(!root.path().join("panel-path-1.request").exists());
             let mut marker = fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)

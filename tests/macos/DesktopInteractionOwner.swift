@@ -464,48 +464,17 @@ final class DesktopInteractionOwner {
     }
   }
 
-  static func readPanelPath(_ url: URL) throws -> String {
-    let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
-    guard fd >= 0 else { throw Failure.invalidInput }
-    defer { close(fd) }
-    var before = stat()
-    guard fstat(fd, &before) == 0, before.st_mode & S_IFMT == S_IFREG,
-      before.st_uid == geteuid(), before.st_nlink == 1, before.st_size > 0,
-      before.st_size <= 4096
-    else { throw Failure.invalidInput }
-    var bytes = Data()
-    var buffer = [UInt8](repeating: 0, count: 4097)
-    while true {
-      let count = Darwin.read(fd, &buffer, min(buffer.count, 4097 - bytes.count))
-      if count < 0 && errno == EINTR { continue }
-      guard count >= 0 else { throw Failure.invalidInput }
-      if count == 0 { break }
-      bytes.append(contentsOf: buffer.prefix(count))
-      guard bytes.count <= 4096 else { throw Failure.invalidInput }
-    }
-    var after = stat()
-    guard fstat(fd, &after) == 0, before.st_dev == after.st_dev,
-      before.st_ino == after.st_ino, before.st_size == after.st_size,
-      before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec,
-      before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec,
-      before.st_ctimespec.tv_sec == after.st_ctimespec.tv_sec,
-      before.st_ctimespec.tv_nsec == after.st_ctimespec.tv_nsec,
-      bytes.count == before.st_size, let path = String(data: bytes, encoding: .utf8),
-      (path as NSString).isAbsolutePath, !bytes.contains(0)
-    else { throw Failure.invalidInput }
-    return path
-  }
-
   private func handlePanelPathRequest(_ request: DesktopFixtureRequest?, fixture: URL) throws {
-    guard request == .preparePanelPath || request == .restorePanelClipboard else { return }
+    guard let request else { return }
+    switch request {
+    case .preparePanelPath, .restorePanelClipboard: break
+    default: return
+    }
     do {
-      if request == .preparePanelPath {
-        guard activePanelPathSequence == nil, nextPanelPathSequence <= 32 else {
-          throw Failure.invalidInput
-        }
-        let sequence = nextPanelPathSequence
-        let path = try Self.readPanelPath(
-          fixture.appendingPathComponent("panel-path-\(sequence).request"))
+      if case .preparePanelPath(let sequence, let path) = request {
+        guard activePanelPathSequence == nil, sequence == nextPanelPathSequence,
+          nextPanelPathSequence <= 32
+        else { throw Failure.invalidInput }
         // configuration() already admitted this disposable hosted runner before
         // any general-pasteboard access. The product and XCTest never write it.
         if panelClipboard == nil { panelClipboard = PanelPathClipboardLease(pasteboard: .general) }

@@ -290,10 +290,7 @@ final class DesktopInteractionTests: XCTestCase {
     panelPathSequence += 1
     guard panelPathSequence <= 32 else { throw InteractionFailure.expectedPresentation }
     let sequence = panelPathSequence
-    try Data(path.path.utf8).write(
-      to: fixture.appendingPathComponent("panel-path-\(sequence).request"),
-      options: .withoutOverwriting)
-    try DesktopFixtureRequest.preparePanelPath.send()
+    try DesktopFixtureRequest.preparePanelPath(sequence: sequence, path: path.path).send()
     let ready = fixture.appendingPathComponent("panel-path-\(sequence).ready")
     let readyBytes = Data("owned panel path ready \(sequence)\n".utf8)
     try await requireObservation(ready, prefix: "owned panel path ready \(sequence)\n")

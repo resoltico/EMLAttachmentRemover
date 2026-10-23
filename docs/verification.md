@@ -74,7 +74,10 @@ XCTest, verifies original and golden bytes, and requires app/runner/worker/resou
 settlement. Forced app cleanup is a failure and does not establish worker
 settlement. A missing result or uncertain cleanup closes further admission.
 Native Go To path input uses one native Command-V action and exact field readback before
-Return. The admitted parent owns the temporary general-pasteboard lease, captures
+Return. XCTest sends the bounded path and sequence through the existing owned
+stdout channel; it does not need filesystem write access. The parent alone
+validates that request, publishes the exclusive acknowledgment, and owns the
+temporary general-pasteboard lease. It captures
 every original item/type/data representation before clearing, and verifies its
 restoration; the independent named Services pasteboard is unchanged. Normal paths
 restore before Return. If the runner fails, restoration waits for its actual reap
@@ -434,6 +437,14 @@ unconfirmed cleanup cannot qualify. Worker status, deadline/cancellation and
 cleanup evidence are separate; supervisor exit0 is insufficient. Observed elapsed
 time is checked even when the worker has already exited between polls.
 
+Process inspection rejects output beyond 8 MiB through a nonblocking pipe within
+its existing deadline and requires both actual inspector exit and output EOF. An
+inherited writer cannot turn inspector exit into completion. Errors settle the
+retained inspector without leaving a reader thread; later cleanup continues while
+preserving its first failure. A nonzombie snapshot row that vanishes before its
+kernel session check still prevents stable census admission; unrelated host churn
+is not silently classified as safe.
+
 This controls the reviewed pinned tool topology, not arbitrary process escape or
 an atomic universal process-table snapshot. Compiler-wrapper/target-runner hooks
 must be absent or explicitly reviewed; the driver refuses unreviewed effective
@@ -459,8 +470,8 @@ panic unwinding. Poison recovery permits later independent tests to run; it does
 not catch a failed test or turn Drop into external-cleanup evidence. Normal Cargo
 test invocation and native CI use that same isolation without a separate
 test-thread flag. This establishes isolated-scenario execution, not simultaneous
-independent-controller or ambient-churn resilience. Production session inspection,
-unknown/refusal handling and cleanup budgets are unchanged.
+independent-controller or ambient-churn resilience. Production membership queries,
+unknown/refusal handling and cleanup budgets remain the same.
 
 The pinned mutation tool's struct-field visitor bypasses its name filter.
 Discovery and execution also select the two guard files; function metadata must

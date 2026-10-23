@@ -4,17 +4,56 @@ import CryptoKit
 import Darwin
 import Foundation
 
-enum DesktopFixtureRequest: String, CaseIterable, Sendable {
-  case pickerBaseline = "EML_NATIVE_PICKER_BASELINE"
-  case picker = "EML_NATIVE_PICKER_REQUESTED"
-  case holdCopy = "EML_OWNED_COPY_HOLD"
-  case restoreCopy = "EML_OWNED_COPY_RESTORE"
-  case preparePanelPath = "EML_NATIVE_PANEL_PATH_PREPARE"
-  case restorePanelClipboard = "EML_NATIVE_PANEL_CLIPBOARD_RESTORE"
+enum DesktopFixtureRequest: Equatable, Sendable {
+  case pickerBaseline, picker, holdCopy, restoreCopy, restorePanelClipboard
+  case preparePanelPath(sequence: Int, path: String)
+
+  static let panelPathPrefix = "EML_NATIVE_PANEL_PATH_PREPARE"
+  static let maximumLineBytes = panelPathPrefix.utf8.count + 1 + 2 + 1 + 4 * ((4096 + 2) / 3)
+  enum InvalidRequest: Error { case malformed }
+
+  var wireLine: String {
+    get throws {
+      switch self {
+      case .pickerBaseline: return "EML_NATIVE_PICKER_BASELINE"
+      case .picker: return "EML_NATIVE_PICKER_REQUESTED"
+      case .holdCopy: return "EML_OWNED_COPY_HOLD"
+      case .restoreCopy: return "EML_OWNED_COPY_RESTORE"
+      case .restorePanelClipboard: return "EML_NATIVE_PANEL_CLIPBOARD_RESTORE"
+      case .preparePanelPath(let sequence, let path):
+        let bytes = Data(path.utf8)
+        guard (1...32).contains(sequence), !bytes.isEmpty, bytes.count <= 4096,
+          !bytes.contains(0), (path as NSString).isAbsolutePath
+        else { throw InvalidRequest.malformed }
+        return "\(Self.panelPathPrefix) \(sequence) \(bytes.base64EncodedString())"
+      }
+    }
+  }
+
+  static func decode(_ line: String) throws -> Self? {
+    switch line {
+    case "EML_NATIVE_PICKER_BASELINE": return .pickerBaseline
+    case "EML_NATIVE_PICKER_REQUESTED": return .picker
+    case "EML_OWNED_COPY_HOLD": return .holdCopy
+    case "EML_OWNED_COPY_RESTORE": return .restoreCopy
+    case "EML_NATIVE_PANEL_CLIPBOARD_RESTORE": return .restorePanelClipboard
+    default:
+      guard line.hasPrefix(panelPathPrefix) else { return nil }
+      let fields = line.split(separator: " ", omittingEmptySubsequences: false)
+      guard fields.count == 3, fields[0] == panelPathPrefix,
+        let sequence = Int(fields[1]), (1...32).contains(sequence),
+        String(sequence) == fields[1], fields[2].utf8.count <= 4 * ((4096 + 2) / 3),
+        let bytes = Data(base64Encoded: String(fields[2])), !bytes.isEmpty, bytes.count <= 4096,
+        bytes.base64EncodedString() == fields[2], !bytes.contains(0),
+        let path = String(data: bytes, encoding: .utf8), (path as NSString).isAbsolutePath
+      else { throw InvalidRequest.malformed }
+      return .preparePanelPath(sequence: sequence, path: path)
+    }
+  }
+
   func send() throws {
-    // Bypass stdio buffering: the owner must observe this before the UI waits
-    // for an acknowledgment or enters the native panel operation.
-    try FileHandle.standardOutput.write(contentsOf: Data((rawValue + "\n").utf8))
+    // The parent receives bounded payload bytes without granting XCTest write access.
+    try FileHandle.standardOutput.write(contentsOf: Data((try wireLine + "\n").utf8))
   }
 }
 
@@ -39,6 +78,9 @@ final class DesktopFixtureOutput: @unchecked Sendable {
   }
   func finish() {
     lock.lock()
+    if line.starts(with: Data(DesktopFixtureRequest.panelPathPrefix.utf8)) {
+      relayFailure = relayFailure ?? "Incomplete owned panel path request at EOF"
+    }
     ended = true
     lock.unlock()
   }
@@ -57,22 +99,32 @@ final class DesktopFixtureOutput: @unchecked Sendable {
     defer { lock.unlock() }
     for byte in bytes {
       if byte == 10 {
-        if !droppingLine,
-          let text = String(data: line, encoding: .utf8),
-          let request = DesktopFixtureRequest(rawValue: text)
-        {
-          guard pending.count < 8 else {
-            relayFailure = relayFailure ?? "Owned fixture request queue overflow"
-            return
+        if !droppingLine, let text = String(data: line, encoding: .utf8) {
+          do {
+            if let request = try DesktopFixtureRequest.decode(text) {
+              guard pending.count < 8 else {
+                relayFailure = relayFailure ?? "Owned fixture request queue overflow"
+                return
+              }
+              pending.append(request)
+            }
+          } catch {
+            relayFailure = relayFailure ?? "Malformed owned panel path request"
           }
-          pending.append(request)
+        } else if !droppingLine,
+          line.starts(with: Data(DesktopFixtureRequest.panelPathPrefix.utf8))
+        {
+          relayFailure = relayFailure ?? "Malformed owned panel path request"
         }
         line.removeAll(keepingCapacity: true)
         droppingLine = false
       } else if !droppingLine {
-        if line.count < 4096 {
+        if line.count < DesktopFixtureRequest.maximumLineBytes {
           line.append(byte)
         } else {
+          if line.starts(with: Data(DesktopFixtureRequest.panelPathPrefix.utf8)) {
+            relayFailure = relayFailure ?? "Oversize owned panel path request"
+          }
           line.removeAll(keepingCapacity: true)
           droppingLine = true
         }

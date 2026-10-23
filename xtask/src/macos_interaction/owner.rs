@@ -287,8 +287,11 @@ fn qualify_control(
     {
         return Err(format!("Native desktop owner control {case} did not prove its required rejection/cleanup; retained {}", directory.display()).into());
     }
-    if case == "runner-crash" && facts["runner_status"] != 6 {
-        return Err("Native runner crash control did not observe actual SIGABRT".into());
+    if case == "runner-crash" {
+        qualify_crash_relay(facts)?;
+        if facts["runner_status"] != 6 {
+            return Err("Native runner crash control did not observe actual SIGABRT".into());
+        }
     }
     let expected_failure = match case {
         "deadline" => Some("deadline"),
@@ -321,4 +324,64 @@ fn qualify_control(
         return Err("Cancelled native owner controller left admission open".into());
     }
     Ok(())
+}
+
+// A restored clipboard claim cannot stand in for the independently retained
+// runner/pipe observations that must precede post-crash restoration.
+fn qualify_crash_relay(facts: &Value) -> Result<()> {
+    if facts["runner_reaped"] != true
+        || facts["fixture_output_relay"]
+            != json!({"enabled":true,"eof_observed":true,"drain_within_deadline":true,"failure":null})
+    {
+        return Err("Native clipboard crash control did not settle its runner/output relay".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod clipboard_crash_tests {
+    use super::*;
+
+    #[test]
+    fn crash_clipboard_restoration_requires_literal_runner_and_relay_settlement() {
+        let good = json!({"runner_reaped":true,"fixture_output_relay":{"enabled":true,"eof_observed":true,"drain_within_deadline":true,"failure":null}});
+        qualify_crash_relay(&good).unwrap();
+        for field in ["runner_reaped", "fixture_output_relay"] {
+            let mut missing = good.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(qualify_crash_relay(&missing).is_err(), "{field}");
+        }
+        for field in [
+            "enabled",
+            "eof_observed",
+            "drain_within_deadline",
+            "failure",
+        ] {
+            let mut missing = good.clone();
+            missing["fixture_output_relay"]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            assert!(qualify_crash_relay(&missing).is_err(), "{field}");
+        }
+        for (pointer, value) in [
+            ("/runner_reaped", json!(false)),
+            ("/fixture_output_relay/enabled", json!(false)),
+            ("/fixture_output_relay/eof_observed", json!(false)),
+            ("/fixture_output_relay/drain_within_deadline", json!(false)),
+            ("/fixture_output_relay/drain_within_deadline", Value::Null),
+            (
+                "/fixture_output_relay/failure",
+                json!("independent relay failure"),
+            ),
+            ("/fixture_output_relay/eof_observed", json!("true")),
+        ] {
+            let mut invalid = good.clone();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(qualify_crash_relay(&invalid).is_err(), "{pointer}");
+        }
+        let mut incomplete = good;
+        incomplete["fixture_output_relay"]["unverified"] = json!(true);
+        assert!(qualify_crash_relay(&incomplete).is_err());
+    }
 }

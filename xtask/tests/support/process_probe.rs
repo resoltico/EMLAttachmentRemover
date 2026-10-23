@@ -14,16 +14,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if mode == "clipboard-abort" {
         use std::io::{Read, Write};
         let path = root.join("one.eml");
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(root.join("panel-path-1.request"))?
-            .write_all(
-                path.to_str()
-                    .ok_or("native clipboard fixture path is not UTF8")?
-                    .as_bytes(),
-            )?;
-        std::io::stdout().write_all(b"EML_NATIVE_PANEL_PATH_PREPARE\n")?;
+        use base64::Engine;
+        let path = path
+            .to_str()
+            .ok_or("native clipboard fixture path is not UTF8")?;
+        let payload = base64::engine::general_purpose::STANDARD.encode(path.as_bytes());
+        writeln!(
+            std::io::stdout(),
+            "EML_NATIVE_PANEL_PATH_PREPARE 1 {payload}"
+        )?;
         std::io::stdout().flush()?;
         let began = std::time::Instant::now();
         let expected = b"owned panel path ready 1\n";

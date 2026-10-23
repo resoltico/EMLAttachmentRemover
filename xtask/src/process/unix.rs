@@ -328,40 +328,68 @@ fn inspect(
     let mut process = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        // Inspection consumes status and numeric stdout only. An unread stderr
+        // pipe could block the inspector and provides no diagnostic evidence.
+        .stderr(Stdio::null())
         .spawn()?;
     let inspector = process.id() as i32;
-    let stdout = process.stdout.take().ok_or("Missing inspector output")?;
-    let reader = std::thread::spawn(move || {
+    let observed = (|| -> Result<Vec<u8>> {
+        let mut stdout = process.stdout.take().ok_or("Missing inspector output")?;
+        let flags = rustix::fs::fcntl_getfl(&stdout)?;
+        rustix::fs::fcntl_setfl(&stdout, flags | rustix::fs::OFlags::NONBLOCK)?;
         let mut bytes = Vec::new();
-        stdout
-            .take(8 * 1024 * 1024 + 1)
-            .read_to_end(&mut bytes)
-            .map(|_| bytes)
-    });
-    let status = loop {
-        let status = process.try_wait()?;
-        if Instant::now() >= until {
-            if status.is_none() {
-                let _ = process.kill();
-                let _ = process.wait();
+        let mut buffer = [0u8; 64 * 1024];
+        let mut status = None;
+        let mut eof = false;
+        loop {
+            let mut progress = false;
+            if !eof {
+                let available = buffer.len().min(8 * 1024 * 1024 + 1 - bytes.len());
+                match stdout.read(&mut buffer[..available]) {
+                    Ok(0) => eof = true,
+                    Ok(count) => {
+                        progress = true;
+                        bytes.extend_from_slice(&buffer[..count]);
+                        if bytes.len() > 8 * 1024 * 1024 {
+                            return Err("Process inspection output exceeds its bound".into());
+                        }
+                    }
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                        ) => {}
+                    Err(error) => return Err(error.into()),
+                }
             }
-            return Err("Process inspection exceeded its remaining budget".into());
+            if status.is_none() {
+                status = process.try_wait()?;
+            }
+            if Instant::now() >= until {
+                return Err("Process inspection exceeded its remaining budget".into());
+            }
+            if let Some(status) = status
+                && eof
+            {
+                if !status.success() {
+                    return Err("Process inspection command failed".into());
+                }
+                return Ok(bytes);
+            }
+            if !progress {
+                std::thread::sleep(Duration::from_millis(5));
+            }
         }
-        if let Some(status) = status {
-            break status;
+    })();
+    if observed.is_err() {
+        // Retain and settle this exact inspector on every error. A reaped child
+        // with an inherited writer still open supplies no EOF/cleanup proof.
+        if !matches!(process.try_wait(), Ok(Some(_))) {
+            let _ = process.kill();
+            let _ = process.wait();
         }
-        std::thread::sleep(Duration::from_millis(5));
-    };
-    if !status.success() {
-        return Err("Process inspection command failed".into());
     }
-    let bytes = reader
-        .join()
-        .map_err(|_| "Process inspector reader failed")??;
-    if bytes.len() > 8 * 1024 * 1024 {
-        return Err("Process inspection output exceeds its bound".into());
-    }
+    let bytes = observed?;
     inspected_rows(&bytes, session, inspector)
 }
 

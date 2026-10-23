@@ -19,14 +19,13 @@ struct DesktopFixtureTests {
   @MainActor
   static func main() throws {
     checkFailureSampleRetention()
-    checkRequestDecoding()
+    try checkRequestDecoding()
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "eml-fixture-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
     defer { try? FileManager.default.removeItem(at: root) }
     try checkFixtureFilesystem(root)
     try checkPanelPathClipboard(root)
-    try checkPanelPathRequests(root)
     try checkOpenPipeRelay(root)
     try checkNoReplaceAndAcknowledgment(root)
     try FileManager.default.removeItem(at: root)
@@ -36,40 +35,6 @@ struct DesktopFixtureTests {
         "All request, native no-replace/acknowledgment and prelaunch filesystem observation checks passed\n"
           .utf8))
   }
-  @MainActor
-  private static func checkPanelPathRequests(_ root: URL) throws {
-    let request = root.appendingPathComponent("panel-path-request-control")
-    let path = "/owned/日本語-00/one.eml"
-    try Data(path.utf8).write(to: request, options: .withoutOverwriting)
-    let before = try FileManager.default.attributesOfItem(atPath: request.path)
-    let observedPath = try DesktopInteractionOwner.readPanelPath(request)
-    precondition(observedPath == path)
-    let after = try FileManager.default.attributesOfItem(atPath: request.path)
-    precondition(before[.modificationDate] as? Date == after[.modificationDate] as? Date)
-    let link = root.appendingPathComponent("panel-path-link-control")
-    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: request)
-    do {
-      _ = try DesktopInteractionOwner.readPanelPath(link)
-      preconditionFailure("A request symlink must not be followed")
-    } catch {}
-    try requireBytes(request, Data(path.utf8))
-    let large = root.appendingPathComponent("panel-path-large-control")
-    try Data(repeating: 65, count: 4097).write(to: large, options: .withoutOverwriting)
-    do {
-      _ = try DesktopInteractionOwner.readPanelPath(large)
-      preconditionFailure("An oversize request must refuse before clipboard preparation")
-    } catch {}
-    let invalid = root.appendingPathComponent("panel-path-invalid-control")
-    for bytes in [Data(), Data("relative".utf8), Data([47, 0, 97])] {
-      try bytes.write(to: invalid)
-      do {
-        _ = try DesktopInteractionOwner.readPanelPath(invalid)
-        preconditionFailure("Incomplete, relative and NUL requests must be refused")
-      } catch {}
-      try requireBytes(invalid, bytes)
-    }
-  }
-
   @MainActor
   private static func checkPanelPathClipboard(_ root: URL) throws {
     let board = NSPasteboard.withUniqueName()
@@ -133,6 +98,38 @@ struct DesktopFixtureTests {
     } catch PanelPathClipboardLease.Failure.ownershipLost {}
     precondition(board.changeCount == newerCount && board.string(forType: .string) == "newer owner")
 
+    installOriginal()
+    let outOfOrder = PanelPathClipboardLease(pasteboard: board)
+    let beforeOutOfOrder = board.changeCount
+    do {
+      try outOfOrder.prepare(path: path, sequence: 2)
+      preconditionFailure("An out-of-order prepare must not capture or clear the board")
+    } catch PanelPathClipboardLease.Failure.invalidSequence {}
+    precondition(board.changeCount == beforeOutOfOrder && !outOfOrder.hasActiveLease)
+    requireOriginal()
+
+    let duplicate = PanelPathClipboardLease(pasteboard: board)
+    try duplicate.prepare(path: path, sequence: 1)
+    let beforeDuplicate = board.changeCount
+    do {
+      try duplicate.prepare(path: "/owned/other.eml", sequence: 1)
+      preconditionFailure("An active duplicate must not replace the prepared path")
+    } catch PanelPathClipboardLease.Failure.activeLease {}
+    precondition(board.changeCount == beforeDuplicate && board.string(forType: .string) == path)
+    try duplicate.restore(phase: .runnerSettled)
+    requireOriginal()
+
+    let replay = PanelPathClipboardLease(pasteboard: board)
+    try replay.prepare(path: path, sequence: 1)
+    try replay.restore(phase: .requested)
+    let beforeReplay = board.changeCount
+    do {
+      try replay.prepare(path: path, sequence: 1)
+      preconditionFailure("A restored sequence must not be replayed")
+    } catch PanelPathClipboardLease.Failure.invalidSequence {}
+    precondition(board.changeCount == beforeReplay && !replay.hasActiveLease)
+    requireOriginal()
+
     board.clearContents()
     let large = NSPasteboardItem()
     let largeBytes = Data(repeating: 7, count: 1_048_576)
@@ -177,7 +174,7 @@ struct DesktopFixtureTests {
     precondition(failedAcknowledgment.observation["state"] as? String == "unverified")
     precondition(failedAcknowledgment.observation["failure"] is String)
     print(
-      "Named-pasteboard path lease: empty, complete representations, abandoned runner, newer owner, oversize and acknowledgment failure controls passed; general clipboard untouched"
+      "Named-pasteboard path lease: empty, complete representations, abandoned runner, newer owner, sequence/replay, oversize and acknowledgment failure controls passed; general clipboard untouched"
     )
   }
 
@@ -268,9 +265,14 @@ struct DesktopFixtureTests {
         expected: expected, before: nil, after: expected, settled: true, bytes: 1))
   }
 
-  private static func checkRequestDecoding() {
-    for request in DesktopFixtureRequest.allCases {
-      let bytes = Data("\(request.rawValue)\n".utf8)
+  private static func checkRequestDecoding() throws {
+    let requests: [DesktopFixtureRequest] = [
+      .pickerBaseline, .picker, .holdCopy, .restoreCopy, .restorePanelClipboard,
+      .preparePanelPath(sequence: 1, path: "/owned/日本語-00/one.eml"),
+      .preparePanelPath(sequence: 32, path: "/owned/two.eml"),
+    ]
+    for request in requests {
+      let bytes = Data((try request.wireLine + "\n").utf8)
       for split in 0...bytes.count {
         let output = DesktopFixtureOutput()
         precondition(output.take() == nil)
@@ -282,6 +284,40 @@ struct DesktopFixtureTests {
         precondition(output.take() == nil)
       }
     }
+    let prefix = DesktopFixtureRequest.panelPathPrefix
+    let maximumPath = "/" + String(repeating: "a", count: 4095)
+    let maximum = DesktopFixtureRequest.preparePanelPath(sequence: 32, path: maximumPath)
+    let maximumLine = try maximum.wireLine
+    precondition(maximumLine.utf8.count == DesktopFixtureRequest.maximumLineBytes)
+    let decodedMaximum = try DesktopFixtureRequest.decode(maximumLine)
+    precondition(decodedMaximum == maximum)
+    let malformed = [
+      prefix, prefix + " 0 L2E=", prefix + " 33 L2E=", prefix + " 01 L2E=",
+      prefix + " +1 L2E=", prefix + " 1 L2E", prefix + " 1 L2E= ",
+      prefix + " 1 L2E=\r", prefix + " 1 L2E$", prefix + " 1 /w==",
+      prefix + " 1 LwBh", prefix + " 1 cmVsYXRpdmU=", prefix + " 1 ",
+      prefix + " 1 " + Data((maximumPath + "a").utf8).base64EncodedString(),
+    ]
+    for line in malformed {
+      let output = DesktopFixtureOutput()
+      output.observe(Data((line + "\n").utf8))
+      precondition(output.take() == nil && output.observedRelayFailure() != nil)
+    }
+    for split in [0, prefix.utf8.count - 1, prefix.utf8.count, maximumLine.utf8.count] {
+      let output = DesktopFixtureOutput()
+      let bytes = Data((maximumLine + "\n").utf8)
+      output.observe(bytes.prefix(split))
+      output.observe(bytes.suffix(bytes.count - split))
+      precondition(output.take() == maximum && output.observedRelayFailure() == nil)
+    }
+    let incomplete = DesktopFixtureOutput()
+    incomplete.observe(Data((prefix + " 1 L2E=").utf8))
+    incomplete.finish()
+    precondition(incomplete.take() == nil && !incomplete.observedEOF())
+    let tooLong = DesktopFixtureOutput()
+    tooLong.observe(Data((maximumLine + "x").utf8))
+    tooLong.observe(Data("\n".utf8))
+    precondition(tooLong.take() == nil && tooLong.observedRelayFailure() != nil)
     let incidental = DesktopFixtureOutput()
     incidental.observe(Data("prefix EML_OWNED_COPY_HOLD suffix\n".utf8))
     precondition(incidental.take() == nil)
@@ -291,7 +327,8 @@ struct DesktopFixtureTests {
     let oversized = DesktopFixtureOutput()
     oversized.observe(
       Data(
-        (String(repeating: "x", count: 4097) + "EML_OWNED_COPY_HOLD\nEML_OWNED_COPY_RESTORE\n").utf8
+        (String(repeating: "x", count: DesktopFixtureRequest.maximumLineBytes + 1)
+          + "EML_OWNED_COPY_HOLD\nEML_OWNED_COPY_RESTORE\n").utf8
       ))
     precondition(oversized.take() == .restoreCopy && oversized.take() == nil)
     let ordered = DesktopFixtureOutput()

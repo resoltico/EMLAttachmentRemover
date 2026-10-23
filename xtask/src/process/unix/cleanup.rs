@@ -27,7 +27,7 @@ impl Session {
         self.confirm_termination(began, &mut detail);
         self.reap_pins(began, &mut detail);
         if self.worker.is_some() && self.raw_status.is_none() {
-            detail = Some("Worker could not be reaped within cleanup grace".into());
+            detail.get_or_insert_with(|| "Worker could not be reaped within cleanup grace".into());
         }
         self.cleaned = detail.is_none();
         (
@@ -62,7 +62,7 @@ impl Session {
             let (rows, unstable) = match scan {
                 Ok(scan) => scan,
                 Err(error) => {
-                    *detail = Some(error.to_string());
+                    detail.get_or_insert_with(|| format!("Quiescence inspection failed: {error}"));
                     break;
                 }
             };
@@ -88,7 +88,9 @@ impl Session {
             std::thread::sleep(Duration::from_millis(10));
         }
         if stable < 2 && detail.is_none() {
-            *detail = Some("Session quiescence remained unconfirmed within cleanup grace".into());
+            detail.get_or_insert_with(|| {
+                "Session quiescence remained unconfirmed within cleanup grace".into()
+            });
         }
         (unexpected, observations)
     }
@@ -110,7 +112,7 @@ impl Session {
         let mut running = false;
         for row in rows {
             if Instant::now() >= discovery_until {
-                *detail = Some("Cleanup discovery budget exhausted".into());
+                detail.get_or_insert_with(|| "Cleanup discovery budget exhausted".into());
                 break;
             }
             let pid = number(row.pid);
@@ -118,7 +120,9 @@ impl Session {
                 continue;
             }
             if row.group == number(self.id) {
-                *detail = Some("Unexpected worker joined the supervisor's protected group".into());
+                detail.get_or_insert_with(|| {
+                    "Unexpected worker joined the supervisor's protected group".into()
+                });
                 continue;
             }
             if ordinary_exit && !row.state.starts_with('Z') {
@@ -129,7 +133,7 @@ impl Session {
             }
             if !self.pins.contains_key(&row.group) {
                 let Some(group) = Pid::from_raw(row.group) else {
-                    *detail = Some("Invalid inspected group ID".into());
+                    detail.get_or_insert_with(|| "Invalid inspected group ID".into());
                     continue;
                 };
                 match pin(&self.helper, self.id, Some(group), discovery_until) {
@@ -159,7 +163,7 @@ impl Session {
             if let Err(error) = kill_process_group(held.id, Signal::KILL)
                 && error != rustix::io::Errno::SRCH
             {
-                *detail = Some("Owned group termination failed".into());
+                detail.get_or_insert_with(|| "Owned group termination failed".into());
             }
         }
     }
@@ -175,7 +179,7 @@ impl Session {
                     }
                     Ok(None) => std::thread::sleep(Duration::from_millis(5)),
                     Err(error) => {
-                        *detail = Some(error.to_string());
+                        detail.get_or_insert_with(|| error.to_string());
                         break;
                     }
                 }
@@ -207,14 +211,18 @@ impl Session {
                     }
                 }
                 Err(error) => {
-                    *detail = Some(error.to_string());
+                    detail.get_or_insert_with(|| {
+                        format!("Post-termination inspection failed: {error}")
+                    });
                     break;
                 }
             }
             std::thread::sleep(Duration::from_millis(10));
         }
         if clean_observations < 2 {
-            *detail = Some("Post-termination live-member observation is unconfirmed".into());
+            detail.get_or_insert_with(|| {
+                "Post-termination live-member observation is unconfirmed".into()
+            });
         }
     }
     fn reap_pins(&mut self, began: Instant, detail: &mut Option<String>) {
@@ -232,7 +240,9 @@ impl Session {
                 }
             }
             if !reaped {
-                *detail = Some("Owned pin could not be reaped within cleanup grace".into());
+                detail.get_or_insert_with(|| {
+                    "Owned pin could not be reaped within cleanup grace".into()
+                });
             }
         }
         self.pins.clear();
