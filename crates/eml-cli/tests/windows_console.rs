@@ -10,7 +10,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-const CLI: &str = env!("CARGO_BIN_EXE_remove-eml-attachments");
+const CLI: &str = env!("CARGO_BIN_EXE_emlattachmentremover");
 const SENDER: &str = env!("CARGO_BIN_EXE_console-observation");
 #[path = "../../../tests/support/owned_scratch.rs"]
 mod scratch;

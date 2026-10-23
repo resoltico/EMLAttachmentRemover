@@ -16,6 +16,21 @@ git fetch origin main
 cargo xtask release-check --source FULL_SHA --version 7.0.0
 ```
 
+Before distributing changed product binaries, independently authenticate the
+previous published app archive and extract its `Contents/Info.plist`. With Python
+3 on PATH, compare that retained file against the current source:
+
+```sh
+cargo xtask check-product-identity --previous-info "/path/to/previous/EML Attachment Remover.app/Contents/Info.plist"
+```
+
+Retain the command's prior-file identity and ordering result with preparation
+evidence. This command checks app identity, canonical version/build values and
+monotonic ordering; it does not authenticate the caller's file, prove equal
+binaries when values match, or authorize publication. The owner must establish
+the prior archive's authenticity separately. The pending 7.0.0 source uses Build
+36, above published 6.0.0 Build 35; these undistributed packaging changes reuse 36.
+
 Resolve every admission failure before dispatch. After the owner authorizes
 publication, start the workflow from main with the same source and version:
 
@@ -122,3 +137,39 @@ never increments it. The build number identifies a distributed product revision,
 not exact bytes or qualification. Checksums identify delivered bytes. Machine
 protocol version fields remain the release version, independently of the display
 build number.
+
+## Packaging source and timestamps
+
+The typed `BuildPlan` admits one source commit, UTC epoch and provenance for all
+packagers and readers. In a Git checkout, the epoch comes from that exact commit's
+committer timestamp. An explicit `EML_SOURCE_COMMIT` or `SOURCE_DATE_EPOCH` must
+match the admitted Git input. Packaging rechecks the held commit/epoch and clean
+worktree; it does not silently acquire a later commit as authority.
+
+Without `.git`, standalone packaging requires both a full `EML_SOURCE_COMMIT`
+and decimal `SOURCE_DATE_EPOCH` from the source archive's metadata. The epoch
+must be in 315532800..4294967295 UTC Unix seconds. These inputs are recorded as
+`declared_archive`; they identify the caller's declaration without proving the
+archive matches a verified Git tree. Qualification and release admission require
+`git_commit` provenance and reject declared archives. There is no wallclock,
+zero or default-1980 fallback.
+
+CLI archives are `emlattachmentremover-VERSION-OS-CPU.tar.gz` on macOS/Linux and
+`.zip` on Windows. Their root and executable use `emlattachmentremover`, with
+`.exe` on Windows. The two Mac desktop archives are
+`emlattachmentremover-gui-VERSION-macos-CPU.zip`; the human bundle name,
+`Contents/MacOS/EMLAttachmentRemover`, bundle identifier and private `eml-worker`
+keep their existing identities. The exact eight archive names come from
+`cargo xtask distribution`; no other GUI product is introduced. Published
+archives and their historical names remain immutable.
+
+TAR members and gzip headers retain the exact source epoch. ZIP timestamps use
+UTC with two-second precision, rounded down; references retain the exact source
+epoch. Native Mac apps keep the separate ditto metadata profile. After signing
+and final byte/mode/signature reads, the builder normalizes all staged files and
+directories to the derived ZIP epoch, then runs ditto with `TZ=UTC`. This ordering
+also fixes native access-time metadata without modifying signed bytes or modes.
+Readback and native extraction check timestamps as well as existing inventories,
+resources, permissions, strict signatures and actual private-worker execution.
+The same fixed staged inputs and epoch must produce identical archive bytes;
+that property does not establish reproducible compiled binaries.

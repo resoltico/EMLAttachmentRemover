@@ -6,10 +6,13 @@ impl ArchiveSnapshot {
     /// expected file identity and mode. References come from the frozen producer;
     /// hashes prove identity, not review quality. This does not execute the app.
     /// Expected keys are paths relative to the one app root; modes are 0644/0755.
+    /// DOS and native Unix fields must equal the source epoch rounded down to
+    /// two seconds. The native producer stages those times and runs in UTC.
     pub fn inspect_ditto_app(
         &self,
         root_name: &str,
         expected: &BTreeMap<String, (ByteIdentity, u32)>,
+        epoch: PackageEpoch,
     ) -> io::Result<()> {
         validate_member_name(root_name)?;
         if root_name.contains('/')
@@ -39,7 +42,8 @@ impl ArchiveSnapshot {
         if files.len() + directories.len() > usize::from(MAX_ENTRIES) {
             return Err(invalid("App inventory exceeds its entry bound"));
         }
-        let members = inspect_zip_profile(&mut Cursor::new(&self.bytes), ZipProfile::DittoApp)?;
+        let members =
+            inspect_zip_profile(&mut Cursor::new(&self.bytes), ZipProfile::DittoApp, epoch)?;
         if members.len() != files.len() + directories.len() {
             return Err(invalid(
                 "App archive inventory differs from expected files/directories",
@@ -89,13 +93,14 @@ impl ArchiveSnapshot {
         root: &str,
         relative: &str,
         maximum: usize,
+        epoch: PackageEpoch,
     ) -> io::Result<Vec<u8>> {
         validate_member_name(root)?;
         validate_member_name(relative)?;
         if root.contains('/') || relative.ends_with('/') || maximum > 16 * 1024 * 1024 {
             return Err(invalid("Invalid bounded CLI evidence request"));
         }
-        let members = inspect_zip_directory(&mut Cursor::new(&self.bytes))?;
+        let members = inspect_zip_directory(&mut Cursor::new(&self.bytes), epoch)?;
         let name = format!("{root}/{relative}");
         let matches = members
             .iter()
@@ -133,11 +138,12 @@ impl ArchiveSnapshot {
         executable: &str,
         materials: &BTreeMap<String, Vec<u8>>,
         parent: &Path,
+        epoch: PackageEpoch,
     ) -> io::Result<ExtractedCli> {
         let layout = cli_layout(root_name, executable, materials)?;
         let files = &layout.files;
         let directories = &layout.directories;
-        let members = inspect_zip_directory(&mut Cursor::new(&self.bytes))?;
+        let members = inspect_zip_directory(&mut Cursor::new(&self.bytes), epoch)?;
         let mut observed = BTreeSet::new();
         let mut expanded = 0_u64;
         for member in &members {
@@ -234,18 +240,21 @@ impl ArchiveSnapshot {
 }
 
 /// Encode the explicit seekable ZIP32 CLI profile to an already owned staging
-/// writer. Callers publish only after readback and actual behavior verification.
+/// writer. Every DOS timestamp is the source UTC epoch rounded down to two
+/// seconds. Callers publish only after readback and actual behavior verification.
 pub fn encode_cli_zip<W: Write + Seek>(
     writer: W,
     root_name: &str,
     executable: &str,
     binary: &[u8],
     materials: &BTreeMap<String, Vec<u8>>,
+    epoch: PackageEpoch,
 ) -> io::Result<W> {
     let layout = producer_layout(root_name, executable, binary, materials)?;
     let mut archive = zip::ZipWriter::new(writer);
     let options = |mode| {
         zip::write::SimpleFileOptions::default()
+            .last_modified_time(epoch.zip_datetime())
             .system(zip::System::Unix)
             .compression_method(zip::CompressionMethod::Deflated)
             .unix_permissions(mode)
@@ -298,8 +307,13 @@ pub struct ZipMember {
 /// Reject ZIP64 rather than allowing unbounded metadata before validation.
 /// The reader must refer to one stable owned archive throughout later readback.
 /// No filesystem objects are extracted here and data CRCs are checked separately.
-pub fn inspect_zip_directory(reader: &mut (impl Read + Seek)) -> io::Result<Vec<ZipMember>> {
-    inspect_zip_profile(reader, ZipProfile::Cli)
+/// Every local/central DOS date must match the explicitly supplied UTC epoch
+/// at two-second precision; this profile does not admit timestamp extensions.
+pub fn inspect_zip_directory(
+    reader: &mut (impl Read + Seek),
+    epoch: PackageEpoch,
+) -> io::Result<Vec<ZipMember>> {
+    inspect_zip_profile(reader, ZipProfile::Cli, epoch)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -311,6 +325,7 @@ pub(super) enum ZipProfile {
 pub(super) fn inspect_zip_profile(
     reader: &mut (impl Read + Seek),
     profile: ZipProfile,
+    epoch: PackageEpoch,
 ) -> io::Result<Vec<ZipMember>> {
     let (count, offset, directory) = read_zip_directory(reader)?;
     let mut cursor = 0_usize;
@@ -320,7 +335,7 @@ pub(super) fn inspect_zip_profile(
     let mut regions = Vec::with_capacity(usize::from(count));
     let mut expanded = 0_u64;
     for _ in 0..count {
-        let record = central_record(&directory, cursor, offset, profile)?;
+        let record = central_record(&directory, cursor, offset, profile, epoch)?;
         let name = record.name;
         let directory_entry = record.directory_entry;
         // Check original records here: ZipArchive's filename map discards
@@ -336,7 +351,7 @@ pub(super) fn inspect_zip_profile(
         if expanded > MAX_EXPANDED_BYTES {
             return Err(invalid("ZIP member/expanded size exceeds its bound"));
         }
-        let end = local_record_end(reader, &record, &directory, cursor, offset, profile)?;
+        let end = local_record_end(reader, &record, &directory, cursor, offset, profile, epoch)?;
         regions.push((u64::from(record.member.local_header), end));
         cursor = record.record_end;
         members.push(record.member);
@@ -408,12 +423,21 @@ fn central_record(
     cursor: usize,
     offset: u32,
     profile: ZipProfile,
+    epoch: PackageEpoch,
 ) -> io::Result<CentralRecord<'_>> {
     let header = directory
         .get(cursor..cursor.saturating_add(46))
         .ok_or_else(|| invalid("Truncated ZIP central header"))?;
     if header[..4] != *b"PK\x01\x02" || short(header, 34) != 0 {
         return Err(invalid("Unsupported ZIP central header or disk"));
+    }
+    let expected_time = epoch.zip_datetime();
+    if short(header, 12) != expected_time.timepart()
+        || short(header, 14) != expected_time.datepart()
+    {
+        return Err(invalid(
+            "ZIP timestamp differs from the source epoch at two-second precision",
+        ));
     }
     let flags = short(header, 8);
     let allowed = if profile == ZipProfile::DittoApp {
@@ -489,6 +513,7 @@ fn local_record_end(
     cursor: usize,
     offset: u32,
     profile: ZipProfile,
+    epoch: PackageEpoch,
 ) -> io::Result<u64> {
     let CentralRecord {
         header,
@@ -538,7 +563,9 @@ fn local_record_end(
         }
     } else {
         // Native ditto emits one Info-ZIP Unix time field: central length8,
-        // local length12 with uid/gid. These values confer no authority;
+        // local length12 with uid/gid. Both UTC fields must carry the
+        // same source-derived two-second epoch as the DOS fields. Ownership
+        // values confer no authority;
         // native extraction's resulting ownership is checked separately.
         if local_extra_length != 16 || extra_length != 12 {
             return Err(invalid("Unsupported ditto metadata extent"));
@@ -551,6 +578,8 @@ fn local_record_end(
             || short(&local_extra, 0) != 0x5855
             || short(&local_extra, 2) != 12
             || central[4..12] != local_extra[4..12]
+            || long(central, 4) != epoch.floor_seconds()
+            || long(central, 8) != epoch.floor_seconds()
         {
             return Err(invalid("Unsupported or inconsistent ditto metadata"));
         }

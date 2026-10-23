@@ -73,7 +73,7 @@ fn write_human(writer: &mut impl Write, event: Event<'_>) -> io::Result<()> {
         Event::Start(value) => writeln!(
             writer,
             "{} {} — known items: {}; discovery {}{}",
-            env!("CARGO_PKG_NAME"),
+            eml_core::product::CLI_NAME,
             eml_core::product::VERSION_WITH_BUILD.as_str(),
             value.total,
             if value.collection_complete {
@@ -166,7 +166,7 @@ mod tests {
     ));
     fn expected_human_start() -> String {
         format!(
-            "remove-eml-attachments {} — known items: 1; discovery complete; dry run\n",
+            "emlattachmentremover {} — known items: 1; discovery complete; dry run\n",
             eml_core::product::VERSION_WITH_BUILD.as_str()
         )
     }

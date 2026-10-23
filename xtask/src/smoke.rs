@@ -855,7 +855,7 @@ mod tests {
         assert!(
             verify(
                 owned.path(),
-                "remove-eml-attachments",
+                "emlattachmentremover",
                 "6.0.0",
                 Case::Created,
                 &encode(&events),
@@ -874,7 +874,7 @@ mod tests {
         assert_eq!(
             kind(verify(
                 owned.path(),
-                "remove-eml-attachments",
+                "emlattachmentremover",
                 "6.0.0",
                 Case::Created,
                 &encode(&events),
@@ -903,7 +903,7 @@ mod tests {
         assert_eq!(
             kind(verify(
                 counterfeit.path(),
-                "remove-eml-attachments",
+                "emlattachmentremover",
                 "6.0.0",
                 Case::Created,
                 &trace,
@@ -936,7 +936,7 @@ mod tests {
             assert_eq!(
                 kind(verify(
                     owned.path(),
-                    "remove-eml-attachments",
+                    "emlattachmentremover",
                     "6.0.0",
                     Case::Created,
                     &encode(&changed),

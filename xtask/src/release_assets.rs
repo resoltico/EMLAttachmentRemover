@@ -125,9 +125,7 @@ pub(crate) fn server(
     release: &Path,
     inputs: &Path,
 ) -> Result<()> {
-    if !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty() {
-        return Err("Release server checking requires a clean committed checkout".into());
-    }
+    plan.require_qualified_source(root)?;
     let admitted = crate::release_inputs::load(root, plan, inputs)?;
     let identities = admitted.archive_identities();
     let metadata = fs::symlink_metadata(release)?;
@@ -138,13 +136,15 @@ pub(crate) fn server(
     if bytes.len() > 1024 * 1024 {
         return Err("Server release JSON grew beyond its bound".into());
     }
-    let result = check_server(
+    let mut result = check_server(
         &identities,
         assets,
         &serde_json::from_slice(&bytes)?,
-        &crate::git(root, &["rev-parse", "HEAD"])?,
+        plan.source_commit(),
         plan.version(),
     )?;
+    result["source_epoch"] = json!(plan.source_epoch());
+    result["source_provenance"] = json!(plan.source_provenance());
     admitted.recheck_pickers(root, plan, std::time::SystemTime::now())?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
@@ -227,15 +227,15 @@ fn assemble(
 }
 
 pub(crate) fn run(root: &Path, plan: &BuildPlan, inputs: &Path, out: &Path) -> Result<()> {
-    if !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty() {
-        return Err("Release asset assembly requires a clean committed checkout".into());
-    }
+    plan.require_qualified_source(root)?;
     let admitted = crate::release_inputs::load(root, plan, inputs)?;
     let archives = admitted.archive_directory()?;
     let identities = admitted.archive_identities();
     let mut result = assemble(&identities, archives, out)?;
-    result["assembly_source"] = json!(crate::git(root, &["rev-parse", "HEAD"])?);
+    result["assembly_source"] = json!(plan.source_commit());
     result["version"] = json!(plan.version());
+    result["source_epoch"] = json!(plan.source_epoch());
+    result["source_provenance"] = json!(plan.source_provenance());
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())

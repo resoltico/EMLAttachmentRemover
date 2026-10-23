@@ -11,14 +11,18 @@ impl ArchiveSnapshot {
         executable: &str,
         materials: &BTreeMap<String, Vec<u8>>,
         parent: &Path,
+        epoch: PackageEpoch,
     ) -> io::Result<ExtractedCli> {
         let layout = cli_layout(root_name, executable, materials)?;
-        let members = self.walk_tar(|member, body| {
-            if io::copy(body, &mut io::sink())? != member.size {
-                return Err(invalid("Truncated USTAR member body"));
-            }
-            Ok(())
-        })?;
+        let members = self.walk_tar(
+            |member, body| {
+                if io::copy(body, &mut io::sink())? != member.size {
+                    return Err(invalid("Truncated USTAR member body"));
+                }
+                Ok(())
+            },
+            epoch,
+        )?;
         let mut observed = BTreeSet::new();
         for member in &members {
             if member.directory {
@@ -47,47 +51,50 @@ impl ArchiveSnapshot {
             enclosure.path.display()
         );
         let mut index = 0;
-        self.walk_tar(|member, body| {
-            if members.get(index) != Some(member) {
-                return Err(invalid("USTAR second-pass metadata differs"));
-            }
-            index += 1;
-            let path = enclosure.path.join(member.name.trim_end_matches('/'));
-            if member.directory {
-                fs::create_dir_all(path)?;
-                return Ok(());
-            }
-            fs::create_dir_all(
-                path.parent()
-                    .ok_or_else(|| invalid("Missing tar extraction parent"))?,
-            )?;
-            let mut output = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)?;
-            if io::copy(body, &mut output)? != member.size {
-                return Err(invalid("USTAR actual member size differs"));
-            }
-            output.flush()?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                output.set_permissions(fs::Permissions::from_mode(member.mode))?;
-            }
-            drop(output);
-            let relative = member
-                .name
-                .strip_prefix(&format!("{root_name}/"))
-                .ok_or_else(|| invalid("Invalid tar package root"))?;
-            if let Some(expected) = materials.get(relative)
-                && fs::read(path)? != *expected
-            {
-                return Err(invalid(
-                    "Extracted tar legal material differs from reviewed inputs",
-                ));
-            }
-            Ok(())
-        })?;
+        self.walk_tar(
+            |member, body| {
+                if members.get(index) != Some(member) {
+                    return Err(invalid("USTAR second-pass metadata differs"));
+                }
+                index += 1;
+                let path = enclosure.path.join(member.name.trim_end_matches('/'));
+                if member.directory {
+                    fs::create_dir_all(path)?;
+                    return Ok(());
+                }
+                fs::create_dir_all(
+                    path.parent()
+                        .ok_or_else(|| invalid("Missing tar extraction parent"))?,
+                )?;
+                let mut output = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)?;
+                if io::copy(body, &mut output)? != member.size {
+                    return Err(invalid("USTAR actual member size differs"));
+                }
+                output.flush()?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    output.set_permissions(fs::Permissions::from_mode(member.mode))?;
+                }
+                drop(output);
+                let relative = member
+                    .name
+                    .strip_prefix(&format!("{root_name}/"))
+                    .ok_or_else(|| invalid("Invalid tar package root"))?;
+                if let Some(expected) = materials.get(relative)
+                    && fs::read(path)? != *expected
+                {
+                    return Err(invalid(
+                        "Extracted tar legal material differs from reviewed inputs",
+                    ));
+                }
+                Ok(())
+            },
+            epoch,
+        )?;
         if index != members.len() {
             return Err(invalid("USTAR second pass omitted a member"));
         }
@@ -102,11 +109,19 @@ impl ArchiveSnapshot {
     pub(super) fn walk_tar(
         &self,
         mut visit: impl FnMut(&TarMember, &mut dyn Read) -> io::Result<()>,
+        epoch: PackageEpoch,
     ) -> io::Result<Vec<TarMember>> {
         // The explicit producer emits no optional gzip metadata. This is a
         // narrow format boundary, not a claim that the decoder is unbounded.
         if self.bytes.len() < 18 || self.bytes[..4] != [0x1f, 0x8b, 8, 0] {
             return Err(invalid("Expected the generated single-member gzip header"));
+        }
+        if u32::from_le_bytes(self.bytes[4..8].try_into().expect("fixed gzip timestamp"))
+            != epoch.seconds()
+        {
+            return Err(invalid(
+                "Gzip timestamp differs from the exact source epoch",
+            ));
         }
         let decoder = flate2::bufread::GzDecoder::new(self.bytes.as_slice());
         let mut stream = ExpandedReader {
@@ -148,7 +163,7 @@ impl ArchiveSnapshot {
             if members.len() >= usize::from(MAX_ENTRIES) {
                 return Err(invalid("USTAR member count exceeds its bound"));
             }
-            let member = tar_member(&block)?;
+            let member = tar_member(&block, epoch)?;
             if !names.insert(member.name.trim_end_matches('/').to_ascii_lowercase()) {
                 return Err(invalid("Duplicate original USTAR member name"));
             }
@@ -234,7 +249,7 @@ pub(super) fn octal_field(field: &[u8], empty: bool) -> io::Result<()> {
     }
     Ok(())
 }
-pub(super) fn tar_member(block: &[u8; 512]) -> io::Result<TarMember> {
+pub(super) fn tar_member(block: &[u8; 512], epoch: PackageEpoch) -> io::Result<TarMember> {
     let mut header = tar::Header::new_ustar();
     header.as_mut_bytes().copy_from_slice(block);
     let raw = header
@@ -268,6 +283,11 @@ pub(super) fn tar_member(block: &[u8; 512]) -> io::Result<TarMember> {
         .sum();
     if header.cksum()? != checksum {
         return Err(invalid("USTAR header checksum differs"));
+    }
+    if header.mtime()? != u64::from(epoch.seconds()) {
+        return Err(invalid(
+            "USTAR timestamp differs from the exact source epoch",
+        ));
     }
     let directory = match raw.typeflag[0] {
         b'0' => false,
@@ -313,15 +333,19 @@ pub(super) fn tar_member(block: &[u8; 512]) -> io::Result<TarMember> {
 
 /// Encode one gzip member containing only explicit classic USTAR records.
 /// Names are validated before set_path; no GNU/PAX convenience fallback is used.
+/// All USTAR member and gzip header times retain the exact source UTC seconds.
 pub fn encode_cli_tar_gz<W: Write>(
     writer: W,
     root_name: &str,
     executable: &str,
     binary: &[u8],
     materials: &BTreeMap<String, Vec<u8>>,
+    epoch: PackageEpoch,
 ) -> io::Result<W> {
     let layout = producer_layout(root_name, executable, binary, materials)?;
-    let gzip = flate2::write::GzEncoder::new(writer, flate2::Compression::default());
+    let gzip = flate2::GzBuilder::new()
+        .mtime(epoch.seconds())
+        .write(writer, flate2::Compression::default());
     let mut archive = tar::Builder::new(gzip);
     let mut append = |name: &str, bytes: &[u8], directory: bool, mode: u32| -> io::Result<()> {
         let mut header = tar::Header::new_ustar();
@@ -334,7 +358,7 @@ pub fn encode_cli_tar_gz<W: Write>(
         header.set_mode(mode);
         header.set_uid(0);
         header.set_gid(0);
-        header.set_mtime(0);
+        header.set_mtime(u64::from(epoch.seconds()));
         header.set_size(bytes.len() as u64);
         header.set_cksum();
         // Slice EOF is independently fixed to the advertised length.

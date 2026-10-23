@@ -12,7 +12,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-const BIN: &str = env!("CARGO_BIN_EXE_remove-eml-attachments");
+const BIN: &str = env!("CARGO_BIN_EXE_emlattachmentremover");
 const INPUT: &[u8] = include_bytes!("../../../tests/contract/mime/inputs/01-gmail-attachment.eml");
 const GOLDEN: &[u8] = include_bytes!("../../../tests/contract/mime/golden/01-gmail-attachment.eml");
 fn root() -> tempfile::TempDir {
@@ -162,7 +162,7 @@ fn actual_binary_version_help_and_argument_conflicts_have_checked_channel_contra
     assert_eq!(
         version.stdout,
         format!(
-            "remove-eml-attachments {}\n",
+            "emlattachmentremover {}\n",
             eml_core::product::VERSION_WITH_BUILD.as_str()
         )
         .as_bytes()
@@ -171,11 +171,12 @@ fn actual_binary_version_help_and_argument_conflicts_have_checked_channel_contra
     let help = invoke(root.path(), &["--help"], None);
     assert!(help.status.success());
     assert!(help.stderr.is_empty());
-    assert!(
-        String::from_utf8(help.stdout)
-            .unwrap()
-            .contains("--request")
-    );
+    let help = String::from_utf8(help.stdout).unwrap();
+    assert!(help.contains("--request"));
+    assert!(help.contains("Usage: emlattachmentremover"));
+    assert!(help.contains("emlattachmentremover -- message.eml"));
+    assert!(!help.contains("remove-eml-attachments")); // Released command is no alias.
+
     for args in [
         vec!["--request", "-", "a.eml"],
         vec!["--request", "-", "--dry-run"],

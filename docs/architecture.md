@@ -12,7 +12,7 @@ The workspace separates message policy and native storage from frontends.
   native no-replace publication and synchronization, and reports independent
   identity/address/cleanup facts. Its reviewed native modules contain the narrow
   unsafe ABI operations; generated platform bindings supply native layouts.
-- **remove-eml-attachments** decodes bounded native-path requests, adapts process
+- **emlattachmentremover** decodes bounded native-path requests, adapts process
   signals and renders checked human or LF-delimited JSON events. Its executable
   calls the reusable business workflow rather than maintaining another engine.
 - **eml-protocol** shares native-path/request/event transport across products.

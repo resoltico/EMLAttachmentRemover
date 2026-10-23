@@ -119,16 +119,43 @@ pub(super) fn write_new_tree(output: &Path, files: &Files) -> Result<()> {
     matches_tree(output, files)
 }
 
-pub(super) fn source_identity(source: &Value, head: &str, working_tree: &str) -> Result<()> {
-    if source["head"] != head || source["working_tree"] != "" || !working_tree.is_empty() {
-        return Err(
-            "Legal producer and native consumer must use the same clean source checkout".into(),
-        );
+pub(super) fn source_document(root: &Path, plan: &BuildPlan) -> Result<Value> {
+    Ok(json!({
+        "source_commit": plan.source_commit(),
+        "source_epoch": plan.source_epoch().seconds(),
+        "source_provenance": plan.source_provenance(),
+        "source_working_tree": plan.source_working_tree(root)?,
+        "scope": "generated legal materials; not native execution or legal review evidence"
+    }))
+}
+
+pub(super) fn source_identity(source: &Value, expected: &Value) -> Result<()> {
+    for field in [
+        "source_commit",
+        "source_epoch",
+        "source_provenance",
+        "source_working_tree",
+    ] {
+        if source.get(field).is_none() || source.get(field) != expected.get(field) {
+            return Err(
+                "Generated legal source differs from the admitted source tuple/working tree".into(),
+            );
+        }
+    }
+    // Generating fresh notices in a dirty checkout remains useful. Consuming
+    // another producer's bytes retains the clean-Git requirement; declarations
+    // have no working-tree proof and never become qualified Git provenance.
+    if expected["source_provenance"] == "git_commit" && expected["source_working_tree"] != "" {
+        return Err("Generated legal inputs require the same clean Git source checkout".into());
     }
     Ok(())
 }
 
-pub(super) fn checked_generated_input(root: &Path, directory: &Path) -> Result<Files> {
+pub(super) fn checked_generated_input(
+    root: &Path,
+    plan: &BuildPlan,
+    directory: &Path,
+) -> Result<Files> {
     let mut all = enumerate(directory)?;
     let marker = all
         .remove(OUTPUT_MANIFEST)
@@ -140,11 +167,7 @@ pub(super) fn checked_generated_input(root: &Path, directory: &Path) -> Result<F
         all.get("source.json")
             .ok_or("Missing legal producer source")?,
     )?;
-    source_identity(
-        &source,
-        &crate::git(root, &["rev-parse", "HEAD"])?,
-        &crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?,
-    )?;
+    source_identity(&source, &source_document(root, plan)?)?;
     all.insert(OUTPUT_MANIFEST.into(), marker);
     Ok(all)
 }

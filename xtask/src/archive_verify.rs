@@ -69,10 +69,10 @@ fn glibc_version(value: &str) -> Result<(u16, u16, u16)> {
 
 pub(crate) fn runtime(
     root: &Path,
+    plan: &BuildPlan,
     executable: &Path,
     os: &str,
     architecture: &str,
-    maximum_glibc: &str,
     logs: &Path,
 ) -> Result<Value> {
     let run = |program: &str, args: &[&str], label: &str| -> Result<String> {
@@ -134,7 +134,7 @@ pub(crate) fn runtime(
         );
     }
     if os == "linux" {
-        return linux_runtime(architecture, maximum_glibc, &run);
+        return linux_runtime(architecture, plan.floors().linux_glibc_maximum(), &run);
     }
     if os == "windows" {
         let imports = crate::windows_runtime::inspect(&fs::read(executable)?, architecture)?;
@@ -154,7 +154,7 @@ pub(crate) fn runtime(
             crate::windows_evidence::verify(
                 root,
                 &target,
-                &crate::git(root, &["rev-parse", "HEAD"])?,
+                plan.source_commit(),
                 &fs::read(executable)?,
                 &evidence,
             )?;
@@ -234,14 +234,7 @@ fn verify(
         let executable_bytes = fs::read(&executable)?;
         let (actual_binary, binary) =
             verify_executable_bytes(&executable_bytes, expected_binary, os, architecture, plan)?;
-        let runtime = runtime(
-            root,
-            &executable,
-            os,
-            architecture,
-            plan.floors().linux_glibc_maximum(),
-            &work,
-        )?;
+        let runtime = runtime(root, plan, &executable, os, architecture, &work)?;
         let behavior = smoke::run(
             root,
             &executable,
@@ -256,7 +249,7 @@ fn verify(
         fs::write(
             work.join("result.json"),
             serde_json::to_vec_pretty(
-                &json!({"archive":name,"snapshot":snapshot_identity,"target":target,"host":host,"binary":binary,"binary_bytes":actual_binary,"matched_frozen_build":expected_binary.is_some(),"runtime":runtime,"behavior":behavior,
+                &json!({"source":plan.source_commit(),"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"archive":name,"snapshot":snapshot_identity,"target":target,"host":host,"binary":binary,"binary_bytes":actual_binary,"matched_frozen_build":expected_binary.is_some(),"runtime":runtime,"behavior":behavior,
             "scope":"native CLI archive structural/material/runtime/fixture behavior only; full source/platform/app qualification is separate"}),
             )?,
         )?;
@@ -267,7 +260,7 @@ fn verify(
 
 pub(crate) fn cli_readme(version: &str, platform_text: &str) -> String {
     format!(
-        "EML Attachment Remover {version}\n\n{platform_text}\n\nRun ./remove-eml-attachments --help (remove-eml-attachments.exe on Windows).\nCreate copies: remove-eml-attachments PATH...\nInspect without writes: remove-eml-attachments --dry-run PATH...\nOriginal messages remain unchanged; existing different copies are never replaced.\n\nSource and documentation: https://github.com/resoltico/EMLAttachmentRemover\nSoftware/artwork terms: LICENSE. Complete third-party materials: THIRD-PARTY-NOTICES.txt and licenses/.\nmacOS binaries are ad hoc signed, without Developer ID or notarization; first launch may require the system's Open Anyway choice.\n"
+        "EML Attachment Remover {version}\n\n{platform_text}\n\nRun ./emlattachmentremover --help (emlattachmentremover.exe on Windows).\nCreate copies: emlattachmentremover PATH...\nInspect without writes: emlattachmentremover --dry-run PATH...\nOriginal messages remain unchanged; existing different copies are never replaced.\n\nSource and documentation: https://github.com/resoltico/EMLAttachmentRemover\nSoftware/artwork terms: LICENSE. Complete third-party materials: THIRD-PARTY-NOTICES.txt and licenses/.\nmacOS binaries are ad hoc signed, without Developer ID or notarization; first launch may require the system's Open Anyway choice.\n"
     )
 }
 
@@ -371,13 +364,14 @@ fn extract_cli_materials(
             root_name,
             crate::windows_evidence::MATERIAL,
             crate::windows_evidence::MAX_BYTES,
+            plan.source_epoch(),
         )?;
         materials.insert(crate::windows_evidence::MATERIAL.into(), evidence);
     }
-    let extracted = if row.platform().family() == crate::distribution::OsFamily::Linux {
-        snapshot.extract_cli_tar_gz(root_name, executable, &materials, work)?
+    let extracted = if artifact.format() == crate::distribution::ArchiveFormat::TarGz {
+        snapshot.extract_cli_tar_gz(root_name, executable, &materials, work, plan.source_epoch())?
     } else {
-        snapshot.extract_cli_zip(root_name, executable, &materials, work)?
+        snapshot.extract_cli_zip(root_name, executable, &materials, work, plan.source_epoch())?
     };
     Ok(extracted)
 }

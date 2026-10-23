@@ -4,6 +4,12 @@ Create attachment-stripped EML copies while leaving original messages untouched.
 The application uses reusable Rust libraries, a native CLI and a Slint macOS
 frontend. Download the separate macOS, Linux or Windows CLI archive, or the
 macOS app for your CPU, from [Releases](https://github.com/resoltico/EMLAttachmentRemover/releases).
+The CLI command is `emlattachmentremover` (`emlattachmentremover.exe` on Windows).
+CLI downloads use `emlattachmentremover-VERSION-OS-CPU`: `.tar.gz` on macOS/Linux
+and `.zip` on Windows. Mac app downloads use
+`emlattachmentremover-gui-VERSION-macos-CPU.zip`; the app remains
+**EML Attachment Remover.app**. These names apply to the forthcoming 7.0.0
+(Build 36); published downloads keep their original names.
 See the [platform policy](#native-platform-policy) before installing. Public
 release requires complete [native, archive and GUI qualification](docs/verification.md)
 for the selected source and the [release procedure](docs/release.md). Check the
@@ -12,17 +18,25 @@ for execution results.
 
 ## Run the CLI
 
+For a prebuilt CLI, extract the matching native archive and add its executable
+directory to PATH, or invoke the extracted executable by its full path. Preserve
+the Unix executable permissions. Rust is needed only when building from source.
+
 Install rustup, then build from a checkout. `rust-toolchain.toml` selects Rust:
 
 ```sh
-cargo build --locked --release -p remove-eml-attachments
-./target/release/remove-eml-attachments --help
-./target/release/remove-eml-attachments --dry-run -- message.eml
-./target/release/remove-eml-attachments -- message.eml
+cargo build --locked --release -p emlattachmentremover
+./target/release/emlattachmentremover --help
+./target/release/emlattachmentremover --dry-run -- message.eml
+./target/release/emlattachmentremover -- message.eml
 mkdir copies
-./target/release/remove-eml-attachments --output-dir copies -- selected-folder
-./target/release/remove-eml-attachments --format json -- message.eml
+./target/release/emlattachmentremover --output-dir copies -- selected-folder
+./target/release/emlattachmentremover --format json -- message.eml
 ```
+
+Version 7 changes the former `remove-eml-attachments` command and download stem.
+Update scripts and PATH entries to `emlattachmentremover`; no old-command alias is
+provided.
 
 On Windows the executable ends in `.exe`; native GNU LLVM builds also require
 its selected Rust sysroot linker and rust-mingw component. See

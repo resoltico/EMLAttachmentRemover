@@ -1,4 +1,4 @@
-//! Rust-only repository verification and distribution commands.
+//! Repository verification and distribution commands.
 #![forbid(unsafe_code)]
 mod archive_verify;
 mod campaign;
@@ -40,6 +40,7 @@ mod preparation_resources;
 mod qualify;
 mod release_assets;
 mod release_check;
+mod release_identity;
 mod release_inputs;
 mod repository_config;
 mod smoke;
@@ -167,6 +168,11 @@ enum Task {
     Check,
     /// Check Cargo manifest ownership and complete lint inheritance.
     CheckConfig,
+    /// Compare the current product revision with an authenticated prior app's metadata.
+    CheckProductIdentity {
+        #[arg(long)]
+        previous_info: PathBuf,
+    },
     /// Strictly check all discovered authored shell scripts, including shebang files.
     CheckShell,
     /// Build and verify one native CLI archive; remaining qualification is separate.
@@ -287,20 +293,42 @@ enum Task {
 fn capture(command: &mut Command) -> Result<Vec<u8>> {
     controller()?.capture(command)
 }
-fn git(root: &std::path::Path, args: &[&str]) -> Result<String> {
-    Ok(
-        String::from_utf8(capture(Command::new("git").current_dir(root).args(args))?)?
-            .trim_end()
-            .to_owned(),
-    )
+fn git_command(root: &std::path::Path) -> Command {
+    let mut command = Command::new("git");
+    // Source observations belong to this workspace, even when the caller is
+    // running under another Git invocation or has inherited a linked checkout.
+    for variable in [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_COMMON_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_NAMESPACE",
+    ] {
+        command.env_remove(variable);
+    }
+    command
+        .current_dir(root)
+        .args(["--no-pager", "--no-replace-objects"]);
+    command
 }
+fn git(root: &std::path::Path, args: &[&str]) -> Result<String> {
+    Ok(String::from_utf8(capture(git_command(root).args(args))?)?
+        .trim_end()
+        .to_owned())
+}
+
 fn root() -> Result<PathBuf> {
     for path in std::env::current_dir()?.ancestors() {
-        if path.join(".git").exists() {
-            return Ok(path.to_owned());
+        if path.join("Cargo.toml").is_file()
+            && path.join("xtask/distribution.toml").is_file()
+            && path.join("xtask/tools.toml").is_file()
+        {
+            return Ok(path.canonicalize()?);
         }
     }
-    Err("Run repository tasks from a Git checkout".into())
+    Err("Run repository tasks from the EML Cargo workspace (a source archive requires explicit source identity inputs)".into())
 }
 fn initialize_controller(root: &std::path::Path) -> Result<()> {
     let controlled = xtask::process::Controller::new(root, &std::env::current_exe()?)?;

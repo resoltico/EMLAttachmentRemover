@@ -13,7 +13,7 @@ use std::{
     path::{Path, PathBuf},
     time::SystemTime,
 };
-use xtask::archive::{ArchiveSnapshot, ByteIdentity};
+use xtask::archive::{ArchiveSnapshot, ByteIdentity, PackageEpoch};
 const MAX_RECORD: usize = 16 * 1024 * 1024;
 const MAX_MANIFEST: usize = 64 * 1024 * 1024;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +108,8 @@ pub(crate) struct VerifiedInputs {
     schema: String,
     schema_version: u8,
     source: String,
+    source_epoch: PackageEpoch,
+    source_provenance: String,
     version: String,
     workflow: WorkflowIdentity,
     products: StringMap<ProductInput>,
@@ -190,6 +192,105 @@ fn record_binding(
     }
     Ok(())
 }
+fn source_epoch_binding(value: &Value, plan: &BuildPlan) -> Result<()> {
+    let epoch: PackageEpoch = serde_json::from_value(
+        value
+            .get("source_epoch")
+            .ok_or("Missing source epoch")?
+            .clone(),
+    )?;
+    if epoch != plan.source_epoch() || value["source_provenance"] != plan.source_provenance() {
+        return Err(
+            "Native record source epoch/provenance differs from the admitted source".into(),
+        );
+    }
+    Ok(())
+}
+
+fn bundle_timestamps(verification: &Value, reference: &Value, plan: &BuildPlan) -> Result<()> {
+    source_epoch_binding(verification, plan)?;
+    let files: BTreeMap<String, (ByteIdentity, u32)> = serde_json::from_value(
+        reference
+            .get("files")
+            .ok_or("App reference lacks its file inventory")?
+            .clone(),
+    )?;
+    if files.is_empty() || files.len() > 4096 {
+        return Err("Invalid app reference file inventory".into());
+    }
+    let mut tree = BTreeMap::from([(String::new(), "directory")]);
+    let mut names = BTreeSet::new();
+    for (name, (identity, mode)) in files {
+        xtask::archive::validate_member_name(&name)?;
+        if name.ends_with('/')
+            || !matches!(mode, 0o644 | 0o755)
+            || identity.byte_length > 256 * 1024 * 1024
+            || identity.sha256.len() != 64
+            || !identity
+                .sha256
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            || !names.insert(name.to_ascii_lowercase())
+            || tree.insert(name.clone(), "file").is_some()
+        {
+            return Err("Invalid app reference file identity, mode or path collision".into());
+        }
+        let mut path = name.as_str();
+        while let Some((parent, _)) = path.rsplit_once('/') {
+            if tree
+                .insert(parent.to_owned(), "directory")
+                .is_some_and(|kind| kind != "directory")
+            {
+                return Err("App reference file is also a directory".into());
+            }
+            path = parent;
+        }
+    }
+    if tree.len() > 4096
+        || tree
+            .keys()
+            .map(|name| name.to_ascii_lowercase())
+            .collect::<BTreeSet<_>>()
+            .len()
+            != tree.len()
+    {
+        return Err("App timestamp tree exceeds its bound or contains case aliases".into());
+    }
+    let times = verification
+        .get("bundle_timestamps")
+        .and_then(Value::as_object)
+        .ok_or("App timestamp observation is absent")?;
+    let keys: BTreeSet<_> = times.keys().map(String::as_str).collect();
+    if keys != BTreeSet::from(["source_epoch", "zip_epoch_seconds", "precision", "entries"])
+        || times["source_epoch"].as_u64() != Some(u64::from(plan.source_epoch().seconds()))
+        || times["zip_epoch_seconds"].as_u64()
+            != Some(u64::from(plan.source_epoch().floor_seconds()))
+        || times["precision"] != "UTC DOS two-second floor"
+    {
+        return Err("App timestamp epoch/precision differs from the source profile".into());
+    }
+    let entries = times["entries"]
+        .as_object()
+        .ok_or("App timestamp entries are not an object")?;
+    if entries.keys().collect::<BTreeSet<_>>() != tree.keys().collect() {
+        return Err("App timestamp tree differs from the exact reference inventory".into());
+    }
+    for (name, kind) in tree {
+        let row = entries[&name]
+            .as_object()
+            .ok_or("App timestamp entry is not an object")?;
+        if row.keys().map(String::as_str).collect::<BTreeSet<_>>()
+            != BTreeSet::from(["kind", "mtime_seconds", "mtime_nanoseconds"])
+            || row["kind"] != kind
+            || row["mtime_seconds"].as_u64() != Some(u64::from(plan.source_epoch().floor_seconds()))
+            || row["mtime_nanoseconds"].as_u64() != Some(0)
+        {
+            return Err("App timestamp entry kind or UTC precision differs".into());
+        }
+    }
+    Ok(())
+}
+
 fn host(
     value: &Value,
     target: &crate::distribution::NativeTarget,
@@ -301,6 +402,7 @@ fn check_product(
     }
     let producer = product.producer.document()?;
     record_binding(&producer, source, target.rust_target(), workflow)?;
+    source_epoch_binding(&producer, plan)?;
     host(&producer["host"], target, None)?;
     match product.role {
         ProductRole::Cli => {
@@ -368,6 +470,8 @@ fn check_product(
                 return Err("App producer reference identity differs".into());
             }
             record_binding(&reference_document, source, target.rust_target(), workflow)?;
+            source_epoch_binding(&reference_document, plan)?;
+            bundle_timestamps(&producer["verification"], &reference_document, plan)?;
             if reference_document["schema"] != 2
                 || reference_document["version"] != plan.version()
                 || reference_document["root"] != artifact.root()
@@ -375,12 +479,15 @@ fn check_product(
             {
                 return Err("App reference schema/version differs".into());
             }
+            let desktop = product
+                .desktop
+                .as_ref()
+                .ok_or("Complete desktop consumer is absent")?
+                .document()?;
+            source_epoch_binding(&desktop, plan)?;
+            bundle_timestamps(&desktop["verification"], &reference_document, plan)?;
             check_desktop(
-                &product
-                    .desktop
-                    .as_ref()
-                    .ok_or("Complete desktop consumer is absent")?
-                    .document()?,
+                &desktop,
                 source,
                 target,
                 workflow,
@@ -400,6 +507,8 @@ fn check_product(
             if let (Some(picker), Some(raw)) = (&product.picker, &product.picker_product) {
                 let raw_document = raw.document()?;
                 record_binding(&raw_document, source, target.rust_target(), workflow)?;
+                source_epoch_binding(&raw_document, plan)?;
+                bundle_timestamps(&raw_document["verification"], &reference_document, plan)?;
                 picker.check_raw_product(
                     raw.contents.as_bytes(),
                     &binding(
@@ -445,11 +554,14 @@ impl VerifiedInputs {
             .map(|(name, product)| (name.clone(), product.archive.clone()))
             .collect()
     }
-    fn validate(&self, plan: &BuildPlan, source: &str, workflow: &WorkflowIdentity) -> Result<()> {
+    fn validate(&self, plan: &BuildPlan, workflow: &WorkflowIdentity) -> Result<()> {
         self.workflow.validate()?;
         if self.schema != "eml-verified-release-inputs"
-            || self.schema_version != 1
-            || self.source != source
+            || self.schema_version != 2
+            || self.source != plan.source_commit()
+            || self.source_epoch != plan.source_epoch()
+            || self.source_provenance != plan.source_provenance()
+            || self.source_provenance != "git_commit"
             || self.version != plan.version()
             || &self.workflow != workflow
             || self.products.keys().cloned().collect::<BTreeSet<_>>() != plan.archive_names()
@@ -457,7 +569,7 @@ impl VerifiedInputs {
             return Err("Verified input source/version/workflow/product set differs".into());
         }
         for (name, product) in self.products.iter() {
-            check_product(product, name, plan, source, workflow)?;
+            check_product(product, name, plan, plan.source_commit(), workflow)?;
         }
         Ok(())
     }
@@ -511,7 +623,8 @@ pub(crate) fn load(root: &Path, plan: &BuildPlan, path: &Path) -> Result<Verifie
     let manifest: VerifiedInputs = serde_json::from_slice(&read(path, MAX_MANIFEST)?)?;
     let workflow = workflow_identity()?
         .ok_or("Release input consumption requires exact current GitHub run identity")?;
-    manifest.validate(plan, &crate::git(root, &["rev-parse", "HEAD"])?, &workflow)?;
+    plan.require_qualified_source(root)?;
+    manifest.validate(plan, &workflow)?;
     Ok(manifest)
 }
 pub(crate) fn run(
@@ -523,11 +636,7 @@ pub(crate) fn run(
 ) -> Result<()> {
     let root = context.root();
     let plan = context.plan();
-    if !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty()
-        || crate::git(root, &["rev-parse", "HEAD"])? != context.source()
-    {
-        return Err("Release inputs require the exact clean source checkout".into());
-    }
+    plan.require_qualified_source(root)?;
     let workflow =
         workflow_identity()?.ok_or("Release admission requires exact GitHub run identity")?;
     let all_products = files(products)?;
@@ -673,13 +782,15 @@ pub(crate) fn run(
     }
     let manifest = VerifiedInputs {
         schema: "eml-verified-release-inputs".into(),
-        schema_version: 1,
-        source: context.source().into(),
+        schema_version: 2,
+        source: plan.source_commit().into(),
+        source_epoch: plan.source_epoch(),
+        source_provenance: plan.source_provenance().into(),
         version: plan.version().into(),
         workflow,
         products: admitted.into(),
     };
-    manifest.validate(plan, context.source(), &manifest.workflow)?;
+    manifest.validate(plan, &manifest.workflow)?;
     let bytes = serde_json::to_vec_pretty(&manifest)?;
     if bytes.len() > MAX_MANIFEST {
         return Err("Verified release manifest exceeds its bound".into());
@@ -694,7 +805,7 @@ pub(crate) fn run(
     println!(
         "{}",
         serde_json::to_string(
-            &serde_json::json!({"manifest":path,"source":context.source(),"version":plan.version(),"archives_directory":frozen.path(),"picker_receipts":manifest.products.values().filter_map(|product|product.picker.as_ref().map(|receipt|serde_json::json!({"platform":product.platform,"identity":receipt.identity(),"mode":receipt.mode()}))).collect::<Vec<_>>(),"scope":"admitted exact current-run product and native consumer identities; not permission to publish"})
+            &serde_json::json!({"manifest":path,"source":plan.source_commit(),"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"version":plan.version(),"archives_directory":frozen.path(),"picker_receipts":manifest.products.values().filter_map(|product|product.picker.as_ref().map(|receipt|serde_json::json!({"platform":product.platform,"identity":receipt.identity(),"mode":receipt.mode()}))).collect::<Vec<_>>(),"scope":"admitted exact current-run product and native consumer identities; not permission to publish"})
         )?
     );
     Ok(())

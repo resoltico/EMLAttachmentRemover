@@ -1,18 +1,68 @@
 use super::*;
 
 #[test]
-fn generated_source_identity_rejects_stale_and_dirty_receipts() {
-    let source = json!({"head":"owned-head","working_tree":""});
-    source_identity(&source, "owned-head", "").unwrap();
-    assert!(source_identity(&source, "different-head", "").is_err());
-    assert!(source_identity(&source, "owned-head", " M source").is_err());
-    for invalid in [
-        json!({"head":"owned-head","working_tree":" M source"}),
-        json!({"head":"owned-head"}),
-        json!({"working_tree":""}),
+fn generated_source_identity_requires_every_admitted_source_fact() {
+    let git = json!({
+        "source_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_epoch":1609459201,
+        "source_provenance":"git_commit",
+        "source_working_tree":""
+    });
+    source_identity(&git, &git).unwrap();
+    for (field, replacement) in [
+        (
+            "source_commit",
+            json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        ),
+        ("source_epoch", json!(1609459202)),
+        ("source_provenance", json!("declared_archive")),
+        ("source_working_tree", json!(" M source")),
+        ("source_working_tree", Value::Null),
     ] {
-        assert!(source_identity(&invalid, "owned-head", "").is_err());
+        let mut invalid = git.clone();
+        invalid[field] = replacement;
+        assert!(source_identity(&invalid, &git).is_err(), "{field}");
     }
+    for field in [
+        "source_commit",
+        "source_epoch",
+        "source_provenance",
+        "source_working_tree",
+    ] {
+        let mut missing = git.clone();
+        missing.as_object_mut().unwrap().remove(field);
+        assert!(source_identity(&missing, &git).is_err(), "{field}");
+    }
+    let mut dirty = git.clone();
+    dirty["source_working_tree"] = json!(" M source");
+    assert!(source_identity(&dirty, &dirty).is_err());
+    assert!(source_identity(&git, &dirty).is_err());
+}
+
+#[test]
+fn declared_notice_source_retains_unverified_provenance_and_required_null_observation() {
+    let declared = json!({
+        "source_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_epoch":1609459201,
+        "source_provenance":"declared_archive",
+        "source_working_tree":null
+    });
+    source_identity(&declared, &declared).unwrap();
+    for (field, replacement) in [
+        ("source_provenance", json!("git_commit")),
+        ("source_working_tree", json!("")),
+        ("source_epoch", json!(0)),
+    ] {
+        let mut invalid = declared.clone();
+        invalid[field] = replacement;
+        assert!(source_identity(&invalid, &declared).is_err(), "{field}");
+    }
+    let mut missing = declared.clone();
+    missing
+        .as_object_mut()
+        .unwrap()
+        .remove("source_working_tree");
+    assert!(source_identity(&missing, &declared).is_err());
 }
 
 #[test]
@@ -37,7 +87,13 @@ target="x86_64-unknown-linux-gnu"
 runner="ubuntu-22.04"
 products=["cli"]
 "#;
-    let plan = BuildPlan::parse(config, include_str!("../../tools.toml"), "6.0.0".into()).unwrap();
+    let plan = BuildPlan::parse(
+        config,
+        include_str!("../../tools.toml"),
+        "6.0.0".into(),
+        crate::distribution::PackageSource::fixture(),
+    )
+    .unwrap();
     let mut all = Files::new();
     for (prefix, platform, target, component) in [
         (

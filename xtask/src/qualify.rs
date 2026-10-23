@@ -1,6 +1,6 @@
 //! Native release build/package orchestration; incomplete platform gates fail.
 use crate::distribution::BuildPlan;
-use crate::{Result, archive_verify, capture, cli_build, controller, notices};
+use crate::{Result, archive_verify, cli_build, controller, notices};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -148,7 +148,7 @@ pub(crate) fn checked_tests(
         {
             command.args([
                 "--features",
-                "eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures",
+                "eml-core/native-fixtures,eml-windows/native-fixtures,emlattachmentremover/native-fixtures",
             ]);
             if release {
                 command.env(
@@ -447,13 +447,14 @@ pub(crate) fn staged_cli(
         .write(true)
         .create_new(true)
         .open(&path)?;
-    let writer = if row.platform().family() == crate::distribution::OsFamily::Linux {
+    let writer = if artifact.format() == crate::distribution::ArchiveFormat::TarGz {
         xtask::archive::encode_cli_tar_gz(
             writer,
             artifact.root(),
             artifact.executable(),
             cli.bytes(),
             &materials,
+            plan.source_epoch(),
         )?
     } else {
         xtask::archive::encode_cli_zip(
@@ -462,6 +463,7 @@ pub(crate) fn staged_cli(
             artifact.executable(),
             cli.bytes(),
             &materials,
+            plan.source_epoch(),
         )?
     };
     #[cfg(unix)]
@@ -501,20 +503,9 @@ pub(crate) fn run(
     if icons.is_some() {
         return Err("Icon inputs apply only to native macOS app qualification".into());
     }
-    let changes = capture(Command::new("git").current_dir(root).args([
-        "status",
-        "--porcelain",
-        "--untracked-files=normal",
-    ]))?;
-    if !changes.is_empty() {
-        return Err("Native qualification requires a clean committed checkout; preserve/commit intended work first".into());
-    }
+    plan.require_qualified_source(root)?;
     crate::native_host::inspect_target(root, plan, target)?;
-    let source = String::from_utf8(capture(
-        Command::new("git")
-            .current_dir(root)
-            .args(["rev-parse", "HEAD"]),
-    )?)?;
+    let source = plan.source_commit().to_owned();
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let result: Result<()> = (|| {
@@ -566,7 +557,7 @@ pub(crate) fn run(
         fs::write(
             out.join("cli-result.json"),
             serde_json::to_vec_pretty(
-                &json!({"source":source.trim(),"target":target,"workflow":crate::release_inputs::workflow_identity()?,"host":cli.host(),"release_tests":tests,
+                &json!({"source":source.trim(),"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"target":target,"workflow":crate::release_inputs::workflow_identity()?,"host":cli.host(),"release_tests":tests,
             "frozen_cli":cli.identity(),"verified_cli_archive":archive,"preparation_resources":resources,"name_profiles":name_profiles,"qualification_failures":qualification_failures,"scope":"CLI build/archive behavior only; required remaining platform/source gates are not waived"}),
             )?,
         )?;
@@ -580,7 +571,7 @@ pub(crate) fn run(
             fs::write(
                 out.join("qualification.json"),
                 serde_json::to_vec_pretty(&json!({
-                    "stage":"native_candidate","source":source.trim(),"target":target,"workflow":crate::release_inputs::workflow_identity()?,"host":cli.host(),"release_tests":tests,
+                    "stage":"native_candidate","source":source.trim(),"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"target":target,"workflow":crate::release_inputs::workflow_identity()?,"host":cli.host(),"release_tests":tests,
                     "cli_image":cli.identity(),"archive":archive,"app":app,"volume_evidence":volume,"name_profiles":name_profiles,"qualification_failures":qualification_failures,
                     "scope":"native release tests, owned exFAT observations, frozen CLI and native app candidate structure/signature/worker verification; desktop and picker compatibility are separate required consumers"
                 }))?,
@@ -596,7 +587,7 @@ pub(crate) fn run(
             fs::write(
                 out.join("qualification.json"),
                 serde_json::to_vec_pretty(&json!({
-                    "source":source.trim(),"target":target,"workflow":crate::release_inputs::workflow_identity()?,"host":cli.host(),"release_tests":tests,
+                    "source":source.trim(),"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"target":target,"workflow":crate::release_inputs::workflow_identity()?,"host":cli.host(),"release_tests":tests,
                     "native_primitives":primitives,"cli_image":cli.identity(),"archive":archive,"preparation_resources":resources,"name_profiles":name_profiles,"qualification_failures":qualification_failures,
                     "scope":"native CLI release tests, real namespace/filesystem controls, final executable/runtime inspection and extracted archive behavior; repository-wide and other-platform qualification is separate"
                 }))?,

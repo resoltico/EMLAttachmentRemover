@@ -99,6 +99,13 @@ pub(crate) fn run(root: &Path, task: Task) -> Result<()> {
         Task::CheckHostIncidents { out } => {
             controlled(root, || crate::host_incidents::check(root, &out))
         }
+        Task::CheckProductIdentity { previous_info } => controlled(root, || {
+            shared::print_json(crate::release_identity::check(
+                &previous_info,
+                plan()?.version(),
+                eml_core::product::BUILD_NUMBER,
+            ))
+        }),
         Task::CheckConfig => controlled(root, || {
             shared::print_json(
                 crate::repository_config::check(root)

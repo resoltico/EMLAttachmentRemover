@@ -8,6 +8,7 @@ use std::{fs, os::unix::process::ExitStatusExt, path::Path, time::Duration};
 /// One production input set. A settled actool failure may select the approved
 /// alternate host; validation, timeout or uncertain cleanup never permits it.
 pub(crate) fn compile(root: &Path, plan: &BuildPlan, out: &Path) -> Result<()> {
+    plan.verify_packaging_source(root)?;
     fs::create_dir(out)?;
     let build = macos::load(root, plan)?;
     let host = crate::native_host::inspect(root, &build.host, "macos", &build.architecture)?;
@@ -24,7 +25,10 @@ pub(crate) fn compile(root: &Path, plan: &BuildPlan, out: &Path) -> Result<()> {
     } else {
         None
     };
-    let passed = settled && validation.as_ref().is_some_and(|result| result.is_ok());
+    let source_validation = plan.verify_packaging_source(root);
+    let passed = settled
+        && source_validation.is_ok()
+        && validation.as_ref().is_some_and(|result| result.is_ok());
     let materials = if passed {
         ["Assets.car", "EML.icns", "icon-partial.plist"]
             .into_iter()
@@ -43,10 +47,10 @@ pub(crate) fn compile(root: &Path, plan: &BuildPlan, out: &Path) -> Result<()> {
     fs::write(
         out.join("result.json"),
         serde_json::to_vec_pretty(&json!({
-            "source":crate::git(root, &["rev-parse", "HEAD"])?,
-        "source_working_tree":crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?,"host":host,"build":build,
+            "source":plan.source_commit(),"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"host":host,"build":build,
             "process":process.evidence(),"outputs_validated":passed,"materials":materials,
-            "retry_allowed":settled && !process.status.success(),
+            "source_validation_error":source_validation.as_ref().err().map(ToString::to_string),
+            "retry_allowed":settled && source_validation.is_ok() && !process.status.success(),
             "validation_error":validation.as_ref().and_then(|result| result.as_ref().err()).map(ToString::to_string),
             "scope":"one actual owner-icon compile; shared input identity, not app/GUI qualification"
         }))?,

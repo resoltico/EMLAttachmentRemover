@@ -602,6 +602,7 @@ pub(crate) fn checked_run(command: Command, log: &Path, seconds: u64) -> Result<
 
 #[derive(Serialize)]
 pub(crate) struct MacBuild {
+    pub source_epoch: xtask::archive::PackageEpoch,
     pub version: String,
     pub minimum_text: String,
     pub minimum: u32,
@@ -690,6 +691,7 @@ pub(crate) fn load(root: &Path, plan: &BuildPlan) -> Result<MacBuild> {
     }
     let minimum = packed_version(plan.floors().macos_minimum())?;
     Ok(MacBuild {
+        source_epoch: plan.source_epoch(),
         version: plan.version().to_owned(),
         minimum_text: plan.floors().macos_minimum().to_owned(),
         minimum,

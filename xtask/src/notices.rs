@@ -273,11 +273,7 @@ fn generated_materials(
     insert(
         &mut all,
         "source.json".into(),
-        serde_json::to_vec_pretty(&json!({
-            "head": crate::git(&root, &["rev-parse", "HEAD"])?,
-            "working_tree": crate::git(&root, &["status", "--porcelain=v1", "--untracked-files=all"])?,
-            "scope": "generated legal materials; not native execution or legal review evidence"
-        }))?,
+        serde_json::to_vec_pretty(&source_document(&root, plan)?)?,
     )?;
     for component in [
         NoticeComponent::Cli,
@@ -344,7 +340,7 @@ pub(crate) fn check(root: &Path, plan: &BuildPlan, output: Option<&Path>) -> Res
     campaign::require_stock_topology(root)?;
     let (all, mode) = if let Some(directory) = std::env::var_os("EML_GENERATED_LEGAL_MATERIALS") {
         (
-            checked_generated_input(root, Path::new(&directory))?,
+            checked_generated_input(root, plan, Path::new(&directory))?,
             "consumer_identity",
         )
     } else {
@@ -363,7 +359,7 @@ pub(crate) fn check(root: &Path, plan: &BuildPlan, output: Option<&Path>) -> Res
     )?;
     Ok(
         json!({"mode":mode,"profiles":pairs,"entries":all.len(),"source":source,"compared_output":output,
-        "scope":if mode=="consumer_identity" {"same-clean-source generated material identity/completeness; successful same-source producer is a separate prerequisite, not attested by inventory/source SHA"} else {"current selected locked graphs and reviewed source/material bindings regenerated and validated; no native execution or external legal assurance"}}),
+        "scope":if mode=="consumer_identity" {"same-source tuple and generated material identity/completeness; Git inputs additionally require a clean checkout; declared archives remain unverified; successful same-source producer is a separate prerequisite, not attested by inventory/source SHA"} else {"current selected locked graphs and reviewed source/material bindings regenerated and validated; no native execution or external legal assurance"}}),
     )
 }
 
@@ -410,7 +406,7 @@ pub(crate) fn checked_component(
     // builds may consume the target-selected output of the same CI run's Linux
     // producer. Identity checks bind that input, without treating it as review.
     let all = if let Some(directory) = std::env::var_os("EML_GENERATED_LEGAL_MATERIALS") {
-        checked_generated_input(root, Path::new(&directory))?
+        checked_generated_input(root, plan, Path::new(&directory))?
     } else {
         generated_materials(root, plan, Some((platform, component)))?.1
     };

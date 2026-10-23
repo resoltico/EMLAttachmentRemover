@@ -6,7 +6,7 @@
 
 /// Protocol 1's canonical program identity, shared by both product adapters.
 /// It identifies the wire contract; it does not imply invoking the CLI binary.
-pub const PROGRAM_ID: &str = "remove-eml-attachments";
+pub use eml_core::product::CLI_NAME as PROGRAM_ID;
 
 pub mod desktop;
 mod event;

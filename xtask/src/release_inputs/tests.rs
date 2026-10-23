@@ -3,10 +3,10 @@ use super::*;
 use serde_json::json;
 use std::time::{Duration, UNIX_EPOCH};
 const SOURCE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const LINUX: &str = "remove-eml-attachments-7.0.0-linux-aarch64.tar.gz";
-const LINUX_X86: &str = "remove-eml-attachments-7.0.0-linux-x86_64.tar.gz";
-const MAC_CLI: &str = "remove-eml-attachments-7.0.0-macos-x86_64.zip";
-const MAC_APP: &str = "EML-Attachment-Remover-7.0.0-macos-x86_64.zip";
+const LINUX: &str = "emlattachmentremover-7.0.0-linux-aarch64.tar.gz";
+const LINUX_X86: &str = "emlattachmentremover-7.0.0-linux-x86_64.tar.gz";
+const MAC_CLI: &str = "emlattachmentremover-7.0.0-macos-x86_64.tar.gz";
+const MAC_APP: &str = "emlattachmentremover-gui-7.0.0-macos-x86_64.zip";
 fn workflow() -> WorkflowIdentity {
     WorkflowIdentity {
         run: "12".into(),
@@ -240,12 +240,21 @@ fn desktop_case(name: &str, method: &str) -> Value {
     }
     value
 }
+fn timestamps() -> Value {
+    json!({"source_epoch":1609459201,"zip_epoch_seconds":1609459200,"precision":"UTC DOS two-second floor","entries":{
+        "":{"kind":"directory","mtime_seconds":1609459200,"mtime_nanoseconds":0},
+        "Contents":{"kind":"directory","mtime_seconds":1609459200,"mtime_nanoseconds":0},
+        "Contents/Info.plist":{"kind":"file","mtime_seconds":1609459200,"mtime_nanoseconds":0},
+        "Contents/MacOS":{"kind":"directory","mtime_seconds":1609459200,"mtime_nanoseconds":0},
+        "Contents/MacOS/EMLAttachmentRemover":{"kind":"file","mtime_seconds":1609459200,"mtime_nanoseconds":0}
+    }})
+}
 fn desktop(reference: &ByteIdentity) -> Value {
     let controls: Vec<_> = CONTROLLED_CASES
         .iter()
         .map(|(name, method)| desktop_case(name, method))
         .collect();
-    json!({"stage":"desktop_qualification","source":SOURCE,"target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",15),"reference":reference,"verification":{"stage":"desktop_qualification","snapshot":identity(),"gui_interaction":{"workflow":desktop_case("workflow","testOwnedDesktopWorkflowAndNativeIngress"),"pagination":desktop_case("pagination","testOwnedPagination"),"appearance":desktop_case("appearance","testOwnedNativeAppearance"),"operation_controls":{"shipping_bundle_unchanged":true,"cases":controls}}}})
+    json!({"stage":"desktop_qualification","source":SOURCE,"source_epoch":1609459201,"source_provenance":"git_commit","target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",15),"reference":reference,"verification":{"source_epoch":1609459201,"source_provenance":"git_commit","bundle_timestamps":timestamps(),"stage":"desktop_qualification","snapshot":identity(),"gui_interaction":{"workflow":desktop_case("workflow","testOwnedDesktopWorkflowAndNativeIngress"),"pagination":desktop_case("pagination","testOwnedPagination"),"appearance":desktop_case("appearance","testOwnedNativeAppearance"),"operation_controls":{"shipping_bundle_unchanged":true,"cases":controls}}}})
 }
 fn picker(reference: &ByteIdentity) -> (VerifiedPickerReceipt, FrozenRecord) {
     let binding = binding(
@@ -259,7 +268,7 @@ fn picker(reference: &ByteIdentity) -> (VerifiedPickerReceipt, FrozenRecord) {
     let before = json!({"host":native,"caller":{"uid":501,"euid":501,"console_uid":501,"security_session":{"status":0,"security_session_id":9,"graphic_access":true}},"disabled_override":{"program":"/bin/launchctl","arguments":["print-disabled","gui/501"],"process":process(),"override":null}});
     let app = "/owned/EML Attachment Remover.app";
     let raw = frozen(
-        json!({"stage":"picker_compatibility","source":SOURCE,"target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",26),"verification":{"stage":"picker_compatibility","snapshot":identity(),"picker":{"source":SOURCE,"source_archive":identity(),"case":"picker","test_method":"testOwnedNativePickerCompatibility","app":app,"summary":summary(),"process":process(),"lifetime_owner":owner(app,4),"ownership_receipt":ownership(app),"picker_observation":{"schema":1,"scenario":"picker","owned_pid":42,"message":"/owned/one.eml","folder":"/owned/folder-input"},"persistent_preferences":{"fresh_process_before":{},"fresh_process_after":{},"comparison":comparison(true),"argument_only_controls":comparison(false)}}}}),
+        json!({"stage":"picker_compatibility","source":SOURCE,"source_epoch":1609459201,"source_provenance":"git_commit","target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",26),"verification":{"source_epoch":1609459201,"source_provenance":"git_commit","bundle_timestamps":timestamps(),"stage":"picker_compatibility","snapshot":identity(),"picker":{"source":SOURCE,"source_archive":identity(),"case":"picker","test_method":"testOwnedNativePickerCompatibility","app":app,"summary":summary(),"process":process(),"lifetime_owner":owner(app,4),"ownership_receipt":ownership(app),"picker_observation":{"schema":1,"scenario":"picker","owned_pid":42,"message":"/owned/one.eml","folder":"/owned/folder-input"},"persistent_preferences":{"fresh_process_before":{},"fresh_process_after":{},"comparison":comparison(true),"argument_only_controls":comparison(false)}}}}),
     );
     // Facts are deliberately authored independently from project_product().
     let product = json!({"stage":"picker_compatibility","source":SOURCE,"target":"x86_64-apple-darwin","host":native,"snapshot":identity(),"raw_product_identity":raw.identity,"case":"picker","test_method":"testOwnedNativePickerCompatibility","app":app,"summary":{"total":1,"passed":1,"failed":0,"skipped":0,"expected_failures":0},"process":process(),"lifetime_owner":owner(app,4),"ownership_receipt":ownership(app),"picker_observation":{"schema":1,"scenario":"picker","owned_pid":42,"message":"/owned/one.eml","folder":"/owned/folder-input"},"persistent_preferences":{"fresh_process_before":{},"fresh_process_after":{},"comparison":comparison(true),"argument_only_controls":comparison(false)}});
@@ -303,6 +312,7 @@ fn fixture(extra_linux: bool) -> (tempfile::TempDir, BuildPlan, VerifiedInputs) 
         &toml::to_string(&table).unwrap(),
         include_str!("../../tools.toml"),
         "7.0.0".into(),
+        crate::distribution::PackageSource::fixture(),
     )
     .unwrap();
     let mut products = BTreeMap::new();
@@ -332,7 +342,7 @@ fn fixture(extra_linux: bool) -> (tempfile::TempDir, BuildPlan, VerifiedInputs) 
     ))) {
         let path = dir.join(name);
         fs::write(&path, b"abc").unwrap();
-        let mut record = json!({"source":SOURCE,"target":target,"workflow":workflow(),"host":host(target,os,arch,26),"archive":{"identity":identity()},"cli_image":identity(),"qualification_failures":[]});
+        let mut record = json!({"source":SOURCE,"source_epoch":1609459201,"source_provenance":"git_commit","target":target,"workflow":workflow(),"host":host(target,os,arch,26),"archive":{"identity":identity()},"cli_image":identity(),"qualification_failures":[]});
         record["name_profiles"] = crate::name_profiles::valid_fixture(
             SOURCE,
             &identity(),
@@ -361,20 +371,22 @@ fn fixture(extra_linux: bool) -> (tempfile::TempDir, BuildPlan, VerifiedInputs) 
         );
     }
     let reference = frozen(
-        json!({"schema":2,"source":SOURCE,"target":"x86_64-apple-darwin","workflow":workflow(),"version":"7.0.0","root":"EML Attachment Remover.app","architecture":"x86_64"}),
+        json!({"schema":2,"source":SOURCE,"source_epoch":1609459201,"source_provenance":"git_commit","target":"x86_64-apple-darwin","workflow":workflow(),"version":"7.0.0","root":"EML Attachment Remover.app","architecture":"x86_64","files":{"Contents/Info.plist":[identity(),420],"Contents/MacOS/EMLAttachmentRemover":[identity(),493]}}),
     );
     let (picker, picker_product) = picker(&reference.identity);
     let consumer = frozen(desktop(&reference.identity));
     let path = dir.join(MAC_APP);
     fs::write(&path, b"abc").unwrap();
-    products.insert(MAC_APP.into(),ProductInput{platform:"macos-x86_64".into(),role:ProductRole::DesktopApp,archive:identity(),archive_path:path,producer:frozen(json!({"source":SOURCE,"target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",26),"stage":"native_candidate","verification":{"stage":"native_candidate"},"identity":identity(),"reference":reference.identity})),reference:Some(reference),desktop:Some(consumer),picker:Some(picker),picker_product:Some(picker_product)});
+    products.insert(MAC_APP.into(),ProductInput{platform:"macos-x86_64".into(),role:ProductRole::DesktopApp,archive:identity(),archive_path:path,producer:frozen(json!({"source":SOURCE,"source_epoch":1609459201,"source_provenance":"git_commit","target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",26),"stage":"native_candidate","verification":{"stage":"native_candidate","source_epoch":1609459201,"source_provenance":"git_commit","bundle_timestamps":timestamps()},"identity":identity(),"reference":reference.identity})),reference:Some(reference),desktop:Some(consumer),picker:Some(picker),picker_product:Some(picker_product)});
     (
         root,
         plan,
         VerifiedInputs {
             schema: "eml-verified-release-inputs".into(),
-            schema_version: 1,
+            schema_version: 2,
             source: SOURCE.into(),
+            source_epoch: PackageEpoch::new(1_609_459_201).unwrap(),
+            source_provenance: "git_commit".into(),
             version: "7.0.0".into(),
             workflow: workflow(),
             products: products.into(),
@@ -399,7 +411,7 @@ fn clone_inputs(value: &VerifiedInputs) -> VerifiedInputs {
 fn composed_current_run_inputs_admit_variable_exact_sets_and_ordinary_picker_without_registry() {
     for extra in [false, true] {
         let (root, plan, value) = fixture(extra);
-        value.validate(&plan, SOURCE, &workflow()).unwrap();
+        value.validate(&plan, &workflow()).unwrap();
 
         value
             .recheck_pickers(root.path(), &plan, UNIX_EPOCH)
@@ -410,7 +422,7 @@ fn composed_current_run_inputs_admit_variable_exact_sets_and_ordinary_picker_wit
 #[test]
 fn missing_extra_duplicate_wrong_product_roles_and_stale_bindings_fail() {
     let (_, plan, good) = fixture(false);
-    good.validate(&plan, SOURCE, &workflow()).unwrap();
+    good.validate(&plan, &workflow()).unwrap();
     for case in [
         "missing",
         "extra",
@@ -466,7 +478,7 @@ fn missing_extra_duplicate_wrong_product_roles_and_stale_bindings_fail() {
             }
             _ => unreachable!(),
         }
-        assert!(bad.validate(&plan, SOURCE, &workflow()).is_err(), "{case}");
+        assert!(bad.validate(&plan, &workflow()).is_err(), "{case}");
     }
     let raw = serde_json::to_string(&good).unwrap();
     let product = serde_json::to_string(good.products.get(LINUX).unwrap()).unwrap();
@@ -532,10 +544,7 @@ fn desktop_case_identity_owner_process_and_preference_omissions_fail_composed_ad
                 .unwrap(),
             |v| *v.pointer_mut(pointer).unwrap() = replacement,
         );
-        assert!(
-            bad.validate(&plan, SOURCE, &workflow()).is_err(),
-            "{pointer}"
-        );
+        assert!(bad.validate(&plan, &workflow()).is_err(), "{pointer}");
     }
     let mut bad = clone_inputs(&good);
     edit(
@@ -552,7 +561,7 @@ fn desktop_case_identity_owner_process_and_preference_omissions_fail_composed_ad
                 .remove("pagination");
         },
     );
-    assert!(bad.validate(&plan, SOURCE, &workflow()).is_err());
+    assert!(bad.validate(&plan, &workflow()).is_err());
 }
 #[test]
 fn stale_raw_picker_workflows_and_duplicate_observations_cannot_be_laundered() {
@@ -568,7 +577,7 @@ fn stale_raw_picker_workflows_and_duplicate_observations_cannot_be_laundered() {
         |v| v["workflow"]["run"] = "11".into(),
     );
     synchronize_picker_raw(bad.products.get_mut(MAC_APP).unwrap());
-    assert!(bad.validate(&plan, SOURCE, &workflow()).is_err());
+    assert!(bad.validate(&plan, &workflow()).is_err());
     let mut bad = clone_inputs(&good);
     let raw = bad
         .products
@@ -584,7 +593,7 @@ fn stale_raw_picker_workflows_and_duplicate_observations_cannot_be_laundered() {
     );
     raw.identity = ByteIdentity::of(raw.contents.as_bytes());
     synchronize_picker_raw(bad.products.get_mut(MAC_APP).unwrap());
-    assert!(bad.validate(&plan, SOURCE, &workflow()).is_err());
+    assert!(bad.validate(&plan, &workflow()).is_err());
 }
 #[test]
 fn failed_actual_picker_cannot_be_replaced_by_success_projection_even_with_consistent_hashes() {
@@ -603,12 +612,12 @@ fn failed_actual_picker_cannot_be_replaced_by_success_projection_even_with_consi
         },
     );
     synchronize_picker_raw(bad.products.get_mut(MAC_APP).unwrap());
-    assert!(bad.validate(&plan, SOURCE, &workflow()).is_err());
+    assert!(bad.validate(&plan, &workflow()).is_err());
 }
 #[test]
 fn linux_resource_failure_missing_rows_or_fabricated_metrics_cannot_qualify() {
     let (_, plan, good) = fixture(true);
-    good.validate(&plan, SOURCE, &workflow()).unwrap();
+    good.validate(&plan, &workflow()).unwrap();
     for (pointer, replacement) in [
         ("/preparation_resources", Value::Null),
         ("/preparation_resources/process/signal", json!(9)),
@@ -664,10 +673,7 @@ fn linux_resource_failure_missing_rows_or_fabricated_metrics_cannot_qualify() {
             &mut bad.products.get_mut(LINUX_X86).unwrap().producer,
             |v| *v.pointer_mut(pointer).unwrap() = replacement,
         );
-        assert!(
-            bad.validate(&plan, SOURCE, &workflow()).is_err(),
-            "{pointer}"
-        );
+        assert!(bad.validate(&plan, &workflow()).is_err(), "{pointer}");
     }
     let mut bad = clone_inputs(&good);
     edit(
@@ -679,7 +685,7 @@ fn linux_resource_failure_missing_rows_or_fabricated_metrics_cannot_qualify() {
                 .remove(0);
         },
     );
-    assert!(bad.validate(&plan, SOURCE, &workflow()).is_err());
+    assert!(bad.validate(&plan, &workflow()).is_err());
     let mut bad = clone_inputs(&good);
     edit(
         &mut bad.products.get_mut(LINUX_X86).unwrap().producer,
@@ -694,7 +700,7 @@ fn linux_resource_failure_missing_rows_or_fabricated_metrics_cannot_qualify() {
         },
     );
     assert!(
-        bad.validate(&plan, SOURCE, &workflow()).is_err(),
+        bad.validate(&plan, &workflow()).is_err(),
         "honest slower deep median must fail independently of declared passed"
     );
 }
@@ -722,13 +728,13 @@ fn required_manifest_nullable_roles_and_duplicate_producer_observations_are_not_
         1,
     );
     producer.identity = ByteIdentity::of(producer.contents.as_bytes());
-    assert!(bad.validate(&plan, SOURCE, &workflow()).is_err());
+    assert!(bad.validate(&plan, &workflow()).is_err());
 }
 
 #[test]
 fn every_controlled_desktop_case_and_its_bound_raw_observations_are_required() {
     let (_, plan, good) = fixture(false);
-    good.validate(&plan, SOURCE, &workflow()).unwrap();
+    good.validate(&plan, &workflow()).unwrap();
     for (name, _) in CONTROLLED_CASES {
         let mut omitted = clone_inputs(&good);
         edit(
@@ -749,7 +755,7 @@ fn every_controlled_desktop_case_and_its_bound_raw_observations_are_required() {
             },
         );
         assert!(
-            omitted.validate(&plan, SOURCE, &workflow()).is_err(),
+            omitted.validate(&plan, &workflow()).is_err(),
             "missing {name}"
         );
     }
@@ -818,9 +824,173 @@ fn every_controlled_desktop_case_and_its_bound_raw_observations_are_required() {
                     json!({"identity":ByteIdentity::of(contents.as_bytes()),"contents":contents});
             },
         );
+        assert!(bad.validate(&plan, &workflow()).is_err(), "{change}");
+    }
+}
+
+#[test]
+fn manifest_epoch_provenance_and_schema_are_required_and_match_the_held_source() {
+    let (_, plan, good) = fixture(false);
+    for field in ["source_epoch", "source_provenance"] {
+        let mut missing = serde_json::to_value(&good).unwrap();
+        missing.as_object_mut().unwrap().remove(field);
         assert!(
-            bad.validate(&plan, SOURCE, &workflow()).is_err(),
-            "{change}"
+            serde_json::from_value::<VerifiedInputs>(missing).is_err(),
+            "{field}"
+        );
+    }
+    for (field, replacement) in [
+        ("source_epoch", json!(1609459200)),
+        ("source_epoch", json!(0)),
+        ("source_epoch", Value::Null),
+        ("source_provenance", json!("declared_archive")),
+        ("source_provenance", Value::Null),
+        ("schema_version", json!(1)),
+    ] {
+        let mut value = serde_json::to_value(&good).unwrap();
+        value[field] = replacement;
+        if let Ok(bad) = serde_json::from_value::<VerifiedInputs>(value) {
+            assert!(bad.validate(&plan, &workflow()).is_err(), "{field}");
+        }
+    }
+}
+
+#[test]
+fn every_product_and_app_consumer_requires_exact_source_epoch_and_git_provenance() {
+    let (_, plan, good) = fixture(false);
+    for lane in ["cli", "app", "desktop", "picker", "reference"] {
+        for field in ["source_epoch", "source_provenance"] {
+            for replacement in [
+                None,
+                Some(Value::Null),
+                Some(if field == "source_epoch" {
+                    json!(1609459200)
+                } else {
+                    json!("declared_archive")
+                }),
+            ] {
+                let mut bad = clone_inputs(&good);
+                let product = bad
+                    .products
+                    .get_mut(if lane == "cli" { LINUX } else { MAC_APP })
+                    .unwrap();
+                let record = match lane {
+                    "cli" | "app" => &mut product.producer,
+                    "desktop" => product.desktop.as_mut().unwrap(),
+                    "picker" => product.picker_product.as_mut().unwrap(),
+                    "reference" => product.reference.as_mut().unwrap(),
+                    _ => unreachable!(),
+                };
+                edit(record, |v| {
+                    if let Some(value) = replacement {
+                        v[field] = value;
+                    } else {
+                        v.as_object_mut().unwrap().remove(field);
+                    }
+                });
+                if lane == "reference" {
+                    let identity = product.reference.as_ref().unwrap().identity.clone();
+                    edit(&mut product.producer, |v| v["reference"] = json!(identity));
+                }
+                let error = bad.validate(&plan, &workflow()).unwrap_err().to_string();
+                assert!(
+                    error.contains("epoch") || error.contains("invalid type"),
+                    "{lane}/{field}: {error}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn app_timestamp_observations_cover_the_whole_reference_tree_at_exact_zip_precision() {
+    let (_, plan, good) = fixture(false);
+    for lane in ["app", "desktop", "picker"] {
+        for pointer in [
+            "/verification/source_epoch",
+            "/verification/source_provenance",
+            "/verification/bundle_timestamps",
+            "/verification/bundle_timestamps/source_epoch",
+            "/verification/bundle_timestamps/zip_epoch_seconds",
+            "/verification/bundle_timestamps/precision",
+            "/verification/bundle_timestamps/entries/",
+            "/verification/bundle_timestamps/entries/Contents",
+            "/verification/bundle_timestamps/entries/Contents~1Info.plist/mtime_seconds",
+            "/verification/bundle_timestamps/entries/Contents~1MacOS~1EMLAttachmentRemover/mtime_nanoseconds",
+        ] {
+            let mut bad = clone_inputs(&good);
+            let product = bad.products.get_mut(MAC_APP).unwrap();
+            let record = match lane {
+                "app" => &mut product.producer,
+                "desktop" => product.desktop.as_mut().unwrap(),
+                "picker" => product.picker_product.as_mut().unwrap(),
+                _ => unreachable!(),
+            };
+            edit(record, |v| *v.pointer_mut(pointer).unwrap() = Value::Null);
+            assert!(bad.validate(&plan, &workflow()).is_err(), "{lane}{pointer}");
+        }
+    }
+    let reference = good
+        .products
+        .get(MAC_APP)
+        .unwrap()
+        .reference
+        .as_ref()
+        .unwrap()
+        .document()
+        .unwrap();
+    let base = json!({"source_epoch":1609459201,"source_provenance":"git_commit","bundle_timestamps":timestamps()});
+    for (pointer, wrong) in [
+        ("/bundle_timestamps/source_epoch", json!(1609459200)),
+        ("/bundle_timestamps/zip_epoch_seconds", json!(1609459202)),
+        ("/bundle_timestamps/precision", json!("UTC nearest second")),
+        (
+            "/bundle_timestamps/entries/Contents~1Info.plist/kind",
+            json!("directory"),
+        ),
+        (
+            "/bundle_timestamps/entries/Contents~1Info.plist/mtime_seconds",
+            json!(1609459201),
+        ),
+        (
+            "/bundle_timestamps/entries/Contents~1Info.plist/mtime_nanoseconds",
+            json!(1),
+        ),
+    ] {
+        let mut wrong_record = base.clone();
+        *wrong_record.pointer_mut(pointer).unwrap() = wrong;
+        assert!(
+            bundle_timestamps(&wrong_record, &reference, &plan).is_err(),
+            "{pointer}"
+        );
+    }
+    for target in ["header", "row", "entry"] {
+        let mut extra = base.clone();
+        match target {
+            "header" => extra["bundle_timestamps"]["unexpected"] = true.into(),
+            "row" => extra["bundle_timestamps"]["entries"]["Contents"]["unexpected"] = true.into(),
+            "entry" => {
+                extra["bundle_timestamps"]["entries"]["unlisted"] =
+                    json!({"kind":"file","mtime_seconds":1609459200,"mtime_nanoseconds":0})
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            bundle_timestamps(&extra, &reference, &plan).is_err(),
+            "{target}"
+        );
+    }
+    for path in [
+        "../outside",
+        "Contents/Info.plist/child",
+        "contents/other",
+        "Contents/",
+    ] {
+        let mut bad_reference = reference.clone();
+        bad_reference["files"][path] = json!([identity(), 420]);
+        assert!(
+            bundle_timestamps(&base, &bad_reference, &plan).is_err(),
+            "{path}"
         );
     }
 }

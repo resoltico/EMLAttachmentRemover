@@ -3,6 +3,10 @@ use super::zip_format::*;
 use super::*;
 use std::io::{Cursor, Write};
 
+fn fixture_epoch() -> PackageEpoch {
+    PackageEpoch::new(1_609_459_201).unwrap()
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn actual_ditto_profile_checks_original_records_descriptors_and_materials() {
@@ -10,9 +14,11 @@ fn actual_ditto_profile_checks_original_records_descriptors_and_materials() {
     let root = "EML Attachment Remover.app";
     let (path, expected) = ditto_fixture(owned.path(), root);
     let snapshot = ArchiveSnapshot::read(&path).unwrap();
-    snapshot.inspect_ditto_app(root, &expected).unwrap();
+    snapshot
+        .inspect_ditto_app(root, &expected, fixture_epoch())
+        .unwrap();
     assert!(
-        inspect_zip_directory(&mut Cursor::new(snapshot.bytes())).is_err(),
+        inspect_zip_directory(&mut Cursor::new(snapshot.bytes()), fixture_epoch()).is_err(),
         "The CLI profile must retain its no-extension/no-descriptor contract"
     );
     let bytes = snapshot.bytes();
@@ -43,7 +49,7 @@ fn actual_ditto_profile_checks_original_records_descriptors_and_materials() {
     bad[descriptor.unwrap() + 4] ^= 1;
     assert!(
         ArchiveSnapshot { bytes: bad }
-            .inspect_ditto_app(root, &expected)
+            .inspect_ditto_app(root, &expected, fixture_epoch())
             .unwrap_err()
             .to_string()
             .contains("descriptor differs")
@@ -52,7 +58,7 @@ fn actual_ditto_profile_checks_original_records_descriptors_and_materials() {
     bad[central + 46 + usize::from(short(&bytes[central..central + 46], 28))] ^= 1;
     assert!(
         ArchiveSnapshot { bytes: bad }
-            .inspect_ditto_app(root, &expected)
+            .inspect_ditto_app(root, &expected, fixture_epoch())
             .unwrap_err()
             .to_string()
             .contains("ditto metadata")
@@ -64,7 +70,7 @@ fn actual_ditto_profile_checks_original_records_descriptors_and_materials() {
     bad[local_name..local_name + replacement.len()].copy_from_slice(replacement.as_bytes());
     assert!(
         ArchiveSnapshot { bytes: bad }
-            .inspect_ditto_app(root, &expected)
+            .inspect_ditto_app(root, &expected, fixture_epoch())
             .unwrap_err()
             .to_string()
             .contains("Duplicate original ZIP member")
@@ -77,7 +83,7 @@ fn actual_ditto_profile_checks_original_records_descriptors_and_materials() {
         .sha256 = ByteIdentity::of(b"different owned source material").sha256;
     assert!(
         snapshot
-            .inspect_ditto_app(root, &wrong_material)
+            .inspect_ditto_app(root, &wrong_material, fixture_epoch())
             .unwrap_err()
             .to_string()
             .contains("expected bytes differ")
@@ -114,9 +120,22 @@ fn ditto_fixture(parent: &Path, root: &str) -> (PathBuf, BTreeMap<String, (ByteI
     for name in ["", "Contents", "Contents/MacOS", "Contents/Resources"] {
         fs::set_permissions(app.join(name), fs::Permissions::from_mode(0o755)).unwrap();
     }
+    let time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_609_459_200);
+    for relative in payloads.keys().map(String::as_str).chain([
+        "",
+        "Contents",
+        "Contents/MacOS",
+        "Contents/Resources",
+    ]) {
+        fs::File::open(app.join(relative))
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_accessed(time).set_modified(time))
+            .unwrap();
+    }
     let path = parent.join("format.zip");
     assert!(
         std::process::Command::new("/usr/bin/ditto")
+            .env("TZ", "UTC")
             .args([
                 "-c",
                 "-k",
@@ -144,7 +163,9 @@ fn archive() -> Vec<u8> {
     writer
         .start_file(
             "package/README.txt",
-            zip::write::SimpleFileOptions::default().system(zip::System::Unix),
+            zip::write::SimpleFileOptions::default()
+                .last_modified_time(zip::DateTime::from_date_and_time(2021, 1, 1, 0, 0, 0).unwrap())
+                .system(zip::System::Unix),
         )
         .unwrap();
     writer.write_all(b"ordinary owned fixture").unwrap();
@@ -214,15 +235,24 @@ fn explicit_cli_producers_roundtrip_their_narrow_profiles_and_materials() {
         "tool",
         binary,
         &materials,
+        fixture_epoch(),
     )
     .unwrap()
     .into_inner();
-    let tar = encode_cli_tar_gz(Vec::new(), "package", "tool", binary, &materials).unwrap();
+    let tar = encode_cli_tar_gz(
+        Vec::new(),
+        "package",
+        "tool",
+        binary,
+        &materials,
+        fixture_epoch(),
+    )
+    .unwrap();
     let zip = ArchiveSnapshot { bytes: zip }
-        .extract_cli_zip("package", "tool", &materials, owned.path())
+        .extract_cli_zip("package", "tool", &materials, owned.path(), fixture_epoch())
         .unwrap();
     let tar = ArchiveSnapshot { bytes: tar }
-        .extract_cli_tar_gz("package", "tool", &materials, owned.path())
+        .extract_cli_tar_gz("package", "tool", &materials, owned.path(), fixture_epoch())
         .unwrap();
     for extracted in [&zip, &tar] {
         assert_eq!(fs::read(extracted.root().join("tool")).unwrap(), binary);
@@ -242,6 +272,7 @@ fn synthetic_cli_zip(materials: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
         )
     {
         let options = zip::write::SimpleFileOptions::default()
+            .last_modified_time(zip::DateTime::from_date_and_time(2021, 1, 1, 0, 0, 0).unwrap())
             .system(zip::System::Unix)
             .compression_method(zip::CompressionMethod::Stored)
             .unix_permissions(if name == "tool" { 0o755 } else { 0o644 });
@@ -262,7 +293,7 @@ fn cli_evidence_reader_requires_one_bounded_crc_checked_material() {
     };
     assert!(
         missing
-            .read_cli_zip_material("package", name, 1024)
+            .read_cli_zip_material("package", name, 1024, fixture_epoch())
             .is_err()
     );
     materials.insert(
@@ -275,14 +306,18 @@ fn cli_evidence_reader_requires_one_bounded_crc_checked_material() {
     };
     assert_eq!(
         snapshot
-            .read_cli_zip_material("package", name, 1024)
+            .read_cli_zip_material("package", name, 1024, fixture_epoch())
             .unwrap(),
         materials[name]
     );
-    assert!(snapshot.read_cli_zip_material("package", name, 2).is_err());
     assert!(
         snapshot
-            .read_cli_zip_material("package", "../outside", 1024)
+            .read_cli_zip_material("package", name, 2, fixture_epoch())
+            .is_err()
+    );
+    assert!(
+        snapshot
+            .read_cli_zip_material("package", "../outside", 1024, fixture_epoch())
             .is_err()
     );
     let mut changed = bytes;
@@ -293,7 +328,7 @@ fn cli_evidence_reader_requires_one_bounded_crc_checked_material() {
     changed[body] ^= 1;
     assert!(
         ArchiveSnapshot { bytes: changed }
-            .read_cli_zip_material("package", name, 1024)
+            .read_cli_zip_material("package", name, 1024, fixture_epoch())
             .is_err()
     );
 }
@@ -311,7 +346,7 @@ fn ustar(entries: &[(&str, &[u8])]) -> Vec<u8> {
         });
         header.set_uid(0);
         header.set_gid(0);
-        header.set_mtime(0);
+        header.set_mtime(1_609_459_201);
         header.set_size(bytes.len() as u64);
         header.set_cksum();
         writer.append(&header, *bytes).unwrap();
@@ -321,13 +356,18 @@ fn ustar(entries: &[(&str, &[u8])]) -> Vec<u8> {
 }
 
 fn gzip(bytes: &[u8]) -> Vec<u8> {
-    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    let mut encoder = flate2::GzBuilder::new()
+        .mtime(1_609_459_201)
+        .write(Vec::new(), flate2::Compression::fast());
     encoder.write_all(bytes).unwrap();
     encoder.finish().unwrap()
 }
 
 fn inspect_tar(bytes: Vec<u8>) -> io::Result<Vec<TarMember>> {
-    ArchiveSnapshot { bytes }.walk_tar(|_, body| io::copy(body, &mut io::sink()).map(|_| ()))
+    ArchiveSnapshot { bytes }.walk_tar(
+        |_, body| io::copy(body, &mut io::sink()).map(|_| ()),
+        fixture_epoch(),
+    )
 }
 
 fn fix_tar_checksum(bytes: &mut [u8]) {
@@ -406,10 +446,13 @@ fn ustar_headers_reject_extensions_links_hidden_suffixes_and_path_aliases() {
         let result = ArchiveSnapshot {
             bytes: gzip(&changed),
         }
-        .walk_tar(|_, _| {
-            visited = true;
-            Ok(())
-        });
+        .walk_tar(
+            |_, _| {
+                visited = true;
+                Ok(())
+            },
+            fixture_epoch(),
+        );
         assert!(result.is_err());
         assert!(!visited);
     }
@@ -491,7 +534,7 @@ fn cli_ustar_extracts_exact_materials_inside_the_retained_private_enclosure() {
         bytes: gzip(&ustar(&entries)),
     };
     let extracted = snapshot
-        .extract_cli_tar_gz("package", "tool", &materials, owned.path())
+        .extract_cli_tar_gz("package", "tool", &materials, owned.path(), fixture_epoch())
         .unwrap();
     for (name, bytes) in materials {
         assert_eq!(fs::read(extracted.root().join(name)).unwrap(), bytes);
@@ -546,7 +589,7 @@ fn cli_tar_rejects_missing_extra_and_changed_materials() {
         };
         assert!(
             snapshot
-                .extract_cli_tar_gz("package", "tool", &materials, owned.path())
+                .extract_cli_tar_gz("package", "tool", &materials, owned.path(), fixture_epoch())
                 .is_err()
         );
         assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 0);
@@ -570,7 +613,7 @@ fn cli_tar_rejects_missing_extra_and_changed_materials() {
     };
     assert!(
         snapshot
-            .extract_cli_tar_gz("package", "tool", &materials, owned.path())
+            .extract_cli_tar_gz("package", "tool", &materials, owned.path(), fixture_epoch())
             .is_err()
     );
     assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 1);
@@ -586,7 +629,7 @@ fn immutable_cli_snapshot_extracts_exact_owned_materials_and_modes() {
     let snapshot = ArchiveSnapshot::read(&path).unwrap();
     fs::write(&path, b"changed owned archive after snapshot").unwrap();
     let extracted = snapshot
-        .extract_cli_zip("package", "tool", &materials, owned.path())
+        .extract_cli_zip("package", "tool", &materials, owned.path(), fixture_epoch())
         .unwrap();
     for (name, bytes) in materials {
         assert_eq!(fs::read(extracted.root().join(name)).unwrap(), bytes);
@@ -640,14 +683,14 @@ fn missing_required_material_is_rejected_before_extraction() {
     };
     assert!(
         snapshot
-            .extract_cli_zip("package", "tool", &materials, owned.path())
+            .extract_cli_zip("package", "tool", &materials, owned.path(), fixture_epoch())
             .is_err()
     );
     assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 0);
     // An incomplete expected inventory cannot redefine completeness either.
     assert!(
         snapshot
-            .extract_cli_zip("package", "tool", &missing, owned.path())
+            .extract_cli_zip("package", "tool", &missing, owned.path(), fixture_epoch())
             .is_err()
     );
     assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 0);
@@ -668,7 +711,7 @@ fn writable_nonsticky_upper_ancestor_is_refused_before_extraction() {
     let snapshot = ArchiveSnapshot {
         bytes: synthetic_cli_zip(&materials),
     };
-    let result = snapshot.extract_cli_zip("package", "tool", &materials, &parent);
+    let result = snapshot.extract_cli_zip("package", "tool", &materials, &parent, fixture_epoch());
     fs::set_permissions(&upper, fs::Permissions::from_mode(0o700)).unwrap();
     assert!(result.is_err());
     assert_eq!(fs::read_dir(&parent).unwrap().count(), 0);
@@ -685,7 +728,7 @@ fn crc_and_material_byte_changes_fail_real_readback() {
     let snapshot = ArchiveSnapshot { bytes };
     assert!(
         snapshot
-            .extract_cli_zip("package", "tool", &materials, owned.path())
+            .extract_cli_zip("package", "tool", &materials, owned.path(), fixture_epoch())
             .is_err()
     );
 
@@ -699,7 +742,7 @@ fn crc_and_material_byte_changes_fail_real_readback() {
     };
     assert!(
         snapshot
-            .extract_cli_zip("package", "tool", &materials, owned.path())
+            .extract_cli_zip("package", "tool", &materials, owned.path(), fixture_epoch())
             .is_err()
     );
     assert_eq!(fs::read_dir(owned.path()).unwrap().count(), 2); // Useful failed extraction evidence retained.
@@ -714,7 +757,7 @@ fn windows_extraction_requires_protected_acl_evidence() {
         bytes: synthetic_cli_zip(&materials),
     };
     let result = snapshot
-        .extract_cli_zip("package", "tool", &materials, owned.path())
+        .extract_cli_zip("package", "tool", &materials, owned.path(), fixture_epoch())
         .unwrap();
     for (name, bytes) in materials {
         assert_eq!(fs::read(result.root().join(name)).unwrap(), bytes);
@@ -730,7 +773,7 @@ fn windows_extraction_requires_protected_acl_evidence() {
 #[test]
 fn original_directory_is_bounded_and_preserves_each_record() {
     let bytes = archive();
-    let members = inspect_zip_directory(&mut Cursor::new(&bytes)).unwrap();
+    let members = inspect_zip_directory(&mut Cursor::new(&bytes), fixture_epoch()).unwrap();
     assert_eq!(members.len(), 1);
     assert_eq!(members[0].name, "package/README.txt");
     assert_eq!(members[0].size, 22);
@@ -750,7 +793,7 @@ fn duplicates_are_rejected_before_filename_map_collapses_them() {
     // The dependency accepts this and exposes one entry; the original
     // directory guard must reject the two records rather than count one.
     assert_eq!(zip::ZipArchive::new(Cursor::new(&bytes)).unwrap().len(), 1);
-    assert!(inspect_zip_directory(&mut Cursor::new(bytes)).is_err());
+    assert!(inspect_zip_directory(&mut Cursor::new(bytes), fixture_epoch()).is_err());
 }
 
 #[test]
@@ -760,10 +803,10 @@ fn invalid_directory_extents_and_unsupported_zip_features_fail() {
         let mut bytes = original.clone();
         let end = bytes.len() - 22;
         bytes[end + field..end + field + 2].copy_from_slice(&value.to_le_bytes());
-        assert!(inspect_zip_directory(&mut Cursor::new(bytes)).is_err());
+        assert!(inspect_zip_directory(&mut Cursor::new(bytes), fixture_epoch()).is_err());
     }
     for count in [0, 1, 21] {
-        assert!(inspect_zip_directory(&mut Cursor::new(vec![0; count])).is_err());
+        assert!(inspect_zip_directory(&mut Cursor::new(vec![0; count]), fixture_epoch()).is_err());
     }
 }
 
@@ -775,12 +818,12 @@ fn local_header_disagreement_and_special_file_types_fail() {
     for field in [6, 8, 14, 22, 30] {
         let mut bytes = original.clone();
         bytes[field] ^= 1;
-        assert!(inspect_zip_directory(&mut Cursor::new(bytes)).is_err());
+        assert!(inspect_zip_directory(&mut Cursor::new(bytes), fixture_epoch()).is_err());
     }
     for mode in [0o120777_u32, 0o104755, 0o040755] {
         let mut bytes = original.clone();
         bytes[central + 38..central + 42].copy_from_slice(&(mode << 16).to_le_bytes());
-        assert!(inspect_zip_directory(&mut Cursor::new(bytes)).is_err());
+        assert!(inspect_zip_directory(&mut Cursor::new(bytes), fixture_epoch()).is_err());
     }
 }
 
@@ -867,4 +910,161 @@ fn package_paths_reject_ambiguous_components() {
     ] {
         validate_member_name(path).unwrap();
     }
+}
+
+#[test]
+fn source_epoch_producers_are_repeatable_and_independent_readers_observe_utc_precision() {
+    let materials = synthetic_materials();
+    let zip_bytes = || {
+        encode_cli_zip(
+            Cursor::new(Vec::new()),
+            "package",
+            "tool",
+            b"exact executable",
+            &materials,
+            fixture_epoch(),
+        )
+        .unwrap()
+        .into_inner()
+    };
+    let tar_bytes = || {
+        encode_cli_tar_gz(
+            Vec::new(),
+            "package",
+            "tool",
+            b"exact executable",
+            &materials,
+            fixture_epoch(),
+        )
+        .unwrap()
+    };
+    let zip = zip_bytes();
+    assert_eq!(zip, zip_bytes());
+    let mut independent_zip = zip::ZipArchive::new(Cursor::new(&zip)).unwrap();
+    for index in 0..independent_zip.len() {
+        let mut entry = independent_zip.by_index(index).unwrap();
+        let date = entry.last_modified().unwrap();
+        assert_eq!(
+            (
+                date.year(),
+                date.month(),
+                date.day(),
+                date.hour(),
+                date.minute(),
+                date.second()
+            ),
+            (2021, 1, 1, 0, 0, 0)
+        );
+        let expected_mode = if entry.is_dir() || entry.name().unwrap() == "package/tool" {
+            0o755
+        } else {
+            0o644
+        };
+        assert_eq!(entry.unix_mode().unwrap() & 0o7777, expected_mode);
+        let mut body = Vec::new();
+        entry.read_to_end(&mut body).unwrap(); // includes the library's CRC verification
+        if entry.name().unwrap() == "package/tool" {
+            assert_eq!(body, b"exact executable");
+        }
+    }
+    let tar = tar_bytes();
+    assert_eq!(tar, tar_bytes());
+    assert_eq!(&tar[4..8], &1_609_459_201_u32.to_le_bytes());
+    let mut independent_tar = tar::Archive::new(flate2::read::GzDecoder::new(tar.as_slice()));
+    for entry in independent_tar.entries().unwrap() {
+        let mut entry = entry.unwrap();
+        assert_eq!(entry.header().mtime().unwrap(), 1_609_459_201);
+        let executable = entry.path().unwrap().as_ref() == Path::new("package/tool");
+        assert_eq!(
+            entry.header().mode().unwrap(),
+            if executable || entry.header().entry_type().is_dir() {
+                0o755
+            } else {
+                0o644
+            }
+        );
+        let mut body = Vec::new();
+        entry.read_to_end(&mut body).unwrap();
+        if executable {
+            assert_eq!(body, b"exact executable");
+        }
+    }
+}
+
+#[test]
+fn epoch_mismatches_fail_even_when_zip_headers_and_tar_checksums_agree() {
+    let bytes = archive();
+    let central = long(&bytes[bytes.len() - 22..], 16) as usize;
+    // Both local and central claim the same valid but wrong calendar date.
+    let mut wrong = bytes.clone();
+    wrong[12..14].copy_from_slice(&0x5222_u16.to_le_bytes());
+    wrong[central + 14..central + 16].copy_from_slice(&0x5222_u16.to_le_bytes());
+    assert!(
+        inspect_zip_directory(&mut Cursor::new(&wrong), fixture_epoch())
+            .unwrap_err()
+            .to_string()
+            .contains("timestamp")
+    );
+    assert!(
+        inspect_zip_directory(
+            &mut Cursor::new(&bytes),
+            PackageEpoch::new(1_609_459_202).unwrap()
+        )
+        .is_err()
+    );
+    let mut local_only = bytes;
+    local_only[10..12].copy_from_slice(&1_u16.to_le_bytes());
+    assert!(
+        inspect_zip_directory(&mut Cursor::new(local_only), fixture_epoch())
+            .unwrap_err()
+            .to_string()
+            .contains("disagree")
+    );
+
+    let raw = ustar(&[("package/file", b"abc")]);
+    let mut wrong_tar = raw.clone();
+    // Valid octal and recomputed header checksum must not authorize a wrong epoch.
+    wrong_tar[136..148].copy_from_slice(b"13773463002\0");
+    fix_tar_checksum(&mut wrong_tar);
+    assert!(
+        inspect_tar(gzip(&wrong_tar))
+            .unwrap_err()
+            .to_string()
+            .contains("timestamp")
+    );
+    let mut wrong_gzip = gzip(&raw);
+    wrong_gzip[4..8].copy_from_slice(&1_609_459_200_u32.to_le_bytes());
+    assert!(
+        inspect_tar(wrong_gzip)
+            .unwrap_err()
+            .to_string()
+            .contains("Gzip timestamp")
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn native_unix_times_must_match_source_zip_precision_even_when_both_copies_agree() {
+    let owned = tempfile::tempdir().unwrap();
+    let root = "EML Attachment Remover.app";
+    let (path, expected) = ditto_fixture(owned.path(), root);
+    let mut bytes = ArchiveSnapshot::read(&path).unwrap().bytes;
+    let central = long(&bytes[bytes.len() - 22..], 16) as usize;
+    let name_length = usize::from(short(&bytes[central..central + 46], 28));
+    let local = long(&bytes[central..central + 46], 42) as usize;
+    let local_extra = local + 30 + name_length;
+    let central_extra = central + 46 + name_length;
+    for relative in [4, 8] {
+        bytes[local_extra + relative..local_extra + relative + 4]
+            .copy_from_slice(&1_609_459_201_u32.to_le_bytes());
+        bytes[central_extra + relative..central_extra + relative + 4]
+            .copy_from_slice(&1_609_459_201_u32.to_le_bytes());
+    }
+    assert!(
+        ArchiveSnapshot { bytes }
+            .inspect_ditto_app(root, &expected, fixture_epoch())
+            .unwrap_err()
+            .to_string()
+            .contains("ditto metadata")
+    );
 }

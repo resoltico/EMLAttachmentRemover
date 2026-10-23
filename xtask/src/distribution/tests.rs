@@ -2,7 +2,7 @@ use super::*;
 const TABLE: &str = include_str!("../../distribution.toml");
 const TOOLS: &str = include_str!("../../tools.toml");
 fn parse(input: &str) -> Result<BuildPlan> {
-    BuildPlan::parse(input, TOOLS, "7.0.0".into())
+    BuildPlan::parse(input, TOOLS, "7.0.0".into(), PackageSource::fixture())
 }
 fn approved(plan: &BuildPlan) -> Result<()> {
     // Independent support oracle, deliberately not used to generate production policy.
@@ -135,7 +135,13 @@ fn typed_lookup_rejects_external_unknown_platform_role_target_and_artifact() {
 }
 #[test]
 fn one_renderer_exposes_matrix_roles_tools_and_exact_versioned_names() {
-    let plan = BuildPlan::parse(TABLE, TOOLS, "7.2.1-rc.2+build.5".into()).unwrap();
+    let plan = BuildPlan::parse(
+        TABLE,
+        TOOLS,
+        "7.2.1-rc.2+build.5".into(),
+        PackageSource::fixture(),
+    )
+    .unwrap();
     let rendered = plan.render();
     assert_eq!(rendered["schema"], "eml-build-plan");
     assert_eq!(rendered["schema_version"], 1);
@@ -159,7 +165,6 @@ fn one_renderer_exposes_matrix_roles_tools_and_exact_versioned_names() {
     );
     let context = BuildContext {
         root: PathBuf::from("unused"),
-        source: SourceCommit::parse("a".repeat(40)).unwrap(),
         plan,
     };
     let file = tempfile::NamedTempFile::new().unwrap();
@@ -181,13 +186,14 @@ fn one_renderer_exposes_matrix_roles_tools_and_exact_versioned_names() {
 #[test]
 fn malformed_tool_floor_version_and_source_values_cannot_form_a_plan() {
     for version in ["", "../other", "1/2", "1\\2", "1\n2", "1\0", "1 2"] {
-        assert!(BuildPlan::parse(TABLE, TOOLS, version.into()).is_err());
+        assert!(BuildPlan::parse(TABLE, TOOLS, version.into(), PackageSource::fixture()).is_err());
     }
     assert!(
         BuildPlan::parse(
             TABLE,
             &TOOLS.replace("version = \"26.3\"", "version = \"26\""),
-            "7.0.0".into()
+            "7.0.0".into(),
+            PackageSource::fixture()
         )
         .is_err()
     );
@@ -209,7 +215,7 @@ fn metadata(version: &str) -> serde_json::Value {
     serde_json::json!({
         "workspace_root": root,
         "workspace_members": ["owned-workspace-cli"],
-        "packages": [{"id":"owned-workspace-cli", "name":"remove-eml-attachments",
+        "packages": [{"id":"owned-workspace-cli", "name":"emlattachmentremover",
             "version":version, "source":null,
             "manifest_path":root.join("crates/eml-cli/Cargo.toml")}]
     })
@@ -285,14 +291,89 @@ fn metadata_must_identify_the_actual_local_workspace_cli() {
 #[test]
 fn colliding_tool_output_cannot_replace_a_matrix_or_partially_write_workflow_fields() {
     let tools = TOOLS.replace("[versions]", "[versions]\nnative='1.0.0'");
-    let plan = BuildPlan::parse(TABLE, &tools, "7.0.0".into()).unwrap();
+    let plan = BuildPlan::parse(TABLE, &tools, "7.0.0".into(), PackageSource::fixture()).unwrap();
     let context = BuildContext {
         root: PathBuf::from("unused"),
-        source: SourceCommit::parse("a".repeat(40)).unwrap(),
         plan,
     };
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(file.path(), b"prior=unchanged\n").unwrap();
     assert!(run(&context, Some(file.path())).is_err());
     assert_eq!(std::fs::read(file.path()).unwrap(), b"prior=unchanged\n");
+}
+
+#[test]
+fn canonical_downloads_have_exact_names_roots_executables_and_platform_formats() {
+    let plan = parse(TABLE).unwrap();
+    let expected = [
+        (
+            "emlattachmentremover-7.0.0-macos-aarch64.tar.gz",
+            "emlattachmentremover-7.0.0-macos-aarch64",
+            "emlattachmentremover",
+            ArchiveFormat::TarGz,
+        ),
+        (
+            "emlattachmentremover-7.0.0-macos-x86_64.tar.gz",
+            "emlattachmentremover-7.0.0-macos-x86_64",
+            "emlattachmentremover",
+            ArchiveFormat::TarGz,
+        ),
+        (
+            "emlattachmentremover-7.0.0-linux-aarch64.tar.gz",
+            "emlattachmentremover-7.0.0-linux-aarch64",
+            "emlattachmentremover",
+            ArchiveFormat::TarGz,
+        ),
+        (
+            "emlattachmentremover-7.0.0-linux-x86_64.tar.gz",
+            "emlattachmentremover-7.0.0-linux-x86_64",
+            "emlattachmentremover",
+            ArchiveFormat::TarGz,
+        ),
+        (
+            "emlattachmentremover-7.0.0-windows-aarch64.zip",
+            "emlattachmentremover-7.0.0-windows-aarch64",
+            "emlattachmentremover.exe",
+            ArchiveFormat::Zip,
+        ),
+        (
+            "emlattachmentremover-7.0.0-windows-x86_64.zip",
+            "emlattachmentremover-7.0.0-windows-x86_64",
+            "emlattachmentremover.exe",
+            ArchiveFormat::Zip,
+        ),
+        (
+            "emlattachmentremover-gui-7.0.0-macos-aarch64.zip",
+            "EML Attachment Remover.app",
+            "Contents/MacOS/EMLAttachmentRemover",
+            ArchiveFormat::Zip,
+        ),
+        (
+            "emlattachmentremover-gui-7.0.0-macos-x86_64.zip",
+            "EML Attachment Remover.app",
+            "Contents/MacOS/EMLAttachmentRemover",
+            ArchiveFormat::Zip,
+        ),
+    ];
+    assert_eq!(plan.expected_artifacts().count(), expected.len());
+    for (name, root, executable, format) in expected {
+        let actual = plan.named_artifact(name).unwrap();
+        assert_eq!(
+            (actual.root(), actual.executable(), actual.format()),
+            (root, executable, format)
+        );
+    }
+    for invalid in [
+        "remove-eml-attachments-7.0.0-macos-aarch64.zip",
+        "emlattachmentremover-7.0.0-macos-aarch64.zip",
+        "emlattachmentremover-7.0.0-windows-x86_64.tar.gz",
+        "emlattachmentremover-gui-7.0.0-linux-x86_64.tar.gz",
+        "EMLAttachmentRemover-7.0.0-macos-x86_64.zip",
+    ] {
+        assert!(plan.named_artifact(invalid).is_err(), "{invalid}");
+    }
+    assert_eq!(
+        plan.render()["source"],
+        json!({"commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "epoch":1609459201, "provenance":"git_commit"})
+    );
 }

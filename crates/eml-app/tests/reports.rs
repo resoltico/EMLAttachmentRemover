@@ -428,3 +428,25 @@ fn successful_sync_codes_require_consistent_methods_for_new_and_existing_copies(
         }
     }
 }
+
+#[test]
+fn released_cli_program_identity_is_not_an_accepted_desktop_transport_alias() {
+    let start = fixture("created")
+        .split(|byte| *byte == b'\n')
+        .next()
+        .unwrap()
+        .to_vec();
+    let mut start: serde_json::Value = serde_json::from_slice(&start).unwrap();
+    assert_eq!(start["program"], "emlattachmentremover");
+    let mut report = RunReport::new("test-version");
+    report
+        .accept_frame(&serde_json::to_vec(&start).unwrap())
+        .unwrap();
+    start["program"] = serde_json::json!("remove-eml-attachments"); // Immutable v6 identity.
+    let mut report = RunReport::new("test-version");
+    assert_eq!(
+        report.accept_frame(&serde_json::to_vec(&start).unwrap()),
+        Err(ProtocolFailure::IncompatibleHelper)
+    );
+    assert!(report.start().is_none());
+}

@@ -11,6 +11,7 @@ use std::{
 };
 
 pub(crate) fn build_sources(root: &Path, plan: &BuildPlan, out: &Path) -> Result<()> {
+    plan.verify_packaging_source(root)?;
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let result = (|| -> Result<()> {
@@ -59,10 +60,11 @@ pub(crate) fn build_sources(root: &Path, plan: &BuildPlan, out: &Path) -> Result
                 name,
             )?);
         }
+        plan.verify_packaging_source(root)?;
         fs::write(
             out.join("desktop-sources.json"),
             serde_json::to_vec_pretty(
-                &json!({"host":host,"build":build,"artifacts":artifacts,"planned_bundle_metadata":app_metadata(&build.version,&build.minimum_text),"scope":"native desktop executable source/build/ad-hoc-signature evidence only; app bundle, complete GUI legal closure, extracted archive and GUI acceptance remain incomplete"}),
+                &json!({"source":plan.source_commit(),"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"host":host,"build":build,"artifacts":artifacts,"planned_bundle_metadata":app_metadata(&build.version,&build.minimum_text),"scope":"native desktop executable source/build/ad-hoc-signature evidence only; app bundle, complete GUI legal closure, extracted archive and GUI acceptance remain incomplete"}),
             )?,
         )?;
         Ok(())

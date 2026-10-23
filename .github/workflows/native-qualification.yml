@@ -169,7 +169,7 @@ jobs:
           $tests = Get-Content -LiteralPath target/native-tests/result.json -Raw | ConvertFrom-Json
           if ($tests.test_build_cleanup.removed -ne $true) { throw 'Private native test build was not cleaned after confirmed settlement' }
           & ./tests/windows/assert-test-sentinels.ps1 -Listing target/native-tests/native-test-discovery.log -IgnoredListing target/native-tests/native-test-ignored.log
-          cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures --target '${{ matrix.target }}' -- -D warnings
+          cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures,emlattachmentremover/native-fixtures --target '${{ matrix.target }}' -- -D warnings
           $code = $LASTEXITCODE
           if ($code -ne 0) { exit $code }
           cargo clippy --locked --manifest-path tests/native-filesystem/Cargo.toml --all-targets --target '${{ matrix.target }}' -- -D warnings
@@ -462,7 +462,7 @@ jobs:
           name: native-products-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
           compression-level: 0
           path: |
-            target/native-app-build/*.zip
+            target/native-app-build/*.tar.gz
             target/native-app-build/qualification.json
             target/native-app-build/app-build/*.zip
             target/native-app-build/app-build/*.reference.json
@@ -486,7 +486,7 @@ jobs:
             target/native-app-build/**/gui-operation-controls/**/Results.xcresult/**
             target/native-app-build/**/gui-operation-controls/**/preferences-*.plist
             target/native-app-build/**/entitlements.plist
-            target/native-app-build/*.zip
+            target/native-app-build/*.tar.gz
             target/native-app-build/app-build/*.zip
             !target/native-app-build/native-test-build/**
             !target/native-app-build/app-build/sources/cargo/**

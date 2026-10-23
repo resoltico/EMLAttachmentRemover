@@ -22,7 +22,7 @@ unprovable memory lifetime must not fabricate an unpublished receipt.
 
 ## Request decoding
 
-The `remove-eml-attachments` executable delegates shared transport to
+The `emlattachmentremover` executable delegates shared transport to
 `eml-protocol`. Its `decode_request` accepts a complete byte buffer plus the captured
 absolute working directory. It checks the 8 MiB limit, strict protocol-1 JSON,
 required fields (including explicit null for absent output directory), duplicate
@@ -101,6 +101,10 @@ Each event has a `type` discriminator and the following fields:
 | `start` | `protocol`, `program`, `version`, `dry_run`, `total`, `collection_complete` |
 | `item` | `index`, `source`, `status`, `destination`, `source_bytes`, `copy_bytes`, `removed`, `stripped_fields`, `plan`, `publication`, `existing_observation`, `error` |
 | `summary` | `counts`, `interrupted`, `collection_complete`, `run_error`, `exit_code` |
+
+`start.program` is `emlattachmentremover`; version 7 changes this product-name
+value along with the public command, without changing protocol 1 record fields.
+`start.version` remains the release version, independent of the product build.
 
 Counts contain `created`, `up_to_date`, `planned`, `failed` and `not_processed`.
 Nullable fields are present with explicit JSON null when unobserved. Nested path,

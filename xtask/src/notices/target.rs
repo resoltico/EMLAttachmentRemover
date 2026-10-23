@@ -23,7 +23,7 @@ impl NoticeComponent {
     }
     pub(super) fn package(self) -> &'static str {
         match self {
-            Self::Cli => "remove-eml-attachments",
+            Self::Cli => "emlattachmentremover",
             Self::Gui => "eml-gui",
             Self::Worker => "eml-worker",
         }

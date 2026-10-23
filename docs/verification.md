@@ -240,7 +240,9 @@ and complete macOS15 consumer roles remain mandatory.
 
 `cargo xtask distribution` prints the native target policy and expected archive
 identities derived from `xtask/distribution.toml` and actual locked Cargo metadata.
-It creates no product archive or qualification record. The consolidated CI
+It also records the held source commit, packaging epoch and provenance; source
+archives without Git require explicit declarations, which do not qualify a Git
+source. It creates no product archive or qualification record. The consolidated CI
 consumes its six native build/test rows and separate macOS floor-smoke rows. This metadata task does not initialize the
 Unix campaign controller or signal handlers. Its fixed read-only Cargo metadata
 subprocess has ordinary Cargo lifecycle behavior, without a campaign cleanup or

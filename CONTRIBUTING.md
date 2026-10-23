@@ -13,13 +13,30 @@ from a clean checkout:
 ```sh
 rustup show
 cargo test --locked --workspace
-cargo build --locked --release -p remove-eml-attachments
+cargo build --locked --release -p emlattachmentremover
 cargo xtask distribution
 ```
 
 `rust-toolchain.toml` selects the compiler and components. Cargo.lock is committed;
 do not regenerate it merely to work around a failed locked command. Normal product
 business behavior belongs in eml-core/eml-fs, not CLI renderers or desktop views.
+
+Standalone packaging resolves the UTC epoch of the admitted source commit; an
+explicit `SOURCE_DATE_EPOCH` must agree with Git when supplied. From a source
+archive without `.git`, supply both the full `EML_SOURCE_COMMIT` and decimal
+`SOURCE_DATE_EPOCH` belonging to that source. They are caller declarations,
+recorded as `declared_archive`, rather than proof of a Git tree. No current-time
+or placeholder epoch is substituted. For example, after setting those two
+variables from the archive's trusted source metadata:
+
+```sh
+cargo xtask build-cli-archive --target TARGET --out target/cli-package
+```
+
+Use a new output directory and the native target. Full qualification and release
+admission require a clean verified Git checkout; a declared source archive cannot
+supply that evidence. See [packaging timestamps](docs/release.md#packaging-source-and-timestamps).
+
 All test mail is synthetic. Put build output and owned fixtures under target/.
 Never use owner mail, saved preferences or unrelated processes for verification.
 

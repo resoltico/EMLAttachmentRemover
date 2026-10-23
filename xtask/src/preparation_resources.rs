@@ -8,7 +8,7 @@ pub(crate) fn run(root: &Path, cli: &FrozenCli, out: &Path) -> Result<Value> {
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let owner = xtask::archive::create_artifact_directory(&out)?;
-    let binary = owner.path().join("remove-eml-attachments");
+    let binary = owner.path().join("emlattachmentremover");
     let mut image = fs::OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -20,14 +20,14 @@ pub(crate) fn run(root: &Path, cli: &FrozenCli, out: &Path) -> Result<Value> {
     if ByteIdentity::of(&fs::read(&binary)?) != *cli.identity() {
         return Err("Resource executable differs from frozen shipping bytes".into());
     }
-    let source = crate::git(root, &["rev-parse", "HEAD"])?;
+    let source = cli.source();
     let mut command = Command::new("python3");
     command
         .current_dir(root)
         .arg(root.join("tools/measure_preparation.py"))
         .arg(&binary)
         .arg(out.join("measurement"))
-        .arg(&source)
+        .arg(source)
         .env("LC_ALL", "C");
     let log = out.join("campaign.log");
     let observed = controller()?.run(command, &log, Duration::from_secs(600));

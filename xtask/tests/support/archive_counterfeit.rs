@@ -10,7 +10,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     if args == ["--version"] {
         println!(
-            "remove-eml-attachments {}",
+            "{} {}",
+            eml_core::product::CLI_NAME,
             eml_core::product::VERSION_WITH_BUILD.as_str()
         );
         return Ok(());

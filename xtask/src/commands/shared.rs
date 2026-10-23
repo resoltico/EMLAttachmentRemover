@@ -1,6 +1,6 @@
 //! Shared command handlers retain their output and clean-source contracts.
 use crate::distribution::BuildPlan;
-use crate::{Result, cli_build, git, native_host, notices, qualify, smoke};
+use crate::{Result, cli_build, native_host, notices, qualify, smoke};
 use std::path::Path;
 
 pub(super) fn print_json(result: Result<serde_json::Value>) -> Result<()> {
@@ -28,9 +28,7 @@ pub(super) fn build_cli_archive(
     target: &str,
     out: &Path,
 ) -> Result<()> {
-    if !git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty() {
-        return Err("CLI archives require a clean committed source checkout".into());
-    }
+    plan.verify_packaging_source(root)?;
     std::fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let cli = cli_build::build(root, plan, target, &out.join("cli-build"))?;
@@ -39,7 +37,7 @@ pub(super) fn build_cli_archive(
     std::fs::write(
         out.join("cli-result.json"),
         serde_json::to_vec_pretty(
-            &serde_json::json!({"source":git(root, &["rev-parse", "HEAD"])?,"workflow":crate::release_inputs::workflow_identity()?,
+            &serde_json::json!({"source":plan.source_commit(),"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"workflow":crate::release_inputs::workflow_identity()?,
             "target":cli.target(),"platform":cli.platform(),"version":cli.version(),
             "host":cli.host(),"frozen_image":cli.identity(),"archive":archive,
             "scope":"native CLI build and archive readback only; full qualification remains separate"}),
@@ -54,7 +52,7 @@ pub(super) fn cli_smoke(root: &Path, executable: &Path, out: &Path) -> Result<()
     let result = smoke::run(
         root,
         &executable.canonicalize()?,
-        "remove-eml-attachments",
+        "emlattachmentremover",
         env!("CARGO_PKG_VERSION"),
         owned.path(),
         &out.join("behavior"),

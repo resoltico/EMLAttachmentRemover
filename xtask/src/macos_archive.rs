@@ -12,7 +12,7 @@ use std::{
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 use xtask::archive::{ArchiveSnapshot, ByteIdentity};
 const MAIN: &str = "Contents/MacOS/EMLAttachmentRemover";
@@ -34,6 +34,8 @@ struct Reference {
     schema: u8,
     workflow: Option<crate::release_inputs::WorkflowIdentity>,
     source: String,
+    source_provenance: String,
+    source_epoch: xtask::archive::PackageEpoch,
     version: String,
     target: String,
     architecture: String,
@@ -134,11 +136,84 @@ fn tree(root: &Path, normalize: bool) -> Result<Files> {
     visit(root, root, 0, normalize, &mut files, &mut 0)?;
     Ok(files)
 }
+/// Native ZIP stores DOS timestamps with two-second precision. Normalize to the
+/// lower representable second before ditto, which otherwise rounds odd seconds up.
+fn bundle_timestamps(
+    app: &Path,
+    epoch: xtask::archive::PackageEpoch,
+    normalize: bool,
+) -> Result<Value> {
+    fn visit(
+        base: &Path,
+        path: &Path,
+        seconds: u32,
+        normalize: bool,
+        depth: usize,
+        entries: &mut BTreeMap<String, Value>,
+    ) -> Result<()> {
+        if depth > 8 || entries.len() >= 4096 {
+            return Err("App timestamp inventory exceeds its depth/entry bound".into());
+        }
+        let before = fs::symlink_metadata(path)?;
+        if before.uid() != rustix::process::geteuid().as_raw()
+            || !(before.is_dir() || before.is_file())
+            || (before.is_file() && before.nlink() != 1)
+        {
+            return Err("App timestamp input is not an owned ordinary entry".into());
+        }
+        let file = fs::File::from(rustix::fs::open(
+            path,
+            rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::CLOEXEC | rustix::fs::OFlags::NOFOLLOW,
+            rustix::fs::Mode::empty(),
+        )?);
+        let held = file.metadata()?;
+        if held.dev() != before.dev() || held.ino() != before.ino() {
+            return Err("App timestamp input identity changed".into());
+        }
+        if before.is_dir() {
+            for child in fs::read_dir(path)? {
+                visit(base, &child?.path(), seconds, normalize, depth + 1, entries)?;
+            }
+        }
+        if normalize {
+            let time = UNIX_EPOCH + Duration::from_secs(u64::from(seconds));
+            file.set_times(fs::FileTimes::new().set_accessed(time).set_modified(time))?;
+        }
+        let after = file.metadata()?;
+        let addressed = fs::symlink_metadata(path)?;
+        if after.dev() != addressed.dev()
+            || after.ino() != addressed.ino()
+            || after.mtime() != i64::from(seconds)
+            || after.mtime_nsec() != 0
+        {
+            return Err("App timestamp/entry identity differs from admitted ZIP epoch".into());
+        }
+        let name = path
+            .strip_prefix(base)?
+            .to_str()
+            .ok_or("App timestamp path is not UTF8")?;
+        entries.insert(name.to_owned(), json!({"kind":if after.is_dir() {"directory"} else {"file"},"mtime_seconds":after.mtime(),"mtime_nanoseconds":after.mtime_nsec()}));
+        Ok(())
+    }
+    let seconds = epoch.floor_seconds();
+    let mut entries = BTreeMap::new();
+    visit(app, app, seconds, normalize, 0, &mut entries)?;
+    Ok(
+        json!({"source_epoch":epoch,"zip_epoch_seconds":seconds,"precision":"UTC DOS two-second floor","entries":entries}),
+    )
+}
+
 pub(crate) fn bundle_identity(app: &Path) -> Result<Value> {
     Ok(serde_json::to_value(tree(app, false)?)?)
 }
 
-fn inspect_images(root: &Path, app: &Path, build: &macos::MacBuild, out: &Path) -> Result<Value> {
+fn inspect_images(
+    root: &Path,
+    plan: &BuildPlan,
+    app: &Path,
+    build: &macos::MacBuild,
+    out: &Path,
+) -> Result<Value> {
     fs::create_dir(out)?;
     let files = tree(app, false)?;
     let mut images = Vec::new();
@@ -152,10 +227,10 @@ fn inspect_images(root: &Path, app: &Path, build: &macos::MacBuild, out: &Path) 
             fs::create_dir(&logs)?;
             let runtime = crate::archive_verify::runtime(
                 root,
+                plan,
                 &path,
                 "macos",
                 &build.architecture,
-                "",
                 &logs,
             )?;
             let mut vtool = build.command(root, "/usr/bin/xcrun");
@@ -573,6 +648,10 @@ fn verify_snapshot(
     out: &Path,
     checks: AppChecks,
 ) -> Result<Value> {
+    plan.verify_packaging_source(root)?;
+    if checks != AppChecks::Candidate {
+        plan.require_qualified_source(root)?;
+    }
     if checks != AppChecks::Candidate
         && (std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
             || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted"))
@@ -583,23 +662,25 @@ fn verify_snapshot(
     let (_, _, app_root) = artifact(plan, &build.host)?;
     if reference.schema != 2
         || reference.workflow != crate::release_inputs::workflow_identity()?
-        || reference.source != crate::git(root, &["rev-parse", "HEAD"])?
+        || reference.source != plan.source_commit()
+        || reference.source_provenance != plan.source_provenance()
+        || reference.source_epoch != build.source_epoch
         || reference.version != build.version
         || reference.target != build.host
         || reference.architecture != build.architecture
         || reference.minimum != build.minimum
         || reference.root != app_root
-        || !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty()
     {
         return Err("App reference does not match the current source/native build policy".into());
     }
-    snapshot.inspect_ditto_app(&reference.root, &reference.files)?;
+    snapshot.inspect_ditto_app(&reference.root, &reference.files, reference.source_epoch)?;
     let enclosure = xtask::archive::create_artifact_directory(out)?;
     let copy = enclosure.path().join("inspected-input.zip");
     write(&copy, snapshot.bytes(), 0o600)?;
     let mut extract = build.command(root, "/usr/bin/ditto");
     extract
         .args(["-x", "-k", "--norsrc", "--noextattr", "--noqtn", "--noacl"])
+        .env("TZ", "UTC")
         .arg(&copy)
         .arg(enclosure.path());
     macos::checked_run(extract, &out.join("ditto-extract.log"), 120)?;
@@ -607,13 +688,14 @@ fn verify_snapshot(
     if tree(&app, false)? != reference.files {
         return Err("Extracted app tree differs from frozen producer reference".into());
     }
-    let images = inspect_images(root, &app, build, &out.join("extracted-images"))?;
+    let timestamps = bundle_timestamps(&app, reference.source_epoch, false)?;
+    let images = inspect_images(root, plan, &app, build, &out.join("extracted-images"))?;
     let worker = worker_smoke(
         &app.join(WORKER),
         &build.version,
         &enclosure.path().join("worker-fixture"),
     )?;
-    let mut verification = json!({"stage":checks.stage(),"snapshot":snapshot.identity(),"images":images,"worker":worker});
+    let mut verification = json!({"stage":checks.stage(),"snapshot":snapshot.identity(),"source_epoch":reference.source_epoch,"source_provenance":reference.source_provenance,"bundle_timestamps":timestamps,"images":images,"worker":worker});
     if checks == AppChecks::Desktop {
         let gui = gui_startup(root, &app, build, &out.join("gui-startup"))?;
         use crate::macos_interaction::{DesktopCase, run_case};
@@ -668,18 +750,18 @@ fn verify_snapshot(
     if tree(&app, false)? != reference.files {
         return Err("Native app/worker execution changed the extracted bundle".into());
     }
+    bundle_timestamps(&app, reference.source_epoch, false)?;
+    plan.verify_packaging_source(root)?;
     Ok(verification)
 }
 pub(crate) fn build(root: &Path, plan: &BuildPlan, out: &Path, icons: &Path) -> Result<()> {
+    plan.verify_packaging_source(root)?;
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
     let build = macos::load(root, plan)?;
     let host = app_host(root, plan, &build, AppChecks::Candidate)?;
-    if !crate::git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty() {
-        return Err("App artifacts require a clean committed source checkout".into());
-    }
-    let source = crate::git(root, &["rev-parse", "HEAD"])?;
-    let (icon_dir, partial) = checked_icon_inputs(root, &build, icons, &source)?;
+    let source = plan.source_commit().to_owned();
+    let (icon_dir, partial) = checked_icon_inputs(root, plan, &build, icons)?;
     let (platform, name, app_root) = artifact(plan, &build.host)?;
     let stage = xtask::archive::create_artifact_directory(&out)?;
     let (gui, worker) = checked_app_materials(root, plan, &platform, &build)?;
@@ -710,11 +792,13 @@ pub(crate) fn build(root: &Path, plan: &BuildPlan, out: &Path, icons: &Path) -> 
     if read(&app.join(WORKER), 256 * 1024 * 1024)? != worker_bytes {
         return Err("Outer ad hoc signing changed the frozen signed private worker".into());
     }
-    let images = inspect_images(root, &app, &build, &out.join("producer-images"))?;
+    let images = inspect_images(root, plan, &app, &build, &out.join("producer-images"))?;
     let reference = Reference {
         schema: 2,
         workflow: crate::release_inputs::workflow_identity()?,
         source,
+        source_provenance: plan.source_provenance().to_owned(),
+        source_epoch: build.source_epoch,
         version: build.version.clone(),
         target: build.host.clone(),
         architecture: build.architecture.clone(),
@@ -722,6 +806,9 @@ pub(crate) fn build(root: &Path, plan: &BuildPlan, out: &Path, icons: &Path) -> 
         root: app_root,
         files,
     };
+    // The inventory and signature checks above read signed files. Normalize last
+    // so ditto also receives deterministic access-time metadata.
+    bundle_timestamps(&app, build.source_epoch, true)?;
     let staged = stage.path().join(&name);
     let mut pack = build.command(root, "/usr/bin/ditto");
     pack.args([
@@ -733,6 +820,7 @@ pub(crate) fn build(root: &Path, plan: &BuildPlan, out: &Path, icons: &Path) -> 
         "--noqtn",
         "--noacl",
     ])
+    .env("TZ", "UTC")
     .arg(&app)
     .arg(&staged);
     macos::checked_run(pack, &out.join("ditto-create.log"), 120)?;
@@ -766,7 +854,7 @@ pub(crate) fn build(root: &Path, plan: &BuildPlan, out: &Path, icons: &Path) -> 
     fs::write(
         out.join("app-result.json"),
         serde_json::to_vec_pretty(
-            &json!({"stage":"native_candidate","workflow":crate::release_inputs::workflow_identity()?,"host":host,"archive":destination,"identity":snapshot.identity(),"reference":ByteIdentity::of(&reference_bytes),"producer_images":images,"verification":verification,"source":reference.source,"target":reference.target,"scope":"native candidate structure/signatures/CPU/minimum and actual extracted Core-backed worker; desktop and picker compatibility qualification are separate required consumers"}),
+            &json!({"stage":"native_candidate","workflow":crate::release_inputs::workflow_identity()?,"host":host,"archive":destination,"identity":snapshot.identity(),"reference":ByteIdentity::of(&reference_bytes),"producer_images":images,"verification":verification,"source":reference.source,"source_epoch":reference.source_epoch,"source_provenance":reference.source_provenance,"target":reference.target,"scope":"native candidate structure/signatures/CPU/minimum and actual extracted Core-backed worker; desktop and picker compatibility qualification are separate required consumers"}),
         )?,
     )?;
     Ok(())
@@ -842,6 +930,7 @@ fn consume(
     reference_path: &Path,
     checks: AppChecks,
 ) -> Result<std::path::PathBuf> {
+    plan.require_qualified_source(root)?;
     let build = macos::load(root, plan)?;
     let (_, name, _) = artifact(plan, &build.host)?;
     if archive.file_name() != Some(std::ffi::OsStr::new(&name)) {
@@ -867,7 +956,7 @@ fn consume(
     fs::write(
         out.join("result.json"),
         serde_json::to_vec_pretty(
-            &json!({"stage":checks.stage(),"workflow":crate::release_inputs::workflow_identity()?,"host":host,"source":reference.source,"target":reference.target,"reference":ByteIdentity::of(&reference_bytes),"verification":verification}),
+            &json!({"stage":checks.stage(),"workflow":crate::release_inputs::workflow_identity()?,"host":host,"source":reference.source,"source_epoch":reference.source_epoch,"source_provenance":reference.source_provenance,"target":reference.target,"reference":ByteIdentity::of(&reference_bytes),"verification":verification}),
         )?,
     )?;
     Ok(out.join("result.json"))
@@ -895,14 +984,15 @@ fn write_bundle_metadata(
 
 fn checked_icon_inputs(
     root: &Path,
+    plan: &BuildPlan,
     build: &macos::MacBuild,
     icons: &Path,
-    source: &str,
 ) -> Result<(std::path::PathBuf, Value)> {
     let icon_record: Value =
         serde_json::from_slice(&read(&icons.join("result.json"), 1024 * 1024)?)?;
-    if icon_record["source"] != source
-        || icon_record["source_working_tree"] != ""
+    if icon_record["source"] != plan.source_commit()
+        || icon_record["source_epoch"] != plan.source_epoch().seconds()
+        || icon_record["source_provenance"] != plan.source_provenance()
         || icon_record["outputs_validated"] != true
         || icon_record["build"]["minimum_text"] != build.minimum_text
         || icon_record["build"]["xcode_identity"] != build.xcode_identity
@@ -943,6 +1033,83 @@ fn checked_app_materials(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn app_reference_requires_exact_valid_source_epoch_without_defaulting_or_rounding() {
+        let document = json!({"schema":2,"workflow":null,"source":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source_provenance":"git_commit","source_epoch":1_792_758_913_u64,"version":"7.0.0","target":"aarch64-apple-darwin","architecture":"aarch64","minimum":983040,"root":"EML Attachment Remover.app","files":{}});
+        let reference: Reference = serde_json::from_value(document.clone()).unwrap();
+        assert_eq!(reference.source_epoch.seconds(), 1_792_758_913);
+        assert_eq!(serde_json::to_value(reference).unwrap(), document);
+        for field in ["source_epoch", "source_provenance"] {
+            let mut missing = document.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(serde_json::from_value::<Reference>(missing).is_err());
+        }
+        for epoch in [
+            json!(0),
+            json!(315_532_799_u64),
+            json!(4_294_967_296_u64),
+            json!("1792758913"),
+            Value::Null,
+        ] {
+            let mut invalid = document.clone();
+            invalid["source_epoch"] = epoch;
+            assert!(serde_json::from_value::<Reference>(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn native_zip_times_floor_odd_source_epoch_and_preserve_file_bytes_and_modes() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("Contents");
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("signed-resource");
+        fs::write(&path, b"independent resource bytes\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        let epoch = xtask::archive::PackageEpoch::new(1_792_758_913).unwrap();
+        let observed = bundle_timestamps(root.path(), epoch, true).unwrap();
+        assert_eq!(observed["source_epoch"], 1_792_758_913_u64);
+        assert_eq!(observed["zip_epoch_seconds"], 1_792_758_912_u64);
+        assert_eq!(observed["entries"].as_object().unwrap().len(), 3);
+        assert_eq!(fs::read(&path).unwrap(), b"independent resource bytes\n");
+        assert_eq!(fs::metadata(&path).unwrap().mode() & 0o7777, 0o644);
+        assert_eq!(
+            bundle_timestamps(root.path(), epoch, false).unwrap(),
+            observed
+        );
+        assert!(
+            bundle_timestamps(
+                root.path(),
+                xtask::archive::PackageEpoch::new(1_792_758_915).unwrap(),
+                false
+            )
+            .is_err()
+        );
+        fs::File::open(&path)
+            .unwrap()
+            .set_times(
+                fs::FileTimes::new().set_modified(UNIX_EPOCH + Duration::new(1_792_758_912, 1)),
+            )
+            .unwrap();
+        assert!(bundle_timestamps(root.path(), epoch, false).is_err());
+    }
+
+    #[test]
+    fn native_zip_timestamp_normalization_refuses_links_without_touching_the_target() {
+        let root = tempfile::tempdir().unwrap();
+        let app = root.path().join("app");
+        fs::create_dir(&app).unwrap();
+        let target = root.path().join("outside");
+        fs::write(&target, b"outside sentinel").unwrap();
+        let before = fs::metadata(&target).unwrap();
+        let before = (before.mtime(), before.mtime_nsec());
+        std::os::unix::fs::symlink(&target, app.join("link")).unwrap();
+        let epoch = xtask::archive::PackageEpoch::new(1_792_758_913).unwrap();
+        assert!(bundle_timestamps(&app, epoch, true).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"outside sentinel");
+        let after = fs::metadata(&target).unwrap();
+        assert_eq!((after.mtime(), after.mtime_nsec()), before);
+    }
+
     #[test]
     fn desktop_and_compatibility_receipts_require_their_actual_os_generation() {
         for version in ["15.0", "15.7.1"] {

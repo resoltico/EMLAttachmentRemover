@@ -1004,9 +1004,9 @@ pub(crate) fn run(root: &Path, cli: &FrozenCli, out: &Path, platform: PlatformId
     let out = out.canonicalize()?;
     let owner = xtask::archive::create_artifact_directory(&out)?;
     let binary = owner.path().join(if cfg!(windows) {
-        "remove-eml-attachments.exe"
+        "emlattachmentremover.exe"
     } else {
-        "remove-eml-attachments"
+        "emlattachmentremover"
     });
     let mut image = fs::OpenOptions::new()
         .create_new(true)
@@ -1051,7 +1051,7 @@ pub(crate) fn run(root: &Path, cli: &FrozenCli, out: &Path, platform: PlatformId
     let observations = (|| -> Result<Value> {
         crate::picker_evidence::observation_document(&fs::read(out.join("profiles/result.json"))?)
     })();
-    let source = crate::git(root, &["rev-parse", "HEAD"])?;
+    let source = cli.source();
     let result = json!({"source":source,"binary":cli.identity(),"process":process.as_ref().ok().map(|p|p.evidence()),"process_failure":process.as_ref().err().map(ToString::to_string),"observations":observations.as_ref().ok(),"observation_read_failure":observations.as_ref().err().map(ToString::to_string)});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     process?.require_success(&log)?;
@@ -1059,7 +1059,7 @@ pub(crate) fn run(root: &Path, cli: &FrozenCli, out: &Path, platform: PlatformId
     if ByteIdentity::of(&fs::read(&binary)?) != *cli.identity() {
         return Err("Native profile executable changed during observation".into());
     }
-    validate(&result, &source, cli.identity(), platform)?;
+    validate(&result, source, cli.identity(), platform)?;
     Ok(result)
 }
 

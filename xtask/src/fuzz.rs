@@ -190,15 +190,46 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
         )
         .into());
     }
-    let after = metadata(&campaign, &compiler, &target, &build)?;
-    fs::write(
-        campaign.directory.join("metadata-after.json"),
-        serde_json::to_vec_pretty(&after)?,
-    )?;
-    if !executable.is_file() {
-        return Err("Pinned cargo-fuzz did not produce the expected executable".into());
+    match fs::symlink_metadata(&executable) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let settled =
+                crate::controller().is_ok_and(|controller| controller.ownership_settled());
+            return post_build_admission_failure(
+                &campaign,
+                &built,
+                None,
+                settled,
+                "Pinned cargo-fuzz did not produce the expected executable".into(),
+            );
+        }
+        Ok(metadata) if metadata.is_file() => {}
+        _ => return Err("Expected fuzz image identity is uncertain; retain build storage".into()),
     }
+    // Preserve the image before diagnostics that can fail after a settled build.
+    // An image/address identity failure still retains all scratch conservatively.
     let retained = campaign.retain_executable(&executable)?;
+    let after = (|| -> Result<Value> {
+        let after = metadata(&campaign, &compiler, &target, &build)?;
+        fs::write(
+            campaign.directory.join("metadata-after.json"),
+            serde_json::to_vec_pretty(&after)?,
+        )?;
+        Ok(after)
+    })();
+    let after = match after {
+        Ok(after) => after,
+        Err(error) => {
+            let settled =
+                crate::controller().is_ok_and(|controller| controller.ownership_settled());
+            return post_build_admission_failure(
+                &campaign,
+                &built,
+                Some(&retained),
+                settled,
+                error,
+            );
+        }
+    };
     let mut seed_option = std::ffi::OsString::from("-seed_inputs=@");
     seed_option.push(&seed_list);
     let mut command = std::process::Command::new(&retained.path);
@@ -280,6 +311,29 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
         .into());
     }
     Ok(())
+}
+
+// Admission refusal does not undo a successfully settled compiler lifetime.
+fn post_build_admission_failure(
+    campaign: &Campaign,
+    built: &crate::campaign::ProcessResult,
+    retained: Option<&crate::campaign::RetainedExecutable>,
+    later_processes_settled: bool,
+    error: Box<dyn std::error::Error>,
+) -> Result<()> {
+    let cleanup = if later_processes_settled {
+        campaign.cleanup_generated(built)
+    } else {
+        serde_json::json!({"state":"retained","failure":"Later process ownership is uncertain; retain all storage"})
+    };
+    if let Err(report) = campaign.report(&serde_json::json!({
+        "source":campaign.sha,"stage":"post_build_admission","failure":error.to_string(),
+        "build_process":built.evidence(),"retained_unexecuted_image":retained,
+        "cleanup":cleanup,"qualified":false
+    })) {
+        eprintln!("Post-build admission failure report also failed: {report}");
+    }
+    Err(error)
 }
 
 fn capture_build_inputs(campaign: &Campaign, before: &Value) -> Result<StableInputs> {
@@ -397,6 +451,123 @@ mod tests {
         fs::create_dir_all(&parent).unwrap();
         tempfile::tempdir_in(parent).unwrap()
     }
+    #[test]
+    #[cfg(unix)]
+    fn post_build_metadata_refusal_preserves_primary_error_image_and_settled_cleanup() {
+        for (uncertain, later_settled) in [(false, true), (true, true), (false, false)] {
+            let root = scratch();
+            let campaign = crate::campaign::cleanup_tests::fixture(root.path());
+            let executable = campaign.directory.join("build/preparation");
+            fs::write(&executable, b"owned unexecuted image").unwrap();
+            fs::write(
+                campaign.directory.join("build/objects"),
+                b"compiler scratch",
+            )
+            .unwrap();
+            fs::write(campaign.directory.join("tmp/scratch"), b"temporary bytes").unwrap();
+            fs::write(
+                campaign.directory.join("build.log"),
+                b"compiler observations",
+            )
+            .unwrap();
+            let retained = campaign.retain_executable(&executable).unwrap();
+            let status = std::process::Command::new("/usr/bin/true")
+                .status()
+                .unwrap();
+            let built = crate::campaign::ProcessResult {
+                status,
+                timed_out: false,
+                cancelled: false,
+                unexpected_survivors: 0,
+                cleanup_complete: !uncertain,
+                elapsed: Duration::ZERO,
+                cleanup_elapsed: Duration::ZERO,
+            };
+            let error = post_build_admission_failure(
+                &campaign,
+                &built,
+                Some(&retained),
+                later_settled,
+                "independent metadata failure".into(),
+            )
+            .unwrap_err();
+            assert_eq!(error.to_string(), "independent metadata failure");
+            assert_eq!(fs::read(&retained.path).unwrap(), b"owned unexecuted image");
+            assert_eq!(
+                fs::read(campaign.directory.join("build.log")).unwrap(),
+                b"compiler observations"
+            );
+            for name in ["build", "tmp"] {
+                assert_eq!(
+                    campaign.directory.join(name).exists(),
+                    uncertain || !later_settled
+                );
+            }
+            let report: Value =
+                serde_json::from_slice(&fs::read(campaign.directory.join("result.json")).unwrap())
+                    .unwrap();
+            assert_eq!(report["qualified"], false);
+            assert_eq!(report["failure"], "independent metadata failure");
+            assert_eq!(
+                report["cleanup"]["state"],
+                if uncertain || !later_settled {
+                    "retained"
+                } else {
+                    "complete"
+                }
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn settled_build_missing_image_keeps_failure_and_logs_without_compiler_tree() {
+        let root = scratch();
+        let campaign = crate::campaign::cleanup_tests::fixture(root.path());
+        fs::write(
+            campaign.directory.join("build/objects"),
+            b"compiler scratch",
+        )
+        .unwrap();
+        fs::write(
+            campaign.directory.join("build.log"),
+            b"compiler observations",
+        )
+        .unwrap();
+        let built = crate::campaign::ProcessResult {
+            status: std::process::Command::new("/usr/bin/true")
+                .status()
+                .unwrap(),
+            timed_out: false,
+            cancelled: false,
+            unexpected_survivors: 0,
+            cleanup_complete: true,
+            elapsed: Duration::ZERO,
+            cleanup_elapsed: Duration::ZERO,
+        };
+        let error = post_build_admission_failure(
+            &campaign,
+            &built,
+            None,
+            true,
+            "expected image absent".into(),
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "expected image absent");
+        assert!(!campaign.directory.join("build").exists());
+        assert!(!campaign.directory.join("tmp").exists());
+        assert_eq!(
+            fs::read(campaign.directory.join("build.log")).unwrap(),
+            b"compiler observations"
+        );
+        let report: Value =
+            serde_json::from_slice(&fs::read(campaign.directory.join("result.json")).unwrap())
+                .unwrap();
+        assert_eq!(report["qualified"], false);
+        assert_eq!(report["retained_unexecuted_image"], Value::Null);
+        assert_eq!(report["cleanup"]["state"], "complete");
+    }
+
     #[test]
     #[cfg(unix)]
     fn drift_and_graph_mismatch_prevent_real_process_launch() {

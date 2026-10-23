@@ -9,7 +9,9 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-const CLI_PACKAGE: &str = "remove-eml-attachments";
+mod source;
+pub(crate) use source::PackageSource;
+const CLI_PACKAGE: &str = eml_core::product::CLI_NAME;
 const MAX_PLAN_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -321,6 +323,7 @@ impl ArtifactSpec {
     }
 }
 pub(crate) struct BuildPlan {
+    source: PackageSource,
     version: PackageVersion,
     floors: PlatformFloors,
     targets: BTreeMap<PlatformId, NativeTarget>,
@@ -330,7 +333,6 @@ pub(crate) struct BuildPlan {
 }
 pub(crate) struct BuildContext {
     root: PathBuf,
-    source: SourceCommit,
     plan: BuildPlan,
 }
 #[derive(Deserialize)]
@@ -373,11 +375,17 @@ impl BuildPlan {
             include_str!("../distribution.toml"),
             include_str!("../tools.toml"),
             env!("CARGO_PKG_VERSION").into(),
+            PackageSource::fixture(),
         )
         .unwrap()
     }
 
-    pub(crate) fn parse(distribution: &str, tool_input: &str, version: String) -> Result<Self> {
+    pub(crate) fn parse(
+        distribution: &str,
+        tool_input: &str,
+        version: String,
+        source: PackageSource,
+    ) -> Result<Self> {
         let table: Distribution = toml::from_str(distribution)?;
         let tools: ToolInput = toml::from_str(tool_input)?;
         if !plain(&version, 128) {
@@ -491,7 +499,7 @@ impl BuildPlan {
                 let (basename, root, executable, format) = match role {
                     ProductRole::Cli => {
                         let root = format!("{CLI_PACKAGE}-{version}-{platform}");
-                        let format = if platform.family == OsFamily::Linux {
+                        let format = if platform.family != OsFamily::Windows {
                             ArchiveFormat::TarGz
                         } else {
                             ArchiveFormat::Zip
@@ -507,7 +515,7 @@ impl BuildPlan {
                             ),
                             root,
                             if platform.family == OsFamily::Windows {
-                                "remove-eml-attachments.exe"
+                                "emlattachmentremover.exe"
                             } else {
                                 CLI_PACKAGE
                             }
@@ -516,7 +524,7 @@ impl BuildPlan {
                         )
                     }
                     ProductRole::DesktopApp => (
-                        format!("EML-Attachment-Remover-{version}-{platform}.zip"),
+                        format!("emlattachmentremover-gui-{version}-{platform}.zip"),
                         "EML Attachment Remover.app".into(),
                         "Contents/MacOS/EMLAttachmentRemover".into(),
                         ArchiveFormat::Zip,
@@ -552,6 +560,7 @@ impl BuildPlan {
             return Err("Distribution has no native products".into());
         }
         Ok(Self {
+            source,
             version: PackageVersion(version),
             floors: table.policy,
             targets,
@@ -559,6 +568,24 @@ impl BuildPlan {
             tools: ToolPins(tools.versions),
             xcode: tools.xcode,
         })
+    }
+    pub(crate) fn source_commit(&self) -> &str {
+        self.source.commit()
+    }
+    pub(crate) fn source_epoch(&self) -> xtask::archive::PackageEpoch {
+        self.source.epoch()
+    }
+    pub(crate) fn source_provenance(&self) -> &str {
+        self.source.provenance()
+    }
+    pub(crate) fn source_working_tree(&self, root: &Path) -> Result<Option<String>> {
+        self.source.working_tree(root)
+    }
+    pub(crate) fn verify_packaging_source(&self, root: &Path) -> Result<()> {
+        self.source.verify_packaging_source(root)
+    }
+    pub(crate) fn require_qualified_source(&self, root: &Path) -> Result<()> {
+        self.source.require_qualified_source(root)
     }
     pub(crate) fn version(&self) -> &str {
         self.version.as_str()
@@ -641,7 +668,7 @@ impl BuildPlan {
         json!({"include":self.targets().filter_map(|row|row.desktop().and_then(DesktopChecks::picker).map(|picker|json!({"platform":row.platform.to_string(),"target":row.rust_target(),"runner":picker.runner(),"os_major":picker.os_major()}))).collect::<Vec<_>>()})
     }
     pub(crate) fn render(&self) -> Value {
-        json!({"schema":"eml-build-plan","schema_version":1,"version":self.version(),"policy":{"macos_minimum":self.floors.macos_minimum(),"linux_minimum_ubuntu":self.floors.linux_minimum_ubuntu(),"linux_glibc_maximum":self.floors.linux_glibc_maximum(),"windows_rust_minimum":self.floors.windows_rust_minimum()},"native_targets":self.targets().map(Self::row_json).collect::<Vec<_>>(),"expected_artifacts":self.expected_artifacts().map(|row|json!({"name":row.basename(),"platform":row.key.platform.to_string(),"role":row.key.role.as_str(),"root":row.root(),"executable":row.executable(),"format":match row.format() {ArchiveFormat::Zip=>"zip",ArchiveFormat::TarGz=>"tar.gz"}})).collect::<Vec<_>>(),"xcode":{"version":self.xcode().version(),"build":self.xcode().build()},"tools":self.tools.0,"native_matrix":self.native_matrix(),"app_matrix":self.app_matrix(),"floor_matrix":self.floor_matrix(),"picker_matrix":self.picker_matrix()})
+        json!({"schema":"eml-build-plan","schema_version":1,"source":{"commit":self.source_commit(),"epoch":self.source_epoch(),"provenance":self.source_provenance()},"version":self.version(),"policy":{"macos_minimum":self.floors.macos_minimum(),"linux_minimum_ubuntu":self.floors.linux_minimum_ubuntu(),"linux_glibc_maximum":self.floors.linux_glibc_maximum(),"windows_rust_minimum":self.floors.windows_rust_minimum()},"native_targets":self.targets().map(Self::row_json).collect::<Vec<_>>(),"expected_artifacts":self.expected_artifacts().map(|row|json!({"name":row.basename(),"platform":row.key.platform.to_string(),"role":row.key.role.as_str(),"root":row.root(),"executable":row.executable(),"format":match row.format() {ArchiveFormat::Zip=>"zip",ArchiveFormat::TarGz=>"tar.gz"}})).collect::<Vec<_>>(),"xcode":{"version":self.xcode().version(),"build":self.xcode().build()},"tools":self.tools.0,"native_matrix":self.native_matrix(),"app_matrix":self.app_matrix(),"floor_matrix":self.floor_matrix(),"picker_matrix":self.picker_matrix()})
     }
 }
 impl BuildContext {
@@ -669,14 +696,7 @@ impl BuildContext {
             return Err("Cargo metadata exceeds its input bound".into());
         }
         let version = workspace_version(&root, &metadata.stdout)?;
-        let source = Command::new("git")
-            .current_dir(&root)
-            .args(["rev-parse", "--verify", "HEAD"])
-            .output()?;
-        if !source.status.success() {
-            return Err("Cannot observe source commit".into());
-        }
-        let source = SourceCommit::parse(String::from_utf8(source.stdout)?.trim_end().to_owned())?;
+        let source = PackageSource::observe(&root)?;
         let plan = BuildPlan::parse(
             std::str::from_utf8(&bounded(
                 &root.join("xtask/distribution.toml"),
@@ -684,14 +704,15 @@ impl BuildContext {
             )?)?,
             std::str::from_utf8(&bounded(&root.join("xtask/tools.toml"), MAX_PLAN_BYTES)?)?,
             version,
+            source,
         )?;
-        Ok(Self { root, source, plan })
+        Ok(Self { root, plan })
     }
     pub(crate) fn root(&self) -> &Path {
         &self.root
     }
     pub(crate) fn source(&self) -> &str {
-        self.source.as_str()
+        self.plan.source_commit()
     }
     pub(crate) fn plan(&self) -> &BuildPlan {
         &self.plan
@@ -706,6 +727,10 @@ pub(crate) fn run(context: &BuildContext, github_output: Option<&Path>) -> Resul
     }
     if let Some(path) = github_output {
         let mut fields = vec![
+            (
+                "source_date_epoch".to_owned(),
+                json!(plan.source_epoch().seconds()),
+            ),
             ("version".to_owned(), json!(plan.version())),
             ("native".into(), plan.native_matrix()),
             ("apps".into(), plan.app_matrix()),

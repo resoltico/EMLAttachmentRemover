@@ -61,6 +61,7 @@ fn checked_linker_version(compiler: &str, bytes: &[u8]) -> Result<String> {
 }
 pub(crate) fn prepare(
     root: &Path,
+    source: &str,
     target: &str,
     work: &Path,
     cargo: &Path,
@@ -96,7 +97,7 @@ pub(crate) fn prepare(
     )?;
     let control = Control {
         schema: 1,
-        source: crate::git(root, &["rev-parse", "HEAD"])?,
+        source: source.to_owned(),
         target: target.to_owned(),
         linker,
         linker_version,

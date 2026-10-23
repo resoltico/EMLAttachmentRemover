@@ -12,6 +12,7 @@ use std::{
 use std::process::Command;
 
 pub(crate) struct FrozenCli {
+    source: String,
     bytes: Vec<u8>,
     identity: xtask::archive::ByteIdentity,
     target: String,
@@ -21,6 +22,9 @@ pub(crate) struct FrozenCli {
     windows_evidence: Option<Vec<u8>>,
 }
 impl FrozenCli {
+    pub(crate) fn source(&self) -> &str {
+        &self.source
+    }
     pub(crate) fn target(&self) -> &str {
         &self.target
     }
@@ -59,6 +63,7 @@ fn build_inner(
         return Err("Additional native-input control requires Windows".into());
     }
     crate::campaign::require_stock_topology(root)?;
+    plan.verify_packaging_source(root)?;
     let row = plan.lookup_target(target)?;
     let platform = row.platform().to_string();
     let os = row.platform().family().as_str();
@@ -80,6 +85,7 @@ fn build_inner(
     #[cfg(windows)]
     let wrapper = crate::windows_link::prepare(
         root,
+        plan.source_commit(),
         target,
         &work.path().join("native-link"),
         &cargo,
@@ -110,6 +116,7 @@ fn build_inner(
     let identity = xtask::archive::ByteIdentity::of(&bytes);
     let version = plan.version().to_owned();
     let artifact = FrozenCli {
+        source: plan.source_commit().to_owned(),
         bytes,
         identity,
         target: target.to_owned(),
@@ -133,10 +140,11 @@ fn build_inner(
     };
     #[cfg(not(windows))]
     drop(output);
+    plan.verify_packaging_source(root)?;
     fs::write(
         out.join("artifact.json"),
         serde_json::to_vec_pretty(
-            &json!({"target":target,"platform":platform,"version":artifact.version,"host":artifact.host,"profile":profile,
+            &json!({"source":artifact.source,"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"target":target,"platform":platform,"version":artifact.version,"host":artifact.host,"profile":profile,
         "owned_bytes":artifact.identity,"signing":{"mode":if cfg!(target_os="macos") {"adhoc"} else {"not_applicable"},"verified":cfg!(target_os="macos")},"scope":"native release CLI build/conditional signature identity; archive and full platform gates are separate"}),
         )?,
     )?;
@@ -237,13 +245,13 @@ pub(crate) fn unknown_input_control(
         );
     }
     let rejected =
-        xtask::archive::ByteIdentity::of(&fs::read(attempt.join("remove-eml-attachments.exe"))?);
+        xtask::archive::ByteIdentity::of(&fs::read(attempt.join("emlattachmentremover.exe"))?);
     if receipt["linked_image"] != serde_json::to_value(&rejected)? {
         return Err(
             "Rejected native input trace is not bound to the actual control executable".into(),
         );
     }
-    let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"target":target,"baseline_image":baseline.identity(),"object":object_identity,"object_compile":compiled.evidence(),"actual_linker_status":0,"rejected_image":rejected,"rejection":rejection,
+    let result = json!({"source":plan.source_commit(),"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"target":target,"baseline_image":baseline.identity(),"object":object_identity,"object_compile":compiled.evidence(),"actual_linker_status":0,"rejected_image":rejected,"rejection":rejection,
         "scope":"real native rustc object and successful final CLI link consumed the unreviewed input; independent input admission rejected it before packaging"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     Ok(result)
@@ -254,7 +262,7 @@ pub(crate) fn artifact(root: &Path, output: &[u8]) -> Result<PathBuf> {
         output,
         "crates/eml-cli/Cargo.toml",
         "crates/eml-cli/src/main.rs",
-        "remove-eml-attachments",
+        "emlattachmentremover",
     )
 }
 pub(crate) fn named_artifact(
@@ -357,7 +365,7 @@ fn compile_cli(
             "--locked",
             "--release",
             "--package",
-            "remove-eml-attachments",
+            "emlattachmentremover",
             "--target",
             target,
             "--message-format=json",
@@ -365,7 +373,7 @@ fn compile_cli(
         .env("CARGO_TARGET_DIR", cargo);
     #[cfg(windows)]
     command
-        .args(["--bin", "remove-eml-attachments", "--", "-C"])
+        .args(["--bin", "emlattachmentremover", "--", "-C"])
         .arg(format!(
             "linker={}",
             wrapper
@@ -425,9 +433,9 @@ fn freeze_cli_bytes(
     #[cfg(not(target_os = "macos"))]
     let _ = root;
     let destination = out.join(if os == "windows" {
-        "remove-eml-attachments.exe"
+        "emlattachmentremover.exe"
     } else {
-        "remove-eml-attachments"
+        "emlattachmentremover"
     });
     let mut source = fs::File::open(compiled)?;
     let mut owned = fs::OpenOptions::new()
@@ -481,7 +489,7 @@ impl FrozenCli {
         let captured = crate::windows_link::captured(
             &work.join("native-link"),
             &self.bytes,
-            &crate::git(root, &["rev-parse", "HEAD"])?,
+            &self.source,
             target,
             self.host["compiler"]
                 .as_str()
@@ -518,7 +526,7 @@ impl FrozenCli {
         let evidence = crate::windows_evidence::capture(
             root,
             crate::windows_evidence::Capture {
-                source: &crate::git(root, &["rev-parse", "HEAD"])?,
+                source: &self.source,
                 target,
                 compiler: self.host["compiler"]
                     .as_str()
@@ -547,7 +555,7 @@ impl FrozenCli {
         fs::write(
             out.join("official-input-identities.json"),
             serde_json::to_vec_pretty(&json!({
-            "source":crate::git(root,&["rev-parse","HEAD"])?,"target":target,"inputs":official,"selected_native_members":selected,"rust_inputs":rust_inputs,
+            "source":self.source,"target":target,"inputs":official,"selected_native_members":selected,"rust_inputs":rust_inputs,
             "scope":"official component identities, selected runtime member/source bindings and Cargo/compiler Rust input classes; complete archive-bound admission and real native rejection control remain separate"
             }))?,
         )?;
@@ -590,7 +598,7 @@ mod tests {
             .unwrap()
             .canonicalize()
             .unwrap();
-        let artifact = serde_json::json!({"reason":"compiler-artifact","manifest_path":root.join("crates/eml-cli/Cargo.toml"),"target":{"name":"remove-eml-attachments","kind":["bin"],"src_path":root.join("crates/eml-cli/src/main.rs")},"profile":{"test":false},"executable":root.join("target/owned-test-executable")});
+        let artifact = serde_json::json!({"reason":"compiler-artifact","manifest_path":root.join("crates/eml-cli/Cargo.toml"),"target":{"name":"emlattachmentremover","kind":["bin"],"src_path":root.join("crates/eml-cli/src/main.rs")},"profile":{"test":false},"executable":root.join("target/owned-test-executable")});
         let finished = serde_json::json!({"reason":"build-finished","success":true});
         let encode = |values: &[serde_json::Value]| {
             values

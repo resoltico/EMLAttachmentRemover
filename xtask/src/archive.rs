@@ -45,11 +45,13 @@ impl ByteIdentity {
     }
 }
 mod enclosure;
+mod epoch;
 mod layout;
 mod tar_format;
 mod zip_format;
 
 pub use enclosure::{ArtifactDirectory, create_artifact_directory};
+pub use epoch::PackageEpoch;
 pub use layout::validate_member_name;
 use layout::*;
 pub use tar_format::encode_cli_tar_gz;

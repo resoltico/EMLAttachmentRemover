@@ -166,10 +166,9 @@ pub(crate) fn run(root: &Path, plan: &BuildPlan, source: &str, version: &str) ->
     // credentials; an HTTP/CLI error or inaccessible ID cannot prove it. Never mutate
     // tags, releases, assets, remote refs, changelog or repository settings.
     source_id(source)?;
-    if git(root, &["rev-parse", "HEAD"])? != source
-        || !git(root, &["status", "--porcelain=v1", "--untracked-files=all"])?.is_empty()
-    {
-        return Err("Release checks require the exact clean source checkout".into());
+    plan.require_qualified_source(root)?;
+    if plan.source_commit() != source {
+        return Err("Release source differs from the admitted source tuple".into());
     }
     if plan.version() != version {
         return Err("Release version differs from the authoritative Cargo workspace".into());
@@ -226,7 +225,7 @@ pub(crate) fn run(root: &Path, plan: &BuildPlan, source: &str, version: &str) ->
             draft_release(&body, id, version, source)?
         }
     };
-    let result = json!({"source":source,"main":local_main,"version":version,"date":date,"repository":repository,"release":release,"expected_archives":names,"release_visibility":"requires push-capable credentials to include unpublished drafts","scope":"read-only source/version/changelog/tag/release-state/expected-name admission; no archive, attestation or publication qualification"});
+    let result = json!({"source":plan.source_commit(),"source_epoch":plan.source_epoch(),"source_provenance":plan.source_provenance(),"main":local_main,"version":version,"date":date,"repository":repository,"release":release,"expected_archives":names,"release_visibility":"requires push-capable credentials to include unpublished drafts","scope":"read-only source/version/changelog/tag/release-state/expected-name admission; no archive, attestation or publication qualification"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())

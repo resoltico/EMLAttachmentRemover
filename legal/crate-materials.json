@@ -8325,12 +8325,12 @@
       ],
       "checksum": null,
       "license_expression": "MPL-2.0",
-      "name": "remove-eml-attachments",
+      "name": "emlattachmentremover",
       "provenance": {
         "checksum_basis": "No registry archive checksum for a workspace package.",
         "kind": "workspace",
         "manifest_path": "crates/eml-cli/Cargo.toml",
-        "manifest_sha256": "e811c9092d3f916449a6017a661500810134bcc6ead2521d4cad41b7f0a8b7a3"
+        "manifest_sha256": "a50832973ded826e117b62caa59aac399ae7ffa66bcf60d6d2fceb80cb7b0eb4"
       },
       "source": null,
       "scopes": [
@@ -13040,10 +13040,10 @@
   "purpose": "Reviewed per-used_by source-material binding candidate for deliberate renderer-guard adoption; not a self-approved registry.",
   "source_inputs": [
     {
-      "bytes": 148240,
+      "bytes": 148238,
       "kind": "review_input",
       "path": "Cargo.lock",
-      "sha256": "6a2c62814ae6a86acf6b620cdb8730b117a9a104b49d460456fc2c2d00a8c456"
+      "sha256": "1852d9893affa66fe4d8304614aa9ee6ab249d70fe8bdc0befcdb924cb564947"
     },
     {
       "bytes": 1548,
@@ -13052,10 +13052,10 @@
       "sha256": "dab355c0ed853dbb356b8d376be2ea81772224de39c7bc6254b8e451bc46d35a"
     },
     {
-      "bytes": 839,
+      "bytes": 837,
       "kind": "review_input",
       "path": "crates/eml-cli/Cargo.toml",
-      "sha256": "e811c9092d3f916449a6017a661500810134bcc6ead2521d4cad41b7f0a8b7a3"
+      "sha256": "a50832973ded826e117b62caa59aac399ae7ffa66bcf60d6d2fceb80cb7b0eb4"
     },
     {
       "bytes": 541,
@@ -13364,6 +13364,10 @@
     {
       "basis_head": "4d194af07a89a93071623108c715ffa439efbc7d",
       "scope": "Reviewed the sole workspace manifest change: profile.dev debug=1 keeps line tables/backtraces for ordinary nonshipping builds without full local-variable/type debug records. Parsed TOML comparison after removing only profile.dev is identical to the frozen basis; dependencies, features, package identities, licenses and shipping release profile are unchanged. Cargo.lock and all component manifests are unchanged. Renewed only the root manifest input binding. Actual notice generation and native qualification remain separate; this review does not claim either execution."
+    },
+    {
+      "basis_head": "95d0404806df6b00ba4488093760b21843c03744",
+      "scope": "Reviewed the public CLI workspace package rename from remove-eml-attachments to emlattachmentremover. Independently executed all ten locked offline shipping normal/build package-and-feature trees against the retained resource-review source snapshot; after normalizing only the CLI local package identity and absolute source-root paths, every tree is identical. Cargo.lock changes only that local package identity/order; all registry package records, license selections, material bindings and other workspace package records are unchanged. Renewed the CLI package manifest provenance and the two changed source inputs (CLI manifest and Cargo.lock). The source-bound package epoch/provenance tuple changes archive metadata, not dependency or license graphs. Hashes identify inputs and do not attest review quality, generator execution, legal assurance or native qualification."
     }
   ],
   "product_material_review": {
