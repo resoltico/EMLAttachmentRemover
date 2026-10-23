@@ -4,6 +4,22 @@ use std::{io::Read, path::Path};
 const MAX_REPLAY_BYTES: u64 = 1024 * 1024;
 const MAX_REPLAY_SEEDS: usize = 4096;
 
+// Direct persistence needs a static string, but the expression must first be
+// assembled as a native path. In particular, Windows verbatim paths do not
+// normalize embedded forward slashes or parent components.
+pub(crate) fn seed_path(manifest: &Path, filename: &str) -> String {
+    manifest
+        .parent()
+        .and_then(Path::parent)
+        .expect("Core manifest must be inside the workspace crates directory")
+        .join("target")
+        .join("proptest")
+        .join(filename)
+        .into_os_string()
+        .into_string()
+        .expect("Property seed path derives from the UTF8 manifest and filename")
+}
+
 pub(crate) fn check_seed_file(path: &Path) -> Result<(), String> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,

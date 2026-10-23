@@ -4,8 +4,14 @@ use mail_parser::{MessageParser, MimeHeaders, PartType};
 use proptest::prelude::*;
 #[path = "../../tests/support/property_config.rs"]
 mod property_config;
+static DIFFERENTIAL_SEEDS: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    property_config::seed_path(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
+        "differential.txt",
+    )
+});
 proptest! {
-    #![proptest_config(property_config::bounded(ProptestConfig { cases:64, ..ProptestConfig::default() }, concat!(env!("CARGO_MANIFEST_DIR"),"/../../target/proptest/differential.txt")))]
+    #![proptest_config(property_config::bounded(ProptestConfig { cases:64, ..ProptestConfig::default() }, &DIFFERENTIAL_SEEDS))]
     #[test]
     fn independent_parser_agrees_on_crlf_identity_leaf_types_and_raw_spans(a in "[A-Za-z0-9 =]{0,128}", b in "[A-Za-z0-9 =]{0,128}") {
         // Matching syntax subset only: explicit ASCII types, CRLF, identity CTE,

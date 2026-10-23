@@ -6,7 +6,10 @@ use eml_core::{
 use proptest::prelude::*;
 #[path = "support/property_config.rs"]
 mod property_config;
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, path::Path, sync::LazyLock};
+static MODEL_SEEDS: LazyLock<String> = LazyLock::new(|| {
+    property_config::seed_path(Path::new(env!("CARGO_MANIFEST_DIR")), "model.txt")
+});
 #[derive(Clone, Copy, Debug)]
 enum Disposition {
     Absent,
@@ -411,13 +414,7 @@ fn model_config() -> ProptestConfig {
     // PROPTEST_CASES can extend scheduled coverage without weakening normal checks
     // or allowing an unbounded campaign through an inherited environment value.
     config.cases = config.cases.clamp(256, 4096);
-    property_config::bounded(
-        config,
-        concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../target/proptest/model.txt"
-        ),
-    )
+    property_config::bounded(config, &MODEL_SEEDS)
 }
 proptest! {
     #![proptest_config(model_config())]

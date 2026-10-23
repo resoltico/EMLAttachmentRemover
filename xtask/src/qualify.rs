@@ -855,21 +855,30 @@ mod private_build_tests {
             .prefix("project (owned)-")
             .tempdir()
             .unwrap();
-        let build = root.path().join("native-test-build");
+        // Operation capabilities take a canonical native address, just as the
+        // real fresh build selection does; retain TempDir for fixture ownership.
+        let directory = root.path().canonicalize().unwrap();
+        let build = directory.join("native-test-build");
         fs::create_dir(&build).unwrap();
-        let owner = eml_fs::BoundDirectory::open(&build).unwrap();
+        let build = build.canonicalize().unwrap();
+        let owner = eml_fs::BoundDirectory::open(&build).unwrap_or_else(|error| {
+            panic!(
+                "Cannot bind canonical owned fixture {build:?} (temporary root {:?}): {error}",
+                root.path()
+            )
+        });
         let executable = build.join("independent-test-executable");
         fs::write(&executable, b"independently specified executed bytes").unwrap();
         let stderr = format!("Running unittests src/lib.rs ({})\n", executable.display());
-        fs::write(root.path().join("native-test-discovery.stderr"), &stderr).unwrap();
-        fs::write(root.path().join("native-tests.stderr"), &stderr).unwrap();
+        fs::write(directory.join("native-test-discovery.stderr"), &stderr).unwrap();
+        fs::write(directory.join("native-tests.stderr"), &stderr).unwrap();
         fs::write(
-            root.path().join("native-tests.log"),
+            directory.join("native-tests.log"),
             b"retained failure or success evidence",
         )
         .unwrap();
         let receipt =
-            cleanup_private_test_build(root.path(), &build, root.path(), true, &owner).unwrap();
+            cleanup_private_test_build(&directory, &build, &directory, true, &owner).unwrap();
         assert_eq!(receipt["removed"], true);
         assert!(!build.exists());
         assert_eq!(
@@ -884,30 +893,37 @@ mod private_build_tests {
             .unwrap()
         );
         assert_eq!(
-            fs::read(root.path().join("native-tests.log")).unwrap(),
+            fs::read(directory.join("native-tests.log")).unwrap(),
             b"retained failure or success evidence"
         );
-        assert!(root.path().join("native-test-build-cleanup.json").is_file());
+        assert!(directory.join("native-test-build-cleanup.json").is_file());
     }
     #[test]
     fn closed_ownership_or_outside_executable_keeps_the_private_build() {
         let root = tempfile::tempdir().unwrap();
-        let build = root.path().join("native-test-build");
+        // Operation capabilities take a canonical native address, just as the
+        // real fresh build selection does; retain TempDir for fixture ownership.
+        let directory = root.path().canonicalize().unwrap();
+        let build = directory.join("native-test-build");
         fs::create_dir(&build).unwrap();
-        let owner = eml_fs::BoundDirectory::open(&build).unwrap();
-        let outside = root.path().join("outside-executable");
+        let build = build.canonicalize().unwrap();
+        let owner = eml_fs::BoundDirectory::open(&build).unwrap_or_else(|error| {
+            panic!(
+                "Cannot bind canonical owned fixture {build:?} (temporary root {:?}): {error}",
+                root.path()
+            )
+        });
+        let outside = directory.join("outside-executable");
         fs::write(&outside, b"not build-owned").unwrap();
         fs::write(
-            root.path().join("native-tests.stderr"),
+            directory.join("native-tests.stderr"),
             format!("Running unittests src/lib.rs ({})\n", outside.display()),
         )
         .unwrap();
-        assert!(
-            cleanup_private_test_build(root.path(), &build, root.path(), true, &owner).is_err()
-        );
+        assert!(cleanup_private_test_build(&directory, &build, &directory, true, &owner).is_err());
         assert!(build.is_dir());
         let retained =
-            cleanup_private_test_build(root.path(), &build, root.path(), false, &owner).unwrap();
+            cleanup_private_test_build(&directory, &build, &directory, false, &owner).unwrap();
         assert_eq!(retained["removed"], false);
         assert!(build.is_dir());
         assert_eq!(fs::read(outside).unwrap(), b"not build-owned");
@@ -915,19 +931,26 @@ mod private_build_tests {
     #[test]
     fn replaced_private_build_is_not_adopted_or_removed() {
         let root = tempfile::tempdir().unwrap();
-        let build = root.path().join("native-test-build");
+        // Operation capabilities take a canonical native address, just as the
+        // real fresh build selection does; retain TempDir for fixture ownership.
+        let directory = root.path().canonicalize().unwrap();
+        let build = directory.join("native-test-build");
         fs::create_dir(&build).unwrap();
-        let owner = eml_fs::BoundDirectory::open(&build).unwrap();
-        fs::rename(&build, root.path().join("original-build")).unwrap();
+        let build = build.canonicalize().unwrap();
+        let owner = eml_fs::BoundDirectory::open(&build).unwrap_or_else(|error| {
+            panic!(
+                "Cannot bind canonical owned fixture {build:?} (temporary root {:?}): {error}",
+                root.path()
+            )
+        });
+        fs::rename(&build, directory.join("original-build")).unwrap();
         fs::create_dir(&build).unwrap();
         fs::write(build.join("sentinel"), b"unowned replacement").unwrap();
-        assert!(
-            cleanup_private_test_build(root.path(), &build, root.path(), true, &owner).is_err()
-        );
+        assert!(cleanup_private_test_build(&directory, &build, &directory, true, &owner).is_err());
         assert_eq!(
             fs::read(build.join("sentinel")).unwrap(),
             b"unowned replacement"
         );
-        assert!(root.path().join("original-build").is_dir());
+        assert!(directory.join("original-build").is_dir());
     }
 }
