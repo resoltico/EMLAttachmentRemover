@@ -7,31 +7,41 @@ import XCTest
 final class DesktopInteractionTests: XCTestCase {
   var pickerBaselineSettled = false
   enum InteractionFailure: Error { case expectedPresentation }
+  @MainActor
+  func contentFrame(_ window: XCUIElement) throws -> CGRect {
+    // A Slint layout Group is observable in the snapshot tree but need not
+    // retain an identity that XCTest can resolve as a live XCUIElement.
+    let snapshot = try window.snapshot()
+    let groups = snapshot.children.filter { $0.elementType == .group }
+    guard groups.count == 1 else { throw InteractionFailure.expectedPresentation }
+    let frame = groups[0].frame
+    guard !frame.isEmpty, snapshot.frame.contains(frame) else {
+      throw InteractionFailure.expectedPresentation
+    }
+    return frame
+  }
+
   // Always make one bounded gesture to the requested end. A visible endpoint
   // can coexist with a clipped header/footer; the outer window also includes
   // titlebar space that is not part of the Slint content viewport.
   @MainActor
   func showReportDetails(_ app: XCUIApplication) throws {
     let window = app.windows["EML Attachment Remover"]
-    let groups = window.children(matching: .group)
-    guard groups.count == 1 else { throw InteractionFailure.expectedPresentation }
-    let content = groups.firstMatch
-    guard !content.frame.isEmpty, window.frame.contains(content.frame) else {
-      throw InteractionFailure.expectedPresentation
-    }
+    let before = try contentFrame(window)
     let technical = app.checkBoxes["Technical details"]
     let top = app.buttons["Choose messages…"]
     let anchor: XCUIElement
-    if top.exists && top.isHittable && content.frame.contains(top.frame) {
+    if top.exists && top.isHittable && before.contains(top.frame) {
       anchor = top
-    } else if technical.exists && technical.isHittable && content.frame.contains(technical.frame) {
+    } else if technical.exists && technical.isHittable && before.contains(technical.frame) {
       anchor = technical
     } else {
       XCTFail("No physically visible content anchor for the report-end scroll")
       throw InteractionFailure.expectedPresentation
     }
     anchor.scroll(byDeltaX: 0, deltaY: -1000)
-    guard technical.exists, technical.isHittable, content.frame.contains(technical.frame) else {
+    let after = try contentFrame(window)
+    guard technical.exists, technical.isHittable, after.contains(technical.frame) else {
       XCTFail("Report controls remain clipped after the one owned scroll")
       throw InteractionFailure.expectedPresentation
     }
@@ -40,25 +50,21 @@ final class DesktopInteractionTests: XCTestCase {
   @MainActor
   func showRunControls(_ app: XCUIApplication) throws {
     let window = app.windows["EML Attachment Remover"]
-    let groups = window.children(matching: .group)
-    guard groups.count == 1 else { throw InteractionFailure.expectedPresentation }
-    let content = groups.firstMatch
-    guard !content.frame.isEmpty, window.frame.contains(content.frame) else {
-      throw InteractionFailure.expectedPresentation
-    }
+    let before = try contentFrame(window)
     let top = app.buttons["Choose messages…"]
     let technical = app.checkBoxes["Technical details"]
     let anchor: XCUIElement
-    if technical.exists && technical.isHittable && content.frame.contains(technical.frame) {
+    if technical.exists && technical.isHittable && before.contains(technical.frame) {
       anchor = technical
-    } else if top.exists && top.isHittable && content.frame.contains(top.frame) {
+    } else if top.exists && top.isHittable && before.contains(top.frame) {
       anchor = top
     } else {
       XCTFail("No physically visible content anchor for the run-control-end scroll")
       throw InteractionFailure.expectedPresentation
     }
     anchor.scroll(byDeltaX: 0, deltaY: 1000)
-    guard top.exists, top.isHittable, content.frame.contains(top.frame) else {
+    let after = try contentFrame(window)
+    guard top.exists, top.isHittable, after.contains(top.frame) else {
       XCTFail("Run controls remain clipped after the one owned scroll")
       throw InteractionFailure.expectedPresentation
     }

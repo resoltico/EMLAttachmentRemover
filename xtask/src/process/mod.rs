@@ -104,6 +104,18 @@ impl ProcessResult {
 /// Developer verification with platform-specific owned process lifetimes.
 pub struct Controller {
     #[cfg(unix)]
+    helper_directory: PathBuf,
+    #[cfg(unix)]
+    helper_owner: eml_fs::BoundDirectory,
+    #[cfg(unix)]
+    helper_identity: crate::archive::ByteIdentity,
+    #[cfg(unix)]
+    helper_file_identity: eml_fs::Identity,
+    worker_lifetime: std::sync::RwLock<()>,
+    ownership_uncertain: AtomicBool,
+    #[cfg(unix)]
+    helper_removed: AtomicBool,
+    #[cfg(unix)]
     pub(crate) helper: PathBuf,
     pub(crate) root: PathBuf,
     pub(crate) stopped: Arc<AtomicBool>,
@@ -112,28 +124,55 @@ pub struct Controller {
     pub(crate) inspector: PathBuf,
 }
 impl Controller {
-    /// Copy the helper to owned target storage, avoiding later build-path replacement.
+    /// Create the actual process owner. Unix copies its session helper into
+    /// private storage to avoid later build-path replacement; Windows needs no copy.
     pub fn new(root: &Path, executable: &Path) -> Result<Self> {
         let parent = root.join("target/process-control");
         fs::create_dir_all(&parent)?;
-        let directory = tempfile::Builder::new()
-            .prefix("helper-")
-            .tempdir_in(&parent)?
-            .keep();
-        let helper = directory.join("xtask-helper");
-        let mut input = fs::File::open(executable)?;
-        let mut output = fs::File::options()
-            .write(true)
-            .create_new(true)
-            .open(&helper)?;
-        std::io::copy(&mut input, &mut output)?;
-        output.sync_all()?;
+        // Windows Job ownership uses its actual suspended worker; it never
+        // launches this Unix session helper and needs no executable copy.
         #[cfg(unix)]
-        {
+        let (directory, helper, helper_owner, helper_identity, helper_file_identity) = {
+            let directory = tempfile::Builder::new()
+                .prefix("helper-")
+                .tempdir_in(&parent)?;
+            let helper = directory.path().join("xtask-helper");
+            let mut input = fs::File::open(executable)?;
+            let mut output = fs::File::options()
+                .write(true)
+                .create_new(true)
+                .open(&helper)?;
+            std::io::copy(&mut input, &mut output)?;
+            output.sync_all()?;
+            drop(output);
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&helper, fs::Permissions::from_mode(0o700))?;
-        }
+            let identity = crate::archive::ByteIdentity::of(&fs::read(&helper)?);
+            fs::write(
+                directory.path().join("helper-identity.json"),
+                serde_json::to_vec_pretty(&identity)?,
+            )?;
+            let owner = eml_fs::BoundDirectory::open(directory.path())?;
+            let file_identity = owner
+                .observe_child(std::ffi::OsStr::new("xtask-helper"))?
+                .identity;
+            (directory.keep(), helper, owner, identity, file_identity)
+        };
+        #[cfg(not(unix))]
+        let _ = executable;
         Ok(Self {
+            #[cfg(unix)]
+            helper_directory: directory,
+            #[cfg(unix)]
+            helper_owner,
+            #[cfg(unix)]
+            helper_identity,
+            #[cfg(unix)]
+            helper_file_identity,
+            worker_lifetime: std::sync::RwLock::new(()),
+            ownership_uncertain: AtomicBool::new(false),
+            #[cfg(unix)]
+            helper_removed: AtomicBool::new(false),
             #[cfg(unix)]
             helper,
             root: root.to_owned(),
@@ -142,6 +181,83 @@ impl Controller {
             #[cfg(unix)]
             inspector: PathBuf::from("/bin/ps"),
         })
+    }
+    /// End admission and remove only the copied helper after confirmed lifetime
+    /// settlement. Identity and cleanup receipts remain; uncertain owners retain
+    /// the executable. Static command controllers must call this explicitly.
+    pub fn finish_helper(&self) -> Result<()> {
+        self.admission_open.store(false, Ordering::SeqCst);
+        let lease = self.worker_lifetime.try_write();
+        if self.ownership_uncertain.load(Ordering::SeqCst)
+            || lease.is_err()
+            || std::thread::panicking()
+        {
+            return Err(
+                "Process ownership is active or uncertain; retaining owned intermediate storage"
+                    .into(),
+            );
+        }
+        let _lease = lease.map_err(|_| "Process lifetime could not be exclusively observed")?;
+        #[cfg(unix)]
+        {
+            if self.helper_removed.load(Ordering::Acquire) {
+                return Ok(());
+            }
+            if !fs::symlink_metadata(&self.helper_directory)?.is_dir()
+                || eml_fs::BoundDirectory::open(&self.helper_directory)?.identity()
+                    != self.helper_owner.identity()
+            {
+                return Err(
+                    "Owned process helper directory address changed; preserving storage".into(),
+                );
+            }
+            let entry = self
+                .helper_owner
+                .observe_child(std::ffi::OsStr::new("xtask-helper"))?;
+            if entry.kind != eml_fs::EntryKind::File || entry.identity != self.helper_file_identity
+            {
+                return Err("Copied process helper entry changed; preserving its namespace".into());
+            }
+            let identity = &self.helper_identity;
+            if crate::archive::ByteIdentity::of(&fs::read(&self.helper)?) != *identity {
+                return Err("Copied process helper changed; preserving its namespace".into());
+            }
+            let receipt = self.helper_directory.join("cleanup.json");
+            fs::write(
+                &receipt,
+                serde_json::to_vec_pretty(
+                    &serde_json::json!({"ownership_settled":true,"helper_removed":false,"identity":identity}),
+                )?,
+            )?;
+            fs::remove_file(&self.helper)?;
+            fs::write(
+                receipt,
+                serde_json::to_vec_pretty(
+                    &serde_json::json!({"ownership_settled":true,"helper_removed":true,"identity":identity}),
+                )?,
+            )?;
+            self.helper_removed.store(true, Ordering::Release);
+        }
+        Ok(())
+    }
+    fn process_use(&self) -> Result<ProcessUse<'_>> {
+        let guard = self
+            .worker_lifetime
+            .read()
+            .map_err(|_| "Helper lifetime lock is poisoned")?;
+        if !self.admits_work() {
+            return Err("Helper admission closed before launch".into());
+        }
+        Ok(ProcessUse {
+            controller: self,
+            _guard: guard,
+            observed: false,
+        })
+    }
+    /// Whether all actual calls have returned observed settled lifetimes. A
+    /// known-clean timeout/interrupt can satisfy this while admission stays closed.
+    pub fn ownership_settled(&self) -> bool {
+        !self.ownership_uncertain.load(Ordering::SeqCst) && self.worker_lifetime.try_write().is_ok()
     }
     /// Install this command-line process's cooperative INT/TERM/HUP adapter.
     pub fn install_signals(&self) -> Result<()> {
@@ -157,7 +273,11 @@ impl Controller {
     pub fn admits_work(&self) -> bool {
         self.admission_open.load(Ordering::Relaxed) && !self.stopped.load(Ordering::Relaxed)
     }
-    fn observe(&self, result: Result<ProcessResult>) -> Result<ProcessResult> {
+    fn observe(
+        &self,
+        result: Result<ProcessResult>,
+        mut lease: ProcessUse<'_>,
+    ) -> Result<ProcessResult> {
         let close = match &result {
             Err(_) => true,
             Ok(result) => {
@@ -170,6 +290,13 @@ impl Controller {
         if close {
             self.admission_open.store(false, Ordering::Relaxed);
         }
+        if match &result {
+            Err(_) => true,
+            Ok(result) => !result.cleanup_complete || result.unexpected_survivors != 0,
+        } {
+            self.ownership_uncertain.store(true, Ordering::SeqCst);
+        }
+        lease.observed = true;
         result
     }
     /// Run a worker; both worker and cleanup evidence must be checked.
@@ -179,25 +306,25 @@ impl Controller {
         }
         #[cfg(unix)]
         {
-            self.observe(unix::run(
-                self,
-                command,
-                log,
-                deadline,
-                false,
-                Duration::ZERO,
-            ))
+            let lease = self.process_use()?;
+            self.observe(
+                unix::run(self, command, log, deadline, false, Duration::ZERO),
+                lease,
+            )
         }
         #[cfg(windows)]
         {
-            self.observe(windows::run(self, command, log, deadline, false))
+            let lease = self.process_use()?;
+            self.observe(windows::run(self, command, log, deadline, false), lease)
         }
         #[cfg(not(any(unix, windows)))]
         {
             let _ = (command, log, deadline);
-            self.observe(Err(
-                "Owned Unix-session verification control is unavailable on this host".into(),
-            ))
+            let lease = self.process_use()?;
+            self.observe(
+                Err("Owned Unix-session verification control is unavailable on this host".into()),
+                lease,
+            )
         }
     }
     /// Give a Unix worker a bounded TERM opportunity through its retained root
@@ -216,7 +343,8 @@ impl Controller {
                 "Cooperative stop requires open admission and a positive bounded grace".into(),
             );
         }
-        self.observe(unix::run(self, command, log, deadline, false, grace))
+        let lease = self.process_use()?;
+        self.observe(unix::run(self, command, log, deadline, false, grace), lease)
     }
     /// Preserve stdout at `log` and stderr at `log.with_extension("stderr")`,
     /// returning the actual status even when nonzero. Callers must check timing,
@@ -234,25 +362,25 @@ impl Controller {
         }
         #[cfg(unix)]
         {
-            self.observe(unix::run(
-                self,
-                command,
-                log,
-                deadline,
-                true,
-                Duration::ZERO,
-            ))
+            let lease = self.process_use()?;
+            self.observe(
+                unix::run(self, command, log, deadline, true, Duration::ZERO),
+                lease,
+            )
         }
         #[cfg(windows)]
         {
-            self.observe(windows::run(self, command, log, deadline, true))
+            let lease = self.process_use()?;
+            self.observe(windows::run(self, command, log, deadline, true), lease)
         }
         #[cfg(not(any(unix, windows)))]
         {
             let _ = (command, log, deadline);
-            self.observe(Err(
-                "Owned Unix-session verification control is unavailable on this host".into(),
-            ))
+            let lease = self.process_use()?;
+            self.observe(
+                Err("Owned Unix-session verification control is unavailable on this host".into()),
+                lease,
+            )
         }
     }
     /// Capture a bounded stdout document through the same lifetime controller.
@@ -315,6 +443,29 @@ impl Controller {
         Ok(fs::read(path)?)
     }
 }
+impl Drop for Controller {
+    fn drop(&mut self) {
+        let _ = self.finish_helper();
+    }
+}
+struct ProcessUse<'a> {
+    controller: &'a Controller,
+    _guard: std::sync::RwLockReadGuard<'a, ()>,
+    observed: bool,
+}
+impl Drop for ProcessUse<'_> {
+    fn drop(&mut self) {
+        if !self.observed {
+            self.controller
+                .admission_open
+                .store(false, Ordering::SeqCst);
+            self.controller
+                .ownership_uncertain
+                .store(true, Ordering::SeqCst);
+        }
+    }
+}
+
 #[cfg(unix)]
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -369,4 +520,45 @@ pub fn helper_entry() -> Option<ExitCode> {
     }
     let _ = mode;
     None
+}
+
+#[cfg(all(test, unix))]
+mod helper_lifetime_tests {
+    use super::*;
+    #[test]
+    fn active_or_unobserved_use_retains_the_actual_helper_file() {
+        let root = tempfile::tempdir().unwrap();
+        let controller = Controller::new(root.path(), Path::new("/usr/bin/true")).unwrap();
+        let lease = controller.process_use().unwrap();
+        assert!(!controller.ownership_settled());
+        assert!(controller.finish_helper().is_err());
+        assert!(controller.helper.is_file());
+        drop(lease); // No observed process result: the unknown owner stays closed.
+        assert!(!controller.ownership_settled());
+        assert!(controller.finish_helper().is_err());
+        assert!(controller.helper.is_file());
+    }
+    #[test]
+    fn replaced_helper_directory_and_mutated_receipt_never_authorize_deletion() {
+        let root = tempfile::tempdir().unwrap();
+        let controller = Controller::new(root.path(), Path::new("/usr/bin/true")).unwrap();
+        let original = controller.helper_directory.with_extension("original");
+        fs::rename(&controller.helper_directory, &original).unwrap();
+        fs::create_dir(&controller.helper_directory).unwrap();
+        fs::write(&controller.helper, b"unowned replacement executable").unwrap();
+        fs::write(
+            controller.helper_directory.join("helper-identity.json"),
+            serde_json::to_vec(&crate::archive::ByteIdentity::of(
+                b"unowned replacement executable",
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(controller.finish_helper().is_err());
+        assert_eq!(
+            fs::read(&controller.helper).unwrap(),
+            b"unowned replacement executable"
+        );
+        assert!(original.join("xtask-helper").is_file());
+    }
 }

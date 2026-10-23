@@ -81,11 +81,24 @@ CPU. The project test bundle uses native ARCHS and ONLY_ACTIVE_ARCH=YES. No
 `SWIFTBUILD_LAUNCH_IN_PROCESS=YES` is scoped to xcodebuild; it does not waive
 survivor rejection or change saved Xcode defaults.
 
+Ordinary development and test builds retain line tables/backtraces
+(`profile.dev.debug=1`) without full local-variable/type debug records. Shipping
+release settings are separate. Fresh per-run test builds disable incremental
+compilation; discovery and execution still reuse normal Cargo artifacts. After
+confirmed process settlement, their executable identities and transcripts remain
+while the private compiler tree is removed. A rebound directory or uncertain
+owner prevents deletion. The shared macOS release cache is separate.
+
 Native macOS builds share CPU-specific intermediates under `target/native-cargo/`.
-CI cache keys include target, lock/manifests, compiler/tool/SDK policy and Cargo
-configuration. Cached intermediates are unqualified: current products are copied,
-frozen, signed and subjected to image, archive, extraction, behavior and GUI
-checks. Qualification records and prior test results are not restored as passes.
+CI cache keys include target, locks/manifests, compiler/tool/SDK policy, Cargo
+configuration and complete retained vendor sources. There is no source-commit
+suffix or broad fallback. Before saving, Cargo removes every authored workspace
+package using its actual workspace metadata. Restored dependency objects cannot
+substitute an earlier authored build, even with preserved timestamps. Only
+compressed registry archives accompany this cache; Cargo regenerates unpacked
+sources. Cached intermediates are unqualified: current products are built, frozen,
+signed and subjected to image, archive, extraction, behavior and GUI checks.
+Qualification records and prior test results are never restored as passes.
 
 Windows uses the bounded native controller with discovery/execution comparison,
 separate transcripts, required-name sentinels and ignored-test rejection. Actual
@@ -248,14 +261,20 @@ cargo xtask mutants --diff origin/main
 
 Campaigns clone their exact clean source into owned target/fuzz or target/mutations
 storage, retain diagnostics/results, and use an owned Unix process group for
-bounded cleanup. Dirty or untracked workspace inputs fail with a commit requirement;
+bounded cleanup. Fuzz and initial mutation snapshots clone only the selected
+commit; diff mutation snapshots retain the history needed for the real merge
+base. No alternate object store or hard-linked source snapshot is used. Dirty or untracked workspace inputs fail with a commit requirement;
 they are never silently omitted or called an empty diff. These bounded local
 campaign commands require Unix. This is a tooling condition, not a restriction
 on the six native product CLI targets. No full mutation campaign is provided.
 
 Fuzz uses the pinned nightly and cargo-fuzz, all twelve synthetic inputs plus
-structural seeds, a fresh writable first corpus, 4 MiB maximum input, five-second
-case timeout and 1,024 MiB RSS limit. Runtime independent source authorization and
+structural seeds, a 4 MiB maximum input, five-second case timeout and 1,024 MiB
+RSS limit. The admitted relative seed names and exact bytes are recorded. The
+pinned libFuzzer reads the seed list with `-seed_inputs=@file` and no positional
+corpus directory: adaptive coverage/corpus feedback remains in memory, without
+persisting every newly interesting input. Crash and timeout reproducers retain
+all admitted input bytes in the separate artifact directory. Runtime independent source authorization and
 byte/structure checks run within every preparation. The harness rejects Internal
 refusals, checks source subsequence/metadata bounds and independently invokes a
 second preparation for fixed-point checks. Crash/timeout/RSS/abnormal exit,
@@ -265,6 +284,22 @@ printing. In pinned libfuzzer-sys0.4.13 this skips only the PrintPC diagnostic l
 coverage accounting, corpus feedback, sanitizer failure diagnostics and final
 execution statistics remain enabled. Unknown or unexpected children fail;
 there is no symbolizer-name exemption.
+
+Campaign results retain the actual launched fuzz image and its byte identity,
+plus any debug companion. Mutation records label remaining terminal build images
+as forensic copies, without claiming baseline/per-mutant binary identity. After
+known process settlement, held directory identities guard removal of only that
+run's `build` and `tmp` trees, including ordinary failed runs. Logs, source,
+seeds, outcomes, diffs and reproducers remain. Uncertain ownership or changed
+addresses retain scratch and fail cleanup. The extended workflow uploads the
+retained images and cleanup receipts before its runner disappears.
+
+Seed byte identities are recorded; adaptive corpus disk growth is zero. One
+failing input can still require the full 4 MiB input limit, so shrinking that
+artifact allowance would risk losing the exact reproducer. These are corpus and
+input bounds, not a filesystem quota for compiler output or logs. Cleanup records
+measure terminal compiler scratch and retained image sizes; they do not establish
+peak disk use or a universal compiler-space maximum.
 
 No finite campaign establishes correctness for all byte sequences.
 
@@ -292,7 +327,7 @@ See [pinned cargo-fuzz source](https://github.com/rust-fuzz/cargo-fuzz/blob/984c
 
 ## Scoped mutation selection
 
-A manual dispatch of the Extended verification workflow runs `cargo xtask mutants --initial` in its own bounded Linux job and retains discovery, per-mutant outcomes and compiler logs. The mutation control host is Ubuntu 24.04 because the pinned GNU tool requires GLIBC 2.39. Native shipping Linux builds retain their declared Ubuntu 22.04 hosts and GLIBC 2.35 limit.
+A manual dispatch of the Extended verification workflow defaults to a 60-second fuzz smoke and omits mutation execution. Selecting `qualification` runs the required 900-second fuzz campaign and `cargo xtask mutants --initial` in its own bounded Linux job, retaining discovery, per-mutant outcomes and compiler logs. A smoke is development feedback and never closes full-campaign acceptance. The property selection remains 4096 cases: its measured execution is about one second, so reducing it would save little. The mutation control host is Ubuntu 24.04 because the pinned GNU tool requires GLIBC 2.39. Native shipping Linux builds retain their declared Ubuntu 22.04 hosts and GLIBC 2.35 limit.
 
 Only eml-core authorize_deletions and check_edit_ranges are selected. Discovery
 must be positive in both, with at most 400 total. Initial execution covers the
@@ -387,7 +422,16 @@ source with fresh advisory data across workspace, excluded fuzz/filesystem and
 enabled macOS dependency graphs. It derives tool versions from the same source,
 runs the independent semantic model with4096 cases and the bounded fuzz harness
 for900 seconds. The model honors `PROPTEST_CASES` within256..4096, preserving
-the normal minimum and limiting inherited requests. Fuzz input, per-case and RSS
+the normal minimum and limiting inherited requests. Both existing property
+runners set Proptest's shrink budgets to at most 4096 iterations and 2000 ms,
+preserving lower explicit requests. This does not preempt an individual case;
+the owned outer process deadline remains separate. Before replay, retained seed files must be regular, canonical and at
+most 1 MiB/4096 seeds; excess or malformed evidence is preserved and refused,
+never silently truncated. Standard Proptest still appends the failing seed after
+shrinking, so this is a replay-admission bound rather than a strict append quota.
+The replay count matches the largest generated campaign; the byte allowance
+permits about 256 bytes per seed on average, while refusing larger retained files
+for explicit review. Fuzz input, per-case and RSS
 limits remain the harness's reviewed limits. Source identity, property failures,
 fuzz summaries/logs and crash artifacts are retained; scheduled results do not
 replace exact-head six-platform or GUI qualification. No mutation campaign or

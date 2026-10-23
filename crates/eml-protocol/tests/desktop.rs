@@ -221,3 +221,79 @@ fn observed_header_boundary_uses_the_strict_codec_before_any_body_read() {
         "A valid observed header never excuses a truncated body"
     );
 }
+
+#[test]
+fn export_body_accepts_exact_256_mib_and_rejects_one_more_before_reading_it() {
+    use std::io::{self, Read};
+    // Literal wire bounds are independent of the codec's production constants.
+    const CHUNK: usize = 1_048_576;
+    const REPORT: usize = 268_435_456;
+    assert_eq!(MAX_REPORT_BYTES, REPORT);
+    let h = Header {
+        operation_id: OperationId::new(91).unwrap(),
+        operation: Operation::Export {
+            destination: std::env::temp_dir().join("bounded-report.json"),
+        },
+    };
+    let encoded_header = serde_json::to_string(&h).unwrap();
+    let mut prefix = MAGIC.to_vec();
+    prefix.extend_from_slice(&(encoded_header.len() as u32).to_be_bytes());
+    prefix.extend_from_slice(encoded_header.as_bytes());
+    let frame = |overflow: bool| {
+        let mut input: Box<dyn Read> = Box::new(io::Cursor::new(prefix.clone()));
+        for _ in 0..256 {
+            input = Box::new(
+                input
+                    .chain(io::Cursor::new((CHUNK as u32).to_be_bytes()))
+                    .chain(io::repeat(b'x').take(CHUNK as u64)),
+            );
+        }
+        // For overflow, deliberately supply no payload: rejection must precede
+        // reading the byte beyond the admitted report, rather than fail at EOF.
+        Box::new(input.chain(io::Cursor::new(
+            if overflow { 1u32 } else { 0u32 }.to_be_bytes(),
+        ))) as Box<dyn Read>
+    };
+    {
+        let (accepted, body) = read_operation(frame(false)).unwrap();
+        assert_eq!(accepted, h);
+        assert_eq!(body.len(), REPORT);
+        assert!(body.iter().all(|byte| *byte == b'x'));
+    }
+    assert_eq!(
+        read_operation(frame(true)).unwrap_err().kind(),
+        io::ErrorKind::InvalidData
+    );
+    let mut writer = BodyWriter::new(io::sink(), &h).unwrap();
+    let chunk = vec![b'x'; CHUNK];
+    for _ in 0..256 {
+        writer.write_all(&chunk).unwrap();
+    }
+    assert!(writer.write_all(b"x").is_err());
+    writer.finish().unwrap();
+}
+
+#[test]
+fn receipt_encoded_and_decoded_64_kib_limits_count_bytes_inclusively() {
+    const LIMIT: usize = 65_536;
+    assert_eq!(MAX_RECEIPT_BYTES, LIMIT);
+    let text = r#"{"operation_id":8,"publication":"not_published","file_sync":null,"namespace_sync":null,"address_verified":null,"candidate_identity":null,"final_file_verified":null,"cleanup":{"state":"not_needed","residual_name":null,"native_code":null},"failures":[{"stage":"destination","kind":"","native_code":null,"detail":"observed failure"}]}"#;
+    let id = OperationId::new(8).unwrap();
+    // A multibyte string distinguishes the byte budget from a character count.
+    let remaining = LIMIT - text.len();
+    let padding = format!("{}{}", "é".repeat(remaining / 2), "x".repeat(remaining % 2));
+    let exact = text.replace(r#""kind":"""#, &format!(r#""kind":"{padding}""#));
+    assert_eq!(exact.len(), LIMIT);
+    let receipt = decode_receipt(exact.as_bytes(), id).unwrap();
+    assert_eq!(encode_receipt(&receipt).unwrap(), exact.as_bytes());
+    let over = exact.replace(
+        r#""detail":"observed failure""#,
+        r#""detail":"observed failure!""#,
+    );
+    assert_eq!(over.len(), LIMIT + 1);
+    // Parse independently to exercise encoding refusal as well as wire decoding.
+    let over_receipt: ExportReceipt = serde_json::from_str(&over).unwrap();
+    assert!(encode_receipt(&over_receipt).is_err());
+    assert!(decode_receipt(over.as_bytes(), id).is_err());
+    assert!(observe_receipt(over.as_bytes(), id).is_err());
+}

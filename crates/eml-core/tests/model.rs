@@ -4,6 +4,8 @@ use eml_core::{
     PreparationError, Refusal, RemovalReason, RemovedPart, RunControl, prepare_message,
 };
 use proptest::prelude::*;
+#[path = "support/property_config.rs"]
+mod property_config;
 use std::collections::BTreeSet;
 #[derive(Clone, Copy, Debug)]
 enum Disposition {
@@ -409,13 +411,13 @@ fn model_config() -> ProptestConfig {
     // PROPTEST_CASES can extend scheduled coverage without weakening normal checks
     // or allowing an unbounded campaign through an inherited environment value.
     config.cases = config.cases.clamp(256, 4096);
-    config.failure_persistence = Some(Box::new(
-        proptest::test_runner::FileFailurePersistence::Direct(concat!(
+    property_config::bounded(
+        config,
+        concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../target/proptest/model.txt"
-        )),
-    ));
-    config
+        ),
+    )
 }
 proptest! {
     #![proptest_config(model_config())]

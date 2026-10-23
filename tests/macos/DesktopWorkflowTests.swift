@@ -114,18 +114,16 @@ extension DesktopInteractionTests {
       app, window: window, source: serviceSource, displayedName: serviceDisplayName)
     app.buttons["Dismiss notice"].click()
     try showReportDetails(app)
-    let groups = window.children(matching: .group)
-    guard groups.count == 1 else { throw InteractionFailure.expectedPresentation }
-    let content = groups.firstMatch
+    let before = try contentFrame(window)
     let retainedRun = try XCTUnwrap(
       window.buttons.allElementsBoundByIndex.first { $0.title.hasPrefix("Run 1\n") })
-    guard !content.frame.isEmpty, window.frame.contains(content.frame),
-      retainedRun.isHittable, content.frame.contains(retainedRun.frame)
+    guard retainedRun.isHittable, before.contains(retainedRun.frame)
     else { throw InteractionFailure.expectedPresentation }
     // This gesture belongs to the nested Runs pane, not the outer document.
     // At its end the last waiting row is fully exposed. The eight requests
     // carry the same source, so cancelling them in this visible order is safe.
     retainedRun.scroll(byDeltaX: 0, deltaY: -1000)
+    _ = try contentFrame(window)
     for remaining in stride(from: 7, through: 0, by: -1) {
       // Waiting-count readback returns the outer document to its top; the
       // nested pane retains its own end position as each row is removed.
@@ -148,7 +146,8 @@ extension DesktopInteractionTests {
       print(
         "Native removal control: exists=\(remove.exists), enabled=\(remove.isEnabled), hittable=\(remove.isHittable), frame=\(remove.frame)"
       )
-      guard remove.isEnabled, remove.isHittable, content.frame.contains(remove.frame) else {
+      let after = try contentFrame(window)
+      guard remove.isEnabled, remove.isHittable, after.contains(remove.frame) else {
         throw InteractionFailure.expectedPresentation
       }
       remove.click()

@@ -110,3 +110,18 @@ fn windows_controller_evidence_collision_preserves_existing_bytes() {
     assert!(!controller.admits_work());
     root.close().unwrap();
 }
+
+#[test]
+fn job_controller_does_not_create_an_unused_unix_helper_copy() {
+    let root = tempfile::tempdir().unwrap();
+    let controller = Controller::new(root.path(), Path::new(env!("CARGO_BIN_EXE_xtask"))).unwrap();
+    assert_eq!(
+        std::fs::read_dir(root.path().join("target/process-control"))
+            .unwrap()
+            .count(),
+        0
+    );
+    assert!(controller.ownership_settled());
+    controller.finish_helper().unwrap();
+    assert!(!controller.admits_work());
+}

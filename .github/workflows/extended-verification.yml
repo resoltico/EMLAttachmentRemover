@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: '23 4 * * 1'
   workflow_dispatch:
+    inputs:
+      qualification:
+        description: 'Run the required 900-second fuzz campaign and complete selected mutations'
+        type: boolean
+        default: false
 defaults:
   run:
     shell: bash
@@ -13,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   mutations:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.qualification }}
     # The pinned GNU cargo-mutants executable requires GLIBC 2.39.
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -42,6 +47,8 @@ jobs:
             target/mutations/*/result.json
             target/mutations/*/discovery.json
             target/mutations/*/campaign.log
+            target/mutations/*/cleanup.json
+            target/mutations/*/executables/**
             target/mutations/*/*.control.json
             target/mutations/*/output/mutants.out/**
           if-no-files-found: error
@@ -90,9 +97,11 @@ jobs:
         env:
           PROPTEST_CASES: '4096'
         run: cargo test --locked -p eml-core --test model
-      - name: Bounded synthetic-input fuzz campaign
+      - name: Bounded synthetic-input fuzz campaign (60-second smoke or 900-second qualification)
         if: ${{ !cancelled() && steps.policy.outcome == 'success' }}
-        run: cargo xtask fuzz --seconds 900
+        env:
+          FUZZ_SECONDS: ${{ (github.event_name == 'schedule' || inputs.qualification) && '900' || '60' }}
+        run: cargo xtask fuzz --seconds "$FUZZ_SECONDS"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
@@ -103,6 +112,8 @@ jobs:
             target/host-incident-checks/**
             target/proptest/**
             target/fuzz/*/result.json
+            target/fuzz/*/cleanup.json
+            target/fuzz/*/executables/**
             target/fuzz/*/metadata-before.json
             target/fuzz/*/metadata-after.json
             target/fuzz/*/*.control.json

@@ -239,6 +239,9 @@ pub(crate) fn check_desktop(root: &Path, plan: &BuildPlan, out: &Path) -> Result
     let borrowed_result = check_borrowed_url_docs(root, &build, &out.join("borrowed-url-docs"));
     let fixture = out.join("child-fixtures");
     fs::create_dir(&fixture)?;
+    let fixture_build = fixture.join("build");
+    fs::create_dir(&fixture_build)?;
+    let fixture_owner = eml_fs::BoundDirectory::open(&fixture_build)?;
     let tests = crate::qualify::checked_commands(&fixture, |listing| {
         let mut command = build.command(root, "cargo");
         command
@@ -261,21 +264,44 @@ pub(crate) fn check_desktop(root: &Path, plan: &BuildPlan, out: &Path) -> Result
                 "--color",
                 "never",
             ])
-            .env("CARGO_TARGET_DIR", fixture.join("build"))
+            .env("CARGO_TARGET_DIR", &fixture_build)
+            .env("CARGO_BUILD_BUILD_DIR", &fixture_build)
+            .env("CARGO_INCREMENTAL", "0")
             .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text);
         if listing {
             command.arg("--list");
         }
         command
-    })?;
-    fs::write(
-        out.join("result.json"),
-        serde_json::to_vec_pretty(
-            &serde_json::json!({"build":build,"tests":tests,"borrowed_url_docs":{"passed":borrowed_result.is_ok(),"failure":borrowed_result.as_ref().err().map(ToString::to_string)},"slint_profile_lint":{"passed":lint_result.is_ok(),"failure":lint_result.as_ref().err().map(ToString::to_string)},"scope":"native Slint profile and owned Darwin child fixtures; no actual GUI/bundle/archive acceptance"}),
-        )?,
-    )?;
+    });
+    let cleanup = crate::qualify::cleanup_private_test_build(
+        root,
+        &fixture_build,
+        &fixture,
+        controller()?.ownership_settled(),
+        &fixture_owner,
+    );
+    let recorded: Result<()> = (|| {
+        fs::write(
+            out.join("result.json"),
+            serde_json::to_vec_pretty(
+                &serde_json::json!({"build":build,"tests":tests.as_ref().ok(),"test_failure":tests.as_ref().err().map(ToString::to_string),"test_build_cleanup":cleanup.as_ref().ok(),"cleanup_failure":cleanup.as_ref().err().map(ToString::to_string),"borrowed_url_docs":{"passed":borrowed_result.is_ok(),"failure":borrowed_result.as_ref().err().map(ToString::to_string)},"slint_profile_lint":{"passed":lint_result.is_ok(),"failure":lint_result.as_ref().err().map(ToString::to_string)},"scope":"native Slint profile and owned Darwin child fixtures; no actual GUI/bundle/archive acceptance"}),
+            )?,
+        )?;
+        Ok(())
+    })();
+    // Keep the original execution failure primary; cleanup has its own receipt.
+    if let Err(error) = &cleanup {
+        eprintln!("Native desktop private build cleanup also failed: {error}");
+    }
+    if let Err(error) = &recorded {
+        eprintln!("Native desktop result recording also failed: {error}");
+    }
+    tests?;
     lint_result?;
-    borrowed_result
+    borrowed_result?;
+    cleanup?;
+    recorded?;
+    Ok(())
 }
 
 /// Three authored borrowed-batch guards; upstream vendor doctests are deliberately
@@ -283,6 +309,9 @@ pub(crate) fn check_desktop(root: &Path, plan: &BuildPlan, out: &Path) -> Result
 /// actual callback/as_ptr use as its positive import and use control.
 fn check_borrowed_url_docs(root: &Path, build: &MacBuild, out: &Path) -> Result<()> {
     fs::create_dir(out)?;
+    let private_build = out.join("build");
+    fs::create_dir(&private_build)?;
+    let owner = eml_fs::BoundDirectory::open(&private_build)?;
     let mut command = build.command(root, "cargo");
     command
         .args([
@@ -301,13 +330,18 @@ fn check_borrowed_url_docs(root: &Path, build: &MacBuild, out: &Path) -> Result<
             "--nocapture",
             "--test-threads=1",
         ])
-        .env("CARGO_TARGET_DIR", out.join("build"))
+        .env("CARGO_TARGET_DIR", &private_build)
+        .env("CARGO_BUILD_BUILD_DIR", &private_build)
+        .env("CARGO_INCREMENTAL", "0")
         .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text)
         .env("CARGO_TERM_COLOR", "never");
     let log = out.join("rustdoc.log");
-    let process = controller()?.run_separate_output(command, &log, Duration::from_secs(1200))?;
+    let process = controller()?.run_separate_output(command, &log, Duration::from_secs(1200));
     let validation = (|| -> Result<()> {
-        process.require_success(&log)?;
+        process
+            .as_ref()
+            .map_err(ToString::to_string)?
+            .require_success(&log)?;
         let stderr = log.with_extension("stderr");
         if fs::metadata(&log)?.len() > 1024 * 1024
             || fs::metadata(&stderr)?.len() > 16 * 1024 * 1024
@@ -316,18 +350,40 @@ fn check_borrowed_url_docs(root: &Path, build: &MacBuild, out: &Path) -> Result<
         }
         verify_borrowed_url_docs(&fs::read_to_string(&log)?, &fs::read_to_string(stderr)?)
     })();
-    fs::write(
-        out.join("result.json"),
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "process": process.evidence(), "passed": validation.is_ok(),
-            "failure": validation.as_ref().err().map(ToString::to_string),
-            "required_selection": {"selected": 3, "intentionally_filtered_upstream": 27},
-            "qualified_counts": validation.is_ok().then(|| serde_json::json!({"passed":3,"failed":0,"ignored":0,"intentionally_filtered_upstream":27})),
-            "positive_control": "same desktop gate Slint Clippy compiles actual BorrowedFileUrls callback/as_ptr use",
-            "scope": "three authored lifetime/Send/Sync compile-fail doctests; no GUI execution or complete upstream vendor suite"
-        }))?,
-    )?;
-    validation
+    let cleanup = crate::qualify::cleanup_private_test_build(
+        root,
+        &private_build,
+        out,
+        controller()?.ownership_settled(),
+        &owner,
+    );
+    let recorded: Result<()> = (|| {
+        fs::write(
+            out.join("result.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "process": process.as_ref().ok().map(|process| process.evidence()), "passed": validation.is_ok() && cleanup.is_ok(),
+                "test_build_cleanup":cleanup.as_ref().ok(),"cleanup_failure":cleanup.as_ref().err().map(ToString::to_string),
+                "failure": validation.as_ref().err().map(ToString::to_string),
+                "required_selection": {"selected": 3, "intentionally_filtered_upstream": 27},
+                "qualified_counts": (validation.is_ok() && cleanup.is_ok()).then(|| serde_json::json!({"passed":3,"failed":0,"ignored":0,"intentionally_filtered_upstream":27})),
+                "positive_control": "same desktop gate Slint Clippy compiles actual BorrowedFileUrls callback/as_ptr use",
+                "scope": "three authored lifetime/Send/Sync compile-fail doctests; no GUI execution or complete upstream vendor suite"
+            }))?,
+        )?;
+        Ok(())
+    })();
+
+    if let Err(error) = &cleanup {
+        eprintln!("Borrowed URL private build cleanup also failed: {error}");
+    }
+    if let Err(error) = &recorded {
+        eprintln!("Borrowed URL result recording also failed: {error}");
+    }
+    process?;
+    validation?;
+    cleanup?;
+    recorded?;
+    Ok(())
 }
 
 fn verify_borrowed_url_docs(stdout: &str, stderr: &str) -> Result<()> {

@@ -1,7 +1,7 @@
 //! Complete, positive-discovery mutation campaigns for exactly two real guards.
 use crate::{
     Result,
-    campaign::{Campaign, require_unix_campaign, run_logged, tool_version},
+    campaign::{Campaign, SourceHistory, require_unix_campaign, run_logged, tool_version},
     capture, git,
 };
 use serde::{Deserialize, Serialize};
@@ -321,11 +321,53 @@ fn validate(outcome: &Outcome, selected: &[Value], version: &str, logs: &Path) -
     }
     Ok(reviewed)
 }
+fn terminal_images(campaign: &Campaign) -> Result<Vec<crate::campaign::RetainedExecutable>> {
+    campaign.check_generated_addresses()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut pending = vec![campaign.directory.join("build")];
+        let mut paths = Vec::new();
+        while let Some(directory) = pending.pop() {
+            for entry in fs::read_dir(directory)? {
+                let entry = entry?;
+                let metadata = fs::symlink_metadata(entry.path())?;
+                if metadata.is_dir() {
+                    pending.push(entry.path());
+                } else if metadata.is_file()
+                    && metadata.permissions().mode() & 0o111 != 0
+                    && entry
+                        .file_name()
+                        .to_str()
+                        .is_some_and(|name| name.starts_with("eml_core-") && !name.contains('.'))
+                {
+                    paths.push(entry.path());
+                }
+            }
+        }
+        paths.sort();
+        paths
+            .iter()
+            .map(|path| campaign.retain_executable(path))
+            .collect()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = campaign;
+        Err("Mutation campaigns require Unix".into())
+    }
+}
+
 pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> {
     require_unix_campaign()?;
     let version = tool_version(root, "mutants", "cargo_mutants")?;
     let resolved_base = resolve_diff_base(root, initial, base)?;
-    let campaign = Campaign::create(root, "mutations")?;
+    let history = if initial {
+        SourceHistory::HeadOnly
+    } else {
+        SourceHistory::Reachable
+    };
+    let campaign = Campaign::create(root, "mutations", history)?;
     let all = discovery(&campaign, SELECTION)?;
     let guard_counts = positive_guards(&all)?;
     let Some(MutationSelection {
@@ -343,7 +385,13 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
     else {
         return Ok(());
     };
-    let selected = discovery(&campaign, &selection)?;
+    // Full discovery was already admitted above. Reuse it for the complete
+    // selection; only a narrower changed-guard expression needs another query.
+    let selected = if selection == SELECTION {
+        all
+    } else {
+        discovery(&campaign, &selection)?
+    };
     if selected.is_empty() {
         return Err("Changed guards require positive mutant discovery".into());
     }
@@ -400,9 +448,24 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
         &campaign.directory.join("campaign.log"),
         Duration::from_secs(45 * 60),
     )?;
-    let outcome: Outcome = serde_json::from_slice(&fs::read(
-        campaign.directory.join("output/mutants.out/outcomes.json"),
-    )?)?;
+    let images = if process.cleanup_complete && process.unexpected_survivors == 0 {
+        terminal_images(&campaign)?
+    } else {
+        Vec::new()
+    };
+    let outcome: Result<Outcome> =
+        fs::read(campaign.directory.join("output/mutants.out/outcomes.json"))
+            .map_err(Into::into)
+            .and_then(|bytes| serde_json::from_slice(&bytes).map_err(Into::into));
+    let cleanup = campaign.cleanup_generated(&process);
+    let cleanup_complete = cleanup["state"] == "complete";
+    let outcome = match outcome {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            campaign.report(&serde_json::json!({"source":campaign.sha,"tool_version":version,"discovered":selected.len(),"outcome_failure":error.to_string(),"process":process.evidence(),"retained_terminal_images":images,"image_scope":"remaining terminal build images, not baseline or per-mutant execution identities","cleanup":cleanup,"qualified":false}))?;
+            return Err(error);
+        }
+    };
     let validation = validate(
         &outcome,
         &selected,
@@ -411,10 +474,10 @@ pub(crate) fn run(root: &Path, initial: bool, base: Option<&str>) -> Result<()> 
     );
     campaign.report(&serde_json::json!({"source":campaign.sha,"merge_base":merge_base,"tool_version":version,"discovered":selected.len(),"guard_discovery":guard_counts,
         "executed":outcome.total_mutants,"caught":outcome.caught,"missed":outcome.missed,"unviable":outcome.unviable,"reviewed_unviable":validation.as_ref().ok(),"timed_out":outcome.timeout,
-        "command_exit":process.status.code(),"campaign_deadline_exceeded":process.timed_out,"elapsed_ms":process.elapsed.as_millis(),"qualified":validation.is_ok()&&process.success()}))?;
-    if !process.success() {
+        "command_exit":process.status.code(),"campaign_deadline_exceeded":process.timed_out,"elapsed_ms":process.elapsed.as_millis(),"retained_terminal_images":images,"image_scope":"remaining terminal build images, not baseline or per-mutant execution identities","cleanup":cleanup,"qualified":validation.is_ok()&&process.success()&&cleanup_complete}))?;
+    if !process.success() || !cleanup_complete {
         return Err(format!(
-            "Mutation process failed; retain {}",
+            "Mutation process or owned storage cleanup failed; retain {}",
             campaign.directory.display()
         )
         .into());
@@ -526,6 +589,50 @@ mod tests {
             ],
         }
     }
+    #[cfg(unix)]
+    #[test]
+    fn terminal_images_survive_explicit_target_layout_before_generated_cleanup() {
+        use std::os::unix::fs::PermissionsExt;
+        let owned = tempfile::tempdir().unwrap();
+        let campaign = crate::campaign::cleanup_tests::fixture(owned.path());
+        for target in ["native-target-a", "native-target-b"] {
+            let directory = campaign
+                .directory
+                .join("build")
+                .join(target)
+                .join("mutants/deps");
+            fs::create_dir_all(&directory).unwrap();
+            let image = directory.join("eml_core-0123456789abcdef");
+            fs::write(&image, b"#!/bin/sh\nexit 7\n").unwrap();
+            fs::set_permissions(&image, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let retained = terminal_images(&campaign).unwrap();
+        assert_eq!(retained.len(), 2);
+        assert_ne!(retained[0].path, retained[1].path);
+        let status = std::process::Command::new(&retained[0].path)
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(7));
+        let process = crate::campaign::ProcessResult {
+            status,
+            timed_out: false,
+            cancelled: false,
+            unexpected_survivors: 0,
+            cleanup_complete: true,
+            elapsed: Duration::ZERO,
+            cleanup_elapsed: Duration::ZERO,
+        };
+        assert_eq!(campaign.cleanup_generated(&process)["state"], "complete");
+        assert!(!campaign.directory.join("build").exists());
+        for image in retained {
+            assert_eq!(fs::read(&image.path).unwrap(), b"#!/bin/sh\nexit 7\n");
+            assert_eq!(
+                crate::campaign::image_file_identity(&image.path).unwrap(),
+                image.identity
+            );
+        }
+    }
+
     #[test]
     fn incomplete_missed_and_timeout_are_not_caught() {
         let logs = Path::new("unused-no-unviable-logs");

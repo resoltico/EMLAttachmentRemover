@@ -323,12 +323,21 @@ fn main() -> ExitCode {
         let root = root()?;
         commands::run(&root, args.task)
     })();
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            let _ = writeln!(std::io::stderr(), "{error}");
-            ExitCode::FAILURE
-        }
+    let mut failed = false;
+    if let Err(error) = result {
+        let _ = writeln!(std::io::stderr(), "{error}");
+        failed = true;
+    }
+    if let Some(controller) = CONTROLLER.get()
+        && let Err(error) = controller.finish_helper()
+    {
+        let _ = writeln!(std::io::stderr(), "Process helper cleanup: {error}");
+        failed = true;
+    }
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }
 

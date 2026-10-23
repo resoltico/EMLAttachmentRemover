@@ -1,7 +1,7 @@
 //! Two-phase pinned cargo-fuzz build and pre-execution graph admission.
 use crate::{
     Result,
-    campaign::{Campaign, pin, require_unix_campaign, run_logged, tool_version},
+    campaign::{Campaign, SourceHistory, pin, require_unix_campaign, run_logged, tool_version},
     capture,
 };
 use serde_json::Value;
@@ -82,6 +82,27 @@ fn regular_seeds(path: &Path) -> Result<Vec<PathBuf>> {
     files.sort();
     Ok(files)
 }
+fn seed_names(source: &Path, files: &[PathBuf]) -> Result<Vec<String>> {
+    files
+        .iter()
+        .map(|path| {
+            let relative = path.strip_prefix(source)?;
+            let name = relative.to_str().ok_or("Fuzz seed names must be UTF-8")?;
+            if name.is_empty()
+                || name.contains([',', '\n', '\r'])
+                || relative
+                    .components()
+                    .any(|part| !matches!(part, std::path::Component::Normal(_)))
+            {
+                return Err(
+                    "Fuzz seed name cannot be represented by the pinned comma-list format".into(),
+                );
+            }
+            Ok(name.to_owned())
+        })
+        .collect()
+}
+
 fn admit_and_execute(
     inputs: &StableInputs,
     seeds: &StableInputs,
@@ -103,7 +124,7 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
     require_unix_campaign()?;
     let version = tool_version(root, "fuzz", "cargo_fuzz")?;
     let compiler = pin(root, "fuzz_compiler")?;
-    let campaign = Campaign::create(root, "fuzz")?;
+    let campaign = Campaign::create(root, "fuzz", SourceHistory::HeadOnly)?;
     let mut rustc = campaign.command("rustup")?;
     rustc.args(["run", &compiler, "rustc", "-vV"]);
     let identity = String::from_utf8(capture(&mut rustc)?)?;
@@ -114,9 +135,7 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
         .to_owned();
     fs::write(campaign.directory.join("compiler.txt"), &identity)?;
     let build = campaign.directory.join("build");
-    let corpus = campaign.directory.join("corpus");
     let artifacts = campaign.directory.join("artifacts");
-    fs::create_dir(&corpus)?;
     fs::create_dir(&artifacts)?;
     let fixtures = campaign.source.join("tests/contract/mime/inputs");
     let edges = campaign.source.join("fuzz/seeds");
@@ -135,26 +154,57 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
         serde_json::to_vec_pretty(&before)?,
     )?;
     let inputs = capture_build_inputs(&campaign, &before)?;
+    let seed_files = fixture_files
+        .iter()
+        .chain(&edge_files)
+        .cloned()
+        .collect::<Vec<_>>();
+    let names = seed_names(&campaign.source, &seed_files)?;
     let mut seeds = StableInputs::default();
-    for file in fixture_files.iter().chain(&edge_files) {
+    for file in &seed_files {
         seeds.add(file.clone())?;
     }
-    build_harness(&campaign, &compiler, &target, &build)?;
+    let seed_identities = names.iter().zip(&seed_files).map(|(name, path)| {
+        serde_json::json!({"path":name,"identity":xtask::archive::ByteIdentity::of(&seeds.0[path])})
+    }).collect::<Vec<_>>();
+    let seed_list = campaign.directory.join("seed-inputs.txt");
+    // No positional corpus directory: libFuzzer keeps its adaptive corpus in
+    // memory without copying every newly interesting input to disk. Crash and
+    // timeout reproducers still use the separately owned artifact directory.
+    fs::write(&seed_list, names.join(","))?;
+    seeds.add(seed_list.clone())?;
+    let executable = build.join(&target).join("release/preparation");
+    let built = build_harness(&campaign, &compiler, &target, &build)?;
+    if !built.success() {
+        let image =
+            if built.cleanup_complete && built.unexpected_survivors == 0 && executable.is_file() {
+                Some(campaign.retain_executable(&executable)?)
+            } else {
+                None
+            };
+        let cleanup = campaign.cleanup_generated(&built);
+        campaign.report(&serde_json::json!({"source":campaign.sha,"stage":"build","tool_version":version,"compiler":compiler,"host_target":target,"build_process":built.evidence(),"retained_unexecuted_image":image,"seed_inputs":seed_identities,"cleanup":cleanup,"qualified":false}))?;
+        return Err(format!(
+            "Fuzz build failed; inspect {}",
+            campaign.directory.join("build.log").display()
+        )
+        .into());
+    }
     let after = metadata(&campaign, &compiler, &target, &build)?;
     fs::write(
         campaign.directory.join("metadata-after.json"),
         serde_json::to_vec_pretty(&after)?,
     )?;
-    let executable = build.join(&target).join("release/preparation");
     if !executable.is_file() {
         return Err("Pinned cargo-fuzz did not produce the expected executable".into());
     }
-    let mut command = std::process::Command::new(&executable);
+    let retained = campaign.retain_executable(&executable)?;
+    let mut seed_option = std::ffi::OsString::from("-seed_inputs=@");
+    seed_option.push(&seed_list);
+    let mut command = std::process::Command::new(&retained.path);
     command
         .current_dir(&campaign.source)
-        .arg(&corpus)
-        .arg(&fixtures)
-        .arg(&edges)
+        .arg(seed_option)
         .args([
             format!("-max_total_time={seconds}"),
             "-max_len=4194304".into(),
@@ -172,27 +222,55 @@ pub(crate) fn run(root: &Path, seconds: u64) -> Result<()> {
         std::io::stderr(),
         "Admitting bounded fuzz execution for max_total_time={seconds}"
     )?;
-    let process = admit_and_execute(&inputs, &seeds, &before, &after, || {
+    let mut process_launch_attempted = false;
+    let launched = admit_and_execute(&inputs, &seeds, &before, &after, || {
+        process_launch_attempted = true;
         run_logged(
             command,
             &campaign.directory.join("campaign.log"),
             Duration::from_secs(seconds + 30),
         )
-    })?;
-    let log = fs::read_to_string(campaign.directory.join("campaign.log"))?;
-    let count = execution_count(&log);
-    let artifacts_present = fs::read_dir(&artifacts)?.next().is_some();
+    });
+    let process = match launched {
+        Ok(process) => process,
+        Err(error) if !process_launch_attempted => {
+            let cleanup = campaign.cleanup_generated(&built);
+            campaign.report(&serde_json::json!({"source":campaign.sha,"stage":"pre_execution_admission","failure":error.to_string(),"retained_unexecuted_image":retained,"seed_inputs":seed_identities,"cleanup":cleanup,"qualified":false}))?;
+            return Err(error);
+        }
+        Err(error) => return Err(error), // No terminal process result: retain all.
+    };
+    let count: Result<u64> = fs::read_to_string(campaign.directory.join("campaign.log"))
+        .map_err(Into::into)
+        .and_then(|log| execution_count(&log));
+    let artifacts_present = fs::read_dir(&artifacts).map(|mut entries| entries.next().is_some());
+    let image_stable = crate::campaign::image_file_identity(&retained.path).and_then(|actual| {
+        if actual == retained.identity {
+            Ok(())
+        } else {
+            Err("Executed fuzz image changed".into())
+        }
+    });
     let stable = inputs.verify().and_then(|()| seeds.verify());
     let qualified = process.success()
         && !process.timed_out
-        && !artifacts_present
+        && artifacts_present.as_ref().is_ok_and(|present| !present)
         && count.is_ok()
-        && stable.is_ok();
+        && stable.is_ok()
+        && image_stable.is_ok();
+    let cleanup = if image_stable.is_ok() {
+        campaign.cleanup_generated(&process)
+    } else {
+        serde_json::json!({"state":"retained","failure":"Executed image identity is unconfirmed; retain all storage"})
+    };
+    let qualified = qualified && cleanup["state"] == "complete";
     campaign.report(&serde_json::json!({"source":campaign.sha,"tool_version":version,"compiler":compiler,"host_target":target,
-        "fixture_seeds":fixture_files.len(),"edge_seeds":edge_files.len(),"max_total_time":seconds,"max_len":4194304,"per_input_timeout_seconds":5,"rss_limit_mb":1024,
-        "executed_units":count.as_ref().ok(),"command_exit":process.status.code(),"deadline_exceeded":process.timed_out,"elapsed_ms":process.elapsed.as_millis(),"artifacts_present":artifacts_present,
+        "fixture_seeds":fixture_files.len(),"edge_seeds":edge_files.len(),"seed_inputs":seed_identities,"generated_corpus_storage":"memory_only","max_total_time":seconds,"max_len":4194304,"per_input_timeout_seconds":5,"rss_limit_mb":1024,
+        "executed_units":count.as_ref().ok(),"command_exit":process.status.code(),"deadline_exceeded":process.timed_out,"elapsed_ms":process.elapsed.as_millis(),"artifacts_present":artifacts_present.as_ref().ok(),"artifact_observation_failure":artifacts_present.as_ref().err().map(ToString::to_string),"execution_summary_failure":count.as_ref().err().map(ToString::to_string),"retained_executed_image":retained,"image_identity_failure":image_stable.as_ref().err().map(ToString::to_string),"input_failure":stable.as_ref().err().map(ToString::to_string),"cleanup":cleanup,
         "pre_execution_inputs_and_graph_verified":true,"qualified":qualified}))?;
     stable?;
+    image_stable?;
+    artifacts_present?;
     count?;
     if !qualified {
         return Err(format!(
@@ -232,7 +310,12 @@ fn capture_build_inputs(campaign: &Campaign, before: &Value) -> Result<StableInp
     Ok(inputs)
 }
 
-fn build_harness(campaign: &Campaign, compiler: &str, target: &str, build: &Path) -> Result<()> {
+fn build_harness(
+    campaign: &Campaign,
+    compiler: &str,
+    target: &str,
+    build: &Path,
+) -> Result<crate::campaign::ProcessResult> {
     let mut command = campaign.command("rustup")?;
     let fuzz_tool = campaign.tool_path("fuzz")?;
     command
@@ -254,19 +337,35 @@ fn build_harness(campaign: &Campaign, compiler: &str, target: &str, build: &Path
         &campaign.directory.join("build.log"),
         Duration::from_secs(10 * 60),
     )?;
-    if !built.success() {
-        return Err(format!(
-            "Fuzz build failed; inspect {}",
-            campaign.directory.join("build.log").display()
-        )
-        .into());
-    }
-    Ok(())
+    Ok(built)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn seed_list_keeps_relative_inputs_when_the_owned_parent_contains_commas() {
+        let source = Path::new("/owned,parent/source");
+        let names = seed_names(
+            source,
+            &[
+                source.join("fixtures/first.eml"),
+                source.join("edges/second.eml"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(names.join(","), "fixtures/first.eml,edges/second.eml");
+        for invalid in [
+            source.join("edges/comma,name"),
+            source.join("edges/line\nname"),
+            source.join("edges/carriage\rname"),
+            source.join("../escape"),
+            PathBuf::from("/outside/input"),
+        ] {
+            assert!(seed_names(source, &[invalid]).is_err());
+        }
+    }
+
     #[test]
     fn summary_requires_real_positive_execution_and_completion() {
         assert!(

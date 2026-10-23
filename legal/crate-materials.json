@@ -13046,10 +13046,10 @@
       "sha256": "6a2c62814ae6a86acf6b620cdb8730b117a9a104b49d460456fc2c2d00a8c456"
     },
     {
-      "bytes": 1380,
+      "bytes": 1548,
       "kind": "review_input",
       "path": "Cargo.toml",
-      "sha256": "e17cc1dc6624c055f61b7bd46d9723bbc74c2ea42a211f4332932d26adb359aa"
+      "sha256": "dab355c0ed853dbb356b8d376be2ea81772224de39c7bc6254b8e451bc46d35a"
     },
     {
       "bytes": 839,
@@ -13360,12 +13360,16 @@
     {
       "basis_head": "dbbf1157eac5de1cc5dfe2bf8e1c021a020f8cce",
       "scope": "Reviewed the owned Core/App/Protocol/Worker manifest changes for finite native operation-boundary and request-body observation fixtures. Core adds a development-only FS feature selection; App and Protocol declare opt-in native-fixtures and Worker forwards those fixture features. Default shipping normal/build dependency and feature trees were independently executed and byte-compared after source-root normalization against an isolated exact dbbf1157 source for all six CLI targets and both Darwin GUI and worker targets (ten graphs); all remain identical. Cargo.lock is unchanged. No registry identity, selected license, legal text or shipping feature changed. Renewed only the four reviewed manifest input bindings. These source/graph observations do not attest native execution or notice generation."
+    },
+    {
+      "basis_head": "4d194af07a89a93071623108c715ffa439efbc7d",
+      "scope": "Reviewed the sole workspace manifest change: profile.dev debug=1 keeps line tables/backtraces for ordinary nonshipping builds without full local-variable/type debug records. Parsed TOML comparison after removing only profile.dev is identical to the frozen basis; dependencies, features, package identities, licenses and shipping release profile are unchanged. Cargo.lock and all component manifests are unchanged. Renewed only the root manifest input binding. Actual notice generation and native qualification remain separate; this review does not claim either execution."
     }
   ],
   "product_material_review": {
     "basis_head": "f9da54984a2a76f7b7431c0acb645a4db4f4285a",
     "scope": "Enabled macOS GUI and private-worker normal/build closures on both native target triples; this is source/material review, not native execution, final-link qualification or legal assurance.",
-    "method": "Separate raw-package/upstream catalog and skeptical material pass, not a record emitted by the notice generator. Each target/product membership was compared separately. Cached published archives were SHA-256 checked against Cargo.lock and 718 source members were byte-compared using native tar stdout. Hashes establish identity only. Grant/condition/disclaimer bodies, source copyright notices and nonstandard additional material were separately examined. 101 MIT groups matched identified standard bodies after whitespace/quote normalization; cfg_aliases third-party notices and bytemuck next-paragraph wording were reviewed verbatim and retained. Apache terms 1\u20139 matched the retained standard; BSD, Zlib and Unicode/ICU notices were retained, including IBM attribution.",
+    "method": "Separate raw-package/upstream catalog and skeptical material pass, not a record emitted by the notice generator. Each target/product membership was compared separately. Cached published archives were SHA-256 checked against Cargo.lock and 718 source members were byte-compared using native tar stdout. Hashes establish identity only. Grant/condition/disclaimer bodies, source copyright notices and nonstandard additional material were separately examined. 101 MIT groups matched identified standard bodies after whitespace/quote normalization; cfg_aliases third-party notices and bytemuck next-paragraph wording were reviewed verbatim and retained. Apache terms 1–9 matched the retained standard; BSD, Zlib and Unicode/ICU notices were retained, including IBM attribution.",
     "generator_omission": "cargo-about 0.9.2 includes the ten Slint1.18.1 packages in its selected graph but omits their LicenseRef text groups. The reviewed supplement uses the complete royalty-free license from each exact published package. No patched tool or source-build fallback is used. The macOS top-level Help/About path already displays AboutSlint.",
     "special_cases": [
       "chrono and libm keep their complete combined source legal files; libm and dpi preserve musl/CORE-MATH and original copyright notices.",

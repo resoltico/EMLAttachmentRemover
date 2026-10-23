@@ -167,15 +167,8 @@ jobs:
           $code = $LASTEXITCODE
           if ($code -ne 0) { exit $code }
           $tests = Get-Content -LiteralPath target/native-tests/result.json -Raw | ConvertFrom-Json
-          $testTarget = [string] $tests.cargo_target_directory
-          if ([string]::IsNullOrWhiteSpace($testTarget) -or !(Test-Path -LiteralPath $testTarget -PathType Container)) { throw 'Missing canonical native test build directory' }
-          $env:CARGO_TARGET_DIR = $testTarget
-          $arguments = @('test', '--workspace', '--locked', '--features', 'eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures', '--target', '${{ matrix.target }}')
-          $ignored = & cargo @arguments -- --list --ignored --color never 2>&1
-          $code = $LASTEXITCODE
-          if ($code -ne 0) { exit $code }
-          $ignored | Set-Content -Encoding utf8 target/ignored.list
-          & ./tests/windows/assert-test-sentinels.ps1 -Listing target/native-tests/native-test-discovery.log -IgnoredListing target/ignored.list
+          if ($tests.test_build_cleanup.removed -ne $true) { throw 'Private native test build was not cleaned after confirmed settlement' }
+          & ./tests/windows/assert-test-sentinels.ps1 -Listing target/native-tests/native-test-discovery.log -IgnoredListing target/native-tests/native-test-ignored.log
           cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures --target '${{ matrix.target }}' -- -D warnings
           $code = $LASTEXITCODE
           if ($code -ne 0) { exit $code }
@@ -306,7 +299,6 @@ jobs:
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.stderr
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/child-fixtures/build/**
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-creation-evidence/*.json
-            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/*.list
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.json
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/name-profile-prerequisites/*.txt
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/name-profiles/**/*.json
@@ -432,24 +424,36 @@ jobs:
           artifact-ids: ${{ needs.icon.outputs.artifact_id || needs.icon_fallback.outputs.artifact_id }}
           path: target/icon-input
           digest-mismatch: error
+      # One immutable build cache per target and dependency/toolchain policy,
+      # rather than another near-identical archive on every source commit.
+      # Compressed registry archives suffice; Cargo regenerates unpacked sources.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: cargo_cache
         with:
           path: |
             target/native-cargo/${{ matrix.target }}
-            ~/.cargo/registry/src
             ~/.cargo/registry/cache
-          key: macos-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}-${{ inputs.source }}
-          restore-keys: |
-            macos-cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
+          key: macos-build-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'vendor/**', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
       - name: Verify native release tests, exFAT, CLI and ad hoc app candidates
         run: cargo xtask qualify --target '${{ matrix.target }}' --icons target/icon-input --out target/native-app-build
+      - name: Keep only dependencies in the reusable build cache
+        if: ${{ success() && steps.cargo_cache.outputs.cache-hit != 'true' }}
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
+        run: |
+          cargo metadata --locked --no-deps --format-version 1 > target/cache-members.json
+          jq -er '.workspace_members as $members | .packages[] | select(.id as $id | $members | index($id)) | .name' target/cache-members.json > target/cache-packages.txt
+          packages=()
+          while IFS= read -r package; do
+            packages+=(-p "$package")
+          done < target/cache-packages.txt
+          test "${#packages[@]}" -gt 0
+          cargo clean --locked --profile release --target "$NATIVE_TARGET" --target-dir "target/native-cargo/$NATIVE_TARGET" "${packages[@]}"
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: ${{ success() && steps.cargo_cache.outputs.cache-hit != 'true' }}
         with:
           path: |
             target/native-cargo/${{ matrix.target }}
-            ~/.cargo/registry/src
             ~/.cargo/registry/cache
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -38,6 +38,11 @@ all = { level = "deny", priority = -1 }
 allow_attributes_without_reason = "deny"
 undocumented_unsafe_blocks = "deny"
 
+# Ordinary builds keep source locations/backtraces without full type/local-variable
+# debug records in generated GUI dependency intermediates.
+[profile.dev]
+debug = 1
+
 [profile.release]
 overflow-checks = true
 

@@ -1,7 +1,7 @@
 //! Real Unix session/group lifetime probes. Windows bounded campaigns are unsupported.
 #![cfg(unix)]
 use std::{fs, path::Path, process::Command, time::Duration};
-use xtask::process::Controller;
+use xtask::{archive, process::Controller};
 // Scenarios share the global process census and finite observation budget even
 // with separate directories/sessions. Isolate outer scenarios, preserving all
 // concurrency inside each real process-lifetime/negative-control scenario.
@@ -134,7 +134,8 @@ fn overdue_observed_success_cannot_qualify() {
 fn cooperative_deadline_cleans_external_resource_but_cannot_qualify_exit_zero() {
     let _scenario = scenario();
     let root = scratch();
-    let result = controller(root.path())
+    let controller = controller(root.path());
+    let result = controller
         .run_with_cooperative_stop(
             worker(root.path(), "cooperative-resource"),
             &root.path().join("worker.log"),
@@ -146,6 +147,10 @@ fn cooperative_deadline_cleans_external_resource_but_cannot_qualify_exit_zero() 
     assert!(result.cleanup_complete && !result.success());
     assert!(root.path().join("cooperative-stop-observed").is_file());
     assert!(!root.path().join("external-resource").exists());
+    assert!(!controller.admits_work());
+    assert!(controller.ownership_settled());
+    controller.finish_helper().unwrap();
+    assert!(!controller.admits_work());
 }
 
 #[test]
@@ -170,6 +175,9 @@ fn cooperative_cancellation_closes_admission_even_after_clean_exit_zero() {
     assert!(
         result.cancelled && result.status.success() && result.cleanup_complete && !result.success()
     );
+    assert!(!controller.admits_work());
+    assert!(controller.ownership_settled());
+    controller.finish_helper().unwrap();
     assert!(!controller.admits_work());
     assert!(root.path().join("cooperative-stop-observed").is_file());
     assert!(!root.path().join("external-resource").exists());
@@ -869,4 +877,48 @@ fn pin_startup_uses_remaining_absolute_budget_not_a_fresh_timeout() {
         std::time::Instant::now() - Duration::from_millis(1),
     );
     assert!(expired.is_err());
+}
+
+#[test]
+fn settled_helper_copy_is_removed_but_identity_and_process_receipts_remain() {
+    let _scenario = scenario();
+    let root = scratch();
+    let controller = controller(root.path());
+    let helper_directory = fs::read_dir(root.path().join("target/process-control"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("helper-")
+        })
+        .unwrap();
+    let identity: archive::ByteIdentity =
+        serde_json::from_slice(&fs::read(helper_directory.join("helper-identity.json")).unwrap())
+            .unwrap();
+    assert!(identity.byte_length > 0);
+    let log = root.path().join("worker.log");
+    assert!(
+        controller
+            .run(Command::new("/usr/bin/true"), &log, Duration::from_secs(5))
+            .unwrap()
+            .success()
+    );
+    controller.finish_helper().unwrap();
+    assert!(!helper_directory.join("xtask-helper").exists());
+    let cleanup: serde_json::Value =
+        serde_json::from_slice(&fs::read(helper_directory.join("cleanup.json")).unwrap()).unwrap();
+    assert_eq!(cleanup["helper_removed"], true);
+    assert_eq!(cleanup["identity"], serde_json::to_value(identity).unwrap());
+    assert!(log.is_file());
+    assert!(
+        controller
+            .run(
+                Command::new("/usr/bin/true"),
+                &root.path().join("late.log"),
+                Duration::from_secs(5)
+            )
+            .is_err()
+    );
 }

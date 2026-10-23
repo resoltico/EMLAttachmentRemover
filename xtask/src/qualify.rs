@@ -102,6 +102,17 @@ pub(crate) fn checked_tests(
     let target_directory = mac
         .as_ref()
         .map_or_else(|| target_directory, |build| build.cargo_directory(root));
+    #[cfg(target_os = "macos")]
+    let private_build = mac.is_none();
+    #[cfg(not(target_os = "macos"))]
+    let private_build = true;
+    let private_owner = if private_build {
+        // Existing output is never adopted for later recursive removal.
+        fs::create_dir(&target_directory)?;
+        Some(eml_fs::BoundDirectory::open(&target_directory)?)
+    } else {
+        None
+    };
     let command = |listing: bool| {
         let mut command = Command::new("cargo");
         command
@@ -115,6 +126,12 @@ pub(crate) fn checked_tests(
                 "--no-fail-fast",
             ])
             .env("CARGO_TARGET_DIR", &target_directory);
+        if private_build {
+            // Discovery and execution reuse Cargo's ordinary artifacts, but a
+            // fresh per-run tree has no cross-run incremental state to reuse.
+            command.env("CARGO_INCREMENTAL", "0");
+            command.env("CARGO_BUILD_BUILD_DIR", &target_directory);
+        }
         if release {
             command.arg("--release");
         }
@@ -153,8 +170,67 @@ pub(crate) fn checked_tests(
         }
         command
     };
-    let counts = checked_commands(out, command)?;
-    let result = json!({"discovery":counts,"profile":if release {"release"} else {"test"},"target":target,"cargo_target_directory":target_directory,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"});
+    let selection = checked_commands(out, command);
+    #[cfg(windows)]
+    let selection = selection.and_then(|mut counts| {
+        // The workflow consumes this real listing after private build cleanup.
+        // Reuse the exact discovery selector, then ask the harness for ignored
+        // cases before discarding any of its compiled test executables.
+        let mut ignored = command(true);
+        ignored.arg("--ignored");
+        let log = out.join("native-test-ignored.log");
+        let process =
+            controller()?.run_separate_output(ignored, &log, Duration::from_secs(20 * 60))?;
+        process.require_success(&log)?;
+        for path in [&log, &log.with_extension("stderr")] {
+            if fs::metadata(path)?.len() > 16 * 1024 * 1024 {
+                return Err("Native ignored-test listing exceeds its document bound".into());
+            }
+        }
+        let mut observation = validate_ignored_listing(
+            &fs::read_to_string(out.join("native-test-discovery.stderr"))?,
+            &fs::read_to_string(&log)?,
+            &fs::read_to_string(log.with_extension("stderr"))?,
+        )?;
+        observation["process"] = process.evidence();
+        counts["ignored_listing"] = observation;
+        Ok(counts)
+    });
+    let cleanup = if private_build {
+        cleanup_private_test_build(
+            root,
+            &target_directory,
+            out,
+            controller()?.ownership_settled(),
+            private_owner.as_ref().unwrap(),
+        )
+    } else {
+        Ok(
+            json!({"removed":false,"scope":"shared native-cargo build retained for later shipping/native profile consumers"}),
+        )
+    };
+    let (counts, cleanup) = match selection {
+        Ok(counts) => (counts, cleanup?),
+        Err(primary) => {
+            if let Err(error) = cleanup {
+                eprintln!("Private test build cleanup also failed: {error}");
+                let record = json!({"failure":error.to_string(),"primary_error_preserved":true,"scope":"cleanup diagnostic only; original command/lifetime failure returned unchanged"});
+                match serde_json::to_vec_pretty(&record) {
+                    Ok(bytes) => {
+                        if let Err(write) =
+                            fs::write(out.join("native-test-build-cleanup-failure.json"), bytes)
+                        {
+                            eprintln!("Could not retain cleanup diagnostic: {write}");
+                        }
+                    }
+                    Err(write) => eprintln!("Could not encode cleanup diagnostic: {write}"),
+                }
+            }
+            return Err(primary);
+        }
+    };
+
+    let result = json!({"discovery":counts,"profile":if release {"release"} else {"test"},"target":target,"cargo_target_directory":target_directory,"test_build_cleanup":cleanup,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"});
     #[cfg(target_os = "linux")]
     let result = {
         let mut result = result;
@@ -174,6 +250,100 @@ pub(crate) fn checked_tests(
         result
     };
     Ok(result)
+}
+
+#[cfg(any(windows, test))]
+fn validate_ignored_listing(discovery_stderr: &str, stdout: &str, stderr: &str) -> Result<Value> {
+    let suites = test_suites(discovery_stderr)?;
+    if test_suites(stderr)? != suites {
+        return Err("Ignored-test selector omitted or changed discovered suites".into());
+    }
+    let summaries: Vec<_> = stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    if summaries.len() != suites.len()
+        || summaries
+            .iter()
+            .any(|line| *line != "0 tests, 0 benchmarks")
+    {
+        return Err(
+            "Ignored-test listing is incomplete, malformed or contains disabled cases".into(),
+        );
+    }
+    Ok(
+        json!({"ignored":0,"observed_suites":suites,"empty_summaries":summaries.len(),"scope":"actual identical-selector --list --ignored before private build cleanup"}),
+    )
+}
+
+/// Remove only this selection's fresh build after the actual controlled Cargo
+/// processes settled. Keep all transcripts and exact launched-test identities.
+pub(crate) fn cleanup_private_test_build(
+    root: &Path,
+    build: &Path,
+    out: &Path,
+    ownership_settled: bool,
+    owner: &eml_fs::BoundDirectory,
+) -> Result<Value> {
+    let receipt = out.join("native-test-build-cleanup.json");
+    if !ownership_settled {
+        let retained = json!({"removed":false,"directory":build,"reason":"actual controlled process ownership/cleanup is uncertain"});
+        fs::write(receipt, serde_json::to_vec_pretty(&retained)?)?;
+        return Ok(retained);
+    }
+    let check_owner = || -> Result<()> {
+        if !fs::symlink_metadata(build)?.is_dir()
+            || eml_fs::BoundDirectory::open(build)?.identity() != owner.identity()
+        {
+            return Err("Private test build directory address changed; preserving storage".into());
+        }
+        Ok(())
+    };
+    check_owner()?;
+    let bound = build.canonicalize()?;
+    let mut executables = std::collections::BTreeSet::new();
+    for name in ["native-test-discovery.stderr", "native-tests.stderr"] {
+        let log = out.join(name);
+        if !log.exists() {
+            continue;
+        }
+        if fs::metadata(&log)?.len() > 16 * 1024 * 1024 {
+            return Err(
+                "Retaining private build: executable-identity transcript exceeds its bound".into(),
+            );
+        }
+        for line in fs::read_to_string(log)?.lines() {
+            let Some((_, path)) = line
+                .find("Running ")
+                .and_then(|offset| line[offset..].split_once(" ("))
+            else {
+                continue;
+            };
+            let Some(path) = path.strip_suffix(')') else {
+                continue;
+            };
+            let path = root.join(path);
+            let resolved = path.canonicalize()?;
+            if !resolved.starts_with(&bound) || !fs::symlink_metadata(&path)?.is_file() {
+                return Err("Launched test executable is outside the owned build tree".into());
+            }
+            executables.insert(resolved);
+        }
+    }
+    let identities: Vec<_> = executables
+        .into_iter()
+        .map(|path| -> Result<Value> {
+            Ok(json!({"path":path,"identity":xtask::archive::ByteIdentity::of(&fs::read(&path)?)}))
+        })
+        .collect::<Result<_>>()?;
+    let mut record = json!({"directory":build,"removed":false,"processes_settled":true,"executable_identities":identities,"incremental":false,"scope":"only generated private build intermediates; discovery/execution logs and result evidence retained"});
+    fs::write(&receipt, serde_json::to_vec_pretty(&record)?)?;
+    check_owner()?;
+    fs::remove_dir_all(build)?;
+    record["removed"] = json!(true);
+    fs::write(receipt, serde_json::to_vec_pretty(&record)?)?;
+    Ok(record)
 }
 
 pub(crate) fn checked_commands(out: &Path, command: impl Fn(bool) -> Command) -> Result<Value> {
@@ -586,6 +756,33 @@ fn publish_verified_cli(
 mod tests {
     use super::*;
     #[test]
+    fn ignored_listing_requires_actual_matching_selector_and_zero_disabled_cases() {
+        let suites = "Running unittests src/lib.rs (target/owned)\nDoc-tests eml_core\n";
+        let empty = "0 tests, 0 benchmarks\n\n0 tests, 0 benchmarks\n";
+        assert_eq!(
+            validate_ignored_listing(suites, empty, suites).unwrap()["ignored"],
+            0
+        );
+        for invalid in [
+            "",
+            "0 tests, 0 benchmarks\n",
+            "disabled: test\n1 test, 0 benchmarks\n0 tests, 0 benchmarks\n",
+            "0 tests, 1 benchmark\n0 tests, 0 benchmarks\n",
+            "0 tests, 0 benchmarks\n0 tests, 0 benchmarks\n0 tests, 0 benchmarks\n",
+            "test result: ok. 0 passed; 0 failed; 1 ignored\n0 tests, 0 benchmarks\n",
+        ] {
+            assert!(validate_ignored_listing(suites, invalid, suites).is_err());
+        }
+        for mismatch in [
+            "Running unittests src/lib.rs (target/other-profile)\nDoc-tests eml_core\n",
+            "Running unittests src/lib.rs (target/owned)\n",
+            "Running unittests src/lib.rs (target/owned)\nDoc-tests eml_core\nDoc-tests eml_core\n",
+            "",
+        ] {
+            assert!(validate_ignored_listing(suites, empty, mismatch).is_err());
+        }
+    }
+    #[test]
     fn aggregate_discovery_requires_suites_cases_and_summary_totals() {
         let suites =
             "Running unittests src/lib.rs (target/owned)\ndiagnostic   Doc-tests eml_core\n";
@@ -654,5 +851,91 @@ mod tests {
         ] {
             assert!(summary_passes(&changed).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod private_build_tests {
+    use super::*;
+    #[test]
+    fn settled_private_build_removes_intermediates_and_retains_exact_test_identity_and_logs() {
+        let root = tempfile::Builder::new()
+            .prefix("project (owned)-")
+            .tempdir()
+            .unwrap();
+        let build = root.path().join("native-test-build");
+        fs::create_dir(&build).unwrap();
+        let owner = eml_fs::BoundDirectory::open(&build).unwrap();
+        let executable = build.join("independent-test-executable");
+        fs::write(&executable, b"independently specified executed bytes").unwrap();
+        let stderr = format!("Running unittests src/lib.rs ({})\n", executable.display());
+        fs::write(root.path().join("native-test-discovery.stderr"), &stderr).unwrap();
+        fs::write(root.path().join("native-tests.stderr"), &stderr).unwrap();
+        fs::write(
+            root.path().join("native-tests.log"),
+            b"retained failure or success evidence",
+        )
+        .unwrap();
+        let receipt =
+            cleanup_private_test_build(root.path(), &build, root.path(), true, &owner).unwrap();
+        assert_eq!(receipt["removed"], true);
+        assert!(!build.exists());
+        assert_eq!(
+            receipt["executable_identities"].as_array().unwrap().len(),
+            1
+        );
+        assert_eq!(
+            receipt["executable_identities"][0]["identity"],
+            serde_json::to_value(xtask::archive::ByteIdentity::of(
+                b"independently specified executed bytes"
+            ))
+            .unwrap()
+        );
+        assert_eq!(
+            fs::read(root.path().join("native-tests.log")).unwrap(),
+            b"retained failure or success evidence"
+        );
+        assert!(root.path().join("native-test-build-cleanup.json").is_file());
+    }
+    #[test]
+    fn closed_ownership_or_outside_executable_keeps_the_private_build() {
+        let root = tempfile::tempdir().unwrap();
+        let build = root.path().join("native-test-build");
+        fs::create_dir(&build).unwrap();
+        let owner = eml_fs::BoundDirectory::open(&build).unwrap();
+        let outside = root.path().join("outside-executable");
+        fs::write(&outside, b"not build-owned").unwrap();
+        fs::write(
+            root.path().join("native-tests.stderr"),
+            format!("Running unittests src/lib.rs ({})\n", outside.display()),
+        )
+        .unwrap();
+        assert!(
+            cleanup_private_test_build(root.path(), &build, root.path(), true, &owner).is_err()
+        );
+        assert!(build.is_dir());
+        let retained =
+            cleanup_private_test_build(root.path(), &build, root.path(), false, &owner).unwrap();
+        assert_eq!(retained["removed"], false);
+        assert!(build.is_dir());
+        assert_eq!(fs::read(outside).unwrap(), b"not build-owned");
+    }
+    #[test]
+    fn replaced_private_build_is_not_adopted_or_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let build = root.path().join("native-test-build");
+        fs::create_dir(&build).unwrap();
+        let owner = eml_fs::BoundDirectory::open(&build).unwrap();
+        fs::rename(&build, root.path().join("original-build")).unwrap();
+        fs::create_dir(&build).unwrap();
+        fs::write(build.join("sentinel"), b"unowned replacement").unwrap();
+        assert!(
+            cleanup_private_test_build(root.path(), &build, root.path(), true, &owner).is_err()
+        );
+        assert_eq!(
+            fs::read(build.join("sentinel")).unwrap(),
+            b"unowned replacement"
+        );
+        assert!(root.path().join("original-build").is_dir());
     }
 }
