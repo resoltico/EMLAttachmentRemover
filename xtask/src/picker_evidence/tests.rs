@@ -606,6 +606,14 @@ fn producer_projection_preserves_actual_facts_without_defaults_and_raw_identity(
     let host: Host = serde_json::from_value(host()).unwrap();
     let bytes = serde_json::to_vec(&raw).unwrap();
     let projected = project_product(&bytes, &binding, &host).unwrap();
+    for missing in ["runner_image", "runner_image_version"] {
+        let mut absent = raw.clone();
+        absent["host"].as_object_mut().unwrap().remove(missing);
+        assert!(
+            project_product(&serde_json::to_vec(&absent).unwrap(), &binding, &host).is_err(),
+            "Missing actual producer field must refuse: {missing}"
+        );
+    }
     assert_eq!(projected.raw_product_identity, ByteIdentity::of(&bytes));
     assert_eq!(projected.picker_observation.owned_pid, 42);
     assert_eq!(projected.summary.total, 1);

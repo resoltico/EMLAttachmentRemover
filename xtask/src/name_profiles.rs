@@ -52,6 +52,9 @@ pub(crate) fn validate(
             "Native naming profiles lack successful exact-source/binary/process binding".into(),
         );
     }
+    if family == OsFamily::Windows {
+        validate_windows_metadata_control(observation)?;
+    }
     let profiles = observation["profiles"]
         .as_array()
         .ok_or("Native profile observations are absent")?;
@@ -185,6 +188,127 @@ fn sha256(value: &Value) -> bool {
                 .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
     })
 }
+/// An actual owned-directory timestamp mutation must be visible to the very
+/// namespace oracle used around Check. Enumerated FileSystemInfo cache values
+/// remain stale; they are evidence of the rejected oracle, not an admission source.
+fn validate_windows_metadata_control(observation: &Value) -> Result<()> {
+    // Independently specified UTC instants, in .NET ticks since 0001-01-01.
+    const BEFORE: u64 = 637_479_219_060_000_000; // 2021-02-03T04:05:06Z
+    const AFTER: u64 = 637_819_671_670_000_000; // 2022-03-04T05:06:07Z
+    let volume = observation["storage"]["volume_root"]
+        .as_str()
+        .ok_or("Metadata control has no owned volume binding")?;
+    if volume.len() != 3 || !volume.as_bytes()[0].is_ascii_alphabetic() || &volume[1..] != ":\\" {
+        return Err("Metadata control volume is not an exact local drive root".into());
+    }
+    let root = format!("\\\\?\\{volume}EML metadata observation control");
+    let directory = format!("{root}\\directory");
+    let control = &observation["metadata_control"];
+    let cached = control["cached_before_ticks"]
+        .as_u64()
+        .filter(|ticks| *ticks > 0)
+        .ok_or("Metadata control cached timestamp is absent or nonpositive")?;
+    if control["passed"] != true
+        || control["root"] != root
+        || control["directory"] != directory
+        || control["expected_before_ticks"] != BEFORE
+        || control["expected_after_ticks"] != AFTER
+        || control["cached_after_ticks"] != cached
+        || cached == AFTER
+        || control["namespace_change_detected"] != true
+        || control["cleanup_complete"] != true
+    {
+        return Err("Native metadata control lacks exact instants, stale-cache contrast, path binding or cleanup".into());
+    }
+    let before = control["namespace_before"]
+        .as_array()
+        .ok_or("Metadata control before namespace is absent")?;
+    let after = control["namespace_after"]
+        .as_array()
+        .ok_or("Metadata control after namespace is absent")?;
+    if before.len() != 2 || after.len() != 2 || before == after {
+        return Err("Metadata control must compare two complete distinct owned namespaces".into());
+    }
+    let mut identities = std::collections::BTreeSet::new();
+    for path in [&root, &directory] {
+        let find = |entries: &[Value]| -> Result<Value> {
+            let entries: Vec<_> = entries
+                .iter()
+                .filter(|entry| entry["path"] == *path)
+                .collect();
+            if entries.len() != 1 {
+                return Err("Metadata control namespace path is missing or duplicated".into());
+            }
+            Ok(entries[0].clone())
+        };
+        let first = find(before)?;
+        let last = find(after)?;
+        let id = first["identity"]
+            .as_str()
+            .ok_or("Metadata control native identity is absent")?;
+        let identity_shape = id.split_once(':').is_some_and(|(volume, file)| {
+            volume.len() == 16
+                && file.len() == 32
+                && volume
+                    .bytes()
+                    .chain(file.bytes())
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        });
+        let attributes = first["attributes"]
+            .as_u64()
+            .filter(|value| *value <= u64::from(u32::MAX))
+            .ok_or("Metadata control attributes are not native numeric flags")?;
+        if !identity_shape
+            || !identities.insert(id.to_owned())
+            || attributes & 16 == 0
+            || attributes & 1024 != 0
+            || first["identity"] != last["identity"]
+            || first["attributes"] != last["attributes"]
+            || !explicit_null(&first, "bytes")
+            || !explicit_null(&last, "bytes")
+            || !explicit_null(&first, "sha256")
+            || !explicit_null(&last, "sha256")
+            || !first["last_write_ticks"]
+                .as_u64()
+                .is_some_and(|ticks| ticks > 0)
+            || !last["last_write_ticks"]
+                .as_u64()
+                .is_some_and(|ticks| ticks > 0)
+        {
+            return Err(
+                "Metadata control directory identity, attributes or empty namespace facts differ"
+                    .into(),
+            );
+        }
+        if path == &directory {
+            if first["last_write_ticks"] != BEFORE || last["last_write_ticks"] != AFTER {
+                return Err("Same namespace oracle did not observe the independently chosen timestamp change".into());
+            }
+            for (name, ticks) in [("native_before", BEFORE), ("native_after", AFTER)] {
+                let native = &control[name];
+                if native["Identity"] != id
+                    || native["Attributes"] != attributes
+                    || native["LastWriteTicks"] != ticks
+                {
+                    return Err(
+                        "Held-handle metadata disagrees with the actual namespace oracle".into(),
+                    );
+                }
+            }
+        }
+    }
+    if identities
+        .iter()
+        .map(|id| &id[..16])
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        != 1
+    {
+        return Err("Metadata control directories are not on the same owned volume".into());
+    }
+    Ok(())
+}
+
 fn validate_windows_profile(
     observation: &Value,
     profile: &Value,
@@ -1059,6 +1183,24 @@ pub(crate) fn valid_fixture(source: &str, binary: &ByteIdentity, family: OsFamil
         value["observations"]["cleanup"] =
             json!({"detached":true,"observation_complete":true,"forced_detach":false});
         value["observations"]["host"] = json!({"architecture":"X64"});
+        let root = r"\\?\R:\EML metadata observation control";
+        let directory = format!("{root}\\directory");
+        let root_identity = "00000000000004d2:00000000000000000000000000001001";
+        let child_identity = "00000000000004d2:00000000000000000000000000001002";
+        let before = json!([
+            {"path":root,"attributes":16,"last_write_ticks":637479219060000000u64,"identity":root_identity,"bytes":null,"sha256":null},
+            {"path":directory,"attributes":16,"last_write_ticks":637479219060000000u64,"identity":child_identity,"bytes":null,"sha256":null}
+        ]);
+        let mut after = before.clone();
+        after[1]["last_write_ticks"] = json!(637819671670000000u64);
+        value["observations"]["metadata_control"] = json!({
+            "passed":true,"root":root,"directory":directory,
+            "expected_before_ticks":637479219060000000u64,"expected_after_ticks":637819671670000000u64,
+            "cached_before_ticks":637134336000000000u64,"cached_after_ticks":637134336000000000u64,
+            "native_before":{"Identity":child_identity,"Attributes":16,"LastWriteTicks":637479219060000000u64},
+            "native_after":{"Identity":child_identity,"Attributes":16,"LastWriteTicks":637819671670000000u64},
+            "namespace_before":before,"namespace_after":after,"namespace_change_detected":true,"cleanup_complete":true
+        });
         let unattempted = json!({"file_sync":{"method":"not_requested","state":"not_attempted","native_code":null},"namespace_sync":{"method":"not_requested","state":"not_attempted","native_code":null,"required_edges":0,"completed_edges":0,"failed_edge_index":null}});
         let mut publication = unattempted.clone();
         publication["state"] = json!("not_published");

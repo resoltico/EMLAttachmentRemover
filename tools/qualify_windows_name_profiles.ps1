@@ -120,7 +120,10 @@ function Invoke-Observed([string] $Program, [string[]] $Arguments, [string] $Dir
 function Namespace-Facts([string] $Root) {
     $paths = @((Get-Item -LiteralPath (Verbatim $Root))) + @(Get-ChildItem -LiteralPath (Verbatim $Root) -Recurse -Force)
     return @($paths | Sort-Object FullName -CaseSensitive | ForEach-Object {
-        [ordered]@{ path = $_.FullName; attributes = $_.Attributes.ToString(); last_write_ticks = $_.LastWriteTimeUtc.Ticks; identity = [EmlOwnedNameVolume]::Identity((Verbatim $_.FullName)); bytes = if ($_.PSIsContainer) { $null } else { $_.Length }; sha256 = if ($_.PSIsContainer) { $null } else { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } }
+        # NTFS enumeration attributes may be stale. Identity and basic metadata
+        # come from the same retained read-attributes handle instead.
+        $native = [EmlOwnedNameVolume]::NamespaceMetadata((Verbatim $_.FullName))
+        [ordered]@{ path = $_.FullName; attributes = $native.Attributes; last_write_ticks = $native.LastWriteTicks; identity = $native.Identity; bytes = if ($_.PSIsContainer) { $null } else { $_.Length }; sha256 = if ($_.PSIsContainer) { $null } else { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } }
     })
 }
 function Verbatim([string] $Path) {
@@ -164,6 +167,8 @@ public sealed class EmlOwnedNameVolume : IDisposable {
     [StructLayout(LayoutKind.Sequential)] struct AttachParameters { public uint Version; public uint Reserved; }
     [StructLayout(LayoutKind.Sequential)] struct CaseInformation { public uint Flags; }
     [StructLayout(LayoutKind.Sequential)] struct FileIdentity { public ulong Volume; public ulong Low; public ulong High; }
+    [StructLayout(LayoutKind.Sequential)] struct FileBasicInformation { public long CreationTime; public long LastAccessTime; public long LastWriteTime; public long ChangeTime; public uint Attributes; }
+    public sealed class NamespaceEntryMetadata { public string Identity; public uint Attributes; public long LastWriteTicks; }
     [DllImport("virtdisk.dll", CharSet=CharSet.Unicode)] static extern uint CreateVirtualDisk(ref StorageType type, string path, uint access, IntPtr security, uint flags, uint providerFlags, ref CreateParameters parameters, IntPtr overlapped, out IntPtr handle);
     [DllImport("virtdisk.dll")] static extern uint AttachVirtualDisk(SafeFileHandle handle, IntPtr security, uint flags, uint providerFlags, ref AttachParameters parameters, IntPtr overlapped);
     [DllImport("virtdisk.dll")] static extern uint DetachVirtualDisk(SafeFileHandle handle, uint flags, uint providerFlags);
@@ -171,6 +176,7 @@ public sealed class EmlOwnedNameVolume : IDisposable {
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern SafeFileHandle CreateFileW(string path, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int kind, out CaseInformation info, uint size);
     [DllImport("kernel32.dll", EntryPoint="GetFileInformationByHandleEx", SetLastError=true)] static extern bool GetFileIdentity(SafeFileHandle file, int kind, out FileIdentity info, uint size);
+    [DllImport("kernel32.dll", EntryPoint="GetFileInformationByHandleEx", SetLastError=true)] static extern bool GetFileBasicInformation(SafeFileHandle file, int kind, out FileBasicInformation info, uint size);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern uint GetShortPathNameW(string path, StringBuilder output, uint size);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode)] static extern uint GetDriveTypeW(string root);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool GetVolumeInformationW(string root, StringBuilder label, uint labelSize, out uint serial, out uint component, out uint flags, StringBuilder fs, uint fsSize);
@@ -207,6 +213,19 @@ public sealed class EmlOwnedNameVolume : IDisposable {
             FileIdentity info;
             if(!GetFileIdentity(file,18,out info,24)) throw new Win32Exception(Marshal.GetLastWin32Error());
             return info.Volume.ToString("x16")+":"+info.Low.ToString("x16")+info.High.ToString("x16");
+        }
+    }
+    public static NamespaceEntryMetadata NamespaceMetadata(string path) {
+        using(var file=CreateFileW(path,0x80,7,IntPtr.Zero,3,0x02000000,IntPtr.Zero)) {
+            if(file.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+            FileIdentity identity;
+            if(!GetFileIdentity(file,18,out identity,24)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            FileBasicInformation basic;
+            if(!GetFileBasicInformation(file,0,out basic,40)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            return new NamespaceEntryMetadata {
+                Identity=identity.Volume.ToString("x16")+":"+identity.Low.ToString("x16")+identity.High.ToString("x16"),
+                Attributes=basic.Attributes, LastWriteTicks=DateTime.FromFileTimeUtc(basic.LastWriteTime).Ticks
+            };
         }
     }
     public static string ShortPath(string path) {
@@ -275,6 +294,43 @@ public sealed class EmlOwnedNameVolume : IDisposable {
     [void](Invoke-Observed $fsutil @('8dot3name','query',"${letter}:") $Out 'owned-volume-query-8dot3')
     [void](Invoke-Observed $fsutil @('fsinfo','drivetype',"${letter}:") $Out 'owned-volume-drive-type')
     [void](Invoke-Observed $fsutil @('fsinfo','volumeinfo',"${letter}:") $Out 'owned-volume-info')
+    # Prove the namespace oracle detects a deliberate metadata change even
+    # while the enumerated FileSystemInfo object retains its cached timestamp.
+    $phase = 'native-metadata-control'
+    $metadataControlRoot = Join-Path $driveRoot 'EML metadata observation control'
+    $controlDirectory = Join-Path $metadataControlRoot 'directory'
+    if ([IO.Directory]::Exists($metadataControlRoot)) { throw 'Owned metadata-control path unexpectedly exists.' }
+    $expectedBefore = [DateTime]::new(2021,2,3,4,5,6,[DateTimeKind]::Utc)
+    $expectedAfter = [DateTime]::new(2022,3,4,5,6,7,[DateTimeKind]::Utc)
+    $result.metadata_control = [ordered]@{ passed = $false; root = (Verbatim $metadataControlRoot); directory = (Verbatim $controlDirectory); expected_before_ticks = $expectedBefore.Ticks; expected_after_ticks = $expectedAfter.Ticks; cached_before_ticks = $null; cached_after_ticks = $null; native_before = $null; native_after = $null; namespace_before = $null; namespace_after = $null; namespace_change_detected = $false; cleanup_complete = $false }
+    try {
+        [void][IO.Directory]::CreateDirectory($controlDirectory)
+        [IO.Directory]::SetLastWriteTimeUtc($controlDirectory,$expectedBefore)
+        $enumerated = @(Get-ChildItem -LiteralPath (Verbatim $metadataControlRoot))
+        if ($enumerated.Count -ne 1 -or !$enumerated[0].PSIsContainer) { throw 'Metadata control did not enumerate exactly its owned directory.' }
+        $result.metadata_control.cached_before_ticks = $enumerated[0].LastWriteTimeUtc.Ticks
+        $result.metadata_control.native_before = [EmlOwnedNameVolume]::NamespaceMetadata((Verbatim $controlDirectory))
+        $controlBefore = Namespace-Facts $metadataControlRoot
+        [IO.Directory]::SetLastWriteTimeUtc($controlDirectory,$expectedAfter)
+        $result.metadata_control.cached_after_ticks = $enumerated[0].LastWriteTimeUtc.Ticks
+        $result.metadata_control.native_after = [EmlOwnedNameVolume]::NamespaceMetadata((Verbatim $controlDirectory))
+        $controlAfter = Namespace-Facts $metadataControlRoot
+        $beforeChild = @($controlBefore | Where-Object { [IO.Path]::GetFileName($_.path) -ceq 'directory' })
+        $afterChild = @($controlAfter | Where-Object { [IO.Path]::GetFileName($_.path) -ceq 'directory' })
+        if ($beforeChild.Count -ne 1 -or $afterChild.Count -ne 1) { throw 'Native namespace control lost its exact directory.' }
+        $result.metadata_control.namespace_before = @($controlBefore)
+        $result.metadata_control.namespace_after = @($controlAfter)
+        $result.metadata_control.namespace_change_detected = ($controlBefore | ConvertTo-Json -Depth 10 -Compress) -cne ($controlAfter | ConvertTo-Json -Depth 10 -Compress)
+        $controlBefore | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $Out 'metadata-control-before.json') -Encoding utf8NoBOM
+        $controlAfter | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $Out 'metadata-control-after.json') -Encoding utf8NoBOM
+        $beforeMetadata = $result.metadata_control.native_before; $afterMetadata = $result.metadata_control.native_after
+        if ($beforeMetadata.LastWriteTicks -ne $expectedBefore.Ticks -or $afterMetadata.LastWriteTicks -ne $expectedAfter.Ticks -or $beforeChild[0].last_write_ticks -ne $expectedBefore.Ticks -or $afterChild[0].last_write_ticks -ne $expectedAfter.Ticks -or $beforeMetadata.Identity -ne $afterMetadata.Identity -or $beforeMetadata.Attributes -ne $afterMetadata.Attributes -or $result.metadata_control.cached_before_ticks -le 0 -or $result.metadata_control.cached_before_ticks -ne $result.metadata_control.cached_after_ticks -or $result.metadata_control.cached_after_ticks -eq $expectedAfter.Ticks -or !$result.metadata_control.namespace_change_detected) { throw 'Native namespace metadata control did not detect the actual directory timestamp change.' }
+        $result.metadata_control.passed = $true
+    } finally {
+        if ([IO.Directory]::Exists($metadataControlRoot)) { [IO.Directory]::Delete($metadataControlRoot,$true) }
+        $result.metadata_control.cleanup_complete = ![IO.Directory]::Exists($metadataControlRoot)
+        if (!$result.metadata_control.cleanup_complete) { throw 'Owned metadata-control cleanup is unconfirmed.' }
+    }
     foreach ($profile in $result.profiles) {
         $directory = Join-Path $Out $profile.profile
         [void][IO.Directory]::CreateDirectory($directory)
@@ -381,7 +437,7 @@ finally {
         try { $result.binary_unchanged = (Get-FileHash -LiteralPath $Binary -Algorithm SHA256).Hash.ToLowerInvariant() -eq $result.binary_sha256 }
         catch { $result.binary_unchanged = $false; $result.failure = $_.Exception.Message }
     } else { $result.binary_unchanged = $false }
-    $result.passed = $null -eq $result.failure -and $result.binary_unchanged -and $result.cleanup.detached -and $result.cleanup.observation_complete -and !($result.cleanup.Contains('failure')) -and !($result.cleanup.Contains('observation_failure')) -and @($result.profiles | Where-Object { $_.status -ne 'passed' }).Count -eq 0
+    $result.passed = $null -eq $result.failure -and $result.Contains('metadata_control') -and $result.metadata_control.passed -and $result.metadata_control.cleanup_complete -and $result.binary_unchanged -and $result.cleanup.detached -and $result.cleanup.observation_complete -and !($result.cleanup.Contains('failure')) -and !($result.cleanup.Contains('observation_failure')) -and @($result.profiles | Where-Object { $_.status -ne 'passed' }).Count -eq 0
     $json = $result | ConvertTo-Json -Depth 100
     [IO.File]::WriteAllText((Join-Path $Out 'result.json'), $json + "`n", [Text.UTF8Encoding]::new($false))
 }

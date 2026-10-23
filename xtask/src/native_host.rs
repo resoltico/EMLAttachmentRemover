@@ -18,6 +18,21 @@ pub(crate) fn inspect_target(root: &Path, plan: &BuildPlan, target: &str) -> Res
 }
 
 pub(crate) fn inspect(root: &Path, target: &str, os: &str, architecture: &str) -> Result<Value> {
+    Ok(runner_identity(inspect_process(
+        root,
+        target,
+        os,
+        architecture,
+    )?))
+}
+
+fn runner_identity(mut observed: Value) -> Value {
+    observed["runner_image"] = json!(std::env::var("ImageOS").ok());
+    observed["runner_image_version"] = json!(std::env::var("ImageVersion").ok());
+    observed
+}
+
+fn inspect_process(root: &Path, target: &str, os: &str, architecture: &str) -> Result<Value> {
     if std::env::consts::OS != os || std::env::consts::ARCH != architecture {
         return Err("Native verification requires the target's actual OS and CPU".into());
     }
@@ -60,7 +75,7 @@ pub(crate) fn inspect(root: &Path, target: &str, os: &str, architecture: &str) -
             return Err("Running inspector PE differs from the requested native CPU".into());
         }
         Ok(
-            json!({"target":target,"process_os":os,"process_architecture":architecture,"native_machine":observed.native_machine,"emulated_process_machine":observed.process_machine,"actual_kernel":{"major":observed.major,"minor":observed.minor,"build":observed.build},"compiler":compiler,"runner_image":std::env::var("ImageOS").ok(),"runner_image_version":std::env::var("ImageVersion").ok(),"scope":"actual process-machine/kernel/PE/compiler observations; no all-client-patches compatibility claim"}),
+            json!({"target":target,"process_os":os,"process_architecture":architecture,"native_machine":observed.native_machine,"emulated_process_machine":observed.process_machine,"actual_kernel":{"major":observed.major,"minor":observed.minor,"build":observed.build},"compiler":compiler,"scope":"actual process-machine/kernel/PE/compiler observations; no all-client-patches compatibility claim"}),
         )
     }
     #[cfg(not(any(unix, windows)))]
@@ -194,5 +209,24 @@ mod tests {
         ] {
             assert!(translation_response(arch, code, out, err).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod runner_identity_tests {
+    use super::*;
+
+    #[test]
+    fn canonical_runner_identity_retains_actual_environment_including_unavailable_values() {
+        let observed = runner_identity(json!({"process_os":std::env::consts::OS}));
+        assert_eq!(
+            observed.get("runner_image"),
+            Some(&json!(std::env::var("ImageOS").ok()))
+        );
+        assert_eq!(
+            observed.get("runner_image_version"),
+            Some(&json!(std::env::var("ImageVersion").ok()))
+        );
+        assert_eq!(observed["process_os"], std::env::consts::OS);
     }
 }

@@ -561,3 +561,118 @@ fn unsupported_linux_new_names_refuse_independently_of_unsafe_creation_modes() {
         assert!(validate(&bad, "owned-source", &image, target).is_err());
     }
 }
+
+#[test]
+fn windows_metadata_control_requires_actual_path_bound_timestamp_mutation_and_cleanup() {
+    let image = ByteIdentity::of(b"owned shipping executable");
+    let target = platform(OsFamily::Windows);
+    let baseline = valid_fixture("owned-source", &image, OsFamily::Windows);
+    let control = &baseline["observations"]["metadata_control"];
+    // Literal independent oracle: .NET UTC ticks for these two calendar instants.
+    assert_eq!(control["expected_before_ticks"], 637479219060000000u64);
+    assert_eq!(control["expected_after_ticks"], 637819671670000000u64);
+    // The enumeration can already predate SetLastWriteTimeUtc(2021). Its stale
+    // cached value need not equal the authoritative native before observation.
+    assert_eq!(control["cached_before_ticks"], 637134336000000000u64); // 2020-01-01Z
+    assert_eq!(control["cached_after_ticks"], 637134336000000000u64);
+    assert_eq!(control["root"], r"\\?\R:\EML metadata observation control");
+    assert_eq!(
+        control["directory"],
+        r"\\?\R:\EML metadata observation control\directory"
+    );
+    validate(&baseline, "owned-source", &image, target).unwrap();
+    for missing in [
+        "/observations/metadata_control",
+        "/observations/metadata_control/root",
+        "/observations/metadata_control/cached_before_ticks",
+        "/observations/metadata_control/cached_after_ticks",
+        "/observations/metadata_control/directory",
+        "/observations/metadata_control/native_before/Identity",
+        "/observations/metadata_control/native_after/Attributes",
+        "/observations/metadata_control/namespace_before",
+        "/observations/metadata_control/namespace_after",
+        "/observations/metadata_control/cleanup_complete",
+    ] {
+        let mut bad = baseline.clone();
+        remove_member(&mut bad, missing);
+        assert!(
+            validate(&bad, "owned-source", &image, target).is_err(),
+            "missing {missing}"
+        );
+    }
+    for (suffix, contradiction) in [
+        ("passed", json!(false)),
+        ("root", json!(r"\\?\S:\EML metadata observation control")),
+        (
+            "directory",
+            json!(r"\\?\R:\EML metadata observation control\other"),
+        ),
+        ("expected_before_ticks", json!(637479219060000001u64)),
+        ("expected_after_ticks", json!(637819671670000001u64)),
+        ("cached_after_ticks", json!(637819671670000000u64)),
+        ("cached_after_ticks", json!(637479219060000000u64)),
+        ("cached_before_ticks", json!(0)),
+        ("cached_before_ticks", json!(-1)),
+        ("native_after/LastWriteTicks", json!(637479219060000000u64)),
+        (
+            "native_after/Identity",
+            json!("00000000000004d2:0000000000000000000000000000aaaa"),
+        ),
+        ("native_after/Attributes", json!(32)),
+        (
+            "namespace_after/1/last_write_ticks",
+            json!(637479219060000000u64),
+        ),
+        (
+            "namespace_after/1/path",
+            json!(r"\\?\R:\unrelated\directory"),
+        ),
+        (
+            "namespace_after/1/identity",
+            json!("00000000000004d2:0000000000000000000000000000aaaa"),
+        ),
+        ("namespace_after/1/attributes", json!("Directory")),
+        ("namespace_after/1/bytes", json!(0)),
+        ("namespace_after/1/sha256", json!("e".repeat(64))),
+        ("namespace_change_detected", json!(false)),
+        ("cleanup_complete", json!(false)),
+    ] {
+        let mut bad = baseline.clone();
+        *bad.pointer_mut(&format!("/observations/metadata_control/{suffix}"))
+            .unwrap() = contradiction;
+        assert!(
+            validate(&bad, "owned-source", &image, target).is_err(),
+            "contradictory {suffix}"
+        );
+    }
+    // A success flag cannot replace the actual changed directory in a complete
+    // namespace, nor can a substituted native volume/entry supply that proof.
+    for mutation in 0..5 {
+        let mut bad = baseline.clone();
+        let control = &mut bad["observations"]["metadata_control"];
+        match mutation {
+            0 => control["namespace_after"] = control["namespace_before"].clone(),
+            1 => {
+                control["namespace_after"].as_array_mut().unwrap().pop();
+            }
+            2 => {
+                control["namespace_after"][0] = control["namespace_after"][1].clone();
+            }
+            3 => {
+                for phase in ["namespace_before", "namespace_after"] {
+                    control[phase][0]["identity"] =
+                        json!("000000000000beef:00000000000000000000000000001001");
+                }
+            }
+            4 => {
+                control["cached_before_ticks"] = json!(637819671670000000u64);
+                control["cached_after_ticks"] = json!(637819671670000000u64);
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            validate(&bad, "owned-source", &image, target).is_err(),
+            "substitution {mutation}"
+        );
+    }
+}

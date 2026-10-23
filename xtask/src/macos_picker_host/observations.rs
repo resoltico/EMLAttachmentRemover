@@ -54,8 +54,8 @@ impl Observer<'_> {
             process_os: field("process_os")?,
             process_architecture: field("process_architecture")?,
             kernel_machine: field("kernel_machine")?,
-            image_os: std::env::var("ImageOS")?,
-            image_version: std::env::var("ImageVersion")?,
+            image_os: field("runner_image")?,
+            image_version: field("runner_image_version")?,
             product_version: self.checked(
                 "product-version",
                 "/usr/bin/sw_vers",

@@ -7,22 +7,31 @@ import XCTest
 final class DesktopInteractionTests: XCTestCase {
   var pickerBaselineSettled = false
   enum InteractionFailure: Error { case expectedPresentation }
-  // The fixture uses the real outer scroll, never AX auto-scroll or a retry
-  // search. These two domains have stable controls on opposite ends of it.
+  // Always make one bounded gesture to the requested end. A visible endpoint
+  // can coexist with a clipped header/footer; the outer window also includes
+  // titlebar space that is not part of the Slint content viewport.
   @MainActor
   func showReportDetails(_ app: XCUIApplication) throws {
     let window = app.windows["EML Attachment Remover"]
-    let technical = app.checkBoxes["Technical details"]
-    if technical.exists && technical.isHittable && window.frame.contains(technical.frame) {
-      return
-    }
-    let top = app.buttons["Choose messages…"]
-    guard top.exists, top.isHittable, window.frame.contains(top.frame) else {
-      XCTFail("No physically visible outer-scroll anchor for report details")
+    let groups = window.children(matching: .group)
+    guard groups.count == 1 else { throw InteractionFailure.expectedPresentation }
+    let content = groups.firstMatch
+    guard !content.frame.isEmpty, window.frame.contains(content.frame) else {
       throw InteractionFailure.expectedPresentation
     }
-    top.scroll(byDeltaX: 0, deltaY: -1000)
-    guard technical.exists, technical.isHittable, window.frame.contains(technical.frame) else {
+    let technical = app.checkBoxes["Technical details"]
+    let top = app.buttons["Choose messages…"]
+    let anchor: XCUIElement
+    if top.exists && top.isHittable && content.frame.contains(top.frame) {
+      anchor = top
+    } else if technical.exists && technical.isHittable && content.frame.contains(technical.frame) {
+      anchor = technical
+    } else {
+      XCTFail("No physically visible content anchor for the report-end scroll")
+      throw InteractionFailure.expectedPresentation
+    }
+    anchor.scroll(byDeltaX: 0, deltaY: -1000)
+    guard technical.exists, technical.isHittable, content.frame.contains(technical.frame) else {
       XCTFail("Report controls remain clipped after the one owned scroll")
       throw InteractionFailure.expectedPresentation
     }
@@ -31,15 +40,25 @@ final class DesktopInteractionTests: XCTestCase {
   @MainActor
   func showRunControls(_ app: XCUIApplication) throws {
     let window = app.windows["EML Attachment Remover"]
-    let top = app.buttons["Choose messages…"]
-    if top.exists && top.isHittable && window.frame.contains(top.frame) { return }
-    let technical = app.checkBoxes["Technical details"]
-    guard technical.exists, technical.isHittable, window.frame.contains(technical.frame) else {
-      XCTFail("No physically visible outer-scroll anchor for run controls")
+    let groups = window.children(matching: .group)
+    guard groups.count == 1 else { throw InteractionFailure.expectedPresentation }
+    let content = groups.firstMatch
+    guard !content.frame.isEmpty, window.frame.contains(content.frame) else {
       throw InteractionFailure.expectedPresentation
     }
-    technical.scroll(byDeltaX: 0, deltaY: 1000)
-    guard top.exists, top.isHittable, window.frame.contains(top.frame) else {
+    let top = app.buttons["Choose messages…"]
+    let technical = app.checkBoxes["Technical details"]
+    let anchor: XCUIElement
+    if technical.exists && technical.isHittable && content.frame.contains(technical.frame) {
+      anchor = technical
+    } else if top.exists && top.isHittable && content.frame.contains(top.frame) {
+      anchor = top
+    } else {
+      XCTFail("No physically visible content anchor for the run-control-end scroll")
+      throw InteractionFailure.expectedPresentation
+    }
+    anchor.scroll(byDeltaX: 0, deltaY: 1000)
+    guard top.exists, top.isHittable, content.frame.contains(top.frame) else {
       XCTFail("Run controls remain clipped after the one owned scroll")
       throw InteractionFailure.expectedPresentation
     }
