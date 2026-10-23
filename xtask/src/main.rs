@@ -8,7 +8,6 @@ mod cli_build;
 mod commands;
 mod dependencies;
 mod desktop_evidence;
-#[cfg(any(target_os = "macos", test))]
 mod desktop_preferences;
 mod distribution;
 mod fuzz;

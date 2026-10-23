@@ -36,6 +36,7 @@ impl DesktopCase {
     pub(crate) fn uses_native_pickers(self) -> bool {
         matches!(self, Self::Workflow | Self::Picker)
     }
+    #[cfg(target_os = "macos")]
     pub(crate) fn is_publication(self) -> bool {
         matches!(
             self,
