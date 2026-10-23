@@ -387,13 +387,18 @@ final class DesktopInteractionTests: XCTestCase {
 
   @MainActor
   func requireRunCounts(_ app: XCUIApplication, counts: String) async throws {
-    try showRunControls(app)
+    try showReportDetails(app)
     let predicate = NSPredicate { _, _ in
-      app.buttons.allElementsBoundByIndex.contains {
-        let text = $0.title + "\n" + $0.label + "\n" + ($0.value as? String ?? "")
-        return text.contains(counts) && text.contains("Finished")
-          && !text.contains("Finished with errors") && text.contains("0 failed · 0 not processed")
+      let summaries = app.staticTexts.allElementsBoundByIndex.compactMap { element in
+        [element.title, element.label, element.value as? String ?? ""].first {
+          $0.hasPrefix("Run summary: ")
+        }
       }
+      guard summaries.count == 1 else { return false }
+      let text = summaries[0]
+      let lines = text.components(separatedBy: .newlines)
+      return lines.contains("\(counts) · 0 failed · 0 not processed")
+        && lines.contains("Finished.") && !text.contains("Finished with errors")
     }
     let result = await XCTWaiter.fulfillment(
       of: [XCTNSPredicateExpectation(predicate: predicate, object: nil)], timeout: 30)
