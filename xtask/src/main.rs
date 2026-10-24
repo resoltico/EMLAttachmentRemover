@@ -1,5 +1,6 @@
 //! Repository verification and distribution commands.
 #![forbid(unsafe_code)]
+mod app_reference;
 mod archive_verify;
 mod campaign;
 mod check;
@@ -22,6 +23,8 @@ mod macos_archive;
 mod macos_icon;
 #[cfg(target_os = "macos")]
 mod macos_interaction;
+#[cfg(target_os = "macos")]
+mod macos_operation_fixture;
 #[cfg(target_os = "macos")]
 mod macos_operation_ui;
 #[cfg(target_os = "macos")]
@@ -245,12 +248,16 @@ enum Task {
         #[arg(long)]
         icons: PathBuf,
     },
-    /// Qualify the complete desktop case set against a frozen native app archive.
+    /// Qualify complete desktop cases against frozen shipping and operation-fixture app archives.
     SmokeMacosApp {
         #[arg(long)]
         archive: PathBuf,
         #[arg(long)]
         reference: PathBuf,
+        #[arg(long)]
+        operation_fixture: PathBuf,
+        #[arg(long)]
+        operation_reference: PathBuf,
     },
     /// Test actual native picker compatibility against a frozen app candidate.
     CheckMacosPicker {

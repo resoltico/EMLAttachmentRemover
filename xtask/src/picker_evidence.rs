@@ -45,6 +45,7 @@ macro_rules! record {
     (@next $map:ident,$ty:ty,$decoder:path)=>{$decoder(&mut $map)?};
     (@next $map:ident,$ty:ty)=>{$map.next_value::<$ty>()?};
 }
+pub(crate) use record;
 record!(IdentityObject {
     byte_length: usize,
     sha256: String

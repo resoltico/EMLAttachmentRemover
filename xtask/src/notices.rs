@@ -485,3 +485,66 @@ fn checked_review(root: &Path, tool: &str) -> Result<Review> {
     }
     Ok(review)
 }
+
+/// Same reviewed worker packages, with only the declared workspace fixture features.
+#[cfg(target_os = "macos")]
+pub(crate) fn operation_fixture_legal(
+    root: &Path,
+    target: &str,
+    shipping_features: Vec<u8>,
+    shipping_materials: Vec<u8>,
+    out: &Path,
+) -> Result<crate::app_reference::LegalBinding> {
+    use crate::app_reference::{LegalBinding, ReferenceDocument};
+    let mut materials = crate::picker_evidence::observation_document(&shipping_materials)?;
+    let expected = feature_arguments(target, NoticeComponent::Worker);
+    let mut args: Vec<String> =
+        serde_json::from_value(materials["generation"]["feature_arguments"].clone())?;
+    if args != expected {
+        return Err("Shipping worker material feature command differs".into());
+    }
+    args.extend([
+        "--features".to_owned(),
+        "eml-worker/native-fixtures".to_owned(),
+    ]);
+    let mut command = Command::new("cargo");
+    command
+        .current_dir(root)
+        .args(&args)
+        .env("CARGO_INCREMENTAL", "0");
+    let log = out.join("fixture-feature-tree.log");
+    let process = crate::controller()?.run_separate_output(
+        command,
+        &log,
+        std::time::Duration::from_secs(120),
+    )?;
+    process.require_success(&log)?;
+    let packages = materials["packages"]
+        .as_array()
+        .ok_or("Missing worker material package inventory")?
+        .iter()
+        .map(|v| -> Result<(String, String)> {
+            Ok((
+                v["name"]
+                    .as_str()
+                    .ok_or("Missing material package name")?
+                    .to_owned(),
+                v["version"]
+                    .as_str()
+                    .ok_or("Missing material package version")?
+                    .to_owned(),
+            ))
+        })
+        .collect::<Result<BTreeSet<_>>>()?;
+    let text = String::from_utf8(read(&log, 4 * 1024 * 1024)?)?;
+    let fixture_features = serde_json::to_vec_pretty(&feature_tree(&text, &packages)?)?;
+    materials["generation"]["feature_arguments"] = serde_json::to_value(args)?;
+    let legal = LegalBinding {
+        shipping_features: ReferenceDocument::new(shipping_features)?,
+        fixture_features: ReferenceDocument::new(fixture_features)?,
+        shipping_materials: ReferenceDocument::new(shipping_materials)?,
+        fixture_materials: ReferenceDocument::new(serde_json::to_vec_pretty(&materials)?)?,
+    };
+    crate::app_reference::validate_legal(&legal)?;
+    Ok(legal)
+}

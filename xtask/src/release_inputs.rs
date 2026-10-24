@@ -137,6 +137,22 @@ fn read(path: &Path, maximum: usize) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
+fn read_picker_records(receipt_path: &Path) -> Result<(Vec<u8>, FrozenRecord)> {
+    let bytes = read(receipt_path, MAX_RECORD).map_err(|error| {
+        format!(
+            "Read required picker qualification {}: {error}",
+            receipt_path.display()
+        )
+    })?;
+    let product_path = receipt_path.with_file_name("product-result.json");
+    let product = FrozenRecord::read(&product_path).map_err(|error| {
+        format!(
+            "Read required picker product {}: {error}",
+            product_path.display()
+        )
+    })?;
+    Ok((bytes, product))
+}
 fn files(root: &Path) -> Result<Vec<PathBuf>> {
     fn visit(
         path: &Path,
@@ -323,15 +339,138 @@ fn host(
     }
     Ok(())
 }
+fn check_operation_verification(
+    value: &Value,
+    fixture: &crate::app_reference::OperationFixtureEnvelope,
+    reference: &crate::app_reference::OperationFixtureReference,
+    plan: &BuildPlan,
+    sdk: u32,
+) -> Result<()> {
+    let app = serde_json::to_value(&reference.app)?;
+    source_epoch_binding(value, plan)?;
+    if value["stage"] != "operation_fixture"
+        || serde_json::from_value::<ByteIdentity>(value["snapshot"].clone())? != fixture.archive
+    {
+        return Err("Controlled companion verification stage/archive differs".into());
+    }
+    bundle_timestamps(value, &app, plan)?;
+    let images = value["images"]["images"]
+        .as_array()
+        .ok_or("Controlled companion lacks native image observations")?;
+    let mut paths = BTreeSet::new();
+    for image in images {
+        let path = image["path"]
+            .as_str()
+            .ok_or("Missing companion image path")?;
+        let entitlements = match path {
+            crate::app_reference::MAIN => &reference.gui.fixture_signature.entitlements,
+            crate::app_reference::WORKER => &reference.worker.fixture_signature.entitlements,
+            _ => return Err("Unexpected controlled companion native image".into()),
+        };
+        if !paths.insert(path)
+            || image.get("entitlements") != Some(entitlements)
+            || image["bytes"] != app["files"][path][0]
+            || image["image"]["architecture"] != app["architecture"]
+            || image["image"]["minimum"] != app["minimum"]
+            || image["image"]["sdk"].as_u64() != Some(u64::from(sdk))
+            || image["runtime"]["adhoc_signature_verified"] != true
+        {
+            return Err(
+                "Controlled companion native image differs from its frozen reference".into(),
+            );
+        }
+    }
+    if paths != BTreeSet::from([crate::app_reference::MAIN, crate::app_reference::WORKER]) {
+        return Err("Controlled companion native image set differs".into());
+    }
+    let runs = value["worker"]["runs"]
+        .as_array()
+        .ok_or("Controlled companion lacks extracted-worker observations")?;
+    if runs.len() != 2 {
+        return Err("Controlled companion extracted-worker case set differs".into());
+    }
+    for (run, expected) in runs.iter().zip(["created", "up_to_date"]) {
+        let completion = &run["completion"];
+        let report = &run["report"];
+        let items = report["items"]
+            .as_array()
+            .ok_or("Controlled companion report lacks its one input result")?;
+        let expected_counts = serde_json::json!({
+            "created": u8::from(expected == "created"),
+            "up_to_date": u8::from(expected == "up_to_date"),
+            "planned": 0, "failed": 0, "not_processed": 0
+        });
+        // Each fixed smoke must retain one complete report1 envelope.
+        if run
+            .as_object()
+            .map(|v| v.keys().map(String::as_str).collect::<BTreeSet<_>>())
+            != Some(BTreeSet::from(["expected", "completion", "report"]))
+            || report
+                .as_object()
+                .map(|v| v.keys().map(String::as_str).collect::<BTreeSet<_>>())
+                != Some(BTreeSet::from([
+                    "schema",
+                    "schema_version",
+                    "version",
+                    "build",
+                    "run_id",
+                    "start",
+                    "items",
+                    "summary",
+                    "protocol_failure",
+                    "worker",
+                    "terminal",
+                ]))
+            || report["schema"] != "eml-technical-report"
+            || report["schema_version"].as_u64() != Some(1)
+            || report["run_id"].as_u64().is_none_or(|id| id == 0)
+            || report["run_id"] != completion["operation_id"]
+            || items.len() != 1
+            || report["start"]["total"].as_u64() != Some(1)
+            || report["start"]["version"] != plan.version()
+            || report["start"]["program"] != eml_core::product::CLI_NAME
+            || report["start"]["protocol"].as_u64() != Some(1)
+            || report["start"]["dry_run"] != false
+            || report["start"]["collection_complete"] != true
+            || report["summary"]["collection_complete"] != true
+            || report["summary"]["counts"] != expected_counts
+            || report["summary"]["interrupted"] != false
+            || report["summary"].get("run_error") != Some(&Value::Null)
+            || report["terminal"] != "completed"
+            || report["worker"] != *completion
+            || items[0]["index"].as_u64() != Some(0)
+            || items[0].get("error") != Some(&Value::Null)
+            || run["expected"] != expected
+            || completion["settled"] != true
+            || completion["reusable"] != true
+            || completion["exit_code"].as_i64() != Some(0)
+            || completion.get("failure") != Some(&Value::Null)
+            || completion.get("signal") != Some(&Value::Null)
+            || report["items"][0]["status"] != expected
+            || report["summary"]["exit_code"].as_i64() != Some(0)
+            || report.get("protocol_failure") != Some(&Value::Null)
+            || report["version"] != plan.version()
+            || report["build"] != eml_core::product::BUILD_NUMBER
+        {
+            return Err("Controlled companion extracted-worker observation did not qualify".into());
+        }
+    }
+    Ok(())
+}
 fn check_desktop(
     document: &Value,
-    source: &str,
+    plan: &BuildPlan,
     target: &crate::distribution::NativeTarget,
     workflow: &WorkflowIdentity,
     archive: &ByteIdentity,
-    reference: &ByteIdentity,
-    app_root: &str,
+    reference: &FrozenRecord,
+    fixture_document: &Value,
 ) -> Result<()> {
+    let source = plan.source_commit();
+    let shipping_reference = reference.document()?;
+    let app_root = shipping_reference["root"]
+        .as_str()
+        .ok_or("Shipping reference lacks its bundle root")?;
     record_binding(document, source, target.rust_target(), workflow)?;
     let desktop = target
         .desktop()
@@ -344,7 +483,8 @@ fn check_desktop(
     {
         return Err("Desktop consumer stage/archive identity differs".into());
     }
-    if serde_json::from_value::<ByteIdentity>(document["reference"].clone())? != *reference {
+    if serde_json::from_value::<ByteIdentity>(document["reference"].clone())? != reference.identity
+    {
         return Err("Desktop consumer reference identity differs".into());
     }
     let interaction = &document["verification"]["gui_interaction"];
@@ -365,6 +505,33 @@ fn check_desktop(
     if interaction["operation_controls"]["shipping_bundle_unchanged"] != true {
         return Err("Operation-control fixture changed the shipping bundle".into());
     }
+    if interaction["operation_controls"].get("operation_fixture") != Some(fixture_document) {
+        return Err("Controlled companion differs from the frozen producer metadata".into());
+    }
+    let fixture: crate::app_reference::OperationFixtureEnvelope =
+        serde_json::from_value(fixture_document.clone())?;
+    let fixture_reference = fixture.validate(archive, reference.contents.as_bytes())?;
+    let fixture_app = serde_json::to_value(&fixture_reference.app)?;
+    record_binding(&fixture_app, source, target.rust_target(), workflow)?;
+    source_epoch_binding(&fixture_app, plan)?;
+    if fixture_app["version"] != plan.version()
+        || fixture_app["architecture"] != target.platform().architecture().as_str()
+        || fixture_app["root"] != "Observed Operations.app"
+    {
+        return Err("Controlled companion source profile differs from the admitted product".into());
+    }
+    check_operation_verification(
+        &interaction["operation_controls"]["verification"],
+        &fixture,
+        &fixture_reference,
+        plan,
+        crate::app_reference::packed_version(&fixture_reference.worker.toolchain.sdk_version)?,
+    )?;
+    if interaction["operation_controls"].get("observed_bundle") != Some(&fixture_app["files"]) {
+        return Err(
+            "Observed controlled bundle differs from the complete frozen fixture tree".into(),
+        );
+    }
     let cases = interaction["operation_controls"]["cases"]
         .as_array()
         .ok_or("Missing operation-control cases")?;
@@ -381,7 +548,13 @@ fn check_desktop(
         if !observed.insert(name) {
             return Err("Duplicate operation-control case".into());
         }
-        crate::desktop_evidence::validate_case(value, *case, source, archive, app_root)?;
+        crate::desktop_evidence::validate_case(
+            value,
+            *case,
+            source,
+            &fixture.archive,
+            &fixture_reference.app.root,
+        )?;
     }
     if observed != expected.iter().map(|case| case.name()).collect() {
         return Err("Desktop operation-control case set differs".into());
@@ -508,6 +681,11 @@ fn check_product(
             }
         }
         ProductRole::DesktopApp => {
+            if producer.get("operation_fixture_failure") != Some(&Value::Null) {
+                return Err(
+                    "App producer retains a failed or missing controlled-companion result".into(),
+                );
+            }
             if producer["stage"] != "native_candidate"
                 || producer["verification"]["stage"] != "native_candidate"
                 || serde_json::from_value::<ByteIdentity>(producer["identity"].clone())?
@@ -535,6 +713,72 @@ fn check_product(
             {
                 return Err("App reference schema/version differs".into());
             }
+            let fixture_document = producer
+                .get("operation_fixture")
+                .ok_or("App producer lacks its frozen controlled companion")?;
+            let fixture: crate::app_reference::OperationFixtureEnvelope =
+                serde_json::from_value(fixture_document.clone())?;
+            let fixture_reference =
+                fixture.validate(&product.archive, reference.contents.as_bytes())?;
+            let toolchain = &fixture_reference.worker.toolchain;
+            let rust_pin: toml::Value = toml::from_str(include_str!("../../rust-toolchain.toml"))?;
+            let release = rust_pin["toolchain"]["channel"]
+                .as_str()
+                .ok_or("Missing pinned Rust compiler release")?;
+            if toolchain
+                .rust_identity
+                .lines()
+                .filter(|line| *line == format!("release: {release}"))
+                .count()
+                != 1
+                || toolchain
+                    .rust_identity
+                    .lines()
+                    .filter(|line| *line == format!("host: {}", target.rust_target()))
+                    .count()
+                    != 1
+                || toolchain.minimum
+                    != crate::app_reference::packed_version(plan.floors().macos_minimum())?
+            {
+                return Err("Controlled companion worker toolchain differs from the admitted producer policy".into());
+            }
+            let shipping_images = producer["verification"]["images"]["images"]
+                .as_array()
+                .ok_or("Shipping producer lacks its native image SDK observation")?;
+            let shipping_gui: Vec<_> = shipping_images
+                .iter()
+                .filter(|image| image["path"] == crate::app_reference::MAIN)
+                .collect();
+            if shipping_gui.len() != 1
+                || shipping_gui[0]["bytes"]
+                    != reference_document["files"][crate::app_reference::MAIN][0]
+            {
+                return Err(
+                    "Controlled companion SDK differs from the frozen shipping GUI image".into(),
+                );
+            }
+            let sdk: u32 = shipping_gui[0]["image"]["sdk"]
+                .as_u64()
+                .ok_or("Shipping GUI lacks its observed SDK")?
+                .try_into()?;
+            toolchain.validate_observed(
+                producer["host"]["compiler"]
+                    .as_str()
+                    .ok_or("Producer compiler observation missing")?,
+                &format!(
+                    "Xcode {}\nBuild version {}\n",
+                    plan.xcode().version(),
+                    plan.xcode().build()
+                ),
+                sdk,
+            )?;
+            check_operation_verification(
+                &producer["operation_fixture_verification"],
+                &fixture,
+                &fixture_reference,
+                plan,
+                sdk,
+            )?;
             let desktop = product
                 .desktop
                 .as_ref()
@@ -544,12 +788,12 @@ fn check_product(
             bundle_timestamps(&desktop["verification"], &reference_document, plan)?;
             check_desktop(
                 &desktop,
-                source,
+                plan,
                 target,
                 workflow,
                 &product.archive,
-                &reference.identity,
-                artifact.root(),
+                reference,
+                fixture_document,
             )?;
             let requires_picker = target
                 .desktop()
@@ -786,10 +1030,8 @@ pub(crate) fn run(
                         workflow.attempt
                     ))
                     .join("result.json");
-                let bytes = read(&receipt_path, MAX_RECORD)?;
-                product.picker_product = Some(FrozenRecord::read(
-                    &receipt_path.with_file_name("product-result.json"),
-                )?);
+                let (bytes, picker_product) = read_picker_records(&receipt_path)?;
+                product.picker_product = Some(picker_product);
                 product.picker = Some(crate::picker_evidence::verify_receipt(
                     root,
                     plan,

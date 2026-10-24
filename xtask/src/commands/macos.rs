@@ -22,9 +22,19 @@ pub(super) fn run(root: &Path, plan: &BuildPlan, task: Task) -> Result<()> {
         Task::BuildMacosSources { out } => crate::macos_app::build_sources(root, plan, &out),
         Task::CheckMacosVolume { out } => crate::macos_volume::run(root, &out),
         Task::BuildMacosApp { out, icons } => crate::macos_archive::build(root, plan, &out, &icons),
-        Task::SmokeMacosApp { archive, reference } => {
-            crate::macos_archive::smoke(root, plan, &archive, &reference)
-        }
+        Task::SmokeMacosApp {
+            archive,
+            reference,
+            operation_fixture,
+            operation_reference,
+        } => crate::macos_archive::smoke(
+            root,
+            plan,
+            &archive,
+            &reference,
+            &operation_fixture,
+            &operation_reference,
+        ),
         Task::CheckMacosPicker { archive, reference } => {
             crate::macos_archive::picker(root, plan, &archive, &reference)
         }

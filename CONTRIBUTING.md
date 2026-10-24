@@ -61,19 +61,27 @@ local tests must not change Accessibility permissions or preference domains.
 
 Build complete app archives on the native macOS26 hosts and execute the same bytes
 on matching macOS15 hosts. The minimum remains 15.0. Compile the owner icon once
-with `cargo xtask compile-macos-icon --out target/icon-input`; pass that validated
-same-source directory to both native builders with
-`cargo xtask build-macos-app --icons target/icon-input --out target/app-build`.
-This produces a `native_candidate` receipt after structure, signature, CPU,
-minimum-OS and actual extracted-worker checks. On each matching macOS15 host,
-`cargo xtask smoke-macos-app --archive ARCHIVE --reference REFERENCE` requires the
-complete desktop case set against those frozen bytes. On macOS26 Intel,
+with `cargo xtask compile-macos-icon --out target/icon-input`. On each native CPU,
+run `cargo xtask qualify --target NATIVE_TARGET --icons target/icon-input --out target/native-app-build`
+with that validated same-source icon directory. Besides the shipping archive and
+`native_candidate` receipt, this freezes the nonshipping controlled-worker archive
+and reference under `app-build/operation-fixture/`, named `operation-fixture.zip`
+and `operation-fixture.reference.json`. Structure, signature, CPU, minimum-OS,
+extracted-worker and GUI-code/security/legal equivalence checks remain required.
+Standalone `cargo xtask build-macos-app --icons target/icon-input --out target/app-build`
+packages only the shipping app; it does not supply complete desktop qualification.
+On each matching macOS15 host,
+`cargo xtask smoke-macos-app --archive ARCHIVE --reference REFERENCE --operation-fixture FIXTURE_ZIP --operation-reference FIXTURE_REFERENCE`
+requires the complete desktop case set against those two frozen inputs. Ordinary
+workflow, pagination and appearance use the shipping app; controlled I/O uses the
+companion. Missing companion inputs fail rather than constructing them locally.
+On macOS26 Intel,
 `cargo xtask qualify-macos-picker --archive ARCHIVE --reference REFERENCE --out NEW_DIR` separately
 requires the dedicated picker case with the original startup/interaction
 prelude, actual message/folder/keyboard pickers, independent copy checks,
 scenario-bound preferences and normal Quit. Full Finder and broader desktop
-integration remain required on both macOS15 consumers. Neither consumer rebuilds the
-shipping app, and candidate success alone does not qualify the desktop product.
+integration remain required on both macOS15 consumers. Neither consumer rebuilds or re-signs its application inputs, and candidate
+success alone does not qualify the desktop product.
 A settled actool failure may use the approved macOS15 Intel producer; timeout,
 uncertain cleanup, missing pinned Xcode or invalid outputs do not permit fallback.
 Keep each app ZIP's frozen `.reference.json` receipt for `smoke-macos-app` and
@@ -108,11 +116,13 @@ install-action does not provide them. Other supported tools use SHA-pinned
 install-action, checksums and `fallback:none`. CI requires the pinned prebuilt
 downloads; it does not build tools from source.
 
-If a native run disproves a premise relied on by product safety, stop that design
-work and obtain the owner decision after that run. Do not leave an impossible
-required assertion red while proceeding. Correct an invalid check when the
-established product contract does not rely on it, preserving meaningful controls
-and the original failure evidence.
+If native execution disproves a premise relied on by product safety, preserve
+the failed gate and stop dependent work. Record the concrete evidence, revise the
+affected design to one resolved approach and challenge that approach independently
+before continuing. Obtain an owner decision when the revision needs authority
+outside the task's scope. Correct invalid checks against the established contract;
+retain meaningful controls and the original failure evidence. A later passing
+run does not erase an earlier failure or establish its root cause.
 
 ## Checks and evidence
 
@@ -124,6 +134,7 @@ cargo xtask check-shell
 cargo xtask notices --check
 cargo xtask notices --write --out target/legal-materials
 cargo xtask qualify --target TARGET --out target/native-qualification
+# Native CLI archives; app qualification uses the explicit frozen inputs above
 cargo xtask verify-archive --archive ARCHIVE --target TARGET
 ```
 

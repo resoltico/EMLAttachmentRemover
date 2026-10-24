@@ -516,20 +516,7 @@ pub(crate) fn main_image_uuid(bytes: &[u8]) -> Result<[u8; 16]> {
     uuid.ok_or_else(|| "Owned app main image has no UUID".into())
 }
 
-pub(crate) fn packed_version(value: &str) -> Result<u32> {
-    let parts: Vec<u32> = value
-        .split('.')
-        .map(str::parse)
-        .collect::<std::result::Result<_, _>>()?;
-    if !(2..=3).contains(&parts.len())
-        || parts[0] > 65_535
-        || parts[1] > 255
-        || parts.get(2).is_some_and(|value| *value > 255)
-    {
-        return Err("Invalid macOS deployment version".into());
-    }
-    Ok((parts[0] << 16) | (parts[1] << 8) | parts.get(2).copied().unwrap_or(0))
-}
+pub(crate) use crate::app_reference::packed_version;
 
 pub(crate) fn fixture_identity(
     bytes: &[u8],

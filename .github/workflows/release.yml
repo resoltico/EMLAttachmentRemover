@@ -108,10 +108,17 @@ jobs:
           path: target/desktop-qualification
           merge-multiple: false
           digest-mismatch: error
+      - name: Resolve the exact picker artifact directory from the admitted plan
+        env:
+          PICKER_MATRIX: ${{ needs.qualification.outputs.picker }}
+        run: |
+          platform=$(jq -er '.include | select(type == "array" and length == 1) | .[0].platform | select(type == "string" and length > 0)' <<< "$PICKER_MATRIX")
+          [[ "$platform" =~ ^[a-z0-9_-]+$ ]]
+          printf 'PICKER_ARTIFACT=picker-qualification-%s-%s-r%s-a%s\n' "$SOURCE" "$platform" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: picker-qualification-${{ inputs.source }}-macos-x86_64-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: target/picker-qualification/picker-qualification-${{ inputs.source }}-macos-x86_64-r${{ github.run_id }}-a${{ github.run_attempt }}
+          name: ${{ env.PICKER_ARTIFACT }}
+          path: target/picker-qualification/${{ env.PICKER_ARTIFACT }}
           digest-mismatch: error
       - name: Freeze the exact qualified product set and qualification identity
         env:
@@ -129,7 +136,7 @@ jobs:
           jq -n --arg source "$SOURCE" --arg dispatch "$DISPATCH_SHA" --arg workflow "$WORKFLOW_REF" --arg workflow_sha "$WORKFLOW_SHA" \
             --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
             --slurpfile policy target/release-distribution.json --slurpfile assembly target/release-assembly.json --slurpfile inputs target/release-inputs/verified-inputs.json \
-            '{source:$source,dispatch_sha:$dispatch,workflow_ref:$workflow,workflow_sha:$workflow_sha,qualification_run:$run,policy:$policy[0],assembly:$assembly[0],verified_inputs:$inputs[0],scope:"native candidate production, same-archive desktop/picker qualification and exact asset assembly; dispatch workflow identity and artifact source are distinct"}' > target/release-predicate.json
+            '{source:$source,dispatch_sha:$dispatch,workflow_ref:$workflow,workflow_sha:$workflow_sha,qualification_run:$run,policy:$policy[0],assembly:$assembly[0],verified_inputs:$inputs[0],scope:"native candidate production, frozen shipping desktop/picker and producer-frozen controlled-companion qualification, and exact eight-product shipping asset assembly; dispatch workflow identity and artifact source are distinct"}' > target/release-predicate.json
           awk -v version="$VERSION" 'index($0,"## [" version "] - ")==1 {selected=1; next} selected && /^## / {exit} selected {print}' CHANGELOG.md > target/release-notes.md
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2; explicit qualification/source predicate
         with:

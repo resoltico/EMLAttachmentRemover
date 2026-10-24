@@ -1,9 +1,9 @@
 //! Native app assembly, frozen-input ditto readback and extracted execution.
+use crate::app_reference::{AppReference as Reference, Files, MAIN, WORKER};
 use crate::distribution::BuildPlan;
 use crate::{Result, controller, macos, macos_app, notices};
 use eml_app::{RequestSnapshot, RunQueue, WorkerControl, WorkerObservation, WorkerRun};
 use eml_macos::{ChildState, StopSignal};
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -15,9 +15,6 @@ use std::{
     time::{Duration, Instant, UNIX_EPOCH},
 };
 use xtask::archive::{ArchiveSnapshot, ByteIdentity};
-const MAIN: &str = "Contents/MacOS/EMLAttachmentRemover";
-const WORKER: &str = "Contents/Helpers/eml-worker";
-type Files = BTreeMap<String, (ByteIdentity, u32)>;
 fn artifact(plan: &BuildPlan, target: &str) -> Result<(String, String, String)> {
     let row = plan.lookup_target(target)?;
     let artifact =
@@ -28,22 +25,7 @@ fn artifact(plan: &BuildPlan, target: &str) -> Result<(String, String, String)> 
         artifact.root().to_owned(),
     ))
 }
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Reference {
-    schema: u8,
-    workflow: Option<crate::release_inputs::WorkflowIdentity>,
-    source: String,
-    source_provenance: String,
-    source_epoch: xtask::archive::PackageEpoch,
-    version: String,
-    target: String,
-    architecture: String,
-    minimum: u32,
-    root: String,
-    files: Files,
-}
-fn read(path: &Path, maximum: u64) -> Result<Vec<u8>> {
+pub(crate) fn read(path: &Path, maximum: u64) -> Result<Vec<u8>> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_file() || metadata.len() > maximum {
         return Err("App input is not a bounded ordinary file".into());
@@ -57,7 +39,7 @@ fn read(path: &Path, maximum: u64) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
-fn write(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
+pub(crate) fn write(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
     fs::create_dir_all(path.parent().ok_or("Missing app output parent")?)?;
     let mut file = fs::File::options()
         .write(true)
@@ -69,7 +51,7 @@ fn write(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
     file.sync_all()?;
     Ok(())
 }
-fn tree(root: &Path, normalize: bool) -> Result<Files> {
+pub(crate) fn tree(root: &Path, normalize: bool) -> Result<Files> {
     fn visit(
         base: &Path,
         path: &Path,
@@ -138,7 +120,7 @@ fn tree(root: &Path, normalize: bool) -> Result<Files> {
 }
 /// Native ZIP stores DOS timestamps with two-second precision. Normalize to the
 /// lower representable second before ditto, which otherwise rounds odd seconds up.
-fn bundle_timestamps(
+pub(crate) fn bundle_timestamps(
     app: &Path,
     epoch: xtask::archive::PackageEpoch,
     normalize: bool,
@@ -207,7 +189,7 @@ pub(crate) fn bundle_identity(app: &Path) -> Result<Value> {
     Ok(serde_json::to_value(tree(app, false)?)?)
 }
 
-fn inspect_images(
+pub(crate) fn inspect_images(
     root: &Path,
     plan: &BuildPlan,
     app: &Path,
@@ -575,6 +557,7 @@ enum AppChecks {
     Candidate,
     Desktop,
     Picker,
+    OperationFixture,
 }
 impl AppChecks {
     fn stage(self) -> &'static str {
@@ -582,6 +565,7 @@ impl AppChecks {
             Self::Candidate => "native_candidate",
             Self::Desktop => "desktop_qualification",
             Self::Picker => "picker_compatibility",
+            Self::OperationFixture => "operation_fixture",
         }
     }
 }
@@ -624,7 +608,7 @@ fn app_host(
         .desktop()
         .ok_or("Native app target has no desktop role")?;
     let expected = match checks {
-        AppChecks::Candidate => None,
+        AppChecks::Candidate | AppChecks::OperationFixture => None,
         AppChecks::Desktop => Some(desktop.floor_major()),
         AppChecks::Picker => Some(
             desktop
@@ -639,7 +623,13 @@ fn app_host(
     Ok(host)
 }
 
-fn verify_snapshot(
+pub(crate) struct ExtractedApp {
+    pub(crate) _enclosure: xtask::archive::ArtifactDirectory,
+    pub(crate) _held: eml_fs::BoundDirectory,
+    pub(crate) app: std::path::PathBuf,
+    pub(crate) verification: Value,
+}
+fn extract_snapshot(
     root: &Path,
     plan: &BuildPlan,
     snapshot: &ArchiveSnapshot,
@@ -647,7 +637,7 @@ fn verify_snapshot(
     build: &macos::MacBuild,
     out: &Path,
     checks: AppChecks,
-) -> Result<Value> {
+) -> Result<ExtractedApp> {
     plan.verify_packaging_source(root)?;
     if checks != AppChecks::Candidate {
         plan.require_qualified_source(root)?;
@@ -658,8 +648,12 @@ fn verify_snapshot(
     {
         return Err("Desktop qualification requires a fresh hosted Mac; owner desktop/preferences are protected".into());
     }
-    let source_archive = snapshot.identity();
-    let (_, _, app_root) = artifact(plan, &build.host)?;
+    let (_, _, shipping_root) = artifact(plan, &build.host)?;
+    let app_root = if checks == AppChecks::OperationFixture {
+        crate::app_reference::ROOT
+    } else {
+        shipping_root.as_str()
+    };
     if reference.schema != 2
         || reference.workflow != crate::release_inputs::workflow_identity()?
         || reference.source != plan.source_commit()
@@ -674,7 +668,10 @@ fn verify_snapshot(
         return Err("App reference does not match the current source/native build policy".into());
     }
     snapshot.inspect_ditto_app(&reference.root, &reference.files, reference.source_epoch)?;
-    let enclosure = xtask::archive::create_artifact_directory(out)?;
+    let extraction = out.join("extracted-input");
+    fs::create_dir(&extraction)?;
+    let enclosure = xtask::archive::create_artifact_directory(&extraction)?;
+    let held = eml_fs::BoundDirectory::open(enclosure.path())?;
     let copy = enclosure.path().join("inspected-input.zip");
     write(&copy, snapshot.bytes(), 0o600)?;
     let mut extract = build.command(root, "/usr/bin/ditto");
@@ -688,19 +685,95 @@ fn verify_snapshot(
     if tree(&app, false)? != reference.files {
         return Err("Extracted app tree differs from frozen producer reference".into());
     }
-    let timestamps = bundle_timestamps(&app, reference.source_epoch, false)?;
+    bundle_timestamps(&app, reference.source_epoch, false)?;
     let images = inspect_images(root, plan, &app, build, &out.join("extracted-images"))?;
+    let sdk = macos::packed_version(&build.sdk_version)?;
+    if images["images"]
+        .as_array()
+        .ok_or("Missing extracted image facts")?
+        .iter()
+        .any(|image| image["image"]["sdk"].as_u64() != Some(u64::from(sdk)))
+    {
+        return Err("Extracted app image SDK differs from selected native SDK".into());
+    }
+
     let worker = worker_smoke(
         &app.join(WORKER),
         &build.version,
         &enclosure.path().join("worker-fixture"),
     )?;
-    let mut verification = json!({"stage":checks.stage(),"snapshot":snapshot.identity(),"source_epoch":reference.source_epoch,"source_provenance":reference.source_provenance,"bundle_timestamps":timestamps,"images":images,"worker":worker});
+    if tree(&app, false)? != reference.files {
+        return Err("Extracted worker smoke changed the frozen app bundle".into());
+    }
+    let timestamps = bundle_timestamps(&app, reference.source_epoch, false)?;
+    let verification = json!({"stage":checks.stage(),"snapshot":snapshot.identity(),"source_epoch":reference.source_epoch,"source_provenance":reference.source_provenance,"bundle_timestamps":timestamps,"images":images,"worker":worker});
+    Ok(ExtractedApp {
+        _enclosure: enclosure,
+        _held: held,
+        app,
+        verification,
+    })
+}
+pub(crate) fn verify_operation_snapshot(
+    root: &Path,
+    plan: &BuildPlan,
+    snapshot: &ArchiveSnapshot,
+    reference: &Reference,
+    build: &macos::MacBuild,
+    out: &Path,
+) -> Result<ExtractedApp> {
+    extract_snapshot(
+        root,
+        plan,
+        snapshot,
+        reference,
+        build,
+        out,
+        AppChecks::OperationFixture,
+    )
+}
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Desktop verification binds separately frozen shipping and operation-fixture inputs"
+)]
+fn verify_snapshot(
+    root: &Path,
+    plan: &BuildPlan,
+    snapshot: &ArchiveSnapshot,
+    reference: &Reference,
+    build: &macos::MacBuild,
+    out: &Path,
+    checks: AppChecks,
+    operation: Option<&crate::macos_operation_fixture::FrozenOperationFixture>,
+) -> Result<Value> {
+    if checks == AppChecks::Desktop && operation.is_none() {
+        return Err("Desktop qualification requires the producer-frozen operation fixture".into());
+    }
+    let ExtractedApp {
+        _enclosure,
+        _held,
+        app,
+        mut verification,
+    } = extract_snapshot(root, plan, snapshot, reference, build, out, checks)?;
+    let source_archive = snapshot.identity();
     if checks == AppChecks::Desktop {
+        let frozen = operation
+            .ok_or("Desktop qualification requires the producer-frozen operation fixture")?;
+        let fixture_out = out.join("operation-fixture-input");
+        fs::create_dir(&fixture_out)?;
+        let controlled = verify_operation_snapshot(
+            root,
+            plan,
+            &frozen.snapshot,
+            &frozen.reference.app,
+            build,
+            &fixture_out,
+        )?;
         let gui = gui_startup(root, &app, build, &out.join("gui-startup"))?;
         use crate::macos_interaction::{DesktopCase, run_case};
-        // Exercise the shipping bundle before registering copied fixture bundles.
-        // The earlier startup observation remains a separate launch.
+        // Both frozen inputs are admitted before GUI actions. This preflight
+        // launches only worker smoke, not the companion GUI. Shipping GUI cases
+        // precede the controlled companion's actual registration and launch.
         let workflow = run_case(
             root,
             &app,
@@ -722,7 +795,12 @@ fn verify_snapshot(
             &app,
             build,
             &out.join("gui-operation-controls"),
-            &source_archive,
+            &crate::macos_operation_fixture::VerifiedOperationFixture {
+                app: &controlled.app,
+                envelope: &frozen.envelope,
+                verification: &controlled.verification,
+                reference: &frozen.reference,
+            },
         )?;
         // Native Settings changes belong to the final phase on this disposable
         // host. Failure stops qualification with restoration uncertainty retained.
@@ -755,6 +833,24 @@ fn verify_snapshot(
     Ok(verification)
 }
 pub(crate) fn build(root: &Path, plan: &BuildPlan, out: &Path, icons: &Path) -> Result<()> {
+    build_inner(root, plan, out, icons, false)
+}
+pub(crate) fn build_qualification(
+    root: &Path,
+    plan: &BuildPlan,
+    out: &Path,
+    icons: &Path,
+) -> Result<()> {
+    plan.require_qualified_source(root)?;
+    build_inner(root, plan, out, icons, true)
+}
+fn build_inner(
+    root: &Path,
+    plan: &BuildPlan,
+    out: &Path,
+    icons: &Path,
+    qualification: bool,
+) -> Result<()> {
     plan.verify_packaging_source(root)?;
     fs::create_dir(out)?;
     let out = out.canonicalize()?;
@@ -833,6 +929,7 @@ pub(crate) fn build(root: &Path, plan: &BuildPlan, out: &Path, icons: &Path) -> 
         &build,
         &out,
         AppChecks::Candidate,
+        None,
     )?;
     let destination = out.join(&name);
     rustix::fs::renameat_with(
@@ -851,14 +948,47 @@ pub(crate) fn build(root: &Path, plan: &BuildPlan, out: &Path, icons: &Path) -> 
         &reference_bytes,
         0o644,
     )?;
-    fs::write(
-        out.join("app-result.json"),
-        serde_json::to_vec_pretty(
-            &json!({"stage":"native_candidate","workflow":crate::release_inputs::workflow_identity()?,"host":host,"archive":destination,"identity":snapshot.identity(),"reference":ByteIdentity::of(&reference_bytes),"producer_images":images,"verification":verification,"source":reference.source,"source_epoch":reference.source_epoch,"source_provenance":reference.source_provenance,"target":reference.target,"scope":"native candidate structure/signatures/CPU/minimum and actual extracted Core-backed worker; desktop and picker compatibility qualification are separate required consumers"}),
-        )?,
-    )?;
-    Ok(())
+    let operation = if qualification {
+        Some(crate::macos_operation_fixture::produce(
+            root,
+            plan,
+            &app,
+            &snapshot,
+            &reference_bytes,
+            &build,
+            &out,
+        ))
+    } else {
+        None
+    };
+    let (operation_fixture, operation_fixture_verification, operation_fixture_failure) =
+        match &operation {
+            Some(Ok((envelope, verification))) => (Some(envelope), Some(verification), None),
+            Some(Err(error)) => (None, None, Some(error.to_string())),
+            None => (None, None, None),
+        };
+    let recorded: Result<()> = (|| {
+        fs::write(
+            out.join("app-result.json"),
+            serde_json::to_vec_pretty(
+                &json!({"stage":"native_candidate","workflow":reference.workflow,"host":host,"archive":destination,"identity":snapshot.identity(),"reference":ByteIdentity::of(&reference_bytes),"producer_images":images,"verification":verification,"operation_fixture":operation_fixture,"operation_fixture_verification":operation_fixture_verification,"operation_fixture_failure":operation_fixture_failure,"source":reference.source,"source_epoch":reference.source_epoch,"source_provenance":reference.source_provenance,"target":reference.target,"scope":"shipping candidate structure/signatures/worker verified independently; nonshipping companion availability/failure explicit; desktop and picker qualification remain separate consumers"}),
+            )?,
+        )?;
+        Ok(())
+    })();
+    match operation {
+        Some(Err(primary)) => {
+            if let Err(recording) = recorded {
+                eprintln!(
+                    "Could not retain verified shipping candidate after operation-fixture failure: {recording}"
+                );
+            }
+            Err(primary)
+        }
+        _ => recorded,
+    }
 }
+
 fn write_bundle_resources(
     root: &Path,
     app: &Path,
@@ -904,8 +1034,18 @@ pub(crate) fn smoke(
     plan: &BuildPlan,
     archive: &Path,
     reference_path: &Path,
+    operation_archive: &Path,
+    operation_reference: &Path,
 ) -> Result<()> {
-    consume(root, plan, archive, reference_path, AppChecks::Desktop).map(|_| ())
+    consume(
+        root,
+        plan,
+        archive,
+        reference_path,
+        AppChecks::Desktop,
+        Some((operation_archive, operation_reference)),
+    )
+    .map(|_| ())
 }
 pub(crate) fn picker(
     root: &Path,
@@ -913,7 +1053,7 @@ pub(crate) fn picker(
     archive: &Path,
     reference_path: &Path,
 ) -> Result<()> {
-    consume(root, plan, archive, reference_path, AppChecks::Picker).map(|_| ())
+    consume(root, plan, archive, reference_path, AppChecks::Picker, None).map(|_| ())
 }
 pub(crate) fn picker_receipt(
     root: &Path,
@@ -921,7 +1061,7 @@ pub(crate) fn picker_receipt(
     archive: &Path,
     reference: &Path,
 ) -> Result<std::path::PathBuf> {
-    consume(root, plan, archive, reference, AppChecks::Picker)
+    consume(root, plan, archive, reference, AppChecks::Picker, None)
 }
 fn consume(
     root: &Path,
@@ -929,6 +1069,7 @@ fn consume(
     archive: &Path,
     reference_path: &Path,
     checks: AppChecks,
+    operation: Option<(&Path, &Path)>,
 ) -> Result<std::path::PathBuf> {
     plan.require_qualified_source(root)?;
     let build = macos::load(root, plan)?;
@@ -937,11 +1078,11 @@ fn consume(
         return Err("App archive basename does not match its native target/version".into());
     }
     let reference_bytes = read(reference_path, 4 * 1024 * 1024)?;
-    let reference: Reference = serde_json::from_slice(&reference_bytes)?;
+    let reference = crate::app_reference::parse_reference(&reference_bytes)?;
     let parent = root.join(match checks {
         AppChecks::Desktop => "target/app-archive-smoke",
         AppChecks::Picker => "target/app-picker-compatibility",
-        AppChecks::Candidate => {
+        AppChecks::Candidate | AppChecks::OperationFixture => {
             return Err("Candidate verification belongs to its native producer".into());
         }
     });
@@ -952,7 +1093,33 @@ fn consume(
         .keep();
     let host = app_host(root, plan, &build, checks)?;
     let snapshot = ArchiveSnapshot::read(archive)?;
-    let verification = verify_snapshot(root, plan, &snapshot, &reference, &build, &out, checks)?;
+    let operation = operation
+        .map(|(archive, reference)| {
+            crate::macos_operation_fixture::read(
+                archive,
+                reference,
+                &snapshot.identity(),
+                &reference_bytes,
+            )
+        })
+        .transpose()?;
+    if let Some(frozen) = &operation {
+        frozen.reference.worker.toolchain.validate_observed(
+            &build.rust_identity,
+            &build.xcode_identity,
+            macos::packed_version(&build.sdk_version)?,
+        )?;
+    }
+    let verification = verify_snapshot(
+        root,
+        plan,
+        &snapshot,
+        &reference,
+        &build,
+        &out,
+        checks,
+        operation.as_ref(),
+    )?;
     fs::write(
         out.join("result.json"),
         serde_json::to_vec_pretty(

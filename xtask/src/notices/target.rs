@@ -145,13 +145,8 @@ pub(super) fn target_materials(
     Ok(files)
 }
 
-fn activated_features<'a>(
-    root: &Path,
-    target: &'a str,
-    component: NoticeComponent,
-    report: &About,
-) -> Result<(Vec<&'a str>, Value)> {
-    let mut features_arguments = vec![
+pub(super) fn feature_arguments(target: &str, component: NoticeComponent) -> Vec<String> {
+    let mut features_arguments: Vec<String> = vec![
         "tree",
         "--locked",
         "--package",
@@ -164,10 +159,22 @@ fn activated_features<'a>(
         "depth",
         "--format",
         "{p}|{f}",
-    ];
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
     if component == NoticeComponent::Gui {
-        features_arguments.extend(["--features", "eml-gui/macos-gui"]);
+        features_arguments.extend(["--features".to_owned(), "eml-gui/macos-gui".to_owned()]);
     }
+    features_arguments
+}
+fn activated_features(
+    root: &Path,
+    target: &str,
+    component: NoticeComponent,
+    report: &About,
+) -> Result<(Vec<String>, Value)> {
+    let features_arguments = feature_arguments(target, component);
     let features = String::from_utf8(capture(
         Command::new("cargo")
             .current_dir(root)

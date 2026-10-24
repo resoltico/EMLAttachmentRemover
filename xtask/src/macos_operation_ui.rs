@@ -226,7 +226,7 @@ pub(crate) fn run(
     app: &Path,
     build: &MacBuild,
     out: &Path,
-    source_archive: &xtask::archive::ByteIdentity,
+    operation: &crate::macos_operation_fixture::VerifiedOperationFixture<'_>,
 ) -> Result<Value> {
     if std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
         || std::env::var("RUNNER_ENVIRONMENT").as_deref() != Ok("github-hosted")
@@ -235,14 +235,12 @@ pub(crate) fn run(
     }
     fs::create_dir(out)?;
     let before = crate::macos_archive::bundle_identity(app)?;
-    let observed_app = out.join("Observed Operations.app");
-    let mut copy = build.command(root, "/usr/bin/ditto");
-    copy.args(["--norsrc", "--noextattr", "--noqtn", "--noacl"])
-        .arg(app)
-        .arg(&observed_app);
-    crate::macos::checked_run(copy, &out.join("bundle-copy.log"), 120)?;
-    let worker_image = install_observed_worker(root, &observed_app, build, out)?;
-    let identity = crate::macos_archive::bundle_identity(&observed_app)?;
+    let observed_app = operation.app;
+    let identity = crate::macos_archive::bundle_identity(observed_app)?;
+    let frozen_identity = serde_json::to_value(&operation.reference.app.files)?;
+    if identity != frozen_identity {
+        return Err("Operation UI input differs from its frozen producer reference".into());
+    }
     let mut cases = Vec::new();
     let mut failures = Vec::new();
     let mut stopped = None;
@@ -255,11 +253,11 @@ pub(crate) fn run(
         let case_out = out.join(case.name());
         match crate::macos_interaction::run_case(
             root,
-            &observed_app,
+            observed_app,
             build,
             &case_out,
             case,
-            source_archive,
+            &operation.envelope.archive,
         ) {
             Ok(value) => cases.push(value),
             Err(error) => {
@@ -278,23 +276,30 @@ pub(crate) fn run(
         )?,
     )?;
     let after = crate::macos_archive::bundle_identity(app)?;
-    let observed_after = crate::macos_archive::bundle_identity(&observed_app)?;
+    let observed_after = crate::macos_archive::bundle_identity(observed_app)?;
     fs::write(
         out.join("bundle-identities.json"),
         serde_json::to_vec_pretty(
-            &json!({"shipping_before":before,"shipping_after":after,"observed_bundle":identity,"observed_bundle_after":observed_after,"worker_image":worker_image,"cases":cases,"failures":failures,"not_executed":not_executed,"requested_fixture_feature":"eml-worker/native-fixtures"}),
+            &json!({"shipping_before":before,"shipping_after":after,"observed_bundle":identity,"observed_bundle_after":observed_after,"operation_fixture":operation.envelope,"cases":cases,"failures":failures,"not_executed":not_executed,"requested_fixture_feature":"eml-worker/native-fixtures"}),
         )?,
     )?;
     if before != after {
         return Err("Observed fixture changed the original shipping bundle".into());
     }
-    if identity != observed_after {
+    if identity != observed_after || observed_after != frozen_identity {
         return Err("GUI execution changed the observed fixture bundle".into());
     }
     if !failures.is_empty() {
         return Err(format!("{} native operation-control cases failed; {} not executed; retained case-attempts.json",failures.len(),not_executed.len()).into());
     }
-    let result = json!({"cases":cases,"observed_bundle":identity,"shipping_bundle_unchanged":true,"scope":"separately signed nonshipping worker synchronization and actual GUI integration; unmodified shipping archive checks remain required"});
+    let timestamps = crate::macos_archive::bundle_timestamps(
+        observed_app,
+        operation.reference.app.source_epoch,
+        false,
+    )?;
+    let mut verification = operation.verification.clone();
+    verification["bundle_timestamps"] = timestamps;
+    let result = json!({"cases":cases,"observed_bundle":identity,"shipping_bundle_unchanged":true,"operation_fixture":operation.envelope,"verification":verification,"scope":"separately signed nonshipping worker synchronization and actual GUI integration; unmodified shipping archive checks remain required"});
     fs::write(out.join("result.json"), serde_json::to_vec_pretty(&result)?)?;
     Ok(result)
 }
@@ -658,75 +663,4 @@ fn finish_child_control(
     Ok(
         json!({"case":case.name(),"operation":operation,"phase":phase,"operation_id":operation_id,"worker_pid":pid,"worker_absent":true,"additional_worker":additional_worker,"matrix":matrix,"writer_document":writer,"first_interrupt_micros":first,"second_interrupt_micros":second,"ui_receipt":{"identity":xtask::archive::ByteIdentity::of(&document),"contents":String::from_utf8(document)?},"originals":originals,"target":{"path":target,"identity":target_bytes},"scope":"actual native fixture child, GUI actions and retained effects; lost receipts never imply publication rollback"}),
     )
-}
-
-fn install_observed_worker(
-    root: &Path,
-    observed_app: &Path,
-    build: &MacBuild,
-    out: &Path,
-) -> Result<crate::macos::MachIdentity> {
-    use std::os::unix::fs::PermissionsExt;
-    let mut compile = build.command(root, "cargo");
-    compile
-        .args([
-            "build",
-            "--locked",
-            "--release",
-            "--package",
-            "eml-worker",
-            "--features",
-            "eml-worker/native-fixtures",
-            "--target",
-            &build.host,
-            "--message-format=json",
-        ])
-        .env("CARGO_TARGET_DIR", out.join("cargo"))
-        .env("MACOSX_DEPLOYMENT_TARGET", &build.minimum_text);
-    let log = out.join("worker-build.jsonl");
-    controller()?
-        .run_separate_output(compile, &log, Duration::from_secs(1200))?
-        .require_success(&log)?;
-    if fs::metadata(&log)?.len() > 16 * 1024 * 1024 {
-        return Err("Observed worker compiler log exceeds its document bound".into());
-    }
-    let worker = crate::cli_build::named_artifact(
-        root,
-        &fs::read(&log)?,
-        "crates/eml-worker/Cargo.toml",
-        "crates/eml-worker/src/main.rs",
-        "eml-worker",
-    )?;
-    let metadata = fs::symlink_metadata(&worker)?;
-    if !metadata.is_file()
-        || metadata.len() > 256 * 1024 * 1024
-        || !worker
-            .canonicalize()?
-            .starts_with(out.join("cargo").canonicalize()?)
-    {
-        return Err("Observed worker escaped its bounded owned native build".into());
-    }
-    let bytes = fs::read(worker)?;
-    if bytes.len() > 256 * 1024 * 1024 {
-        return Err("Observed worker grew beyond its image bound".into());
-    }
-    let worker_image = crate::macos::fixture_identity(&bytes, &build.architecture, build.minimum)?;
-    let worker_path = observed_app.join("Contents/Helpers/eml-worker");
-    if !fs::symlink_metadata(&worker_path)?.is_file() {
-        return Err("Copied worker is not an ordinary file".into());
-    }
-    fs::write(&worker_path, bytes)?;
-    fs::set_permissions(&worker_path, fs::Permissions::from_mode(0o755))?;
-    for (label, path) in [("worker", worker_path.as_path()), ("app", observed_app)] {
-        let mut sign = build.command(root, "/usr/bin/codesign");
-        sign.args(["--force", "--sign", "-", "--timestamp=none"])
-            .arg(path);
-        crate::macos::checked_run(sign, &out.join(format!("{label}-sign.log")), 30)?;
-        let mut verify = build.command(root, "/usr/bin/codesign");
-        verify
-            .args(["--verify", "--strict", "--verbose=2"])
-            .arg(path);
-        crate::macos::checked_run(verify, &out.join(format!("{label}-verify.log")), 30)?;
-    }
-    Ok(worker_image)
 }

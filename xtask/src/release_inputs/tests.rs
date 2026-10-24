@@ -288,13 +288,52 @@ fn desktop_case(name: &str, method: &str) -> Value {
     value
 }
 fn timestamps() -> Value {
-    json!({"source_epoch":1609459201,"zip_epoch_seconds":1609459200,"precision":"UTC DOS two-second floor","entries":{
-        "":{"kind":"directory","mtime_seconds":1609459200,"mtime_nanoseconds":0},
-        "Contents":{"kind":"directory","mtime_seconds":1609459200,"mtime_nanoseconds":0},
-        "Contents/Info.plist":{"kind":"file","mtime_seconds":1609459200,"mtime_nanoseconds":0},
-        "Contents/MacOS":{"kind":"directory","mtime_seconds":1609459200,"mtime_nanoseconds":0},
-        "Contents/MacOS/EMLAttachmentRemover":{"kind":"file","mtime_seconds":1609459200,"mtime_nanoseconds":0}
-    }})
+    let mut entries = serde_json::Map::new();
+    for (path, kind) in [
+        ("", "directory"),
+        ("Contents", "directory"),
+        ("Contents/Info.plist", "file"),
+        ("Contents/MacOS", "directory"),
+        ("Contents/MacOS/EMLAttachmentRemover", "file"),
+        ("Contents/Helpers", "directory"),
+        ("Contents/Helpers/eml-worker", "file"),
+        ("Contents/Resources", "directory"),
+        ("Contents/Resources/licenses", "directory"),
+        ("Contents/Resources/licenses/worker", "directory"),
+        ("Contents/Resources/licenses/worker/licenses", "directory"),
+        (
+            "Contents/Resources/licenses/worker/licenses/activated-features.json",
+            "file",
+        ),
+        (
+            "Contents/Resources/licenses/worker/licenses/materials.json",
+            "file",
+        ),
+        ("Contents/_CodeSignature", "directory"),
+        ("Contents/_CodeSignature/CodeResources", "file"),
+    ] {
+        entries.insert(
+            path.into(),
+            json!({"kind":kind,"mtime_seconds":1609459200,"mtime_nanoseconds":0}),
+        );
+    }
+    json!({"source_epoch":1609459201,"zip_epoch_seconds":1609459200,"precision":"UTC DOS two-second floor","entries":entries})
+}
+fn operation_verification(envelope: &Value) -> Value {
+    let reference: Value =
+        serde_json::from_str(envelope["reference"]["contents"].as_str().unwrap()).unwrap();
+    let mut runs = Vec::new();
+    for expected in ["created", "up_to_date"] {
+        let completion = json!({"operation_id":1,"exit_code":0,"signal":null,"settled":true,"reusable":true,"failure":null});
+        let report = json!({"schema":"eml-technical-report","schema_version":1,"version":"7.0.0","build":36,"run_id":1,
+            "start":{"total":1,"version":"7.0.0","program":"emlattachmentremover","protocol":1,"dry_run":false,"collection_complete":true},
+            "items":[{"index":0,"status":expected,"error":null}],
+            "summary":{"exit_code":0,"collection_complete":true,"interrupted":false,"run_error":null,"counts":{"created":u8::from(expected=="created"),"up_to_date":u8::from(expected=="up_to_date"),"planned":0,"failed":0,"not_processed":0}},
+            "protocol_failure":null,"worker":completion,"terminal":"completed"});
+        runs.push(json!({"expected":expected,"completion":completion,"report":report}));
+    }
+    let images: Vec<_> = ["Contents/MacOS/EMLAttachmentRemover", "Contents/Helpers/eml-worker"].into_iter().map(|path|json!({"path":path,"bytes":reference["app"]["files"][path][0],"image":{"architecture":"x86_64","minimum":983040,"sdk":1704448},"runtime":{"adhoc_signature_verified":true},"entitlements":null})).collect();
+    json!({"stage":"operation_fixture","snapshot":envelope["archive"],"source_epoch":1609459201,"source_provenance":"git_commit","bundle_timestamps":timestamps(),"images":{"images":images},"worker":{"runs":runs}})
 }
 fn desktop(reference: &ByteIdentity) -> Value {
     let controls: Vec<_> = CONTROLLED_CASES
@@ -421,11 +460,56 @@ fn fixture(extra_linux: bool) -> (tempfile::TempDir, BuildPlan, VerifiedInputs) 
     let reference = frozen(
         json!({"schema":2,"source":SOURCE,"source_epoch":1609459201,"source_provenance":"git_commit","target":"x86_64-apple-darwin","workflow":workflow(),"version":"7.0.0","root":"EML Attachment Remover.app","architecture":"x86_64","files":{"Contents/Info.plist":[identity(),420],"Contents/MacOS/EMLAttachmentRemover":[identity(),493]}}),
     );
+    let (expanded, mut envelope) =
+        crate::app_reference::test_fixture(&reference.document().unwrap(), &identity());
+    let reference = frozen(expanded);
+    let mut fixture_document: Value =
+        serde_json::from_str(envelope["reference"]["contents"].as_str().unwrap()).unwrap();
+    let compiler = "rustc 1.99.1 (synthetic fixture)\nrelease: 1.99.1\nhost: x86_64-apple-darwin\n";
+    fixture_document["worker"]["toolchain"]["rust_identity"] = compiler.into();
+    fixture_document["worker"]["toolchain"]["xcode_identity"] =
+        "Xcode 26.3\nBuild version 17C529\n".into();
+    let fixture_contents = serde_json::to_string(&fixture_document).unwrap();
+    envelope["reference"] = json!({"identity":ByteIdentity::of(fixture_contents.as_bytes()),"contents":fixture_contents});
+    let verification = operation_verification(&envelope);
     let (picker, picker_product) = picker(&reference.identity);
-    let consumer = frozen(desktop(&reference.identity));
+    let mut consumer = desktop(&reference.identity);
+    let controls = &mut consumer["verification"]["gui_interaction"]["operation_controls"];
+    controls["operation_fixture"] = envelope.clone();
+    controls["observed_bundle"] = fixture_document["app"]["files"].clone();
+    controls["verification"] = verification.clone();
+    for case in controls["cases"].as_array_mut().unwrap() {
+        case["source_archive"] = envelope["archive"].clone();
+    }
+    let consumer = frozen(consumer);
     let path = dir.join(MAC_APP);
     fs::write(&path, b"abc").unwrap();
     products.insert(MAC_APP.into(),ProductInput{platform:"macos-x86_64".into(),role:ProductRole::DesktopApp,archive:identity(),archive_path:path,producer:frozen(json!({"source":SOURCE,"source_epoch":1609459201,"source_provenance":"git_commit","target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",26),"stage":"native_candidate","release_tests":{"native_publication":crate::publication_evidence::test_fixture(SOURCE,1609459201,"x86_64-apple-darwin","macos","x86_64","release")},"verification":{"stage":"native_candidate","source_epoch":1609459201,"source_provenance":"git_commit","bundle_timestamps":timestamps()},"identity":identity(),"reference":reference.identity})),reference:Some(reference),desktop:Some(consumer),picker:Some(picker),picker_product:Some(picker_product)});
+    let shipping_document = products
+        .get(MAC_APP)
+        .unwrap()
+        .reference
+        .as_ref()
+        .unwrap()
+        .document()
+        .unwrap();
+    edit(
+        &mut products.get_mut(MAC_APP).unwrap().producer,
+        |producer| {
+            producer["verification"]["images"] = verification["images"].clone();
+            for image in producer["verification"]["images"]["images"]
+                .as_array_mut()
+                .unwrap()
+            {
+                image["bytes"] =
+                    shipping_document["files"][image["path"].as_str().unwrap()][0].clone();
+            }
+            producer["host"]["compiler"] = compiler.into();
+            producer["operation_fixture"] = envelope;
+            producer["operation_fixture_failure"] = Value::Null;
+            producer["operation_fixture_verification"] = verification;
+        },
+    );
     (
         root,
         plan,
@@ -1194,6 +1278,356 @@ fn every_product_requires_actual_publication_records_and_rechecks_rehashed_edge_
         assert!(
             bad.validate(&plan, &workflow()).is_err(),
             "changed native edge {name}"
+        );
+    }
+}
+
+#[test]
+fn picker_required_records_preserve_exact_named_layout_and_missing_path_context() {
+    let root = tempfile::tempdir().unwrap();
+    // The pinned downloader flattens a sole artifact. Bare records must never
+    // satisfy the reader's exact artifact-named directory contract.
+    fs::write(root.path().join("result.json"), b"{}\n").unwrap();
+    fs::write(root.path().join("product-result.json"), b"{}\n").unwrap();
+    let directory = root
+        .path()
+        .join(format!("picker-qualification-{SOURCE}-macos-x86_64-r12-a1"));
+    let receipt = directory.join("result.json");
+    let missing_receipt = fs::read(&receipt).unwrap_err();
+    assert_eq!(missing_receipt.kind(), std::io::ErrorKind::NotFound);
+    let error = read_picker_records(&receipt).err().unwrap().to_string();
+    assert!(error.contains("Read required picker qualification"));
+    assert!(error.contains(receipt.to_str().unwrap()));
+    assert!(error.contains(&missing_receipt.to_string()));
+    fs::create_dir(&directory).unwrap();
+    fs::write(&receipt, b"{\"receipt\":true}\n").unwrap();
+    let product_path = directory.join("product-result.json");
+    let missing_product = fs::read(&product_path).unwrap_err();
+    assert_eq!(missing_product.kind(), std::io::ErrorKind::NotFound);
+    let error = read_picker_records(&receipt).err().unwrap().to_string();
+    assert!(error.contains("Read required picker product"));
+    assert!(error.contains(directory.join("product-result.json").to_str().unwrap()));
+    assert!(error.contains(&missing_product.to_string()));
+    let product = b"{\"product\":true}\n";
+    fs::write(directory.join("product-result.json"), product).unwrap();
+    let (observed, record) = read_picker_records(&receipt).unwrap();
+    assert_eq!(observed, b"{\"receipt\":true}\n");
+    assert_eq!(record.identity, ByteIdentity::of(product));
+    assert_eq!(record.document().unwrap(), json!({"product":true}));
+}
+
+#[test]
+fn controlled_companion_is_required_and_cannot_replace_shipping_case_bindings() {
+    let (_, plan, value) = fixture(false);
+    value.validate(&plan, &workflow()).unwrap();
+    for (producer, field) in [
+        (true, "operation_fixture"),
+        (true, "operation_fixture_verification"),
+        (true, "operation_fixture_failure"),
+        (false, "operation_fixture"),
+        (false, "verification"),
+        (false, "observed_bundle"),
+    ] {
+        let mut bad = clone_inputs(&value);
+        let product = bad.products.get_mut(MAC_APP).unwrap();
+        let record = if producer {
+            &mut product.producer
+        } else {
+            product.desktop.as_mut().unwrap()
+        };
+        edit(record, |document| {
+            let parent = if producer {
+                document
+            } else {
+                &mut document["verification"]["gui_interaction"]["operation_controls"]
+            };
+            parent.as_object_mut().unwrap().remove(field);
+        });
+        assert!(
+            bad.validate(&plan, &workflow()).is_err(),
+            "missing {producer}/{field}"
+        );
+    }
+    for failure in [json!("native fixture build failed"), json!(false), json!(0)] {
+        let mut bad = clone_inputs(&value);
+        edit(
+            &mut bad.products.get_mut(MAC_APP).unwrap().producer,
+            |document| {
+                document["operation_fixture_failure"] = failure;
+            },
+        );
+        assert!(
+            bad.validate(&plan, &workflow()).is_err(),
+            "non-null companion failure cannot qualify"
+        );
+    }
+    for change in ["bytes", "mode", "extra-path"] {
+        let mut bad = clone_inputs(&value);
+        edit(
+            bad.products
+                .get_mut(MAC_APP)
+                .unwrap()
+                .desktop
+                .as_mut()
+                .unwrap(),
+            |document| {
+                let bundle = &mut document["verification"]["gui_interaction"]["operation_controls"]
+                    ["observed_bundle"];
+                match change {
+                    "bytes" => bundle["Contents/MacOS/EMLAttachmentRemover"][0] = json!(identity()),
+                    "mode" => bundle["Contents/MacOS/EMLAttachmentRemover"][1] = json!(420),
+                    "extra-path" => bundle["Contents/extra-resource"] = json!([identity(), 420]),
+                    _ => unreachable!(),
+                }
+            },
+        );
+        assert!(
+            bad.validate(&plan, &workflow()).is_err(),
+            "contradictory observed bundle {change}"
+        );
+    }
+    for index in 0..CONTROLLED_CASES.len() {
+        let mut bad = clone_inputs(&value);
+        edit(
+            bad.products
+                .get_mut(MAC_APP)
+                .unwrap()
+                .desktop
+                .as_mut()
+                .unwrap(),
+            |document| {
+                document["verification"]["gui_interaction"]["operation_controls"]["cases"][index]
+                    ["source_archive"] = json!(identity());
+            },
+        );
+        assert!(
+            bad.validate(&plan, &workflow()).is_err(),
+            "controlled case {index} used shipping archive"
+        );
+    }
+    for case in ["workflow", "pagination", "appearance"] {
+        let mut bad = clone_inputs(&value);
+        edit(
+            bad.products
+                .get_mut(MAC_APP)
+                .unwrap()
+                .desktop
+                .as_mut()
+                .unwrap(),
+            |document| {
+                let fixture_archive = document["verification"]["gui_interaction"]["operation_controls"]["operation_fixture"]["archive"].clone();
+                document["verification"]["gui_interaction"][case]["source_archive"] =
+                    fixture_archive;
+            },
+        );
+        assert!(
+            bad.validate(&plan, &workflow()).is_err(),
+            "shipping case {case} used companion"
+        );
+    }
+}
+
+#[test]
+fn controlled_companion_native_verifications_require_exact_images_times_and_smoke_cases() {
+    let (_, plan, value) = fixture(false);
+    for producer in [true, false] {
+        for change in [
+            "stage",
+            "report-schema",
+            "report-schema-version",
+            "report-extra-field",
+            "report-run-identity",
+            "archive",
+            "time",
+            "missing-image",
+            "extra-image",
+            "image-bytes",
+            "sdk",
+            "signature",
+            "entitlements",
+            "missing-worker",
+            "extra-run",
+            "missing-item",
+            "extra-item",
+            "status",
+            "counts",
+            "start-total",
+            "run-error",
+            "unsettled",
+            "contradictory-worker",
+        ] {
+            let mut bad = clone_inputs(&value);
+            let product = bad.products.get_mut(MAC_APP).unwrap();
+            let record = if producer {
+                &mut product.producer
+            } else {
+                product.desktop.as_mut().unwrap()
+            };
+            edit(record, |document| {
+                let observation = if producer {
+                    &mut document["operation_fixture_verification"]
+                } else {
+                    &mut document["verification"]["gui_interaction"]["operation_controls"]["verification"]
+                };
+                match change {
+                    "report-schema" => {
+                        observation["worker"]["runs"][0]["report"]["schema"] =
+                            "not-the-technical-report".into()
+                    }
+                    "report-schema-version" => {
+                        observation["worker"]["runs"][0]["report"]["schema_version"] = json!(99)
+                    }
+                    "report-extra-field" => {
+                        observation["worker"]["runs"][0]["report"]["extra_outcome"] =
+                            "up_to_date".into()
+                    }
+                    "report-run-identity" => {
+                        observation["worker"]["runs"][0]["report"]["run_id"] = json!(2)
+                    }
+                    "stage" => observation["stage"] = "native_candidate".into(),
+                    "archive" => observation["snapshot"] = json!(identity()),
+                    "time" => {
+                        observation["bundle_timestamps"]["entries"][""]["mtime_seconds"] =
+                            json!(1609459201)
+                    }
+                    "missing-image" => {
+                        observation["images"]["images"]
+                            .as_array_mut()
+                            .unwrap()
+                            .pop();
+                    }
+                    "extra-image" => {
+                        let item = observation["images"]["images"][0].clone();
+                        observation["images"]["images"]
+                            .as_array_mut()
+                            .unwrap()
+                            .push(item);
+                    }
+                    "image-bytes" => {
+                        observation["images"]["images"][0]["bytes"] = json!(identity())
+                    }
+                    "sdk" => observation["images"]["images"][0]["image"]["sdk"] = json!(1769472),
+                    "entitlements" => {
+                        observation["images"]["images"][0]["entitlements"] =
+                            json!({"com.apple.security.get-task-allow":true});
+                    }
+                    "signature" => {
+                        observation["images"]["images"][0]["runtime"]["adhoc_signature_verified"] =
+                            false.into()
+                    }
+                    "missing-worker" => {
+                        observation.as_object_mut().unwrap().remove("worker");
+                    }
+                    "extra-run" => {
+                        let run = observation["worker"]["runs"][0].clone();
+                        observation["worker"]["runs"]
+                            .as_array_mut()
+                            .unwrap()
+                            .push(run);
+                    }
+                    "missing-item" => {
+                        observation["worker"]["runs"][0]["report"]["items"] = json!([])
+                    }
+                    "extra-item" => {
+                        let item = observation["worker"]["runs"][0]["report"]["items"][0].clone();
+                        observation["worker"]["runs"][0]["report"]["items"]
+                            .as_array_mut()
+                            .unwrap()
+                            .push(item);
+                    }
+                    "status" => {
+                        observation["worker"]["runs"][0]["report"]["items"][0]["status"] =
+                            "up_to_date".into()
+                    }
+                    "counts" => {
+                        observation["worker"]["runs"][0]["report"]["summary"]["counts"]["failed"] =
+                            json!(1)
+                    }
+                    "start-total" => {
+                        observation["worker"]["runs"][0]["report"]["start"]["total"] = json!(2)
+                    }
+                    "run-error" => {
+                        observation["worker"]["runs"][0]["report"]["summary"]["run_error"] =
+                            "contradictory error".into()
+                    }
+                    "unsettled" => {
+                        observation["worker"]["runs"][0]["completion"]["settled"] = false.into();
+                        observation["worker"]["runs"][0]["report"]["worker"]["settled"] =
+                            false.into();
+                    }
+                    "contradictory-worker" => {
+                        observation["worker"]["runs"][0]["report"]["worker"]["exit_code"] = json!(1)
+                    }
+                    _ => unreachable!(),
+                }
+            });
+            assert!(
+                bad.validate(&plan, &workflow()).is_err(),
+                "accepted {producer}/{change}"
+            );
+        }
+    }
+}
+
+#[test]
+fn coherently_rehashed_companion_context_cannot_override_shipping_or_toolchain_policy() {
+    let (_, plan, value) = fixture(false);
+    for change in [
+        "source",
+        "epoch",
+        "target",
+        "workflow",
+        "shipping-archive",
+        "shipping-reference",
+        "rust",
+        "xcode",
+        "sdk",
+    ] {
+        let mut bad = clone_inputs(&value);
+        let product = bad.products.get_mut(MAC_APP).unwrap();
+        let mut envelope = product.producer.document().unwrap()["operation_fixture"].clone();
+        let mut reference: Value =
+            serde_json::from_str(envelope["reference"]["contents"].as_str().unwrap()).unwrap();
+        match change {
+            "source" => reference["app"]["source"] = "d".repeat(40).into(),
+            "epoch" => reference["app"]["source_epoch"] = json!(1609459202),
+            "target" => reference["app"]["target"] = "aarch64-apple-darwin".into(),
+            "workflow" => reference["app"]["workflow"]["run"] = "13".into(),
+            "shipping-archive" => {
+                reference["shipping_archive"] = json!(ByteIdentity::of(b"another shipping archive"))
+            }
+            "shipping-reference" => {
+                reference["shipping_reference"] =
+                    json!(ByteIdentity::of(b"another shipping reference"))
+            }
+            "rust" => {
+                reference["worker"]["toolchain"]["rust_identity"] =
+                    "rustc wrong\nrelease: 9.9.9\nhost: x86_64-apple-darwin\n".into()
+            }
+            "xcode" => {
+                reference["worker"]["toolchain"]["xcode_identity"] =
+                    "Xcode 99.0\nBuild version wrong\n".into()
+            }
+            "sdk" => reference["worker"]["toolchain"]["sdk_version"] = "27.0".into(),
+            _ => unreachable!(),
+        }
+        let text = serde_json::to_string(&reference).unwrap();
+        envelope["reference"] =
+            json!({"identity":ByteIdentity::of(text.as_bytes()),"contents":text});
+        edit(&mut product.producer, |document| {
+            document["operation_fixture"] = envelope.clone();
+            if change == "rust" {
+                document["host"]["compiler"] =
+                    reference["worker"]["toolchain"]["rust_identity"].clone();
+            }
+        });
+        edit(product.desktop.as_mut().unwrap(), |document| {
+            document["verification"]["gui_interaction"]["operation_controls"]["operation_fixture"] =
+                envelope;
+        });
+        assert!(
+            bad.validate(&plan, &workflow()).is_err(),
+            "coherent forged {change}"
         );
     }
 }

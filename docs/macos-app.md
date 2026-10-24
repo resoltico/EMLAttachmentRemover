@@ -123,16 +123,24 @@ both declarations retain `LSHandlerRank=None`. It does not set default file or
 folder associations. The separate Services declaration accepts the same types.
 `cargo xtask build-macos-sources` retains native Rust executable/profile and
 ad-hoc-signature evidence. Complete bundle/legal/archive/GUI acceptance requires
-the builder and separate consumers below; a source build or startup-window
-observation cannot qualify those integrations.
+packaging and the native producer/consumer steps in the
+[contributor guide](../CONTRIBUTING.md#start-with-rust); a source build or
+startup-window observation cannot qualify those integrations.
 
-The complete builder is `cargo xtask build-macos-app --icons ICON_PRODUCER_DIR
+The shipping archive builder is `cargo xtask build-macos-app --icons ICON_PRODUCER_DIR
 --out NEW_OUTPUT_DIR`. It consumes same-source validated icon and component legal
 inputs, preserves signed worker bytes when signing the outer app, verifies every
 Mach-O's CPU/minimum/system dependencies, and uses actual ditto creation/extraction.
 The frozen producer reference checks file identities and modes before extraction;
 actual extracted worker runs check Core outcomes against independent goldens and
-unchanged originals. Hosted startup smoke observes the exact owned GUI PID's real
+unchanged originals. Complete qualification additionally freezes a separate
+nonshipping controlled-worker companion on the producer. macOS15 consumers use
+the shipping archive for ordinary workflow, pagination and appearance, and the
+companion for controlled I/O. They rebuild or re-sign neither input. The
+companion must preserve GUI code, signing attributes and legal provenance and
+remain outside shipping downloads.
+
+On the hosted consumers, startup smoke observes the exact owned GUI PID's real
 window and settles that process without sending requests. This is not full GUI,
 paint, accessibility or UI Quit acceptance. Startup failure evidence includes
 owned-PID window observations and retained GUI stdout/stderr. While the owned GUI

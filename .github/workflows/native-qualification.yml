@@ -5,6 +5,10 @@ on:
       source:
         required: true
         type: string
+    outputs:
+      picker:
+        description: Exact picker matrix from the admitted source build plan
+        value: ${{ jobs.plan.outputs.picker }}
 defaults:
   run:
     shell: bash
@@ -476,6 +480,17 @@ jobs:
             target/native-app-build/app-build/app-result.json
           if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: operation_fixture
+        if: ${{ !cancelled() && hashFiles('target/native-app-build/app-build/operation-fixture/result.json') != '' }}
+        with:
+          name: native-operation-fixtures-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          compression-level: 0
+          path: |
+            target/native-app-build/app-build/operation-fixture/operation-fixture.zip
+            target/native-app-build/app-build/operation-fixture/operation-fixture.reference.json
+            target/native-app-build/app-build/operation-fixture/result.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
           name: native-app-evidence-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
@@ -495,14 +510,17 @@ jobs:
             target/native-app-build/**/entitlements.plist
             target/native-app-build/*.tar.gz
             target/native-app-build/app-build/*.zip
+            target/native-app-build/app-build/operation-fixture/operation-fixture.zip
+            target/native-app-build/app-build/operation-fixture/artifact-*/**
+            target/native-app-build/app-build/operation-fixture-build/**/artifact-*/**
             !target/native-app-build/native-test-build/**
             !target/native-app-build/app-build/sources/cargo/**
             !target/native-app-build/**/gui-interaction/**/build/**
             !target/native-app-build/**/gui-operation-controls/**/build/**
-            !target/native-app-build/**/gui-operation-controls/cargo/**
             target/archive-verification/**
             ${{ steps.products.outcome == 'success' && '!target/native-app-build/*.tar.gz' || '' }}
             ${{ steps.products.outcome == 'success' && '!target/native-app-build/app-build/*.zip' || '' }}
+            ${{ steps.operation_fixture.outcome == 'success' && '!target/native-app-build/app-build/operation-fixture/operation-fixture.zip' || '' }}
           if-no-files-found: error
   app_smoke:
     permissions:
@@ -537,22 +555,23 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           ARTIFACT_NAME: native-products-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
+          FIXTURE_ARTIFACT_NAME: native-operation-fixtures-${{ inputs.source }}-${{ matrix.platform }}-r${{ github.run_id }}-a${{ github.run_attempt }}
         run: |
-          id=$(gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts" | jq -er --arg name "$ARTIFACT_NAME" '[.[]|.artifacts[]|select(.name==$name and .expired==false)] | if length==1 then .[0].id else error("missing or ambiguous exact producer artifact") end')
-          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
-          printf 'Exact producer artifact ID: %s\n' "$id"
+          artifacts=$(gh api --paginate --slurp "repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts")
+          id=$(printf '%s' "$artifacts" | jq -er --arg name "$ARTIFACT_NAME" '[.[]|.artifacts[]|select(.name==$name and .expired==false)] | if length==1 then .[0].id else error("missing or ambiguous exact producer artifact") end')
+          fixture_id=$(printf '%s' "$artifacts" | jq -er --arg name "$FIXTURE_ARTIFACT_NAME" '[.[]|.artifacts[]|select(.name==$name and .expired==false)] | if length==1 then .[0].id else error("missing or ambiguous exact operation-fixture artifact") end')
+          printf 'id=%s\nfixture_id=%s\n' "$id" "$fixture_id" >> "$GITHUB_OUTPUT"
+          printf 'Exact producer artifact IDs: shipping=%s fixture=%s\n' "$id" "$fixture_id"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ steps.artifact.outputs.id }}
           path: target/products
           digest-mismatch: error
-      - name: Reuse producer dependencies for consumer bootstrap
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: |
-            target/native-cargo/${{ matrix.target }}
-            ~/.cargo/registry/cache
-          key: macos-build-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'vendor/**', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
+          artifact-ids: ${{ steps.artifact.outputs.fixture_id }}
+          path: target/operation-fixture
+          digest-mismatch: error
       - name: Run the same native CLI and app archive bytes on the floor host
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -562,7 +581,7 @@ jobs:
           app=$(jq -er --arg platform "$PLATFORM" '.expected_artifacts[]|select(.platform==$platform and .role=="app")|.name' target/distribution.json)
           cli=$(jq -er --arg platform "$PLATFORM" '.expected_artifacts[]|select(.platform==$platform and .role=="cli")|.name' target/distribution.json)
           cargo xtask verify-archive --archive "target/products/$cli" --target "$TARGET"
-          cargo xtask smoke-macos-app --archive "target/products/app-build/$app" --reference "target/products/app-build/$app.reference.json"
+          cargo xtask smoke-macos-app --archive "target/products/app-build/$app" --reference "target/products/app-build/$app.reference.json" --operation-fixture target/operation-fixture/operation-fixture.zip --operation-reference target/operation-fixture/operation-fixture.reference.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
@@ -571,7 +590,6 @@ jobs:
             target/app-archive-smoke/**
             !target/app-archive-smoke/**/gui-interaction/**/build/**
             !target/app-archive-smoke/**/gui-operation-controls/**/build/**
-            !target/app-archive-smoke/**/gui-operation-controls/cargo/**
             target/archive-verification/**
             target/native-host/**
           if-no-files-found: error
@@ -615,13 +633,6 @@ jobs:
           artifact-ids: ${{ steps.artifact.outputs.id }}
           path: target/products
           digest-mismatch: error
-      - name: Reuse producer dependencies for consumer bootstrap
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            target/native-cargo/${{ matrix.target }}
-            ~/.cargo/registry/cache
-          key: macos-build-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'vendor/**', 'rust-toolchain.toml', 'xtask/tools.toml', 'xtask/distribution.toml', '.cargo/config.toml') }}
       - name: Qualify the frozen picker once in its admitted ordinary or incident host state
         env:
           PLATFORM: ${{ matrix.platform }}

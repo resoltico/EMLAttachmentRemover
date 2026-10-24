@@ -202,17 +202,7 @@ fn verify(
         return Err("Archive platform differs from the requested native target".into());
     }
     if artifact.key().role() != crate::distribution::ProductRole::Cli {
-        #[cfg(target_os = "macos")]
-        {
-            let reference = archive.with_file_name(format!("{name}.reference.json"));
-            crate::macos_archive::smoke(root, plan, archive, &reference)?;
-            return Ok(ArchiveSnapshot::read(archive)?.identity());
-        }
-        #[cfg(not(target_os = "macos"))]
-        return Err(
-            "App archive verification requires native macOS and its frozen producer reference"
-                .into(),
-        );
+        return Err("App qualification requires native macOS smoke-macos-app with explicit --archive, --reference, --operation-fixture and --operation-reference inputs".into());
     }
     let host = crate::native_host::inspect(root, target, os, architecture)?;
     let work = retained_verification_directory(root)?;

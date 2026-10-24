@@ -637,7 +637,7 @@ pub(crate) fn run(
             let app_stage = out.join("app-build");
             let volume = out.join("owned-exfat-observation");
             crate::macos_volume::run(root, &volume)?;
-            crate::macos_archive::build(root, plan, &app_stage, icons)?;
+            crate::macos_archive::build_qualification(root, plan, &app_stage, icons)?;
             let app: Value = serde_json::from_slice(&fs::read(app_stage.join("app-result.json"))?)?;
             fs::write(
                 out.join("qualification.json"),

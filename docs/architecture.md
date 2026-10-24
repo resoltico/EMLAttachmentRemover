@@ -63,6 +63,13 @@ identity and runs the actual extracted executable against independent goldens.
 An archive is published into its output directory only after those scoped checks.
 This is packaging publication, separate from the product's message-copy edge.
 
+Desktop qualification freezes a separate nonshipping controlled-worker companion
+on the producer. Its closed reference links the shipping app and complete
+equivalence/security/legal observations; floor consumers execute both frozen
+inputs without rebuilding or re-signing them. The ordinary cases use the shipping
+app, and controlled I/O cases use the companion. Release-input admission binds
+each case to its actual archive while keeping the shipping inventory unchanged.
+
 The native target table and tool pins have single authorities under xtask/;
 Cargo metadata supplies the workspace version. Generated target legal trees have
 reviewed source bindings and deterministic freshness checks. Cargo notices do not

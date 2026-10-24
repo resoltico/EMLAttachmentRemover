@@ -75,6 +75,14 @@ product receipt bytes must match their typed projection. Failed, missing, skippe
 duplicate or mismatched evidence refuses admission before assembly. No receipt or
 digest alone establishes native execution.
 
+Desktop admission binds ordinary workflow, pagination and appearance to the
+shipping archive, and the 18 controlled cases to a separate producer-frozen
+companion. Its closed reference binds the source, CPU, epoch, workflow and
+shipping input, with actual GUI-code, signature, feature/material and native
+verification facts. Producer and floor observations must agree. The verified
+input manifest retains this nonshipping binding; asset assembly excludes the
+companion archive and reference.
+
 The versioned `verified-inputs.json` retains the exact frozen native documents and
 identities, typed picker receipt and source/run binding. Archive bytes are copied
 with exclusive creation, synchronized and read back. This manifest is admitted

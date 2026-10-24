@@ -140,14 +140,12 @@ sources. Cached intermediates are unqualified: current products are built, froze
 signed and subjected to image, archive, extraction, behavior and GUI checks.
 Qualification records and prior test results are never restored as passes.
 
-The macOS15 desktop and macOS26 picker consumers restore this same exact-key
-cache before compiling their tooling, without saving another cache object. This
-transfers about 395 MiB per consumer, including native dependency objects their
-bootstrap does not use, in exchange for reusing the compressed crate archives.
-Consumer tooling still compiles fresh in its ordinary build directory and checks
-the frozen product archives. Cache reuse reduces crate-archive downloads; the
-registry index and other network prerequisites can still be required. It neither
-retries a failed qualification nor makes a cache hit evidence of product behavior.
+The macOS15 desktop and macOS26 picker consumers compile their tooling in its
+ordinary build directory and fetch its selected locked crate dependencies. They
+do not restore the producer's release cache: its native objects are unused by
+that bootstrap, and consumers neither build nor re-sign the frozen applications.
+Cargo may still need registry-index and other network access. A dependency cache
+hit never establishes product behavior or permits retrying a failed qualification.
 
 The fixed Windows PowerShell script uses an ordinary absolute drive expression;
 script admission can reject verbatim expressions under the native working
@@ -216,10 +214,39 @@ archive builder. It requires a fresh hosted runner before native operations,
 preserves the validated same-source shared icon producer and emits one
 native-candidate record for the CLI and nested app archive. CI's app job owns these
 release/volume checks; the separate native matrix retains debug, desktop,
-formatting and namespace checks. macOS15 consumers exercise exactly the producer
-archives. Producer verification ends after extraction, structure, signature,
+formatting and namespace checks. macOS15 consumers exercise two separate,
+producer-frozen inputs: the shipping app and a nonshipping operation-fixture
+companion. Producer verification includes extraction, structure, signature,
 CPU/minimum policy, actual Core-backed worker and unchanged-bundle checks; its
 `native_candidate` receipt contains no successful/default GUI fields.
+
+The companion contains the same GUI code with the existing controlled worker
+feature enabled. The producer uses the shared native Cargo directory, records the
+actual worker feature graph and freezes a separate archive/reference linked to
+the shipping archive, source, CPU, epoch and workflow run/attempt. Consumers do
+not build, replace or re-sign either app. Host Swift/XCTest driver compilation
+remains separate from the application under test.
+
+Producer comparison requires identical bundle paths and modes. Only the worker,
+GUI signature, bundle signature resource, worker activated-feature graph and its
+recorded graph-generation arguments may differ. External dependency identities,
+checksums and activated features must match; only the closed workspace fixture
+features may differ. All license text and other material facts remain unchanged.
+Native strict signature checks and exact signing identifier, flags and entitlement
+comparisons are required. On exclusive analytical GUI copies, the native
+`codesign --remove-signature` operation must leave entirely equal files. These
+analytical copies are never executed or substituted for frozen inputs. A failed
+metadata command cannot become an empty observation.
+
+Workflow, pagination and appearance cases use the shipping archive; all 18
+controlled cases use the companion archive. Each case binds its actual input.
+Release admission requires the same producer reference and companion identities
+in floor evidence, rejecting missing, swapped or stale inputs and incomplete
+case sets. The companion is retained separately as test support and never enters
+the six-CLI/two-app shipping asset set. This split resolves the single-archive
+assumption: controlled worker behavior cannot be obtained from unmodified
+shipping bytes. Consumer construction and successful tests on modified copies
+do not establish producer-to-floor byte qualification.
 
 Debug and release test selections retain native publication receipts and namespace
 inventories under `native-publication-evidence`. Windows additionally retains
