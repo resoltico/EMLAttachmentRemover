@@ -109,7 +109,7 @@ fn signature(
         entitlements_process,
     })
 }
-fn sign(root: &Path, build: &MacBuild, path: &Path, out: &Path, label: &str) -> Result<()> {
+fn sign_copied_app(root: &Path, build: &MacBuild, path: &Path, out: &Path) -> Result<()> {
     let mut sign = build.command(root, "/usr/bin/codesign");
     sign.args([
         "--force",
@@ -119,12 +119,37 @@ fn sign(root: &Path, build: &MacBuild, path: &Path, out: &Path, label: &str) -> 
         "--preserve-metadata=identifier,entitlements,flags",
     ])
     .arg(path);
-    checked(sign, &out.join(format!("{label}-sign.log")), 30)?;
+    checked(sign, &out.join("app-sign.log"), 30)?;
     let mut verify = build.command(root, "/usr/bin/codesign");
     verify
         .args(["--verify", "--strict", "--verbose=2"])
         .arg(path);
-    checked(verify, &out.join(format!("{label}-verify.log")), 30)?;
+    checked(verify, &out.join("app-verify.log"), 30)?;
+    Ok(())
+}
+fn sign_compiled_worker(
+    root: &Path,
+    build: &MacBuild,
+    path: &Path,
+    shipping_identifier: &str,
+    out: &Path,
+) -> Result<()> {
+    let mut sign = build.command(root, "/usr/bin/codesign");
+    sign.args([
+        "--force",
+        "--sign",
+        "-",
+        "--timestamp=none",
+        "--identifier",
+        shipping_identifier,
+    ])
+    .arg(path);
+    checked(sign, &out.join("worker-sign.log"), 30)?;
+    let mut verify = build.command(root, "/usr/bin/codesign");
+    verify
+        .args(["--verify", "--strict", "--verbose=2"])
+        .arg(path);
+    checked(verify, &out.join("worker-verify.log"), 30)?;
     Ok(())
 }
 struct CompiledWorker {
@@ -383,19 +408,25 @@ pub(crate) fn produce(
         legal.fixture_materials.contents.as_bytes(),
     )?;
     let compiled = compile_worker(root, plan, build, &logs)?;
+    let shipping_signature = signature(
+        root,
+        build,
+        &shipping.join(app_reference::WORKER),
+        &logs.join("shipping-worker-signature"),
+    )?;
     fs::write(app.join(app_reference::WORKER), &compiled.bytes)?;
     fs::set_permissions(
         app.join(app_reference::WORKER),
         fs::Permissions::from_mode(0o755),
     )?;
-    sign(
+    sign_compiled_worker(
         root,
         build,
         &app.join(app_reference::WORKER),
+        &shipping_signature.identifier,
         &logs,
-        "worker",
     )?;
-    sign(root, build, &app, &logs, "app")?;
+    sign_copied_app(root, build, &app, &logs)?;
     let worker = WorkerBuild {
         compiled_image: ByteIdentity::of(&compiled.bytes),
         features: compiled.features,
@@ -409,12 +440,7 @@ pub(crate) fn produce(
             minimum: build.minimum,
         },
         process: compiled.process,
-        shipping_signature: signature(
-            root,
-            build,
-            &shipping.join(app_reference::WORKER),
-            &logs.join("shipping-worker-signature"),
-        )?,
+        shipping_signature,
         fixture_signature: signature(
             root,
             build,

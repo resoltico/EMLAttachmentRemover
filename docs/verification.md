@@ -233,7 +233,12 @@ recorded graph-generation arguments may differ. External dependency identities,
 checksums and activated features must match; only the closed workspace fixture
 features may differ. All license text and other material facts remain unchanged.
 Native strict signature checks and exact signing identifier, flags and entitlement
-comparisons are required. On exclusive analytical GUI copies, the native
+comparisons are required. Before replacing the worker, the producer observes its
+shipping signature. The newly compiled worker is signed with that observed
+identifier explicitly: preserving the new image's metadata would retain its own
+linker-derived identifier. The copied outer app retains metadata-preserving
+re-signing. Every signature equality check remains required.
+On exclusive analytical GUI copies, the native
 `codesign --remove-signature` operation must leave entirely equal files. These
 analytical copies are never executed or substituted for frozen inputs. A failed
 metadata command cannot become an empty observation.
