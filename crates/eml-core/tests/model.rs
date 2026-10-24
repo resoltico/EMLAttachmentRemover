@@ -426,11 +426,21 @@ proptest! {
             Ok(Expected{copy:None,..})=>prop_assert!(matches!(actual,Err(PreparationError::Refused{kind:Refusal::NoBody,..})), "Expected no supported body"),
             Ok(Expected{copy:Some(copy),removals,stripped})=>{
                 let actual=actual.map_err(|error|TestCaseError::fail(error.to_string()))?;
-                prop_assert_eq!(actual.as_bytes(),copy.as_slice());prop_assert_eq!(actual.removed(),removals.as_slice());
+                prop_assert!(
+                    actual.as_bytes() == copy.as_slice(),
+                    "Prepared bytes differ from model: prepared length {}; model length {}",
+                    actual.as_bytes().len(), copy.len()
+                );
+                prop_assert_eq!(actual.removed(),removals.as_slice());
                 let stripped: Vec<_> = stripped.into_iter().collect();
                 prop_assert_eq!(actual.stripped_fields(),stripped.as_slice());
                 let again=prepare_message(actual.as_bytes(),&RunControl::default()).map_err(|error|TestCaseError::fail(error.to_string()))?;
-                prop_assert_eq!(again.as_bytes(),actual.as_bytes());prop_assert!(again.removed().is_empty());prop_assert!(again.stripped_fields().is_empty());
+                prop_assert!(
+                    again.as_bytes() == actual.as_bytes(),
+                    "Fixed-point bytes differ: second length {}; first length {}",
+                    again.as_bytes().len(), actual.as_bytes().len()
+                );
+                prop_assert!(again.removed().is_empty());prop_assert!(again.stripped_fields().is_empty());
             }
         }
     }

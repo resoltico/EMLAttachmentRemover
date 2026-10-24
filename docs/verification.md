@@ -125,6 +125,10 @@ confirmed process settlement, their executable identities and transcripts remain
 while the private compiler tree is removed. A rebound directory or uncertain
 owner prevents deletion. The shared macOS release cache is separate.
 
+Shared developer builds also retain authored tooling objects. After commands using
+that target directory have exited, `cargo clean --package xtask` retires those
+tooling builds while retaining third-party dependency objects.
+
 Native macOS builds share CPU-specific intermediates under `target/native-cargo/`.
 CI cache keys include target, locks/manifests, compiler/tool/SDK policy, Cargo
 configuration and complete retained vendor sources. There is no source-commit
@@ -497,6 +501,11 @@ settlement operations. Census failures also record their ordinal and prior
 stability. Missing operations remain null; diagnostic facts grant no ownership
 and do not replace a failed cleanup decision.
 
+Native owner observations preserve AppKit launch-date values through the bounded
+JSON reader, projection and serialization. The authored shared JSON dependency
+enables `float_roundtrip`; adjacent native `f64` identities must remain distinct.
+The same reader still rejects duplicate keys, invalid shapes and oversized input.
+
 This controls the reviewed pinned tool topology, not arbitrary process escape or
 an atomic universal process-table snapshot. Compiler-wrapper/target-runner hooks
 must be absent or explicitly reviewed; the driver refuses unreviewed effective
@@ -544,7 +553,11 @@ runs the independent semantic model with4096 cases and the bounded fuzz harness
 for900 seconds. The model honors `PROPTEST_CASES` within256..4096, preserving
 the normal minimum and limiting inherited requests. Both existing property
 runners set Proptest's shrink budgets to at most 4096 iterations and 2000 ms,
-preserving lower explicit requests. This does not preempt an individual case;
+preserving lower explicit requests. They fix verbosity at zero to suppress repeated
+case/shrink tracing, while retaining the final minimized case and seed. The large
+work-bound, semantic-model and fuzz fixed-point comparisons keep exact byte
+equality but report reasons and lengths instead of formatting payloads. This does
+not preempt an individual case;
 the owned outer process deadline remains separate. Before replay, retained seed files must be regular, canonical and at
 most 1 MiB/4096 seeds; excess or malformed evidence is preserved and refused,
 never silently truncated. Standard Proptest still appends the failing seed after

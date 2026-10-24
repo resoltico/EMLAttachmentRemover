@@ -785,9 +785,12 @@ fn exited_inspector_with_inherited_stdout_cannot_bypass_eof_deadline() {
 fn oversized_inspection_is_bounded_and_its_exact_process_is_reaped() {
     let _scenario = scenario();
     let root = scratch();
+    // Request a finite stream of 129 × 64 KiB blocks: one block beyond 8 MiB.
+    // This needs no payload file or unbounded generator; scheduling and short
+    // reads can still fail the unchanged deadline or specific overflow check.
     let controller = inspection_controller(
         root.path(),
-        "#!/bin/sh\nprintf '%s' \"$$\" > \"$0.pid\"\nexec /usr/bin/yes oversized\n",
+        "#!/bin/sh\nprintf '%s' \"$$\" > \"$0.pid\"\nexec /bin/dd if=/dev/zero bs=65536 count=129\n",
     );
     let error = controller
         .run(

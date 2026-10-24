@@ -13,28 +13,33 @@ static CONFIG_SEEDS: LazyLock<String> = LazyLock::new(|| {
 });
 
 #[test]
-fn inherited_shrink_limits_remain_finite_and_lower_requests_are_preserved() {
+fn inherited_verbosity_is_disabled_and_lower_shrink_limits_are_preserved() {
     if let Ok(mode) = std::env::var("EML_PROPERTY_CONFIG_PROBE") {
         let config = Config::default();
+        assert_eq!(config.verbose, if mode == "high" { 2 } else { 1 });
         if mode == "high" {
             assert_eq!(config.max_shrink_iters, u32::MAX - 1);
             assert_eq!(config.max_shrink_time, u32::MAX);
         }
         let config = property_config::bounded(config, &CONFIG_SEEDS);
+        assert_eq!(config.verbose, 0);
         let (iterations, time) = if mode == "high" { (4096, 2000) } else { (7, 9) };
         assert_eq!(config.max_shrink_iters, iterations);
         assert_eq!(config.max_shrink_time, time);
         return;
     }
-    for (mode, iterations, time) in [("high", 4294967294u32, u32::MAX), ("low", 7, 9)] {
+    for (mode, iterations, time, verbose) in
+        [("high", 4294967294u32, u32::MAX, 2), ("low", 7, 9, 1)]
+    {
         let result = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "inherited_shrink_limits_remain_finite_and_lower_requests_are_preserved",
+                "inherited_verbosity_is_disabled_and_lower_shrink_limits_are_preserved",
             ])
             .env("EML_PROPERTY_CONFIG_PROBE", mode)
             .env("PROPTEST_MAX_SHRINK_ITERS", iterations.to_string())
             .env("PROPTEST_MAX_SHRINK_TIME", time.to_string())
+            .env("PROPTEST_VERBOSE", verbose.to_string())
             .output()
             .unwrap();
         assert!(

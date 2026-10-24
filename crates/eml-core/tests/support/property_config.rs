@@ -63,6 +63,8 @@ pub(crate) fn check_seed_file(path: &Path) -> Result<(), String> {
 
 pub(crate) fn bounded(mut config: Config, path: &'static str) -> Config {
     check_seed_file(Path::new(path)).unwrap_or_else(|error| panic!("{}: {error}", path));
+    // Retained seeds preserve reproduction without repeated per-case payload output.
+    config.verbose = 0;
     config.max_shrink_iters = config.max_shrink_iters().min(4096);
     config.max_shrink_time = match config.max_shrink_time {
         0 => 2000,

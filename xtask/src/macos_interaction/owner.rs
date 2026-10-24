@@ -386,3 +386,75 @@ mod clipboard_crash_tests {
         assert!(qualify_crash_relay(&incomplete).is_err());
     }
 }
+
+#[cfg(test)]
+mod owner_number_tests {
+    use super::*;
+
+    #[test]
+    fn bounded_owner_reader_and_projection_preserve_adjacent_native_launch_dates() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("owner.json");
+        let output = directory.path().join("projected-owner.json");
+        let template = serde_json::to_string(&json!({
+            "fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),
+            "fixture_output_relay":crate::picker_evidence::fixture_output_relay_test_value(),
+            "fixture_actors":crate::picker_evidence::fixture_actors::test_value("owner-control"),
+            "panel_path_clipboard":crate::picker_evidence::panel_path_clipboard_test_value(false),
+            "failure":null,"source_check_failure":null,"timed_out":false,"cancelled":false,
+            "runner_reaped":true,"runner_status":0,"owned_app_terminated":true,
+            "forced_app_cleanup":false,"originals_captured":4,"originals_unchanged":true,
+            "owned_pasteboard_released":true,"unexpected_application_pids":[],
+            "ownership_receipt":{"pid":42,"launch_date":"NATIVE_LAUNCH_DATE",
+                "bundle_path":"/owned/app","pasteboard":"private"}
+        }))
+        .unwrap();
+        let mut observed = Vec::new();
+        // Independent IEEE-754 oracles for the native decimal and its distinct
+        // adjacent identity, not expectations computed by serde_json itself.
+        for (decimal, expected_bits) in [
+            ("1792819537.2597399", 0x41da_b710_5450_9f94),
+            ("1792819537.25974", 0x41da_b710_5450_9f95),
+        ] {
+            let bytes = template.replace("\"NATIVE_LAUNCH_DATE\"", decimal);
+            fs::write(&input, bytes).unwrap();
+            let raw = read_owner_facts(&input).unwrap();
+            assert_eq!(
+                raw["ownership_receipt"]["launch_date"]
+                    .as_f64()
+                    .unwrap()
+                    .to_bits(),
+                expected_bits
+            );
+            let projected = crate::picker_evidence::project_lifetime_owner(&raw).unwrap();
+            assert_eq!(
+                projected.ownership_receipt.launch_date.to_bits(),
+                expected_bits
+            );
+            fs::write(&output, serde_json::to_vec(&projected).unwrap()).unwrap();
+            let roundtrip = read_owner_facts(&output).unwrap();
+            let projected_again =
+                crate::picker_evidence::project_lifetime_owner(&roundtrip).unwrap();
+            assert_eq!(
+                projected_again.ownership_receipt.launch_date.to_bits(),
+                expected_bits
+            );
+            observed.push(projected_again.ownership_receipt.launch_date.to_bits());
+        }
+        assert_ne!(observed[0], observed[1]);
+        for invalid in [
+            br#"{"launch_date":1,"launch_date":2}"#.as_slice(),
+            br#"{"launch_date":1e9999}"#.as_slice(),
+            b"[]".as_slice(),
+        ] {
+            fs::write(&input, invalid).unwrap();
+            assert!(read_owner_facts(&input).is_err());
+        }
+        fs::write(
+            &input,
+            vec![b' '; crate::picker_evidence::fixture_actors::MAX_OWNER_BYTES + 1],
+        )
+        .unwrap();
+        assert!(read_owner_facts(&input).is_err());
+    }
+}

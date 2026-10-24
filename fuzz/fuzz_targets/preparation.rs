@@ -29,7 +29,12 @@ fuzz_target!(|input: &[u8]| {
             }
             let again = prepare_message(prepared.as_bytes(), &RunControl::default())
                 .expect("Successful preparation is not a fixed point");
-            assert_eq!(again.as_bytes(), prepared.as_bytes());
+            assert!(
+                again.as_bytes() == prepared.as_bytes(),
+                "Fixed-point bytes differ: second length {}; first length {}",
+                again.as_bytes().len(),
+                prepared.as_bytes().len()
+            );
             assert!(again.removed().is_empty() && again.stripped_fields().is_empty());
         }
         Err(PreparationError::Refused {

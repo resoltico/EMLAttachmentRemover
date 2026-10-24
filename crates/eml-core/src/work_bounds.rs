@@ -88,7 +88,12 @@ fn payload_work_is_linear_at_shallow_middle_and_admitted_deep_shapes() {
             let bytes = message(depth, &payload);
             reset(None);
             let prepared = crate::prepare_message(&bytes, &RunControl::default()).unwrap();
-            assert_eq!(prepared.as_bytes(), bytes);
+            assert!(
+                prepared.as_bytes() == bytes.as_slice(),
+                "Prepared bytes differ from source: prepared length {}; source length {}",
+                prepared.as_bytes().len(),
+                bytes.len()
+            );
             let m = measured();
             assert!(m.max_unit <= crate::PREPARATION_CHUNK_BYTES, "{m:?}");
             for stage in [Stage::SourceParse, Stage::CandidateParse] {

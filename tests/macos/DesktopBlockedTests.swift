@@ -405,7 +405,8 @@ extension DesktopInteractionTests {
         atPath: session.fixture.appendingPathComponent("blocked-report.json").path))
     // With no body read and a report larger than the pipe, this is the actual
     // parent writer holding its shared report lock, observed by try-inspection.
-    try await requireText(app, containing: "Report is busy; waiting for results.")
+    try await showReportDetails(app)
+    try await requireText(app, containing: "Run 1\nReport is busy; waiting for results.")
     try await selectReport(app, run: 2)
     try await requireRun(
       app, counts: "1 created · 0 up to date",

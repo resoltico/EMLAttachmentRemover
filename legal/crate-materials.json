@@ -9041,13 +9041,19 @@
           "generator_text_bytes": 1023,
           "generator_text_sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
           "license_id": "MIT",
-          "mapping": "exact_per_package_legal_file",
+          "mapping": "complete_source_license_materials",
           "materials": [
             {
               "bytes": 1023,
               "kind": "package_file",
               "path": "LICENSE-MIT",
               "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            },
+            {
+              "kind": "package_file",
+              "path": "src/lexical/mod.rs",
+              "bytes": 1059,
+              "sha256": "ace2ccea2cd541f019a84b9eeb3b9ecd88daf6bccbe9edf0eac00b62704f47c4"
             }
           ],
           "scopes": [
@@ -9068,7 +9074,7 @@
       "license_expression": "MIT OR Apache-2.0",
       "name": "serde_json",
       "provenance": {
-        "checksum_basis": "Cargo.lock package.checksum; registry archive was not re-downloaded or rehashed in this QA review.",
+        "checksum_basis": "Cached serde_json 1.0.154 registry archive independently rehashed during the float_roundtrip material review and equal to Cargo.lock package.checksum; every lexical module member and the retained permission text separately matched the archive. No registry archive was newly downloaded. This establishes byte identity, not review quality or legal assurance.",
         "kind": "registry"
       },
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -13046,10 +13052,10 @@
       "sha256": "1852d9893affa66fe4d8304614aa9ee6ab249d70fe8bdc0befcdb924cb564947"
     },
     {
-      "bytes": 1568,
+      "bytes": 1614,
       "kind": "review_input",
       "path": "Cargo.toml",
-      "sha256": "7367598d6c9dbe8b35a1ef40d0fc12d8960a2fb14c62889b4cf65426f87901c8"
+      "sha256": "9af9b14f8a97d36481a72cf56e42d5e929b00adb340d82c805f11cc3b60e4352"
     },
     {
       "bytes": 837,
@@ -13372,6 +13378,10 @@
     {
       "basis_head": "7d282476da5bd110b5ff83bcb811876c021f2b14",
       "scope": "Independent profile-only input review compared the complete parsed root Cargo.toml with 4961dbc7bd482b49844161bfb409d8c579e7f5e1: adding profile.dev.incremental=false is the sole semantic difference. Removing that key yields exact equality; package, dependency, feature, license and release declarations are unchanged. Cargo.lock bytes and every other recorded legal source input are unchanged. The complete local check of that commit passed all five dependency graphs but failed notice input validation before generation because this root manifest binding was stale. Renewed only the root manifest byte identity after that review; registry package materials and license bindings are unchanged. This amendment does not attest generator execution, legal assurance or native qualification."
+    },
+    {
+      "basis_head": "52a8f22a6ebf70eb1ccd6ae2c8bd31784981684e",
+      "scope": "Independent review of serde_json 1.0.154 float_roundtrip material follows its newly enabled internal lexical module. The cached published crate SHA-256 matches the locked and existing reviewed checksum e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6; all 19 lexical Rust files match their archive members. The 18 subordinate file headers point to the same Alexhuszagh/rust-lexical adaptation, with no distinct additional copyright or grant declaration found. The complete unchanged src/lexical/mod.rs states copyright Alexander Huszagh and dual MIT/Apache-2.0 licensing for the condensed module. Retain that whole 1059-byte source declaration as additional package material through the existing complete_source_license_materials mapping, alongside the unchanged 1023-byte LICENSE-MIT permission text and its existing generator binding. This changes no selected license, registry package identity, dependency version or generator; it does not attest generation execution, external legal assurance or native qualification. The complete parsed root manifest differs from the basis only by enabling serde_json float_roundtrip with the same version; all other package, dependency, feature, profile and license declarations are equal after removing that single feature selection. Renewed the root Cargo.toml source-input bytes and SHA-256 after that independent comparison. All six tracked Cargo.lock files remain byte-identical to the basis. The former lock-only checksum-basis wording remains in the basis commit; the active serde_json provenance now records this independently rehashed cached archive without claiming a new download."
     }
   ],
   "product_material_review": {
