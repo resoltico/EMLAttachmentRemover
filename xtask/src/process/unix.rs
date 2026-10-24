@@ -300,15 +300,56 @@ enum InspectionScope {
     Supervisor,
     Session,
 }
+// Failure-only scalar facts. They never grant process ownership or replace EOF,
+// native exit, deadline, or cleanup decisions; no census text is retained.
+#[derive(serde::Serialize)]
+struct InspectionFailure {
+    scope: &'static str,
+    session: i32,
+    inspector_pid: Option<i32>,
+    budget_us: u128,
+    observed_elapsed_us: u128,
+    settlement_elapsed_us: u128,
+    stdout_bytes: usize,
+    stdout_eof: Option<bool>,
+    observed_raw_status: Option<i32>,
+    settlement_poll: Option<serde_json::Value>,
+    kill_result: Option<serde_json::Value>,
+    wait_result: Option<serde_json::Value>,
+}
+impl InspectionFailure {
+    fn error(&self, error: impl std::fmt::Display) -> Box<dyn std::error::Error> {
+        format!("{error}; inspection={}", serde_json::json!(self)).into()
+    }
+}
 fn inspect(
     program: &Path,
     session: Pid,
     scope: InspectionScope,
     until: Instant,
 ) -> Result<(Vec<Row>, bool)> {
-    let until = until.min(Instant::now() + Duration::from_secs(2));
+    let began = Instant::now();
+    let until = until.min(began + Duration::from_secs(2));
+    let mut observation = InspectionFailure {
+        scope: match scope {
+            InspectionScope::Supervisor => "supervisor",
+            InspectionScope::Session => "session",
+        },
+        session: number(session),
+        inspector_pid: None,
+        budget_us: until.saturating_duration_since(began).as_micros(),
+        observed_elapsed_us: 0,
+        settlement_elapsed_us: 0,
+        stdout_bytes: 0,
+        stdout_eof: None,
+        observed_raw_status: None,
+        settlement_poll: None,
+        kill_result: None,
+        wait_result: None,
+    };
     if Instant::now() >= until {
-        return Err("Inspection budget exhausted before spawn".into());
+        observation.observed_elapsed_us = began.elapsed().as_micros();
+        return Err(observation.error("Inspection budget exhausted before spawn"));
     }
     let mut command = Command::new(program);
     // The short kernel command name is diagnostic only, never signal authority.
@@ -331,10 +372,16 @@ fn inspect(
         // Inspection consumes status and numeric stdout only. An unread stderr
         // pipe could block the inspector and provides no diagnostic evidence.
         .stderr(Stdio::null())
-        .spawn()?;
+        .spawn()
+        .map_err(|error| {
+            observation.observed_elapsed_us = began.elapsed().as_micros();
+            observation.error(error)
+        })?;
     let inspector = process.id() as i32;
+    observation.inspector_pid = Some(inspector);
     let observed = (|| -> Result<Vec<u8>> {
         let mut stdout = process.stdout.take().ok_or("Missing inspector output")?;
+        observation.stdout_eof = Some(false);
         let flags = rustix::fs::fcntl_getfl(&stdout)?;
         rustix::fs::fcntl_setfl(&stdout, flags | rustix::fs::OFlags::NONBLOCK)?;
         let mut bytes = Vec::new();
@@ -346,10 +393,14 @@ fn inspect(
             if !eof {
                 let available = buffer.len().min(8 * 1024 * 1024 + 1 - bytes.len());
                 match stdout.read(&mut buffer[..available]) {
-                    Ok(0) => eof = true,
+                    Ok(0) => {
+                        eof = true;
+                        observation.stdout_eof = Some(true);
+                    }
                     Ok(count) => {
                         progress = true;
                         bytes.extend_from_slice(&buffer[..count]);
+                        observation.stdout_bytes = bytes.len();
                         if bytes.len() > 8 * 1024 * 1024 {
                             return Err("Process inspection output exceeds its bound".into());
                         }
@@ -364,6 +415,7 @@ fn inspect(
             }
             if status.is_none() {
                 status = process.try_wait()?;
+                observation.observed_raw_status = status.map(ExitStatus::into_raw);
             }
             if Instant::now() >= until {
                 return Err("Process inspection exceeded its remaining budget".into());
@@ -381,16 +433,40 @@ fn inspect(
             }
         }
     })();
+    observation.observed_elapsed_us = began.elapsed().as_micros();
     if observed.is_err() {
         // Retain and settle this exact inspector on every error. A reaped child
         // with an inherited writer still open supplies no EOF/cleanup proof.
-        if !matches!(process.try_wait(), Ok(Some(_))) {
-            let _ = process.kill();
-            let _ = process.wait();
+        let poll = process.try_wait();
+        observation.settlement_poll = Some(match &poll {
+            Ok(status) => {
+                serde_json::json!({"raw_status":status.map(ExitStatus::into_raw),"error":null})
+            }
+            Err(error) => {
+                serde_json::json!({"raw_status":null,"error":format!("{:?}:{}",error.kind(),error.raw_os_error().map_or_else(||"unavailable".into(),|code|code.to_string()))})
+            }
+        });
+        if !matches!(poll, Ok(Some(_))) {
+            observation.kill_result = Some(match process.kill() {
+                Ok(()) => serde_json::json!({"succeeded":true,"native_error":null}),
+                Err(error) => {
+                    serde_json::json!({"succeeded":false,"native_error":error.raw_os_error(),"error_kind":format!("{:?}",error.kind())})
+                }
+            });
+            observation.wait_result = Some(match process.wait() {
+                Ok(status) => serde_json::json!({"raw_status":status.into_raw(),"error":null}),
+                Err(error) => {
+                    serde_json::json!({"raw_status":null,"error":format!("{:?}:{}",error.kind(),error.raw_os_error().map_or_else(||"unavailable".into(),|code|code.to_string()))})
+                }
+            });
         }
+        observation.settlement_elapsed_us = began
+            .elapsed()
+            .as_micros()
+            .saturating_sub(observation.observed_elapsed_us);
     }
-    let bytes = observed?;
-    inspected_rows(&bytes, session, inspector)
+    let bytes = observed.map_err(|error| observation.error(error))?;
+    inspected_rows(&bytes, session, inspector).map_err(|error| observation.error(error))
 }
 
 fn admit_inspection(program: &Path, session: Pid) -> Result<()> {

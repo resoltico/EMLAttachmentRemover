@@ -718,7 +718,11 @@ impl BuildContext {
         &self.plan
     }
 }
-pub(crate) fn run(context: &BuildContext, github_output: Option<&Path>) -> Result<()> {
+pub(crate) fn run(
+    context: &BuildContext,
+    github_output: Option<&Path>,
+    output: &mut impl Write,
+) -> Result<()> {
     let plan = context.plan();
     let mut bytes = serde_json::to_vec(&plan.render())?;
     bytes.push(b'\n');
@@ -770,7 +774,7 @@ pub(crate) fn run(context: &BuildContext, github_output: Option<&Path>) -> Resul
         output.write_all(encoded.as_bytes())?;
         output.flush()?;
     }
-    std::io::stdout().lock().write_all(&bytes)?;
+    output.write_all(&bytes)?;
     Ok(())
 }
 #[derive(Deserialize)]

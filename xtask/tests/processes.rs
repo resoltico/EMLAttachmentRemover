@@ -660,6 +660,27 @@ fn admission_inspects_only_supervisor_then_cleanup_inspects_full_session() {
     );
 }
 
+// Diagnostic JSON is embedded only in the existing failure detail; it grants no
+// authority and is not a new process-control input or production parser.
+fn inspection_failure_detail(detail: &str) -> serde_json::Value {
+    let json = detail.split_once("; inspection=").unwrap().1;
+    serde_json::from_str(json.split_once("; census=").map_or(json, |parts| parts.0)).unwrap()
+}
+
+fn assert_recorded_inspector_settlement(diagnostic: &serde_json::Value) {
+    assert!(diagnostic["stdout_eof"].is_boolean());
+    assert!(diagnostic["settlement_poll"]["error"].is_null());
+    if diagnostic["settlement_poll"]["raw_status"].is_null() {
+        assert!(diagnostic["kill_result"]["succeeded"].is_boolean());
+        assert!(diagnostic["wait_result"]["raw_status"].is_i64());
+        assert!(diagnostic["wait_result"]["error"].is_null());
+    } else {
+        assert!(diagnostic["settlement_poll"]["raw_status"].is_i64());
+        assert!(diagnostic["kill_result"].is_null());
+        assert!(diagnostic["wait_result"].is_null());
+    }
+}
+
 #[test]
 fn delayed_admission_inspection_is_reaped_recorded_and_closes_admission() {
     let _scenario = scenario();
@@ -694,6 +715,20 @@ fn delayed_admission_inspection_is_reaped_recorded_and_closes_admission() {
         .trim()
         .parse()
         .unwrap();
+    let diagnostic = inspection_failure_detail(record["detail"].as_str().unwrap());
+    assert_eq!(diagnostic["scope"], "supervisor");
+    assert_eq!(diagnostic["inspector_pid"], pid);
+    assert_eq!(diagnostic["stdout_bytes"], 0);
+    // A late scheduler wakeup may observe the finite sleep's ordinary exit.
+    // The deadline still refuses admission; diagnostics retain what occurred.
+    assert!(diagnostic["observed_raw_status"].is_null() || diagnostic["observed_raw_status"] == 0);
+    assert!(diagnostic["budget_us"].as_u64().unwrap() <= 2_000_000);
+    assert!(
+        diagnostic["observed_elapsed_us"].as_u64().unwrap()
+            >= diagnostic["budget_us"].as_u64().unwrap()
+    );
+    assert_recorded_inspector_settlement(&diagnostic);
+    eprintln!("Retained delayed inspector failure: {diagnostic}");
     assert_eq!(
         rustix::process::getpgid(rustix::process::Pid::from_raw(pid)).unwrap_err(),
         rustix::io::Errno::SRCH
@@ -731,6 +766,16 @@ fn exited_inspector_with_inherited_stdout_cannot_bypass_eof_deadline() {
         .err()
         .expect("Child exit without output EOF cannot admit a worker");
     assert!(error.to_string().contains("exceeded its remaining budget"));
+    let record: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path().join("worker.control.json")).unwrap())
+            .unwrap();
+    let diagnostic = inspection_failure_detail(record["detail"].as_str().unwrap());
+    assert_eq!(diagnostic["scope"], "supervisor");
+    assert!(diagnostic["stdout_bytes"].as_u64().unwrap() > 0);
+    // Do not assume the observer was scheduled before the finite writer exits,
+    // or that native ps itself completed before the unchanged deadline.
+    assert_recorded_inspector_settlement(&diagnostic);
+    eprintln!("Retained inherited-writer failure: {diagnostic}");
     assert!(elapsed >= Duration::from_secs(2) && elapsed < Duration::from_secs(8));
     assert!(!root.path().join("invoked").exists());
     assert!(!controller.admits_work());
@@ -753,6 +798,16 @@ fn oversized_inspection_is_bounded_and_its_exact_process_is_reaped() {
         .err()
         .expect("Oversized output cannot authorize worker execution");
     assert!(error.to_string().contains("output exceeds its bound"));
+    let record: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.path().join("worker.control.json")).unwrap())
+            .unwrap();
+    let diagnostic = inspection_failure_detail(record["detail"].as_str().unwrap());
+    assert_eq!(diagnostic["stdout_bytes"], 8 * 1024 * 1024 + 1);
+    assert_eq!(diagnostic["stdout_eof"], false);
+    // The inspector may observe closed stdout and exit before the error poll;
+    // retain which exact native result happened rather than demand a kill.
+    assert_recorded_inspector_settlement(&diagnostic);
+    eprintln!("Retained oversized inspector failure: {diagnostic}");
     let pid: i32 = fs::read_to_string(root.path().join("inspect.pid"))
         .unwrap()
         .parse()
@@ -789,10 +844,20 @@ fn first_inspection_failure_survives_later_cleanup_observation_failure() {
             .unwrap();
     assert_eq!(record["raw_status"], 0);
     assert_eq!(record["cleanup_complete"], false);
+    let detail = record["detail"].as_str().unwrap();
+    assert!(detail.starts_with("Quiescence inspection failed: Process inspection exceeded its remaining budget; inspection="));
+    assert!(!detail.contains("Malformed numeric process inspection"));
+    let diagnostic = inspection_failure_detail(detail);
+    assert_eq!(diagnostic["scope"], "session");
+    assert_eq!(diagnostic["stdout_bytes"], 0);
+    assert_recorded_inspector_settlement(&diagnostic);
+    let census: serde_json::Value =
+        serde_json::from_str(detail.split_once("; census=").unwrap().1).unwrap();
     assert_eq!(
-        record["detail"],
-        "Quiescence inspection failed: Process inspection exceeded its remaining budget"
+        census,
+        serde_json::json!({"ordinal":1,"prior_stable":0,"prior_unstable":null})
     );
+    eprintln!("Retained first cleanup failure: {detail}");
     assert!(root.path().join("inspect.once").exists());
     assert!(!controller.admits_work());
 }

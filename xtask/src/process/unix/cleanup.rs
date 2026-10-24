@@ -47,12 +47,15 @@ impl Session {
         let mut unexpected = BTreeSet::new();
         let mut observations = BTreeMap::new();
         let mut stable = 0;
+        let mut scan_ordinal = 0_u32;
+        let mut prior_unstable = None;
         let discovery_until = began + CLEANUP_GRACE / 2;
         // Freeze the known root first, including cargo-mutants' spawning/reaping threads.
         for pin in self.pins.values() {
             let _ = kill_process_group(pin.id, Signal::STOP);
         }
         while began.elapsed() < CLEANUP_GRACE / 2 {
+            scan_ordinal += 1;
             let scan = inspect(
                 &self.inspector,
                 self.id,
@@ -62,10 +65,11 @@ impl Session {
             let (rows, unstable) = match scan {
                 Ok(scan) => scan,
                 Err(error) => {
-                    detail.get_or_insert_with(|| format!("Quiescence inspection failed: {error}"));
+                    detail.get_or_insert_with(|| format!("Quiescence inspection failed: {error}; census={}", serde_json::json!({"ordinal":scan_ordinal,"prior_stable":stable,"prior_unstable":prior_unstable})));
                     break;
                 }
             };
+            prior_unstable = Some(unstable);
             let (added, running) = self.freeze_observed_rows(
                 rows,
                 ordinary_exit,
@@ -189,7 +193,10 @@ impl Session {
     fn confirm_termination(&self, began: Instant, detail: &mut Option<String>) {
         let cleanup_until = began + CLEANUP_GRACE;
         let mut clean_observations = 0;
+        let mut scan_ordinal = 0_u32;
+        let mut prior_unstable = None;
         while began.elapsed() < CLEANUP_GRACE {
+            scan_ordinal += 1;
             match inspect(
                 &self.inspector,
                 self.id,
@@ -197,6 +204,7 @@ impl Session {
                 cleanup_until,
             ) {
                 Ok((rows, unstable)) => {
+                    prior_unstable = Some(unstable);
                     if !unstable
                         && !rows
                             .iter()
@@ -212,7 +220,7 @@ impl Session {
                 }
                 Err(error) => {
                     detail.get_or_insert_with(|| {
-                        format!("Post-termination inspection failed: {error}")
+                        format!("Post-termination inspection failed: {error}; census={}", serde_json::json!({"ordinal":scan_ordinal,"prior_stable":clean_observations,"prior_unstable":prior_unstable}))
                     });
                     break;
                 }

@@ -491,7 +491,11 @@ inherited writer cannot turn inspector exit into completion. Errors settle the
 retained inspector without leaving a reader thread; later cleanup continues while
 preserving its first failure. A nonzombie snapshot row that vanishes before its
 kernel session check still prevents stable census admission; unrelated host churn
-is not silently classified as safe.
+is not silently classified as safe. Failure details retain the actual inspector PID,
+admitted budget, observed bytes/EOF/status and the results of the existing
+settlement operations. Census failures also record their ordinal and prior
+stability. Missing operations remain null; diagnostic facts grant no ownership
+and do not replace a failed cleanup decision.
 
 This controls the reviewed pinned tool topology, not arbitrary process escape or
 an atomic universal process-table snapshot. Compiler-wrapper/target-runner hooks

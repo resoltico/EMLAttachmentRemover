@@ -40,6 +40,7 @@ pub(crate) fn run(root: &Path, task: Task) -> Result<()> {
         Task::Distribution { github_output } => crate::distribution::run(
             context.as_ref().ok_or("Missing build context")?,
             github_output.as_deref(),
+            &mut std::io::stdout().lock(),
         ),
         task @ (Task::ObserveWindowsLink { .. } | Task::PrepareWindowsWorkspace) => {
             windows::run(root, plan()?, task)

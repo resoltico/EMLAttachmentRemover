@@ -68,9 +68,7 @@ pub(crate) fn run_case(
     if case.is_controlled() {
         let actor = crate::macos_operation_ui::finish(root, build, fixture.path(), &out, case)?;
         let parent = crate::picker_evidence::project_lifetime_owner(&ownership)?;
-        parent
-            .fixture_actors
-            .check_payloads(&actor, case == DesktopCase::ExportPublication)?;
+        parent.fixture_actors.check_payloads(&actor)?;
         let preferences =
             crate::desktop_preferences::compare(&before, &after, case.uses_export_picker())?;
         let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"test_method":case.method(),"source_archive":source_archive,"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"actor":actor,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"nonshipping processing and export synchronization with actual native GUI controls and lifecycle; unchanged shipping archive qualification remains separate"});

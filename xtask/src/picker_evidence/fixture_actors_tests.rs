@@ -234,18 +234,72 @@ fn common_owner_relay_requires_actual_eof_drain_and_no_failure() {
 }
 
 #[test]
+fn baseline_worker_observations_need_no_payload_but_required_actor_payloads_cannot_be_omitted() {
+    for case in ["stop", "force-stop", "active-quit", "published-error"] {
+        let good = test_value(case);
+        check(&good, case).unwrap();
+        let owner: FixtureActors = serde_json::from_value(good.clone()).unwrap();
+        // Independent shape of finish()'s existing native worker observation:
+        // these scenarios never publish a child UI or report payload actor.
+        let worker = json!({"case":case,"worker_pid":1234,"worker_absent":true,"first_interrupt_micros":1,"second_interrupt_micros":null,"independent_copy_golden":true});
+        owner.check_payloads(&worker).unwrap();
+        let mut bad = good.clone();
+        bad["state"] = json!("complete");
+        assert!(check(&bad, case).is_err());
+        let mut bad = good;
+        bad["records"] = test_value("workflow")["records"].clone();
+        assert!(check(&bad, case).is_err());
+    }
+    for case in [
+        "blocked-processing-preflight",
+        "blocked-processing-readback",
+        "blocked-processing-stage-write",
+        "blocked-processing-file-sync",
+        "blocked-processing-publication",
+        "blocked-processing-namespace-sync",
+        "blocked-export-preflight",
+        "blocked-export-readback",
+        "blocked-export-stage-write",
+        "blocked-export-file-sync",
+        "blocked-export-publication",
+        "blocked-export-namespace-sync",
+        "export-writer-block",
+    ] {
+        let value = test_value(case);
+        check(&value, case).unwrap();
+        let owner: FixtureActors = serde_json::from_value(value).unwrap();
+        owner
+            .check_payloads(&json!({"ui_receipt":{"contents":"independent observation bytes"}}))
+            .unwrap();
+        assert!(
+            owner.check_payloads(&json!({"worker_pid":1234})).is_err(),
+            "missing {case}"
+        );
+        assert!(
+            owner
+                .check_payloads(&json!({"ui_receipt":{"contents":"wrong bytes"}}))
+                .is_err(),
+            "changed {case}"
+        );
+    }
+    let mut unknown: FixtureActors = serde_json::from_value(test_value("stop")).unwrap();
+    unknown.scenario = "foreign".into();
+    assert!(unknown.check_payloads(&json!({})).is_err());
+}
+
+#[test]
 fn exact_payload_requests_and_actual_owner_size_cannot_be_replaced_by_digests() {
     let good = test_value("blocked-processing-preflight");
     let actual: FixtureActors = serde_json::from_value(good.clone()).unwrap();
     let document = json!({"ui_receipt":{"contents":"independent observation bytes"}});
-    actual.check_payloads(&document, false).unwrap();
+    actual.check_payloads(&document).unwrap();
     let mut changed = good;
     change_ack(&mut changed, 1, |ack| {
         ack["request_sha256"] = json!("a".repeat(64))
     });
     check(&changed, "blocked-processing-preflight").unwrap();
     let changed: FixtureActors = serde_json::from_value(changed).unwrap();
-    assert!(changed.check_payloads(&document, false).is_err());
+    assert!(changed.check_payloads(&document).is_err());
     let mut owner = json!({"fixture_filesystem":fixture_filesystem_test_value(),"fixture_output_relay":fixture_output_relay_test_value(),"fixture_actors":test_value("picker"),"panel_path_clipboard":panel_path_clipboard_test_value(true),"failure":null,"source_check_failure":null,"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":4,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":{"pid":42,"launch_date":1.0,"bundle_path":"/owned/app","pasteboard":"private"}});
     project_lifetime_owner(&owner).unwrap();
     owner["unprojected_observation"] = json!("x".repeat(MAX_OWNER_BYTES));
@@ -257,7 +311,33 @@ fn internally_consistent_rehashed_workers_must_match_independent_native_matrix()
     let matrix = json!({"ui_receipt":{"contents":"independent observation bytes"},"matrix":{"expected_document":ByteIdentity::of(b"abc"),"expected_document_contents":"abc","controls":[{"case":"racing-winner","operation_id":90,"worker_pid":140,"phase":"publication","worker_absent":true},{"case":"pre-edge-stop","operation_id":91,"worker_pid":141,"phase":"publication","worker_absent":true},{"case":"post-edge-stop","operation_id":92,"worker_pid":142,"phase":"namespace-sync","worker_absent":true}]}});
     let good = test_value("export-publication");
     let valid: FixtureActors = serde_json::from_value(good.clone()).unwrap();
-    valid.check_payloads(&matrix, true).unwrap();
+    valid.check_payloads(&matrix).unwrap();
+    for (parent, field) in [
+        ("", "ui_receipt"),
+        ("matrix", "expected_document_contents"),
+        ("matrix", "expected_document"),
+        ("matrix", "controls"),
+    ] {
+        let mut missing = matrix.clone();
+        let object = if parent.is_empty() {
+            &mut missing
+        } else {
+            &mut missing[parent]
+        };
+        object.as_object_mut().unwrap().remove(field);
+        assert!(
+            valid.check_payloads(&missing).is_err(),
+            "missing {parent}/{field}"
+        );
+    }
+    for (path, value) in [
+        ("/ui_receipt/contents", json!("wrong UI")),
+        ("/matrix/expected_document_contents", json!("wrong report")),
+    ] {
+        let mut changed = matrix.clone();
+        *changed.pointer_mut(path).unwrap() = value;
+        assert!(valid.check_payloads(&changed).is_err(), "{path}");
+    }
     let mut root_alias = good.clone();
     for index in [5, 6, 7] {
         change_ack(&mut root_alias, index, |ack| {
@@ -291,7 +371,7 @@ fn internally_consistent_rehashed_workers_must_match_independent_native_matrix()
         }
         check(&forged, "export-publication").unwrap();
         let forged: FixtureActors = serde_json::from_value(forged).unwrap();
-        assert!(forged.check_payloads(&matrix, true).is_err());
+        assert!(forged.check_payloads(&matrix).is_err());
     }
 }
 

@@ -219,7 +219,7 @@ extension DesktopInteractionTests {
       try await requireText(
         app, containing: "0 created · 0 up to date · 1 failed · 0 not processed")
       try await requireText(app, containing: "ADDRESS_CHANGED")
-      try await requireText(app, containing: "Copy published with an error")
+      try await requireText(app, containing: "Complete copy published; qualification incomplete")
       try await requireText(app, containing: "Interrupt calls 0; first interrupt observed false")
       XCTAssertFalse(app.buttons["Show in Finder"].isEnabled)
       XCTAssertEqual(

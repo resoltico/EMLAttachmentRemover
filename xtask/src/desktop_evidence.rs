@@ -553,6 +553,11 @@ fn validate_ownership(
 }
 
 fn validate_observations(value: &Value, case: DesktopCase, owner: &LifetimeOwner) -> Result<()> {
+    if case.is_controlled() {
+        owner
+            .fixture_actors
+            .check_payloads(field(value, "actor")?)?;
+    }
     match case {
         DesktopCase::Workflow | DesktopCase::Picker => {
             let picker = field(value, "picker_observation")?;
@@ -646,9 +651,6 @@ fn validate_observations(value: &Value, case: DesktopCase, owner: &LifetimeOwner
         | DesktopCase::ExportWriterBlock => {
             let actor = field(value, "actor")?;
             validate_child_actor(actor, case)?;
-            owner
-                .fixture_actors
-                .check_payloads(actor, case == DesktopCase::ExportPublication)?;
         }
         DesktopCase::Stop
         | DesktopCase::ForceStop

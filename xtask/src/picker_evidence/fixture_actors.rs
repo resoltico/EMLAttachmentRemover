@@ -578,16 +578,15 @@ impl FixtureActors {
 }
 
 impl FixtureActors {
-    pub(crate) fn check_payloads(
-        &self,
-        actor: &serde_json::Value,
-        publication: bool,
-    ) -> Result<()> {
-        let ui = actor["ui_receipt"]["contents"]
-            .as_str()
-            .ok_or("Missing actual fixture UI bytes")?;
-        self.require_payload("retain-child-observation", ui.as_bytes())?;
-        if publication {
+    pub(crate) fn check_payloads(&self, actor: &serde_json::Value) -> Result<()> {
+        let expected = sequence(&self.scenario)?;
+        if expected.contains(&"retain-child-observation") {
+            let ui = actor["ui_receipt"]["contents"]
+                .as_str()
+                .ok_or("Missing actual fixture UI bytes")?;
+            self.require_payload("retain-child-observation", ui.as_bytes())?;
+        }
+        if expected.contains(&"retain-independent-report") {
             let contents = actor["matrix"]["expected_document_contents"]
                 .as_str()
                 .ok_or("Missing independent report fixture bytes")?;

@@ -168,7 +168,11 @@ fn one_renderer_exposes_matrix_roles_tools_and_exact_versioned_names() {
         plan,
     };
     let file = tempfile::NamedTempFile::new().unwrap();
-    run(&context, Some(file.path())).unwrap();
+    let mut emitted = Vec::new();
+    run(&context, Some(file.path()), &mut emitted).unwrap();
+    assert_eq!(emitted.last(), Some(&b'\n'));
+    assert_eq!(emitted.iter().filter(|&&byte| byte == b'\n').count(), 1);
+    assert_eq!(serde_json::from_slice::<Value>(&emitted).unwrap(), rendered);
     let output = std::fs::read_to_string(file.path()).unwrap();
     let mut keys = BTreeSet::new();
     for line in output.lines() {
@@ -298,7 +302,9 @@ fn colliding_tool_output_cannot_replace_a_matrix_or_partially_write_workflow_fie
     };
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(file.path(), b"prior=unchanged\n").unwrap();
-    assert!(run(&context, Some(file.path())).is_err());
+    let mut emitted = Vec::new();
+    assert!(run(&context, Some(file.path()), &mut emitted).is_err());
+    assert!(emitted.is_empty());
     assert_eq!(std::fs::read(file.path()).unwrap(), b"prior=unchanged\n");
 }
 
