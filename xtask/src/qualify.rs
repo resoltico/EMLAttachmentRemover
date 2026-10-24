@@ -35,6 +35,22 @@ fn require_linux_storage_cases(discovery: &str, execution: &str) -> Result<Value
     Ok(json!(observations))
 }
 
+#[cfg(any(windows, test))]
+fn require_windows_query_cases(discovery: &str, execution: &str) -> Result<Value> {
+    let discovered = test_names(discovery, true);
+    let executed = test_names(execution, false);
+    let mut observations = Vec::new();
+    for name in crate::ntfs_query_evidence::REQUIRED_TESTS {
+        let found = discovered.get(name).copied().unwrap_or(0);
+        let passed = executed.get(name).copied().unwrap_or(0);
+        if found != 1 || passed != 1 {
+            return Err(format!("Required native NTFS query fixture was not discovered and passed exactly once: {name}; discovered={found}, executed={passed}").into());
+        }
+        observations.push(json!({"name":name,"discovered":found,"executed":passed}));
+    }
+    Ok(json!(observations))
+}
+
 fn test_suites(stderr: &str) -> Result<std::collections::BTreeSet<String>> {
     let mut suites = std::collections::BTreeSet::new();
     for raw in stderr.lines() {
@@ -63,7 +79,7 @@ fn test_suites(stderr: &str) -> Result<std::collections::BTreeSet<String>> {
     }
     Ok(suites)
 }
-fn test_names(text: &str, listing: bool) -> std::collections::BTreeMap<String, usize> {
+pub(crate) fn test_names(text: &str, listing: bool) -> std::collections::BTreeMap<String, usize> {
     let mut names = std::collections::BTreeMap::new();
     for line in text.lines() {
         let name = if listing {
@@ -125,7 +141,11 @@ pub(crate) fn checked_tests(
                 "--workspace",
                 "--no-fail-fast",
             ])
-            .env("CARGO_TARGET_DIR", &target_directory);
+            .env("CARGO_TARGET_DIR", &target_directory)
+            .env(
+                "EML_NATIVE_PUBLICATION_EVIDENCE_DIR",
+                out.join("native-publication-evidence"),
+            );
         if private_build {
             // Discovery and execution reuse Cargo's ordinary artifacts, but a
             // fresh per-run tree has no cross-run incremental state to reuse.
@@ -150,12 +170,10 @@ pub(crate) fn checked_tests(
                 "--features",
                 "eml-core/native-fixtures,eml-windows/native-fixtures,emlattachmentremover/native-fixtures",
             ]);
-            if release {
-                command.env(
-                    "EML_WINDOWS_EVIDENCE_DIR",
-                    out.join("windows-creation-evidence"),
-                );
-            }
+            command.env(
+                "EML_WINDOWS_EVIDENCE_DIR",
+                out.join("windows-creation-evidence"),
+            );
         }
         command.args(["--", "--color", "never"]);
         if listing {
@@ -205,15 +223,23 @@ pub(crate) fn checked_tests(
             private_owner.as_ref().unwrap(),
         )
     } else {
-        Ok(
-            json!({"removed":false,"scope":"shared native-cargo build retained for later shipping/native profile consumers"}),
-        )
+        (|| -> Result<Value> {
+            let settled = controller()?.ownership_settled();
+            let images = if settled {
+                launched_test_images(root, &target_directory, out)?
+            } else {
+                Vec::new()
+            };
+            Ok(
+                json!({"removed":false,"processes_settled":settled,"executable_identities":images,"scope":"shared native-cargo build retained for later shipping/native profile consumers; observed executed images are metadata, not copied builds"}),
+            )
+        })()
     };
     let (counts, cleanup) = match selection {
         Ok(counts) => (counts, cleanup?),
         Err(primary) => {
             if let Err(error) = cleanup {
-                eprintln!("Private test build cleanup also failed: {error}");
+                eprintln!("Native test build evidence or cleanup also failed: {error}");
                 let record = json!({"failure":error.to_string(),"primary_error_preserved":true,"scope":"cleanup diagnostic only; original command/lifetime failure returned unchanged"});
                 match serde_json::to_vec_pretty(&record) {
                     Ok(bytes) => {
@@ -230,7 +256,17 @@ pub(crate) fn checked_tests(
         }
     };
 
-    let result = json!({"discovery":counts,"profile":if release {"release"} else {"test"},"target":target,"cargo_target_directory":target_directory,"test_build_cleanup":cleanup,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"});
+    let fixture_host = crate::native_host::inspect_selection(root, plan, target)?;
+    let publication_evidence = crate::publication_evidence::collect(
+        plan,
+        target,
+        release,
+        out,
+        &counts,
+        &cleanup,
+        &fixture_host,
+    )?;
+    let result = json!({"discovery":counts,"profile":if release {"release"} else {"test"},"target":target,"cargo_target_directory":target_directory,"test_build_cleanup":cleanup,"native_fixture_host":fixture_host,"native_publication":publication_evidence,"scope":"suite identities and aggregate case multiplicities; no per-suite case association"});
     #[cfg(target_os = "linux")]
     let result = {
         let mut result = result;
@@ -247,6 +283,31 @@ pub(crate) fn checked_tests(
         if release {
             result["requested_features"] = json!(MACOS_RELEASE_TEST_FEATURES);
         }
+        result
+    };
+    #[cfg(windows)]
+    let result = {
+        let mut result = result;
+        result["windows_existing_sync"] = crate::windows_sync_evidence::collect(
+            plan,
+            target,
+            release,
+            out,
+            &result["test_build_cleanup"],
+            &fixture_host,
+        )?;
+        let architecture = result["windows_existing_sync"]["host"]["process_architecture"]
+            .as_str()
+            .ok_or("Missing actual Windows test CPU")?
+            .to_owned();
+        result["ntfs_query"] = crate::ntfs_query_evidence::read(
+            &out.join("windows-creation-evidence/ntfs-query"),
+            &architecture,
+        )?;
+        result["ntfs_query_test_cases"] = require_windows_query_cases(
+            &fs::read_to_string(out.join("native-test-discovery.log"))?,
+            &fs::read_to_string(out.join("native-tests.log"))?,
+        )?;
         result
     };
     Ok(result)
@@ -277,30 +338,7 @@ fn validate_ignored_listing(discovery_stderr: &str, stdout: &str, stderr: &str) 
     )
 }
 
-/// Remove only this selection's fresh build after the actual controlled Cargo
-/// processes settled. Keep all transcripts and exact launched-test identities.
-pub(crate) fn cleanup_private_test_build(
-    root: &Path,
-    build: &Path,
-    out: &Path,
-    ownership_settled: bool,
-    owner: &eml_fs::BoundDirectory,
-) -> Result<Value> {
-    let receipt = out.join("native-test-build-cleanup.json");
-    if !ownership_settled {
-        let retained = json!({"removed":false,"directory":build,"reason":"actual controlled process ownership/cleanup is uncertain"});
-        fs::write(receipt, serde_json::to_vec_pretty(&retained)?)?;
-        return Ok(retained);
-    }
-    let check_owner = || -> Result<()> {
-        if !fs::symlink_metadata(build)?.is_dir()
-            || eml_fs::BoundDirectory::open(build)?.identity() != owner.identity()
-        {
-            return Err("Private test build directory address changed; preserving storage".into());
-        }
-        Ok(())
-    };
-    check_owner()?;
+fn launched_test_images(root: &Path, build: &Path, out: &Path) -> Result<Vec<Value>> {
     let bound = build.canonicalize()?;
     let mut executables = std::collections::BTreeSet::new();
     for name in ["native-test-discovery.stderr", "native-tests.stderr"] {
@@ -337,6 +375,34 @@ pub(crate) fn cleanup_private_test_build(
             Ok(json!({"path":path,"identity":xtask::archive::ByteIdentity::of(&fs::read(&path)?)}))
         })
         .collect::<Result<_>>()?;
+    Ok(identities)
+}
+
+/// Remove only this selection's fresh build after the actual controlled Cargo
+/// processes settled. Keep all transcripts and exact launched-test identities.
+pub(crate) fn cleanup_private_test_build(
+    root: &Path,
+    build: &Path,
+    out: &Path,
+    ownership_settled: bool,
+    owner: &eml_fs::BoundDirectory,
+) -> Result<Value> {
+    let receipt = out.join("native-test-build-cleanup.json");
+    if !ownership_settled {
+        let retained = json!({"removed":false,"directory":build,"reason":"actual controlled process ownership/cleanup is uncertain"});
+        fs::write(receipt, serde_json::to_vec_pretty(&retained)?)?;
+        return Ok(retained);
+    }
+    let check_owner = || -> Result<()> {
+        if !fs::symlink_metadata(build)?.is_dir()
+            || eml_fs::BoundDirectory::open(build)?.identity() != owner.identity()
+        {
+            return Err("Private test build directory address changed; preserving storage".into());
+        }
+        Ok(())
+    };
+    check_owner()?;
+    let identities = launched_test_images(root, build, out)?;
     let mut record = json!({"directory":build,"removed":false,"processes_settled":true,"executable_identities":identities,"incremental":false,"scope":"only generated private build intermediates; discovery/execution logs and result evidence retained"});
     fs::write(&receipt, serde_json::to_vec_pretty(&record)?)?;
     check_owner()?;
@@ -348,6 +414,7 @@ pub(crate) fn cleanup_private_test_build(
 
 pub(crate) fn checked_commands(out: &Path, command: impl Fn(bool) -> Command) -> Result<Value> {
     let mut transcripts = Vec::new();
+    let mut processes = Vec::new();
     for (listing, label) in [(true, "native-test-discovery"), (false, "native-tests")] {
         let log = out.join(format!("{label}.log"));
         let result = controller()?.run_separate_output(
@@ -361,12 +428,16 @@ pub(crate) fn checked_commands(out: &Path, command: impl Fn(bool) -> Command) ->
                 return Err("Native test output exceeds its document bound".into());
             }
         }
+        processes.push(result.evidence());
         transcripts.push((
             fs::read_to_string(&log)?,
             fs::read_to_string(log.with_extension("stderr"))?,
         ));
     }
-    validate_test_transcripts(&transcripts)
+    let mut selection = validate_test_transcripts(&transcripts)?;
+    selection["discovery_process"] = processes[0].clone();
+    selection["execution_process"] = processes[1].clone();
+    Ok(selection)
 }
 
 fn validate_test_transcripts(transcripts: &[(String, String)]) -> Result<Value> {
@@ -952,5 +1023,49 @@ mod private_build_tests {
             b"unowned replacement"
         );
         assert!(directory.join("original-build").is_dir());
+    }
+}
+
+#[cfg(test)]
+mod windows_query_selection_tests {
+    use super::*;
+    #[test]
+    fn literal_query_selection_rejects_omitted_duplicate_and_unexecuted_native_cases() {
+        let names = [
+            "windows::name_domain::tests::native_locality_query_retains_actual_completion_fields",
+            "windows::name_domain::tests::native_failed_wait_retains_concrete_query_owners_until_event_and_thread_settle",
+            "windows::name_domain::tests::only_exact_complete_local_disk_success_qualifies",
+        ];
+        let discovery = names
+            .iter()
+            .map(|n| format!("{n}: test\n"))
+            .collect::<String>();
+        let execution = names
+            .iter()
+            .map(|n| format!("test {n} ... ok\n"))
+            .collect::<String>();
+        assert!(require_windows_query_cases(&discovery, &execution).is_ok());
+        assert!(require_windows_query_cases("", "").is_err());
+        assert!(
+            require_windows_query_cases(
+                &discovery,
+                &execution.replace(&format!("test {} ... ok\n", names[1]), "")
+            )
+            .is_err()
+        );
+        assert!(
+            require_windows_query_cases(
+                &(discovery.clone() + &format!("{}: test\n", names[0])),
+                &execution
+            )
+            .is_err()
+        );
+        assert!(
+            require_windows_query_cases(
+                &discovery,
+                &(execution.clone() + &format!("test {} ... ok\n", names[0]))
+            )
+            .is_err()
+        );
     }
 }

@@ -330,6 +330,14 @@ pub(super) fn resynchronize_item<'a>(
     control: &RunControl,
     data: MessageMetadata<'a>,
 ) -> ItemResult<'a> {
+    #[cfg(all(test, windows))]
+    {
+        let mut step = eml_fs::existing_sync_evidence::Step::new("comparison_matched", "equal");
+        step.signature = Some(matched.comparison.signature());
+        step.parent = Some(matched.frame.directory.identity());
+        step.bytes_equal = Some(matched.comparison.bytes_equal());
+        observe_existing_sync(&mut context.existing_sync_evidence, source, step);
+    }
     let mut observed = observation(matched.comparison.signature().identity, Some(true), true);
     let mut binding = match crate::binding::ExistingSyncBinding::acquire_existing(
         plan,
@@ -382,6 +390,10 @@ pub(super) fn resynchronize_item<'a>(
         &mut context.pending_layout,
         #[cfg(any(test, feature = "native-fixtures"))]
         &mut context.observation,
+        #[cfg(all(test, windows))]
+        &mut context.existing_sync_evidence,
+        #[cfg(all(test, windows))]
+        source,
     ) {
         return existing_failure(error, data, observed);
     }
@@ -402,6 +414,14 @@ pub(super) fn resynchronize_item<'a>(
         return existing_failure(error, data, observed);
     }
     observed.address = AddressState::Verified;
+    #[cfg(all(test, windows))]
+    {
+        let mut step = eml_fs::existing_sync_evidence::Step::new("requalified", "succeeded");
+        step.signature = Some(compared.signature());
+        step.parent = Some(binding.directory().identity());
+        step.bytes_equal = Some(compared.bytes_equal());
+        observe_existing_sync(&mut context.existing_sync_evidence, source, step);
+    }
     match crate::ExistingCopy::qualify(observed) {
         Ok(copy) => ItemResult::UpToDate(copy, data),
         Err(observed) => existing_failure(
@@ -538,6 +558,12 @@ fn handoff_existing_for_sync(
             error,
         ));
     }
+    #[cfg(all(test, windows))]
+    observe_existing_sync(
+        &mut context.existing_sync_evidence,
+        source,
+        eml_fs::existing_sync_evidence::Step::new("comparison_closed", "succeeded"),
+    );
     #[cfg(test)]
     if let Some(hook) = context.before_sync_reopen.take() {
         hook();
@@ -563,6 +589,13 @@ fn handoff_existing_for_sync(
             });
         }
     };
+    #[cfg(all(test, windows))]
+    {
+        let mut step = eml_fs::existing_sync_evidence::Step::new("sync_opened", "succeeded");
+        step.signature = Some(fresh.initial_signature());
+        step.parent = Some(fresh.parent_identity());
+        observe_existing_sync(&mut context.existing_sync_evidence, source, step);
+    }
     if fresh.parent_identity() != matched.frame.directory.identity()
         || fresh.parent_identity() != binding.directory().identity()
     {
@@ -583,12 +616,32 @@ fn handoff_existing_for_sync(
             file: Some(signature),
         }),
     ) {
+        #[cfg(all(test, windows))]
+        {
+            let mut step = eml_fs::existing_sync_evidence::Step::new("binding_refused", "refused");
+            step.signature = Some(signature);
+            step.parent = Some(fresh.parent_identity());
+            step.native_code = error
+                .native_error()
+                .and_then(|native| native.raw_os_error())
+                .map(i64::from);
+            observe_existing_sync(&mut context.existing_sync_evidence, source, step);
+        }
         observed.stable = false;
         if error.code() == ErrorCode::AddressChanged {
             observed.address = AddressState::Changed;
         }
         return Err(error);
     }
+    #[cfg(all(test, windows))]
+    {
+        let mut step = eml_fs::existing_sync_evidence::Step::new("binding_matched", "succeeded");
+        step.signature = Some(signature);
+        step.parent = Some(fresh.parent_identity());
+        observe_existing_sync(&mut context.existing_sync_evidence, source, step);
+    }
+    #[cfg(all(test, windows))]
+    let fresh_parent = fresh.parent_identity();
     guard_existing_identity(
         fresh.initial_signature().identity,
         &context.source_ids,
@@ -596,7 +649,17 @@ fn handoff_existing_for_sync(
         ErrorPhase::Existing,
     )?;
     match compare_existing(source, fresh, control) {
-        Ok(compared) if compared.bytes_equal() => Ok(compared),
+        Ok(compared) if compared.bytes_equal() => {
+            #[cfg(all(test, windows))]
+            {
+                let mut step = eml_fs::existing_sync_evidence::Step::new("recompared", "equal");
+                step.signature = Some(compared.signature());
+                step.parent = Some(fresh_parent);
+                step.bytes_equal = Some(compared.bytes_equal());
+                observe_existing_sync(&mut context.existing_sync_evidence, source, step);
+            }
+            Ok(compared)
+        }
         Ok(_) => {
             observed.bytes_equal = Some(false);
             Err(OperationFailure::new(
@@ -612,6 +675,13 @@ fn handoff_existing_for_sync(
     }
 }
 
+#[cfg_attr(
+    all(test, windows),
+    allow(
+        clippy::too_many_arguments,
+        reason = "Only the native unit fixture adds a finite evidence vector and the still-held source to the existing storage inputs."
+    )
+)]
 fn synchronize_existing_storage(
     binding: &mut crate::binding::ExistingSyncBinding,
     compared: &crate::ComparedExisting,
@@ -621,9 +691,25 @@ fn synchronize_existing_storage(
     #[cfg(any(test, feature = "native-fixtures"))] observer: &mut Option<
         Box<dyn FnMut(eml_fs::StoragePhase)>,
     >,
+    #[cfg(all(test, windows))] evidence: &mut Option<Vec<eml_fs::existing_sync_evidence::Step>>,
+    #[cfg(all(test, windows))] source: &PreparedSource,
 ) -> Result<(), OperationFailure> {
     checkpoint(control, ErrorPhase::Existing)?;
     let receipt = compared.sync_file();
+    #[cfg(all(test, windows))]
+    {
+        let mut step = eml_fs::existing_sync_evidence::Step::new(
+            "file_flush",
+            if receipt.succeeded() {
+                "succeeded"
+            } else {
+                "failed"
+            },
+        );
+        step.native_code = receipt.native_code;
+        step.sync = Some(receipt);
+        observe_existing_sync(evidence, source, step);
+    }
     observed.file_sync = Some(receipt);
     if !receipt.succeeded() {
         return Err(OperationFailure::new(
@@ -642,5 +728,28 @@ fn synchronize_existing_storage(
         return Err(sync_access_error(error));
     }
     observed.namespace_sync = binding.namespace();
+    #[cfg(all(test, windows))]
+    {
+        let mut step = eml_fs::existing_sync_evidence::Step::new("endpoint_flush", "succeeded");
+        step.parent = Some(binding.directory().identity());
+        step.namespace = Some(observed.namespace_sync.fixture_json());
+        observe_existing_sync(evidence, source, step);
+    }
     Ok(())
+}
+
+#[cfg(all(test, windows))]
+fn observe_existing_sync(
+    evidence: &mut Option<Vec<eml_fs::existing_sync_evidence::Step>>,
+    source: &PreparedSource,
+    mut step: eml_fs::existing_sync_evidence::Step,
+) {
+    if let Some(evidence) = evidence {
+        step.source = Some(
+            source
+                .fixture_source_observation()
+                .expect("Observe the same held qualification source"),
+        );
+        evidence.push(step);
+    }
 }

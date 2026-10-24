@@ -404,6 +404,18 @@ fn check_product(
     record_binding(&producer, source, target.rust_target(), workflow)?;
     source_epoch_binding(&producer, plan)?;
     host(&producer["host"], target, None)?;
+    crate::publication_evidence::validate_summary(
+        producer
+            .get("release_tests")
+            .and_then(|v| v.get("native_publication"))
+            .ok_or("Missing actual native publication/cleanup evidence")?,
+        source,
+        u64::from(plan.source_epoch().seconds()),
+        target.rust_target(),
+        target.platform().family().as_str(),
+        target.platform().architecture().as_str(),
+        "release",
+    )?;
     match product.role {
         ProductRole::Cli => {
             if producer.get("qualification_failures") != Some(&serde_json::json!([])) {
@@ -434,6 +446,50 @@ fn check_product(
                 &image,
                 target.platform(),
             )?;
+            if target.platform().family() == OsFamily::Windows {
+                crate::windows_sync_evidence::validate(
+                    producer
+                        .get("release_tests")
+                        .and_then(|v| v.get("windows_existing_sync"))
+                        .ok_or("Missing actual Windows existing-copy synchronization evidence")?,
+                    source,
+                    u64::from(plan.source_epoch().seconds()),
+                    target.rust_target(),
+                    "release",
+                )?;
+                crate::ntfs_query_evidence::validate_summary(
+                    producer
+                        .get("release_tests")
+                        .and_then(|v| v.get("ntfs_query"))
+                        .ok_or("Missing actual NTFS locality/query lifetime evidence")?,
+                    target.platform().architecture().as_str(),
+                )?;
+                let expected_query_cases: Vec<_> = crate::ntfs_query_evidence::REQUIRED_TESTS
+                    .iter()
+                    .map(|name| serde_json::json!({"name":name,"discovered":1,"executed":1}))
+                    .collect();
+                if producer["release_tests"].get("ntfs_query_test_cases")
+                    != Some(&serde_json::json!(expected_query_cases))
+                {
+                    return Err("NTFS query fixtures lack exact actual discovery/execution".into());
+                }
+            } else if [
+                "windows_existing_sync",
+                "ntfs_query",
+                "ntfs_query_test_cases",
+            ]
+            .iter()
+            .any(|key| {
+                producer
+                    .get("release_tests")
+                    .and_then(|v| v.get(key))
+                    .is_some_and(|v| !v.is_null())
+            }) {
+                return Err(
+                    "Windows synchronization evidence cannot qualify another native platform"
+                        .into(),
+                );
+            }
             if product.platform == "linux-x86_64" {
                 crate::preparation_evidence::validate(
                     producer

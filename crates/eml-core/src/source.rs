@@ -98,6 +98,12 @@ impl PreparedSource {
     pub fn revalidate(&self) -> Result<(), BoundFileError> {
         self.source.check_binding()
     }
+    /// Nonshipping qualification readback from the same retained source handle.
+    /// This observation supplies no later operation authority.
+    #[cfg(all(windows, any(test, feature = "native-fixtures")))]
+    pub fn fixture_source_observation(&self) -> std::io::Result<String> {
+        self.source.fixture_source_observation()
+    }
 }
 
 fn read_checkpoint(control: &RunControl) -> Result<(), SourcePreparationError> {

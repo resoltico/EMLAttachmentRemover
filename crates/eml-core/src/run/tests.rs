@@ -1,3 +1,5 @@
+#[path = "publication_fixture.rs"]
+mod publication_fixture;
 use super::*;
 use std::{fs, path::Path};
 #[test]
@@ -58,6 +60,7 @@ fn final_existing_observation_distinguishes_address_and_same_file_changes() {
 }
 #[test]
 fn stage_checkpoint_origin_is_distinct_from_a_native_interrupted_error() {
+    let mut rows = Vec::new();
     for checkpoint_stopped in [false, true] {
         let sync = eml_fs::SyncReceipt {
             method: eml_fs::SyncMethod::Fsync,
@@ -78,6 +81,12 @@ fn stage_checkpoint_origin_is_distinct_from_a_native_interrupted_error() {
             },
         };
         let (error, receipt, cleanup) = stage_failure(original, checkpoint_stopped);
+        rows.push(publication_fixture::translated(
+            checkpoint_stopped,
+            &error,
+            receipt,
+            &cleanup,
+        ));
         assert_eq!(
             error.code(),
             if checkpoint_stopped {
@@ -95,6 +104,7 @@ fn stage_checkpoint_origin_is_distinct_from_a_native_interrupted_error() {
             std::io::ErrorKind::Interrupted
         );
     }
+    publication_fixture::cleanup_causes(&rows);
 }
 #[cfg(unix)]
 #[test]
@@ -247,17 +257,24 @@ fn controlled_stop_before_and_after_the_real_edge_preserves_actual_effect() {
         let source = bind_source(&plan, 0, &control)
             .unwrap_or_else(|error| panic!("Source failed: {error:?}"));
         let mut context = RunContext::new(plan.sources());
+        let before = publication_fixture::before(root.path());
+        let phases = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let captured = phases.clone();
         let signal = control.clone();
-        let hook = Box::new(move || signal.request_stop());
-        context.observation = once_at(
-            if after {
-                eml_fs::StoragePhase::AfterPublication
-            } else {
-                eml_fs::StoragePhase::Publication
-            },
-            hook,
-        );
+        context.observation = Some(Box::new(move |phase| {
+            captured.borrow_mut().push(phase);
+            if phase
+                == if after {
+                    eml_fs::StoragePhase::AfterPublication
+                } else {
+                    eml_fs::StoragePhase::Publication
+                }
+            {
+                signal.request_stop();
+            }
+        }));
         let result = execute_prepared(&plan, 0, &source, &mut context, &control);
+        publication_fixture::stop(root.path(), after, before, &phases.borrow(), &result);
         assert!(control.is_stopped());
         if after {
             assert!(matches!(result, ItemResult::Created(..)), "{result:?}");
@@ -437,7 +454,7 @@ fn controlled_requested_output_move_after_edge_keeps_complete_published_copy() {
 #[cfg(windows)]
 #[test]
 fn controlled_resync_gap_distinguishes_file_replacement_and_same_id_change() {
-    for replace in [false, true] {
+    for change in [None, Some(false), Some(true)] {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/run-tests");
         fs::create_dir_all(&base).unwrap();
         let root = tempfile::tempdir_in(base).unwrap();
@@ -461,24 +478,72 @@ fn controlled_resync_gap_distinguishes_file_replacement_and_same_id_change() {
         let source = bind_source(&plan, 0, &control)
             .unwrap_or_else(|error| panic!("Source failed: {error:?}"));
         let mut context = RunContext::new(plan.sources());
+        context.existing_sync_evidence = Some(Vec::new());
+        let before_source =
+            eml_fs::existing_sync_evidence::file_observation(&root.path().join("a.eml")).unwrap();
+        let before_copy = eml_fs::existing_sync_evidence::file_observation(&copy).unwrap();
         let old = match plan.records()[0].destination().unwrap().observation() {
             crate::DestinationObservation::Present(entry) => entry.identity,
             _ => panic!("Owned copy missing"),
         };
         let changed = copy.clone();
         let working = root.path().to_owned();
-        context.before_sync_reopen = Some(Box::new(move || {
-            if replace {
-                fs::remove_file(&changed).unwrap();
-                fs::write(&changed, golden).unwrap();
-            } else {
-                fs::write(&changed, b"controlled changed copy").unwrap();
-            }
-            let paths = eml_fs::PathContext::capture(&working).unwrap();
-            let now = eml_fs::observe_selected(&paths.resolve(&changed).unwrap()).unwrap();
-            assert_eq!(now.identity != old, replace);
-        }));
+        if let Some(replace) = change {
+            context.before_sync_reopen = Some(Box::new(move || {
+                if replace {
+                    fs::remove_file(&changed).unwrap();
+                    fs::write(&changed, golden).unwrap();
+                } else {
+                    fs::write(&changed, b"controlled changed copy").unwrap();
+                }
+                let paths = eml_fs::PathContext::capture(&working).unwrap();
+                let now = eml_fs::observe_selected(&paths.resolve(&changed).unwrap()).unwrap();
+                assert_eq!(now.identity != old, replace);
+            }));
+        }
         let result = execute_prepared(&plan, 0, &source, &mut context, &control);
+        let after_source =
+            eml_fs::existing_sync_evidence::file_observation(&root.path().join("a.eml")).unwrap();
+        let after_copy = eml_fs::existing_sync_evidence::file_observation(&copy).unwrap();
+        let (classification, code) = match &result {
+            ItemResult::UpToDate(..) => ("up_to_date", None),
+            ItemResult::Failed(failure) => (
+                failure.error().code().as_str(),
+                failure
+                    .error()
+                    .native_error()
+                    .and_then(|e| e.raw_os_error())
+                    .map(i64::from),
+            ),
+            _ => panic!("Unexpected existing-sync evidence outcome: {result:?}"),
+        };
+        eml_fs::existing_sync_evidence::write_case(
+            match change {
+                None => "core-sync-success",
+                Some(false) => "core-gap-same-id",
+                Some(true) => "core-gap-replacement",
+            },
+            root.path(),
+            root.path(),
+            Some(&before_source),
+            &before_copy,
+            context.existing_sync_evidence.as_ref().unwrap(),
+            classification,
+            code,
+            Some(&after_source),
+            &after_copy,
+        )
+        .unwrap();
+        if change.is_none() {
+            assert!(matches!(result, ItemResult::UpToDate(..)), "{result:?}");
+            assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), input);
+            drop(result);
+            drop(source);
+            drop(plan);
+            root.close().unwrap();
+            continue;
+        }
+        let replace = change.unwrap();
         let ItemResult::Failed(failure) = &result else {
             panic!("Gap change qualified: {result:?}");
         };
@@ -602,6 +667,7 @@ fn matching_existing_copy_pays_known_current_run_mirror_debt_without_creation_ad
     }
 }
 
+#[cfg(unix)]
 fn once_at(
     phase: eml_fs::StoragePhase,
     action: Box<dyn FnOnce()>,

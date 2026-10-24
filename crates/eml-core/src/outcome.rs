@@ -30,6 +30,19 @@ pub struct NamespaceObservation {
     pub failed_edge_index: Option<u16>,
 }
 impl NamespaceObservation {
+    /// Nonshipping qualification encoding of the actual aggregate and receipt.
+    #[cfg(any(test, feature = "native-fixtures"))]
+    pub fn fixture_json(&self) -> String {
+        format!(
+            "{{\"receipt\":{},\"required_edges\":{},\"completed_edges\":{},\"failed_edge_index\":{}}}",
+            self.receipt
+                .map_or_else(|| "null".into(), eml_fs::fixture_evidence::sync_json),
+            self.required_edges,
+            self.completed_edges,
+            self.failed_edge_index
+                .map_or_else(|| "null".into(), |value| value.to_string())
+        )
+    }
     pub(super) const fn unattempted() -> Self {
         Self {
             receipt: None,

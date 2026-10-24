@@ -115,7 +115,6 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.native) }}
     env:
       MACOSX_DEPLOYMENT_TARGET: ${{ needs.plan.outputs.minimum }}
-      EML_WINDOWS_EVIDENCE_DIR: ${{ github.workspace }}/target/windows-creation-evidence
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -152,7 +151,6 @@ jobs:
           'path=' + $workspace.path >> $env:GITHUB_OUTPUT
           'TEMP=' + $workspace.scratch >> $env:GITHUB_ENV
           'TMP=' + $workspace.scratch >> $env:GITHUB_ENV
-          'EML_WINDOWS_EVIDENCE_DIR=' + (Join-Path $workspace.path 'target/windows-creation-evidence') >> $env:GITHUB_ENV
       - name: Windows required-name discovery and unfiltered native workspace execution
         if: ${{ runner.os == 'Windows' }}
         working-directory: ${{ steps.private_workspace.outputs.path }}
@@ -299,7 +297,6 @@ jobs:
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.log
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/**/*.stderr
             !${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-desktop-checks/child-fixtures/build/**
-            ${{ steps.private_workspace.outputs.path || github.workspace }}/target/windows-creation-evidence/*.json
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/*.json
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/name-profile-prerequisites/*.txt
             ${{ steps.private_workspace.outputs.path || github.workspace }}/target/native-cli-build/name-profiles/**/*.json

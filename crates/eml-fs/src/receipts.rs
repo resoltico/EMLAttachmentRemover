@@ -160,3 +160,17 @@ mod tests {
         }
     }
 }
+
+/// Fixture-only observation of the one native no-replace call, not final copy qualification.
+#[cfg(any(test, feature = "native-fixtures"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativePublicationReceipt {
+    /// Actual selected primitive; never inferred from a filename or effect.
+    pub primitive: &'static str,
+    /// Success observed from the actual API return.
+    pub succeeded: bool,
+    /// Actual Windows BOOL; Unix's safe Result API exposes no integer return.
+    pub raw_return: Option<i32>,
+    /// Immediate native cause returned by the API, before later cleanup.
+    pub native_code: Option<i64>,
+}

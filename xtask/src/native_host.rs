@@ -17,6 +17,26 @@ pub(crate) fn inspect_target(root: &Path, plan: &BuildPlan, target: &str) -> Res
     )
 }
 
+/// Observe the actual default compiler host without inferring a shipping target.
+pub(crate) fn inspect_selection(
+    root: &Path,
+    plan: &BuildPlan,
+    target: Option<&str>,
+) -> Result<Value> {
+    if let Some(target) = target {
+        return inspect_target(root, plan, target);
+    }
+    let compiler = String::from_utf8(capture(Command::new("rustc").current_dir(root).arg("-vV"))?)?;
+    let hosts: Vec<_> = compiler
+        .lines()
+        .filter_map(|line| line.strip_prefix("host: "))
+        .collect();
+    if hosts.len() != 1 || hosts[0].is_empty() || hosts[0].len() > 128 {
+        return Err("Cannot observe the actual default compiler host".into());
+    }
+    inspect(root, hosts[0], std::env::consts::OS, std::env::consts::ARCH)
+}
+
 pub(crate) fn inspect(root: &Path, target: &str, os: &str, architecture: &str) -> Result<Value> {
     Ok(runner_identity(inspect_process(
         root,

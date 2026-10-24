@@ -26,6 +26,8 @@ struct RunContext {
     observation: Option<Box<dyn FnMut(eml_fs::StoragePhase)>>,
     #[cfg(all(test, windows))]
     before_sync_reopen: Option<Box<dyn FnOnce()>>,
+    #[cfg(all(test, windows))]
+    existing_sync_evidence: Option<Vec<eml_fs::existing_sync_evidence::Step>>,
 }
 impl RunContext {
     fn new(sources: &crate::CollectedSources<'_>) -> Self {
@@ -38,6 +40,8 @@ impl RunContext {
             observation: None,
             #[cfg(all(test, windows))]
             before_sync_reopen: None,
+            #[cfg(all(test, windows))]
+            existing_sync_evidence: None,
         }
     }
     #[cfg(any(test, feature = "native-fixtures"))]

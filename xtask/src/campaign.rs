@@ -166,7 +166,8 @@ impl Campaign {
             .env("TEMP", self.directory.join("tmp"));
         command
             .env("CARGO_TARGET_DIR", self.directory.join("build"))
-            .env("CARGO_BUILD_BUILD_DIR", self.directory.join("build"));
+            .env("CARGO_BUILD_BUILD_DIR", self.directory.join("build"))
+            .env("CARGO_INCREMENTAL", "0");
         Ok(command)
     }
     pub(crate) fn tool_command(&self, name: &str) -> Result<Command> {
@@ -741,12 +742,12 @@ mod inherited_configuration_tests {
         }
         assert!(
             command
-                .args(["-c", "printf actual > invoked"])
+                .args(["-c", r#"printf 'actual:%s' "$CARGO_INCREMENTAL" > invoked"#])
                 .status()
                 .unwrap()
                 .success()
         );
-        assert!(source.join("invoked").exists());
+        assert_eq!(fs::read(source.join("invoked")).unwrap(), b"actual:0");
     }
     #[test]
     fn standard_rustdoc_and_native_compiler_override_families_require_review() {

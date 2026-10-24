@@ -347,6 +347,7 @@ fn fixture(extra_linux: bool) -> (tempfile::TempDir, BuildPlan, VerifiedInputs) 
         let path = dir.join(name);
         fs::write(&path, b"abc").unwrap();
         let mut record = json!({"source":SOURCE,"source_epoch":1609459201,"source_provenance":"git_commit","target":target,"workflow":workflow(),"host":host(target,os,arch,26),"archive":{"identity":identity()},"cli_image":identity(),"qualification_failures":[]});
+        record["release_tests"] = json!({"native_publication":crate::publication_evidence::test_fixture(SOURCE,1609459201,target,os,arch,"release")});
         record["name_profiles"] = crate::name_profiles::valid_fixture(
             SOURCE,
             &identity(),
@@ -381,7 +382,7 @@ fn fixture(extra_linux: bool) -> (tempfile::TempDir, BuildPlan, VerifiedInputs) 
     let consumer = frozen(desktop(&reference.identity));
     let path = dir.join(MAC_APP);
     fs::write(&path, b"abc").unwrap();
-    products.insert(MAC_APP.into(),ProductInput{platform:"macos-x86_64".into(),role:ProductRole::DesktopApp,archive:identity(),archive_path:path,producer:frozen(json!({"source":SOURCE,"source_epoch":1609459201,"source_provenance":"git_commit","target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",26),"stage":"native_candidate","verification":{"stage":"native_candidate","source_epoch":1609459201,"source_provenance":"git_commit","bundle_timestamps":timestamps()},"identity":identity(),"reference":reference.identity})),reference:Some(reference),desktop:Some(consumer),picker:Some(picker),picker_product:Some(picker_product)});
+    products.insert(MAC_APP.into(),ProductInput{platform:"macos-x86_64".into(),role:ProductRole::DesktopApp,archive:identity(),archive_path:path,producer:frozen(json!({"source":SOURCE,"source_epoch":1609459201,"source_provenance":"git_commit","target":"x86_64-apple-darwin","workflow":workflow(),"host":host("x86_64-apple-darwin","macos","x86_64",26),"stage":"native_candidate","release_tests":{"native_publication":crate::publication_evidence::test_fixture(SOURCE,1609459201,"x86_64-apple-darwin","macos","x86_64","release")},"verification":{"stage":"native_candidate","source_epoch":1609459201,"source_provenance":"git_commit","bundle_timestamps":timestamps()},"identity":identity(),"reference":reference.identity})),reference:Some(reference),desktop:Some(consumer),picker:Some(picker),picker_product:Some(picker_product)});
     (
         root,
         plan,
@@ -1066,5 +1067,90 @@ fn every_literal_panel_case_requires_used_restored_clipboard_evidence() {
                 "{name}: {failure}"
             );
         }
+    }
+}
+
+fn literal_windows_query_selection() -> Value {
+    json!([
+        {"name":"windows::name_domain::tests::native_locality_query_retains_actual_completion_fields","discovered":1,"executed":1},
+        {"name":"windows::name_domain::tests::native_failed_wait_retains_concrete_query_owners_until_event_and_thread_settle","discovered":1,"executed":1},
+        {"name":"windows::name_domain::tests::only_exact_complete_local_disk_success_qualifies","discovered":1,"executed":1}
+    ])
+}
+#[test]
+fn windows_release_admission_requires_retained_native_sync_records_not_only_test_success() {
+    let plan = BuildPlan::test_plan();
+    let name = "emlattachmentremover-7.0.0-windows-x86_64.zip";
+    let target = "x86_64-pc-windows-gnullvm";
+    let mut record = json!({"source":SOURCE,"source_epoch":plan.source_epoch(),"source_provenance":"git_commit","target":target,"workflow":workflow(),"host":host(target,"windows","x86_64",26),"archive":{"identity":identity()},"cli_image":identity(),"qualification_failures":[],"name_profiles":crate::name_profiles::valid_fixture(SOURCE,&identity(),OsFamily::Windows),"release_tests":{"windows_existing_sync":crate::windows_sync_evidence::test_fixture(SOURCE,u64::from(plan.source_epoch().seconds()),target,"release"),"ntfs_query":crate::ntfs_query_evidence::test_summary("x86_64"),"ntfs_query_test_cases":literal_windows_query_selection(),"native_publication":crate::publication_evidence::test_fixture(SOURCE,u64::from(plan.source_epoch().seconds()),target,"windows","x86_64","release")}});
+    let product = |value: Value| ProductInput {
+        platform: "windows-x86_64".into(),
+        role: ProductRole::Cli,
+        archive: identity(),
+        archive_path: PathBuf::from(name),
+        producer: frozen(value),
+        reference: None,
+        desktop: None,
+        picker: None,
+        picker_product: None,
+    };
+    assert!(check_product(&product(record.clone()), name, &plan, SOURCE, &workflow()).is_ok());
+    let mut no_query = record.clone();
+    no_query["release_tests"]
+        .as_object_mut()
+        .unwrap()
+        .remove("ntfs_query");
+    assert!(check_product(&product(no_query), name, &plan, SOURCE, &workflow()).is_err());
+    let mut no_query_execution = record.clone();
+    no_query_execution["release_tests"]["ntfs_query_test_cases"][0]["executed"] =
+        serde_json::json!(0);
+    assert!(
+        check_product(
+            &product(no_query_execution),
+            name,
+            &plan,
+            SOURCE,
+            &workflow()
+        )
+        .is_err()
+    );
+    record["release_tests"]
+        .as_object_mut()
+        .unwrap()
+        .remove("windows_existing_sync");
+    assert!(check_product(&product(record), name, &plan, SOURCE, &workflow()).is_err());
+    let mut record = product(json!({}));
+    record.producer = frozen(
+        json!({"source":SOURCE,"source_epoch":plan.source_epoch(),"source_provenance":"git_commit","target":target,"workflow":workflow(),"host":host(target,"windows","x86_64",26),"archive":{"identity":identity()},"cli_image":identity(),"qualification_failures":[],"name_profiles":crate::name_profiles::valid_fixture(SOURCE,&identity(),OsFamily::Windows),"release_tests":{"windows_existing_sync":crate::windows_sync_evidence::test_fixture(SOURCE,u64::from(plan.source_epoch().seconds()),target,"test"),"ntfs_query":crate::ntfs_query_evidence::test_summary("x86_64"),"ntfs_query_test_cases":literal_windows_query_selection(),"native_publication":crate::publication_evidence::test_fixture(SOURCE,u64::from(plan.source_epoch().seconds()),target,"windows","x86_64","release")}}),
+    );
+    assert!(check_product(&record, name, &plan, SOURCE, &workflow()).is_err());
+}
+
+#[test]
+fn every_product_requires_actual_publication_records_and_rechecks_rehashed_edge_facts() {
+    let (_, plan, value) = fixture(false);
+    for name in [LINUX, MAC_CLI, MAC_APP] {
+        let mut bad = clone_inputs(&value);
+        edit(&mut bad.products.get_mut(name).unwrap().producer, |v| {
+            v["release_tests"]
+                .as_object_mut()
+                .unwrap()
+                .remove("native_publication");
+        });
+        assert!(bad.validate(&plan, &workflow()).is_err(), "missing {name}");
+        let mut bad = clone_inputs(&value);
+        edit(&mut bad.products.get_mut(name).unwrap().producer, |v| {
+            let record = &mut v["release_tests"]["native_publication"]["records"][2];
+            let mut raw: Value =
+                serde_json::from_str(record["document"].as_str().unwrap()).unwrap();
+            raw["native_edge"]["succeeded"] = json!(true);
+            let text = serde_json::to_string(&raw).unwrap();
+            record["identity"] = serde_json::to_value(ByteIdentity::of(text.as_bytes())).unwrap();
+            record["document"] = json!(text);
+        });
+        assert!(
+            bad.validate(&plan, &workflow()).is_err(),
+            "changed native edge {name}"
+        );
     }
 }

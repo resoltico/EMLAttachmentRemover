@@ -4,6 +4,8 @@ mod child;
 mod containment;
 #[cfg(any(test, feature = "native-fixtures"))]
 pub mod creation_observer;
+#[cfg(any(test, feature = "native-fixtures"))]
+pub mod existing_sync_evidence;
 mod file;
 mod handle;
 mod inventory;

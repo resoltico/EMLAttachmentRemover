@@ -26,8 +26,16 @@ pub struct PublicationCandidate {
 pub struct PublishAttempt {
     candidate: PublicationCandidate,
     error: Option<io::Error>,
+    #[cfg(any(test, feature = "native-fixtures"))]
+    native_edge: Option<crate::NativePublicationReceipt>,
 }
 impl PublishAttempt {
+    /// Actual native call-return facts; absent when a pre-edge check refused.
+    #[cfg(any(test, feature = "native-fixtures"))]
+    pub fn native_edge(&self) -> Option<crate::NativePublicationReceipt> {
+        self.native_edge
+    }
+
     /// Exact native existing-name collision, independent of publication effects.
     pub fn is_name_collision(&self) -> bool {
         self.error.as_ref().is_some_and(crate::name_collision)
@@ -72,6 +80,8 @@ impl PublicationCandidate {
             let maximum = candidate.owned.component_limit()?;
             RenameBuffer::new(name, maximum, &candidate.owned.parent_path()?)
         })();
+        #[cfg(any(test, feature = "native-fixtures"))]
+        let mut native_edge = None;
         let error = match preparation {
             Err(error) => Some(error),
             Ok(mut buffer) => {
@@ -87,11 +97,27 @@ impl PublicationCandidate {
                     )
                 };
                 let error = (succeeded == 0).then(io::Error::last_os_error);
+                #[cfg(any(test, feature = "native-fixtures"))]
+                {
+                    native_edge = Some(crate::NativePublicationReceipt {
+                        primitive: "SetFileInformationByHandle_FileRenameInfo",
+                        succeeded: succeeded != 0,
+                        raw_return: Some(succeeded),
+                        native_code: error
+                            .as_ref()
+                            .and_then(|error| error.raw_os_error().map(i64::from)),
+                    });
+                }
                 candidate.state = effect(error.as_ref());
                 error
             }
         };
-        PublishAttempt { candidate, error }
+        PublishAttempt {
+            candidate,
+            error,
+            #[cfg(any(test, feature = "native-fixtures"))]
+            native_edge,
+        }
     }
     /// Publication effect, never downgraded by handle release.
     pub fn state(&self) -> PublicationState {
@@ -202,6 +228,20 @@ mod tests {
         let write = CreationDirectory::bind_resolved(&operation(path), read.identity()).unwrap();
         (read, write)
     }
+    fn publication_record(name: &'static str, case: &str, origin: &str, fields: &str) {
+        if let Some(directory) = std::env::var_os("EML_NATIVE_PUBLICATION_EVIDENCE_DIR") {
+            let document = format!(
+                "{{\"schema\":1,\"case\":\"{case}\",\"origin\":\"{origin}\",\"process_os\":\"windows\",\"process_architecture\":\"{}\",{fields}}}",
+                std::env::consts::ARCH
+            );
+            crate::fixture_evidence::write_record(
+                std::path::Path::new(&directory),
+                name,
+                &document,
+            )
+            .unwrap();
+        }
+    }
     #[test]
     fn native_no_replace_edge_keeps_complete_same_object_and_release_retains_final_file() {
         let fixture = directory();
@@ -209,9 +249,22 @@ mod tests {
         let (read, write) = writer(fixture.path());
         let bytes = b"Subject: synthetic\r\n\r\ncomplete verified body\r\n";
         let ready = write.stage_bytes(bytes, || Ok(())).unwrap();
+        let sync = ready.file_sync();
+        let parent_before = read.identity();
+        let inventory_before = crate::fixture_evidence::inventory_json(fixture.path()).unwrap();
+        let mut events = vec!["stage_returned"];
+        let denied =
+            std::fs::rename(fixture.path(), fixture.path().with_extension("moved")).unwrap_err();
+        let actor_native_code = denied.raw_os_error();
+        events.push("parent_rename_denied");
+        assert_eq!(actor_native_code, Some(32));
         let identity = ready.identity();
         let name = OsStr::new("result.eml");
         let attempt = ready.publish(name);
+        let edge = attempt.native_edge();
+        let publication = attempt.state();
+        events.push("native_publication_returned");
+
         assert_eq!(attempt.state(), PublicationState::Published);
         assert!(attempt.error().is_none());
         let (published, error) = attempt.into_parts();
@@ -252,6 +305,8 @@ mod tests {
         // Release cannot undo the already observed edge, including if core has
         // received a stop meanwhile. This is release evidence, not core stop QA.
         let (effect, cleanup) = published.cleanup();
+        events.push("cleanup_returned");
+
         assert_eq!(effect, PublicationState::Published);
         assert_eq!(cleanup.state, CleanupState::NotNeeded);
         assert!(cleanup.residual_name.is_none());
@@ -261,6 +316,37 @@ mod tests {
         assert_eq!(identity_pin.observation().identity, identity);
         identity_pin.close().unwrap();
         assert_eq!(std::fs::read_dir(fixture.path()).unwrap().count(), 1);
+        use crate::fixture_evidence::{
+            cleanup_json, identity_json, inventory_json, native_code_json, native_edge_json,
+            sync_json,
+        };
+        let requested = BoundDirectory::open(&operation(fixture.path())).unwrap();
+        let events = events
+            .iter()
+            .map(|event| format!("\"{event}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        publication_record(
+            "native-parent-binding.json",
+            "native-parent-binding",
+            "actual_native_parent_interference",
+            &format!(
+                "\"events\":[{events}],\"parent_before\":{},\"held_parent_after\":{},\"requested_parent_after\":{},\"actor_native_code\":{},\"actor_changed_address\":{},\"requested_address_verified\":{},\"candidate_identity\":{},\"candidate_expected\":{bytes:?},\"candidate_actual\":{:?},\"file_sync\":{},\"namespace_sync\":null,\"native_edge\":{},\"publication\":\"{publication:?}\",\"cleanup\":{},\"inventory_before\":{inventory_before},\"inventory_after\":{},\"substitute_expected\":null,\"substitute_after\":null",
+                identity_json(parent_before),
+                identity_json(read.identity()),
+                identity_json(requested.identity()),
+                native_code_json(actor_native_code.map(i64::from)),
+                requested.identity() != parent_before,
+                requested.identity() == parent_before,
+                identity_json(identity),
+                &actual[..count],
+                sync_json(sync),
+                native_edge_json(edge),
+                cleanup_json(&cleanup),
+                inventory_json(fixture.path()).unwrap()
+            ),
+        );
+        drop(requested);
         drop(write);
         drop(read);
         drop(actor);
@@ -291,7 +377,6 @@ mod tests {
     #[test]
     fn native_rename_conflict_and_preedge_name_refusals_only_clean_owned_staging() {
         let fixture = directory();
-        std::fs::write(fixture.path().join("winner.eml"), b"synthetic winner").unwrap();
         let actor = RestrictedToken::enter().unwrap();
         let read = BoundDirectory::open(&operation(fixture.path())).unwrap();
         // Obtain the public planning property before any write capability, and
@@ -300,11 +385,27 @@ mod tests {
         assert_eq!(maximum, native_name_limit(&read));
         let write =
             CreationDirectory::bind_resolved(&operation(fixture.path()), read.identity()).unwrap();
+        let ready = write.stage_bytes(b"synthetic loser", || Ok(())).unwrap();
+        let candidate_identity = ready.identity();
+        let sync = ready.file_sync();
+        let mut events = vec!["stage_returned"];
+        std::io::Write::write_all(
+            &mut std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(fixture.path().join("winner.eml"))
+                .unwrap(),
+            b"synthetic winner",
+        )
+        .unwrap();
+        events.push("winner_created");
         let winner = read.observe_child(OsStr::new("winner.eml")).unwrap();
-        let attempt = write
-            .stage_bytes(b"synthetic loser", || Ok(()))
-            .unwrap()
-            .publish(OsStr::new("winner.eml"));
+        let winner_bytes = std::fs::read(fixture.path().join("winner.eml")).unwrap();
+        let inventory_before = crate::fixture_evidence::inventory_json(fixture.path()).unwrap();
+        let attempt = ready.publish(OsStr::new("winner.eml"));
+        let edge = attempt.native_edge();
+        let publication = attempt.state();
+        events.push("native_publication_returned");
         assert_eq!(attempt.state(), PublicationState::NotPublished);
         assert_eq!(
             attempt.error().unwrap().raw_os_error(),
@@ -312,7 +413,9 @@ mod tests {
         );
         let (loser, error) = attempt.into_parts();
         assert!(error.is_some());
+        let candidate_actual = crate::fixture_evidence::held_file_bytes(&loser.owned.file).unwrap();
         let (effect, cleanup) = loser.cleanup();
+        events.push("cleanup_returned");
         assert_eq!(effect, PublicationState::NotPublished);
         assert_eq!(cleanup.state, CleanupState::Complete);
         assert_eq!(
@@ -323,12 +426,47 @@ mod tests {
             std::fs::read(fixture.path().join("winner.eml")).unwrap(),
             b"synthetic winner"
         );
+        use crate::fixture_evidence::{
+            cleanup_json, identity_json, inventory_json, native_edge_json, signature_json,
+            sync_json,
+        };
+        let after = read
+            .observe_child(OsStr::new("winner.eml"))
+            .unwrap()
+            .file
+            .unwrap();
+        let after_bytes = std::fs::read(fixture.path().join("winner.eml")).unwrap();
+        let events = events
+            .iter()
+            .map(|event| format!("\"{event}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        publication_record(
+            "native-racing-winner.json",
+            "native-racing-winner",
+            "actual_native_publication",
+            &format!(
+                "\"events\":[{events}],\"candidate_identity\":{},\"candidate_expected\":{:?},\"candidate_actual\":{candidate_actual:?},\"file_sync\":{},\"native_edge\":{},\"publication\":\"{publication:?}\",\"cleanup\":{},\"winner_before\":{{\"signature\":{},\"bytes\":{winner_bytes:?}}},\"winner_after\":{{\"signature\":{},\"bytes\":{after_bytes:?}}},\"inventory_before\":{inventory_before},\"inventory_after\":{}",
+                identity_json(candidate_identity),
+                b"synthetic loser",
+                sync_json(sync),
+                native_edge_json(edge),
+                cleanup_json(&cleanup),
+                signature_json(winner.file.unwrap()),
+                signature_json(after),
+                inventory_json(fixture.path()).unwrap()
+            ),
+        );
         for name in ["", ".", "..", "a/b", r"a\b", "a:b", "NUL", "a\0b"] {
             let attempt = write
                 .stage_bytes(b"owned synthetic", || Ok(()))
                 .unwrap()
                 .publish(OsStr::new(name));
             assert_eq!(attempt.state(), PublicationState::NotPublished, "{name:?}");
+            assert!(
+                attempt.native_edge().is_none(),
+                "Name prechecks must not invent a native call"
+            );
             assert_eq!(attempt.error().unwrap().kind(), io::ErrorKind::InvalidInput);
             assert_eq!(
                 attempt.into_parts().0.cleanup().1.state,

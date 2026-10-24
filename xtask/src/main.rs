@@ -33,10 +33,12 @@ mod mutants;
 mod name_profiles;
 mod native_host;
 mod notices;
+mod ntfs_query_evidence;
 mod picker_evidence;
 mod preparation_evidence;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod preparation_resources;
+mod publication_evidence;
 mod qualify;
 mod release_assets;
 mod release_check;
@@ -54,6 +56,7 @@ mod windows_input_review;
 mod windows_link;
 mod windows_references;
 mod windows_runtime;
+mod windows_sync_evidence;
 #[cfg(windows)]
 mod windows_workspace;
 use clap::{Parser, Subcommand};

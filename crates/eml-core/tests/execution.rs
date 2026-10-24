@@ -31,6 +31,10 @@ struct Item {
     code: Option<(ErrorCode, ErrorPhase)>,
     namespace_edges: u16,
     equality: Option<bool>,
+    #[cfg(all(windows, feature = "native-fixtures"))]
+    native_code: Option<i64>,
+    #[cfg(all(windows, feature = "native-fixtures"))]
+    existing: Option<eml_core::ExistingObservation>,
 }
 #[derive(Default)]
 struct Sink {
@@ -74,6 +78,10 @@ impl EventSink for Sink {
                         assert_eq!(metadata.copy_bytes, GOLDEN.len() as u64);
                         Item {
                             status: "created",
+                            #[cfg(all(windows, feature = "native-fixtures"))]
+                            native_code: None,
+                            #[cfg(all(windows, feature = "native-fixtures"))]
+                            existing: None,
                             code: None,
                             namespace_edges: copy.publication().namespace_sync().required_edges,
                             equality: None,
@@ -88,6 +96,10 @@ impl EventSink for Sink {
                         namespace(copy.namespace_sync);
                         Item {
                             status: "up_to_date",
+                            #[cfg(all(windows, feature = "native-fixtures"))]
+                            native_code: None,
+                            #[cfg(all(windows, feature = "native-fixtures"))]
+                            existing: Some(copy.clone()),
                             code: None,
                             namespace_edges: copy.namespace_sync.required_edges,
                             equality: copy.bytes_equal,
@@ -101,6 +113,14 @@ impl EventSink for Sink {
                         );
                         Item {
                             status: "failed",
+                            #[cfg(all(windows, feature = "native-fixtures"))]
+                            native_code: failure
+                                .error()
+                                .native_error()
+                                .and_then(|error| error.raw_os_error())
+                                .map(i64::from),
+                            #[cfg(all(windows, feature = "native-fixtures"))]
+                            existing: failure.existing().cloned(),
                             code: Some((failure.error().code(), failure.error().phase())),
                             namespace_edges: failure
                                 .existing()
@@ -239,6 +259,11 @@ fn readable_different_readonly_copy_is_a_conflict_before_any_sync_access() {
     let mut readonly = permissions.clone();
     readonly.set_readonly(true);
     fs::set_permissions(&copy, readonly).unwrap();
+    #[cfg(all(windows, feature = "native-fixtures"))]
+    let before = (
+        eml_fs::existing_sync_evidence::file_observation(&source).unwrap(),
+        eml_fs::existing_sync_evidence::file_observation(&copy).unwrap(),
+    );
     let mut sink = Sink::default();
     let outcome = run(
         &request(root.path(), &["a.eml"], None),
@@ -246,6 +271,16 @@ fn readable_different_readonly_copy_is_a_conflict_before_any_sync_access() {
         &mut sink,
     )
     .unwrap();
+    #[cfg(all(windows, feature = "native-fixtures"))]
+    retain_existing_evidence(
+        "core-readonly-unequal",
+        root.path(),
+        &source,
+        &copy,
+        &before.0,
+        &before.1,
+        &sink.items[0],
+    );
     fs::set_permissions(&copy, permissions).unwrap();
     assert_eq!(outcome.exit_class(), ExitClass::Failure);
     assert_eq!(
@@ -402,6 +437,11 @@ fn identical_readonly_copy_retains_equality_and_never_clears_its_attribute() {
     let mut readonly = permissions.clone();
     readonly.set_readonly(true);
     fs::set_permissions(&copy, readonly).unwrap();
+    #[cfg(all(windows, feature = "native-fixtures"))]
+    let before = (
+        eml_fs::existing_sync_evidence::file_observation(&source).unwrap(),
+        eml_fs::existing_sync_evidence::file_observation(&copy).unwrap(),
+    );
     let mut sink = Sink::default();
     let outcome = run(
         &request(root.path(), &["a.eml"], None),
@@ -410,6 +450,16 @@ fn identical_readonly_copy_retains_equality_and_never_clears_its_attribute() {
     )
     .unwrap();
     let stayed_readonly = fs::metadata(&copy).unwrap().permissions().readonly();
+    #[cfg(all(windows, feature = "native-fixtures"))]
+    retain_existing_evidence(
+        "core-readonly-equal",
+        root.path(),
+        &source,
+        &copy,
+        &before.0,
+        &before.1,
+        &sink.items[0],
+    );
     fs::set_permissions(&copy, permissions).unwrap();
     #[cfg(unix)]
     {
@@ -678,4 +728,42 @@ fn natively_coalesced_mirrors_retain_full_raw_route_tokens_on_repeat() {
             assert_eq!(fs::read(root.path().join(path)).unwrap(), GOLDEN);
         }
     }
+}
+
+#[cfg(all(windows, feature = "native-fixtures"))]
+fn retain_existing_evidence(
+    case: &'static str,
+    root: &Path,
+    source: &Path,
+    copy: &Path,
+    before_source: &str,
+    before_copy: &str,
+    item: &Item,
+) {
+    use eml_fs::existing_sync_evidence::{self as evidence, Step};
+    let after_source = evidence::file_observation(source).unwrap();
+    let after_copy = evidence::file_observation(copy).unwrap();
+    let (signature, parent) = evidence::file_binding(copy).unwrap();
+    let mut step = Step::new("core_returned", "refused");
+    step.signature = Some(signature);
+    step.parent = Some(parent);
+    step.bytes_equal = item.equality;
+    step.native_code = item.native_code;
+    if let Some(existing) = &item.existing {
+        step.sync = existing.file_sync;
+        step.namespace = Some(existing.namespace_sync.fixture_json());
+    }
+    evidence::write_case(
+        case,
+        root,
+        root,
+        Some(before_source),
+        before_copy,
+        &[step],
+        item.code.expect("Observed core refusal").0.as_str(),
+        item.native_code,
+        Some(&after_source),
+        &after_copy,
+    )
+    .unwrap();
 }

@@ -97,6 +97,11 @@ fn hardlink_to_current_source_is_refused_before_byte_comparison() {
     fs::write(&input, INPUT).unwrap();
     fs::hard_link(&input, &alias).unwrap();
     let source = prepared(root.path());
+    #[cfg(all(windows, feature = "native-fixtures"))]
+    let before = (
+        eml_fs::existing_sync_evidence::file_observation(&input).unwrap(),
+        eml_fs::existing_sync_evidence::file_observation(&alias).unwrap(),
+    );
     let existing = bind(&alias);
     let identity = existing.initial_signature().identity;
     let Err(failure) = compare_existing(&source, existing, &RunControl::default()) else {
@@ -109,6 +114,34 @@ fn hardlink_to_current_source_is_refused_before_byte_comparison() {
     assert_eq!(failure.identity(), identity);
     assert_eq!(failure.bytes_equal(), None);
     assert!(!failure.stable());
+    #[cfg(all(windows, feature = "native-fixtures"))]
+    {
+        use eml_fs::existing_sync_evidence::{self as evidence, Step};
+        let (signature, parent) = evidence::file_binding(&alias).unwrap();
+        let mut step = Step::new("comparison_refused", "refused");
+        step.signature = Some(signature);
+        step.parent = Some(parent);
+        step.source = Some(source.fixture_source_observation().unwrap());
+        let after_source = evidence::file_observation(&input).unwrap();
+        let after_copy = evidence::file_observation(&alias).unwrap();
+        evidence::write_case(
+            "core-source-alias",
+            root.path(),
+            root.path(),
+            Some(&before.0),
+            &before.1,
+            &[step],
+            if matches!(failure.error(), ExistingComparisonError::SourceAlias) {
+                "source_alias"
+            } else {
+                "comparison_failed"
+            },
+            None,
+            Some(&after_source),
+            &after_copy,
+        )
+        .unwrap();
+    }
     assert_eq!(fs::read(&input).unwrap(), INPUT);
     assert_eq!(fs::read(&alias).unwrap(), INPUT);
     drop(source);

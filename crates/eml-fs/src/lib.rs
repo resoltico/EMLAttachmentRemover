@@ -12,7 +12,11 @@ pub use capabilities::CreationDirectory;
 pub use capabilities::SyncDirectory;
 mod observation;
 pub use observation::{BoundFileError, EntryKind, EntryObservation, FileSignature};
+#[cfg(any(test, feature = "native-fixtures"))]
+pub mod fixture_evidence;
 mod receipts;
+#[cfg(any(test, feature = "native-fixtures"))]
+pub use receipts::NativePublicationReceipt;
 #[cfg(any(unix, windows))]
 mod staging;
 pub use receipts::{
@@ -44,6 +48,8 @@ mod darwin_acl;
 mod windows;
 #[cfg(all(windows, any(test, feature = "native-fixtures")))]
 pub use windows::creation_observer;
+#[cfg(all(windows, any(test, feature = "native-fixtures")))]
+pub use windows::existing_sync_evidence;
 #[cfg(windows)]
 pub use windows::path::{PathContext, validate_component};
 #[cfg(windows)]

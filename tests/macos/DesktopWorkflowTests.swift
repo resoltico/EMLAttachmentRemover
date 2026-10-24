@@ -347,12 +347,6 @@ extension DesktopInteractionTests {
     _ = try finderEntry(folder, file: firstCopy, selected: true)
     snapshot(folder, "native-finder-revealed-exact-copy")
 
-    // Move only this newly opened fixture window so the titlebar and drop target stay visible.
-    let titlebar = folder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
-      .withOffset(CGVector(dx: 0, dy: 12))
-    let position = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-      .withOffset(CGVector(dx: 750, dy: 100))
-    titlebar.click(forDuration: 0.3, thenDragTo: position)
     // Free one full-report reservation before a real native file drag.
     try await focusOwnedWindow(owned, window: window, avoiding: folder)
     try await showRunControls(app)
@@ -377,22 +371,65 @@ extension DesktopInteractionTests {
       throw InteractionFailure.expectedPresentation
     }
     finder.activate()
-    let originalEntry = try finderEntry(folder, file: sources[0], selected: nil)
-    originalEntry.click()
+    let mainFrame = window.frame
+    let finderFrame = folder.frame
     let drop = window.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.7))
-    guard originalEntry.isHittable, !folder.frame.contains(drop.screenPoint) else {
-      XCTFail(
-        "Owned source and product drop point are not both exposed: \(finder.debugDescription)")
+    let available = CGRect(
+      x: mainFrame.minX, y: mainFrame.minY, width: mainFrame.width,
+      height: drop.screenPoint.y - mainFrame.minY)
+    guard !finderFrame.isEmpty, finderFrame.width < available.width,
+      finderFrame.height < available.height,
+      try contentFrame(window).contains(drop.screenPoint)
+    else {
+      XCTFail("Owned Finder window does not fit above the native drop point")
       throw InteractionFailure.expectedPresentation
     }
+    // Place this one owned window from actual dimensions, leaving the existing
+    // drop point exposed. Refuse nonfit rather than resize or repeat the drag.
+    let titlebar = folder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+      .withOffset(CGVector(dx: 0, dy: 12))
+    let position = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+      .withOffset(
+        CGVector(
+          dx: available.midX - mainFrame.minX,
+          dy: available.midY - finderFrame.height / 2 + 12 - mainFrame.minY))
+    guard finderFrame.contains(titlebar.screenPoint) else {
+      throw InteractionFailure.expectedPresentation
+    }
+    titlebar.click(forDuration: 0.3, thenDragTo: position)
+    let originalEntry = try finderEntry(folder, file: sources[0], selected: nil)
+    @MainActor
+    func exposedDrop() throws -> XCUICoordinate {
+      let currentMain = window.frame
+      let currentFinder = folder.frame
+      let currentSource = originalEntry.frame
+      let currentDrop = window.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.7))
+      let currentAvailable = CGRect(
+        x: currentMain.minX, y: currentMain.minY, width: currentMain.width,
+        height: currentDrop.screenPoint.y - currentMain.minY)
+      guard !currentFinder.isEmpty, !currentSource.isEmpty,
+        currentAvailable.contains(currentFinder), currentFinder.contains(currentSource),
+        currentMain.contains(currentSource), originalEntry.isHittable,
+        try contentFrame(window).contains(currentDrop.screenPoint),
+        !currentFinder.contains(currentDrop.screenPoint)
+      else {
+        XCTFail(
+          "Owned source and product drop point are not both exposed: \(finder.debugDescription)")
+        throw InteractionFailure.expectedPresentation
+      }
+      return currentDrop
+    }
+    _ = try exposedDrop()
+    originalEntry.click()
+    let exposed = try exposedDrop()
     originalEntry.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-      .click(forDuration: 1, thenDragTo: drop)
+      .click(forDuration: 1, thenDragTo: exposed)
+    try await closeOwnedFinderWindow(finder, title: folderTitle)
+    try await focusOwnedWindow(owned, window: window)
     try await requireRun(app, counts: "0 created · 1 up to date", source: sources[0])
     XCTAssertEqual(try Data(contentsOf: firstCopy), golden)
     XCTAssertEqual(try Data(contentsOf: sources[0]), original)
     snapshot(app, "native-finder-file-drop-up-to-date")
-    try await closeOwnedFinderWindow(finder, title: folderTitle)
-    try await focusOwnedWindow(owned, window: window)
 
   }
 

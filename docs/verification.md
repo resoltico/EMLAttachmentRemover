@@ -28,7 +28,11 @@ test identities/counts, and retains transcripts. macOS release selections includ
 GUI, worker, Darwin and Core fixture features under the pinned Xcode policy.
 Windows selections include filesystem, Job and console fixtures. Debug tests
 remain required independently. A passing selection establishes only the tested
-profile on that host.
+profile on that host. On Windows, the repository check's test section also
+collects the native synchronization fixtures and requires an untranslated native
+Windows process. Without `--target`, it records the actual compiler host and a
+null qualification target; this cannot enter shipping release admission.
+`cargo test --locked --workspace` remains the ordinary host test command.
 
 `cargo xtask verify-release-inputs --products DIR --desktop DIR --picker DIR --out NEW_DIR`
 admits exact current-run/current-attempt product and consumer records, freezing
@@ -212,6 +216,17 @@ formatting and namespace checks. macOS15 consumers exercise exactly the producer
 archives. Producer verification ends after extraction, structure, signature,
 CPU/minimum policy, actual Core-backed worker and unchanged-bundle checks; its
 `native_candidate` receipt contains no successful/default GUI fields.
+
+Debug and release test selections retain native publication receipts and namespace
+inventories under `native-publication-evidence`. Windows additionally retains
+existing-copy synchronization records and NTFS query/lifetime records under
+`windows-creation-evidence`. The qualifier requires their complete operation-specific
+case sets and binds the raw documents to source, target, actual test execution and
+launched executable identities. Release admission reparses those same documents.
+Engine progress phases, actual native call returns and controlled completion/error
+inputs remain explicitly distinct. Missing, contradictory or substituted records
+fail admission; compilation and modeled inputs cannot replace native execution.
+
 `smoke-macos-app` on each macOS15 consumer requires the full workflow, pagination,
 finite controlled processing/export I/O and lifecycle cases, export publication
 controls, report-writer backpressure and final appearance checks before emitting
@@ -326,7 +341,10 @@ commit; diff mutation snapshots retain the history needed for the real merge
 base. No alternate object store or hard-linked source snapshot is used. Dirty or untracked workspace inputs fail with a commit requirement;
 they are never silently omitted or called an empty diff. These bounded local
 campaign commands require Unix. This is a tooling condition, not a restriction
-on the six native product CLI targets. No full mutation campaign is provided.
+on the six native product CLI targets. Campaign children explicitly set
+`CARGO_INCREMENTAL=0`, including when the parent environment requests incremental
+compilation. Mutation selection covers the two authorization guards rather than
+every repository function.
 
 Fuzz uses the pinned nightly and cargo-fuzz, all twelve synthetic inputs plus
 structural seeds, a 4 MiB maximum input, five-second case timeout and 1,024 MiB
