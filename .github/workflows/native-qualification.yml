@@ -60,7 +60,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.source }}
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177
         with:
           tool: shellcheck@${{ needs.plan.outputs.shellcheck }}
           checksum: true
@@ -101,7 +101,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.source }}
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177
         with:
           tool: cargo-about@${{ needs.plan.outputs.about }},cargo-deny@${{ needs.plan.outputs.deny }}
           checksum: true

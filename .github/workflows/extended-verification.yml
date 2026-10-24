@@ -28,7 +28,7 @@ jobs:
           for key in cargo_deny cargo_fuzz fuzz_compiler; do
             printf '%s=%s\n' "$key" "$(jq -er --arg key "$key" '.tools[$key]' target/extended-distribution.json)" >> "$GITHUB_OUTPUT"
           done
-      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177
         with:
           tool: cargo-deny@${{ steps.policy.outputs.cargo_deny }}
           checksum: true
