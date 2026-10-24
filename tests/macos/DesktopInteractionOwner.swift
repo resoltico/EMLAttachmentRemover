@@ -58,6 +58,8 @@ final class DesktopInteractionOwner {
   private var diagnosticSettled = true
   private var outputPipe: Pipe?
   private let fixtureOutput = DesktopFixtureOutput()
+  private var fixtureActors: DesktopFixtureActors?
+  private var actorScenario = "unavailable"
   private var outputDrainComplete: Bool?
   private var heldCopy: (source: URL, held: URL, expected: Data)?
   private var copyWasHeld = false
@@ -101,12 +103,20 @@ final class DesktopInteractionOwner {
     }
     do {
       let config = try configuration()
+      guard let scenario = config.input["scenario"] else { throw Failure.invalidInput }
+      actorScenario = scenario
       normalRunner = config.control == "normal"
       try captureFixtureFilesystem(config)
       try captureOriginals(config)
+      guard let root = fixtureFilesystem?["root"] as? [String: Any] else {
+        throw Failure.invalidInput
+      }
+      fixtureActors = try DesktopFixtureActors(
+        fixture: config.fixture, scenario: actorScenario, originals: originals, filesystemRoot: root
+      )
       let (launched, date) = try await launchApplications(config)
       try writeOwnership(config, launched: launched, date: date)
-      try startRunner(config)
+      try startRunner()
       try await monitorRunner(config, launched: launched, date: date)
       try await drainRunnerOutput()
       if pickerBaselineSettled {
@@ -120,8 +130,17 @@ final class DesktopInteractionOwner {
     // sampleFirstFailure includes its entire eight-second settlement budget;
     // an unsettled sampler remains recorded for the outer process owner.
     await settleProcesses()
-    if panelClipboard?.hasActiveLease == true {
+    if panelClipboard?.hasActiveLease == true || fixtureActors != nil {
       do { try await drainRunnerOutput() } catch { failure = failure ?? String(describing: error) }
+    }
+    while let request = fixtureOutput.take() { fixtureActors?.noteUnexecuted(request) }
+    if let fixtureActors {
+      if !childReaped || outputDrainComplete != true || !fixtureOutput.observedEOF() {
+        fixtureActors.failAdmission("Runner/output settlement remains unverified")
+      }
+      do { try fixtureActors.finish() } catch {
+        failure = failure ?? "Fixture actor closure failed: \(error)"
+      }
     }
     do {
       try restoreAndWriteObservation()
@@ -383,19 +402,14 @@ final class DesktopInteractionOwner {
     guard launched.activate(options: []) else { throw Failure.launchIdentity }
   }
 
-  private func startRunner(_ config: Configuration) throws {
-    let input = config.input
+  private func startRunner() throws {
     child.executableURL = URL(fileURLWithPath: arguments[4])
     child.arguments = Array(arguments.dropFirst(5))
     child.standardInput = FileHandle.nullDevice
-    if input["fixture_output"] == "true" {
-      let pipe = Pipe()
-      outputPipe = pipe
-      child.standardOutput = pipe
-      try fixtureOutput.relay(from: pipe.fileHandleForReading, to: FileHandle.standardOutput)
-    } else {
-      child.standardOutput = FileHandle.standardOutput
-    }
+    let pipe = Pipe()
+    outputPipe = pipe
+    child.standardOutput = pipe
+    try fixtureOutput.relay(from: pipe.fileHandleForReading, to: FileHandle.standardOutput)
     child.standardError = FileHandle.standardError
     try child.run()
   }
@@ -414,6 +428,10 @@ final class DesktopInteractionOwner {
         throw Failure.invalidInput
       }
       let request = fixtureOutput.take()
+      try fixtureActors?.handle(
+        request,
+        mayStart: child.isRunning && !fixtureOutput.hasEnded()
+          && fixtureOutput.observedRelayFailure() == nil)
       try handleCopyRequest(request, fixture: config.fixture)
       try handlePanelPathRequest(request, fixture: config.fixture)
       try await samplePicker(request, config: config, launched: launched, date: date)
@@ -941,6 +959,8 @@ final class DesktopInteractionOwner {
         "restoration_failure": copyRestorationFailure.map { $0 as Any } ?? NSNull(),
         "scope": "only the owned synthetic output; hard-kill restoration remains unverified",
       ],
+      "fixture_actors": fixtureActors?.observation
+        ?? DesktopFixtureActors.unavailable(scenario: actorScenario),
       "fixture_output_relay": [
         "enabled": outputPipe != nil,
         "eof_observed": fixtureOutput.observedEOF(),
@@ -950,9 +970,10 @@ final class DesktopInteractionOwner {
     ]
     var observation = result
     observation["ownership_receipt"] = ownershipReceipt.map { $0 as Any } ?? NSNull()
-    try JSONSerialization.data(
-      withJSONObject: observation, options: [.prettyPrinted, .sortedKeys]
-    ).write(to: resultURL, options: .withoutOverwriting)
+    let document = try JSONSerialization.data(
+      withJSONObject: observation, options: [.prettyPrinted, .sortedKeys])
+    guard document.count <= 1024 * 1024 else { throw Failure.invalidInput }
+    try document.write(to: resultURL, options: .withoutOverwriting)
   }
   static func moveWithoutReplacement(from source: URL, to destination: URL) throws {
     let code = source.withUnsafeFileSystemRepresentation { old -> Int32 in

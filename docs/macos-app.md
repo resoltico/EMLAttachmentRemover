@@ -8,6 +8,13 @@ Windows/Linux GUI implementations are outside the current scope.
 The standard native About panel is available from **EML Attachment Remover →
 About EML Attachment Remover**. Its bundle metadata and Credits contain the product
 name, release version, distinct build number, copyright and license information.
+Before Slint/Winit creates the shared AppKit application, the app creates its declared
+`NSApplication` subclass. Its About action opens that same standard panel with
+an explicitly decoded, materialized `Contents/Resources/EML.icns`; AppKit does
+not need its default application-icon lookup for this action. Startup refuses
+an unavailable or invalid packaged icon, or an already initialized foreign
+application singleton. The Winit delegate still owns the existing lifecycle and
+URL callbacks.
 **Help → About Slint and Licenses…** displays the actual `AboutSlint` attribution
 widget under the selected royalty-free license, plus complete software/artwork
 license text. Its Third-party licenses action opens bundled notices and license
@@ -25,6 +32,10 @@ The explicit Cargo profile is:
 ```sh
 MACOSX_DEPLOYMENT_TARGET=15.0 cargo build --locked -p eml-gui --features macos-gui --target aarch64-apple-darwin
 ```
+
+This command compiles the executable. Launch the complete app bundle produced
+by `cargo xtask build-macos-app` below; the GUI requires its packaged icon and
+other bundle resources at runtime.
 
 Use x86_64-apple-darwin on a native Intel Mac. These are separate executables;
 there is no universal build. Qualification requires the selected Xcode version/build in `xtask/tools.toml`

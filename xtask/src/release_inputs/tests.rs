@@ -47,7 +47,7 @@ fn ownership(app: &str) -> Value {
     json!({"pid":42,"launch_date":1.0,"bundle_path":app,"pasteboard":"owned-private-board"})
 }
 fn owner(app: &str, originals: u32) -> Value {
-    json!({"failure":null,"source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"panel_path_clipboard":crate::picker_evidence::panel_path_clipboard_test_value(true),"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":originals,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":ownership(app)})
+    json!({"failure":null,"source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"fixture_output_relay":crate::picker_evidence::fixture_output_relay_test_value(),"fixture_actors":crate::picker_evidence::fixture_actors::test_value("picker"),"panel_path_clipboard":crate::picker_evidence::panel_path_clipboard_test_value(true),"timed_out":false,"cancelled":false,"runner_reaped":true,"runner_status":0,"owned_app_terminated":true,"forced_app_cleanup":false,"originals_captured":originals,"originals_unchanged":true,"owned_pasteboard_released":true,"unexpected_application_pids":[],"ownership_receipt":ownership(app)})
 }
 fn host(target: &str, os: &str, arch: &str, major: u8) -> Value {
     json!({"target":target,"process_os":os,"process_architecture":arch,"kernel_machine":if os=="macos"&&arch=="aarch64"{"arm64"}else{arch},"product_version":format!("{major}.1"),"runner_image":"new-image","runner_image_version":"new-version","actual_os":format!("ProductVersion: {major}.1\nBuildVersion: TestBuild\n")})
@@ -186,7 +186,7 @@ fn controlled_actor(name: &str) -> Value {
         ui["expected_bytes"] = 3.into();
         ui["expected_sha256"] = identity().sha256.into();
         ui["winner_sha256"] = ByteIdentity::of(b"winner").sha256.into();
-        matrix = json!({"expected_document":identity(),"winner":ByteIdentity::of(b"winner"),"directory_unchanged":true,"symlink_unchanged":true,"pre_edge_absent":true,"controls":[{"case":"racing-winner","phase":"publication","operation_id":7,"worker_pid":47,"worker_absent":true,"first_interrupt_micros":null,"second_interrupt_micros":null},{"case":"pre-edge-stop","phase":"publication","operation_id":8,"worker_pid":48,"worker_absent":true,"first_interrupt_micros":100,"second_interrupt_micros":null},{"case":"post-edge-stop","phase":"namespace-sync","operation_id":9,"worker_pid":49,"worker_absent":true,"first_interrupt_micros":100,"second_interrupt_micros":null}]});
+        matrix = json!({"expected_document":identity(),"expected_document_contents":"abc","winner":ByteIdentity::of(b"winner"),"directory_unchanged":true,"symlink_unchanged":true,"pre_edge_absent":true,"controls":[{"case":"racing-winner","phase":"publication","operation_id":90,"worker_pid":140,"worker_absent":true,"first_interrupt_micros":null,"second_interrupt_micros":null},{"case":"pre-edge-stop","phase":"publication","operation_id":91,"worker_pid":141,"worker_absent":true,"first_interrupt_micros":100,"second_interrupt_micros":null},{"case":"post-edge-stop","phase":"namespace-sync","operation_id":92,"worker_pid":142,"worker_absent":true,"first_interrupt_micros":100,"second_interrupt_micros":null}]});
         target_identity = serde_json::to_value(identity()).unwrap();
     }
     if name.starts_with("blocked-") && matches!(phase, "readback" | "namespace-sync") {
@@ -202,6 +202,27 @@ fn controlled_actor(name: &str) -> Value {
     let contents = serde_json::to_string(&ui).unwrap();
     json!({"case":name,"operation":operation,"phase":phase,"operation_id":6,"worker_pid":44,"worker_absent":true,"additional_worker":additional_worker,"matrix":matrix,"writer_document":writer_document,"first_interrupt_micros":100,"second_interrupt_micros":if name=="export-writer-block" {Value::Null}else if name=="blocked-export-preflight"{json!(10000100)}else{json!(200)},"ui_receipt":{"identity":ByteIdentity::of(contents.as_bytes()),"contents":contents},"originals":[{"name":"one.eml","identity":identity()},{"name":"two.eml","identity":identity()},{"name":"folder-input/folder.eml","identity":identity()},{"name":"service-input/日本語-مرحبا-\u{202e}report.eml","identity":identity()}],"target":{"path":"/owned/report.json","identity":target_identity}})
 }
+fn bind_actor_payload(actors: &mut Value, kind: &str, contents: String) {
+    use base64::Engine as _;
+    for record in actors["records"].as_array_mut().unwrap() {
+        let mut ack: Value = serde_json::from_str(record["document"].as_str().unwrap()).unwrap();
+        if ack["actor"] == kind {
+            ack["outputs"][0]["bytes"] =
+                serde_json::to_value(ByteIdentity::of(contents.as_bytes())).unwrap();
+            let line = format!(
+                "EML_FIXTURE_ACTOR {} {} {}\n",
+                ack["sequence"].as_u64().unwrap(),
+                kind,
+                base64::engine::general_purpose::STANDARD.encode(contents.as_bytes())
+            );
+            ack["request_sha256"] = ByteIdentity::of(line.as_bytes()).sha256.into();
+            let document = serde_json::to_string(&ack).unwrap();
+            record["identity"] =
+                serde_json::to_value(ByteIdentity::of(document.as_bytes())).unwrap();
+            record["document"] = document.into();
+        }
+    }
+}
 fn desktop_case(name: &str, method: &str) -> Value {
     let controlled = CONTROLLED_CASES.iter().any(|(case, _)| *case == name);
     let app = if controlled {
@@ -216,6 +237,8 @@ fn desktop_case(name: &str, method: &str) -> Value {
         json!({"before":{},"after":{},"comparison":comparison(export_picker)})
     };
     let mut value = json!({"case":name,"test_method":method,"source":SOURCE,"source_archive":identity(),"app":app,"process":process(),"lifetime_owner":owner(app,if name=="pagination"{69}else if name=="export-writer-block"{1028}else{4}),"summary":summary(),"persistent_preferences":preferences});
+    value["lifetime_owner"]["fixture_actors"] =
+        crate::picker_evidence::fixture_actors::test_value(name);
     value["lifetime_owner"]["panel_path_clipboard"] =
         crate::picker_evidence::panel_path_clipboard_test_value(
             name == "workflow" || export_picker,
@@ -237,6 +260,26 @@ fn desktop_case(name: &str, method: &str) -> Value {
         }
         _ if name.starts_with("blocked-") || name.starts_with("export-") => {
             value["actor"] = controlled_actor(name);
+            let ui_identity = value["actor"]["ui_receipt"]["contents"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            bind_actor_payload(
+                &mut value["lifetime_owner"]["fixture_actors"],
+                "retain-child-observation",
+                ui_identity,
+            );
+            if name == "export-publication" {
+                let identity = value["actor"]["matrix"]["expected_document_contents"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+                bind_actor_payload(
+                    &mut value["lifetime_owner"]["fixture_actors"],
+                    "retain-independent-report",
+                    identity,
+                );
+            }
         }
         _ => {
             value["actor"] = json!({"case":name,"worker_pid":44,"worker_absent":true,"independent_copy_golden":true,"first_interrupt_micros":if name=="published-error"{Value::Null}else{json!(100)},"second_interrupt_micros":match name {"active-quit"=>json!(10000100),"force-stop"=>json!(200),_=>Value::Null}})

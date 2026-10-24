@@ -559,7 +559,8 @@ fn finish_child_control(
     let matrix = if case == DesktopCase::ExportPublication {
         let expected = fs::read(fixture.join("independent-report.json"))?;
         let expected_identity = xtask::archive::ByteIdentity::of(&expected);
-        if ui["expected_bytes"] != expected_identity.byte_length
+        if expected.len() > 65536
+            || ui["expected_bytes"] != expected_identity.byte_length
             || ui["expected_sha256"] != expected_identity.sha256
             || eml_app::report_document::validate(&expected).is_err()
         {
@@ -634,7 +635,7 @@ fn finish_child_control(
             history.push(json!({"case":name,"phase":phase,"operation_id":id,"worker_pid":pid,"worker_absent":true,"first_interrupt_micros":first,"second_interrupt_micros":second}));
         }
         Some(
-            json!({"expected_document":expected_identity,"winner":xtask::archive::ByteIdentity::of(winner),"controls":history,"directory_unchanged":true,"symlink_unchanged":true,"pre_edge_absent":true}),
+            json!({"expected_document":expected_identity,"expected_document_contents":String::from_utf8(expected.clone())?,"winner":xtask::archive::ByteIdentity::of(winner),"controls":history,"directory_unchanged":true,"symlink_unchanged":true,"pre_edge_absent":true}),
         )
     } else {
         None

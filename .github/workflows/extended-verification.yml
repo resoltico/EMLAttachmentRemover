@@ -132,12 +132,12 @@ jobs:
       - name: Fresh advisory and source policy across supported graphs
         run: cargo xtask check-dependencies --out target/dependency-checks
       - name: Extended independent semantic properties
-        if: ${{ !cancelled() && steps.policy.outcome == 'success' }}
+        if: ${{ success() }}
         env:
           PROPTEST_CASES: '4096'
         run: cargo test --locked -p eml-core --test model
       - name: Bounded synthetic-input fuzz campaign (60-second smoke or 900-second qualification)
-        if: ${{ !cancelled() && steps.policy.outcome == 'success' }}
+        if: ${{ success() }}
         env:
           FUZZ_SECONDS: ${{ (github.event_name == 'schedule' || inputs.scope == 'qualification') && '900' || '60' }}
         run: cargo xtask fuzz --seconds "$FUZZ_SECONDS"

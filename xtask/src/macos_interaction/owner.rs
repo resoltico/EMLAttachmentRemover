@@ -76,7 +76,7 @@ fn run_owner_control(
     let command = control_command(root, build, owner, probe, case, directory);
     let local = xtask::process::Controller::new(root, &std::env::current_exe()?)?;
     let (observed, action) = execute_control(&local, command, case, directory);
-    let read_facts = read_control_facts(&result_file);
+    let read_facts = read_owner_facts(&result_file);
     fs::write(
         case_parent.join("observed.json"),
         serde_json::to_vec_pretty(
@@ -115,7 +115,7 @@ fn prepare_control_fixture(app: &Path, case: &str, directory: &Path) -> Result<(
     fs::write(
         &input,
         serde_json::to_vec_pretty(
-            &json!({"app":app,"fixture":directory,"host_scope":"fresh-github-hosted-runner", "fixture_output":if case == "runner-crash" { "true" } else { "false" },"owner_control":match case { "deadline"=>"deadline", "force-app"=>"force-app", _=>"normal" }, "runner_ready":directory.join("worker-ready")}),
+            &json!({"app":app,"fixture":directory,"host_scope":"fresh-github-hosted-runner", "scenario":"owner-control", "owner_control":match case { "deadline"=>"deadline", "force-app"=>"force-app", _=>"normal" }, "runner_ready":directory.join("worker-ready")}),
         )?,
     )?;
     Ok(())
@@ -222,28 +222,23 @@ fn stimulate_owner_control(
     }
     Ok(())
 }
-fn read_control_facts(result_file: &Path) -> std::result::Result<Value, String> {
-    fs::symlink_metadata(result_file)
+pub(super) fn read_owner_facts(result_file: &Path) -> std::result::Result<Value, String> {
+    use std::io::Read;
+    let maximum = crate::picker_evidence::fixture_actors::MAX_OWNER_BYTES;
+    let metadata = fs::symlink_metadata(result_file).map_err(|error| error.to_string())?;
+    if !metadata.is_file() || metadata.len() > maximum as u64 {
+        return Err("Owner result is not an ordinary bounded document".into());
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(result_file)
+        .map_err(|error| error.to_string())?
+        .take(maximum as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    crate::picker_evidence::fixture_actors::owner_document(&bytes)
         .map_err(|error| error.to_string())
-        .and_then(|metadata| {
-            if !metadata.is_file() || metadata.len() > 64 * 1024 {
-                Err("Owner control result is not an ordinary bounded document".into())
-            } else {
-                Ok(())
-            }
-        })
-        .and_then(|()| fs::read(result_file).map_err(|error| error.to_string()))
-        .and_then(|bytes| {
-            if bytes.len() > 64 * 1024 {
-                Err("Owner control result grew beyond its bound".into())
-            } else {
-                Ok(bytes)
-            }
-        })
-        .and_then(|bytes| {
-            serde_json::from_slice::<Value>(&bytes).map_err(|error| error.to_string())
-        })
 }
+
 fn qualify_control(
     case: &str,
     observed: &xtask::process::ProcessResult,
@@ -252,6 +247,12 @@ fn qualify_control(
     directory: &Path,
 ) -> Result<()> {
     crate::picker_evidence::check_fixture_filesystem(&facts["fixture_filesystem"])?;
+    crate::picker_evidence::check_fixture_output_relay(&facts["fixture_output_relay"])?;
+    crate::picker_evidence::fixture_actors::check_fixture_actors(
+        &facts["fixture_actors"],
+        &facts["fixture_filesystem"],
+        "owner-control",
+    )?;
     crate::picker_evidence::check_panel_path_clipboard(
         &facts["panel_path_clipboard"],
         case == "runner-crash",

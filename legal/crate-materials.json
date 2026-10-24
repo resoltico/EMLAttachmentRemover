@@ -2857,7 +2857,7 @@
       "provenance": {
         "kind": "workspace",
         "manifest_path": "crates/eml-gui/Cargo.toml",
-        "manifest_sha256": "93ad753ba78c9b7ca11745f2da22554954930539ba5d6afd6f64c012ddc93f1c"
+        "manifest_sha256": "38d229a3897b3c74d4a5c0ce93c899355256c666848581e6709682c33e53ca1c"
       }
     },
     {
@@ -13114,8 +13114,8 @@
     {
       "path": "crates/eml-gui/Cargo.toml",
       "kind": "review_input",
-      "bytes": 2156,
-      "sha256": "93ad753ba78c9b7ca11745f2da22554954930539ba5d6afd6f64c012ddc93f1c"
+      "bytes": 2213,
+      "sha256": "38d229a3897b3c74d4a5c0ce93c899355256c666848581e6709682c33e53ca1c"
     },
     {
       "path": "crates/eml-worker/Cargo.toml",

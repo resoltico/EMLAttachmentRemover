@@ -67,14 +67,7 @@ pub(super) fn prepare_case_input(
         format!("desktop-interaction-{}", case.name())
     });
     fs::create_dir(&input)?;
-    let mut invocation =
-        json!({"app":app,"fixture":fixture,"host_scope":"fresh-github-hosted-runner"});
-    if case.uses_panel_path_clipboard() {
-        invocation["fixture_output"] = json!("true");
-    }
-    if case.uses_native_pickers() {
-        invocation["scenario"] = json!(case.name());
-    }
+    let mut invocation = json!({"app":app,"fixture":fixture,"host_scope":"fresh-github-hosted-runner","scenario":case.name()});
     if case == DesktopCase::ExportWriterBlock {
         invocation["writer_session"] = json!("true");
     }
@@ -102,6 +95,11 @@ pub(super) fn prepare_case_input(
         }
         let destination = fixture.join("publication-output");
         fs::create_dir(&destination)?;
+        if case == DesktopCase::ExportPublication {
+            let history = fixture.join("control-history");
+            fs::create_dir(&history)?;
+            fs::set_permissions(&history, fs::Permissions::from_mode(0o700))?;
+        }
         if case == DesktopCase::BlockedExportPreflight {
             for (lane, recipe) in [
                 ("processing", "processing:preflight:0\n"),
@@ -119,7 +117,6 @@ pub(super) fn prepare_case_input(
                 include_bytes!("../../../tests/contract/mime/golden/01-gmail-attachment.eml"),
             )?;
         }
-        invocation["scenario"] = json!(case.name());
         invocation["child_control"] = json!("true");
         invocation["observation"] = json!(control);
         invocation["destination"] = json!(
@@ -209,6 +206,7 @@ pub(super) fn compile_interaction_owner(
             ])
             .arg(&build.sdk)
             .arg(root.join("tests/macos/DesktopInteractionOwner.swift"))
+            .arg(root.join("tests/macos/DesktopFixtureActors.swift"))
             .arg(root.join("tests/macos/PanelPathClipboard.swift"))
             .arg(root.join("tests/macos/DesktopFixtureOutput.swift"))
             .arg(root.join("tests/macos/DesktopFixtureTests.swift"))
@@ -234,6 +232,7 @@ pub(super) fn compile_interaction_owner(
         ])
         .arg(&build.sdk)
         .arg(root.join("tests/macos/DesktopInteractionOwner.swift"))
+        .arg(root.join("tests/macos/DesktopFixtureActors.swift"))
         .arg(root.join("tests/macos/PanelPathClipboard.swift"))
         .arg(root.join("tests/macos/DesktopFixtureOutput.swift"))
         .arg("-o")

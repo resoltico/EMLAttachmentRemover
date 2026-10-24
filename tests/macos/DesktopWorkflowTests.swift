@@ -552,7 +552,9 @@ extension DesktopInteractionTests {
     // the earlier destination and starts fresh authorization, despite these
     // changes to the current controls and the destination namespace.
     let sentinel = Data("Owned entry created after Check; never replace.\n".utf8)
-    try sentinel.write(to: exactCopy, options: .withoutOverwriting)
+    let actors = DesktopFixtureActorClient(fixture: session.root, scenario: "workflow")
+    try await actors.perform(.occupyCheckedDestination)
+    XCTAssertEqual(try Data(contentsOf: exactCopy), sentinel)
     try await showRunControls(app)
     app.buttons["Beside originals"].click()
     try await chooseMode(app, label: "Create copies")

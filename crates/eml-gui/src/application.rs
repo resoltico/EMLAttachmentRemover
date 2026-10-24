@@ -1,13 +1,21 @@
-//! Necessary application lifecycle, file-open batches and Services; preserves Winit's delegate.
+//! Declared application, standard About, lifecycle and Services; preserves Winit's delegate.
 use crate::native::{self, NativeError};
 use objc2::rc::Retained;
-use objc2::{ClassType, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSApplication, NSPasteboard};
-use objc2_foundation::{NSArray, NSObject, NSObjectProtocol, NSString, ns_string};
+use objc2::{
+    AnyThread, ClassType, MainThreadMarker, MainThreadOnly, define_class, msg_send,
+    runtime::AnyObject,
+};
+use objc2_app_kit::{
+    NSAboutPanelOptionApplicationIcon, NSApplication, NSBitmapImageRep, NSImage, NSPasteboard,
+};
+use objc2_foundation::{
+    NSArray, NSBundle, NSData, NSDictionary, NSObject, NSObjectProtocol, NSString, ns_string,
+};
 use slint::winit_030::winit::platform::macos::ApplicationEvent;
 use std::{
-    cell::RefCell,
+    cell::{OnceCell, RefCell},
     collections::VecDeque,
+    io::Read,
     path::PathBuf,
     sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
@@ -16,6 +24,136 @@ const REOPEN: u8 = 2;
 const BROKEN: u8 = 4;
 static EVENTS: AtomicU8 = AtomicU8::new(0);
 static WAKE_READY: AtomicBool = AtomicBool::new(false);
+// This public AppKit global must be inspected without calling sharedApplication,
+// which would create the base class before our declared application can own it.
+unsafe extern "C" {
+    #[link_name = "NSApp"]
+    static mut SHARED_APPLICATION: *mut NSApplication;
+}
+thread_local! {
+    static ABOUT_OPTIONS: OnceCell<Retained<NSDictionary<NSString, AnyObject>>> = const { OnceCell::new() };
+}
+
+fn current_application(_main: MainThreadMarker) -> *mut NSApplication {
+    // SAFETY: AppKit confines its application global to the main thread. Copy
+    // only the pointer; no reference or ownership is manufactured from it.
+    unsafe { SHARED_APPLICATION }
+}
+
+fn project_about_icon() -> Result<Retained<NSImage>, Box<dyn std::error::Error>> {
+    let resources = NSBundle::mainBundle()
+        .resourceURL()
+        .and_then(|url| url.to_file_path())
+        .ok_or("Launch the packaged app: its project icon resource directory is unavailable")?;
+    let path = resources.join("EML.icns");
+    let file = std::fs::File::open(&path).map_err(|error| {
+        format!("Launch the packaged app: required Contents/Resources/EML.icns could not be read: {error}")
+    })?;
+    if !file.metadata()?.is_file() {
+        return Err("The packaged project icon is not an ordinary file".into());
+    }
+    // Match the existing icon packaging resource ceiling, including a growing
+    // file. Decode an owned byte snapshot, never a named/system image reference.
+    const MAX_ICON_BYTES: u64 = 64 * 1024 * 1024;
+    let mut bytes = Vec::new();
+    file.take(MAX_ICON_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_ICON_BYTES {
+        return Err("The packaged project icon is empty or exceeds its byte bound".into());
+    }
+    let data = NSData::with_bytes(&bytes);
+    let image = NSImage::initWithData(NSImage::alloc(), &data)
+        .ok_or("The packaged project icon could not be decoded")?;
+    let size = image.size();
+    if !image.isValid()
+        || !size.width.is_finite()
+        || !size.height.is_finite()
+        || size.width <= 0.0
+        || size.height <= 0.0
+    {
+        return Err("The packaged project icon has no valid finite image".into());
+    }
+    let representations = image.representations();
+    if representations.is_empty() {
+        return Err("The packaged project icon has no image representations".into());
+    }
+    for representation in representations {
+        let object: &AnyObject = &representation;
+        let bitmap = object
+            .downcast_ref::<NSBitmapImageRep>()
+            .ok_or("The packaged project icon has an unsupported representation")?;
+        if bitmap.pixelsWide() <= 0 || bitmap.pixelsHigh() <= 0 || bitmap.bitmapData().is_null() {
+            return Err("The packaged project icon bitmap could not be materialized".into());
+        }
+    }
+    Ok(image)
+}
+
+define_class!(
+    #[unsafe(super = NSApplication)]
+    #[thread_kind = MainThreadOnly]
+    #[name = "EMLDesktopApplication"]
+    struct DesktopApplication;
+    unsafe impl NSObjectProtocol for DesktopApplication {}
+    impl DesktopApplication {
+        #[unsafe(method(orderFrontStandardAboutPanel:))]
+        fn show_standard_about(&self, _sender: Option<&AnyObject>) {
+            let shown = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let options = ABOUT_OPTIONS.with(|cell| cell.get().cloned());
+                let Some(options) = options else { return false };
+                native::lifecycle_observation("Native standard About entered with bundled project icon");
+                // SAFETY: invoke AppKit's existing standard panel implementation
+                // with its documented immutable NSImage option. No default icon
+                // lookup, menu replacement or runtime method mutation is used.
+                let _: () = unsafe {
+                    msg_send![super(self), orderFrontStandardAboutPanelWithOptions: &*options]
+                };
+                true
+            }));
+            if !matches!(shown, Ok(true)) {
+                // Preserve already queued Quit/Reopen while closing new ingress.
+                EVENTS.fetch_or(BROKEN, Ordering::Release);
+                wake_event_loop();
+            }
+        }
+    }
+);
+
+/// Own the declared application before Slint/Winit asks for the shared instance.
+pub(crate) fn bootstrap_application() -> Result<Retained<NSApplication>, Box<dyn std::error::Error>>
+{
+    let main = MainThreadMarker::new().ok_or("Native application startup needs the main thread")?;
+    // Decode before Winit owns an event-loop pool; retain every returned object.
+    objc2::rc::autoreleasepool(|_| {
+        if !current_application(main).is_null() {
+            return Err("Native application was initialized before its declared owner".into());
+        }
+        let icon = project_about_icon()?;
+        if !current_application(main).is_null() {
+            return Err(
+                "Project icon decoding unexpectedly initialized the native application".into(),
+            );
+        }
+        // SAFETY: AppKit's process-lifetime constant is an NSString option key.
+        let key = unsafe { NSAboutPanelOptionApplicationIcon };
+        let object = Retained::into_super(Retained::into_super(icon));
+        let options = NSDictionary::from_retained_objects(&[key], &[object]);
+        ABOUT_OPTIONS
+            .with(|cell| cell.set(options))
+            .map_err(|_| "Native About configuration was initialized twice")?;
+        // SAFETY: sharedApplication has its documented base-object return type.
+        // Inspect the actual class/global identity before any subclass assumption.
+        let app: Option<Retained<NSApplication>> =
+            unsafe { msg_send![DesktopApplication::class(), sharedApplication] };
+        let app = app.ok_or("Declared native application initialization failed")?;
+        if !std::ptr::eq(app.class(), DesktopApplication::class())
+            || !std::ptr::eq(current_application(main), Retained::as_ptr(&app))
+        {
+            return Err("Declared native application class or singleton identity changed".into());
+        }
+        Ok(app)
+    })
+}
+
 fn drain_control(events: &AtomicU8, collecting: bool) -> u8 {
     if collecting {
         events.fetch_and(QUIT | REOPEN, Ordering::AcqRel) & BROKEN

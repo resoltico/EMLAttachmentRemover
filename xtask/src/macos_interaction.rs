@@ -67,6 +67,10 @@ pub(crate) fn run_case(
     } = observe_case(root, app, build, &out, fixture.path(), &input, case)?;
     if case.is_controlled() {
         let actor = crate::macos_operation_ui::finish(root, build, fixture.path(), &out, case)?;
+        let parent = crate::picker_evidence::project_lifetime_owner(&ownership)?;
+        parent
+            .fixture_actors
+            .check_payloads(&actor, case == DesktopCase::ExportPublication)?;
         let preferences =
             crate::desktop_preferences::compare(&before, &after, case.uses_export_picker())?;
         let result = json!({"source":crate::git(root,&["rev-parse","HEAD"])?,"case":case.name(),"test_method":case.method(),"source_archive":source_archive,"app":app,"process":process.evidence(),"lifetime_owner":ownership,"summary":summary,"actor":actor,"persistent_preferences":{"before":before,"after":after,"comparison":preferences},"scope":"nonshipping processing and export synchronization with actual native GUI controls and lifecycle; unchanged shipping archive qualification remains separate"});
@@ -239,16 +243,20 @@ fn execute_case(
     // Preserve the first failure. Querying a result bundle must not hide a failed
     // test command or attempt work after process admission has closed.
     process.require_success(&out.join("xctest.log"))?;
-    if fs::symlink_metadata(&owner_result)?.len() > 64 * 1024 {
-        return Err("Desktop lifetime result exceeds its bound".into());
-    }
-    let ownership: Value = serde_json::from_slice(&fs::read(owner_result)?)?;
+    let ownership = owner::read_owner_facts(&owner_result)
+        .map_err(|error| format!("Desktop lifetime observation could not be admitted: {error}"))?;
     qualify_owner_receipt(&ownership, case)?;
 
     Ok((process, ownership))
 }
 fn qualify_owner_receipt(ownership: &Value, case: DesktopCase) -> Result<()> {
     crate::picker_evidence::check_fixture_filesystem(&ownership["fixture_filesystem"])?;
+    crate::picker_evidence::check_fixture_output_relay(&ownership["fixture_output_relay"])?;
+    crate::picker_evidence::fixture_actors::check_fixture_actors(
+        &ownership["fixture_actors"],
+        &ownership["fixture_filesystem"],
+        case.name(),
+    )?;
     crate::picker_evidence::check_panel_path_clipboard(
         &ownership["panel_path_clipboard"],
         case.uses_panel_path_clipboard(),
@@ -600,7 +608,7 @@ mod tests {
         let clean = json!({"failure":null,"timed_out":false,"cancelled":false,
             "runner_reaped":true,"runner_status":0,"owned_app_terminated":true,
             "forced_app_cleanup":false,"originals_unchanged":true,"originals_captured":4,
-            "source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"panel_path_clipboard":crate::picker_evidence::panel_path_clipboard_test_value(true),"owned_pasteboard_released":true,
+            "source_check_failure":null,"fixture_filesystem":crate::picker_evidence::fixture_filesystem_test_value(),"fixture_output_relay":crate::picker_evidence::fixture_output_relay_test_value(),"fixture_actors":crate::picker_evidence::fixture_actors::test_value("workflow"),"panel_path_clipboard":crate::picker_evidence::panel_path_clipboard_test_value(true),"owned_pasteboard_released":true,
             "unexpected_application_pids":[]});
         qualify_owner_receipt(&clean, DesktopCase::Workflow).unwrap();
         for field in [
@@ -625,6 +633,8 @@ mod tests {
         assert!(qualify_owner_receipt(&clean, DesktopCase::Pagination).is_err());
         let mut pagination = clean;
         pagination["originals_captured"] = json!(69);
+        pagination["fixture_actors"] =
+            crate::picker_evidence::fixture_actors::test_value("pagination");
         qualify_owner_receipt(&pagination, DesktopCase::Pagination).unwrap();
     }
 }

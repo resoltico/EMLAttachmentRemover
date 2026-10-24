@@ -14,7 +14,7 @@ use slint::winit_030::winit::platform::macos::{
 };
 #[allow(
     unsafe_code,
-    reason = "Typed source-defined application lifecycle callbacks, callback-scoped NSURL conversion and the separately retained Services provider require this narrow native boundary."
+    reason = "Declared native application bootstrap, standard About icon options, typed lifecycle callbacks, callback-scoped NSURL conversion and the retained Services provider require this narrow boundary."
 )]
 mod application;
 mod controller;
@@ -47,6 +47,7 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var_os("SLINT_SOFTWARE_RENDERER_PARLEY_DISABLED").is_some() {
         return Err("Unset SLINT_SOFTWARE_RENDERER_PARLEY_DISABLED: this app requires the desktop system-font shaping path".into());
     }
+    let _native_application = application::bootstrap_application()?;
     let mut event_loop_builder = slint::winit_030::winit::event_loop::EventLoop::with_user_event();
     event_loop_builder.with_application_callback(application::receive_application);
     slint::BackendSelector::new()

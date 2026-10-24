@@ -253,6 +253,25 @@ or scroll through a nested run list or report editor. AboutSlint attribution is
 observed by its exact native image role/title and contained frame in one fresh
 snapshot of the owned licenses window; an identifier-only query is not a title
 observation. Complete license text and Copy checks remain independent.
+The standard native About action supplies the bundled project icon through
+AppKit's documented panel options. Its source-defined application bootstrap and
+small resource/refusal probes do not establish native panel rendering; both
+macOS15 workflows and the macOS26 picker prelude must execute it against the
+frozen bundle.
+
+Fixture mutation belongs to the existing parent owner, rather than the sandboxed
+XCTest Runner. Its closed actors publish the post-Check sentinel, operation
+recipes and release markers, rotate settled control history, create fixed export
+collision fixtures and retain independent expected reports/Runner observations.
+One ordered stdout relay carries bounded, contiguous requests and exclusive
+canonical acknowledgments. The parent retains native root identity and actual
+partial effects; a failed acknowledgment never means an operation did not occur.
+Actor receipts and the final owner document are bounded at 16 KiB and 1 MiB
+respectively. These bounds do not promise a filesystem syscall deadline or a
+whole-build disk quota. Receipt admission requires the exact scenario's actors,
+root/generation/byte identities and descriptor settlement, in addition to all
+existing product and process evidence. Standalone API controls and typechecking
+cannot qualify the sandboxed native workflow.
 The macOS26 Intel `qualify-macos-picker` consumer separately
 executes `testOwnedNativePickerCompatibility`, the dedicated `picker` case. It
 shares the full workflow's original About/license/reopen/Open With prelude and
@@ -412,7 +431,7 @@ See [pinned cargo-fuzz source](https://github.com/rust-fuzz/cargo-fuzz/blob/984c
 
 ## Scoped mutation selection
 
-The Extended verification workflow uses the `scope` input: `maintenance` runs only the read-only Linux incident check; `smoke` is the default and runs the existing 60-second fuzz smoke without mutations; `qualification` runs the required 900-second fuzz campaign and `cargo xtask mutants --initial` in its own bounded Linux job, retaining discovery, per-mutant outcomes and compiler logs. A smoke is development feedback and never closes full-campaign acceptance. The property selection remains 4096 cases: its measured execution is about one second, so reducing it would save little. The mutation control host is Ubuntu 24.04 because the pinned GNU tool requires GLIBC 2.39. Native shipping Linux builds retain their declared Ubuntu 22.04 hosts and GLIBC 2.35 limit.
+The Extended verification workflow uses the `scope` input: `maintenance` runs only the read-only Linux incident check; `smoke` is the default and runs the existing 60-second fuzz smoke without mutations; `qualification` runs the required 900-second fuzz campaign and `cargo xtask mutants --initial` in its own bounded Linux job, retaining discovery, per-mutant outcomes and compiler logs. A smoke is development feedback and never closes full-campaign acceptance. Properties and fuzzing start only after every preceding step succeeds; failure still retains always-uploaded evidence. The property selection remains 4096 cases: its measured execution is about one second, so reducing it would save little. The mutation control host is Ubuntu 24.04 because the pinned GNU tool requires GLIBC 2.39. Native shipping Linux builds retain their declared Ubuntu 22.04 hosts and GLIBC 2.35 limit.
 
 Only eml-core authorize_deletions and check_edit_ranges are selected. Discovery
 must be positive in both, with at most 400 total. Initial execution covers the

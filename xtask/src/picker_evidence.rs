@@ -252,6 +252,8 @@ record!(FixtureEntry {
 });
 record!(FixtureObservationError {stage:String,errno:Option<i32>,detail:String});
 record!(FixtureFilesystem {phase:String,state:String,fixture_path:String,filesystem_type:Option<String>,root:Option<FixtureEntry>,one:Option<FixtureEntry>,upper:Option<FixtureEntry>,upper_errno:Option<i32>,ascii_alias_relation:Option<String>,descriptor_closed:Option<bool>,errors:Vec<FixtureObservationError>});
+pub(crate) mod fixture_actors;
+use fixture_actors::FixtureActors;
 impl FixtureFilesystem {
     pub(crate) fn check(&self) -> Result<()> {
         let root = self
@@ -381,7 +383,30 @@ pub(crate) fn panel_path_clipboard_test_value(used: bool) -> serde_json::Value {
         serde_json::json!({"state":"unused","operations":[],"failure":null})
     }
 }
-record!(LifetimeOwner {fixture_filesystem:FixtureFilesystem,panel_path_clipboard:PanelPathClipboard,failure:Option<String>,source_check_failure:Option<String>,timed_out:bool,cancelled:bool,runner_reaped:bool,runner_status:Option<i32>,owned_app_terminated:bool,forced_app_cleanup:bool,originals_captured:u32,originals_unchanged:bool,owned_pasteboard_released:bool,unexpected_application_pids:Vec<u32>,ownership_receipt:OwnershipReceipt});
+record!(FixtureOutputRelay {enabled:bool,eof_observed:bool,drain_within_deadline:Option<bool>,failure:Option<String>});
+impl FixtureOutputRelay {
+    pub(crate) fn check(&self) -> Result<()> {
+        if self.enabled
+            && self.eof_observed
+            && self.drain_within_deadline == Some(true)
+            && self.failure.is_none()
+        {
+            Ok(())
+        } else {
+            Err("Native fixture relay did not settle cleanly".into())
+        }
+    }
+}
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn check_fixture_output_relay(value: &serde_json::Value) -> Result<()> {
+    let relay: FixtureOutputRelay = serde_json::from_value(value.clone())?;
+    relay.check()
+}
+#[cfg(test)]
+pub(crate) fn fixture_output_relay_test_value() -> serde_json::Value {
+    serde_json::json!({"enabled":true,"eof_observed":true,"drain_within_deadline":true,"failure":null})
+}
+record!(LifetimeOwner {fixture_filesystem:FixtureFilesystem,fixture_output_relay:FixtureOutputRelay,fixture_actors:FixtureActors,panel_path_clipboard:PanelPathClipboard,failure:Option<String>,source_check_failure:Option<String>,timed_out:bool,cancelled:bool,runner_reaped:bool,runner_status:Option<i32>,owned_app_terminated:bool,forced_app_cleanup:bool,originals_captured:u32,originals_unchanged:bool,owned_pasteboard_released:bool,unexpected_application_pids:Vec<u32>,ownership_receipt:OwnershipReceipt});
 record!(PickerObservation {
     schema: u8,
     scenario: String,
@@ -662,6 +687,10 @@ fn product(
     )?;
     let owner = &value.lifetime_owner;
     owner.fixture_filesystem.check()?;
+    owner.fixture_output_relay.check()?;
+    owner
+        .fixture_actors
+        .check(&owner.fixture_filesystem, "picker")?;
     owner.panel_path_clipboard.check(true, "requested")?;
     require(
         owner.failure.is_none()
@@ -1078,12 +1107,15 @@ fn observed_text<'a>(value: &'a serde_json::Value, name: &str) -> Result<&'a str
 }
 pub(crate) fn project_lifetime_owner(raw: &serde_json::Value) -> Result<LifetimeOwner> {
     use serde_json::json;
+    if serde_json::to_vec(raw)?.len() > fixture_actors::MAX_OWNER_BYTES {
+        return Err("Desktop lifetime observation exceeds its bound".into());
+    }
     let identity = observed_field(raw, "ownership_receipt")?;
     // Additional Settings ownership in appearance scenarios belongs to that
     // scenario's separate proof; these are the common actual app-owner facts.
     let app_identity = json!({"pid":observed_field(identity,"pid")?,"launch_date":observed_field(identity,"launch_date")?,"bundle_path":observed_field(identity,"bundle_path")?,"pasteboard":observed_field(identity,"pasteboard")?});
     Ok(serde_json::from_value(
-        json!({"fixture_filesystem":observed_field(raw,"fixture_filesystem")?,"panel_path_clipboard":observed_field(raw,"panel_path_clipboard")?,"failure":observed_field(raw,"failure")?,"source_check_failure":observed_field(raw,"source_check_failure")?,"timed_out":observed_field(raw,"timed_out")?,"cancelled":observed_field(raw,"cancelled")?,"runner_reaped":observed_field(raw,"runner_reaped")?,"runner_status":observed_field(raw,"runner_status")?,"owned_app_terminated":observed_field(raw,"owned_app_terminated")?,"forced_app_cleanup":observed_field(raw,"forced_app_cleanup")?,"originals_captured":observed_field(raw,"originals_captured")?,"originals_unchanged":observed_field(raw,"originals_unchanged")?,"owned_pasteboard_released":observed_field(raw,"owned_pasteboard_released")?,"unexpected_application_pids":observed_field(raw,"unexpected_application_pids")?,"ownership_receipt":app_identity}),
+        json!({"fixture_filesystem":observed_field(raw,"fixture_filesystem")?,"fixture_output_relay":observed_field(raw,"fixture_output_relay")?,"fixture_actors":observed_field(raw,"fixture_actors")?,"panel_path_clipboard":observed_field(raw,"panel_path_clipboard")?,"failure":observed_field(raw,"failure")?,"source_check_failure":observed_field(raw,"source_check_failure")?,"timed_out":observed_field(raw,"timed_out")?,"cancelled":observed_field(raw,"cancelled")?,"runner_reaped":observed_field(raw,"runner_reaped")?,"runner_status":observed_field(raw,"runner_status")?,"owned_app_terminated":observed_field(raw,"owned_app_terminated")?,"forced_app_cleanup":observed_field(raw,"forced_app_cleanup")?,"originals_captured":observed_field(raw,"originals_captured")?,"originals_unchanged":observed_field(raw,"originals_unchanged")?,"owned_pasteboard_released":observed_field(raw,"owned_pasteboard_released")?,"unexpected_application_pids":observed_field(raw,"unexpected_application_pids")?,"ownership_receipt":app_identity}),
     )?)
 }
 pub(crate) fn project_product(
@@ -1193,3 +1225,6 @@ impl VerifiedPickerReceipt {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod fixture_actors_tests;

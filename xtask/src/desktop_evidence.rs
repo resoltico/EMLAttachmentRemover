@@ -204,6 +204,10 @@ pub(crate) fn validate_case(
     let owner: LifetimeOwner =
         crate::picker_evidence::project_lifetime_owner(field(value, "lifetime_owner")?)?;
     owner.fixture_filesystem.check()?;
+    owner.fixture_output_relay.check()?;
+    owner
+        .fixture_actors
+        .check(&owner.fixture_filesystem, case.name())?;
     owner
         .panel_path_clipboard
         .check(case.uses_panel_path_clipboard(), "requested")?;
@@ -640,7 +644,11 @@ fn validate_observations(value: &Value, case: DesktopCase, owner: &LifetimeOwner
         | DesktopCase::BlockedExportNamespaceSync
         | DesktopCase::ExportPublication
         | DesktopCase::ExportWriterBlock => {
-            validate_child_actor(field(value, "actor")?, case)?;
+            let actor = field(value, "actor")?;
+            validate_child_actor(actor, case)?;
+            owner
+                .fixture_actors
+                .check_payloads(actor, case == DesktopCase::ExportPublication)?;
         }
         DesktopCase::Stop
         | DesktopCase::ForceStop

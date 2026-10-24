@@ -32,6 +32,13 @@ Native panels retain weak completion references, parent checks, cancellation and
 native paths. Renderer selection still requires actual native frames, text,
 artwork, accessibility and appearance checks.
 
+The source-defined application subclass is initialized before Slint/Winit creates
+the shared AppKit application. Its standard About action supplies the existing
+packaged project icon as an `NSImage` option after decoding and materializing its
+bitmap representations. This avoids the standard panel's default application-icon
+lookup. Winit keeps its delegate and the existing lifecycle/URL callback path;
+there is no alternate About window or application-event implementation.
+
 Both native CPUs require app/worker signatures, archive readback and extracted
 execution, file/Services/drop/picker ingress, queue/report limits,
 Stop/Force Stop/Quit, reveal/export failures and accessibility/appearance checks.
@@ -77,6 +84,18 @@ settlement; it grants no signal authority and is not sufficient by itself.
 Uncertain ownership stops further cases. These observations establish fixture
 lifecycle/presentation boundaries only when executed; the baseline workflow and
 unmodified shipping archive checks remain mandatory. Exact-source native outcomes are recorded in the CI run and its retained artifacts.
+
+The existing XCTest stdout relay also carries ten closed parent fixture actors.
+The parent owns the fixture root descriptor and performs the fixed post-Check
+sentinel, recipe/release/history, export-occupancy and retained-oracle writes.
+Requests contain a finite actor and operand, never an arbitrary destination path
+or write command. The Runner waits for the exact bounded, sequence-bound
+acknowledgment and keeps its independent byte and namespace assertions. Control
+history rotation additionally requires the current export operation's displayed
+worker settlement and a separate parent PID-absence observation; PID absence
+grants no process ownership. Failed actors, acknowledgments, root identity or
+cleanup leave the scenario unqualified. This fixture authority does not change
+product Check/Create, filesystem or worker authorization.
 
 ## Capacity-consistent export and processing acceptance
 

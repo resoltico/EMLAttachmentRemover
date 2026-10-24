@@ -61,6 +61,7 @@ extension DesktopInteractionTests {
     let fixture: URL
     let observation: URL
     let delivery: NSWorkspace.OpenConfiguration
+    let actors: DesktopFixtureActorClient
   }
   @MainActor
   private func childSession(_ scenario: String) throws -> ChildSession {
@@ -96,7 +97,8 @@ extension DesktopInteractionTests {
     delivery.createsNewApplicationInstance = false
     delivery.addsToRecentItems = false
     return ChildSession(
-      app: app, owned: owned, fixture: fixture, observation: observation, delivery: delivery)
+      app: app, owned: owned, fixture: fixture, observation: observation, delivery: delivery,
+      actors: DesktopFixtureActorClient(fixture: fixture, scenario: scenario))
   }
   @MainActor
   private func deliver(_ session: ChildSession, _ name: String) async throws {
@@ -114,9 +116,14 @@ extension DesktopInteractionTests {
     try await showRunControls(app)
   }
   @MainActor
-  private func arm(_ session: ChildSession, recipe: String) throws {
-    try Data((recipe + "\n").utf8).write(
-      to: session.observation.appendingPathComponent("observation"), options: .withoutOverwriting)
+  private func arm(_ session: ChildSession, recipe: String) async throws {
+    try await session.actors.perform(.arm(try XCTUnwrap(DesktopOperationRecipe(rawValue: recipe))))
+  }
+  @MainActor
+  private func retainChildObservation(_ session: ChildSession, facts: [String: Any]) async throws {
+    let bytes = try JSONSerialization.data(
+      withJSONObject: facts, options: [.sortedKeys, .withoutEscapingSlashes])
+    try await session.actors.perform(.retainChildObservation(bytes))
   }
   @MainActor
   private func awaitBoundary(_ session: ChildSession, operation: String, phase: String) async throws
@@ -263,13 +270,13 @@ extension DesktopInteractionTests {
         app, counts: "1 created · 0 up to date",
         source: session.fixture.appendingPathComponent("two.eml"))
       try await selectReport(app, run: 1)
-      try arm(session, recipe: "export:\(phase)")
+      try await arm(session, recipe: "export:\(phase)")
       try await saveReport(
         app, fixture: session.fixture,
         to: session.fixture.appendingPathComponent("blocked-report.json"),
         expectNameCollision: false)
     } else {
-      try arm(session, recipe: "processing:\(phase):0")
+      try await arm(session, recipe: "processing:\(phase):0")
       try await deliver(session, "two.eml")
     }
     let operationID = try await awaitBoundary(session, operation: operation, phase: phase)
@@ -351,9 +358,7 @@ extension DesktopInteractionTests {
       "first_stop_observed": true, "force_stop_observed": true,
       "settled_text": settledText,
     ]
-    try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]).write(
-      to: session.fixture.appendingPathComponent("child-ui-observation.json"),
-      options: .withoutOverwriting)
+    try await retainChildObservation(session, facts: facts)
     try await finishChild(session)
   }
   @MainActor
@@ -389,7 +394,7 @@ extension DesktopInteractionTests {
       app, counts: "1 created · 0 up to date",
       source: session.fixture.appendingPathComponent("one.eml"))
     try await selectReport(app, run: 1)
-    try arm(session, recipe: "export:request-body")
+    try await arm(session, recipe: "export:request-body")
     try await saveReport(
       app, fixture: session.fixture,
       to: session.fixture.appendingPathComponent("blocked-report.json"),
@@ -427,9 +432,7 @@ extension DesktopInteractionTests {
       "document_sha256": SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
       "first_stop_observed": true, "source_reserved": true,
     ]
-    try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]).write(
-      to: session.fixture.appendingPathComponent("child-ui-observation.json"),
-      options: .withoutOverwriting)
+    try await retainChildObservation(session, facts: facts)
     try await finishChild(session)
   }
 
@@ -443,25 +446,55 @@ extension DesktopInteractionTests {
     else { throw InteractionFailure.expectedPresentation }
   }
   @MainActor
-  private func releaseChild(_ session: ChildSession) throws {
-    let pending = session.observation.appendingPathComponent("release-" + UUID().uuidString)
-    try Data("release\n".utf8).write(to: pending, options: .withoutOverwriting)
-    try FileManager.default.linkItem(
-      at: pending, to: session.observation.appendingPathComponent("release"))
-    try FileManager.default.removeItem(at: pending)
+  private func releaseChild(_ session: ChildSession, operationID: UInt64) async throws {
+    try await session.actors.perform(.release(operationID: operationID))
+  }
+  private static func exportWorkerSettled(_ text: String, operationID: UInt64) -> Bool {
+    let header = "Report export operation \(operationID) for run 1"
+    let workerPrefix =
+      "Worker lifecycle: WorkerCompletion { operation_id: OperationId(\(operationID)), "
+    guard
+      let lifecycle = try? NSRegularExpression(
+        pattern: "^" + NSRegularExpression.escapedPattern(for: workerPrefix)
+          + "exit_code: (?:Some\\(-?[0-9]+\\)|None), signal: (?:Some\\(-?[0-9]+\\)|None), input_may_have_been_sent: (?:true|false), settled: true,"
+      )
+    else { return false }
+    let lines = text.components(separatedBy: "\n")
+    let starts = lines.indices.filter { lines[$0] == header }
+    guard starts.count == 1 else { return false }
+    let start = starts[0] + 1
+    let end =
+      lines[start...].firstIndex { $0.hasPrefix("Report export operation ") } ?? lines.endIndex
+    let workers = lines[start..<end].filter { $0.hasPrefix("Worker lifecycle: ") }
+    guard workers.count == 1 else { return false }
+    return lifecycle.firstMatch(
+      in: workers[0], range: NSRange(workers[0].startIndex..., in: workers[0])) != nil
   }
   @MainActor
-  private func archiveControl(_ session: ChildSession, label: String) throws {
-    let history = session.fixture.appendingPathComponent("control-history/" + label)
-    try FileManager.default.createDirectory(
-      at: history.deletingLastPathComponent(), withIntermediateDirectories: true)
-    // Callers first observe the export lane settled (actual process and pipe
-    // threads). Preserve this complete admitted directory, then create the next
-    // operation's independent private directory at the environment's path.
-    try FileManager.default.moveItem(at: session.observation, to: history)
-    try FileManager.default.createDirectory(
-      at: session.observation, withIntermediateDirectories: false,
-      attributes: [.posixPermissions: 0o700])
+  private func archiveControl(_ session: ChildSession, label: String, operationID: UInt64)
+    async throws
+  {
+    try await showReportDetails(session.app)
+    let technical = session.app.checkBoxes["Technical details"]
+    if ((technical.value as? String) ?? (technical.value as? NSNumber)?.stringValue) != "1" {
+      technical.click()
+    }
+    let settled = NSPredicate { _, _ in
+      guard let report = try? self.selectedReportText(session.app),
+        report.title == Self.technicalReportTitle
+      else { return false }
+      return Self.exportWorkerSettled(report.text, operationID: operationID)
+    }
+    guard
+      await XCTWaiter.fulfillment(
+        of: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 10) == .completed
+    else {
+      XCTFail("Current export operation \(operationID) did not establish actual worker settlement")
+      throw InteractionFailure.expectedPresentation
+    }
+    try await session.actors.perform(
+      .archive(
+        history: try XCTUnwrap(DesktopControlHistory(rawValue: label)), operationID: operationID))
   }
   @MainActor
   private func independentCheckReport(_ session: ChildSession) throws -> Data {
@@ -540,61 +573,64 @@ extension DesktopInteractionTests {
     try await deliver(session, "one.eml")
     try await requireText(app, containing: "1 planned · Check only")
     let expected = try independentCheckReport(session)
-    try expected.write(
-      to: session.fixture.appendingPathComponent("independent-report.json"),
-      options: .withoutOverwriting)
+    try await session.actors.perform(.retainIndependentReport(expected))
+    XCTAssertEqual(
+      try Data(contentsOf: session.fixture.appendingPathComponent("independent-report.json")),
+      expected)
     let ordinary = session.fixture.appendingPathComponent("ordinary-report.json")
     try await saveReport(app, fixture: session.fixture, to: ordinary, expectNameCollision: false)
     try await waitExport(app, text: "Report exported and verified.")
     XCTAssertEqual(try Data(contentsOf: ordinary), expected)
     let sentinel = Data("Independent report occupancy sentinel\n".utf8)
     let occupied = session.fixture.appendingPathComponent("occupied-report.json")
-    try sentinel.write(to: occupied, options: .withoutOverwriting)
+    try await session.actors.perform(.occupyExport)
+    XCTAssertEqual(try Data(contentsOf: occupied), sentinel)
     try await saveReport(app, fixture: session.fixture, to: occupied, expectNameCollision: true)
     XCTAssertEqual(try Data(contentsOf: occupied), sentinel)
     let directory = session.fixture.appendingPathComponent("directory-report.json")
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    try await session.actors.perform(.createExportDirectory)
     try await saveReport(app, fixture: session.fixture, to: directory, expectNameCollision: true)
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
     let link = session.fixture.appendingPathComponent("symlink-report.json")
-    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: occupied)
+    try await session.actors.perform(.createExportSymlink)
     try await saveReport(app, fixture: session.fixture, to: link, expectNameCollision: true)
     XCTAssertEqual(
       try FileManager.default.destinationOfSymbolicLink(atPath: link.path), occupied.path)
     XCTAssertEqual(try Data(contentsOf: occupied), sentinel)
     let race = session.fixture.appendingPathComponent("racing-report.json")
-    try arm(session, recipe: "export:publication")
+    try await arm(session, recipe: "export:publication")
     try await saveReport(app, fixture: session.fixture, to: race, expectNameCollision: false)
-    _ = try await awaitBoundary(session, operation: "export", phase: "publication")
-    try sentinel.write(to: race, options: .withoutOverwriting)
-    try releaseChild(session)
+    let raceID = try await awaitBoundary(session, operation: "export", phase: "publication")
+    try await session.actors.perform(.raceExportWinner(operationID: raceID))
+    XCTAssertEqual(try Data(contentsOf: race), sentinel)
+    try await releaseChild(session, operationID: raceID)
     try await waitExport(app, text: "Report was not published.")
     XCTAssertEqual(try Data(contentsOf: race), sentinel)
-    try archiveControl(session, label: "racing-winner")
+    try await archiveControl(session, label: "racing-winner", operationID: raceID)
     let pre = session.fixture.appendingPathComponent("pre-edge-report.json")
-    try arm(session, recipe: "export:publication")
+    try await arm(session, recipe: "export:publication")
     try await saveReport(app, fixture: session.fixture, to: pre, expectNameCollision: false)
-    _ = try await awaitBoundary(session, operation: "export", phase: "publication")
+    let preID = try await awaitBoundary(session, operation: "export", phase: "publication")
     app.buttons["Cancel Export"].click()
     try await requireObservation(
       session.observation.appendingPathComponent("first-interrupt"), prefix: "observed ")
-    try releaseChild(session)
+    try await releaseChild(session, operationID: preID)
     try await waitExport(app, text: "Report was not published.")
     XCTAssertFalse(FileManager.default.fileExists(atPath: pre.path))
-    try archiveControl(session, label: "pre-edge-stop")
+    try await archiveControl(session, label: "pre-edge-stop", operationID: preID)
     let post = session.fixture.appendingPathComponent("post-edge-report.json")
-    try arm(session, recipe: "export:namespace-sync")
+    try await arm(session, recipe: "export:namespace-sync")
     try await saveReport(app, fixture: session.fixture, to: post, expectNameCollision: false)
-    _ = try await awaitBoundary(session, operation: "export", phase: "namespace-sync")
+    let postID = try await awaitBoundary(session, operation: "export", phase: "namespace-sync")
     app.buttons["Cancel Export"].click()
     try await requireObservation(
       session.observation.appendingPathComponent("first-interrupt"), prefix: "observed ")
-    try releaseChild(session)
+    try await releaseChild(session, operationID: postID)
     try await waitExport(app, text: "Report exported and verified.")
     XCTAssertEqual(try Data(contentsOf: post), expected)
-    try archiveControl(session, label: "post-edge-stop")
+    try await archiveControl(session, label: "post-edge-stop", operationID: postID)
     let lost = session.fixture.appendingPathComponent("blocked-report.json")
-    try arm(session, recipe: "export:after-publication")
+    try await arm(session, recipe: "export:after-publication")
     try await saveReport(app, fixture: session.fixture, to: lost, expectNameCollision: false)
     let operationID = try await awaitBoundary(
       session, operation: "export", phase: "after-publication")
@@ -614,9 +650,7 @@ extension DesktopInteractionTests {
       "winner_sha256": SHA256.hash(data: sentinel).map { String(format: "%02x", $0) }.joined(),
       "no_replace_observed": true, "post_edge_bytes_preserved": true,
     ]
-    try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]).write(
-      to: session.fixture.appendingPathComponent("child-ui-observation.json"),
-      options: .withoutOverwriting)
+    try await retainChildObservation(session, facts: facts)
     try await finishChild(session)
   }
 
@@ -633,18 +667,19 @@ extension DesktopInteractionTests {
       app, counts: "1 created · 0 up to date",
       source: session.fixture.appendingPathComponent("two.eml"))
     try await selectReport(app, run: 1)
-    try arm(session, recipe: "dual-quit")
+    try await arm(session, recipe: "dual-quit")
     try await saveReport(
       app, fixture: session.fixture,
       to: session.fixture.appendingPathComponent("blocked-report.json"),
       expectNameCollision: false)
     let export = ChildSession(
       app: app, owned: session.owned, fixture: session.fixture,
-      observation: session.observation.appendingPathComponent("export"), delivery: session.delivery)
+      observation: session.observation.appendingPathComponent("export"), delivery: session.delivery,
+      actors: session.actors)
     let processing = ChildSession(
       app: app, owned: session.owned, fixture: session.fixture,
       observation: session.observation.appendingPathComponent("processing"),
-      delivery: session.delivery)
+      delivery: session.delivery, actors: session.actors)
     let exportID = try await awaitBoundary(export, operation: "export", phase: "preflight")
     let responseBegan = ProcessInfo.processInfo.systemUptime
     try await selectReport(app, run: 2)
@@ -733,9 +768,7 @@ extension DesktopInteractionTests {
       "pending_requests": 8, "cosmetic_notice": notice, "quit_cancel_preserved_children": true,
       "app_quit_completed": session.owned.isTerminated,
     ]
-    try JSONSerialization.data(withJSONObject: facts, options: [.sortedKeys]).write(
-      to: session.fixture.appendingPathComponent("child-ui-observation.json"),
-      options: .withoutOverwriting)
+    try await retainChildObservation(session, facts: facts)
   }
 
 }
