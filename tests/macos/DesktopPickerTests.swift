@@ -140,6 +140,49 @@ extension DesktopInteractionTests {
   }
 
   @MainActor
+  private func requireSlintAttribution(_ licenses: XCUIElement) async throws {
+    var snapshotError: Error?
+    let attribution = NSPredicate { _, _ in
+      do {
+        let window = try licenses.snapshot()
+        let finiteFrame: (CGRect) -> Bool = { frame in
+          !frame.isEmpty && frame.minX.isFinite && frame.minY.isFinite
+            && frame.maxX.isFinite && frame.maxY.isFinite
+            && frame.width.isFinite && frame.height.isFinite
+        }
+        guard window.elementType == .window, window.title == "About Slint and Licenses",
+          finiteFrame(window.frame)
+        else { return false }
+        let groups = window.children.filter { $0.elementType == .group }
+        guard groups.count == 1, finiteFrame(groups[0].frame),
+          window.frame.contains(groups[0].frame)
+        else { return false }
+        var pending = window.children
+        var images: [XCUIElementSnapshot] = []
+        while let element = pending.popLast() {
+          if element.elementType == .image && element.title == "#MadeWithSlint" {
+            images.append(element)
+          }
+          pending.append(contentsOf: element.children)
+        }
+        guard images.count == 1, finiteFrame(images[0].frame) else { return false }
+        return groups[0].frame.contains(images[0].frame)
+      } catch {
+        snapshotError = error
+        return false
+      }
+    }
+    let result = await XCTWaiter.fulfillment(
+      of: [XCTNSPredicateExpectation(predicate: attribution, object: nil)], timeout: 10)
+    guard result == .completed else {
+      XCTFail(
+        "Expected one visible AboutSlint image in the licenses content: \(String(describing: snapshotError)); \(licenses.debugDescription)"
+      )
+      throw InteractionFailure.expectedPresentation
+    }
+  }
+
+  @MainActor
   private func checkAboutAndLicenses(_ session: NativePickerSession) async throws {
     let app = session.app
     let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -191,8 +234,7 @@ extension DesktopInteractionTests {
     app.menuBars.menuBarItems["Help"].click()
     app.menuItems["About Slint and Licenses…"].click()
     let licenses = app.windows["About Slint and Licenses"]
-    XCTAssertTrue(licenses.waitForExistence(timeout: 10), app.debugDescription)
-    XCTAssertTrue(licenses.images["#MadeWithSlint"].exists, licenses.debugDescription)
+    try await requireSlintAttribution(licenses)
     let licenseText = try XCTUnwrap(
       app.descendants(matching: .any).allElementsBoundByIndex.first {
         $0.title == "Complete software and owner artwork license terms"

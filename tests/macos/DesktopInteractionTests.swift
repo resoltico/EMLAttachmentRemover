@@ -23,7 +23,12 @@ final class DesktopInteractionTests: XCTestCase {
     let groups = snapshot.children.filter { $0.elementType == .group }
     guard groups.count == 1 else { throw InteractionFailure.expectedPresentation }
     let frame = groups[0].frame
-    guard !frame.isEmpty, snapshot.frame.contains(frame) else {
+    guard
+      [snapshot.frame, frame].allSatisfy({
+        !$0.isEmpty && $0.minX.isFinite && $0.minY.isFinite && $0.maxX.isFinite
+          && $0.maxY.isFinite && $0.width.isFinite && $0.height.isFinite
+      }), snapshot.frame.contains(frame)
+    else {
       throw InteractionFailure.expectedPresentation
     }
     return frame
@@ -75,24 +80,44 @@ final class DesktopInteractionTests: XCTestCase {
     return texts
   }
 
+  @MainActor
+  func visibleOuterPageControl(_ window: XCUIElement) throws -> XCUIElement {
+    let controls: [(XCUIElement.ElementType, String)] = [
+      (.button, "Choose messages…"), (.button, "Copy destination…"),
+      (.button, "Export Report…"), (.checkBox, "Technical details"),
+    ]
+    for (role, title) in controls {
+      let matches = window.descendants(matching: role).matching(
+        NSPredicate(format: "title == %@", title))
+      let count = matches.count
+      guard count <= 1 else {
+        XCTFail("Outer page control is ambiguous: \(title)")
+        throw InteractionFailure.expectedPresentation
+      }
+      if count == 0 { continue }
+      let candidate = matches.element
+      let frame = candidate.frame
+      let viewport = try contentFrame(window)
+      if candidate.title == title && !frame.isEmpty && frame.minX.isFinite
+        && frame.minY.isFinite && frame.maxX.isFinite && frame.maxY.isFinite
+        && frame.width.isFinite && frame.height.isFinite && viewport.contains(frame)
+        && candidate.isHittable
+      {
+        return candidate
+      }
+    }
+    XCTFail("No physically visible outer page control for the one owned scroll")
+    throw InteractionFailure.expectedPresentation
+  }
+
   // Always make one bounded gesture to the requested end. A visible endpoint
   // can coexist with a clipped header/footer; the outer window also includes
   // titlebar space that is not part of the Slint content viewport.
   @MainActor
   func showReportDetails(_ app: XCUIApplication) async throws {
     let window = app.windows["EML Attachment Remover"]
-    let before = try contentFrame(window)
     let technical = app.checkBoxes["Technical details"]
-    let top = app.buttons["Choose messages…"]
-    let anchor: XCUIElement
-    if top.exists && top.isHittable && before.contains(top.frame) {
-      anchor = top
-    } else if technical.exists && technical.isHittable && before.contains(technical.frame) {
-      anchor = technical
-    } else {
-      XCTFail("No physically visible content anchor for the report-end scroll")
-      throw InteractionFailure.expectedPresentation
-    }
+    let anchor = try visibleOuterPageControl(window)
     anchor.scroll(byDeltaX: 0, deltaY: -1000)
     var snapshotFailure: String?
     let settled = NSPredicate { _, _ in
@@ -117,18 +142,8 @@ final class DesktopInteractionTests: XCTestCase {
   @MainActor
   func showRunControls(_ app: XCUIApplication) async throws {
     let window = app.windows["EML Attachment Remover"]
-    let before = try contentFrame(window)
     let top = app.buttons["Choose messages…"]
-    let technical = app.checkBoxes["Technical details"]
-    let anchor: XCUIElement
-    if technical.exists && technical.isHittable && before.contains(technical.frame) {
-      anchor = technical
-    } else if top.exists && top.isHittable && before.contains(top.frame) {
-      anchor = top
-    } else {
-      XCTFail("No physically visible content anchor for the run-control-end scroll")
-      throw InteractionFailure.expectedPresentation
-    }
+    let anchor = try visibleOuterPageControl(window)
     anchor.scroll(byDeltaX: 0, deltaY: 1000)
     var snapshotFailure: String?
     let settled = NSPredicate { _, _ in

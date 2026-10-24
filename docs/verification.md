@@ -246,6 +246,13 @@ and exact restoration remain required. A test-runner-local NSWorkspace getter is
 not used as an additional system-wide oracle; process-local observations may
 differ. Missing, contradictory or
 unrestored native Settings records fail receipt admission.
+Outer-page navigation selects one uniquely identified, physically visible
+control from the page's fixed outer rows, then sends one bounded scroll and
+requires the target control to be wholly visible. It does not assume an endpoint is already visible
+or scroll through a nested run list or report editor. AboutSlint attribution is
+observed by its exact native image role/title and contained frame in one fresh
+snapshot of the owned licenses window; an identifier-only query is not a title
+observation. Complete license text and Copy checks remain independent.
 The macOS26 Intel `qualify-macos-picker` consumer separately
 executes `testOwnedNativePickerCompatibility`, the dedicated `picker` case. It
 shares the full workflow's original About/license/reopen/Open With prelude and
