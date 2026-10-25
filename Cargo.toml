@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/eml-message", "crates/eml-core", "crates/eml-protocol", "crates/eml-cli", "crates/eml-app", "crates/eml-gui", "crates/eml-windows", "xtask"]
-exclude = ["fuzz", "vendor/winit", "vendor/i-slint-core", "vendor/parley"]
+exclude = ["fuzz"]
 resolver = "3"
 
 [workspace.package]
@@ -44,8 +44,3 @@ overflow-checks = true
 [profile.mutants]
 inherits = "test"
 debug = false
-
-[patch.crates-io]
-winit = { path = "vendor/winit" }
-i-slint-core = { path = "vendor/i-slint-core" }
-parley = { path = "vendor/parley" }

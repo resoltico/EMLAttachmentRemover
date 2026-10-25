@@ -7,7 +7,10 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-desktop = ["slint/backend-winit", "slint/renderer-software", "slint/raw-window-handle-06", "slint/unstable-winit-030", "dep:rfd", "dep:opener", "dep:objc2", "dep:objc2-app-kit"]
+default = ["renderer-software"]
+renderer-software = ["slint/renderer-software"]
+renderer-skia = ["slint/renderer-skia"]
+desktop = ["slint/backend-winit", "slint/raw-window-handle-06", "slint/unstable-winit-030", "dep:rfd", "dep:opener", "dep:objc2", "dep:objc2-app-kit"]
 
 [dependencies]
 eml-app = { path = "../eml-app" }
