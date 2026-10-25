@@ -1,327 +1,105 @@
-//! Rust-only repository verification and distribution commands.
-#![forbid(unsafe_code)]
-mod archive_verify;
-mod campaign;
-mod check;
+//! Small distribution and verification entry points. Tool versions live in tools.toml.
+mod archive;
 mod ci;
-mod cli_build;
-mod commands;
-#[cfg(any(target_os = "macos", test))]
-mod desktop_preferences;
-mod distribution;
-mod fuzz;
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(target_os = "macos")]
-mod macos_app;
-#[cfg(target_os = "macos")]
-mod macos_archive;
-#[cfg(target_os = "macos")]
-mod macos_icon;
-#[cfg(target_os = "macos")]
-mod macos_interaction;
-#[cfg(target_os = "macos")]
-mod macos_panel;
-#[cfg(any(target_os = "macos", test))]
-mod macos_picker_host;
-#[cfg(target_os = "macos")]
-mod macos_publication_ui;
-#[cfg(target_os = "macos")]
-mod macos_volume;
-mod mutants;
-mod native_host;
+mod dist;
 mod notices;
-mod qualify;
-mod quality;
-mod release_assets;
-mod release_check;
-mod smoke;
-mod tools;
-#[cfg(any(windows, test))]
-mod windows_evidence;
-#[cfg(any(windows, test))]
-mod windows_input_review;
-#[cfg(windows)]
-mod windows_link;
-mod windows_references;
-mod windows_runtime;
-#[cfg(windows)]
-mod windows_workspace;
+
 use clap::{Parser, Subcommand};
-use std::{
-    error::Error,
-    io::Write,
-    path::PathBuf,
-    process::{Command, ExitCode},
-};
-static CONTROLLER: std::sync::OnceLock<xtask::process::Controller> = std::sync::OnceLock::new();
-fn controller() -> Result<&'static xtask::process::Controller> {
-    CONTROLLER
-        .get()
-        .ok_or_else(|| "Process controller is not initialized".into())
-}
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+use std::{path::PathBuf, process::Command};
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 #[derive(Parser)]
-#[command(about = "EML Attachment Remover repository tasks", version)]
 struct Arguments {
     #[command(subcommand)]
-    task: Task,
+    command: Task,
 }
 #[derive(Subcommand)]
 enum Task {
-    /// Admit exact event-specific CI results, rejecting absent or skipped required jobs.
-    CiResult {
+    /// Build the release CLI archive, and optionally the universal macOS app.
+    Dist {
         #[arg(long)]
-        event: String,
+        cli: bool,
         #[arg(long)]
-        native: bool,
+        app: bool,
         #[arg(long)]
-        needs: PathBuf,
-    },
-    /// Derive byte references from pinned official Windows component archives; not approval.
-    WindowsRuntimeReferences {
+        universal: bool,
         #[arg(long)]
-        archives: PathBuf,
-        #[arg(long)]
+        target: Option<String>,
+        #[arg(long, default_value = "target/dist")]
         out: PathBuf,
     },
-    /// Capture an actual native Windows CLI link; static-input review is separate.
-    ObserveWindowsLink {
-        #[arg(long)]
-        target: String,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Prepare an exact-source hosted Windows checkout in protected user storage.
-    PrepareWindowsWorkspace,
-    /// Read-only source, version, dated changelog and remote release admission.
-    ReleaseCheck {
-        #[arg(long)]
-        source: String,
-        #[arg(long)]
-        version: String,
-    },
-    /// Assemble exactly eight archive bytes and SHA256SUMS; no qualification or publication.
-    StageReleaseAssets {
-        #[arg(long)]
-        archives: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Compare actual local asset bytes with a retained unpublished GitHub draft response.
-    CheckReleaseServer {
-        #[arg(long)]
-        assets: PathBuf,
-        #[arg(long)]
-        release: PathBuf,
-    },
-    /// Strictly lint retained Swift bridge/test sources with selected Xcode defaults.
-    CheckMacosSwift {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Observe an ordinary owned AppKit panel on a fresh native hosted Mac.
-    ObserveMacosPanel {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Prepare the exact affected hosted Intel picker environment; never product acceptance.
-    PrepareMacosPickerHost {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        reference: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Read back the unchanged picker inputs, caller and host state after the real product.
-    VerifyMacosPickerHost {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        reference: PathBuf,
-        #[arg(long)]
-        preparation: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Check the actual macOS Slint profile and owned native child fixtures.
-    CheckMacosDesktop {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Discover and execute the locked native workspace selection without ignored/filtered cases.
-    NativeTests {
-        #[arg(long)]
-        target: String,
-        #[arg(long)]
-        out: PathBuf,
-        #[arg(long)]
-        release: bool,
-    },
-    /// Run independent repository checks, retaining every failed section.
-    Check,
-    /// Validate authored-source structure and centrally justified lint exceptions.
-    CheckQuality,
-    /// Strictly check all discovered authored shell scripts, including shebang files.
-    CheckShell,
-    /// Build and verify one native CLI archive; remaining qualification is separate.
-    BuildCliArchive {
-        #[arg(long)]
-        target: String,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Exercise an owned native CLI and real negative controls; no archive verdict.
-    CliSmokeTests {
-        #[arg(long)]
-        executable: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Run native release/filesystem/archive checks; desktop consumers are separate.
-    Qualify {
-        #[arg(long)]
-        target: String,
-        #[arg(long)]
-        out: PathBuf,
-        /// Validated same-source icon producer directory, required on macOS.
-        #[arg(long)]
-        icons: Option<PathBuf>,
-    },
-    /// Inspect and exercise extracted native CLI archive bytes; missing gates fail.
-    VerifyArchive {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        target: String,
-    },
-    /// Write new legal materials or check source/material and optional generated-tree freshness.
+    /// Generate notices for the selected shipped graph and actual target(s).
     Notices {
         #[arg(long)]
-        out: Option<PathBuf>,
-        #[arg(long, conflicts_with = "check", required_unless_present = "check")]
-        write: bool,
-        #[arg(long, conflicts_with = "write")]
-        check: bool,
-    },
-    /// Observe exactly two pinned icon compilations; never qualifies an app.
-    MacosIconDiagnostic {
+        app: bool,
+        #[arg(long, required = true)]
+        target: Vec<String>,
         #[arg(long)]
         out: PathBuf,
     },
-    /// Compile and validate one shared owner-icon asset set with pinned Xcode.
-    CompileMacosIcon {
+    /// Run the host merge gate. --rust-only runs the native matrix portion.
+    Ci {
         #[arg(long)]
-        out: PathBuf,
-    },
-    /// Build and ad hoc sign native GUI/worker executables; no app/archive verdict.
-    BuildMacosSources {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Exercise an actual exclusively owned exFAT image on a fresh native CI host.
-    CheckMacosVolume {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Assemble and verify a native app candidate; desktop qualification is separate.
-    BuildMacosApp {
-        #[arg(long)]
-        out: PathBuf,
-        #[arg(long)]
-        icons: PathBuf,
-    },
-    /// Qualify the complete desktop case set against a frozen native app archive.
-    SmokeMacosApp {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        reference: PathBuf,
-    },
-    /// Test actual native picker compatibility against a frozen app candidate.
-    CheckMacosPicker {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        reference: PathBuf,
-    },
-    /// Print native target policy and expected archive identities; build nothing.
-    Distribution,
-    /// Run one bounded pure-preparation fuzz campaign with owned corpus storage.
-    Fuzz {
-        #[arg(long,default_value_t=60,value_parser=clap::value_parser!(u64).range(1..=900))]
-        seconds: u64,
-    },
-    /// Completely test the two specified MIME guards, never a whole workspace campaign.
-    Mutants {
-        #[arg(long, conflicts_with = "diff", required_unless_present = "diff")]
-        initial: bool,
-        #[arg(long, conflicts_with = "initial")]
-        diff: Option<String>,
+        rust_only: bool,
     },
 }
-fn capture(command: &mut Command) -> Result<Vec<u8>> {
-    controller()?.capture(command)
-}
-fn git(root: &std::path::Path, args: &[&str]) -> Result<String> {
-    Ok(
-        String::from_utf8(capture(Command::new("git").current_dir(root).args(args))?)?
-            .trim_end()
-            .to_owned(),
-    )
-}
-fn root() -> Result<PathBuf> {
-    for path in std::env::current_dir()?.ancestors() {
-        if path.join(".git").exists() {
-            return Ok(path.to_owned());
-        }
+fn main() {
+    if let Err(error) = execute() {
+        eprintln!("xtask: {error}");
+        std::process::exit(1);
     }
-    Err("Run repository tasks from a Git checkout".into())
 }
-fn initialize_controller(root: &std::path::Path) -> Result<()> {
-    let controlled = xtask::process::Controller::new(root, &std::env::current_exe()?)?;
-    controlled.install_signals()?;
-    CONTROLLER
-        .set(controlled)
-        .map_err(|_| "Process controller was already initialized")?;
+fn execute() -> Result<()> {
+    std::env::set_current_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap())?;
+    match Arguments::parse().command {
+        Task::Dist {
+            cli,
+            app,
+            universal,
+            target,
+            out,
+        } => dist::build(cli, app, universal, target, &out),
+        Task::Notices { app, target, out } => notices::write(app, &target, &out),
+        Task::Ci { rust_only } => ci::run(rust_only),
+    }
+}
+fn run(command: &mut Command) -> Result<()> {
+    eprintln!("+ {command:?}");
+    let status = command.status()?;
+    if !status.success() {
+        return Err(format!("{command:?} exited {status}").into());
+    }
     Ok(())
 }
-fn main() -> ExitCode {
-    #[cfg(windows)]
-    if let Some(exit) = windows_link::helper_entry() {
-        return exit;
+fn capture(command: &mut Command) -> Result<String> {
+    let output = command.output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "{command:?} exited {}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
     }
-    if let Some(exit) = xtask::process::helper_entry() {
-        return exit;
-    }
-    let result = (|| {
-        let args = Arguments::parse();
-        let root = root()?;
-        commands::run(&root, args.task)
-    })();
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            let _ = writeln!(std::io::stderr(), "{error}");
-            ExitCode::FAILURE
-        }
-    }
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn notices_require_one_explicit_operation() {
-        assert!(Arguments::try_parse_from(["xtask", "notices"]).is_err());
-        assert!(Arguments::try_parse_from(["xtask", "notices", "--out", "owned"]).is_err());
-        assert!(Arguments::try_parse_from(["xtask", "notices", "--write", "--check"]).is_err());
-        for mode in ["--write", "--check"] {
-            assert!(Arguments::try_parse_from(["xtask", "notices", mode]).is_ok());
-            assert!(
-                Arguments::try_parse_from(["xtask", "notices", mode, "--out", "owned"]).is_ok()
-            );
-        }
+fn host() -> Result<String> {
+    capture(Command::new("rustc").arg("-vV"))?
+        .lines()
+        .find_map(|line| line.strip_prefix("host: ").map(str::to_owned))
+        .ok_or_else(|| "rustc did not report its host triple".into())
+}
+fn tool(name: &str, key: &str) -> Result<()> {
+    let versions: toml::Value = toml::from_str(include_str!("../tools.toml"))?;
+    let expected = versions["versions"][key]
+        .as_str()
+        .ok_or("missing tool version")?;
+    let actual = capture(Command::new(name).arg("--version"))?;
+    if !actual
+        .split_whitespace()
+        .any(|word| word.trim_start_matches('v') == expected)
+    {
+        return Err(format!("Install {name} {expected} (xtask/tools.toml); found {actual}").into());
     }
+    Ok(())
 }

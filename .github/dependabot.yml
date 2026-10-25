@@ -8,6 +8,12 @@ updates:
     directories:
       - /
       - /fuzz
-      - /tests/native-filesystem
     schedule:
       interval: weekly
+    groups:
+      slint:
+        patterns:
+          - slint
+          - slint-build
+          - i-slint-core
+          - i-slint-backend-testing

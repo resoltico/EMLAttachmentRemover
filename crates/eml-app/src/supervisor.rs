@@ -1,506 +1,403 @@
-//! One native owner polls/signals independently of pipe/model/UI backpressure.
-use crate::{
-    FrameError, FrameSplitter, ProtocolFailure, RequestSnapshot, RunReport, WorkerControl,
-};
-use eml_macos::{
-    ChildExit, ChildState, OwnedChild, PipeEndpoints, StopSignal, close_reader, close_writer,
-};
-use eml_protocol::worker_control::{WorkerControlStream, identity_line};
+//! Nonblocking supervision of one bundled CLI, with one reader per output pipe.
+use crate::{FrameError, FrameSplitter, ProtocolFailure, RequestSnapshot, RunReport};
+use eml_core::RunMode;
+use rustix::process::{Pid, Signal, kill_process};
 use std::{
-    ffi::OsStr,
     io::{self, Read, Write},
-    path::PathBuf,
-    sync::{
-        Arc, Mutex, TryLockError,
-        atomic::{AtomicBool, Ordering},
-    },
+    path::{Path, PathBuf},
+    process::{Child, Command, ExitStatus, Stdio},
+    sync::{Arc, Mutex, mpsc},
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
 };
-
-/// A desktop lifecycle/transport failure; Core's per-item outcomes stay separate.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkerFailure {
-    /// Core refused the captured output before any helper launch.
-    Request,
-    /// The exact bundled executable could not be started or set up.
-    Launch,
-    /// Exact private worker version/compiled CPU/OS did not match.
-    Identity,
-    /// A pipe, framing, decoder or owned-thread operation failed.
-    Transport,
-    /// Native ownership or complete reader/writer settlement is unverified.
-    Unverified,
+/// Retained stderr bound; excess bytes are drained and marked as truncated.
+pub const MAX_STDERR_BYTES: usize = 64 * 1024;
+/// Terminal worker state, independent of the earlier accepted item facts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkerState {
+    /// Complete successful run.
+    Completed,
+    /// Complete run with item or run failures.
+    CompletedWithFailures,
+    /// Cooperative stop with a complete interrupted summary.
+    Stopped,
+    /// Interrupt arrived before the first start record.
+    StoppedBeforeStart,
+    /// The owner requested SIGKILL; publication can have preceded it.
+    ForceStopped,
+    /// CLI refused the request before producing a start record.
+    RequestRefused,
+    /// The stream or process did not complete its contract.
+    Incomplete,
 }
-impl std::fmt::Display for WorkerFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Desktop worker {self:?}")
+/// Worker lifecycle or transport failure; accepted records are retained.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkerFailure {
+    /// First record was not the expected CLI start identity.
+    Identity,
+    /// Invalid or incomplete protocol stream.
+    Protocol(ProtocolFailure),
+    /// A pipe reader or writer failed or panicked.
+    Transport,
+}
+impl From<FrameError> for WorkerFailure {
+    fn from(_: FrameError) -> Self {
+        Self::Protocol(ProtocolFailure::ResourceLimit)
     }
 }
-impl std::error::Error for WorkerFailure {}
-/// Read-only access to accepted report facts; no mutable decoder escapes.
+/// Shared accepted facts, read without blocking the UI while decoding a record.
 #[derive(Clone)]
 pub struct ReportHandle(Arc<Mutex<RunReport>>);
 impl ReportHandle {
-    pub(crate) fn new(version: String) -> Self {
-        Self(Arc::new(Mutex::new(RunReport::for_native_worker(version))))
-    }
-    pub(crate) fn has_external_readers(&self) -> bool {
-        Arc::strong_count(&self.0) > 1
-    }
-    /// Nonblocking bounded UI inspection. Keep the closure short and release it
-    /// before any UI/native call; None means a parser currently owns the model.
-    pub fn inspect<T>(
-        &self,
-        inspect: impl FnOnce(&RunReport) -> T,
-    ) -> Result<Option<T>, WorkerFailure> {
-        match self.0.try_lock() {
-            Ok(report) => Ok(Some(inspect(&report))),
-            Err(TryLockError::WouldBlock) => Ok(None),
-            Err(TryLockError::Poisoned(_)) => Err(WorkerFailure::Unverified),
-        }
-    }
-    /// Serialize on an explicitly owned background export task, never the UI thread.
-    pub fn export_bytes(&self) -> io::Result<Vec<u8>> {
-        self.0
-            .try_lock()
-            .map_err(|error| match error {
-                TryLockError::WouldBlock => {
-                    io::Error::new(io::ErrorKind::WouldBlock, "Report is busy")
-                }
-                TryLockError::Poisoned(_) => io::Error::other("Report ownership is unverified"),
-            })?
-            .technical_report()
-            .map_err(io::Error::other)
-    }
-    pub(crate) fn export_terminal_bytes(
-        &self,
-        id: crate::RunId,
-        completion: &WorkerCompletion,
-    ) -> io::Result<Vec<u8>> {
-        self.0
-            .try_lock()
-            .map_err(|error| match error {
-                TryLockError::WouldBlock => {
-                    io::Error::new(io::ErrorKind::WouldBlock, "Report is busy")
-                }
-                TryLockError::Poisoned(_) => io::Error::other("Report ownership is unverified"),
-            })?
-            .technical_report_with_lifecycle(id, completion)
-            .map_err(io::Error::other)
+    /// Render a consistent report snapshot if its reader is currently available.
+    /// Poisoned state is unavailable and is never presented as an empty success.
+    pub fn with_report<T>(&self, render: impl FnOnce(&RunReport) -> T) -> Option<T> {
+        self.0.try_lock().ok().map(|report| render(&report))
     }
 }
-/// Actual completed lifecycle observations. A valid Core failure is not a broken
-/// transport, and Stop intent never changes a received terminal item/summary.
-#[derive(Clone, Debug, serde::Serialize)]
+/// Settled process and pipe observations, plus the exact bounded stream for export.
 pub struct WorkerCompletion {
-    /// Processing child's actual normal exit; absent if no processing child or signalled.
-    pub exit_code: Option<i32>,
-    /// Processing child's actual terminating signal.
-    pub signal: Option<i32>,
-    /// A complete processing request might have started delivery.
-    pub input_may_have_been_sent: bool,
-    /// Actual process/reader/writer/control settlement was observed.
-    pub settled: bool,
-    /// A later queued request can safely be admitted after final UI application.
-    pub reusable: bool,
-    /// First lifecycle failure, separate from Core's typed item errors.
+    /// Terminal lifecycle state.
+    pub state: WorkerState,
+    /// Actual reaped process status.
+    pub exit: ExitStatus,
+    /// Transport failure, if any.
     pub failure: Option<WorkerFailure>,
-    /// Bounded authored/native diagnostics, excluding raw stdout/message bytes.
-    pub faults: Vec<String>,
-    /// At most64KiB of separately drained stderr for explicit failure inspection.
+    /// Earlier accepted protocol facts.
+    pub report: ReportHandle,
+    /// Received stdout bytes, without an app-owned report wrapper.
+    pub jsonl: Arc<[u8]>,
+    /// Bounded diagnostic stderr.
     pub stderr: Vec<u8>,
-    /// Retained stderr reached its cap; the reader still drained to EOF.
+    /// Whether stderr exceeded its retained byte bound.
     pub stderr_truncated: bool,
-    /// Actual successful native interrupt calls, not inferred handler delivery.
-    pub interrupt_calls_succeeded: u8,
-    /// The private first-interrupt observation byte was actually received.
-    pub first_interrupt_observed: bool,
 }
-/// Nonblocking observation. A warning retains the live run/keeper and must not
-/// cause callers to drop ownership, start another run or approve Quit.
-#[derive(Clone, Debug)]
-pub enum WorkerObservation {
-    /// Still owns pending resources; optional bounded warning is fail-closed.
-    Pending {
-        /// First retained lifecycle warning.
-        warning: Option<String>,
-    },
-    /// All actor observations are available, including retained failures.
-    Settled(WorkerCompletion),
+struct StreamEnd {
+    jsonl: Vec<u8>,
+    tail: bool,
+    failure: Option<WorkerFailure>,
 }
-type Health = Arc<Mutex<Option<String>>>;
-fn warn(health: &Health, message: &str) {
-    let mut health = health
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if health.is_none() {
-        *health = Some(message.chars().take(1000).collect());
-    }
+struct Diagnostics {
+    bytes: Vec<u8>,
+    truncated: bool,
 }
-/// Retain this run through native settlement and final UI model application.
-/// All blocking spawn/pipe/parsing work belongs to its dedicated threads.
+/// Resolve the CLI relative to the desktop executable; never search PATH.
+pub fn bundled_cli(executable: &Path) -> io::Result<PathBuf> {
+    let contents = executable.parent().and_then(Path::parent).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Desktop executable has no Contents directory",
+        )
+    })?;
+    Ok(contents.join("Helpers").join(eml_core::product::CLI_NAME))
+}
+/// One owned child; polling, Stop and Force Stop never wait on its pipes.
 pub struct WorkerRun {
-    control: WorkerControl,
+    child: Option<Child>,
     report: ReportHandle,
-    completion: Arc<Mutex<Option<WorkerCompletion>>>,
-    health: Health,
-    owner: Option<JoinHandle<()>>,
+    output: Option<JoinHandle<StreamEnd>>,
+    diagnostics: Option<JoinHandle<io::Result<Diagnostics>>>,
+    input: Option<JoinHandle<io::Result<()>>>,
+    events: mpsc::Receiver<Option<WorkerFailure>>,
+    exit: Option<ExitStatus>,
+    failure: Option<WorkerFailure>,
+    stop_requested: bool,
+    forced: bool,
 }
 impl WorkerRun {
-    /// Capture this run only after all native actors have actually settled.
-    pub fn export_snapshot(&mut self) -> Option<crate::TerminalReport> {
-        match self.poll() {
-            WorkerObservation::Settled(completion) => {
-                crate::TerminalReport::new(self.control.id(), self.report.clone(), completion)
-            }
-            WorkerObservation::Pending { .. } => None,
+    /// Spawn an absolute CLI and feed one EOF-terminated protocol-1 request.
+    pub fn start(cli: &Path, request: &RequestSnapshot, home: &Path) -> io::Result<Self> {
+        if !cli.is_absolute() || !home.is_absolute() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Worker executable and home directory must be absolute",
+            ));
         }
-    }
-    /// Launch a version-bound private worker; no shell/PATH/interpreter fallback.
-    pub fn start(
-        helper: PathBuf,
-        version: String,
-        request: RequestSnapshot,
-        control: WorkerControl,
-    ) -> io::Result<Self> {
-        let report = ReportHandle::new(version.clone());
-        let completion = Arc::new(Mutex::new(None));
-        let health = Arc::new(Mutex::new(None));
-        let warnings = Arc::clone(&health);
-        let published = Arc::clone(&completion);
-        let result = Arc::clone(&report.0);
-        let token = control.clone();
-        let owner = thread::Builder::new()
-            .name("desktop-worker-owner".into())
-            .spawn(move || {
-                let outcome = execute(helper, version, request, token, result, warnings);
-                if let Ok(mut slot) = published.lock() {
-                    *slot = Some(outcome);
-                }
-            })?;
-        Ok(Self {
-            control,
-            report,
-            completion,
-            health,
-            owner: Some(owner),
-        })
-    }
-    /// Immutable run-bound control reference; it owns no numeric PID.
-    pub fn control(&self) -> &WorkerControl {
-        &self.control
-    }
-    /// Clone read-only access without copying the retained report.
-    pub fn report(&self) -> ReportHandle {
-        self.report.clone()
-    }
-    /// Poll owner completion without a blocking UI join. Callers must apply the
-    /// final report before completing the queue reservation or approving Quit.
-    pub fn poll(&mut self) -> WorkerObservation {
-        if self
-            .owner
-            .as_ref()
-            .is_some_and(|owner| !owner.is_finished())
-        {
-            return WorkerObservation::Pending {
-                warning: self.health.lock().ok().and_then(|warning| warning.clone()),
-            };
-        }
-        if let Some(owner) = self.owner.take()
-            && owner.join().is_err()
-        {
-            warn(
-                &self.health,
-                "Worker owner ended unexpectedly; ownership is unverified",
-            );
-        }
-        // Final observations take priority over an earlier pending warning;
-        // the completion retains that warning as a failed, non-reusable run.
-        if let Ok(slot) = self.completion.lock()
-            && let Some(result) = slot.as_ref()
-        {
-            return WorkerObservation::Settled(result.clone());
-        }
-        WorkerObservation::Pending {
-            warning: self.health.lock().ok().and_then(|warning| warning.clone()),
-        }
-    }
-}
-fn execute(
-    helper: PathBuf,
-    version: String,
-    request: RequestSnapshot,
-    token: WorkerControl,
-    report: Arc<Mutex<RunReport>>,
-    health: Health,
-) -> WorkerCompletion {
-    let mut completion =
-        execute_inner(helper, version, request, token, report, Arc::clone(&health));
-    if let Some(warning) = health.lock().ok().and_then(|warning| warning.clone()) {
-        completion.reusable = false;
-        completion.failure.get_or_insert(WorkerFailure::Unverified);
-        issue(&mut completion.faults, warning);
-    }
-    completion
-}
-fn finalize_report<T>(
-    report: &Mutex<RunReport>,
-    health: &Health,
-    apply: impl FnOnce(&mut RunReport) -> T,
-) -> Result<T, ProtocolFailure> {
-    let started = Instant::now();
-    loop {
-        match report.try_lock() {
-            Ok(mut report) => return Ok(apply(&mut report)),
-            Err(TryLockError::Poisoned(_)) => {
-                warn(
-                    health,
-                    "Final report is poisoned/unavailable; no qualified model application",
-                );
-                return Err(ProtocolFailure::MalformedRecord);
-            }
-            Err(TryLockError::WouldBlock) => {
-                if started.elapsed() >= Duration::from_secs(2) {
-                    warn(
-                        health,
-                        "Final report application is still pending; retain this run",
-                    );
-                }
-                thread::sleep(Duration::from_millis(10));
-            }
-        }
-    }
-}
-fn execute_inner(
-    helper: PathBuf,
-    version: String,
-    request: RequestSnapshot,
-    token: WorkerControl,
-    report: Arc<Mutex<RunReport>>,
-    health: Health,
-) -> WorkerCompletion {
-    let mut completion = WorkerCompletion {
-        exit_code: None,
-        signal: None,
-        input_may_have_been_sent: false,
-        settled: false,
-        reusable: false,
-        failure: None,
-        faults: Vec::new(),
-        stderr: Vec::new(),
-        stderr_truncated: false,
-        interrupt_calls_succeeded: 0,
-        first_interrupt_observed: false,
-    };
-    match token.intent(Instant::now()) {
-        Ok(intent) if !intent.aborted && (intent.interrupts > 0 || intent.closing) => {
-            completion.settled = true;
-            completion.reusable = true;
-            return completion;
-        }
-        Ok(intent) if intent.aborted => {
-            completion.failure = Some(WorkerFailure::Transport);
-            return completion;
-        }
-        Err(error) => {
-            completion.failure = Some(WorkerFailure::Unverified);
-            issue(&mut completion.faults, error.to_string());
-            return completion;
-        }
-        _ => {}
-    }
-    // This owner thread may block in native filesystem I/O. No UI thread waits
-    // on it, and its lifetime remains owned until it actually settles. Core
-    // repeats the binding during processing; this is never publication authority.
-    if let Err(error) = eml_core::check_output_location(request.request()) {
-        completion.failure = Some(WorkerFailure::Request);
-        completion.settled = true;
-        completion.reusable = true;
-        issue(
-            &mut completion.faults,
-            format!(
-                "Selection not started: {error}. Choose an existing copy destination or Beside originals. Originals are unchanged."
-            ),
+        let mut child = Command::new(cli)
+            .args(["--format", "json", "--request", "-"])
+            .current_dir(home)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let mut input = child.stdin.take().expect("piped stdin");
+        let output = child.stdout.take().expect("piped stdout");
+        let diagnostics = child.stderr.take().expect("piped stderr");
+        let report = ReportHandle(Arc::new(Mutex::new(RunReport::for_native_worker(
+            eml_core::product::VERSION,
+        ))));
+        let (sender, events) = mpsc::channel();
+        let mut run = Self {
+            child: Some(child),
+            report: report.clone(),
+            output: None,
+            diagnostics: None,
+            input: None,
+            events,
+            exit: None,
+            failure: None,
+            stop_requested: false,
+            forced: false,
+        };
+        let dry_run = request.request().mode == RunMode::DryRun;
+        run.output = Some(
+            thread::Builder::new()
+                .name("cli-stdout".into())
+                .spawn(move || read_output(output, report, dry_run, sender))?,
         );
-        return completion;
+        run.diagnostics = Some(
+            thread::Builder::new()
+                .name("cli-stderr".into())
+                .spawn(move || read_diagnostics(diagnostics))?,
+        );
+        let encoded = request.encoded().to_vec();
+        run.input = Some(
+            thread::Builder::new()
+                .name("cli-request".into())
+                .spawn(move || {
+                    input.write_all(&encoded)?;
+                    input.flush()
+                })?,
+        );
+        Ok(run)
     }
-    let probe = observe(&helper, None, &token, None, Arc::clone(&health));
-    let probe = match probe {
-        Ok(value) => value,
-        Err(error) => {
-            completion.failure = Some(WorkerFailure::Launch);
-            issue(&mut completion.faults, error);
-            return completion;
-        }
-    };
-    if !completion.admit_identity(&probe, &version, &token, &report, &health) {
-        return completion;
+    /// Accepted progress, available before process completion.
+    pub fn report(&self) -> &ReportHandle {
+        &self.report
     }
-    let observed = observe(
-        &helper,
-        Some(request.encoded().to_vec()),
-        &token,
-        Some(Arc::clone(&report)),
-        Arc::clone(&health),
-    );
-    let observed = match observed {
-        Ok(value) => value,
-        Err(error) => {
-            completion.failure = Some(WorkerFailure::Launch);
-            issue(&mut completion.faults, error);
-            return completion;
+    /// Send exactly one cooperative interrupt to the still-owned, unreaped child.
+    pub fn stop(&mut self) -> io::Result<()> {
+        if self.stop_requested || self.forced {
+            return Ok(());
         }
-    };
-    completion.apply_observed(observed, &token, &report, &health);
-    completion
-}
-
-fn settled(value: &Observed) -> bool {
-    value.exit.is_some()
-        && value.stdout.eof
-        && value.stdout.closed
-        && value.stderr.eof
-        && value.stderr.closed
-        && value.control.eof
-        && value.control.closed
-        && value.writer.closed
-}
-impl From<FrameError> for ProtocolFailure {
-    fn from(error: FrameError) -> Self {
-        match error {
-            FrameError::LineLimit | FrameError::RunLimit => Self::ResourceLimit,
-            FrameError::EmptyRecord | FrameError::Failed => Self::MalformedRecord,
+        let Some(child) = self.child.as_mut() else {
+            return Ok(());
+        };
+        if child.try_wait()?.is_some() {
+            return Ok(());
         }
+        self.stop_requested = true;
+        kill_process(Pid::from_child(child), Signal::INT).map_err(Into::into)
     }
-}
-
-mod transport;
-use transport::*;
-
-#[cfg(test)]
-mod tests;
-
-impl WorkerCompletion {
-    fn admit_identity(
-        &mut self,
-        probe: &Observed,
-        version: &str,
-        token: &WorkerControl,
-        report: &Mutex<RunReport>,
-        health: &Health,
-    ) -> bool {
-        let intent = match token.intent(Instant::now()) {
-            Ok(intent) => intent,
-            Err(error) => {
-                self.failure = Some(WorkerFailure::Unverified);
-                issue(&mut self.faults, error.to_string());
-                return false;
+    /// Force Stop uses the child's kill operation, never a second interrupt.
+    pub fn force_stop(&mut self) -> io::Result<()> {
+        let Some(child) = self.child.as_mut() else {
+            return Ok(());
+        };
+        if child.try_wait()?.is_some() {
+            return Ok(());
+        }
+        child.kill()?;
+        self.forced = true;
+        Ok(())
+    }
+    /// Reap when ready; return a completion only after all three pipe threads settle.
+    pub fn poll(&mut self) -> io::Result<Option<WorkerCompletion>> {
+        let Some(child) = self.child.as_mut() else {
+            return Ok(None);
+        };
+        if self.exit.is_none() {
+            self.exit = child.try_wait()?;
+        }
+        for event in self.events.try_iter() {
+            if let Some(failure) = event {
+                self.failure.get_or_insert(failure);
+            }
+            let summary = self
+                .report
+                .with_report(|report| report.summary().is_some())
+                .unwrap_or(false);
+            if self.failure.is_some() || !summary {
+                child.kill()?;
+            }
+        }
+        if self.exit.is_none() {
+            self.exit = child.try_wait()?;
+        }
+        let Some(exit) = self.exit else {
+            return Ok(None);
+        };
+        if !self.output.as_ref().is_some_and(|task| task.is_finished())
+            || !self
+                .diagnostics
+                .as_ref()
+                .is_some_and(|task| task.is_finished())
+            || !self.input.as_ref().is_some_and(|task| task.is_finished())
+        {
+            return Ok(None);
+        }
+        let output = self
+            .output
+            .take()
+            .expect("finished reader")
+            .join()
+            .unwrap_or_else(|_| StreamEnd {
+                jsonl: Vec::new(),
+                tail: true,
+                failure: Some(WorkerFailure::Transport),
+            });
+        let diagnostics = self
+            .diagnostics
+            .take()
+            .expect("finished diagnostics")
+            .join()
+            .ok()
+            .and_then(Result::ok);
+        if !self
+            .input
+            .take()
+            .expect("finished writer")
+            .join()
+            .ok()
+            .is_some_and(|result| result.is_ok())
+        {
+            self.failure.get_or_insert(WorkerFailure::Transport);
+        }
+        self.failure = self.failure.or(output.failure);
+        let mut report = match self.report.0.lock() {
+            Ok(report) => report,
+            Err(_) => {
+                self.child.take();
+                return Ok(Some(WorkerCompletion {
+                    state: WorkerState::Incomplete,
+                    exit,
+                    failure: Some(WorkerFailure::Transport),
+                    report: self.report.clone(),
+                    jsonl: output.jsonl.into(),
+                    stderr: diagnostics.map_or_else(Vec::new, |d| d.bytes),
+                    stderr_truncated: true,
+                }));
             }
         };
-        let stopping = intent.interrupts > 0 || intent.closing || intent.aborted;
-        let probe_settled = settled(probe);
-        let expected_identity = identity_line(version);
-        let identity_valid = probe.stdout.bytes == expected_identity.as_bytes()
-            && probe.exit
-                == Some(ChildExit {
-                    code: Some(0),
-                    signal: None,
-                })
-            && !probe.stdout.truncated
-            && probe.stderr.total_bytes == 0;
-        let cancelled_probe = stopping
-            && !intent.aborted
-            && probe.transport_ok
-            && (identity_valid
-                || (probe.killed
-                    && probe.exit
-                        == Some(ChildExit {
-                            code: None,
-                            signal: Some(9),
-                        })
-                    && !probe.stdout.truncated
-                    && probe.stderr.total_bytes == 0
-                    && expected_identity
-                        .as_bytes()
-                        .starts_with(&probe.stdout.bytes)));
-        if !probe_settled
-            || !probe.transport_ok
-            || !probe.faults.is_empty()
-            || probe.exit
-                != Some(ChildExit {
-                    code: Some(0),
-                    signal: None,
-                })
-            || probe.stdout.bytes != identity_line(version).as_bytes()
-            || !probe.stderr.bytes.is_empty()
-            || stopping
-        {
-            self.settled = probe_settled;
-            self.failure = if !probe_settled {
-                Some(WorkerFailure::Unverified)
-            } else if !probe.transport_ok {
-                Some(WorkerFailure::Transport)
-            } else if cancelled_probe {
-                None
-            } else {
-                Some(WorkerFailure::Identity)
-            };
-            self.reusable = cancelled_probe && probe_settled;
-            self.faults = probe.faults.clone();
-            self.stderr = probe.stderr.bytes.clone();
-            self.stderr_truncated = probe.stderr.truncated;
-            if self.failure == Some(WorkerFailure::Identity) {
-                let _ = finalize_report(report, health, |report| {
-                    report.invalidate(ProtocolFailure::IncompatibleHelper)
-                });
+        let started = report.start().is_some();
+        let interrupted = report.summary().is_some_and(|summary| summary.interrupted);
+        if let Err(failure) = report.finish(exit.code(), output.tail) {
+            self.failure.get_or_insert(WorkerFailure::Protocol(failure));
+        }
+        let state = if self.forced {
+            WorkerState::ForceStopped
+        } else if !started && interrupted_exit(exit) {
+            WorkerState::StoppedBeforeStart
+        } else if !started && exit.code() == Some(2) {
+            WorkerState::RequestRefused
+        } else if self.failure.is_some() || diagnostics.is_none() {
+            WorkerState::Incomplete
+        } else if interrupted {
+            WorkerState::Stopped
+        } else if exit.success() {
+            WorkerState::Completed
+        } else {
+            WorkerState::CompletedWithFailures
+        };
+        drop(report);
+        if diagnostics.is_none() {
+            self.failure.get_or_insert(WorkerFailure::Transport);
+        }
+        let diagnostics = diagnostics.unwrap_or(Diagnostics {
+            bytes: Vec::new(),
+            truncated: false,
+        });
+        self.child.take();
+        Ok(Some(WorkerCompletion {
+            state,
+            exit,
+            failure: self.failure,
+            report: self.report.clone(),
+            jsonl: output.jsonl.into(),
+            stderr: diagnostics.bytes,
+            stderr_truncated: diagnostics.truncated,
+        }))
+    }
+}
+impl Drop for WorkerRun {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            // Abandoned ownership is settled off the UI thread.
+            thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+    }
+}
+fn interrupted_exit(status: ExitStatus) -> bool {
+    use std::os::unix::process::ExitStatusExt;
+    status.code() == Some(130) || status.signal() == Some(2)
+}
+fn read_output(
+    mut reader: impl Read,
+    report: ReportHandle,
+    dry_run: bool,
+    events: mpsc::Sender<Option<WorkerFailure>>,
+) -> StreamEnd {
+    let mut framing = FrameSplitter::default();
+    let mut jsonl = Vec::new();
+    let mut buffer = [0; 16 * 1024];
+    let mut failure = None;
+    loop {
+        let count = match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => {
+                failure = Some(WorkerFailure::Transport);
+                break;
             }
-            return false;
+        };
+        if jsonl.len().saturating_add(count) >= eml_protocol::MAX_RUN_BYTES {
+            failure = Some(WorkerFailure::Protocol(ProtocolFailure::ResourceLimit));
+            break;
         }
-        true
-    }
-    fn apply_observed(
-        &mut self,
-        observed: Observed,
-        token: &WorkerControl,
-        report: &Mutex<RunReport>,
-        health: &Health,
-    ) {
-        self.exit_code = observed.exit.and_then(|exit| exit.code);
-        self.signal = observed.exit.and_then(|exit| exit.signal);
-        self.settled = settled(&observed);
-        self.faults = observed.faults.clone();
-        self.stderr = observed.stderr.bytes.clone();
-        self.stderr_truncated = observed.stderr.truncated;
-        self.interrupt_calls_succeeded = observed.interrupts;
-        self.first_interrupt_observed = observed.first;
-        let intent = token.intent(Instant::now());
-        self.input_may_have_been_sent = intent
-            .as_ref()
-            .map_or(true, |intent| intent.input_may_have_been_sent);
-        let stopped = intent.is_ok_and(|intent| intent.interrupts > 0 || intent.closing);
-        let protocol = finalize_report(report, health, |report| {
-            report.finish(self.exit_code, observed.stdout.tail)
-        })
-        .unwrap_or_else(Err);
-        let expected_partial = stopped
-            && (self.exit_code == Some(130) || (self.signal == Some(9) && observed.killed))
-            && matches!(
-                protocol,
-                Err(ProtocolFailure::MissingSummary
-                    | ProtocolFailure::IncompleteTail
-                    | ProtocolFailure::ExitDisagreement)
+        jsonl.extend_from_slice(&buffer[..count]);
+        let accepted = framing.append(&buffer[..count], |frame| {
+            let mut report = report.0.lock().map_err(|_| WorkerFailure::Transport)?;
+            let first = report.start().is_none();
+            report.accept_frame(frame).map_err(|error| {
+                if first {
+                    WorkerFailure::Identity
+                } else {
+                    WorkerFailure::Protocol(error)
+                }
+            })?;
+            if report.start().is_some_and(|start| start.dry_run != dry_run) {
+                return Err(WorkerFailure::Protocol(ProtocolFailure::InvalidOrder));
+            }
+            Ok::<_, WorkerFailure>(())
+        });
+        if let Err(error) = accepted {
+            failure = Some(
+                if report.with_report(|report| report.start().is_none()) == Some(true) {
+                    WorkerFailure::Identity
+                } else {
+                    error
+                },
             );
-        let refused =
-            self.exit_code == Some(2) && observed.stdout.total_bytes == 0 && observed.ready;
-        self.reusable = self.settled
-            && observed.transport_ok
-            && (protocol.is_ok() || expected_partial || refused);
-        if !self.settled {
-            self.failure = Some(WorkerFailure::Unverified);
-        } else if !self.reusable {
-            self.failure = Some(WorkerFailure::Transport);
+            break;
         }
     }
+    let tail = framing.finish();
+    let _ = events.send(failure);
+    StreamEnd {
+        jsonl,
+        tail,
+        failure,
+    }
+}
+fn read_diagnostics(mut reader: impl Read) -> io::Result<Diagnostics> {
+    let mut diagnostics = Diagnostics {
+        bytes: Vec::new(),
+        truncated: false,
+    };
+    let mut buffer = [0; 4096];
+    loop {
+        let count = match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        let retained = count.min(MAX_STDERR_BYTES - diagnostics.bytes.len());
+        diagnostics.bytes.extend_from_slice(&buffer[..retained]);
+        diagnostics.truncated |= retained < count;
+    }
+    Ok(diagnostics)
 }

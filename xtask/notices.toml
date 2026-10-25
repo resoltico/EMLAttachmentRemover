@@ -1,6 +1,0 @@
-# Selected licenses in the reviewed CLI/private-worker normal/build closures. This is not the
-# advisory/source policy for dev, tool or fuzz dependencies.
-accepted = ["MPL-2.0", "MIT", "BSD-3-Clause", "Unicode-3.0"]
-ignore-dev-dependencies = true
-ignore-build-dependencies = false
-ignore-transitive-dependencies = false

@@ -5,44 +5,48 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-autobins = false
 
 [features]
-native-fixtures = []
-macos-gui = ["dep:slint", "dep:slint-build", "dep:fontique", "dep:eml-core", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation", "dep:block2", "dep:raw-window-handle", "dep:base64"]
+default = ["renderer-software"]
+renderer-software = ["slint/renderer-software"]
+renderer-skia = ["slint/renderer-skia"]
+desktop = ["slint/backend-winit", "slint/raw-window-handle-06", "slint/unstable-winit-030", "dep:rfd", "dep:opener", "dep:objc2", "dep:objc2-app-kit"]
 
 [dependencies]
 eml-app = { path = "../eml-app" }
+eml-core = { path = "../eml-core" }
 eml-protocol = { path = "../eml-protocol" }
-slint = { version = "=1.18.1", optional = true, default-features = false, features = ["std", "compat-1-18", "backend-winit", "renderer-software", "accessibility", "raw-window-handle-06", "unstable-winit-030"] }
-eml-core = { path = "../eml-core", optional = true }
-base64 = { workspace = true, optional = true }
+slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-18", "accessibility"] }
+# Embedded AboutSlint SVG and widget icons also need decoding without winit.
+i-slint-core = { version = "=1.18.1", default-features = false, features = ["image-decoders", "svg"] }
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+dirs = "6.0.0"
+rfd = { version = "0.17.2", optional = true }
+opener = { version = "0.8.5", features = ["reveal"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-fontique = { version = "=0.11.1", optional = true, default-features = false, features = ["system"] }
 objc2 = { version = "0.6.5", optional = true }
-objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "block2", "NSApplication", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSView", "NSResponder", "NSAppearance", "NSFont", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSColor", "NSColorSpace", "NSWorkspace", "NSAccessibility", "NSPasteboard", "NSPasteboardItem"] }
-objc2-foundation = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSArray", "NSData", "NSString", "NSURL", "NSValue", "NSObject", "NSUserDefaults", "NSDictionary"] }
-block2 = { version = "0.6.2", optional = true }
-raw-window-handle = { version = "0.6.2", optional = true }
+objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSApplication"] }
 
 [build-dependencies]
-slint-build = { version = "=1.18.1", optional = true, default-features = false, features = ["compat-1-18"] }
+slint-build = { version = "=1.18.1", default-features = false, features = ["compat-1-18"] }
+
+[dev-dependencies]
+i-slint-backend-testing = "=1.18.1"
 
 [[bin]]
-name = "EMLAttachmentRemover"
+name = "emlattachmentremover-gui"
 path = "src/main.rs"
-required-features = ["macos-gui"]
-
-[[bin]]
-name = "macos-preference-observation"
-path = "tests/support/preference_observation.rs"
-required-features = ["macos-gui", "native-fixtures"]
-
-[target.'cfg(target_os = "macos")'.dev-dependencies]
-eml-macos = { path = "../eml-macos" }
-tempfile.workspace = true
-serde_json.workspace = true
+required-features = ["desktop"]
 
 [lints]
 workspace = true
+
+# Cargo builds this stable test executable before spawning parallel tests.
+[[bin]]
+name = "eml-gui-cli-fixture"
+path = "../eml-app/tests/support/cli_fixture.rs"
+test = false

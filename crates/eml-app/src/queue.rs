@@ -5,6 +5,8 @@ use serde::Serialize;
 use std::{collections::VecDeque, path::PathBuf};
 /// Maximum admitted waiting selections, excluding the one active run.
 pub const MAX_WAITING_REQUESTS: usize = 8;
+/// Maximum retained complete or active reports.
+pub const MAX_RETAINED_REPORTS: usize = 2;
 
 /// Session-local identity; never derived from a displayed filename or queue index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -54,7 +56,11 @@ pub struct RequestSnapshot {
 }
 impl RequestSnapshot {
     /// Capture paths without resolving or opening them; core owns filesystem admission.
-    pub fn new(paths: Vec<PathBuf>, destination: Option<PathBuf>) -> Result<Self, QueueError> {
+    pub fn new(
+        paths: Vec<PathBuf>,
+        destination: Option<PathBuf>,
+        mode: RunMode,
+    ) -> Result<Self, QueueError> {
         if paths.is_empty()
             || paths.iter().any(|path| !path.is_absolute())
             || destination.as_ref().is_some_and(|path| !path.is_absolute())
@@ -70,7 +76,7 @@ impl RequestSnapshot {
             paths,
             working_directory,
             output: destination.map_or(OutputLocation::BesideSource, OutputLocation::Directory),
-            mode: RunMode::Create,
+            mode,
         };
         request
             .validate_path_limits()
@@ -93,7 +99,7 @@ impl RequestSnapshot {
                 OutputLocation::BesideSource => None,
                 OutputLocation::Directory(path) => Some(NativePathValue::new(path)),
             },
-            dry_run: false,
+            dry_run: mode == RunMode::DryRun,
         })
         .map_err(|_| QueueError::RequestEncoding)?;
         if encoded.len() > MAX_REQUEST_BYTES {
@@ -150,7 +156,7 @@ impl RunQueue {
         Ok(Some(next))
     }
     fn report_capacity_full(&self) -> bool {
-        self.reports.len() >= 2
+        self.reports.len() >= MAX_RETAINED_REPORTS
     }
     /// Waiting work cannot start until a retained report is dismissed.
     /// This uses the same reservation rule as start_next, without mutating it.

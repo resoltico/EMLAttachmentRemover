@@ -1,10 +1,9 @@
 # MIME preparation
 
-The reusable `eml_core::prepare_message` capability prepares immutable bytes,
+The reusable `eml_message::prepare_message` capability prepares immutable bytes,
 authorizes removal independently, and verifies exact expected bytes and retained
 structure. Retained text/plain and text/html payloads are never decoded or
-regenerated. Native execution and release acceptance require the separate
-[verification gates](verification.md).
+regenerated. Filesystem execution is separate; see the [architecture](architecture.md).
 
 ## Retained body and removal policy
 
@@ -13,7 +12,8 @@ text/html representations remain in source order, including empty bodies and
 their original encoded payload bytes. A filename does not decide whether a part
 is body content.
 
-An ordinary non-root entity with attachment disposition is removed whole before
+An ordinary non-root entity with a present non-inline disposition, including a valid
+extension token such as `x-unknown`, is removed whole before
 its interior is parsed. A multipart/related container selects its direct body root
 by `start`, or its first child when `start` is absent; every other direct child is
 removed whole as a related resource. Other multipart containers classify all
@@ -71,3 +71,7 @@ underscore-as-space are decoded. Invalid or undecodable words remain literal.
 Whitespace is suppressed only between two successfully decoded adjacent words,
 including folded linear whitespace after header unfolding. The scanner's
 lookahead is bounded even for long repeated unterminated prefixes.
+
+Retained-body `multipart/report` is refused with `UNSUPPORTED_MIME`: a body-only
+copy cannot preserve its required machine-readable parts. Attached reports and
+nonselected related reports remain opaque removable entities.

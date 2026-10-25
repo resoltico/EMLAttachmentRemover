@@ -1,6 +1,0 @@
-# Selected enabled macOS GUI normal/build license expressions. Per-package
-# source/material review remains mandatory; generator success is not completeness.
-accepted = ["BSD-2-Clause", "MPL-2.0", "MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0", "Zlib", "LicenseRef-Slint-Royalty-free-2.0"]
-ignore-dev-dependencies = true
-ignore-build-dependencies = false
-ignore-transitive-dependencies = false

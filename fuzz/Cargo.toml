@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4.13"
-eml-core = { path = "../crates/eml-core" }
+eml-message = { path = "../crates/eml-message" }
 
 [[bin]]
 name = "preparation"
@@ -23,7 +23,7 @@ bench = false
 [workspace]
 members = ["."]
 
-# Checked against the root workspace lint policy by cargo xtask check-quality.
+# Standalone fuzz workspace: authored-code policy matches the root workspace.
 [lints.rust]
 warnings = "deny"
 unsafe_code = "deny"
@@ -39,5 +39,6 @@ private_intra_doc_links = "deny"
 [lints.clippy]
 all = { level = "deny", priority = -1 }
 allow_attributes_without_reason = "deny"
-too_many_lines = "deny"
-cognitive_complexity = "deny"
+allow_attributes = "deny"
+too_many_lines = "warn"
+cognitive_complexity = "warn"

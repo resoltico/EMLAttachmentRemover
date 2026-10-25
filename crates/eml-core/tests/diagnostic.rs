@@ -22,7 +22,11 @@ fn every_code_and_allowed_or_disallowed_phase_matches_the_contract_table() {
             "Duplicate documented code"
         );
     }
-    assert_eq!(expected.len(), 27, "Protocol1 has exactly27 semantic codes");
+    assert_eq!(
+        expected.len(),
+        28,
+        "Protocol 1 has exactly 28 semantic codes"
+    );
     assert_eq!(ErrorCode::ALL.len(), expected.len());
     assert_eq!(ErrorPhase::ALL.len(), 12);
     let phase_names: BTreeSet<_> = ErrorPhase::ALL.iter().map(|phase| phase.as_str()).collect();
@@ -52,6 +56,7 @@ fn preparation_classification_is_exhaustive_and_preserves_domain_diagnostics() {
         (Refusal::Malformed, ErrorCode::Malformed),
         (Refusal::LimitExceeded, ErrorCode::LimitExceeded),
         (Refusal::Protected, ErrorCode::Protected),
+        (Refusal::UnsupportedMime, ErrorCode::UnsupportedMime),
         (Refusal::NoBody, ErrorCode::NoBody),
         (Refusal::Internal, ErrorCode::Internal),
     ] {
@@ -61,13 +66,14 @@ fn preparation_classification_is_exhaustive_and_preserves_domain_diagnostics() {
             detail: "Independent source refusal",
         };
         let before = error.clone();
-        assert_eq!(error.code(), expected);
-        assert_eq!(error.phase(), ErrorPhase::Prepare);
-        assert!(error.code().allows_phase(error.phase()));
+        assert_eq!(ErrorCode::from_preparation(&error), expected);
+        assert!(ErrorCode::from_preparation(&error).allows_phase(ErrorPhase::Prepare));
         assert_eq!(error, before);
     }
-    assert_eq!(PreparationError::Interrupted.code(), ErrorCode::Interrupted);
-    assert_eq!(PreparationError::Interrupted.phase(), ErrorPhase::Prepare);
+    assert_eq!(
+        ErrorCode::from_preparation(&PreparationError::Interrupted),
+        ErrorCode::Interrupted
+    );
 }
 
 #[test]
@@ -97,12 +103,11 @@ fn known_wire_guidance_does_not_invent_meanings_for_future_or_misspelled_codes()
         Some(ErrorCode::Malformed)
     );
     assert!(
-        ErrorCode::Malformed
-            .recovery_hint()
+        eml_core::vocabulary::recovery_hint(ErrorCode::Malformed.as_str())
             .unwrap()
             .contains("Export")
     );
-    assert!(ErrorCode::Internal.recovery_hint().is_none());
+    assert!(eml_core::vocabulary::recovery_hint(ErrorCode::Internal.as_str()).is_none());
     assert!(ErrorCode::from_wire_name("malformed").is_none());
     assert!(ErrorCode::from_wire_name("FUTURE_CODE").is_none());
 }

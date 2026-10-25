@@ -1,137 +1,118 @@
 # EML Attachment Remover
 
-Create attachment-stripped EML copies while leaving original messages untouched.
-The application uses reusable Rust libraries, a native CLI and a Slint macOS
-frontend. Download the separate macOS, Linux or Windows CLI archive, or the
-macOS app for your CPU, from [Releases](https://github.com/resoltico/EMLAttachmentRemover/releases).
-See the [platform policy](#native-platform-policy) before installing. Public
-release requires complete [native, archive and GUI qualification](docs/verification.md)
-for the selected source and the [release procedure](docs/release.md). Check the
-source-specific [CI runs](https://github.com/resoltico/EMLAttachmentRemover/actions/workflows/ci.yml)
-for execution results.
+Create verified body-only copies of EML messages while keeping originals unchanged.
+Copies retain supported plain-text and HTML bodies, including their encoded bytes;
+attachments and other non-body MIME parts are removed. Retained HTML can still
+contain remote references or unsafe content. See the [MIME policy](docs/mime.md).
 
-## Run the CLI
+This branch documents unreleased 7.0.0. For existing downloads, use the
+documentation at their matching release tag.
 
-Install rustup, then build from a checkout. `rust-toolchain.toml` selects Rust:
+## Install
+
+Download from [Releases](https://github.com/resoltico/EMLAttachmentRemover/releases).
+Choose the archive matching your platform:
+
+| Product | Archive | Minimum platform |
+|---|---|---|
+| CLI, macOS Intel and Apple Silicon | `emlattachmentremover-VERSION-macos-universal.tar.gz` | macOS 15 |
+| Desktop app, both Mac CPUs | `emlattachmentremover-gui-VERSION-macos-universal.zip` | macOS 15 |
+| CLI, Linux x86_64 or aarch64 | `emlattachmentremover-VERSION-linux-ARCH.tar.gz` | Ubuntu 22.04 / glibc 2.35 |
+| CLI, Windows x86_64 or aarch64 | `emlattachmentremover-VERSION-windows-ARCH.zip` | Windows 10 |
+
+Extract into a new folder. On macOS and Linux, run `./emlattachmentremover --help`;
+on Windows, run `.\emlattachmentremover.exe --help` in PowerShell. Add the extracted
+executable to PATH if desired. CLI archives include LICENSE and third-party notices;
+the app carries both under `Contents/Resources`. Release assets include SHA256SUMS
+and GitHub artifact attestations. See [release verification](docs/release.md).
+
+The Mac app is ad hoc signed, without Developer ID or notarization. Move it to
+Applications and try opening it. If macOS blocks it, use System Settings → Privacy
+& Security → Open Anyway for that app, then confirm Open. Apple's
+[opening instructions](https://support.apple.com/en-us/102445) explain the exception.
+
+## CLI
 
 ```sh
-cargo build --locked --release -p remove-eml-attachments
-./target/release/remove-eml-attachments --help
-./target/release/remove-eml-attachments --dry-run -- message.eml
-./target/release/remove-eml-attachments -- message.eml
-mkdir copies
-./target/release/remove-eml-attachments --output-dir copies -- selected-folder
-./target/release/remove-eml-attachments --format json -- message.eml
+emlattachmentremover -- message.eml
+emlattachmentremover --dry-run -- mail-folder
+mkdir -p copies
+emlattachmentremover --output-dir copies -- mail-folder
+emlattachmentremover --format json -- message.eml
 ```
 
-On Windows the executable ends in `.exe`; native GNU LLVM builds also require
-its selected Rust sysroot linker and rust-mingw component. See
-[contributing](CONTRIBUTING.md). These examples require your own input file; the
-program never modifies it. Paths are literal native arguments. Let the shell
-expand home-directory shorthand; display text is not an operational filename.
-Use `--` before filenames that begin with a dash.
-The selected output root must already exist; the program creates only the
-required mirrored directories beneath it.
+Copies use `<stem>.no-attachments.eml`. Explicit files go directly into the chosen
+existing output folder; selected folders mirror their root names and relative
+layout. Without `--output-dir`, copies stay beside their sources. Names that exceed
+native component limits are shortened. Conflicts are refused without retry names.
+Identical existing copies are verified and synchronized; differing files stay intact.
+Directory walks skip hidden entries and generated copies. Explicit selections are
+still checked. Overlapping input/output trees and source/destination aliases are refused.
 
-A copy of `message.eml` is named `message.no-attachments.eml`. The final `.eml`
-extension is recognized without regard to case. A long stem is shortened to the
-actual destination component limit; this can cause a refused collision. There
-is no numeric collision search or name digest. Directory walks skip recognized
-copy suffixes; an explicitly selected file is still an input.
+`--dry-run` checks sources and destinations without writes. A later Create repeats
+admission and verification. `--request FILE|-` accepts an EOF-terminated protocol-1
+JSON request instead of positional paths, output and dry-run options. See the
+[protocol](docs/protocol.md) for the request, JSONL events and native path encoding.
 
-Without `--output-dir`, copies go beside each source. With it, explicitly selected
-files go directly into that folder and selected directories mirror their relative
-tree under a root label. Multiple inputs that reserve the same destination fail;
-choose distinct destinations rather than expecting automatic renaming. An
-identical existing copy is checked and resynchronized as up to date. A different
-existing file remains untouched. Output overlapping selected source trees and
-source/destination aliases are refused.
+Exit codes: 0 completed successfully, 1 run/delivery failure, 2 invalid invocation
+or pre-stream admission failure, 130 interrupted. Ctrl-C requests cooperative stop;
+a second interrupt forces exit. Completed copies remain. Inspect partial results
+and reported cleanup failures before retrying. Recognizable staging files use
+`.emlattachmentremover-<random>.tmp`; abandoned files are never swept automatically.
 
-`--dry-run` checks available preparation and destination facts without creating
-folders, stages or copies. It cannot establish that a later create will succeed.
-The first interrupt requests cooperative stop; a second forces exit 130 and may
-leave a recognized staging directory. Completed copies remain. An OS or storage
-call can block beyond cooperative cancellation; no universal stop deadline is
-promised. Inspect retained residue only after all processing using that destination
-has settled.
+## Desktop app
 
-JSON mode emits protocol 1 start/item/summary records, each terminated by LF.
-`--request FILE` or `--request -` accepts one bounded EOF-terminated native-path
-request instead of positional inputs. See the [protocol contract](docs/protocol.md)
-for lossless path encoding, required nullable fields, counts, failures and limits.
-Exit 0 means completed results, exit 1 means failure, exit 2 means pre-stream
-usage/request admission failure, and exit 130 means cooperative or forced interruption.
-A missing summary or truncated stream is incomplete evidence.
+Add files or folders using the buttons or drop paths into the window. Choose
+Create or Check and the destination before adding a selection. Each queued request
+captures those settings; up to eight requests wait behind the active run. Two
+retained reports pause the queue until a completed report is dismissed.
 
-## Message and storage policy
+Select a report to inspect results, removals and its retained diagnostics. Run-level
+discovery failures are explained even when no item results exist. Export feedback
+is labeled separately from report warnings. Long filenames retain their suffixes;
+full paths remain available through tooltips and accessibility text. A settled
+Check with a valid final report enables Create Copies, which starts a fresh request using the current
+destination. Stop asks the worker to finish cooperatively; Force Stop requires
+confirmation. Busy Quit offers Wait, Stop & Quit, or confirmed Force Stop & Quit.
+Quit waits for worker and report-export settlement. Export Report saves the run's
+original protocol-1 JSONL stream, including a partial stream after failure.
 
-Preparation removes authorized source spans; it does not decode and regenerate
-retained message content. It keeps supported text body alternatives, selects the
-related body root and removes non-root related resources, including inline images.
-Other non-body leaves, including inline images outside related containers,
-calendar payloads and opaque encoded forwarded messages, are removed even without
-an attachment disposition. At least one supported text body must remain. It
-handles embedded messages conservatively and refuses protected or structurally
-unusable messages. Attached files, including mail containers, are
-not exported elsewhere. Source bytes, line endings and retained structure are
-independently checked. See [MIME behavior](docs/mime.md).
+Use Help → About for AboutSlint, the project website and third-party notices.
+Saved destinations use the platform configuration folder's
+`EMLAttachmentRemover/preferences.json`. Earlier NSUserDefaults settings are not
+imported; choose the destination again. Unreadable or corrupt preferences are preserved. The app starts with defaults and
+shows the exact path and recovery guidance. Destination changes remain session-only
+until the settings problem is corrected and the app restarted.
 
-This is not a malware scanner or an HTML sanitizer. Retained HTML can contain
-remote content, tracking and active rendering behavior; use a viewer configured
-for untrusted mail. An attachment-free copy is not a safe-to-open certification.
+The app accepts launch arguments, for example:
 
-Publication uses private staging and atomic no-replace operations with independent
-source, candidate, address, synchronization and cleanup observations. A file can
-be published even when a later check fails; inspect the receipt rather than
-assuming every failed result means no copy exists. OS flush success is not a
-promise of hardware durability, network-server persistence or immunity to later
-changes by an equally privileged actor. Unsupported permission/volume models
-are refused. See [filesystem boundaries](docs/filesystem.md) and
-[Windows publication](docs/windows-publication.md). Windows copies inherit the
-destination folder's ACL. Another writer may make an item fail by redirecting an
-empty destination, but the app checks containment before writing message bytes;
-it does not promise that other writers cannot later change a completed copy.
+```sh
+open -n -a '/Applications/EML Attachment Remover.app' --args "$PWD/message.eml"
+```
 
-## Native platform policy
+Dock-icon drop, Finder Services and Finder Open With integration are removed.
+Native file dialogs use the toolkit/platform implementation; clipboard shortcuts
+in their Go-To fields may differ from earlier releases.
 
-The authoritative [distribution table](xtask/distribution.toml) declares six
-separate CLI builds: macOS Intel/Apple Silicon, Linux x64/ARM64 and Windows
-x64/ARM64. Two separate macOS apps use their same-CPU private core-backed worker. No
-universal binary or other-platform GUI is provided. These are target policies;
-execution results are recorded in the source-specific CI run.
+## Limits and filesystem behavior
 
-macOS requires 15.0 or later. Qualification selects the Xcode version/build in
-`xtask/tools.toml`. Builds are ad hoc signed, without Developer ID or
-notarization; first launch may require app-specific **Open Anyway** in macOS
-Privacy & Security. No Gatekeeper configuration change is part of this project.
-The desktop workflow has one main window with queued runs, source/destination
-selection, per-file results and technical reports. [App details](docs/macos-app.md)
-describe the interface and its native qualification requirements.
-Intel macOS26 picker qualification runs on the exact hosted image declared in
-`xtask/distribution.toml`. It requires recognized current-boot Apple
-IconServices crash evidence before disabling that GUI user's affected agent,
-then tests the actual unchanged app. [Qualification records](docs/verification.md)
-retain preparation, product results and service readback. This establishes
-modified-host coverage, not general unmodified-host compatibility or proof that
-the service change caused recovery. Both complete macOS15 desktop suites remain
-required.
+A source may contain at most 256 MiB. Requests admit 4,096 explicit paths and 4 MiB
+of native input path bytes. Collection admits 4,096 work items, 100,000 visited
+entries, 64 directory levels and 8 MiB of charged reported paths. Split large
+selections or shorten paths when refused. These bounds govern inputs and reports;
+peak memory also includes prepared copies and retained reports.
 
-Linux targets Ubuntu 22.04+ with GNU/glibc, with required GLIBC symbols capped at
-2.35. Other distributions are unqualified. Windows targets system UCRT; native
-x64 testing uses Server 2022 and ARM64 uses Windows 11. This does not establish
-all Windows client patches. Hosted patch versions and compiled deployment minima
-are different evidence.
+Sources are read-only. Copies are written to a fresh staging file, verified,
+synchronized, then published without replacing an existing destination. Filesystem
+synchronization and requested-address observations are reported separately from
+publication. Ordinary owned folders are the supported environment; see the
+[threat model](docs/threat-model.md) for guarantees and excluded actors.
 
 ## Develop and redistribute
 
-See [CONTRIBUTING](CONTRIBUTING.md) for setup and checks, the
-[architecture](docs/architecture.md) for library boundaries and
-[verification](docs/verification.md) for bounded campaigns and required gates.
-Editable artwork, geometry and licensing information live under [artwork](artwork).
-
-Software uses MPL 2.0; owner artwork has separate terms in [LICENSE](LICENSE).
-Reviewed upstream third-party materials live under [legal](legal). Builds generate
-target-specific complete notices and accompanying license files inside each archive. Corresponding source must
-be made available when distributing MPL-covered binaries; use the matching source
-commit/tag and preserve all applicable notices. Each release identifies its
-source revision and includes checksums for its downloadable archives.
+See [CONTRIBUTING](CONTRIBUTING.md) for the shortest build and check commands,
+[architecture](docs/architecture.md) for crate boundaries, and the
+[changelog](CHANGELOG.md) for breaking changes. MPL-2.0-covered source is available
+in this repository; redistributors must preserve notices and corresponding source
+availability. Slint's desktop license and AboutSlint requirements also apply;
+see [legal materials](legal/README.md).

@@ -38,9 +38,9 @@ fn explicit_files_are_flat_and_walked_files_keep_root_and_relative_layout() {
     assert_eq!(plan.state(), DestinationPlanState::Complete);
     assert_eq!(plan.records().len(), 3);
     let expected = [
-        "out/file.BIN.no-attachments.eml",
         "out/Inbox/a.no-attachments.eml",
         "out/Inbox/nested/b.no-attachments.eml",
+        "out/file.BIN.no-attachments.eml",
     ]
     .map(PathBuf::from);
     assert_eq!(
@@ -51,7 +51,7 @@ fn explicit_files_are_flat_and_walked_files_keep_root_and_relative_layout() {
     );
     assert!(plan.records().iter().all(|row| row.failure().is_none()));
     assert_eq!(
-        plan.records()[0].destination().unwrap().observation(),
+        plan.records()[2].destination().unwrap().observation(),
         DestinationObservation::Missing
     );
     assert_eq!(
@@ -89,7 +89,7 @@ fn collisions_mark_all_contenders_even_when_existing_type_already_failed() {
             ErrorCode::DestinationCollision
         );
         assert!(
-            matches!(record.destination().unwrap().observation(), DestinationObservation::Present(value) if value.kind == eml_fs::EntryKind::Directory)
+            matches!(record.destination().unwrap().observation(), DestinationObservation::Present(value) if value.kind == eml_core::fs::EntryKind::Directory)
         );
     }
     assert!(root.path().join("out/a.no-attachments.eml").is_dir());
@@ -414,4 +414,117 @@ fn actual_combined_path_budget_retains_all_source_positions_and_only_admitted_de
     assert_eq!(fs::read_dir(&output).unwrap().count(), 0);
     drop(plan);
     root.close().unwrap();
+}
+
+#[test]
+fn ownership_names_and_execution_order_are_independent_of_argument_permutation() {
+    let root = scratch();
+    fs::create_dir_all(root.path().join("Inbox/deep")).unwrap();
+    fs::create_dir(root.path().join("out")).unwrap();
+    for file in ["Inbox/a.eml", "Inbox/deep/b.eml", "Inbox/deep/c.eml"] {
+        fs::write(root.path().join(file), b"owned source").unwrap();
+    }
+    let selections = ["Inbox", "Inbox/deep", "Inbox/deep/b.eml"];
+    let mut expected = None;
+    for indices in [
+        [0, 1, 2],
+        [2, 1, 0],
+        [1, 0, 2],
+        [1, 2, 0],
+        [0, 2, 1],
+        [2, 0, 1],
+    ] {
+        let choices = indices.map(|index| selections[index]);
+        let request = request(root.path(), &choices, Some("out"));
+        let control = RunControl::default();
+        let plan = plan_destinations(collect_sources(&request, &control).unwrap(), &control);
+        let facts: Vec<_> = plan
+            .records()
+            .iter()
+            .enumerate()
+            .map(|(index, row)| {
+                (
+                    plan.sources().display_path(index).unwrap().into_owned(),
+                    plan.display_path(index).unwrap().into_owned(),
+                    plan.sources().items()[index].origin(),
+                    row.failure().map(|error| error.code()),
+                )
+            })
+            .collect();
+        assert_eq!(facts.len(), 3);
+        assert_eq!(
+            facts
+                .iter()
+                .filter(|(_, _, origin, _)| *origin == eml_core::SourceOrigin::Explicit)
+                .count(),
+            1
+        );
+        if let Some(expected) = &expected {
+            assert_eq!(&facts, expected);
+        } else {
+            expected = Some(facts);
+        }
+    }
+    assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 0);
+}
+
+#[test]
+fn existing_hardlinked_outputs_refuse_all_contenders_without_changing_bytes() {
+    let root = scratch();
+    fs::create_dir(root.path().join("out")).unwrap();
+    for name in ["a.eml", "b.eml"] {
+        fs::write(root.path().join(name), b"source").unwrap();
+    }
+    let a = root.path().join("out/a.no-attachments.eml");
+    let b = root.path().join("out/b.no-attachments.eml");
+    fs::write(&a, b"existing winner").unwrap();
+    fs::hard_link(&a, &b).unwrap();
+    let req = request(root.path(), &["a.eml", "b.eml"], Some("out"));
+    let control = RunControl::default();
+    let plan = plan_destinations(collect_sources(&req, &control).unwrap(), &control);
+    assert!(plan.records().iter().all(|row| {
+        row.failure()
+            .is_some_and(|e| e.code() == ErrorCode::DestinationCollision)
+    }));
+    assert_eq!(fs::read(a).unwrap(), b"existing winner");
+    assert_eq!(fs::read(b).unwrap(), b"existing winner");
+}
+
+#[test]
+fn planned_file_and_mirror_prefix_conflicts_refuse_all_contenders_before_writes() {
+    let root = scratch();
+    fs::create_dir(root.path().join("out")).unwrap();
+    fs::create_dir(root.path().join("a.no-attachments.eml")).unwrap();
+    fs::write(root.path().join("a.eml"), b"source").unwrap();
+    fs::write(root.path().join("a.no-attachments.eml/b.eml"), b"source").unwrap();
+    let req = request(root.path(), &["a.eml", "a.no-attachments.eml"], Some("out"));
+    let control = RunControl::default();
+    let plan = plan_destinations(collect_sources(&req, &control).unwrap(), &control);
+    assert_eq!(plan.records().len(), 2);
+    assert!(plan.records().iter().all(|row| {
+        row.failure()
+            .is_some_and(|e| e.code() == ErrorCode::DestinationCollision)
+    }));
+    assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 0);
+}
+
+#[test]
+fn an_existing_file_used_as_a_mirror_refuses_all_known_contenders() {
+    let root = scratch();
+    fs::create_dir(root.path().join("out")).unwrap();
+    fs::create_dir(root.path().join("a.no-attachments.eml")).unwrap();
+    fs::write(root.path().join("a.eml"), b"source").unwrap();
+    fs::write(root.path().join("a.no-attachments.eml/b.eml"), b"source").unwrap();
+    let blocker = root.path().join("out/a.no-attachments.eml");
+    fs::write(&blocker, b"winner").unwrap();
+    let req = request(root.path(), &["a.eml", "a.no-attachments.eml"], Some("out"));
+    let control = RunControl::default();
+    let plan = plan_destinations(collect_sources(&req, &control).unwrap(), &control);
+    assert_eq!(plan.records().len(), 2);
+    assert!(plan.records().iter().all(|row| {
+        row.failure()
+            .is_some_and(|error| error.code() == ErrorCode::DestinationCollision)
+    }));
+    assert_eq!(fs::read(&blocker).unwrap(), b"winner");
+    assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 1);
 }

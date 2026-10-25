@@ -1,28 +1,19 @@
 //! Current-item destination ownership, mirror policy and ordered namespace work.
+use crate::fs::{
+    CleanupReceipt, CleanupState, EntryKind, Identity, SyncMethod, SyncReceipt, SyncState,
+};
 use crate::{
     DestinationPlan, ErrorCode, ErrorPhase, NamespaceObservation, OperationFailure, RunControl,
     destination::ReadOnlyParent,
-};
-use eml_fs::{
-    CleanupReceipt, CleanupState, EntryKind, Identity, SyncMethod, SyncReceipt, SyncState,
 };
 use std::{
     ffi::{OsStr, OsString},
     io,
     path::Component,
 };
-#[cfg(unix)]
-type MirrorCreation = eml_fs::CreatedDirectory;
-#[cfg(windows)]
-type MirrorCreation = eml_fs::DirectoryCreation;
-#[cfg(unix)]
-type Directory = eml_fs::BoundDirectory;
-#[cfg(windows)]
-type Directory = eml_fs::WritableDirectory;
-#[cfg(unix)]
-type Root = eml_fs::BoundDirectory;
-#[cfg(windows)]
-type Root = eml_fs::PinnedRoot;
+type MirrorCreation = crate::fs::CreatedDirectory;
+type Directory = crate::fs::BoundDirectory;
+type Root = crate::fs::BoundDirectory;
 
 #[derive(Default)]
 pub(super) struct PendingLayout {
@@ -179,68 +170,30 @@ fn not_needed() -> CleanupReceipt {
     }
 }
 fn root_directory(root: &Root) -> &Directory {
-    #[cfg(unix)]
-    {
-        root
-    }
-    #[cfg(windows)]
-    {
-        root.directory()
-    }
+    root
 }
-fn root_from(read: eml_fs::BoundDirectory, control: &RunControl) -> Result<Root, OperationFailure> {
+fn root_from(
+    read: crate::fs::BoundDirectory,
+    control: &RunControl,
+) -> Result<Root, OperationFailure> {
     checkpoint(control)?;
-    #[cfg(unix)]
-    {
-        read.admit_namespace()
-            .map_err(|error| native("Destination namespace cannot admit mutation", error))?;
-        Ok(read)
-    }
-    #[cfg(windows)]
-    {
-        let resolved = read
-            .resolved_path()
-            .map_err(|error| native("Destination root cannot be resolved", error))?;
-        eml_fs::PinnedRoot::bind_resolved(&resolved, read.identity(), || control.is_stopped())
-            .map_err(|error| match error {
-                eml_fs::RootBindingError::Interrupted => OperationFailure::new(
-                    ErrorCode::Interrupted,
-                    ErrorPhase::Stage,
-                    "Destination ancestry binding interrupted",
-                ),
-                eml_fs::RootBindingError::Native(error) => {
-                    native("Destination ancestry cannot be bound", error)
-                }
-            })
-    }
+    read.check_binding()
+        .map_err(|error| native("Destination directory cannot be verified", error))?;
+    Ok(read)
 }
 fn open_existing(parent: &Directory, name: &OsStr, expected: Identity) -> io::Result<Directory> {
-    #[cfg(unix)]
-    {
-        let child = parent.open_child(name)?;
-        if child.identity() != expected {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Opened mirror differs from observed identity",
-            ));
-        }
-        child.admit_namespace()?;
-        Ok(child)
+    let child = parent.open_child(name)?;
+    if child.identity() != expected {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Opened mirror differs from observed identity",
+        ));
     }
-    #[cfg(windows)]
-    {
-        parent.open_existing_child(name, expected)
-    }
+    child.check_binding()?;
+    Ok(child)
 }
-fn create(parent: &Directory, name: &OsStr) -> Result<MirrorCreation, eml_fs::CreationFailure> {
-    #[cfg(unix)]
-    {
-        parent.create_private_child(name)
-    }
-    #[cfg(windows)]
-    {
-        parent.create_child(name)
-    }
+fn create(parent: &Directory, name: &OsStr) -> Result<MirrorCreation, crate::fs::CreationFailure> {
+    parent.create_child(name)
 }
 
 impl DestinationBinding {
@@ -361,7 +314,7 @@ impl DestinationBinding {
         &mut self,
         name: &OsStr,
         expected: Option<Identity>,
-        observed: Option<eml_fs::EntryObservation>,
+        observed: Option<crate::fs::EntryObservation>,
         pending: &mut PendingLayout,
         uncertain_cleanup: &mut CleanupReceipt,
     ) -> Result<bool, OperationFailure> {
@@ -452,37 +405,17 @@ impl DestinationBinding {
         control: &RunControl,
         after_edge: bool,
     ) -> Result<(), OperationFailure> {
-        #[cfg(windows)]
         self.root
-            .check_held(|| !after_edge && control.is_stopped())
-            .map_err(|error| match error {
-                eml_fs::RootBindingError::Interrupted => OperationFailure::new(
-                    ErrorCode::Interrupted,
-                    ErrorPhase::Stage,
-                    "Destination binding interrupted",
-                ),
-                eml_fs::RootBindingError::Native(error) => {
-                    native("Held destination ancestry cannot be verified", error)
-                }
-            })?;
-        #[cfg(unix)]
-        self.root
-            .admit_namespace()
+            .check_binding()
             .map_err(|error| native("Held destination root cannot admit mutation", error))?;
         for mirror in &self.mirrors {
             if !after_edge {
                 checkpoint(control)?;
             }
-            #[cfg(unix)]
             mirror
                 .directory()
-                .admit_namespace()
-                .map_err(|error| native("Held mirror cannot admit mutation", error))?;
-            #[cfg(windows)]
-            mirror
-                .directory()
-                .check_held()
-                .map_err(|error| native("Held ordinary mirror cannot be verified", error))?;
+                .check_binding()
+                .map_err(|error| native("Held mirror cannot be verified", error))?;
         }
         Ok(())
     }
@@ -495,10 +428,7 @@ impl DestinationBinding {
         while let Some(mirror) = self.mirrors.pop() {
             if let Mirror::Added(created) = mirror {
                 let identity = created.directory().identity();
-                #[cfg(unix)]
                 let layout = created.remove_empty();
-                #[cfg(windows)]
-                let layout = created.release_unverified();
                 if layout.state == CleanupState::Complete {
                     pending.removed(identity);
                 }

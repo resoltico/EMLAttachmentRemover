@@ -1,6 +1,6 @@
 //! Bounded read-only comparison against the one verified prepared source.
+use crate::fs::{BoundFile, BoundFileError, FileSignature, Identity};
 use crate::{PreparedSource, RunControl};
-use eml_fs::{BoundFile, BoundFileError, FileSignature, Identity};
 use std::io;
 
 const COMPARE_CHUNK_BYTES: usize = 64 * 1024;
@@ -85,11 +85,7 @@ pub struct ComparedExisting {
     equal: bool,
 }
 impl ComparedExisting {
-    #[cfg(windows)]
-    pub(super) fn into_file(self) -> BoundFile {
-        self.file
-    }
-    pub(super) fn sync_file(&self) -> eml_fs::SyncReceipt {
+    pub(super) fn sync_file(&self) -> crate::fs::SyncReceipt {
         self.file.sync_file()
     }
     /// Original native signature qualified before and after the bounded comparison.

@@ -1,119 +1,144 @@
-//! Bounded native archive inspection/readback on one immutable snapshot.
-//! Structural/material evidence is separate from executable qualification.
-use sha2::{Digest, Sha256};
+use crate::{Result, capture};
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs::{self, OpenOptions},
-    io::{self, Cursor, Read, Seek, SeekFrom, Write},
+    fs,
+    io::{Read, Write},
     path::{Path, PathBuf},
+    process::Command,
 };
 
-/// Shipping archives are bounded independently of advertised expanded sizes.
-pub const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
-const MAX_DIRECTORY_BYTES: u32 = 8 * 1024 * 1024;
-const MAX_ENTRIES: u16 = 4096;
-const MAX_NAME_BYTES: usize = 1024;
-const MAX_PATH_DEPTH: usize = 8;
-const MAX_CLAIM_TEXT_BYTES: usize = 16 * 1024 * 1024;
-const MAX_MEMBER_BYTES: u64 = 256 * 1024 * 1024;
-const MAX_EXPANDED_BYTES: u64 = 1024 * 1024 * 1024;
-
-/// One immutable bounded copy used by inspection and extraction alike.
-pub struct ArchiveSnapshot {
-    bytes: Vec<u8>,
+pub(crate) struct Timestamp {
+    epoch: u64,
+    zip: zip::DateTime,
 }
-
-/// Byte identity of the immutable inspected input, not review/behavior quality.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ByteIdentity {
-    /// Exact snapshot byte length.
-    pub byte_length: usize,
-    /// SHA-256 of these same immutable bytes.
-    pub sha256: String,
-}
-impl ByteIdentity {
-    /// Identify bytes without implying source provenance or review quality.
-    pub fn of(bytes: &[u8]) -> Self {
-        Self {
-            byte_length: bytes.len(),
-            sha256: Sha256::digest(bytes)
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect(),
-        }
+impl Timestamp {
+    pub(crate) fn commit() -> Result<Self> {
+        let epoch =
+            capture(Command::new("git").args(["show", "-s", "--format=%ct", "HEAD"]))?.parse()?;
+        let date = capture(Command::new("git").env("TZ", "UTC").args([
+            "show",
+            "-s",
+            "--date=format-local:%Y %m %d %H %M %S",
+            "--format=%cd",
+            "HEAD",
+        ]))?;
+        let parts = date
+            .split_whitespace()
+            .map(str::parse::<u16>)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let zip = zip::DateTime::from_date_and_time(
+            parts[0],
+            parts[1].try_into()?,
+            parts[2].try_into()?,
+            parts[3].try_into()?,
+            parts[4].try_into()?,
+            (parts[5] / 2 * 2).try_into()?,
+        )?;
+        Ok(Self { epoch, zip })
     }
 }
-mod enclosure;
-mod layout;
-mod tar_format;
-mod zip_format;
-
-pub use enclosure::{ArtifactDirectory, create_artifact_directory};
-pub use layout::validate_member_name;
-use layout::*;
-pub use tar_format::encode_cli_tar_gz;
-pub use zip_format::{ZipMember, encode_cli_zip, inspect_zip_directory};
-
-/// Extracted CLI bytes inside a retained private enclosure. Dropping this value
-/// closes held descriptors but does not remove useful files or failure evidence.
-/// Retain it through bounded pathname-operation observation. If settlement is
-/// unknown, abort later work and preserve files; handles can then close without
-/// sweeping/removing unverified resources. The full-chain policy excludes
-/// interference by the trusted UID/root.
-pub struct ExtractedCli {
-    root: PathBuf,
-    _enclosure: ArtifactDirectory,
+fn files(directory: &Path, result: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            files(&path, result)?;
+        } else {
+            result.push(path);
+        }
+    }
+    Ok(())
 }
-impl ExtractedCli {
-    /// Package directory beneath the private enclosure.
-    pub fn root(&self) -> &Path {
-        &self.root
+pub(crate) fn write(stage: &Path, out: &Path, stamp: &Timestamp) -> Result<()> {
+    let mut paths = Vec::new();
+    files(stage, &mut paths)?;
+    paths.sort();
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(out)?;
+    if out.extension().is_some_and(|extension| extension == "zip") {
+        let mut archive = zip::ZipWriter::new(file);
+        for path in paths {
+            let options = zip::write::SimpleFileOptions::default()
+                .last_modified_time(stamp.zip)
+                .unix_permissions(mode(&path)?)
+                .compression_method(zip::CompressionMethod::Deflated);
+            let name = path
+                .strip_prefix(stage)?
+                .to_str()
+                .ok_or("non-UTF8 archive path")?
+                .replace('\\', "/");
+            archive.start_file(name, options)?;
+            let mut bytes = Vec::new();
+            fs::File::open(path)?.read_to_end(&mut bytes)?;
+            archive.write_all(&bytes)?;
+        }
+        archive.finish()?.sync_all()?;
+    } else {
+        let gzip = flate2::GzBuilder::new()
+            .mtime(stamp.epoch.try_into()?)
+            .write(file, flate2::Compression::default());
+        let mut archive = tar::Builder::new(gzip);
+        for path in paths {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(fs::metadata(&path)?.len());
+            header.set_mode(mode(&path)?);
+            header.set_mtime(stamp.epoch);
+            header.set_cksum();
+            archive.append_data(
+                &mut header,
+                path.strip_prefix(stage)?,
+                fs::File::open(&path)?,
+            )?;
+        }
+        archive.into_inner()?.finish()?.sync_all()?;
     }
+    Ok(())
 }
-
-impl ArchiveSnapshot {
-    /// Borrow the immutable bytes used by inspection; native extraction receives
-    /// an owned copy of these bytes, never a second read of the caller's path.
-    pub fn bytes(&self) -> &[u8] {
-        &self.bytes
+fn mode(path: &Path) -> Result<u32> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        Ok(fs::metadata(path)?.permissions().mode() & 0o777)
     }
-    /// Identify the same snapshot used by all parsing and extraction passes.
-    pub fn identity(&self) -> ByteIdentity {
-        ByteIdentity::of(&self.bytes)
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(0o644)
     }
-    /// Read a snapshot without trusting an advertised file length for allocation.
-    pub fn read(path: &Path) -> io::Result<Self> {
-        if !fs::symlink_metadata(path)?.is_file() {
-            return Err(invalid(
-                "Archive input must be an ordinary non-symlink file",
-            ));
-        }
-        let mut open = OpenOptions::new();
-        open.read(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            open.custom_flags(
-                (rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::NOFOLLOW).bits() as i32,
-            );
-        }
-        let file = open.open(path)?;
-        if !file.metadata()?.is_file() {
-            return Err(invalid("Archive input must be an ordinary file"));
-        }
-        let mut bytes = Vec::new();
-        file.take(MAX_ARCHIVE_BYTES + 1).read_to_end(&mut bytes)?;
-        if bytes.len() as u64 > MAX_ARCHIVE_BYTES {
-            return Err(invalid("Archive snapshot exceeds its bound"));
-        }
-        Ok(Self { bytes })
-    }
-}
-
-fn invalid(message: &'static str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+    #[test]
+    fn archives_use_commit_time_contents_and_refuse_replacement() {
+        let scratch = tempfile::tempdir().unwrap();
+        let stage = scratch.path().join("stage");
+        fs::create_dir(&stage).unwrap();
+        fs::write(stage.join("LICENSE"), b"license text").unwrap();
+        let stamp = Timestamp::commit().unwrap();
+        for extension in ["tar.gz", "zip"] {
+            let path = scratch.path().join(format!("test.{extension}"));
+            write(&stage, &path, &stamp).unwrap();
+            assert!(write(&stage, &path, &stamp).is_err());
+            if extension == "zip" {
+                let mut zip = zip::ZipArchive::new(fs::File::open(path).unwrap()).unwrap();
+                assert_eq!(zip.len(), 1);
+                let mut member = zip.by_name("LICENSE").unwrap();
+                assert_eq!(member.last_modified().unwrap(), stamp.zip);
+                let mut text = String::new();
+                member.read_to_string(&mut text).unwrap();
+                assert_eq!(text, "license text");
+            } else {
+                let gzip = flate2::read::GzDecoder::new(fs::File::open(path).unwrap());
+                assert_eq!(u64::from(gzip.header().unwrap().mtime()), stamp.epoch);
+                let mut tar = tar::Archive::new(gzip);
+                let mut entries = tar.entries().unwrap();
+                let member = entries.next().unwrap().unwrap();
+                assert_eq!(member.path().unwrap(), Path::new("LICENSE"));
+                assert_eq!(member.header().mtime().unwrap(), stamp.epoch);
+                assert!(entries.next().is_none());
+            }
+        }
+    }
+}

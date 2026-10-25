@@ -35,9 +35,7 @@ fn forced_hash_collision_does_not_merge_distinct_paths_or_hardlink_spellings() {
     let found = collect_with_hash(&req, &RunControl::default(), |_| 0).unwrap();
     assert_eq!(found.state(), CollectionState::Collected);
     #[cfg(unix)]
-    let expected = ["a.eml", "./a.eml", "b.eml", "hard.eml"]
-        .map(PathBuf::from)
-        .to_vec();
+    let expected = ["./a.eml", "b.eml", "hard.eml"].map(PathBuf::from).to_vec();
     #[cfg(windows)]
     let expected = ["a.eml", "b.eml", "hard.eml"].map(PathBuf::from).to_vec();
     assert_eq!(found.items().len(), expected.len());
@@ -55,17 +53,8 @@ fn forced_hash_collision_does_not_merge_distinct_paths_or_hardlink_spellings() {
             _ => panic!("ordinary file"),
         })
         .collect();
-    #[cfg(unix)]
-    {
-        assert_eq!(ids[0], ids[1]);
-        assert_eq!(ids[0], ids[3]);
-        assert_ne!(ids[0], ids[2]);
-    }
-    #[cfg(windows)]
-    {
-        assert_eq!(ids[0], ids[2]);
-        assert_ne!(ids[0], ids[1]);
-    }
+    assert_eq!(ids[0], ids[2]);
+    assert_ne!(ids[0], ids[1]);
     drop(found);
     root.close().unwrap();
 }
@@ -230,7 +219,7 @@ fn scripted_late_stop_preserves_observed_failure_and_completed_discovery() {
         result: CollectedSources::empty(&req),
         control: &control,
         hash: |_: &OsStr| 0,
-        seen: HashMap::new(),
+        entries: HashMap::new(),
         unknown: false,
     };
     collector.result.complete = true;
@@ -325,8 +314,50 @@ fn cross_anchor_directory_routes_walk_independently_then_compare_leaf_bindings()
     assert_eq!(found.roots.len(), 2);
     assert_eq!(found.examined_entries(), 2 * examined_once);
     assert_eq!(found.items().len(), 1);
-    assert_eq!(found.request_index(0), Some(0));
+    assert_eq!(found.request_index(0), Some(1));
     assert_eq!(found.items()[0].origin(), SourceOrigin::Walked);
     drop(found);
     root.close().unwrap();
+}
+
+#[test]
+fn changed_signature_for_one_parent_and_basename_keeps_the_original_version_and_fails() {
+    let root = scratch();
+    std::fs::create_dir(root.path().join("source")).unwrap();
+    std::fs::write(root.path().join("source/a.eml"), b"A").unwrap();
+    let mut req = request(root.path(), OutputLocation::BesideSource);
+    req.paths = vec!["source/a.eml".into(), "source".into()];
+    let changed = std::cell::Cell::new(false);
+    let found = collect_with_hash(&req, &RunControl::default(), |path| {
+        if Path::new(path).file_name() == Some(OsStr::new("source")) && !changed.replace(true) {
+            std::fs::write(root.path().join("source/a.eml"), b"replacement").unwrap();
+        }
+        0
+    })
+    .unwrap();
+    assert!(changed.get());
+    assert_eq!(found.items().len(), 1);
+    let CollectedObservation::File { signature, .. } = found.items()[0].observation() else {
+        panic!("Initial source version was discarded");
+    };
+    assert_eq!(signature.size, 1);
+    assert_eq!(
+        found.items()[0].version_failure().unwrap().code(),
+        ErrorCode::SourceChanged
+    );
+    let plan = crate::plan_destinations(found, &RunControl::default());
+    assert_eq!(
+        plan.records()[0].failure().unwrap().code(),
+        ErrorCode::SourceChanged
+    );
+    assert_eq!(
+        std::fs::read(root.path().join("source/a.eml")).unwrap(),
+        b"replacement"
+    );
+    assert_eq!(
+        std::fs::read_dir(root.path().join("source"))
+            .unwrap()
+            .count(),
+        1
+    );
 }

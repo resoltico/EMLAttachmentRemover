@@ -1,123 +1,78 @@
-# Owner release procedure
+# Distribution and release
 
-Publication requires an explicit owner release decision. Local tests and
-workflow lint do not establish live attestation or publication integration.
+The workspace manifest owns the release version; `eml_core::product` owns the
+monotonic build number and names. The compiler comes from rust-toolchain.toml and
+developer tools from xtask/tools.toml. Distribution requires native platform
+linkers; macOS uses Command Line Tools rather than a full Xcode installation.
 
-## Prepare and dispatch
-
-Authenticate `gh` with repository push access so it can see unpublished drafts.
-Select a full commit on main containing the
-workspace version and release notes and the same workflow tree as current main,
-fetch main, and verify read-only admission
-from a clean checkout of that commit:
+## Build and inspect locally
 
 ```sh
-git fetch origin main
-cargo xtask release-check --source FULL_SHA --version 6.0.0
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+cargo xtask dist --cli --app --universal --out target/dist
+mkdir -p target/smoke
+tar -xzf target/dist/emlattachmentremover-*-macos-universal.tar.gz -C target/smoke
+ditto -x -k target/dist/emlattachmentremover-gui-*-macos-universal.zip target/smoke
+scripts/smoke-cli.sh target/smoke/emlattachmentremover tests/contract/mime
+scripts/smoke-macos-app.sh 'target/smoke/EML Attachment Remover.app' tests/contract/mime/inputs/01-gmail-attachment.eml
 ```
 
-Resolve every admission failure before dispatch. After the owner authorizes
-publication, start the workflow from main with the same source and version:
+Use a fresh output folder. The CLI archive is flat: executable, LICENSE and
+THIRD-PARTY-NOTICES.txt. The app ZIP contains `EML Attachment Remover.app`, with
+GUI executable `Contents/MacOS/EMLAttachmentRemover`, public CLI helper
+`Contents/Helpers/emlattachmentremover`, and icon/notices/LICENSE in Resources.
+The GUI Cargo target is `emlattachmentremover-gui`; the bundle name, executable
+and ID retain their public identity. There are no Services/document declarations
+or Assets.car. The icon is the committed complete ICNS; re-exporting its editable
+source is an artwork-maintenance task, described in
+[ARTWORK.md](../artwork/ARTWORK.md).
 
-```sh
-gh workflow run release.yml --ref main -f source=FULL_SHA -f version=6.0.0
-```
+Both Mac executables contain arm64 and x86_64 slices with deployment minimum 15.0.
+The helper is ad hoc signed first, then the bundle, followed by deep strict
+signature verification. Archive timestamps use the built commit's UTC timestamp
+(the SOURCE_DATE_EPOCH value); ZIP timestamps round down to two-second precision.
 
-Follow the resulting run through qualification and publication; a successful
-dispatch only acknowledges scheduling. Inspect failed-run server observations
-before attempting recovery.
+Linux x86_64/aarch64 CLI builds use Ubuntu 22.04 and tar.gz. Windows x86_64/aarch64
+CLI builds use native MSVC with static CRT and ZIP. Run
+`cargo xtask dist --cli --target <native-triple> --out <fresh-folder>` on those
+hosts. Each archive includes notices for its selected normal/build dependency
+graph and Rust standard-library material. App notices cover both executables and
+both CPU slices, with required upstream supplements. See
+[legal materials](../legal/README.md).
 
-## Admission and qualification
+## CI and owner release steps
 
-After owner review and a separate release decision, the `Owner release` workflow
-accepts a full source commit S on main and the matching Cargo version. S must
-contain one nonempty dated changelog section while retaining Unreleased and
-published history. Dispatch the workflow from main. Trusted workflow steps verify
-S against current remote main before executing any repository code, including
-ancestry and equality of the workflow trees. A source with different workflows
-would require a workflow-write credential that `GITHUB_TOKEN` cannot provide.
-Read-only admission operations check the exact clean checkout, version, notes,
-tag and draft-aware API release state. Only a successful GraphQL lookup with an
-explicit null release establishes absence; a resolved release ID must return a
-matching REST response. API errors and inaccessible IDs never establish absence.
-Local callers must supply push-capable credentials; a read-only credential can
-hide drafts and cannot establish their absence.
+The [release workflow](../.github/workflows/release.yml) builds archives once,
+smokes those exact bytes, and runs the universal CLI/app on macos-15 and
+macos-15-intel. CLI smoke compares every MIME fixture with its golden bytes or
+expected refusal and checks original bytes. App smoke verifies signatures and CPU
+slices, launches two paths, compares their copies with a golden, then requests
+idle Quit. It does not automate Finder, Dock, file dialogs or other OS UI.
 
-The same reusable native qualification workflow runs on S. All six native test
-jobs, both native app candidate producers, both complete minimum-OS desktop
-consumers, the macOS26 Intel picker compatibility check and the strict aggregate
-must pass. Products are selected only from this run/attempt's six
-platform artifacts, downloaded into separate directories with digest mismatch
-treated as an error. Their source records must bind to S. Consumer evidence is downloaded separately from
-products. Preparation requires each candidate's `native_candidate` stage plus
-matching `desktop_qualification` and, for Intel, `picker_qualification` envelopes
-from the same run/attempt, source, target and archive bytes. The selected product
-must have case `picker` and method `testOwnedNativePickerCompatibility`;
-it cannot substitute for either full macOS15 desktop consumer. Failed, skipped,
-missing or mismatched case receipts cannot admit an app. Intel envelopes admit
-only `mode: modified_host`: guarded preparation on the image declared by
-`xtask/distribution.toml`, followed by the complete unchanged product case and
-read-only host/service verification. Preparation requires recognized current-boot
-IconServices crash evidence, then records the exact GUI-user agent bootout and
-disable operations. The shared picker predicates independently bind S, workflow
-W, current run/attempt, configured policy, archive/reference bytes, native host,
-method, preferences and normal settlement. Preparation and final verification
-must agree on boot and caller context; the intervening product's observed OS and
-CPU must match. The product does not directly report its boot UUID. This is
-modified-host coverage, not general unmodified-host compatibility or causal proof
-of recovery. Unconfigured hosts, malformed crash reports, absence of the required
-current-boot fault and incomplete attempts block both the reusable aggregate and
-release. Both full macOS15 consumers
-remain required.
-The policy derives exactly eight archive names. `stage-release-assets` freezes their actual bytes,
-checks copy readback and writes the sorted SHA256SUMS as the ninth asset.
-Existing native checks establish behavior; artifact digests preserve the tested
-bytes through transport. Assembly alone establishes neither property.
+A branch `workflow_dispatch` builds, smokes and uploads archives and SHA256SUMS.
+It skips attestation and draft-release creation. On an existing `v*` tag, successful
+build/floor jobs also attest artifacts and create a draft GitHub release using
+`--verify-tag`. The workflow never creates tags. Publishing the draft is an owner
+action. Caches restore on producers; only main can save caches.
 
-The pinned `actions/attest` action uses an explicit qualification predicate at
-`https://github.com/resoltico/EMLAttachmentRemover/attestations/native-qualification/v1`.
-It records S, the distinct dispatch commit and workflow ref/SHA, native run and
-attempt, policy and assembly identities, and compact actual-host/desktop/picker
-case observations from the validated consumer records. All eight archives and SHA256SUMS are
-subjects. This is a qualification/assembly statement, not default SLSA build
-provenance pretending that a checkout override changes the dispatch identity.
-Full native job observations and build/test records remain in run artifacts.
+Before the owner tags or publishes:
 
-Admission and publication receive `contents: write` credentials because draft
-visibility requires push access. Admission performs only read operations on Git refs and releases.
-Attestation and OIDC write scopes belong only to publication. Publication rechecks
-S against current main before executing repository code, repeats admission,
-requires an absent release, creates an unpublished draft and uploads without
-clobbering. Draft-aware lookup resolves its numeric ID before reading the raw
-REST response; the release-by-tag REST endpoint only finds published releases.
-That actual API response feeds
-`cargo xtask check-release-server --assets DIR --release RESPONSE.json`:
-exact source/version/draft, nine distinct positive asset IDs, exact names,
-uploaded state, sizes and SHA256 digests must match the local immutable set.
-The manifest itself is regenerated from the actual local archive bytes before
-comparison. This read-only command trusts the caller to obtain the response
-from the correct repository; the workflow supplies that boundary directly.
-Only after these checks does the workflow publish the draft.
+1. Confirm the intended source, version, build number and consolidated changelog.
+   Review the final PR's native CI and both macOS floor-smoke results.
+2. On Intel and Apple Silicon, manually check real window drag delivery, native
+   file/folder dialogs and destination selection, keyboard navigation, appearance,
+   AboutSlint, Stop/Force Stop, busy Quit and technical report export. Check
+   non-Unicode/long paths and a realistic mailbox selection where practical.
+3. Review the software-renderer screenshots and retained upstream license texts.
+   Check the full icon at normal/high display scale. Real OS interaction and
+   visual review belong in this manual checklist, outside the merge gate.
+4. Verify downloaded archive checksums against SHA256SUMS. On macOS use
+   `shasum -a 256 -c SHA256SUMS`; on Linux use `sha256sum -c SHA256SUMS`.
+   GitHub artifact attestations can be checked with
+   `gh attestation verify <archive> --repo resoltico/EMLAttachmentRemover`.
+5. Test first launch of the downloaded ad hoc app using the
+   [README opening steps](../README.md#install). Preserve corresponding MPL source
+   availability and notices when redistributing.
 
-After success or failure, the workflow observes server state and retains its
-draft-aware ID lookup and REST responses, assembly/admission records,
-source/policy predicate and diagnostics. Failed final lookups retain their errors
-and leave server state uncertain; they do not assert absence. No failure handler deletes a release, replaces assets or resets a tag. Existing
-tags are always refused. A matching unpublished draft is recognized by admission
-but automatic publication still refuses it: inspect its actual assets and tag
-state and obtain an owner recovery decision. A failed action does not prove the
-server did nothing. Retaining the draft makes recovery possible without silently
-retargeting or replacing anything already published.
-
-## Version and build identity
-
-`workspace.package.version` in the root `Cargo.toml` is the sole release-version
-source. `BUILD_NUMBER` in `crates/eml-protocol/src/product.rs` is the sole product
-build-number source, shared by CLI display, GUI About and `CFBundleVersion`.
-Increase that positive integer (1–9999) before distributing changed binaries;
-never reset it on a release-version change. Private dirty builds, both CPU
-variants, CI reruns and source rebuilds reuse the committed value; compilation
-never increments it. The build number identifies a distributed product revision,
-not exact bytes or qualification. Checksums identify delivered bytes. Machine
-protocol version fields remain the release version, independently of the display
-build number.
+Nightly CI runs Intel macOS tests and 15 minutes of pure MIME fuzzing. Its failures
+are investigated separately from the merge gate.

@@ -1,4 +1,5 @@
 //! Frozen read-only destination layout, naming and reservations. No MIME or writes.
+use crate::fs::{BoundDirectory, EntryKind, EntryObservation, Identity};
 use crate::{
     CollectedObservation, CollectedSources, CollectionState, ErrorCode, ErrorPhase,
     OperationFailure, OutputLocation, RunControl, SourceOrigin,
@@ -7,7 +8,6 @@ use crate::{
     request::{native_bytes, path_limits},
     selection::{SelectionError, append},
 };
-use eml_fs::{BoundDirectory, EntryKind, EntryObservation, Identity};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -173,22 +173,41 @@ struct DestinationKey {
     tail: OsString,
 }
 
+struct PlanningFailure {
+    error: OperationFailure,
+    blocker: Option<Identity>,
+}
+impl From<OperationFailure> for PlanningFailure {
+    fn from(error: OperationFailure) -> Self {
+        Self {
+            error,
+            blocker: None,
+        }
+    }
+}
 /// Freeze layout/names and reserve all known outputs without reading message
 /// bodies, creating parents, probing writes or synchronizing. Consume rather than
 /// duplicate inventory; later execution must revalidate every native binding,
 /// naming assumption and actual no-replace outcome.
 pub fn plan_destinations<'a>(
-    sources: CollectedSources<'a>,
+    mut sources: CollectedSources<'a>,
     control: &RunControl,
 ) -> DestinationPlan<'a> {
+    sources.items.sort_by_cached_key(|item| {
+        crate::collection::native_order_key(item.native_path().as_os_str())
+    });
     let path_bytes = sources.source_path_bytes();
     let records = sources
         .items()
         .iter()
         .map(|item| {
-            DestinationRecord(match item.observation() {
-                CollectedObservation::Failed(error) => Row::Failed(error.clone()),
-                _ => Row::Unplanned,
+            DestinationRecord(if let Some(error) = &item.version_failure {
+                Row::Failed(error.clone())
+            } else {
+                match item.observation() {
+                    CollectedObservation::Failed(error) => Row::Failed(error.clone()),
+                    _ => Row::Unplanned,
+                }
             })
         })
         .collect();
@@ -210,6 +229,7 @@ pub fn plan_destinations<'a>(
     }
     let ids = source_identities(&result.sources);
     let mut reservations: HashMap<DestinationKey, Vec<usize>> = HashMap::new();
+    let mut blocked: HashMap<Identity, Vec<usize>> = HashMap::new();
     for index in 0..result.records.len() {
         if control.is_stopped() {
             result.state = DestinationPlanState::Interrupted;
@@ -229,22 +249,62 @@ pub fn plan_destinations<'a>(
                     result.state = DestinationPlanState::Interrupted;
                     break;
                 }
-                result.records[index] = DestinationRecord(Row::Failed(error));
+                if let Some(identity) = error.blocker {
+                    blocked.entry(identity).or_default().push(index);
+                }
+                result.records[index] = DestinationRecord(Row::Failed(error.error));
             }
+        }
+    }
+    // Reserve every known edge before execution, including existing hard links
+    // and a final filename used as another contender's mirrored parent.
+    let mut conflicts = HashSet::new();
+    let mut existing: HashMap<Identity, Vec<usize>> = HashMap::new();
+    for (index, record) in result.records.iter().enumerate() {
+        if let Some(info) = record.destination()
+            && let DestinationObservation::Present(entry) = info.observation
+        {
+            existing.entry(entry.identity).or_default().push(index);
+        }
+    }
+    for (identity, members) in blocked {
+        let others = existing.get(&identity).map_or(&[][..], Vec::as_slice);
+        if members.len() + others.len() > 1 {
+            conflicts.extend(members.into_iter().chain(others.iter().copied()));
         }
     }
     for contenders in reservations
         .values()
-        .filter(|contenders| contenders.len() > 1)
+        .chain(existing.values())
+        .filter(|group| group.len() > 1)
     {
-        for &index in contenders {
-            if let Row::Known { failure, .. } = &mut result.records[index].0 {
-                *failure = Some(OperationFailure::new(
-                    ErrorCode::DestinationCollision,
-                    ErrorPhase::Admission,
-                    "Distinct sources contend for the same planned output",
-                ));
+        conflicts.extend(contenders.iter().copied());
+    }
+    for (key, contenders) in &reservations {
+        for parent in Path::new(&key.tail)
+            .ancestors()
+            .skip(1)
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            let ancestor = DestinationKey {
+                closest: key.closest,
+                tail: parent.as_os_str().to_owned(),
+            };
+            if let Some(other) = reservations.get(&ancestor) {
+                conflicts.extend(contenders.iter().chain(other).copied());
             }
+        }
+    }
+    for index in conflicts {
+        let error = OperationFailure::new(
+            ErrorCode::DestinationCollision,
+            ErrorPhase::Admission,
+            "Distinct sources contend for the same destination edge or identity",
+        );
+        match &mut result.records[index].0 {
+            Row::Known { failure, .. } => *failure = Some(error),
+            Row::Failed(previous) => *previous = error,
+            Row::Unplanned => {}
         }
     }
     if control.is_stopped() {
@@ -325,8 +385,6 @@ fn selected_failure(error: SelectionError) -> OperationFailure {
         SelectionError::Io(error) => {
             native_failure("Selected source parent could not be rebound", error)
         }
-        #[cfg(windows)]
-        SelectionError::Changed => changed("Selected source root identity changed"),
     }
 }
 fn changed(detail: &'static str) -> OperationFailure {
@@ -525,7 +583,7 @@ fn plan_one(
     index: usize,
     control: &RunControl,
     labels: &mut HashMap<usize, Option<OsString>>,
-) -> Result<(DestinationInfo, PathBuf, Option<OperationFailure>), OperationFailure> {
+) -> Result<(DestinationInfo, PathBuf, Option<OperationFailure>), PlanningFailure> {
     checkpoint(control)?;
     let item = &sources.items()[index];
     let mut route = PathBuf::new();
@@ -581,7 +639,7 @@ fn plan_one(
         )
     })?;
     #[cfg(windows)]
-    eml_fs::validate_component(&basename, limit)
+    crate::fs::validate_component(&basename, limit)
         .map_err(|error| native_failure("Copy name is unsupported after truncation", error))?;
     let display = display_destination(sources, index, labels, &basename);
     let native = native_destination_path(sources, index, &route, &basename)?;
@@ -643,7 +701,7 @@ fn inspect_mirrored_route(
     base: &BoundDirectory,
     components: &[&OsStr],
     control: &RunControl,
-) -> Result<(Option<BoundDirectory>, Vec<Identity>, bool), OperationFailure> {
+) -> Result<(Option<BoundDirectory>, Vec<Identity>, bool), PlanningFailure> {
     let mut current: Option<BoundDirectory> = None;
     let mut prefix = vec![base.identity()];
     let mut missing = false;
@@ -673,13 +731,15 @@ fn inspect_mirrored_route(
                     }
                 }
             }
-            Ok(Some(_)) => {
-                failure = Some(OperationFailure::new(
-                    ErrorCode::DestinationExists,
-                    ErrorPhase::Admission,
-                    "Mirrored parent is not an ordinary directory",
-                ));
-                break;
+            Ok(Some(observed)) => {
+                return Err(PlanningFailure {
+                    blocker: Some(observed.identity),
+                    error: OperationFailure::new(
+                        ErrorCode::DestinationExists,
+                        ErrorPhase::Admission,
+                        "Mirrored parent is not an ordinary directory",
+                    ),
+                });
             }
             Err(error) => {
                 failure = Some(native_failure(
@@ -694,7 +754,7 @@ fn inspect_mirrored_route(
     // limit as an assumption. An existing/unverified blocked component does not
     // establish the actual naming parent or a valid frozen basename/key.
     if let Some(error) = failure.take() {
-        return Err(error);
+        return Err(error.into());
     }
     Ok((current, prefix, missing))
 }
@@ -738,6 +798,7 @@ pub(super) fn source_identities(sources: &CollectedSources<'_>) -> HashSet<Ident
             _ => None,
         })
         .collect();
+    ids.extend(sources.observed_identities.iter().copied());
     for root in &sources.roots {
         if let RootKind::File(signature, _) = root.kind {
             ids.insert(signature.identity);
@@ -780,7 +841,7 @@ impl DestinationPlan<'_> {
                 .context
                 .as_ref()
                 .expect("complete context")
-                .directory(root)
+                .destination_directory(root)
                 .map_err(destination_binding_failure)?,
         };
         if directory.identity()
@@ -892,12 +953,6 @@ fn destination_binding_failure(error: SelectionError) -> OperationFailure {
         SelectionError::Io(error) => {
             execution_native_failure("Destination root cannot be bound", error)
         }
-        #[cfg(windows)]
-        SelectionError::Changed => OperationFailure::new(
-            ErrorCode::AddressUnverified,
-            ErrorPhase::Address,
-            "Destination root cannot be consistently resolved",
-        ),
     }
 }
 

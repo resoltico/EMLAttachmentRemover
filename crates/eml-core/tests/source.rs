@@ -1,11 +1,9 @@
 //! Real synthetic held-file preparation; no CLI, publication or copied outputs.
 #![cfg(any(unix, windows))]
+use eml_core::fs::{BoundFile, BoundFileError};
 use eml_core::{
     ErrorCode, ErrorPhase, MAX_MESSAGE_BYTES, RunControl, SourcePreparationError, prepare_source,
 };
-use eml_fs::BoundFile;
-#[cfg(unix)]
-use eml_fs::BoundFileError;
 use std::{
     fs,
     io::Write,
@@ -22,7 +20,7 @@ fn root() -> tempfile::TempDir {
 fn bind(path: &Path) -> BoundFile {
     #[cfg(unix)]
     {
-        eml_fs::BoundDirectory::open(path.parent().unwrap())
+        eml_core::fs::BoundDirectory::open(path.parent().unwrap())
             .unwrap()
             .open_file(path.file_name().unwrap(), false)
             .unwrap()
@@ -30,7 +28,7 @@ fn bind(path: &Path) -> BoundFile {
     #[cfg(windows)]
     {
         BoundFile::open(
-            &eml_fs::PathContext::capture(&std::env::current_dir().unwrap())
+            &eml_core::fs::PathContext::capture(&std::env::current_dir().unwrap())
                 .unwrap()
                 .resolve(path)
                 .unwrap(),
@@ -67,11 +65,6 @@ fn actual_source_prepares_independent_golden_and_keeps_the_original_file_held() 
     prepared.revalidate().unwrap();
     assert_eq!(fs::read(&path).unwrap(), INPUT);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
-    #[cfg(windows)]
-    {
-        let denied = fs::OpenOptions::new().write(true).open(&path).unwrap_err();
-        assert_eq!(denied.raw_os_error(), Some(32));
-    }
     drop(prepared);
     root.close().unwrap();
 }
@@ -118,7 +111,6 @@ fn real_protected_source_uses_existing_preparation_refusal_and_preserves_bytes()
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     root.close().unwrap();
 }
-#[cfg(unix)]
 #[test]
 fn immutable_prepared_bytes_do_not_claim_permanent_source_stability() {
     let root = root();

@@ -72,7 +72,7 @@ impl std::fmt::Display for ErrorPhase {
 // One entry owns each variant's documentation, wire name and permitted phases.
 // Frontends consume these values rather than maintaining another code registry.
 macro_rules! error_codes {
-    ($($name:ident => $wire:literal, [$($phase:ident),+], $doc:literal $(, $hint:literal)?;)+) => {
+    ($($name:ident => $wire:literal, [$($phase:ident),+], $doc:literal;)+) => {
         /// Exhaustive protocol-1 semantic code, distinct from native OS errors.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
         pub enum ErrorCode {
@@ -89,11 +89,6 @@ macro_rules! error_codes {
             pub fn from_wire_name(name: &str) -> Option<Self> {
                 match name { $($wire => Some(Self::$name),)+ _ => None }
             }
-            /// A recovery action appropriate to this observed failure, when known.
-            /// This complements the exact diagnostic; it does not establish effects.
-            pub const fn recovery_hint(self) -> Option<&'static str> {
-                match self { $(Self::$name => error_codes!(@hint $( $hint )?),)+ }
-            }
             /// Phases allowed by this semantic code's contract.
             pub const fn allowed_phases(self) -> &'static [ErrorPhase] {
                 match self { $(Self::$name => &[$(ErrorPhase::$phase,)+],)+ }
@@ -105,28 +100,27 @@ macro_rules! error_codes {
             }
         }
     };
-    (@hint $hint:literal) => { Some($hint) };
-    (@hint) => { None };
 }
 error_codes! {
-    ReadFailed => "READ_FAILED", [Admission, Collection, Read], "A required file could not be read.", "Check that the selected file or folder still exists and that you have permission to read it, then retry.";
+    ReadFailed => "READ_FAILED", [Admission, Collection, Read], "A required file could not be read.";
     SourceNotRegular => "SOURCE_NOT_REGULAR", [Admission, Collection, Read], "The selected object is not a regular disk file.";
     SourceChanged => "SOURCE_CHANGED", [Admission, Collection, Read, Publish], "An observable source identity, binding or signature changed.";
-    Malformed => "MALFORMED", [Prepare], "MIME syntax or structure is ambiguous or damaged.", "This message's MIME structure is damaged or incomplete. Export it again from your mail app and retry with that copy.";
+    Malformed => "MALFORMED", [Prepare], "MIME syntax or structure is ambiguous or damaged.";
     LimitExceeded => "LIMIT_EXCEEDED", [Prepare], "Message or retained metadata exceeds a preparation bound.";
-    Protected => "PROTECTED", [Prepare], "Protected content occurred in a retained body context.", "Protected content would need to change in the retained message body. Obtain an unprotected export if appropriate.";
-    NoBody => "NO_BODY", [Prepare], "No supported text body would remain.", "No supported plain-text or HTML message body would remain. Choose a message that contains a text body.";
+    Protected => "PROTECTED", [Prepare], "Protected content occurred in a retained body context.";
+    UnsupportedMime => "UNSUPPORTED_MIME", [Prepare], "A retained MIME container is outside the supported profile.";
+    NoBody => "NO_BODY", [Prepare], "No supported text body would remain.";
     Internal => "INTERNAL", [Prepare], "Independent preparation verification detected a defect.";
     InputAdmissionFailed => "INPUT_ADMISSION_FAILED", [Admission, Collection], "At least one explicit source root could not bind.";
-    InputLimitExceeded => "INPUT_LIMIT_EXCEEDED", [Admission, Collection], "Whole-run collection exceeded a resource bound.", "Select fewer messages or a smaller folder and try again.";
-    NoInputs => "NO_INPUTS", [Admission, Collection], "Discovery found no work items.", "No .eml messages were found. Select messages or another folder; hidden entries and existing .no-attachments.eml copies are skipped during folder scans.";
-    OutputOverlap => "OUTPUT_OVERLAP", [Admission], "The output root overlaps a selected directory tree.", "The copy folder overlaps a selected source folder. Choose a destination outside the selected tree, or save copies beside the originals.";
-    DestinationCollision => "DESTINATION_COLLISION", [Admission, Existing, Publish], "Distinct inputs contend for one output.", "Split colliding messages into separate runs and destination folders so each copy has its own path.";
-    DestinationExists => "DESTINATION_EXISTS", [Admission, Existing, Publish], "An existing entry cannot qualify as the requested copy.", "Choose another copy folder, or move the existing destination before retrying. Existing entries will not be overwritten.";
+    InputLimitExceeded => "INPUT_LIMIT_EXCEEDED", [Admission, Collection], "Whole-run collection exceeded a resource bound.";
+    NoInputs => "NO_INPUTS", [Admission, Collection], "Discovery found no work items.";
+    OutputOverlap => "OUTPUT_OVERLAP", [Admission], "The output root overlaps a selected directory tree.";
+    DestinationCollision => "DESTINATION_COLLISION", [Admission, Existing, Publish], "Distinct inputs contend for one output.";
+    DestinationExists => "DESTINATION_EXISTS", [Admission, Existing, Publish], "An existing entry cannot qualify as the requested copy.";
     SourceDestinationAlias => "SOURCE_DESTINATION_ALIAS", [Admission, Existing, Publish], "An output aliases a collected source.";
     DestinationUnsupported => "DESTINATION_UNSUPPORTED", [Stage, Publish], "The required destination primitive is unsupported.";
     BindFailed => "BIND_FAILED", [Admission, Read, Stage, Address], "A required native object or address binding failed.";
-    StageFailed => "STAGE_FAILED", [Stage], "Owned private candidate resources could not be established.", "Check destination write permissions and available disk space, or choose another copy folder.";
+    StageFailed => "STAGE_FAILED", [Stage], "Owned private candidate resources could not be established.";
     WriteFailed => "WRITE_FAILED", [Write, Publish], "Candidate storage or publication failed.";
     FileSyncFailed => "FILE_SYNC_FAILED", [Sync], "Required candidate file synchronization failed.";
     NamespaceSyncFailed => "NAMESPACE_SYNC_FAILED", [Sync], "A required namespace synchronization failed.";
@@ -140,5 +134,23 @@ error_codes! {
 impl std::fmt::Display for ErrorCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl ErrorCode {
+    /// Translate a pure MIME refusal into an orchestration diagnostic.
+    pub const fn from_preparation(error: &crate::PreparationError) -> Self {
+        use crate::{PreparationError, Refusal};
+        match error {
+            PreparationError::Interrupted => Self::Interrupted,
+            PreparationError::Refused { kind, .. } => match kind {
+                Refusal::Malformed => Self::Malformed,
+                Refusal::LimitExceeded => Self::LimitExceeded,
+                Refusal::Protected => Self::Protected,
+                Refusal::UnsupportedMime => Self::UnsupportedMime,
+                Refusal::NoBody => Self::NoBody,
+                Refusal::Internal => Self::Internal,
+            },
+        }
     }
 }

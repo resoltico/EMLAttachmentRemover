@@ -110,7 +110,7 @@ fn all_shared_scenarios_pass_at_every_byte_boundary_with_explicit_exit_and_item_
     }
 }
 #[test]
-fn known_items_survive_malformed_later_records_and_export_unknown_summary() {
+fn known_items_survive_malformed_later_records_without_a_summary() {
     let bytes = fixture("created-attachment");
     let mut frames = bytes
         .split(|byte| *byte == b'\n')
@@ -133,15 +133,8 @@ fn known_items_survive_malformed_later_records_and_export_unknown_summary() {
         report.finish(Some(0), false),
         Err(ProtocolFailure::MalformedRecord)
     );
-    let exported: serde_json::Value =
-        serde_json::from_slice(&report.technical_report().unwrap()).unwrap();
-    assert!(exported["summary"].is_null());
-    assert_eq!(exported["protocol_failure"], "malformed_record");
-    assert!(
-        !String::from_utf8(report.technical_report().unwrap())
-            .unwrap()
-            .contains("Hello Bob")
-    );
+    assert!(report.summary().is_none());
+    assert_eq!(report.failure(), Some(ProtocolFailure::MalformedRecord));
 }
 #[test]
 fn summary_exit_partial_tail_and_postsummary_records_cannot_change_accepted_items() {
@@ -297,7 +290,7 @@ fn report_path_budget_charges_each_operand_maximum_at_exact_boundary() {
     }
 }
 #[test]
-fn desktop_worker_rejects_dry_run_and_foreign_native_operands() {
+fn desktop_worker_accepts_check_only_and_rejects_foreign_native_operands() {
     let dry: serde_json::Value = serde_json::from_slice(
         fixture("planned-create-unix")
             .split(|byte| *byte == b'\n')
@@ -305,11 +298,9 @@ fn desktop_worker_rejects_dry_run_and_foreign_native_operands() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(
-        RunReport::for_native_worker("test-version")
-            .accept_frame(&serde_json::to_vec(&dry).unwrap()),
-        Err(ProtocolFailure::IncompatibleHelper)
-    );
+    RunReport::for_native_worker("test-version")
+        .accept_frame(&serde_json::to_vec(&dry).unwrap())
+        .unwrap();
     let foreign = if cfg!(windows) {
         ("unix-bytes", b"a".as_slice())
     } else {
