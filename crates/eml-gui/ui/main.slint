@@ -160,15 +160,22 @@ export component MainWindow inherits Window {
         HorizontalBox { vertical-stretch: 1;
             VerticalBox { width: 205px; horizontal-stretch: 0;
                 Label { text: "Reports"; font-weight: 600; }
+                ListView {
+                    preferred-height: min(330px, root.runs.length * 145px);
+                    min-height: 0px; vertical-stretch: 0;
+                    content-width: self.visible-width;
+                    accessible-role: list; accessible-label: "Retained reports";
                 for run[index] in root.runs: VerticalBox {
+                    spacing: 4px;
                     Button { text: run.label; accessible-role: button; accessible-label: run.label; clicked => { root.select-run(index); } }
                     Label { text: run.status; wrap: word-wrap; }
                     Label { text: run.mode; }
                     PathLabel { path: run.selection; }
                     HorizontalBox { Label { text: run.selections.label; } Label { text: run.selections.value; accessible-label: run.selections.accessible; } }
                 }
+                }
                 Label { text: "Waiting selections"; font-weight: 600; }
-                ListView { accessible-role: list; accessible-label: "Waiting selections";
+                ListView { min-height: 0px; accessible-role: list; accessible-label: "Waiting selections";
                     for run[index] in root.waiting: HorizontalBox {
                         Label { text: run.label; }
                         Label { text: run.mode; }
@@ -189,20 +196,21 @@ export component MainWindow inherits Window {
                 if root.report-diagnostics.length > 0: VerticalBox {
                     Label { text: "Run diagnostics"; font-weight: 600; }
                     ListView {
-                        height: min(160px, root.report-diagnostics.length * 42px); vertical-stretch: 0;
+                        preferred-height: min(160px, root.report-diagnostics.length * 42px); min-height: 0px; vertical-stretch: 0;
                         content-width: self.visible-width;
                         accessible-role: list; accessible-label: "Run diagnostics";
                         for row in root.report-diagnostics: Label { text: row.text; wrap: word-wrap; }
                     }
                 }
-                ListView { height: root.items.length > 0 ? 145px : 0px; vertical-stretch: 0; content-width: self.visible-width; accessible-role: list; accessible-label: "Message results";
+                ListView { preferred-height: root.items.length > 0 ? 145px : 0px; min-height: 0px; vertical-stretch: 0; content-width: self.visible-width; accessible-role: list; accessible-label: "Message results";
                     for item[index] in root.items: VerticalBox {
+                        spacing: 2px;
                         FileButton { path: item.path; clicked => { root.select-item(index); } }
                         Label { text: item.path.directory; font-size: 12px; overflow: elide; min-width: 0px; Tooltip { text: @markdown("\{item.path.full}"); } }
                         Label { text: item.status; }
                     }
                 }
-                details-view := ScrollView { vertical-stretch: 1; accessible-role: list; accessible-label: "Message details";
+                details-view := ScrollView { min-height: 0px; vertical-stretch: 1; accessible-role: list; accessible-label: "Message details";
                     content-width: self.visible-width;
                     content-height: root.has-item ? detail-content.height : 0px;
                 detail-content := VerticalBox {

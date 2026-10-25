@@ -633,6 +633,27 @@ fn unavailable_settings_launch_with_preserved_objects_and_session_only_destinati
             destination.to_str().unwrap()
         );
         assert_eq!(c.window().get_settings_warning(), warning);
+        let ui = c.window();
+        ui.window().set_size(slint::LogicalSize::new(780.0, 600.0));
+        for name in ["first.eml", "second.eml"] {
+            c.enqueue(vec![root.path().join(name)]).unwrap();
+            pump(&c, || !c.is_busy());
+        }
+        mock_elapsed_time(Duration::from_millis(5));
+        for label in ["Dismiss report", "Save JSONL report"] {
+            let element = ElementHandle::find_by_accessible_label(&ui, label)
+                .next()
+                .unwrap();
+            assert!(element.size().height > 0.0);
+            assert!(
+                element.absolute_position().y + element.size().height <= 600.0,
+                "{kind}: {label} must remain within the supported viewport: position {:?}, size {:?}, window {:?}",
+                element.absolute_position(),
+                element.size(),
+                ui.window().size()
+            );
+        }
+
         if kind == "directory" {
             assert!(path.is_dir());
         } else {
