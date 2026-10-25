@@ -1204,7 +1204,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
 name = "eml-app"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "eml-core",
@@ -1217,7 +1217,7 @@ dependencies = [
 
 [[package]]
 name = "eml-core"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "eml-message",
  "getrandom 0.4.3",
@@ -1228,7 +1228,7 @@ dependencies = [
 
 [[package]]
 name = "eml-gui"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "dirs",
@@ -1250,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "eml-message"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "encoding_rs",
@@ -1261,7 +1261,7 @@ dependencies = [
 
 [[package]]
 name = "eml-protocol"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "eml-core",
@@ -1272,7 +1272,7 @@ dependencies = [
 
 [[package]]
 name = "emlattachmentremover"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "base64",
  "clap",
@@ -5772,7 +5772,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "clap",
  "eml-core",

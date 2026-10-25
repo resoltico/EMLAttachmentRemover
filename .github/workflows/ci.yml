@@ -65,8 +65,7 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ steps.cache.outputs.cache-primary-key }}
-      - name: Verification budget (blocking from WP8; see docs/project-rules.md)
-        continue-on-error: true
+      - name: Verification budget
         run: scripts/check-budget.sh
   test:
     strategy:

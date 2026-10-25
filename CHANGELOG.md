@@ -4,6 +4,22 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+## [7.0.0] - Unreleased
+
+### Changed
+
+- **Breaking command and download names:** `emlattachmentremover` replaces `remove-eml-attachments`, without an alias. macOS CLI archives are universal tar.gz files; the universal app is `emlattachmentremover-gui-VERSION-macos-universal.zip`. Linux CLI downloads use tar.gz and Windows downloads use ZIP. Windows builds now use `*-pc-windows-msvc` with a static CRT. See [installation](README.md#install).
+- **Breaking desktop integration changes:** the app runs the bundled public CLI through protocol 1. The private worker/control protocol, Dock-icon drop, Finder Services and Finder Open With integration are removed. Use the window's selection controls, window drop or explicit launch arguments. Native dialog clipboard behavior can differ. Saved destinations reset because NSUserDefaults preferences are no longer imported; choose the destination again.
+- The desktop presents typed run/item counts, removal details and diagnostics using the core's shared vocabulary. Check and Create are separate queued requests; Create after Check repeats admission with the current destination. Busy Quit offers Wait, Stop & Quit and confirmed Force Stop & Quit, and waits for worker/export settlement. **Technical report export now saves the original protocol-1 JSONL stream**, including partial output after failure, instead of an app-owned report document.
+- Valid non-inline extension dispositions are removed as whole non-body entities, just like attachments. Retained-body `multipart/report` is refused with `UNSUPPORTED_MIME`; attached or nonselected related reports can be removed whole. Plain-text/HTML payload bytes remain unchanged and retained HTML is not sanitized. See [MIME behavior](docs/mime.md).
+- Collection uses deterministic source ownership and preflights all known destination contenders, including file/mirrored-folder conflicts and existing object aliases. Copy names remain `<stem>.no-attachments.eml`, with existing root/relative layout; conflicts are refused without route tokens, counters or digest filenames.
+- Filesystem execution targets ordinary user-owned folders. Sources remain read-only, existing destinations stay intact, and complete verified staging files publish without replacement. Recognizable staging residue can remain after force kill or crash and is never automatically swept. Hostile local namespace/ACL races are outside the [threat model](docs/threat-model.md); reported publication, synchronization, address and cleanup facts remain separate.
+- **Contributor requirements:** full Xcode is no longer required to build the app. Command Line Tools suffice on macOS; upstream Slint/winit/Parley replace repository forks. The software renderer is the default. Standard Cargo tools, headless Slint tests and native CLI tests replace OS UI qualification and evidence machinery. See [contributor setup](CONTRIBUTING.md).
+
+### Internal
+
+- Distribution, notices and host verification use `cargo xtask dist`, `notices` and `ci`. Native CI covers macOS, Linux x86_64/aarch64 and Windows MSVC x86_64/aarch64; release checks smoke exact universal archives on both macOS 15 CPU hosts. The merge gate enforces a harness smaller than product code. License notices include the selected Rust sysroot and required upstream legal supplements.
+
 ## [6.0.0] - 2026-10-21
 
 ### Changed
@@ -240,3 +256,5 @@ This tagged candidate's release workflow stopped before asset publication; its c
 [2.0.1]: https://github.com/resoltico/EMLAttachmentRemover/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v1.0.0
+
+[7.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v6.0.0...HEAD

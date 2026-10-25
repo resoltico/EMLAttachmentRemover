@@ -1,66 +1,88 @@
 # Architecture
 
-The workspace separates message policy and native storage from frontends.
+The core owns MIME policy, collection, destinations, execution facts and human
+outcome vocabulary. Frontends adapt inputs and render those facts.
 
-- **eml-core** owns request/resource admission, ordered collection, copy naming,
-  destination reservations, immutable MIME preparation, independent edit
-  authorization, source/existing comparisons, cancellation, publication decisions
-  and typed outcomes. Its error-code registry supplies recovery guidance shared by
-  the adapters. It does not depend on JSON or a GUI framework.
-- **eml-fs** binds ordinary files and directories, protects staging, performs
-  native no-replace publication and synchronization, and reports independent
-  identity/address/cleanup facts. Its reviewed native modules contain the narrow
-  unsafe ABI operations; generated platform bindings supply native layouts.
-- **emlattachmentremover** decodes bounded native-path requests, adapts process
-  signals and renders checked human or LF-delimited JSON events. Its executable
-  calls the reusable business workflow rather than maintaining another engine.
-- **eml-protocol** shares native-path/request/event transport across products.
-  Recovery guidance and shared consequence explanations serve both frontends;
-  command-line arguments, controls and output formatting remain adapter concerns.
-- **eml-worker** is the GUI's private process boundary and calls eml-core
-  directly. It does not invoke the CLI product. Its separate process preserves
-  the required force-stop capability for stalled native operations.
-- **eml-app** owns bounded request snapshots, serial queue/report reservations,
-  LF framing, checked protocol reduction, current activity and protected report
-  export. Report-name inspection is advisory; export still uses held filesystem
-  bindings and atomic no-replace publication. It has no UI-toolkit dependency.
-  The [frontend design](desktop-frontend-design.md) and
-  [process ownership](macos-process-ownership.md) describe its native integration.
-- **eml-gui** contains the Slint macOS screens under the explicit macos-gui
-  Cargo feature. It renders queue, progress, reports and confirmation state and
-  routes native ingress and user actions to the shared application contracts.
-  Exact-source GUI qualification is recorded separately. **eml-macos** carries the
-  reviewed Darwin ownership boundary into Rust, separate from business policy.
-- **xtask** owns repository checks, bounded campaigns, native build identity,
-  complete target notices, archive creation/readback and qualification evidence.
-- **eml-windows** provides the owned Win32 Job/process boundary used by Windows
-  verification tooling. Its narrowly scoped native module keeps unsafe process
-  calls out of xtask and filesystem policy. It is not linked into the CLI or
-  macOS app and introduces no Windows frontend. See
-  [Windows process ownership](windows-process-ownership.md) for its actual scope
-  and source-bound native/console evidence.
-  Developer process supervision is separate from product helper ownership.
+| Crate | Responsibility |
+|---|---|
+| `eml-message` | Pure byte-based MIME parsing, body classification, plans, independent retained-span authorization and verification |
+| `eml-core` | Native request admission, collection, destination preflight, filesystem execution, diagnostics, product identity and vocabulary |
+| `eml-protocol` | Strict protocol-1 request decoding, native path encoding, typed JSONL events and bounded checked output |
+| `emlattachmentremover` | Public CLI arguments, request transport, signals and human/JSON sinks |
+| `eml-app` | Immutable queued requests, bounded report reducer and std child-process supervision |
+| `eml-gui` | Slint view/controller, desktop ingress, configuration and the small macOS Quit shim |
+| `xtask` | Distribution archives, notices and the local merge gate |
 
-A PreparedMessage retains source bytes and authorized deletion ranges. Production
-verification independently checks that retained content and structure remain
-unchanged. It does not regenerate MIME or treat its own removal list as an oracle.
-Real storage observations remain distinct: candidate verification, atomic
-publication knowledge, requested address, file/namespace synchronization and
-cleanup cannot be collapsed into a Boolean success.
+`eml-message` has no filesystem or platform dependency. Fuzzing targets that crate;
+its independent model and verifier check retained bodies and removed parts.
+`eml_core::vocabulary` maps typed facts to human labels for both CLI and GUI.
+`eml_core::product` owns the command/display names and build number; the workspace
+manifest owns the release version.
 
-A native release CLI is built once into an owned copy, signed on macOS and frozen.
-Its CLI archive consumes those exact bytes. The desktop product builds its own
-private worker from the same core/protocol libraries. Archive
-verification reads a bounded immutable snapshot, validates exact structure and
-legal materials, extracts into an admitted owned directory, checks native runtime
-identity and runs the actual extracted executable against independent goldens.
-An archive is published into its output directory only after those scoped checks.
-This is packaging publication, separate from the product's message-copy edge.
+## Execution
 
-The native target table and tool pins have single authorities under xtask/;
-Cargo metadata supplies the workspace version. Generated target legal trees have
-reviewed source bindings and deterministic freshness checks. Cargo notices do not
-replace native runtime input review. Windows final-link provenance, private
-archive extraction/process supervision and macOS app/GUI behavior require their
-distinct source-bound native observations. See [verification](verification.md)
-for the required checks and their limits.
+The caller captures an absolute working directory once. Validation checks native
+resource limits before I/O. Collection observes selected files and directory roots,
+coalesces proven identities, sorts native names and retains failures as known work.
+Explicit files take precedence; the deepest selected root owns a walked file.
+Selected directory aliases can be followed; links encountered during a walk are
+excluded. Destination links and reparse edges are refused.
+
+A request admits 4,096 input paths and 4 MiB of native input path bytes. Collection
+bounds work at 4,096 files/failures, 100,000 visited entries, 64 directory levels
+and 8 MiB of charged reported paths. A source is bounded by 256 MiB. MIME limits
+also bound entity count, nesting, headers, parameters and metadata; see
+[the source constants](../crates/eml-message/src/lib.rs) and [MIME policy](mime.md).
+
+Destination preflight groups exact native names, existing object identities and
+file/mirror-prefix conflicts. All known contenders are refused. Explicit files
+are flat beneath an existing output root; walked files retain their selected-root
+and relative layout. Without an output root, copies stay beside sources. Names
+use `.no-attachments.eml`, shortening stems to native component limits without
+retry counters or hashes. Existing generated names and source aliases participate
+in conflict checks.
+
+Sources are opened read-only. A bounded read checks identity, size and modification
+time before and after. Preparation produces expected bytes without rewriting
+retained payloads. Independent source-span authorization and verification must
+accept the plan. Check performs the read/prepare/destination work without writes;
+Create repeats it and may publish.
+
+Filesystem code lives in `eml-core/src/fs`, with common held-directory/file types,
+identities, signatures and receipts. Unix operations use rustix descriptor-relative
+opens, exclusive creation, synchronization and no-replace publication. Linux's
+`EINVAL` rename fallback uses link/unlink. Windows uses Win32 reparse-aware opens,
+CREATE_NEW, file IDs, FlushFileBuffers and MoveFileExW without replacement or
+copy fallback. Held Windows directory handles are checked against their requested
+address before path-based child operations.
+
+A fresh `.emlattachmentremover-<random>.tmp` file is written and verified in the
+destination directory, synchronized, then published without replacement. Mirror
+directories are created only during Create. Cleanup removes owned staging entries
+on handled failures and reports uncertainty or residue when it cannot finish.
+No startup sweep deletes abandoned staging files. Identical existing destinations
+are compared and synchronized; different bytes are refused. Publication, address,
+file sync, namespace sync and cleanup remain separate reported observations.
+See the [threat model](threat-model.md) for the supported environment.
+
+## Desktop boundary
+
+The desktop runs the public CLI from `Contents/Helpers`, never PATH. Each selection
+captures absolute paths, destination and mode in a protocol request. At most eight
+requests wait, and two retained reports reserve display capacity. A serial worker
+runs one request at a time; dismissing a completed report releases capacity.
+
+`WorkerRun` owns `std::process::Child`; background threads write/close stdin and
+drain stdout/stderr. The UI polls without blocking. Stop sends SIGINT once; Force
+Stop kills the child; completion includes reaping and reader settlement. Partial
+accepted records survive malformed tails and worker failures. Exports write the
+exact retained stream to a new file in a background thread. Busy Quit waits for
+worker/export settlement or follows the user's confirmed stop choice.
+
+Slint view data comes from the shared vocabulary. Headless tests drive accessible
+actions through Slint's testing backend and mock time. Native ingress delivers
+launch arguments, batches window drops with a zero-delay timer, and parents rfd
+asynchronous dialogs to the retained window. Only the small macOS Quit shim uses
+unsafe Objective-C calls. Dock/Finder/Services integration and private worker
+protocols are removed. The software renderer is the default; Skia remains an
+explicit build feature for measurement. Builds use upstream crates without forks.

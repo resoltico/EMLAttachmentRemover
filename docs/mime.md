@@ -3,8 +3,7 @@
 The reusable `eml_message::prepare_message` capability prepares immutable bytes,
 authorizes removal independently, and verifies exact expected bytes and retained
 structure. Retained text/plain and text/html payloads are never decoded or
-regenerated. Native execution and release acceptance require the separate
-[verification gates](verification.md).
+regenerated. Filesystem execution is separate; see the [architecture](architecture.md).
 
 ## Retained body and removal policy
 
