@@ -18,6 +18,8 @@ component FileName inherits Rectangle {
     accessible-role: text;
     accessible-label: root.path.full;
     prefix := Text {
+        x: 0px;
+        horizontal-alignment: left;
         color: Palette.foreground;
         text: root.path.prefix;
         width: min(self.preferred-width, max(0px, root.width - suffix.width));

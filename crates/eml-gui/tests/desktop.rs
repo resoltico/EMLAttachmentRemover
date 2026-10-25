@@ -724,6 +724,18 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
         assert!(a.path.suffix.ends_with("A.eml"));
         assert!(b.path.suffix.ends_with("B.eml"));
         assert_ne!(a.path.suffix, b.path.suffix);
+        let prefix = ElementHandle::find_by_accessible_label(&ui, a.path.prefix.as_str())
+            .next()
+            .unwrap();
+        let suffix = ElementHandle::find_by_accessible_label(&ui, a.path.suffix.as_str())
+            .next()
+            .unwrap();
+        assert!(
+            prefix.absolute_position().x + prefix.size().width
+                <= suffix.absolute_position().x + 0.1,
+            "Filename prefix and distinguishing suffix must not overlap"
+        );
+
         assert_eq!(a.path.full.as_str(), sources[0]);
         assert_eq!(b.path.full.as_str(), sources[1]);
         click(&ui, &sources[1]);
