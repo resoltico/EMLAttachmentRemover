@@ -88,10 +88,10 @@ pub(super) fn open_directory(
     expression: &Path,
     follow: bool,
 ) -> io::Result<Directory> {
-    if !expression.is_absolute() {
-        if let Some(parent) = parent {
-            current_address(parent)?;
-        }
+    if !expression.is_absolute()
+        && let Some(parent) = parent
+    {
+        current_address(parent)?;
     }
     let path = if expression.is_absolute() {
         expression.to_owned()

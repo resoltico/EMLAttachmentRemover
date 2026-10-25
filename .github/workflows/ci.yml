@@ -30,7 +30,20 @@ jobs:
           done
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177
         with:
-          tool: cargo-deny@${{ steps.tools.outputs.cargo_deny }},actionlint@${{ steps.tools.outputs.actionlint }},shellcheck@${{ steps.tools.outputs.shellcheck }}
+          tool: cargo-deny@${{ steps.tools.outputs.cargo_deny }},shellcheck@${{ steps.tools.outputs.shellcheck }}
+      - name: Install pinned actionlint from its upstream release
+        env:
+          VERSION: ${{ steps.tools.outputs.actionlint }}
+        run: |
+          archive="actionlint_${VERSION}_linux_amd64.tar.gz"
+          base="https://github.com/rhysd/actionlint/releases/download/v${VERSION}"
+          mkdir -p "$RUNNER_TEMP/actionlint"
+          cd "$RUNNER_TEMP/actionlint"
+          curl --fail --silent --show-error --location "$base/$archive" -o "$archive"
+          curl --fail --silent --show-error --location "$base/actionlint_${VERSION}_checksums.txt" -o checksums.txt
+          grep "  $archive$" checksums.txt | sha256sum -c -
+          tar -xzf "$archive" actionlint
+          echo "$RUNNER_TEMP/actionlint" >> "$GITHUB_PATH"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         id: cache
         with:
