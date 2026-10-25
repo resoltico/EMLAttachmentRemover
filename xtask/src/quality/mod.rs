@@ -3,8 +3,6 @@ mod discovery;
 mod policy;
 mod references;
 mod rust;
-#[cfg(target_os = "macos")]
-mod swift;
 #[cfg(test)]
 mod tests;
 
@@ -130,16 +128,6 @@ fn bind(
     }
     *matched.entry(entry.id.clone()).or_default() += 1;
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn check_swift_structure(
-    root: &Path,
-    out: &Path,
-    build: &crate::macos::MacBuild,
-    paths: &std::collections::BTreeSet<&str>,
-) -> Result<serde_json::Value> {
-    swift::check(root, out, build, paths)
 }
 
 pub(crate) fn shell_sources(root: &Path) -> Result<Vec<String>> {

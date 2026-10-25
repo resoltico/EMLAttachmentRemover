@@ -45,7 +45,10 @@ fn namespace(receipt: eml_core::NamespaceObservation) {
     assert!(receipt.required_edges > 0 && receipt.required_edges <= 513);
     assert_eq!(receipt.completed_edges, receipt.required_edges);
     assert!(receipt.failed_edge_index.is_none());
-    assert_eq!(receipt.receipt.unwrap().state, eml_fs::SyncState::Succeeded);
+    assert_eq!(
+        receipt.receipt.unwrap().state,
+        eml_core::fs::SyncState::Succeeded
+    );
 }
 impl EventSink for Sink {
     fn emit(&mut self, event: Event<'_>) -> io::Result<()> {
@@ -62,12 +65,13 @@ impl EventSink for Sink {
                         assert_eq!(copy.publication().address(), AddressState::Verified);
                         assert_eq!(
                             copy.publication().file_sync().unwrap().state,
-                            eml_fs::SyncState::Succeeded
+                            eml_core::fs::SyncState::Succeeded
                         );
                         namespace(copy.publication().namespace_sync());
                         assert!(matches!(
                             copy.publication().cleanup().state,
-                            eml_fs::CleanupState::Complete | eml_fs::CleanupState::NotNeeded
+                            eml_core::fs::CleanupState::Complete
+                                | eml_core::fs::CleanupState::NotNeeded
                         ));
                         assert_eq!(copy.publication().cleanup().native_code, None);
                         assert_eq!(metadata.source_bytes, INPUT.len() as u64);
@@ -84,7 +88,10 @@ impl EventSink for Sink {
                         assert_eq!(copy.address, AddressState::Verified);
                         assert!(copy.stable);
                         assert_eq!(copy.bytes_equal, Some(true));
-                        assert_eq!(copy.file_sync.unwrap().state, eml_fs::SyncState::Succeeded);
+                        assert_eq!(
+                            copy.file_sync.unwrap().state,
+                            eml_core::fs::SyncState::Succeeded
+                        );
                         namespace(copy.namespace_sync);
                         Item {
                             status: "up_to_date",

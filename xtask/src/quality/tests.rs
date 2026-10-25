@@ -146,19 +146,6 @@ fn workflow_and_cargo_config_cannot_weaken_lint_commands() {
     assert!(super::policy::check_tool_options("fixture", "cargo clippy -- -D warnings").is_ok());
 }
 
-#[cfg(target_os = "macos")]
-#[test]
-fn missing_matching_swift_host_modules_fail_before_compilation() {
-    let root = tempfile::tempdir().unwrap();
-    let compiler = root.path().join("usr/bin/swiftc");
-    assert!(super::swift::host_modules(&compiler).is_err());
-    let host = root.path().join("usr/lib/swift/host");
-    std::fs::create_dir_all(host.join("SwiftParser.swiftmodule")).unwrap();
-    assert!(super::swift::host_modules(&compiler).is_err());
-    std::fs::create_dir_all(host.join("SwiftSyntax.swiftmodule")).unwrap();
-    assert_eq!(super::swift::host_modules(&compiler).unwrap(), host);
-}
-
 #[test]
 fn duplicate_registry_identifiers_are_rejected_before_source_binding() {
     let root = tempfile::tempdir().unwrap();

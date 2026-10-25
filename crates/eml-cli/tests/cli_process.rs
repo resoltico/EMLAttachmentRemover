@@ -505,10 +505,8 @@ fn caller_argv_zero_does_not_replace_authored_help_program_name() {
     root.close().unwrap();
 }
 
-#[cfg(unix)]
 #[path = "../../../tests/support/report_message.rs"]
 mod report_message;
-#[cfg(unix)]
 use report_message::large_report_message;
 #[cfg(unix)]
 #[test]
@@ -563,4 +561,63 @@ fn distinct_termination_requests_force_owned_process_after_observed_partial_repo
     assert_eq!(fs::read(&copy).unwrap(), golden);
     assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), input);
     root.close().unwrap();
+}
+
+#[test]
+fn force_kill_preserves_original_bytes_mtime_and_the_complete_published_copy() {
+    let root = root();
+    let (input, golden) = large_report_message();
+    let source = root.path().join("a.eml");
+    fs::write(&source, &input).unwrap();
+    let modified = fs::metadata(&source).unwrap().modified().unwrap();
+    let mut child = OwnedChild(
+        Command::new(BIN)
+            .current_dir(root.path())
+            .args(["--format", "json", "--", "a.eml"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let stderr = drain(
+        child.0.stderr.take().unwrap(),
+        Arc::new(AtomicUsize::new(0)),
+    );
+    let mut stdout = child.0.stdout.take().unwrap();
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let mut prefix = vec![0; 65_536];
+        let read = stdout.read_exact(&mut prefix);
+        drop(sender.send((stdout, prefix, read)));
+    });
+    let (mut stdout, mut partial, read) = receiver
+        .recv_timeout(Duration::from_secs(15))
+        .expect("CLI must deliver its actual partial item report");
+    read.unwrap();
+    assert!(String::from_utf8_lossy(&partial).contains("\"removed\":["));
+    assert_eq!(
+        fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+        golden
+    );
+    // The remaining report exceeds the pipe capacity, so the producer is still
+    // alive without a sleep or a private publication hook.
+    assert!(child.0.try_wait().unwrap().is_none());
+    child.0.kill().unwrap();
+    let status = wait(&mut child.0);
+    assert!(!status.success());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(9));
+    }
+    stdout.read_to_end(&mut partial).unwrap();
+    assert!(!String::from_utf8_lossy(&partial).contains("\"type\":\"summary\""));
+    assert!(stderr.join().unwrap().is_empty());
+    assert_eq!(fs::read(&source).unwrap(), input);
+    assert_eq!(fs::metadata(&source).unwrap().modified().unwrap(), modified);
+    assert_eq!(
+        fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+        golden
+    );
 }

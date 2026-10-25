@@ -49,19 +49,9 @@ pub(super) fn open_existing(
     parent: &BoundDirectory,
     info: &crate::DestinationInfo,
 ) -> Result<BoundFile, BoundFileError> {
-    #[cfg(unix)]
-    {
-        parent.open_file(info.basename(), false)
-    }
-    #[cfg(windows)]
-    {
-        let file = BoundFile::open(info.native_path(), false)?;
-        if file.parent_identity() != parent.identity() {
-            return Err(BoundFileError::Changed);
-        }
-        Ok(file)
-    }
+    parent.open_file(info.basename(), false)
 }
+
 pub(super) struct MatchingInspection {
     pub(super) frame: crate::destination::ReadOnlyParent,
     pub(super) comparison: crate::ComparedExisting,
@@ -344,26 +334,7 @@ pub(super) fn resynchronize_item<'a>(
         }
     };
     observed.namespace_sync = binding.namespace();
-    #[cfg(unix)]
     let compared = matched.comparison;
-    #[cfg(windows)]
-    let compared = {
-        let info = plan.records()[index]
-            .destination()
-            .expect("known destination");
-        match handoff_existing_for_sync(
-            source,
-            matched,
-            &binding,
-            info,
-            context,
-            control,
-            &mut observed,
-        ) {
-            Ok(compared) => compared,
-            Err(error) => return existing_failure(error, data, observed),
-        }
-    };
     if let Err(error) = guard_existing_identity(
         compared.signature().identity,
         &context.source_ids,
@@ -508,102 +479,6 @@ fn qualify_inspected_existing(
     checkpoint(control, ErrorPhase::Existing)
 }
 
-#[cfg(windows)]
-fn handoff_existing_for_sync(
-    source: &PreparedSource,
-    matched: MatchingInspection,
-    binding: &crate::binding::DestinationBinding,
-    info: &crate::DestinationInfo,
-    context: &mut RunContext,
-    control: &RunControl,
-    observed: &mut ExistingObservation,
-) -> Result<crate::ComparedExisting, OperationFailure> {
-    let original = matched.comparison.signature();
-    if control.is_stopped() {
-        return Err(interrupted(ErrorPhase::Existing));
-    }
-    if let Err(error) = matched.comparison.into_file().close() {
-        return Err(OperationFailure::io(
-            ErrorCode::ExistingSyncFailed,
-            ErrorPhase::Existing,
-            "Existing comparison holder could not be checked closed",
-            error,
-        ));
-    }
-    #[cfg(test)]
-    if let Some(hook) = context.before_sync_reopen.take() {
-        hook();
-    }
-    if control.is_stopped() {
-        return Err(interrupted(ErrorPhase::Existing));
-    }
-    let fresh = match BoundFile::open_for_sync(info.native_path()) {
-        Ok(file) => file,
-        Err(error) => {
-            return Err(match error {
-                BoundFileError::ObservationFailed(error) => OperationFailure::io(
-                    ErrorCode::ExistingSyncFailed,
-                    ErrorPhase::Existing,
-                    "Existing copy synchronization access is unavailable",
-                    error,
-                ),
-                _ => OperationFailure::new(
-                    ErrorCode::DestinationExists,
-                    ErrorPhase::Existing,
-                    "Existing copy became unsupported during synchronization handoff",
-                ),
-            });
-        }
-    };
-    if fresh.parent_identity() != matched.frame.directory.identity()
-        || fresh.parent_identity() != binding.directory().identity()
-    {
-        observed.stable = false;
-        observed.address = AddressState::Changed;
-        return Err(OperationFailure::new(
-            ErrorCode::AddressChanged,
-            ErrorPhase::Address,
-            "Existing parent changed during synchronization handoff",
-        ));
-    }
-    let signature = fresh.initial_signature();
-    if let Err(error) = check_existing_observation(
-        original,
-        Some(EntryObservation {
-            identity: signature.identity,
-            kind: EntryKind::File,
-            file: Some(signature),
-        }),
-    ) {
-        observed.stable = false;
-        if error.code() == ErrorCode::AddressChanged {
-            observed.address = AddressState::Changed;
-        }
-        return Err(error);
-    }
-    guard_existing_identity(
-        fresh.initial_signature().identity,
-        &context.source_ids,
-        &context.output_candidates,
-        ErrorPhase::Existing,
-    )?;
-    match compare_existing(source, fresh, control) {
-        Ok(compared) if compared.bytes_equal() => Ok(compared),
-        Ok(_) => {
-            observed.bytes_equal = Some(false);
-            Err(OperationFailure::new(
-                ErrorCode::DestinationExists,
-                ErrorPhase::Existing,
-                "Existing bytes changed during synchronization handoff",
-            ))
-        }
-        Err(error) => {
-            observed.stable = false;
-            Err(comparison_failure(error))
-        }
-    }
-}
-
 fn synchronize_existing_storage(
     binding: &mut crate::binding::DestinationBinding,
     compared: &crate::ComparedExisting,
@@ -613,7 +488,7 @@ fn synchronize_existing_storage(
     checkpoint(control, ErrorPhase::Existing)?;
     let receipt = compared.sync_file();
     observed.file_sync = Some(receipt);
-    if receipt.state != eml_fs::SyncState::Succeeded {
+    if receipt.state != crate::fs::SyncState::Succeeded {
         return Err(OperationFailure::new(
             ErrorCode::ExistingSyncFailed,
             ErrorPhase::Existing,

@@ -12,7 +12,7 @@ mod session;
 mod supervisor;
 pub use control::{ControlError, WorkerControl, WorkerIntent};
 #[cfg(target_os = "macos")]
-pub use eml_fs::PublicationState;
+pub use eml_core::fs::PublicationState;
 #[cfg(target_os = "macos")]
 pub use export::{
     ReportExportFailure, ReportExportOutcome, ReportExportStage, ReportNameAvailability,

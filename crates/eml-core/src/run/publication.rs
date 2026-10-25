@@ -12,7 +12,7 @@ pub(super) fn new_copy_failure<'a>(
     error: OperationFailure,
     data: MessageMetadata<'a>,
     identity: Option<Identity>,
-    file_sync: Option<eml_fs::SyncReceipt>,
+    file_sync: Option<crate::fs::SyncReceipt>,
     namespace_sync: NamespaceObservation,
     cleanup: CleanupReceipt,
 ) -> Box<ItemFailure<'a>> {
@@ -75,25 +75,25 @@ pub(super) fn destination_still_absent(
     Ok(())
 }
 pub(super) fn stage_failure(
-    error: eml_fs::StageFailure,
+    error: crate::fs::StageFailure,
     checkpoint_stopped: bool,
 ) -> (
     OperationFailure,
-    Option<eml_fs::SyncReceipt>,
+    Option<crate::fs::SyncReceipt>,
     CleanupReceipt,
 ) {
     let phase = match error.operation {
-        eml_fs::StageOperation::Create => ErrorPhase::Stage,
-        eml_fs::StageOperation::Write => ErrorPhase::Write,
-        eml_fs::StageOperation::Sync => ErrorPhase::Sync,
+        crate::fs::StageOperation::Create => ErrorPhase::Stage,
+        crate::fs::StageOperation::Write => ErrorPhase::Write,
+        crate::fs::StageOperation::Sync => ErrorPhase::Sync,
     };
     let code = if checkpoint_stopped {
         ErrorCode::Interrupted
     } else {
         match error.operation {
-            eml_fs::StageOperation::Create => ErrorCode::StageFailed,
-            eml_fs::StageOperation::Write => ErrorCode::WriteFailed,
-            eml_fs::StageOperation::Sync => ErrorCode::FileSyncFailed,
+            crate::fs::StageOperation::Create => ErrorCode::StageFailed,
+            crate::fs::StageOperation::Write => ErrorCode::WriteFailed,
+            crate::fs::StageOperation::Sync => ErrorCode::FileSyncFailed,
         }
     };
     (
@@ -108,12 +108,12 @@ pub(super) fn stage_failure(
     )
 }
 pub(super) fn reconcile_held_effect(
-    state: eml_fs::PublicationState,
+    state: crate::fs::PublicationState,
     binding: &crate::binding::DestinationBinding,
     identity: Identity,
     name: &std::ffi::OsStr,
-) -> eml_fs::PublicationState {
-    if state == eml_fs::PublicationState::Unknown
+) -> crate::fs::PublicationState {
+    if state == crate::fs::PublicationState::Unknown
         && binding
             .directory()
             .observe_child_if_present(name)
@@ -121,20 +121,20 @@ pub(super) fn reconcile_held_effect(
             .flatten()
             .is_some_and(|entry| entry.identity == identity)
     {
-        eml_fs::PublicationState::Published
+        crate::fs::PublicationState::Published
     } else {
         state
     }
 }
 pub(super) fn record_publication_address(
     result: Result<(), OperationFailure>,
-    state: &mut eml_fs::PublicationState,
+    state: &mut crate::fs::PublicationState,
     error: &mut Option<OperationFailure>,
 ) -> AddressState {
     match result {
         Ok(()) => {
-            if *state == eml_fs::PublicationState::Unknown {
-                *state = eml_fs::PublicationState::Published;
+            if *state == crate::fs::PublicationState::Unknown {
+                *state = crate::fs::PublicationState::Published;
             }
             AddressState::Verified
         }
@@ -266,10 +266,6 @@ pub(super) fn publish_item<'a>(
         .expect("known destination");
     let identity = ready.identity();
     let file_sync = ready.file_sync();
-    #[cfg(any(test, feature = "native-fixtures"))]
-    if let Some(hook) = context.before_edge.take() {
-        hook();
-    }
     let before_edge =
         check_publication_edge(plan, index, source, &binding, identity, context, control);
     if let Err(error) = before_edge {
@@ -286,28 +282,14 @@ pub(super) fn publish_item<'a>(
         ));
     }
     let attempt = ready.publish(info.basename());
-    #[cfg(any(test, feature = "native-fixtures"))]
-    if let Some(hook) = context.after_edge.take() {
-        hook();
-    }
     let (mut evidence, candidate) = PublicationEvidence::from_attempt(attempt, &binding, info);
     evidence.observe_effect(source, &mut binding, context);
     // Keep the candidate alive through final identity observations. Stop cannot roll back the edge.
-    #[cfg(unix)]
-    if evidence.state != eml_fs::PublicationState::NotPublished {
+    if evidence.state != crate::fs::PublicationState::NotPublished {
         evidence.record_address(plan, index, &binding, source);
     }
-    #[cfg(windows)]
-    let identity_pin = evidence.pin_identity(&binding, info);
-    #[cfg(unix)]
     let cleanup = candidate.cleanup();
-    #[cfg(windows)]
-    let cleanup = {
-        let (actual, cleanup) = candidate.cleanup();
-        assert_eq!(actual, evidence.native_state);
-        cleanup
-    };
-    if evidence.state == eml_fs::PublicationState::NotPublished {
+    if evidence.state == crate::fs::PublicationState::NotPublished {
         let namespace = binding.namespace();
         let cleanup = binding.cleanup_before_publication(cleanup, &mut context.pending_layout);
         return ItemResult::Failed(new_copy_failure(
@@ -326,10 +308,6 @@ pub(super) fn publish_item<'a>(
         ));
     }
     evidence.record_cleanup(&cleanup);
-    #[cfg(windows)]
-    if let Some(pin) = identity_pin {
-        evidence.release_identity(pin, plan, index, &binding, source);
-    }
     evidence.into_result(data, binding.namespace(), cleanup)
 }
 
@@ -401,7 +379,13 @@ fn prepare_candidate<'a>(
     context: &mut RunContext,
     control: &RunControl,
     data: MessageMetadata<'a>,
-) -> Result<(crate::binding::DestinationBinding, eml_fs::ReadyCandidate), Box<ItemFailure<'a>>> {
+) -> Result<
+    (
+        crate::binding::DestinationBinding,
+        crate::fs::ReadyCandidate,
+    ),
+    Box<ItemFailure<'a>>,
+> {
     let binding = match crate::binding::DestinationBinding::acquire(
         plan,
         index,
@@ -506,36 +490,25 @@ fn check_publication_edge(
 /// Observed facts while a real candidate continues to hold native identity.
 /// Receipt qualification remains independent from whether publication happened.
 struct PublicationEvidence {
-    state: eml_fs::PublicationState,
+    state: crate::fs::PublicationState,
     confirmed: bool,
     error: Option<OperationFailure>,
     address: AddressState,
     identity: Identity,
-    file_sync: eml_fs::SyncReceipt,
-    #[cfg(windows)]
-    native_state: eml_fs::PublicationState,
+    file_sync: crate::fs::SyncReceipt,
 }
 impl PublicationEvidence {
     fn from_attempt(
-        attempt: eml_fs::PublishAttempt,
+        attempt: crate::fs::PublishAttempt,
         binding: &crate::binding::DestinationBinding,
         info: &crate::DestinationInfo,
-    ) -> (Self, eml_fs::PublicationCandidate) {
+    ) -> (Self, crate::fs::PublicationCandidate) {
         let collision = attempt.is_name_collision();
         let unsupported = attempt.is_unsupported();
-        #[cfg(unix)]
         let (state, candidate, native_error) = (attempt.state, attempt.candidate, attempt.error);
-        #[cfg(windows)]
-        let (state, candidate, native_error) = {
-            let state = attempt.state();
-            let (candidate, error) = attempt.into_parts();
-            (state, candidate, error)
-        };
-        #[cfg(windows)]
-        let native_state = state;
         let identity = candidate.identity();
         let state = reconcile_held_effect(state, binding, identity, info.basename());
-        let confirmed = state == eml_fs::PublicationState::Published;
+        let confirmed = state == crate::fs::PublicationState::Published;
         let error = native_error.map(|error| {
             OperationFailure::io(
                 if collision {
@@ -559,8 +532,6 @@ impl PublicationEvidence {
                 address: AddressState::Unknown,
                 identity,
                 file_sync,
-                #[cfg(windows)]
-                native_state,
             },
             candidate,
         )
@@ -571,7 +542,7 @@ impl PublicationEvidence {
         binding: &mut crate::binding::DestinationBinding,
         context: &mut RunContext,
     ) {
-        if self.state != eml_fs::PublicationState::NotPublished {
+        if self.state != crate::fs::PublicationState::NotPublished {
             context.output_candidates.insert(self.identity);
             if let Err(failure) = binding.final_sync()
                 && self.error.is_none()
@@ -605,43 +576,6 @@ impl PublicationEvidence {
             &mut self.error,
         );
     }
-    #[cfg(windows)]
-    fn pin_identity(
-        &mut self,
-        binding: &crate::binding::DestinationBinding,
-        info: &crate::DestinationInfo,
-    ) -> Option<eml_fs::EntryPin> {
-        if self.state != eml_fs::PublicationState::NotPublished {
-            match binding.directory().pin_child(info.basename()) {
-                Ok(pin) => {
-                    let observed = pin.observation();
-                    if observed.identity == self.identity && observed.kind == EntryKind::File {
-                        self.confirmed = true;
-                    } else if self.error.is_none() {
-                        self.error = Some(OperationFailure::new(
-                            ErrorCode::AddressChanged,
-                            ErrorPhase::Address,
-                            "Published final name changed before identity could be retained",
-                        ));
-                    }
-                    Some(pin)
-                }
-                Err(native) => {
-                    if self.error.is_none() {
-                        self.error = Some(OperationFailure::io(
-                            ErrorCode::AddressUnverified,
-                            ErrorPhase::Address,
-                            "Published identity could not be retained across candidate release",
-                            native,
-                        ));
-                    }
-                    None
-                }
-            }
-        } else {
-            None
-        }
-    }
     fn record_cleanup(&mut self, cleanup: &CleanupReceipt) {
         if (!matches!(
             cleanup.state,
@@ -656,30 +590,6 @@ impl PublicationEvidence {
             ));
         }
     }
-    #[cfg(windows)]
-    fn release_identity(
-        &mut self,
-        pin: eml_fs::EntryPin,
-        plan: &DestinationPlan<'_>,
-        index: usize,
-        binding: &crate::binding::DestinationBinding,
-        source: &PreparedSource,
-    ) {
-        let observed = pin.observation();
-        if observed.identity == self.identity && observed.kind == EntryKind::File {
-            self.record_address(plan, index, binding, source);
-        }
-        if let Err(native) = pin.close()
-            && self.error.is_none()
-        {
-            self.error = Some(OperationFailure::io(
-                ErrorCode::CleanupFailed,
-                ErrorPhase::Cleanup,
-                "Final identity metadata handle could not be released",
-                native,
-            ));
-        }
-    }
     fn into_result<'a>(
         mut self,
         data: MessageMetadata<'a>,
@@ -687,9 +597,9 @@ impl PublicationEvidence {
         cleanup: CleanupReceipt,
     ) -> ItemResult<'a> {
         if self.confirmed {
-            self.state = eml_fs::PublicationState::Published;
+            self.state = crate::fs::PublicationState::Published;
         }
-        if self.state == eml_fs::PublicationState::Published {
+        if self.state == crate::fs::PublicationState::Published {
             let publication = crate::PublishedCopy::observed(
                 self.identity,
                 self.address,

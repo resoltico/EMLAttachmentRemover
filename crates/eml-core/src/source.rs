@@ -1,9 +1,9 @@
 //! Bounded native reading and the one pure MIME preparation capability.
+use crate::fs::{BoundFile, BoundFileError, FileSignature};
 use crate::{
     ErrorCode, ErrorPhase, MAX_MESSAGE_BYTES, PreparationError, PreparedMessage, Refusal,
     RunControl,
 };
-use eml_fs::{BoundFile, BoundFileError, FileSignature};
 use std::io;
 
 const READ_CHUNK_BYTES: usize = 64 * 1024;
@@ -81,7 +81,7 @@ pub struct PreparedSource {
     message: PreparedMessage,
 }
 impl PreparedSource {
-    pub(super) fn identity(&self) -> eml_fs::Identity {
+    pub(super) fn identity(&self) -> crate::fs::Identity {
         self.source.initial_signature().identity
     }
     /// Immutable output bytes and metadata from the existing pure preparer.

@@ -1,5 +1,5 @@
 //! Captured native selection operations. No source data or namespace writes.
-use eml_fs::{BoundDirectory, EntryKind, EntryObservation};
+use crate::fs::{BoundDirectory, EntryKind, EntryObservation};
 use std::{
     borrow::Cow,
     io,
@@ -8,8 +8,6 @@ use std::{
 
 pub(super) enum SelectionError {
     Io(io::Error),
-    #[cfg(windows)]
-    Changed,
 }
 impl From<io::Error> for SelectionError {
     fn from(error: io::Error) -> Self {
@@ -19,7 +17,7 @@ impl From<io::Error> for SelectionError {
 pub(super) struct WorkingContext {
     cwd: BoundDirectory,
     #[cfg(windows)]
-    paths: eml_fs::PathContext,
+    paths: crate::fs::PathContext,
 }
 impl WorkingContext {
     pub(super) fn capture(path: &Path) -> io::Result<Self> {
@@ -31,7 +29,7 @@ impl WorkingContext {
         }
         #[cfg(windows)]
         {
-            let paths = eml_fs::PathContext::capture(path)?;
+            let paths = crate::fs::PathContext::capture(path)?;
             let cwd = BoundDirectory::open(&paths.resolve(path)?)?;
             Ok(Self { cwd, paths })
         }
@@ -79,7 +77,9 @@ impl WorkingContext {
         }
         #[cfg(windows)]
         {
-            Ok(eml_fs::observe_selected(&self.paths.resolve(expression)?)?)
+            Ok(self
+                .cwd
+                .observe_selected(&self.paths.resolve(expression)?)?)
         }
     }
     pub(super) fn directory(&self, expression: &Path) -> Result<BoundDirectory, SelectionError> {
@@ -89,19 +89,28 @@ impl WorkingContext {
         }
         #[cfg(windows)]
         {
-            let directory = BoundDirectory::open(&self.paths.resolve(expression)?)?;
-            let resolved = directory.resolved_path()?;
-            let confirmed = BoundDirectory::open(&resolved)?;
-            if confirmed.identity() != directory.identity() {
-                return Err(SelectionError::Changed);
-            }
-            Ok(directory)
+            Ok(BoundDirectory::open(&self.paths.resolve(expression)?)?)
+        }
+    }
+    pub(super) fn destination_directory(
+        &self,
+        expression: &Path,
+    ) -> Result<BoundDirectory, SelectionError> {
+        #[cfg(unix)]
+        {
+            Ok(self.cwd.open_destination(expression)?)
+        }
+        #[cfg(windows)]
+        {
+            Ok(self
+                .cwd
+                .open_destination(&self.paths.resolve(expression)?)?)
         }
     }
     pub(super) fn parent_identity(
         &self,
         expression: &Path,
-    ) -> Result<eml_fs::Identity, SelectionError> {
+    ) -> Result<crate::fs::Identity, SelectionError> {
         let parent = expression
             .parent()
             .filter(|path| !path.as_os_str().is_empty())

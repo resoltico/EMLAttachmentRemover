@@ -1,9 +1,9 @@
 //! Actual owned-file comparison; no synchronization or publication qualification.
 #![cfg(any(unix, windows))]
+use eml_core::fs::BoundFile;
 use eml_core::{
     ExistingComparisonError, PreparedSource, RunControl, compare_existing, prepare_source,
 };
-use eml_fs::BoundFile;
 use std::{fs, path::Path};
 const INPUT: &[u8] = include_bytes!("../../../tests/contract/mime/inputs/01-gmail-attachment.eml");
 const GOLDEN: &[u8] = include_bytes!("../../../tests/contract/mime/golden/01-gmail-attachment.eml");
@@ -15,14 +15,14 @@ fn root() -> tempfile::TempDir {
 fn bind(path: &Path) -> BoundFile {
     #[cfg(unix)]
     {
-        eml_fs::BoundDirectory::open(path.parent().unwrap())
+        eml_core::fs::BoundDirectory::open(path.parent().unwrap())
             .unwrap()
             .open_file(path.file_name().unwrap(), false)
             .unwrap()
     }
     #[cfg(windows)]
     {
-        let context = eml_fs::PathContext::capture(path.parent().unwrap()).unwrap();
+        let context = eml_core::fs::PathContext::capture(path.parent().unwrap()).unwrap();
         BoundFile::open(&context.resolve(path).unwrap(), false).unwrap()
     }
 }
@@ -164,10 +164,10 @@ fn actual_changed_source_and_existing_file_keep_distinct_causes() {
             (change_source, failure.error()),
             (
                 true,
-                ExistingComparisonError::Source(eml_fs::BoundFileError::Changed)
+                ExistingComparisonError::Source(eml_core::fs::BoundFileError::Changed)
             ) | (
                 false,
-                ExistingComparisonError::Existing(eml_fs::BoundFileError::Changed)
+                ExistingComparisonError::Existing(eml_core::fs::BoundFileError::Changed)
             )
         ));
         assert_eq!(failure.identity(), identity);

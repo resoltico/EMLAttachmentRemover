@@ -127,7 +127,7 @@ impl Sink {
                         assert!(file_sync.is_none());
                         assert_eq!(namespace_sync.required_edges, 0);
                         assert!(namespace_sync.receipt.is_none());
-                        assert_eq!(cleanup.state, eml_fs::CleanupState::NotNeeded);
+                        assert_eq!(cleanup.state, eml_core::fs::CleanupState::NotNeeded);
                     }
                     _ => panic!("Dry run cannot publish"),
                 }

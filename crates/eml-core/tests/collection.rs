@@ -307,7 +307,7 @@ fn source_charge_counts_complete_display_or_expanded_reported_native_value() {
         #[cfg(windows)]
         {
             use std::os::windows::ffi::OsStrExt;
-            let expected_native = eml_fs::PathContext::capture(root.path())
+            let expected_native = eml_core::fs::PathContext::capture(root.path())
                 .unwrap()
                 .resolve(Path::new("a.eml"))
                 .unwrap();
@@ -472,7 +472,7 @@ fn walked_literal_parent_is_reported_as_usable_extended_native_path() {
     use std::os::windows::ffi::OsStrExt;
     let root = scratch();
     fs::create_dir(root.path().join("selected")).unwrap();
-    let context = eml_fs::PathContext::capture(root.path()).unwrap();
+    let context = eml_core::fs::PathContext::capture(root.path()).unwrap();
     let literal_parent = context
         .resolve(Path::new("selected"))
         .unwrap()
@@ -524,13 +524,11 @@ fn actual_directory_entry_bound_accepts_exact_total_and_refuses_next_name() {
     #[cfg(unix)]
     let operand = folder.clone();
     #[cfg(windows)]
-    let operand = eml_fs::PathContext::capture(root.path())
+    let operand = eml_core::fs::PathContext::capture(root.path())
         .unwrap()
         .resolve(&folder)
         .unwrap();
-    let directory = eml_fs::BoundDirectory::open(&operand).unwrap();
-    #[cfg(windows)]
-    let mut directory = directory;
+    let directory = eml_core::fs::BoundDirectory::open(&operand).unwrap();
     // This raw native stream is an oracle for provider dot-entry behavior,
     // independent of core's examination counter and skip policy.
     let raw_count = directory

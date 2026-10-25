@@ -10,8 +10,6 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
         eligible: bool,
         depth: usize,
     ) {
-        #[cfg(windows)]
-        let mut directory = directory;
         if !self.checkpoint() {
             return;
         }

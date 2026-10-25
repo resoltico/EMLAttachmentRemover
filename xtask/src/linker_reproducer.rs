@@ -1,5 +1,5 @@
 //! Read-only linker reproducer inspection; distinct from shipping archive qualification.
-use crate::archive::ByteIdentity;
+use crate::content_identity::ByteIdentity;
 use std::{collections::BTreeSet, io::Read};
 /// One bounded byte observation from the actual linker's reproducer.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

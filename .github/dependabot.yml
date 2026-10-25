@@ -8,6 +8,5 @@ updates:
     directories:
       - /
       - /fuzz
-      - /tests/native-filesystem
     schedule:
       interval: weekly

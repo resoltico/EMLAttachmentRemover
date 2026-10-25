@@ -89,7 +89,7 @@ fn collisions_mark_all_contenders_even_when_existing_type_already_failed() {
             ErrorCode::DestinationCollision
         );
         assert!(
-            matches!(record.destination().unwrap().observation(), DestinationObservation::Present(value) if value.kind == eml_fs::EntryKind::Directory)
+            matches!(record.destination().unwrap().observation(), DestinationObservation::Present(value) if value.kind == eml_core::fs::EntryKind::Directory)
         );
     }
     assert!(root.path().join("out/a.no-attachments.eml").is_dir());

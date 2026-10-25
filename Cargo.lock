@@ -1211,7 +1211,6 @@ version = "6.0.0"
 dependencies = [
  "base64",
  "eml-core",
- "eml-fs",
  "eml-macos",
  "eml-protocol",
  "serde",
@@ -1222,17 +1221,8 @@ dependencies = [
 name = "eml-core"
 version = "6.0.0"
 dependencies = [
- "eml-fs",
  "eml-message",
- "tempfile",
-]
-
-[[package]]
-name = "eml-fs"
-version = "6.0.0"
-dependencies = [
  "getrandom 0.4.3",
- "libc",
  "rustix 1.1.5",
  "tempfile",
  "windows-sys 0.61.2",
@@ -1306,7 +1296,6 @@ dependencies = [
  "ctrlc",
  "eml-app",
  "eml-core",
- "eml-fs",
  "eml-macos",
  "eml-protocol",
  "serde_json",
@@ -5748,10 +5737,7 @@ dependencies = [
  "base64",
  "clap",
  "ctrlc",
- "eml-app",
  "eml-core",
- "eml-fs",
- "eml-macos",
  "eml-protocol",
  "eml-windows",
  "flate2",

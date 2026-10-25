@@ -1,11 +1,11 @@
 //! Real synthetic held-file preparation; no CLI, publication or copied outputs.
 #![cfg(any(unix, windows))]
+use eml_core::fs::BoundFile;
+#[cfg(unix)]
+use eml_core::fs::BoundFileError;
 use eml_core::{
     ErrorCode, ErrorPhase, MAX_MESSAGE_BYTES, RunControl, SourcePreparationError, prepare_source,
 };
-use eml_fs::BoundFile;
-#[cfg(unix)]
-use eml_fs::BoundFileError;
 use std::{
     fs,
     io::Write,
@@ -22,7 +22,7 @@ fn root() -> tempfile::TempDir {
 fn bind(path: &Path) -> BoundFile {
     #[cfg(unix)]
     {
-        eml_fs::BoundDirectory::open(path.parent().unwrap())
+        eml_core::fs::BoundDirectory::open(path.parent().unwrap())
             .unwrap()
             .open_file(path.file_name().unwrap(), false)
             .unwrap()
@@ -30,7 +30,7 @@ fn bind(path: &Path) -> BoundFile {
     #[cfg(windows)]
     {
         BoundFile::open(
-            &eml_fs::PathContext::capture(&std::env::current_dir().unwrap())
+            &eml_core::fs::PathContext::capture(&std::env::current_dir().unwrap())
                 .unwrap()
                 .resolve(path)
                 .unwrap(),

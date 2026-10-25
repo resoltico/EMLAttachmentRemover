@@ -236,7 +236,6 @@ mod target;
 mod tree;
 use material::*;
 use render::*;
-pub(crate) use target::NoticeComponent;
 use target::*;
 use tree::*;
 
@@ -379,84 +378,6 @@ pub(crate) fn check(root: &Path, output: Option<&Path>) -> Result<Value> {
         json!({"mode":mode,"profiles":pairs,"entries":all.len(),"source":source,"compared_output":output,
         "scope":if mode=="consumer_identity" {"same-clean-source generated material identity/completeness; successful same-source producer is a separate prerequisite, not attested by inventory/source SHA"} else {"current selected locked graphs and reviewed source/material bindings regenerated and validated; no native execution or external legal assurance"}}),
     )
-}
-
-/// Fresh target-selected legal bytes, generated from reviewed upstream inputs.
-pub(crate) struct CheckedTargetMaterials {
-    files: Files,
-    target: String,
-    platform: String,
-    version: String,
-}
-impl CheckedTargetMaterials {
-    pub(crate) fn files(&self) -> &Files {
-        &self.files
-    }
-    pub(crate) fn target(&self) -> &str {
-        &self.target
-    }
-    pub(crate) fn platform(&self) -> &str {
-        &self.platform
-    }
-    pub(crate) fn version(&self) -> &str {
-        &self.version
-    }
-}
-
-pub(crate) fn checked_target(root: &Path, platform: &str) -> Result<CheckedTargetMaterials> {
-    checked_component(root, platform, NoticeComponent::Cli)
-}
-
-pub(crate) fn checked_component(
-    root: &Path,
-    platform: &str,
-    component: NoticeComponent,
-) -> Result<CheckedTargetMaterials> {
-    if relative(platform)?.components().count() != 1 {
-        return Err("Invalid notice platform component".into());
-    }
-    // cargo-about has no Intel macOS prebuilt at the pinned version. Native
-    // builds may consume the target-selected output of the same CI run's Linux
-    // producer. Identity checks bind that input, without treating it as review.
-    let all = if let Some(directory) = std::env::var_os("EML_GENERATED_LEGAL_MATERIALS") {
-        checked_generated_input(root, Path::new(&directory))?
-    } else {
-        generated_materials(root, Some((platform, component)))?.1
-    };
-    let prefix = component.prefix(platform);
-    let selected: Files = all
-        .into_iter()
-        .filter_map(|(path, bytes)| {
-            if path.ends_with('/') {
-                return None;
-            }
-            path.strip_prefix(&prefix)
-                .map(|relative| (relative.to_owned(), bytes))
-        })
-        .collect();
-    if selected.is_empty() {
-        return Err("No generated materials for the requested native platform".into());
-    }
-    let identity: Value = serde_json::from_slice(
-        selected
-            .get("licenses/materials.json")
-            .ok_or("Missing checked target material identity")?,
-    )?;
-    if identity["platform"] != platform || identity["component"] != component.name() {
-        return Err("Checked material platform mismatch".into());
-    }
-    Ok(CheckedTargetMaterials {
-        target: identity["target"]
-            .as_str()
-            .ok_or("Missing checked material target")?
-            .to_owned(),
-        version: identity["version"]
-            .as_str()
-            .ok_or("Missing checked material version")?
-            .to_owned(),
-        platform: platform.to_owned(),
-        files: selected,
-    })
 }
 
 #[cfg(test)]

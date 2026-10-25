@@ -1,6 +1,6 @@
 //! Typed workflow observations. Native success is never inferred from a path.
+use crate::fs::{CleanupReceipt, Identity, SyncReceipt};
 use crate::{OperationFailure, RemovedPart};
-use eml_fs::{CleanupReceipt, Identity, SyncReceipt};
 use std::{io, path::Path};
 
 /// Requested-address observation, independent of object identity or publication.
@@ -111,11 +111,11 @@ impl CreatedCopy {
         if publication.address == AddressState::Verified
             && publication
                 .file_sync
-                .is_some_and(|receipt| receipt.state == eml_fs::SyncState::Succeeded)
+                .is_some_and(|receipt| receipt.state == crate::fs::SyncState::Succeeded)
             && namespace_qualified(publication.namespace_sync)
             && matches!(
                 publication.cleanup.state,
-                eml_fs::CleanupState::NotNeeded | eml_fs::CleanupState::Complete
+                crate::fs::CleanupState::NotNeeded | crate::fs::CleanupState::Complete
             )
             && publication.cleanup.native_code.is_none()
         {
@@ -141,7 +141,7 @@ impl ExistingCopy {
             && observation.address == AddressState::Verified
             && observation
                 .file_sync
-                .is_some_and(|receipt| receipt.state == eml_fs::SyncState::Succeeded)
+                .is_some_and(|receipt| receipt.state == crate::fs::SyncState::Succeeded)
             && namespace_qualified(observation.namespace_sync)
         {
             Ok(Self(observation))
@@ -207,7 +207,7 @@ fn namespace_qualified(namespace: NamespaceObservation) -> bool {
         && namespace.failed_edge_index.is_none()
         && namespace
             .receipt
-            .is_some_and(|receipt| receipt.state == eml_fs::SyncState::Succeeded)
+            .is_some_and(|receipt| receipt.state == crate::fs::SyncState::Succeeded)
 }
 /// Publication effect for a failed item, independent of its intended destination.
 #[derive(Debug)]
@@ -494,8 +494,8 @@ mod tests {
     use super::*;
     fn success() -> SyncReceipt {
         SyncReceipt {
-            method: eml_fs::SyncMethod::Fsync,
-            state: eml_fs::SyncState::Succeeded,
+            method: crate::fs::SyncMethod::Fsync,
+            state: crate::fs::SyncState::Succeeded,
             native_code: None,
         }
     }
@@ -509,7 +509,7 @@ mod tests {
     }
     fn cleanup() -> CleanupReceipt {
         CleanupReceipt {
-            state: eml_fs::CleanupState::Complete,
+            state: crate::fs::CleanupState::Complete,
             residual_name: None,
             native_code: None,
         }
@@ -536,12 +536,15 @@ mod tests {
                 1 => publication.file_sync = None,
                 2 => publication.namespace_sync.completed_edges = 0,
                 3 => publication.namespace_sync.receipt = None,
-                4 => publication.cleanup.state = eml_fs::CleanupState::Residual,
+                4 => publication.cleanup.state = crate::fs::CleanupState::Residual,
                 _ => publication.cleanup.native_code = Some(5),
             }
             assert!(CreatedCopy::qualify(publication).is_err());
         }
-        for state in [eml_fs::SyncState::Failed, eml_fs::SyncState::Unsupported] {
+        for state in [
+            crate::fs::SyncState::Failed,
+            crate::fs::SyncState::Unsupported,
+        ] {
             let mut publication = published();
             publication.file_sync = Some(SyncReceipt { state, ..success() });
             assert!(CreatedCopy::qualify(publication).is_err());
@@ -586,7 +589,10 @@ mod tests {
             }
             assert!(ExistingCopy::qualify(copy).is_err());
         }
-        for state in [eml_fs::SyncState::Failed, eml_fs::SyncState::Unsupported] {
+        for state in [
+            crate::fs::SyncState::Failed,
+            crate::fs::SyncState::Unsupported,
+        ] {
             let mut copy = observed.clone();
             copy.file_sync = Some(SyncReceipt { state, ..success() });
             assert!(ExistingCopy::qualify(copy).is_err());

@@ -15,7 +15,6 @@ base64.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 eml-macos = { path = "../eml-macos" }
-eml-fs = { path = "../eml-fs" }
 
 [lints]
 workspace = true

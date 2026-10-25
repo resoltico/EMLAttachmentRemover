@@ -410,19 +410,6 @@ fn workspace_version(root: &Path, bytes: &[u8]) -> Result<String> {
     Ok(package.version)
 }
 
-#[cfg(any(target_os = "macos", test))]
-pub(crate) fn picker_host_policy(root: &Path) -> Result<PickerHostPolicy> {
-    use std::io::Read;
-    let mut input = Vec::new();
-    std::fs::File::open(root.join("xtask/distribution.toml"))?
-        .take((MAX_PLAN_BYTES + 1) as u64)
-        .read_to_end(&mut input)?;
-    if input.len() > MAX_PLAN_BYTES {
-        return Err("Distribution policy exceeds its input bound".into());
-    }
-    Ok(Distribution::parse(std::str::from_utf8(&input)?)?.picker_host)
-}
-
 pub(crate) fn run(root: &Path) -> Result<()> {
     let table = Distribution::parse(&std::fs::read_to_string(
         root.join("xtask/distribution.toml"),
@@ -470,38 +457,6 @@ pub(crate) fn run(root: &Path) -> Result<()> {
 mod tests {
     use super::*;
     const TABLE: &str = include_str!("../distribution.toml");
-
-    #[test]
-    fn picker_policy_is_derived_from_the_selected_distribution_input() {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::create_dir(root.path().join("xtask")).unwrap();
-        for image_version in ["20260824.0517.1", "20260825.0517.2"] {
-            let input = TABLE.replace("20260824.0517.1", image_version);
-            std::fs::write(root.path().join("xtask/distribution.toml"), &input).unwrap();
-            let selected = picker_host_policy(root.path()).unwrap();
-            assert_eq!(selected.image_version, image_version);
-            let plan = Distribution::parse(&input)
-                .unwrap()
-                .plan("6.0.0".into())
-                .unwrap();
-            let output = serde_json::to_value(plan).unwrap();
-            assert_eq!(
-                output["picker_host"],
-                serde_json::to_value(selected).unwrap()
-            );
-        }
-        std::fs::write(
-            root.path().join("xtask/distribution.toml"),
-            vec![b' '; MAX_PLAN_BYTES + 1],
-        )
-        .unwrap();
-        assert!(
-            picker_host_policy(root.path())
-                .unwrap_err()
-                .to_string()
-                .contains("exceeds")
-        );
-    }
 
     #[test]
     fn picker_policy_rejects_missing_unknown_and_malformed_host_coordinates() {

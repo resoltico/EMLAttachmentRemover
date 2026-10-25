@@ -1,7 +1,7 @@
 //! Explicit metadata export through the same held filesystem primitives as Core.
 use crate::{ReportHandle, RunId, WorkerCompletion};
 use eml_core::RunControl;
-use eml_fs::{
+use eml_core::fs::{
     BoundDirectory, BoundFile, CleanupReceipt, CleanupState, Identity, PublicationState,
     SyncReceipt, SyncState,
 };
@@ -103,9 +103,9 @@ impl ReportExportFailure {
             detail: error.to_string().chars().take(1000).collect(),
         }
     }
-    fn binding(stage: ReportExportStage, error: eml_fs::BoundFileError) -> Self {
+    fn binding(stage: ReportExportStage, error: eml_core::fs::BoundFileError) -> Self {
         let mut failure = Self::invariant(stage, &error);
-        if let eml_fs::BoundFileError::ObservationFailed(native) = error {
+        if let eml_core::fs::BoundFileError::ObservationFailed(native) = error {
             failure.kind = Some(native.kind());
             failure.native_code = native.raw_os_error();
         }
@@ -201,7 +201,7 @@ fn prepare_export(
     let parent = BoundDirectory::open(parent_path)
         .map_err(|e| ReportExportFailure::native(Destination, &e))?;
     parent
-        .admit_namespace()
+        .check_binding()
         .map_err(|e| ReportExportFailure::native(Destination, &e))?;
     let bytes = report
         .report
@@ -299,7 +299,7 @@ fn reopen_published(
 }
 fn publish_export(
     parent: &BoundDirectory,
-    candidate: eml_fs::ReadyCandidate,
+    candidate: eml_core::fs::ReadyCandidate,
     name: &std::ffi::OsStr,
     bytes: &[u8],
     result: &mut ReportExportOutcome,

@@ -1,52 +1,15 @@
-//! Rust-only repository verification and distribution commands.
+//! Repository checks and materials; archive qualification has been retired.
 #![forbid(unsafe_code)]
-mod archive_verify;
 mod campaign;
 mod check;
 mod ci;
-mod cli_build;
 mod commands;
-#[cfg(any(target_os = "macos", test))]
-mod desktop_preferences;
 mod distribution;
 mod fuzz;
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(target_os = "macos")]
-mod macos_app;
-#[cfg(target_os = "macos")]
-mod macos_archive;
-#[cfg(target_os = "macos")]
-mod macos_icon;
-#[cfg(target_os = "macos")]
-mod macos_interaction;
-#[cfg(target_os = "macos")]
-mod macos_panel;
-#[cfg(any(target_os = "macos", test))]
-mod macos_picker_host;
-#[cfg(target_os = "macos")]
-mod macos_publication_ui;
-#[cfg(target_os = "macos")]
-mod macos_volume;
 mod mutants;
-mod native_host;
 mod notices;
-mod qualify;
 mod quality;
-mod release_assets;
-mod release_check;
-mod smoke;
 mod tools;
-#[cfg(any(windows, test))]
-mod windows_evidence;
-#[cfg(any(windows, test))]
-mod windows_input_review;
-#[cfg(windows)]
-mod windows_link;
-mod windows_references;
-mod windows_runtime;
-#[cfg(windows)]
-mod windows_workspace;
 use clap::{Parser, Subcommand};
 use std::{
     error::Error,
@@ -69,7 +32,7 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
-    /// Admit exact event-specific CI results, rejecting absent or skipped required jobs.
+    /// Check required event-specific CI results.
     CiResult {
         #[arg(long)]
         event: String,
@@ -78,125 +41,13 @@ enum Task {
         #[arg(long)]
         needs: PathBuf,
     },
-    /// Derive byte references from pinned official Windows component archives; not approval.
-    WindowsRuntimeReferences {
-        #[arg(long)]
-        archives: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Capture an actual native Windows CLI link; static-input review is separate.
-    ObserveWindowsLink {
-        #[arg(long)]
-        target: String,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Prepare an exact-source hosted Windows checkout in protected user storage.
-    PrepareWindowsWorkspace,
-    /// Read-only source, version, dated changelog and remote release admission.
-    ReleaseCheck {
-        #[arg(long)]
-        source: String,
-        #[arg(long)]
-        version: String,
-    },
-    /// Assemble exactly eight archive bytes and SHA256SUMS; no qualification or publication.
-    StageReleaseAssets {
-        #[arg(long)]
-        archives: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Compare actual local asset bytes with a retained unpublished GitHub draft response.
-    CheckReleaseServer {
-        #[arg(long)]
-        assets: PathBuf,
-        #[arg(long)]
-        release: PathBuf,
-    },
-    /// Strictly lint retained Swift bridge/test sources with selected Xcode defaults.
-    CheckMacosSwift {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Observe an ordinary owned AppKit panel on a fresh native hosted Mac.
-    ObserveMacosPanel {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Prepare the exact affected hosted Intel picker environment; never product acceptance.
-    PrepareMacosPickerHost {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        reference: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Read back the unchanged picker inputs, caller and host state after the real product.
-    VerifyMacosPickerHost {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        reference: PathBuf,
-        #[arg(long)]
-        preparation: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Check the actual macOS Slint profile and owned native child fixtures.
-    CheckMacosDesktop {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Discover and execute the locked native workspace selection without ignored/filtered cases.
-    NativeTests {
-        #[arg(long)]
-        target: String,
-        #[arg(long)]
-        out: PathBuf,
-        #[arg(long)]
-        release: bool,
-    },
-    /// Run independent repository checks, retaining every failed section.
-    Check,
-    /// Validate authored-source structure and centrally justified lint exceptions.
+    /// Print the current distribution target policy.
+    Distribution,
+    /// Check authored Rust source policy.
     CheckQuality,
-    /// Strictly check all discovered authored shell scripts, including shebang files.
+    /// Check authored shell scripts.
     CheckShell,
-    /// Build and verify one native CLI archive; remaining qualification is separate.
-    BuildCliArchive {
-        #[arg(long)]
-        target: String,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Exercise an owned native CLI and real negative controls; no archive verdict.
-    CliSmokeTests {
-        #[arg(long)]
-        executable: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Run native release/filesystem/archive checks; desktop consumers are separate.
-    Qualify {
-        #[arg(long)]
-        target: String,
-        #[arg(long)]
-        out: PathBuf,
-        /// Validated same-source icon producer directory, required on macOS.
-        #[arg(long)]
-        icons: Option<PathBuf>,
-    },
-    /// Inspect and exercise extracted native CLI archive bytes; missing gates fail.
-    VerifyArchive {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        target: String,
-    },
-    /// Write new legal materials or check source/material and optional generated-tree freshness.
+    /// Generate or check complete third-party materials.
     Notices {
         #[arg(long)]
         out: Option<PathBuf>,
@@ -205,55 +56,12 @@ enum Task {
         #[arg(long, conflicts_with = "write")]
         check: bool,
     },
-    /// Observe exactly two pinned icon compilations; never qualifies an app.
-    MacosIconDiagnostic {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Compile and validate one shared owner-icon asset set with pinned Xcode.
-    CompileMacosIcon {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Build and ad hoc sign native GUI/worker executables; no app/archive verdict.
-    BuildMacosSources {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Exercise an actual exclusively owned exFAT image on a fresh native CI host.
-    CheckMacosVolume {
-        #[arg(long)]
-        out: PathBuf,
-    },
-    /// Assemble and verify a native app candidate; desktop qualification is separate.
-    BuildMacosApp {
-        #[arg(long)]
-        out: PathBuf,
-        #[arg(long)]
-        icons: PathBuf,
-    },
-    /// Qualify the complete desktop case set against a frozen native app archive.
-    SmokeMacosApp {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        reference: PathBuf,
-    },
-    /// Test actual native picker compatibility against a frozen app candidate.
-    CheckMacosPicker {
-        #[arg(long)]
-        archive: PathBuf,
-        #[arg(long)]
-        reference: PathBuf,
-    },
-    /// Print native target policy and expected archive identities; build nothing.
-    Distribution,
-    /// Run one bounded pure-preparation fuzz campaign with owned corpus storage.
+    /// Run bounded MIME fuzzing.
     Fuzz {
-        #[arg(long,default_value_t=60,value_parser=clap::value_parser!(u64).range(1..=900))]
+        #[arg(long, default_value_t=60, value_parser=clap::value_parser!(u64).range(1..=900))]
         seconds: u64,
     },
-    /// Completely test the two specified MIME guards, never a whole workspace campaign.
+    /// Review mutations of the MIME guards.
     Mutants {
         #[arg(long, conflicts_with = "diff", required_unless_present = "diff")]
         initial: bool,
@@ -288,10 +96,6 @@ fn initialize_controller(root: &std::path::Path) -> Result<()> {
     Ok(())
 }
 fn main() -> ExitCode {
-    #[cfg(windows)]
-    if let Some(exit) = windows_link::helper_entry() {
-        return exit;
-    }
     if let Some(exit) = xtask::process::helper_entry() {
         return exit;
     }

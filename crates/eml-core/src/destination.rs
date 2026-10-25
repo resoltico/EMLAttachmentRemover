@@ -1,4 +1,5 @@
 //! Frozen read-only destination layout, naming and reservations. No MIME or writes.
+use crate::fs::{BoundDirectory, EntryKind, EntryObservation, Identity};
 use crate::{
     CollectedObservation, CollectedSources, CollectionState, ErrorCode, ErrorPhase,
     OperationFailure, OutputLocation, RunControl, SourceOrigin,
@@ -7,7 +8,6 @@ use crate::{
     request::{native_bytes, path_limits},
     selection::{SelectionError, append},
 };
-use eml_fs::{BoundDirectory, EntryKind, EntryObservation, Identity};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -360,8 +360,6 @@ fn selected_failure(error: SelectionError) -> OperationFailure {
         SelectionError::Io(error) => {
             native_failure("Selected source parent could not be rebound", error)
         }
-        #[cfg(windows)]
-        SelectionError::Changed => changed("Selected source root identity changed"),
     }
 }
 fn changed(detail: &'static str) -> OperationFailure {
@@ -616,7 +614,7 @@ fn plan_one(
         )
     })?;
     #[cfg(windows)]
-    eml_fs::validate_component(&basename, limit)
+    crate::fs::validate_component(&basename, limit)
         .map_err(|error| native_failure("Copy name is unsupported after truncation", error))?;
     let display = display_destination(sources, index, labels, &basename);
     let native = native_destination_path(sources, index, &route, &basename)?;
@@ -816,7 +814,7 @@ impl DestinationPlan<'_> {
                 .context
                 .as_ref()
                 .expect("complete context")
-                .directory(root)
+                .destination_directory(root)
                 .map_err(destination_binding_failure)?,
         };
         if directory.identity()
@@ -928,12 +926,6 @@ fn destination_binding_failure(error: SelectionError) -> OperationFailure {
         SelectionError::Io(error) => {
             execution_native_failure("Destination root cannot be bound", error)
         }
-        #[cfg(windows)]
-        SelectionError::Changed => OperationFailure::new(
-            ErrorCode::AddressUnverified,
-            ErrorPhase::Address,
-            "Destination root cannot be consistently resolved",
-        ),
     }
 }
 

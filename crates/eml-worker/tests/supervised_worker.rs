@@ -536,9 +536,9 @@ fn explicit_report_export_reuses_protected_publication_and_never_replaces_origin
             .join()
             .unwrap();
     assert!(first.usable(), "{first:?}");
-    assert_eq!(first.publication, eml_fs::PublicationState::Published);
+    assert_eq!(first.publication, eml_core::fs::PublicationState::Published);
     assert_eq!(first.final_file_verified, Some(true));
-    assert_eq!(first.cleanup.state, eml_fs::CleanupState::Complete);
+    assert_eq!(first.cleanup.state, eml_core::fs::CleanupState::Complete);
     let bytes = fs::read(&destination).unwrap();
     assert_exported_facts(&bytes);
     for output in [destination.clone(), source.clone()] {
@@ -549,8 +549,11 @@ fn explicit_report_export_reuses_protected_publication_and_never_replaces_origin
         .join()
         .unwrap();
         assert!(!refused.usable(), "{refused:?}");
-        assert_eq!(refused.publication, eml_fs::PublicationState::NotPublished);
-        assert_eq!(refused.cleanup.state, eml_fs::CleanupState::Complete);
+        assert_eq!(
+            refused.publication,
+            eml_core::fs::PublicationState::NotPublished
+        );
+        assert_eq!(refused.cleanup.state, eml_core::fs::CleanupState::Complete);
         assert!(
             refused
                 .failures
@@ -565,7 +568,10 @@ fn explicit_report_export_reuses_protected_publication_and_never_replaces_origin
     );
     fs::write(&late, b"Created after advisory inspection").unwrap();
     let raced = export_report(&report, &late, &eml_core::RunControl::default());
-    assert_eq!(raced.publication, eml_fs::PublicationState::NotPublished);
+    assert_eq!(
+        raced.publication,
+        eml_core::fs::PublicationState::NotPublished
+    );
     assert!(
         raced
             .failures
@@ -588,9 +594,12 @@ fn explicit_report_export_reuses_protected_publication_and_never_replaces_origin
     assert!(!cancelled.usable());
     assert_eq!(
         cancelled.publication,
-        eml_fs::PublicationState::NotPublished
+        eml_core::fs::PublicationState::NotPublished
     );
-    assert_eq!(cancelled.cleanup.state, eml_fs::CleanupState::NotNeeded);
+    assert_eq!(
+        cancelled.cleanup.state,
+        eml_core::fs::CleanupState::NotNeeded
+    );
     assert!(!cancelled_path.exists());
     assert_eq!(fs::read(&destination).unwrap(), bytes);
     assert_eq!(fs::read(source).unwrap(), INPUT);

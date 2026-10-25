@@ -1,5 +1,5 @@
 //! Native file/entry observations, independent of frontend encoding or policy.
-use crate::Identity;
+use super::Identity;
 use std::io;
 
 /// Native facts from opening or revalidating an ordinary bound file.

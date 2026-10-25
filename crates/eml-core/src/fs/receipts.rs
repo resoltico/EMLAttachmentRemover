@@ -1,5 +1,5 @@
 //! Native operation receipts shared by the supported filesystem backends.
-use crate::{CleanupReceipt, CreationFailure};
+use super::{CleanupReceipt, CreationFailure};
 use std::io;
 
 /// Exact requested synchronization method.

@@ -1,11 +1,11 @@
 //! Ordered bounded read-only inventory and explicit-output separation.
+use crate::fs::{BoundDirectory, EntryKind, FileSignature, Identity};
 use crate::{
     COPY_SUFFIX, ErrorCode, ErrorPhase, MAX_PATH_UNITS, OperationFailure, OutputLocation,
     RequestPathError, RunControl, RunRequest,
     request::{native_bytes, path_limits},
     selection::{SelectionError, WorkingContext, append},
 };
-use eml_fs::{BoundDirectory, EntryKind, FileSignature, Identity};
 use std::{
     borrow::Cow,
     collections::{HashMap, hash_map::RandomState},
@@ -255,7 +255,7 @@ fn bind_output(
         )));
     }
     let directory = context
-        .directory(path)
+        .destination_directory(path)
         .map_err(|error| InvalidRequest::OutputDirectory(selection_io(error)))?;
     if directory.identity() != observed.identity {
         return Err(InvalidRequest::OutputDirectory(io::Error::new(
@@ -350,11 +350,6 @@ fn collect_with_hash<'a>(
 fn selection_io(error: SelectionError) -> io::Error {
     match error {
         SelectionError::Io(error) => error,
-        #[cfg(windows)]
-        SelectionError::Changed => io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Selected directory identity changed",
-        ),
     }
 }
 fn selection_failure(phase: ErrorPhase, error: SelectionError) -> OperationFailure {
@@ -364,12 +359,6 @@ fn selection_failure(phase: ErrorPhase, error: SelectionError) -> OperationFailu
             phase,
             "Selected path could not be inspected or opened",
             error,
-        ),
-        #[cfg(windows)]
-        SelectionError::Changed => OperationFailure::new(
-            ErrorCode::SourceChanged,
-            phase,
-            "Selected directory identity changed",
         ),
     }
 }
