@@ -153,7 +153,18 @@ export component MainWindow inherits Window {
         if root.settings-warning != "": VerticalBox {
             spacing: 2px;
             Label { text: "Destination settings"; font-weight: 600; }
-            Label { text: root.settings-warning; wrap: word-wrap; }
+            settings-view := ScrollView {
+                preferred-height: min(100px, settings-text.preferred-height);
+                min-height: 0px; vertical-stretch: 0;
+                content-width: self.visible-width;
+                content-height: settings-text.preferred-height;
+                accessible-role: list; accessible-label: "Destination settings warning";
+                settings-text := Label {
+                    width: settings-view.visible-width;
+                    height: self.preferred-height;
+                    text: root.settings-warning; wrap: word-wrap;
+                }
+            }
         }
         if root.operation-feedback != "": HorizontalBox {
             Label { text: root.operation-label; font-weight: 600; }

@@ -203,11 +203,19 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
             &ui,
             &vocabulary::count_label(CountKind::Created, 1)
         ));
-        ElementHandle::find_by_accessible_label(&ui, "Message details")
+        let scroller = ElementHandle::find_by_accessible_label(&ui, "Message details")
             .next()
-            .unwrap()
-            .scroll(0.0, -260.0);
-        mock_elapsed_time(Duration::from_millis(5));
+            .unwrap();
+        // Virtualized rows appear only after scrolling them into the viewport.
+        // Navigate by the actual viewport, independent of font/layout dimensions.
+        assert!(scroller.size().height > 0.0);
+        for _ in 0..16 {
+            if has_label(&ui, vocabulary::removal_reason(RemovalReason::Attachment)) {
+                break;
+            }
+            scroller.scroll(0.0, -scroller.size().height / 2.0);
+            mock_elapsed_time(Duration::from_millis(5));
+        }
         assert!(has_label(
             &ui,
             vocabulary::removal_reason(RemovalReason::Attachment)
