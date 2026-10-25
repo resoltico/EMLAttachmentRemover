@@ -48,17 +48,10 @@ pub struct RunReport {
     removed: usize,
     path_charge_floor: usize,
     finished: bool,
-    native_create_only: bool,
-}
-#[derive(Serialize)]
-struct TechnicalReport<'a> {
-    start: &'a Option<StartRecord>,
-    items: &'a [ItemRecord],
-    summary: &'a Option<SummaryRecord>,
-    protocol_failure: Option<ProtocolFailure>,
+    native_operands: bool,
 }
 impl RunReport {
-    /// Start a report for the independently checked worker version.
+    /// Start a report for the expected CLI version.
     pub fn new(expected_version: impl Into<String>) -> Self {
         Self {
             expected_version: expected_version.into(),
@@ -70,14 +63,14 @@ impl RunReport {
             removed: 0,
             path_charge_floor: 0,
             finished: false,
-            native_create_only: false,
+            native_operands: false,
         }
     }
-    /// The bundled desktop worker must produce create-mode facts for this host.
+    /// The bundled CLI must produce native operand encodings for this host.
     /// General report decoding remains available for independent cross-host fixtures.
     pub fn for_native_worker(expected_version: impl Into<String>) -> Self {
         let mut report = Self::new(expected_version);
-        report.native_create_only = true;
+        report.native_operands = true;
         report
     }
     /// Accepted item facts, retained even after a later malformed record.
@@ -190,7 +183,6 @@ impl RunReport {
                 if start.protocol != 1
                     || start.program != PROGRAM_ID
                     || start.version != self.expected_version
-                    || (self.native_create_only && start.dry_run)
                 {
                     return Err(ProtocolFailure::IncompatibleHelper);
                 }
@@ -290,39 +282,8 @@ impl RunReport {
         }
         result
     }
-    /// Export only structured accepted facts, never raw frames/message contents.
-    pub fn technical_report(&self) -> Result<Vec<u8>, serde_json::Error> {
-        serde_json::to_vec_pretty(&self.export_record())
-    }
-    fn export_record(&self) -> TechnicalReport<'_> {
-        TechnicalReport {
-            start: &self.start,
-            items: &self.items,
-            summary: &self.summary,
-            protocol_failure: self.failure,
-        }
-    }
-    #[cfg(target_os = "macos")]
-    pub(crate) fn technical_report_with_lifecycle(
-        &self,
-        run_id: crate::RunId,
-        completion: &crate::WorkerCompletion,
-    ) -> Result<Vec<u8>, serde_json::Error> {
-        #[derive(Serialize)]
-        struct Export<'a> {
-            run_id: crate::RunId,
-            #[serde(flatten)]
-            report: TechnicalReport<'a>,
-            worker: &'a crate::WorkerCompletion,
-        }
-        serde_json::to_vec_pretty(&Export {
-            run_id,
-            report: self.export_record(),
-            worker: completion,
-        })
-    }
     fn admit_path(&mut self, path: &ReportPathRecord) -> Result<(), ProtocolFailure> {
-        if self.native_create_only
+        if self.native_operands
             && path.native.encoding
                 != if cfg!(windows) {
                     PathEncoding::WindowsUtf16Le

@@ -14,7 +14,6 @@ mod output_buffer;
 mod path;
 pub mod records;
 mod request;
-pub mod worker_control;
 pub use output::{JsonSink, MAX_LINE_BYTES, MAX_RUN_BYTES};
 pub use output_buffer::BoundedEventBuffer;
 pub use path::{DisplayText, NativePathValue, PathValue, TerminalPath};

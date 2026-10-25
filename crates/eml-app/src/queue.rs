@@ -54,7 +54,11 @@ pub struct RequestSnapshot {
 }
 impl RequestSnapshot {
     /// Capture paths without resolving or opening them; core owns filesystem admission.
-    pub fn new(paths: Vec<PathBuf>, destination: Option<PathBuf>) -> Result<Self, QueueError> {
+    pub fn new(
+        paths: Vec<PathBuf>,
+        destination: Option<PathBuf>,
+        mode: RunMode,
+    ) -> Result<Self, QueueError> {
         if paths.is_empty()
             || paths.iter().any(|path| !path.is_absolute())
             || destination.as_ref().is_some_and(|path| !path.is_absolute())
@@ -70,7 +74,7 @@ impl RequestSnapshot {
             paths,
             working_directory,
             output: destination.map_or(OutputLocation::BesideSource, OutputLocation::Directory),
-            mode: RunMode::Create,
+            mode,
         };
         request
             .validate_path_limits()
@@ -93,7 +97,7 @@ impl RequestSnapshot {
                 OutputLocation::BesideSource => None,
                 OutputLocation::Directory(path) => Some(NativePathValue::new(path)),
             },
-            dry_run: false,
+            dry_run: mode == RunMode::DryRun,
         })
         .map_err(|_| QueueError::RequestEncoding)?;
         if encoded.len() > MAX_REQUEST_BYTES {

@@ -40,7 +40,6 @@ path = "tests/support/preference_observation.rs"
 required-features = ["macos-gui", "native-fixtures"]
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-eml-macos = { path = "../eml-macos" }
 tempfile.workspace = true
 serde_json.workspace = true
 

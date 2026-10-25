@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/eml-message", "crates/eml-core", "crates/eml-protocol", "crates/eml-cli", "crates/eml-app", "crates/eml-worker", "crates/eml-gui", "crates/eml-macos", "crates/eml-windows", "xtask"]
+members = ["crates/eml-message", "crates/eml-core", "crates/eml-protocol", "crates/eml-cli", "crates/eml-app", "crates/eml-gui", "crates/eml-windows", "xtask"]
 exclude = ["fuzz", "vendor/winit", "vendor/i-slint-core", "vendor/parley"]
 resolver = "3"
 

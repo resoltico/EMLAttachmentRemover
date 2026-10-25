@@ -1211,10 +1211,11 @@ version = "6.0.0"
 dependencies = [
  "base64",
  "eml-core",
- "eml-macos",
  "eml-protocol",
+ "rustix 1.1.5",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -1236,7 +1237,6 @@ dependencies = [
  "block2 0.6.2",
  "eml-app",
  "eml-core",
- "eml-macos",
  "eml-protocol",
  "fontique",
  "objc2 0.6.5",
@@ -1246,15 +1246,6 @@ dependencies = [
  "serde_json",
  "slint",
  "slint-build",
- "tempfile",
-]
-
-[[package]]
-name = "eml-macos"
-version = "6.0.0"
-dependencies = [
- "libc",
- "rustix 1.1.5",
  "tempfile",
 ]
 
@@ -1286,20 +1277,6 @@ version = "6.0.0"
 dependencies = [
  "tempfile",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "eml-worker"
-version = "6.0.0"
-dependencies = [
- "base64",
- "ctrlc",
- "eml-app",
- "eml-core",
- "eml-macos",
- "eml-protocol",
- "serde_json",
- "tempfile",
 ]
 
 [[package]]
