@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let executable = std::env::current_exe()?;
     let cli = eml_app::bundled_cli(&executable)?;
     let home = dirs::home_dir().ok_or("Cannot locate your home folder")?;
-    let preferences = Preferences::load(Preferences::default_path()?)?;
+    let preferences = Preferences::load(Preferences::default_path()?);
     let controller = DesktopController::new(cli, home, preferences)?;
     let ui = controller.window();
     ui.show()?;

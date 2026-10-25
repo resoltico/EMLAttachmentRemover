@@ -67,7 +67,10 @@ Create or Check and the destination before adding a selection. Each queued reque
 captures those settings; up to eight requests wait behind the active run. Two
 retained reports pause the queue until a completed report is dismissed.
 
-Select a report to inspect results, removals and diagnostics. A settled
+Select a report to inspect results, removals and its retained diagnostics. Run-level
+discovery failures are explained even when no item results exist. Export feedback
+is labeled separately from report warnings. Long filenames retain their suffixes;
+full paths remain available through tooltips and accessibility text. A settled
 Check with a valid final report enables Create Copies, which starts a fresh request using the current
 destination. Stop asks the worker to finish cooperatively; Force Stop requires
 confirmation. Busy Quit offers Wait, Stop & Quit, or confirmed Force Stop & Quit.
@@ -77,8 +80,9 @@ original protocol-1 JSONL stream, including a partial stream after failure.
 Use Help → About for AboutSlint, the project website and third-party notices.
 Saved destinations use the platform configuration folder's
 `EMLAttachmentRemover/preferences.json`. Earlier NSUserDefaults settings are not
-imported; choose the destination again. A corrupt preferences file is preserved;
-remove that file to enable saving settings again.
+imported; choose the destination again. Unreadable or corrupt preferences are preserved. The app starts with defaults and
+shows the exact path and recovery guidance. Destination changes remain session-only
+until the settings problem is corrected and the app restarted.
 
 The app accepts launch arguments, for example:
 

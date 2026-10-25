@@ -3,11 +3,64 @@
 import { AboutSlint, Button, CheckBox, HorizontalBox, VerticalBox, ListView, ScrollView, Palette } from "std-widgets.slint";
 export enum Confirmation { none, force-stop, quit }
 export struct CountView { label: string, value: int, accessible: string }
-export struct RunView { label: string, status: string, mode: string, selection: string, selections: CountView }
-export struct ItemView { source: string, destination: string, status: string }
+export struct PathView { prefix: string, suffix: string, directory: string, full: string }
+export struct RunView { label: string, status: string, mode: string, selection: PathView, selections: CountView }
+export struct ItemView { source: string, destination: string, status: string, path: PathView }
 export struct DetailView { text: string }
 export struct RemovalView { section: string, filename: string, media: string, bytes: int, byte-label: string, byte-accessible: string, reason: string }
 component Label inherits Text { color: Palette.foreground; accessible-role: text; accessible-label: self.text; }
+// Text measures its own glyphs; the suffix stays visible as the prefix elides.
+component FileName inherits Rectangle {
+    in property <PathView> path;
+    height: 22px;
+    horizontal-stretch: 1;
+    min-width: 0px;
+    accessible-role: text;
+    accessible-label: root.path.full;
+    prefix := Text {
+        color: Palette.foreground;
+        text: root.path.prefix;
+        width: min(self.preferred-width, max(0px, root.width - suffix.width));
+        height: parent.height;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+    suffix := Text {
+        color: Palette.foreground;
+        text: root.path.suffix;
+        x: prefix.width;
+        width: min(self.preferred-width, root.path.prefix == "" ? root.width : root.width * 0.6);
+        height: parent.height;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        overflow: clip;
+    }
+    Tooltip { text: @markdown("\{root.path.full}"); }
+}
+component FileButton inherits Rectangle {
+    in property <PathView> path;
+    callback clicked();
+    height: 34px;
+    min-width: 0px;
+    horizontal-stretch: 1;
+    forward-focus: control;
+    accessible-role: button;
+    accessible-label: root.path.full;
+    accessible-action-default => { root.clicked(); }
+    control := Button {
+        text: ""; width: parent.width; height: parent.height;
+        accessible-role: none;
+        clicked => { root.clicked(); }
+    }
+    FileName { path: root.path; x: 12px; y: (parent.height - self.height) / 2; width: max(0px, parent.width - 24px); }
+    Tooltip { text: @markdown("\{root.path.full}"); }
+}
+component PathLabel inherits VerticalBox {
+    in property <PathView> path;
+    spacing: 0px;
+    FileName { path: root.path; }
+    Label { text: root.path.directory; font-size: 12px; overflow: elide; min-width: 0px; Tooltip { text: @markdown("\{root.path.full}"); } }
+}
 export component AboutWindow inherits Window {
     in property <string> product-name;
     title: "About " + root.product-name;
@@ -46,7 +99,12 @@ export component MainWindow inherits Window {
     in property <[RunView]> waiting;
     in property <[ItemView]> items;
     in property <[CountView]> counts;
-    in property <[DetailView]> messages;
+    in property <[DetailView]> report-diagnostics;
+    in property <string> settings-warning;
+    in property <string> operation-label;
+    in property <string> operation-feedback;
+    in property <PathView> item-source-path;
+    in property <PathView> item-destination-path;
     in property <[DetailView]> details;
     in property <[CountView]> byte-counts;
     in property <[RemovalView]> removals;
@@ -90,10 +148,14 @@ export component MainWindow inherits Window {
         }
         Label { text: root.destination-scope; font-size: 12px; }
         if root.queue-notice != "": Label { text: root.queue-notice; wrap: word-wrap; }
-        if root.messages.length > 0: ListView {
-            height: min(72px, root.messages.length * 24px); vertical-stretch: 0;
-            accessible-role: list; accessible-label: "Diagnostics";
-            for message in root.messages: Label { text: message.text; wrap: word-wrap; }
+        if root.settings-warning != "": VerticalBox {
+            spacing: 2px;
+            Label { text: "Destination settings"; font-weight: 600; }
+            Label { text: root.settings-warning; wrap: word-wrap; }
+        }
+        if root.operation-feedback != "": HorizontalBox {
+            Label { text: root.operation-label; font-weight: 600; }
+            Label { text: root.operation-feedback; wrap: word-wrap; }
         }
         HorizontalBox { vertical-stretch: 1;
             VerticalBox { width: 205px; horizontal-stretch: 0;
@@ -102,7 +164,7 @@ export component MainWindow inherits Window {
                     Button { text: run.label; accessible-role: button; accessible-label: run.label; clicked => { root.select-run(index); } }
                     Label { text: run.status; wrap: word-wrap; }
                     Label { text: run.mode; }
-                    Label { text: run.selection; overflow: elide; }
+                    PathLabel { path: run.selection; }
                     HorizontalBox { Label { text: run.selections.label; } Label { text: run.selections.value; accessible-label: run.selections.accessible; } }
                 }
                 Label { text: "Waiting selections"; font-weight: 600; }
@@ -124,9 +186,19 @@ export component MainWindow inherits Window {
                         Label { text: count.value; font-size: 21px; accessible-label: count.accessible; }
                     }
                 }
-                ListView { height: 145px; vertical-stretch: 0; accessible-role: list; accessible-label: "Message results";
+                if root.report-diagnostics.length > 0: VerticalBox {
+                    Label { text: "Run diagnostics"; font-weight: 600; }
+                    ListView {
+                        height: min(160px, root.report-diagnostics.length * 42px); vertical-stretch: 0;
+                        content-width: self.visible-width;
+                        accessible-role: list; accessible-label: "Run diagnostics";
+                        for row in root.report-diagnostics: Label { text: row.text; wrap: word-wrap; }
+                    }
+                }
+                ListView { height: root.items.length > 0 ? 145px : 0px; vertical-stretch: 0; content-width: self.visible-width; accessible-role: list; accessible-label: "Message results";
                     for item[index] in root.items: VerticalBox {
-                        Button { text: item.source; accessible-role: button; accessible-label: item.source; clicked => { root.select-item(index); } }
+                        FileButton { path: item.path; clicked => { root.select-item(index); } }
+                        Label { text: item.path.directory; font-size: 12px; overflow: elide; min-width: 0px; Tooltip { text: @markdown("\{item.path.full}"); } }
                         Label { text: item.status; }
                     }
                 }
@@ -137,8 +209,10 @@ export component MainWindow inherits Window {
                     visible: root.has-item;
                     width: details-view.visible-width;
                     height: self.preferred-height;
-                    Label { text: root.item-source; wrap: word-wrap; }
-                    Label { text: root.item-destination; wrap: word-wrap; }
+                    Label { text: "Source"; font-weight: 600; }
+                    PathLabel { path: root.item-source-path; }
+                    if root.item-destination != "": Label { text: "Destination"; font-weight: 600; }
+                    if root.item-destination != "": PathLabel { path: root.item-destination-path; }
                     Label { text: root.item-status; font-weight: 600; }
                     for count in root.byte-counts: HorizontalBox { Label { text: count.label; } Label { text: count.value; accessible-label: count.accessible; } }
                     for detail in root.details: Label { text: detail.text; wrap: word-wrap; }

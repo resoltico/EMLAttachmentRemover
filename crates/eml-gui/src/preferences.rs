@@ -1,4 +1,4 @@
-//! Destination settings in one JSON file, without importing NSUserDefaults.
+//! Destination settings with preserved, visibly unavailable configuration states.
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -10,36 +10,52 @@ use std::{
 struct Settings {
     destination: Option<PathBuf>,
 }
-/// Loaded destination settings and their explicitly selected backing file.
+/// Session destination and its backing file, which is preserved when unavailable.
 pub struct Preferences {
     path: PathBuf,
     settings: Settings,
-    corrupt: bool,
+    unavailable: Option<String>,
 }
 impl Preferences {
-    /// Read settings; missing files use defaults and malformed files are preserved.
-    pub fn load(path: PathBuf) -> io::Result<Self> {
-        let (settings, corrupt) = match fs::read(&path) {
-            Ok(bytes) => match serde_json::from_slice::<Settings>(&bytes) {
-                Ok(settings)
+    /// Load defaults when settings cannot be read or decoded, preserving the object.
+    pub fn load(path: PathBuf) -> Self {
+        let loaded = match fs::read(&path) {
+            Ok(bytes) => serde_json::from_slice::<Settings>(&bytes)
+                .map_err(|error| error.to_string())
+                .and_then(|settings| {
                     if settings
                         .destination
                         .as_ref()
-                        .is_none_or(|path| path.is_absolute()) =>
-                {
-                    (settings, false)
-                }
-                Ok(_) => (Settings::default(), true),
-                Err(_) => (Settings::default(), true),
-            },
-            Err(error) if error.kind() == io::ErrorKind::NotFound => (Settings::default(), false),
-            Err(error) => return Err(error),
+                        .is_none_or(|p| p.is_absolute())
+                    {
+                        Ok(settings)
+                    } else {
+                        Err("The saved destination is not an absolute path.".into())
+                    }
+                }),
+            Err(error)
+                if error.kind() == io::ErrorKind::NotFound
+                    && fs::symlink_metadata(&path)
+                        .is_err_and(|e| e.kind() == io::ErrorKind::NotFound) =>
+            {
+                Ok(Settings::default())
+            }
+            Err(error) => Err(error.to_string()),
         };
-        Ok(Self {
+        let (settings, unavailable) = match loaded {
+            Ok(settings) => (settings, None),
+            Err(reason) => (
+                Settings::default(),
+                Some(format!(
+                    "Could not load settings; started with the default destination (Beside originals). {reason}"
+                )),
+            ),
+        };
+        Self {
             path,
             settings,
-            corrupt,
-        })
+            unavailable,
+        }
     }
     /// Platform configuration file; new installs start beside the originals.
     pub fn default_path() -> io::Result<PathBuf> {
@@ -52,16 +68,18 @@ impl Preferences {
                 )
             })
     }
-    /// Destination applied to later requests.
+    /// Destination applied to later requests in this session.
     pub fn destination(&self) -> Option<&Path> {
         self.settings.destination.as_deref()
     }
-    /// A corrupt file has not been silently rewritten.
-    pub fn is_corrupt(&self) -> bool {
-        self.corrupt
+    /// Persistent recovery guidance, including the exact affected path and reason.
+    pub fn warning(&self) -> Option<String> {
+        self.unavailable.as_ref().map(|reason| format!(
+            "Destination settings unavailable: {}\n{}\nDestination changes apply only to this session and will not be saved. The settings object was preserved. Correct its contents, path or read permissions, or move it aside, then restart to enable saving.",
+            eml_protocol::TerminalPath::new(&self.path), eml_protocol::DisplayText::new(reason)
+        ))
     }
-    /// Apply a user-selected destination and atomically save valid settings.
-    /// A corrupt original is preserved, and the selection still applies in memory.
+    /// Apply the destination in memory; save only while the backing settings are available.
     pub fn set_destination(&mut self, destination: Option<PathBuf>) -> io::Result<()> {
         if destination.as_ref().is_some_and(|p| !p.is_absolute()) {
             return Err(io::Error::new(
@@ -70,12 +88,19 @@ impl Preferences {
             ));
         }
         self.settings.destination = destination;
-        if self.corrupt {
+        if self.unavailable.is_some() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Saved destination settings are corrupt and were preserved. Remove the preferences file to enable saving again.",
+                "Destination applies only to this session; settings remain unavailable.",
             ));
         }
+        if let Err(error) = self.save() {
+            self.unavailable = Some(error.to_string());
+            return Err(error);
+        }
+        Ok(())
+    }
+    fn save(&self) -> io::Result<()> {
         let bytes = serde_json::to_vec_pretty(&self.settings).map_err(io::Error::other)?;
         let parent = self.path.parent().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "Settings file has no parent")

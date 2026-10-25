@@ -35,6 +35,7 @@ struct Entry {
     report: Option<eml_app::ReportHandle>,
     completion: Option<WorkerCompletion>,
     launch_error: Option<String>,
+    worker_error: Option<String>,
 }
 struct Active {
     id: RunId,
@@ -42,11 +43,15 @@ struct Active {
     stop_requested: bool,
     force_requested: bool,
 }
+struct ExportJob {
+    run: RunId,
+    task: JoinHandle<io::Result<()>>,
+}
 struct Session {
     queue: RunQueue,
     entries: Vec<Entry>,
     active: Option<Active>,
-    export: Option<JoinHandle<io::Result<()>>>,
+    export: Option<ExportJob>,
     selected: usize,
     selected_item: usize,
     mode: RunMode,
@@ -115,9 +120,6 @@ impl DesktopController {
             }),
         });
         controller.bind();
-        if controller.session.borrow().preferences.is_corrupt() {
-            controller.message("Saved destination settings are corrupt and were preserved; using the default destination.");
-        }
         controller.refresh();
         Ok(controller)
     }
@@ -125,6 +127,7 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_mode_changed(move |check| {
             if let Some(c) = weak.upgrade() {
+                c.clear_operation();
                 c.session.borrow_mut().mode = if check {
                     RunMode::DryRun
                 } else {
@@ -142,6 +145,7 @@ impl DesktopController {
                     let mut s = c.session.borrow_mut();
                     s.selected = index;
                     s.selected_item = 0;
+                    c.clear_operation();
                 }
                 c.refresh();
             }
@@ -150,6 +154,7 @@ impl DesktopController {
         self.ui.on_select_item(move |index| {
             if let Some(c) = weak.upgrade() {
                 if let Ok(index) = usize::try_from(index) {
+                    c.clear_operation();
                     c.session.borrow_mut().selected_item = index;
                 }
                 c.refresh();
@@ -269,6 +274,7 @@ impl DesktopController {
     }
     /// Apply a future-request destination; existing queue snapshots stay unchanged.
     pub fn set_destination(&self, destination: Option<PathBuf>) {
+        self.clear_operation();
         if let Err(error) = self
             .session
             .borrow_mut()
@@ -281,6 +287,7 @@ impl DesktopController {
     }
     /// Enqueue one complete selection in the currently selected processing mode.
     pub fn enqueue(&self, paths: Vec<PathBuf>) -> Result<RunId, QueueError> {
+        self.clear_operation();
         let id = {
             let mut s = self.session.borrow_mut();
             let request = RequestSnapshot::new(
@@ -341,6 +348,7 @@ impl DesktopController {
             report: None,
             completion: None,
             launch_error: None,
+            worker_error: None,
         };
         match WorkerRun::start(&self.cli, &entry.request, &self.home) {
             Ok(worker) => {
@@ -360,6 +368,7 @@ impl DesktopController {
         s.entries.push(entry);
         s.selected = s.entries.len() - 1;
         s.selected_item = 0;
+        self.clear_operation();
         platform::set_busy(s.active.is_some() || s.export.is_some());
     }
     /// Poll actual child/pipe and export settlement without blocking the event loop.
@@ -367,7 +376,6 @@ impl DesktopController {
         if platform::take_quit() {
             self.request_quit();
         }
-        let mut messages = Vec::new();
         let refresh_needed;
         {
             let mut s = self.session.borrow_mut();
@@ -376,7 +384,10 @@ impl DesktopController {
                 match active.worker.poll() {
                     Ok(completion) => completion.map(|c| (active.id, c)),
                     Err(error) => {
-                        messages.push(error.to_string());
+                        let id = active.id;
+                        if let Some(entry) = s.entries.iter_mut().find(|e| e.id == id) {
+                            entry.worker_error.get_or_insert_with(|| error.to_string());
+                        }
                         None
                     }
                 }
@@ -388,42 +399,29 @@ impl DesktopController {
                     self.ui.set_confirmation(Confirmation::None);
                 }
 
-                if completion.failure == Some(WorkerFailure::Identity) {
-                    messages.push(vocabulary::WORKER_IDENTITY_HINT.into());
-                }
-                if matches!(
-                    completion.state,
-                    WorkerState::Incomplete | WorkerState::ForceStopped
-                ) {
-                    messages.push(vocabulary::INCOMPLETE_REPORT_NOTICE.into());
-                }
-                if completion.state == WorkerState::ForceStopped {
-                    messages.push(vocabulary::FORCE_STOP_NOTICE.into());
-                }
-                if !completion.stderr.is_empty() {
-                    messages.extend(
-                        String::from_utf8_lossy(&completion.stderr)
-                            .lines()
-                            .map(str::to_owned),
-                    );
-                }
-
                 if let Some(entry) = s.entries.iter_mut().find(|entry| entry.id == id) {
                     entry.completion = Some(completion);
                 }
                 let _ = s.queue.complete(id);
                 s.active = None;
             }
-            if s.export.as_ref().is_some_and(|job| job.is_finished()) {
-                let result = s.export.take().expect("finished export").join();
-                messages.push(match result {
+            if s.export.as_ref().is_some_and(|job| job.task.is_finished()) {
+                let job = s.export.take().expect("finished export");
+                let result = job.task.join();
+                let message = match result {
                     Ok(Ok(())) => vocabulary::REPORT_SAVED.into(),
                     Ok(Err(error)) if error.kind() == io::ErrorKind::AlreadyExists => {
                         vocabulary::NO_REPLACEMENT.into()
                     }
                     Ok(Err(error)) => error.to_string(),
-                    Err(_) => vocabulary::REPORT_EXPORT_FAILED.into(),
-                });
+                    Err(_) => vocabulary::REPORT_EXPORT_FAILED.to_owned(),
+                };
+                if s.entries
+                    .get(s.selected)
+                    .is_some_and(|entry| entry.id == job.run)
+                {
+                    self.operation(&format!("Export for Run {}", job.run), &message);
+                }
             }
 
             if self.ui.get_confirmation() == Confirmation::Quit
@@ -439,17 +437,6 @@ impl DesktopController {
                 s.should_exit = true;
             }
             platform::set_busy(s.active.is_some() || s.export.is_some());
-        }
-        if !messages.is_empty() {
-            self.ui.set_messages(model(
-                messages
-                    .iter()
-                    .flat_map(|message| message.lines())
-                    .map(|line| DetailView {
-                        text: eml_protocol::DisplayText::new(line).to_string().into(),
-                    })
-                    .collect(),
-            ));
         }
         self.start_next();
         if refresh_needed {
@@ -477,6 +464,7 @@ impl DesktopController {
     }
     /// Request a single cooperative Stop of the active run.
     pub fn stop(&self) {
+        self.clear_operation();
         let result = {
             let mut s = self.session.borrow_mut();
             s.active.as_mut().map(|active| {
@@ -485,12 +473,13 @@ impl DesktopController {
             })
         };
         if let Some(Err(error)) = result {
-            self.message(&error.to_string());
+            self.record_worker_error(&error);
         }
         self.refresh();
     }
     /// Force Stop after the user's explicit confirmation.
     pub fn force_stop(&self) {
+        self.clear_operation();
         let result = {
             let mut s = self.session.borrow_mut();
             s.active.as_mut().map(|active| {
@@ -499,9 +488,17 @@ impl DesktopController {
             })
         };
         if let Some(Err(error)) = result {
-            self.message(&error.to_string());
+            self.record_worker_error(&error);
         }
         self.refresh();
+    }
+    fn record_worker_error(&self, error: &io::Error) {
+        let mut s = self.session.borrow_mut();
+        if let Some(id) = s.active.as_ref().map(|active| active.id)
+            && let Some(entry) = s.entries.iter_mut().find(|e| e.id == id)
+        {
+            entry.worker_error.get_or_insert_with(|| error.to_string());
+        }
     }
     /// Start a new Create request on the selected Check's paths, repeating admission.
     pub fn create_copies(&self) {
@@ -522,7 +519,8 @@ impl DesktopController {
     }
     /// Save the selected settled stream in a background thread, never replacing a file.
     pub fn start_export(&self, path: PathBuf) {
-        let jsonl = {
+        self.clear_operation();
+        let selected = {
             let s = self.session.borrow();
             if s.export.is_some() {
                 return;
@@ -530,9 +528,9 @@ impl DesktopController {
             s.entries
                 .get(s.selected)
                 .and_then(|entry| entry.completion.as_ref())
-                .map(|completion| completion.jsonl.clone())
+                .map(|completion| (s.entries[s.selected].id, completion.jsonl.clone()))
         };
-        let Some(jsonl) = jsonl else {
+        let Some((run, jsonl)) = selected else {
             return;
         };
         match std::thread::Builder::new()
@@ -540,7 +538,7 @@ impl DesktopController {
             .spawn(move || eml_app::export_report(&path, &jsonl))
         {
             Ok(job) => {
-                self.session.borrow_mut().export = Some(job);
+                self.session.borrow_mut().export = Some(ExportJob { run, task: job });
                 platform::set_busy(true);
             }
             Err(error) => self.message(&error.to_string()),
@@ -557,18 +555,21 @@ impl DesktopController {
             .with_report(|report| report.reveal_path(s.selected_item))
             .flatten()
     }
-    /// Render a diagnostic as separate, sanitized text elements.
+    /// Show transient feedback for the current user operation, separate from run facts.
     pub fn message(&self, message: &str) {
-        self.ui.set_messages(model(
-            message
-                .lines()
-                .map(|line| DetailView {
-                    text: eml_protocol::DisplayText::new(line).to_string().into(),
-                })
-                .collect(),
-        ));
+        self.operation("Operation status", message);
+    }
+    fn operation(&self, label: &str, message: &str) {
+        self.ui.set_operation_label(label.into());
+        self.ui
+            .set_operation_feedback(eml_protocol::DisplayText::new(message).to_string().into());
+    }
+    fn clear_operation(&self) {
+        self.ui.set_operation_label("".into());
+        self.ui.set_operation_feedback("".into());
     }
     fn dismiss(&self) {
+        self.clear_operation();
         {
             let mut s = self.session.borrow_mut();
             let selected = s.selected;
@@ -586,6 +587,8 @@ impl DesktopController {
     }
     fn refresh(&self) {
         let s = self.session.borrow();
+        self.ui
+            .set_settings_warning(s.preferences.warning().unwrap_or_default().into());
         self.ui
             .set_queue_notice(if s.queue.is_paused_for_report_space() {
                 vocabulary::report_space_notice(eml_app::MAX_RETAINED_REPORTS).into()
@@ -636,9 +639,30 @@ impl DesktopController {
         self.ui
             .set_can_dismiss(entry.completion.is_some() || entry.launch_error.is_some());
         self.ui.set_can_create(can_create(entry));
-        if let Some(error) = &entry.launch_error {
-            self.message(error);
+        let mut diagnostics = entry
+            .completion
+            .as_ref()
+            .map(view_model::completion_diagnostics)
+            .unwrap_or_default();
+        for error in [&entry.launch_error, &entry.worker_error]
+            .into_iter()
+            .flatten()
+        {
+            diagnostics.push(DetailView { text: error.into() });
         }
+        if let Some(handle) = &entry.report {
+            handle.with_report(|report| diagnostics.extend(view_model::report_diagnostics(report)));
+        }
+        self.ui.set_report_diagnostics(model(
+            diagnostics
+                .into_iter()
+                .map(|row| DetailView {
+                    text: eml_protocol::DisplayText::new(row.text.as_str())
+                        .to_string()
+                        .into(),
+                })
+                .collect(),
+        ));
         if self
             .last_view
             .borrow()
@@ -677,6 +701,9 @@ impl DesktopController {
             let view = view_model::item(item);
             self.ui.set_has_item(true);
             self.ui.set_item_source(view.source);
+            self.ui.set_item_source_path(view.path);
+            self.ui
+                .set_item_destination_path(view_model::path(view.destination.as_str()));
             self.ui.set_item_destination(view.destination);
             self.ui.set_item_status(view.status);
             let (details, parts, fields) = view_model::details(item);
@@ -708,6 +735,7 @@ impl DesktopController {
         self.ui.set_can_reveal(false);
     }
     fn clear_report(&self) {
+        self.ui.set_report_diagnostics(model(Vec::new()));
         self.clear_items();
         self.ui
             .set_run_label("Drop messages or choose files to begin".into());
@@ -723,13 +751,14 @@ fn run_view(id: RunId, request: &RequestSnapshot, status: &str) -> RunView {
         label: format!("Run {id}").into(),
         status: status.into(),
         mode: vocabulary::mode_label(request.request().mode).into(),
-        selection: request
-            .request()
-            .paths
-            .first()
-            .map(|p| eml_protocol::TerminalPath::new(p).to_string())
-            .unwrap_or_default()
-            .into(),
+        selection: view_model::path(
+            &request
+                .request()
+                .paths
+                .first()
+                .map(|p| eml_protocol::TerminalPath::new(p).to_string())
+                .unwrap_or_default(),
+        ),
         selections: view_model::count(CountKind::Selections, request.request().paths.len() as u32),
     }
 }

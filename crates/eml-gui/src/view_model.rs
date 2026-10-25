@@ -1,5 +1,5 @@
 //! Map accepted protocol facts into structured Slint values using core vocabulary.
-use crate::{CountView, DetailView, ItemView, RemovalView};
+use crate::{CountView, DetailView, ItemView, PathView, RemovalView};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use eml_core::{
     AddressState, CleanupReceipt, CleanupState, NamespaceObservation, PlanAction, SyncMethod,
@@ -140,6 +140,7 @@ fn meaning(item: &wire::ItemRecord) -> Option<vocabulary::OutcomeMeaning> {
 pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
     ItemView {
         source: item.source.display.clone().into(),
+        path: path(&item.source.display),
         destination: item
             .destination
             .value()
@@ -260,4 +261,94 @@ pub(crate) fn removals(item: &wire::ItemRecord) -> Vec<RemovalView> {
             .into(),
         })
         .collect()
+}
+
+/// Run-level facts remain visible even when the stream contains no item records.
+pub(crate) fn report_diagnostics(report: &eml_app::RunReport) -> Vec<DetailView> {
+    let mut rows = Vec::new();
+    if let Some(error) = report.summary().and_then(|s| s.run_error.value()) {
+        rows.push(DetailView {
+            text: format!("Run error: {}", error.code).into(),
+        });
+        rows.extend(
+            error
+                .detail
+                .lines()
+                .map(|text| DetailView { text: text.into() }),
+        );
+        if let Some(hint) = vocabulary::recovery_hint(&error.code) {
+            rows.push(DetailView { text: hint.into() });
+        }
+    }
+    let complete = report
+        .summary()
+        .map(|s| s.collection_complete)
+        .or_else(|| report.start().map(|s| s.collection_complete));
+    if complete == Some(false) {
+        rows.push(DetailView {
+            text: vocabulary::COLLECTION_INCOMPLETE_NOTICE.into(),
+        });
+    }
+    rows
+}
+/// Retained process/transport diagnostics belong to the completed report.
+pub(crate) fn completion_diagnostics(completion: &eml_app::WorkerCompletion) -> Vec<DetailView> {
+    let mut rows = Vec::new();
+    if completion.failure == Some(eml_app::WorkerFailure::Identity) {
+        rows.push(DetailView {
+            text: vocabulary::WORKER_IDENTITY_HINT.into(),
+        });
+    }
+    if matches!(
+        completion.state,
+        eml_app::WorkerState::Incomplete | eml_app::WorkerState::ForceStopped
+    ) {
+        rows.push(DetailView {
+            text: vocabulary::INCOMPLETE_REPORT_NOTICE.into(),
+        });
+    }
+    if completion.state == eml_app::WorkerState::ForceStopped {
+        rows.push(DetailView {
+            text: vocabulary::FORCE_STOP_NOTICE.into(),
+        });
+    }
+    rows.extend(
+        String::from_utf8_lossy(&completion.stderr)
+            .lines()
+            .map(|text| DetailView { text: text.into() }),
+    );
+    if completion.stderr_truncated {
+        rows.push(DetailView {
+            text: vocabulary::STDERR_TRUNCATED_NOTICE.into(),
+        });
+    }
+    rows
+}
+
+/// Presentation only: retain the full path while giving filename suffixes priority.
+pub(crate) fn path(display: &str) -> PathView {
+    let path = std::path::Path::new(display);
+    let filename = path
+        .file_name()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_else(|| display.into());
+    let split = filename
+        .char_indices()
+        .rev()
+        .nth(19)
+        .map_or(0, |(index, _)| index);
+    PathView {
+        prefix: eml_protocol::DisplayText::new(&filename[..split])
+            .to_string()
+            .into(),
+        suffix: eml_protocol::DisplayText::new(&filename[split..])
+            .to_string()
+            .into(),
+        directory: path
+            .parent()
+            .map(|p| eml_protocol::TerminalPath::new(p).to_string())
+            .unwrap_or_default()
+            .into(),
+        full: eml_protocol::DisplayText::new(display).to_string().into(),
+    }
 }

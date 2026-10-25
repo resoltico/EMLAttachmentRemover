@@ -60,7 +60,7 @@ fn controller(root: &Path, cli: PathBuf) -> Rc<DesktopController> {
     let controller = DesktopController::new(
         cli,
         root.to_owned(),
-        Preferences::load(root.join("preferences.json")).unwrap(),
+        Preferences::load(root.join("preferences.json")),
     )
     .unwrap();
     controller
@@ -411,20 +411,20 @@ fn preferences_roundtrip_and_corrupt_or_relative_settings_are_preserved() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("preferences.json");
     let destination = root.path().join("copies");
-    let mut preferences = Preferences::load(path.clone()).unwrap();
+    let mut preferences = Preferences::load(path.clone());
     assert!(preferences.destination().is_none());
-    assert!(!preferences.is_corrupt());
+    assert!(preferences.warning().is_none());
     preferences
         .set_destination(Some(destination.clone()))
         .unwrap();
     assert_eq!(
-        Preferences::load(path.clone()).unwrap().destination(),
+        Preferences::load(path.clone()).destination(),
         Some(destination.as_path())
     );
     for corrupt in [b"not JSON".as_slice(), br#"{"destination":"relative"}"#] {
         fs::write(&path, corrupt).unwrap();
-        let mut preferences = Preferences::load(path.clone()).unwrap();
-        assert!(preferences.is_corrupt());
+        let mut preferences = Preferences::load(path.clone());
+        assert!(preferences.warning().is_some());
         assert!(preferences.destination().is_none());
         assert!(
             preferences
@@ -483,4 +483,229 @@ fn production_binary_targets_cannot_alias_on_case_insensitive_filesystems() {
         .collect();
     assert_eq!(names.len(), 2);
     assert!(distinct(&names), "Cargo binary outputs collide: {names:?}");
+}
+
+#[test]
+fn run_failure_without_items_explains_incomplete_discovery_without_failed_items() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let cli = script(
+        root.path(),
+        &("cat >/dev/null\n".to_owned() + &print(&fixture("collection-limit")) + "exit 1\n"),
+    );
+    let c = controller(root.path(), cli);
+    click(&c.window(), "Check only");
+    c.enqueue(vec![root.path().join("overflow")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
+    assert!(has_label(&ui, "Collected work exceeds the item bound"));
+    assert!(has_label(
+        &ui,
+        vocabulary::recovery_hint("INPUT_LIMIT_EXCEEDED").unwrap()
+    ));
+    assert!(has_label(&ui, vocabulary::COLLECTION_INCOMPLETE_NOTICE));
+    assert!(has_label(
+        &ui,
+        &vocabulary::count_label(CountKind::Failed, 0)
+    ));
+    assert!(has_label(
+        &ui,
+        &vocabulary::count_label(CountKind::NotProcessed, 4096)
+    ));
+    assert_eq!(ui.get_items().row_count(), 0);
+    // A complete successful report must clear the run-error and discovery notices.
+    completed(root.path(), "created");
+    click(&ui, "Check only");
+    c.enqueue(vec![root.path().join("ordinary.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(ui.get_report_diagnostics().row_count(), 0);
+    assert!(has_label(
+        &ui,
+        &vocabulary::count_label(CountKind::Created, 1)
+    ));
+}
+
+#[test]
+fn report_warnings_survive_switching_and_export_feedback() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let records = fixture("started-preedge-cancellation");
+    let start = records.split_once('\n').unwrap().0.to_owned() + "\n";
+    let cli = script(
+        root.path(),
+        &("trap '' INT\ncat >/dev/null\nprintf 'earlier CLI diagnostic\\n' >&2\n".to_owned()
+            + &print(&start)
+            + "while :; do :; done\n"),
+    );
+    let c = controller(root.path(), cli);
+    let ui = c.window();
+    c.enqueue(vec![root.path().join("first.eml")]).unwrap();
+    wait_started(&c);
+    click(&ui, "Force Stop");
+    click(&ui, "Force Stop now");
+    pump(&c, || !c.is_busy());
+    assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
+    assert!(has_label(&ui, "earlier CLI diagnostic"));
+    c.start_export(root.path().join("first.jsonl"));
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        ui.get_operation_feedback().as_str(),
+        vocabulary::REPORT_SAVED
+    );
+    assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
+    c.start_export(root.path().join("first.jsonl"));
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        ui.get_operation_feedback().as_str(),
+        vocabulary::NO_REPLACEMENT
+    );
+    script(
+        root.path(),
+        &("cat >/dev/null\n".to_owned() + &print(&fixture("collection-limit")) + "exit 1\n"),
+    );
+    click(&ui, "Check only");
+    c.enqueue(vec![root.path().join("overflow")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(ui.get_operation_feedback().as_str(), "");
+    assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
+    assert!(!has_label(&ui, vocabulary::NO_REPLACEMENT));
+    assert!(!has_label(&ui, "earlier CLI diagnostic"));
+    click(&ui, "Run 1");
+    assert!(has_label(&ui, "earlier CLI diagnostic"));
+    assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
+    assert!(!has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
+    click(&ui, "Run 2");
+    assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
+    assert!(!has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
+}
+
+#[test]
+fn unavailable_settings_launch_with_preserved_objects_and_session_only_destinations() {
+    use std::os::unix::fs::PermissionsExt;
+    init_no_event_loop();
+    for kind in ["directory", "unreadable", "malformed"] {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("preferences.json");
+        if kind == "directory" {
+            fs::create_dir(&path).unwrap();
+        } else {
+            fs::write(
+                &path,
+                if kind == "malformed" {
+                    b"{broken".as_slice()
+                } else {
+                    b"{}"
+                },
+            )
+            .unwrap();
+        }
+        if kind == "unreadable" {
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+            assert!(
+                fs::read(&path).is_err(),
+                "Fixture requires an unprivileged test user"
+            );
+        }
+        let preferences = Preferences::load(path.clone());
+        assert!(preferences.destination().is_none());
+        let c = DesktopController::new(
+            completed(root.path(), "created"),
+            root.path().into(),
+            preferences,
+        )
+        .unwrap();
+        c.window().show().unwrap();
+        let warning = c.window().get_settings_warning();
+        assert!(warning.contains(path.to_str().unwrap()), "{warning}");
+        assert!(warning.contains("only to this session"));
+        assert!(warning.contains("preserved"));
+        let cause = match kind {
+            "directory" => "directory",
+            "unreadable" => "Permission denied",
+            _ => "line 1 column",
+        };
+        assert!(warning.contains(cause), "Missing reason: {warning}");
+        let destination = root.path().join("session-copies");
+        c.set_destination(Some(destination.clone()));
+        assert_eq!(
+            c.window().get_destination_label().as_str(),
+            destination.to_str().unwrap()
+        );
+        assert_eq!(c.window().get_settings_warning(), warning);
+        if kind == "directory" {
+            assert!(path.is_dir());
+        } else {
+            if kind == "unreadable" {
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+            }
+            assert_eq!(
+                fs::read(path).unwrap(),
+                if kind == "malformed" {
+                    b"{broken".as_slice()
+                } else {
+                    b"{}"
+                }
+            );
+        }
+    }
+}
+
+#[test]
+fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut records: Vec<serde_json::Value> = fixture("created")
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    records[0]["total"] = 2.into();
+    let mut items = Vec::new();
+    let mut sources = Vec::new();
+    for (index, end) in ["A", "B"].into_iter().enumerate() {
+        let source = root
+            .path()
+            .join(format!(
+                "invoice-{}{end}.eml",
+                "shared-description-".repeat(10)
+            ))
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let mut item = records[1].clone();
+        item["index"] = index.into();
+        item["source"]["display"] = source.clone().into();
+        item["source"]["native"]["base64"] = STANDARD.encode(source.as_bytes()).into();
+        items.push(item);
+        sources.push(source);
+    }
+    records[2]["counts"]["created"] = 2.into();
+    let stream = [&records[0], &items[0], &items[1], &records[2]]
+        .into_iter()
+        .map(|v| v.to_string() + "\n")
+        .collect::<String>();
+    let c = controller(
+        root.path(),
+        script(
+            root.path(),
+            &("cat >/dev/null\n".to_owned() + &print(&stream)),
+        ),
+    );
+    c.enqueue(vec![root.path().join("selection")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    for width in [780.0, 1240.0] {
+        ui.window().set_size(slint::LogicalSize::new(width, 760.0));
+        mock_elapsed_time(Duration::from_millis(5));
+        let a = ui.get_items().row_data(0).unwrap();
+        let b = ui.get_items().row_data(1).unwrap();
+        assert!(a.path.suffix.ends_with("A.eml"));
+        assert!(b.path.suffix.ends_with("B.eml"));
+        assert_ne!(a.path.suffix, b.path.suffix);
+        assert_eq!(a.path.full.as_str(), sources[0]);
+        assert_eq!(b.path.full.as_str(), sources[1]);
+        click(&ui, &sources[1]);
+        assert_eq!(ui.get_item_source().as_str(), sources[1]);
+    }
 }
