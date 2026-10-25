@@ -1,6 +1,6 @@
 //! Actual owned-file comparison; no synchronization or publication qualification.
 #![cfg(any(unix, windows))]
-use eml_core::fs::BoundFile;
+use eml_core::fs::{BoundFile, BoundFileError};
 use eml_core::{
     ExistingComparisonError, PreparedSource, RunControl, compare_existing, prepare_source,
 };
@@ -46,18 +46,31 @@ fn matching_golden_retains_the_actual_file_and_preserves_both_contents() {
     assert_eq!(compared.signature(), signature);
     compared.revalidate().unwrap();
     source.revalidate().unwrap();
-    #[cfg(windows)]
-    assert_eq!(
-        fs::OpenOptions::new()
-            .write(true)
-            .open(&output)
-            .unwrap_err()
-            .raw_os_error(),
-        Some(32)
-    );
     assert_eq!(fs::read(&input).unwrap(), INPUT);
     assert_eq!(fs::read(&output).unwrap(), GOLDEN);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
+    drop(compared);
+    drop(source);
+    root.close().unwrap();
+}
+#[test]
+fn changed_compared_copy_is_refused_on_revalidation() {
+    let root = root();
+    let input = root.path().join("source.eml");
+    let output = root.path().join("copy.eml");
+    fs::write(&input, INPUT).unwrap();
+    fs::write(&output, GOLDEN).unwrap();
+    let source = prepared(root.path());
+    let compared = compare_existing(&source, bind(&output), &RunControl::default()).unwrap();
+    assert!(compared.bytes_equal());
+    fs::write(&output, b"observable later change").unwrap();
+    assert!(matches!(
+        compared.revalidate(),
+        Err(BoundFileError::Changed)
+    ));
+    source.revalidate().unwrap();
+    assert_eq!(fs::read(&input).unwrap(), INPUT);
+    assert_eq!(fs::read(&output).unwrap(), b"observable later change");
     drop(compared);
     drop(source);
     root.close().unwrap();
