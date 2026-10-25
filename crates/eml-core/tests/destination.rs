@@ -507,3 +507,24 @@ fn planned_file_and_mirror_prefix_conflicts_refuse_all_contenders_before_writes(
     }));
     assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 0);
 }
+
+#[test]
+fn an_existing_file_used_as_a_mirror_refuses_all_known_contenders() {
+    let root = scratch();
+    fs::create_dir(root.path().join("out")).unwrap();
+    fs::create_dir(root.path().join("a.no-attachments.eml")).unwrap();
+    fs::write(root.path().join("a.eml"), b"source").unwrap();
+    fs::write(root.path().join("a.no-attachments.eml/b.eml"), b"source").unwrap();
+    let blocker = root.path().join("out/a.no-attachments.eml");
+    fs::write(&blocker, b"winner").unwrap();
+    let req = request(root.path(), &["a.eml", "a.no-attachments.eml"], Some("out"));
+    let control = RunControl::default();
+    let plan = plan_destinations(collect_sources(&req, &control).unwrap(), &control);
+    assert_eq!(plan.records().len(), 2);
+    assert!(plan.records().iter().all(|row| {
+        row.failure()
+            .is_some_and(|error| error.code() == ErrorCode::DestinationCollision)
+    }));
+    assert_eq!(fs::read(&blocker).unwrap(), b"winner");
+    assert_eq!(fs::read_dir(root.path().join("out")).unwrap().count(), 1);
+}

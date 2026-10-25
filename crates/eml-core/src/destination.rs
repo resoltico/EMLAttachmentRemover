@@ -173,6 +173,18 @@ struct DestinationKey {
     tail: OsString,
 }
 
+struct PlanningFailure {
+    error: OperationFailure,
+    blocker: Option<Identity>,
+}
+impl From<OperationFailure> for PlanningFailure {
+    fn from(error: OperationFailure) -> Self {
+        Self {
+            error,
+            blocker: None,
+        }
+    }
+}
 /// Freeze layout/names and reserve all known outputs without reading message
 /// bodies, creating parents, probing writes or synchronizing. Consume rather than
 /// duplicate inventory; later execution must revalidate every native binding,
@@ -217,6 +229,7 @@ pub fn plan_destinations<'a>(
     }
     let ids = source_identities(&result.sources);
     let mut reservations: HashMap<DestinationKey, Vec<usize>> = HashMap::new();
+    let mut blocked: HashMap<Identity, Vec<usize>> = HashMap::new();
     for index in 0..result.records.len() {
         if control.is_stopped() {
             result.state = DestinationPlanState::Interrupted;
@@ -236,7 +249,10 @@ pub fn plan_destinations<'a>(
                     result.state = DestinationPlanState::Interrupted;
                     break;
                 }
-                result.records[index] = DestinationRecord(Row::Failed(error));
+                if let Some(identity) = error.blocker {
+                    blocked.entry(identity).or_default().push(index);
+                }
+                result.records[index] = DestinationRecord(Row::Failed(error.error));
             }
         }
     }
@@ -249,6 +265,12 @@ pub fn plan_destinations<'a>(
             && let DestinationObservation::Present(entry) = info.observation
         {
             existing.entry(entry.identity).or_default().push(index);
+        }
+    }
+    for (identity, members) in blocked {
+        let others = existing.get(&identity).map_or(&[][..], Vec::as_slice);
+        if members.len() + others.len() > 1 {
+            conflicts.extend(members.into_iter().chain(others.iter().copied()));
         }
     }
     for contenders in reservations
@@ -274,12 +296,15 @@ pub fn plan_destinations<'a>(
         }
     }
     for index in conflicts {
-        if let Row::Known { failure, .. } = &mut result.records[index].0 {
-            *failure = Some(OperationFailure::new(
-                ErrorCode::DestinationCollision,
-                ErrorPhase::Admission,
-                "Distinct sources contend for the same destination edge or identity",
-            ));
+        let error = OperationFailure::new(
+            ErrorCode::DestinationCollision,
+            ErrorPhase::Admission,
+            "Distinct sources contend for the same destination edge or identity",
+        );
+        match &mut result.records[index].0 {
+            Row::Known { failure, .. } => *failure = Some(error),
+            Row::Failed(previous) => *previous = error,
+            Row::Unplanned => {}
         }
     }
     if control.is_stopped() {
@@ -558,7 +583,7 @@ fn plan_one(
     index: usize,
     control: &RunControl,
     labels: &mut HashMap<usize, Option<OsString>>,
-) -> Result<(DestinationInfo, PathBuf, Option<OperationFailure>), OperationFailure> {
+) -> Result<(DestinationInfo, PathBuf, Option<OperationFailure>), PlanningFailure> {
     checkpoint(control)?;
     let item = &sources.items()[index];
     let mut route = PathBuf::new();
@@ -676,7 +701,7 @@ fn inspect_mirrored_route(
     base: &BoundDirectory,
     components: &[&OsStr],
     control: &RunControl,
-) -> Result<(Option<BoundDirectory>, Vec<Identity>, bool), OperationFailure> {
+) -> Result<(Option<BoundDirectory>, Vec<Identity>, bool), PlanningFailure> {
     let mut current: Option<BoundDirectory> = None;
     let mut prefix = vec![base.identity()];
     let mut missing = false;
@@ -706,13 +731,15 @@ fn inspect_mirrored_route(
                     }
                 }
             }
-            Ok(Some(_)) => {
-                failure = Some(OperationFailure::new(
-                    ErrorCode::DestinationExists,
-                    ErrorPhase::Admission,
-                    "Mirrored parent is not an ordinary directory",
-                ));
-                break;
+            Ok(Some(observed)) => {
+                return Err(PlanningFailure {
+                    blocker: Some(observed.identity),
+                    error: OperationFailure::new(
+                        ErrorCode::DestinationExists,
+                        ErrorPhase::Admission,
+                        "Mirrored parent is not an ordinary directory",
+                    ),
+                });
             }
             Err(error) => {
                 failure = Some(native_failure(
@@ -727,7 +754,7 @@ fn inspect_mirrored_route(
     // limit as an assumption. An existing/unverified blocked component does not
     // establish the actual naming parent or a valid frozen basename/key.
     if let Some(error) = failure.take() {
-        return Err(error);
+        return Err(error.into());
     }
     Ok((current, prefix, missing))
 }

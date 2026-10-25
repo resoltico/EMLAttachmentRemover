@@ -9,6 +9,3 @@ Thumbs.db
 .vscode/
 target/
 
-# Xcode per-user workspace and debugger state
-xcuserdata/
-*.xcuserstate

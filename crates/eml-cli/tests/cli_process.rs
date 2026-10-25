@@ -505,7 +505,7 @@ fn caller_argv_zero_does_not_replace_authored_help_program_name() {
     root.close().unwrap();
 }
 
-#[path = "../../../tests/support/report_message.rs"]
+#[path = "support/report_message.rs"]
 mod report_message;
 use report_message::large_report_message;
 #[cfg(unix)]

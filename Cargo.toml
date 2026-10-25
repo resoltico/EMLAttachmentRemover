@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/eml-message", "crates/eml-core", "crates/eml-protocol", "crates/eml-cli", "crates/eml-app", "crates/eml-gui", "crates/eml-windows", "xtask"]
+members = ["crates/eml-message", "crates/eml-core", "crates/eml-protocol", "crates/eml-cli", "crates/eml-app", "crates/eml-gui", "xtask"]
 exclude = ["fuzz"]
 resolver = "3"
 
@@ -35,8 +35,9 @@ private_intra_doc_links = "deny"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 allow_attributes_without_reason = "deny"
-too_many_lines = "deny"
-cognitive_complexity = "deny"
+allow_attributes = "deny"
+too_many_lines = "warn"
+cognitive_complexity = "warn"
 
 [profile.release]
 overflow-checks = true

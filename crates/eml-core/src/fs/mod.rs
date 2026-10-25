@@ -426,7 +426,14 @@ fn remove_owned(
     match parent.observe_child_if_present(name) {
         Ok(None) => return cleanup_state(CleanupState::Complete),
         Ok(Some(entry)) if entry.identity == expected => {}
-        _ => return cleanup_state(CleanupState::Unknown),
+        Ok(Some(_)) => return cleanup_state(CleanupState::Unknown),
+        Err(error) => {
+            return CleanupReceipt {
+                state: CleanupState::Unknown,
+                residual_name: None,
+                native_code: error.raw_os_error().map(i64::from),
+            };
+        }
     }
     match backend::remove(&parent.inner, name, directory) {
         Ok(()) => cleanup_state(CleanupState::Complete),

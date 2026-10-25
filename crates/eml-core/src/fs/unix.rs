@@ -17,9 +17,12 @@ fn identity(stat: &fs::Stat) -> io::Result<Identity> {
             "Filesystem did not supply a usable file identity",
         ));
     }
-    #[expect(
-        clippy::unnecessary_cast,
-        reason = "Native device width differs between Unix targets"
+    #[cfg_attr(
+        target_os = "linux",
+        expect(
+            clippy::unnecessary_cast,
+            reason = "Linux already supplies a 64-bit device number"
+        )
     )]
     Ok(Identity::Posix {
         device: stat.st_dev as u64,

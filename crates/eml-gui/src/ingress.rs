@@ -91,15 +91,14 @@ pub fn install_native(
                 .add_filter("EML messages", &["eml"])
                 .pick_files()
                 .await
-            {
-                if let Err(error) = controller.enqueue(
+                && let Err(error) = controller.enqueue(
                     files
                         .into_iter()
                         .map(|file| file.path().to_owned())
                         .collect(),
-                ) {
-                    controller.message(&error.to_string());
-                }
+                )
+            {
+                controller.message(&error.to_string());
             }
         });
     });
@@ -122,10 +121,9 @@ pub fn install_native(
                 .set_parent(parent.as_ref())
                 .pick_folder()
                 .await
+                && let Err(error) = controller.enqueue(vec![folder.path().to_owned()])
             {
-                if let Err(error) = controller.enqueue(vec![folder.path().to_owned()]) {
-                    controller.message(&error.to_string());
-                }
+                controller.message(&error.to_string());
             }
         });
     });
@@ -181,21 +179,20 @@ pub fn install_native(
     });
     let weak = Rc::downgrade(controller);
     ui.on_reveal(move || {
-        if let Some(controller) = weak.upgrade() {
-            if let Some(path) = controller.selected_copy() {
-                if let Err(error) = opener::reveal(path) {
-                    controller.message(&error.to_string());
-                }
-            }
+        if let Some(controller) = weak.upgrade()
+            && let Some(path) = controller.selected_copy()
+            && let Err(error) = opener::reveal(path)
+        {
+            controller.message(&error.to_string());
         }
     });
     let about = controller.about_window();
     let weak = Rc::downgrade(controller);
     about.on_website(move || {
-        if let Err(error) = opener::open(eml_core::product::WEBSITE) {
-            if let Some(controller) = weak.upgrade() {
-                controller.message(&error.to_string());
-            }
+        if let Err(error) = opener::open(eml_core::product::WEBSITE)
+            && let Some(controller) = weak.upgrade()
+        {
+            controller.message(&error.to_string());
         }
     });
     let notices = std::env::current_exe()?
@@ -205,10 +202,10 @@ pub fn install_native(
         .join("Resources/THIRD-PARTY-NOTICES.txt");
     let weak = Rc::downgrade(controller);
     about.on_licenses(move || {
-        if let Err(error) = opener::open(&notices) {
-            if let Some(controller) = weak.upgrade() {
-                controller.message(&error.to_string());
-            }
+        if let Err(error) = opener::open(&notices)
+            && let Some(controller) = weak.upgrade()
+        {
+            controller.message(&error.to_string());
         }
     });
     Ok(())

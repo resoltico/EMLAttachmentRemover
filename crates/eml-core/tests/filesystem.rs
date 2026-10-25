@@ -202,3 +202,31 @@ fn a_destination_junction_is_refused_without_writing_into_its_target() {
     assert_eq!(attempt.candidate.cleanup().state, CleanupState::Complete);
     assert_eq!(fs::read_dir(target.path()).unwrap().count(), 0);
 }
+
+#[cfg(windows)]
+#[test]
+fn moved_parent_never_reports_staging_cleanup_as_complete_at_a_replacement_address() {
+    let root = tempfile::tempdir().unwrap();
+    let parent = root.path().join("out");
+    let moved = root.path().join("moved");
+    fs::create_dir(&parent).unwrap();
+    let directory = BoundDirectory::open(&parent).unwrap();
+    let ready = directory.stage_bytes(b"owned staging", || Ok(())).unwrap();
+    fs::rename(&parent, &moved).unwrap();
+    fs::create_dir(&parent).unwrap();
+    fs::write(parent.join("unrelated"), b"winner").unwrap();
+    let cleanup = ready.cleanup();
+    assert_eq!(cleanup.state, CleanupState::Unknown);
+    assert_eq!(fs::read(parent.join("unrelated")).unwrap(), b"winner");
+    assert_eq!(fs::read_dir(&parent).unwrap().count(), 1);
+    let residue: Vec<_> = fs::read_dir(&moved).unwrap().collect();
+    assert_eq!(residue.len(), 1);
+    assert!(
+        residue[0]
+            .as_ref()
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".emlattachmentremover-")
+    );
+}

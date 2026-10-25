@@ -69,7 +69,7 @@ mod tests {
     use eml_core::RunStart;
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/support/output_writer.rs"
+        "/tests/support/output_writer.rs"
     ));
     fn expected_json_start() -> String {
         format!(

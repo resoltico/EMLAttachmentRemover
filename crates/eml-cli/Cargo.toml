@@ -6,17 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
-[features]
-native-fixtures = ["dep:eml-windows", "eml-windows/native-fixtures"]
-
 [dependencies]
 eml-core = { path = "../eml-core" }
 eml-protocol = { path = "../eml-protocol" }
 clap.workspace = true
 ctrlc.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-eml-windows = { path = "../eml-windows", optional = true }
 
 [dev-dependencies]
 base64.workspace = true
@@ -28,8 +22,3 @@ rustix = { version = "1.1.5", features = ["process", "fs"] }
 
 [lints]
 workspace = true
-
-[[bin]]
-name = "console-observation"
-path = "tests/support/console_observation.rs"
-required-features = ["native-fixtures"]

@@ -13,10 +13,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     platform::install()?;
     ingress::install_native(&controller)?;
     let paths = ingress::launch_paths(std::env::args_os().skip(1), &std::env::current_dir()?)?;
-    if !paths.is_empty() {
-        if let Err(error) = controller.enqueue(paths) {
-            controller.message(&error.to_string());
-        }
+    if !paths.is_empty()
+        && let Err(error) = controller.enqueue(paths)
+    {
+        controller.message(&error.to_string());
     }
     let timer = slint::Timer::default();
     let weak = std::rc::Rc::downgrade(&controller);

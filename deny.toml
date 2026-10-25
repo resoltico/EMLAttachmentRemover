@@ -6,6 +6,7 @@ ignore = []
 [licenses]
 allow = ["MPL-2.0", "MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0", "ISC", "Zlib", "Apache-2.0 WITH LLVM-exception", "CDLA-Permissive-2.0"]
 exceptions = [
+  { crate = "i-slint-backend-testing@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
   # The macOS About screen displays AboutSlint under the royalty-free desktop license.
   { crate = "arrayref@0.3.9", allow = ["BSD-2-Clause"] },
   { crate = "i-slint-backend-selector@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },

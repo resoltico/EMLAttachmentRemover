@@ -1,0 +1,60 @@
+# Nightly and on demand: slower or host-specific checks outside the merge gate.
+name: Nightly
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  intel-tests:
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-intel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-intel-${{ runner.os }}-${{ runner.arch }}-
+      - run: cargo test --workspace --locked
+      - if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+  fuzz:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-fuzz-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-fuzz-${{ runner.os }}-${{ runner.arch }}-
+      - name: Read tool versions
+        id: tools
+        shell: bash
+        run: |
+          for key in cargo_deny cargo_about cargo_fuzz fuzz_compiler actionlint shellcheck; do
+            value=$(awk -F '"' -v key="$key" '$1 ~ "^" key " = " {print $2}' xtask/tools.toml)
+            test -n "$value"
+            echo "$key=$value" >> "$GITHUB_OUTPUT"
+          done
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177
+        with:
+          tool: cargo-fuzz@${{ steps.tools.outputs.cargo_fuzz }}
+      - run: rustup toolchain install ${{ steps.tools.outputs.fuzz_compiler }} --profile minimal
+      - run: cargo +${{ steps.tools.outputs.fuzz_compiler }} fuzz run preparation -- -max_total_time=900

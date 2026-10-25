@@ -1,222 +1,159 @@
-name: Owner release
+# Release: build once, smoke the exact archives on floor hosts, attest, draft.
+# Publishing the drafted GitHub release stays a manual owner action.
+name: Release
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
-    inputs:
-      source:
-        description: Exact full commit on main to qualify and release
-        required: true
-        type: string
-      version:
-        description: Workspace version with a nonempty dated changelog section
-        required: true
-        type: string
+permissions:
+  contents: read
 defaults:
   run:
     shell: bash
-permissions:
-  contents: read
 concurrency:
-  group: owner-release-${{ inputs.version }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  admission:
-    permissions:
-      contents: write # Draft visibility requires push access; admission does not mutate releases.
-    runs-on: ubuntu-22.04
+  cli:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+          - { runner: windows-2022, target: x86_64-pc-windows-msvc }
+          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-release-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-release-cli-${{ runner.os }}-${{ runner.arch }}-
+      - name: Read tool versions
+        id: tools
+        shell: bash
+        run: |
+          for key in cargo_deny cargo_about cargo_fuzz fuzz_compiler actionlint shellcheck; do
+            value=$(awk -F '"' -v key="$key" '$1 ~ "^" key " = " {print $2}' xtask/tools.toml)
+            test -n "$value"
+            echo "$key=$value" >> "$GITHUB_OUTPUT"
+          done
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177
+        with:
+          tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
+      - run: cargo run --locked -p xtask --target ${{ matrix.target }} -- dist --cli --target ${{ matrix.target }} --out target/dist
+      - name: Smoke the exact CLI archive
+        shell: bash
+        run: |
+          mkdir -p target/smoke
+          archive=$(find target/dist -type f | head -1)
+          case "$archive" in
+            *.zip) unzip "$archive" -d target/smoke ;;
+            *) tar -xzf "$archive" -C target/smoke ;;
+          esac
+          scripts/smoke-cli.sh "$(find target/smoke -maxdepth 1 -type f -name 'emlattachmentremover*' | head -1)" tests/contract/mime
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: cli-${{ matrix.target }}
+          path: target/dist/*
+          if-no-files-found: error
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-release-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-release-app-${{ runner.os }}-${{ runner.arch }}-
+      - name: Read tool versions
+        id: tools
+        shell: bash
+        run: |
+          for key in cargo_deny cargo_about cargo_fuzz fuzz_compiler actionlint shellcheck; do
+            value=$(awk -F '"' -v key="$key" '$1 ~ "^" key " = " {print $2}' xtask/tools.toml)
+            test -n "$value"
+            echo "$key=$value" >> "$GITHUB_OUTPUT"
+          done
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177
+        with:
+          tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: cargo xtask dist --cli --app --universal --out target/dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: macos-universal
+          path: target/dist/*
+          if-no-files-found: error
+  floor-smoke:
+    needs: macos
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
-      - name: Admit exact source and owner dispatch from main
-        env:
-          SOURCE: ${{ inputs.source }}
-        run: |
-          test "$GITHUB_REF" = refs/heads/main
-          [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          ref: ${{ inputs.source }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Admit source from current main before executing repository code
-        env:
-          SOURCE: ${{ inputs.source }}
-        run: &admit_source |
-          head=$(git rev-parse HEAD)
-          test "$head" = "$SOURCE"
-          local_main=$(git rev-parse refs/remotes/origin/main)
-          remote_main=$(git ls-remote --exit-code origin refs/heads/main)
-          test "$remote_main" = "$(printf '%s\trefs/heads/main' "$local_main")"
-          git merge-base --is-ancestor "$SOURCE" "$local_main"
-          source_workflows=$(git rev-parse "${SOURCE}:.github/workflows")
-          main_workflows=$(git rev-parse "${local_main}:.github/workflows")
-          test "$source_workflows" = "$main_workflows"
-      - name: Read-only release admission
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE: ${{ inputs.source }}
-          VERSION: ${{ inputs.version }}
+          name: macos-universal
+          path: target/dist
+      - name: Smoke the exact CLI and app archives on the macOS 15 floor
         run: |
-          mkdir -p target
-          cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission.json
-          test "$(jq -er .release.state target/release-admission.json)" = absent
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ always() && hashFiles('target/release-admission.json') != '' }}
-        with:
-          name: release-admission-${{ inputs.source }}-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: |
-            target/release-admission.json
-            target/release-check/**
-          if-no-files-found: error
-  qualification:
-    permissions:
-      contents: read
-      actions: read
-    needs: admission
-    uses: ./.github/workflows/native-qualification.yml
-    with:
-      source: ${{ inputs.source }}
-  publish:
-    needs: [admission, qualification]
+          mkdir -p target/smoke
+          tar -xzf target/dist/emlattachmentremover-*-macos-universal.tar.gz -C target/smoke
+          ditto -x -k target/dist/emlattachmentremover-gui-*-macos-universal.zip target/smoke
+          scripts/smoke-cli.sh target/smoke/emlattachmentremover tests/contract/mime
+          scripts/smoke-macos-app.sh "target/smoke/EML Attachment Remover.app" \
+            tests/contract/mime/inputs/01-gmail-attachment.eml
+  checksums:
+    needs: [cli, macos, floor-smoke]
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          path: target/dist
+          merge-multiple: true
+      - run: (cd target/dist && sha256sum -- *.tar.gz *.zip > SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: checksums
+          path: target/dist/SHA256SUMS
+          if-no-files-found: error
+  draft:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [checksums]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
     permissions:
       contents: write
-      actions: read
-      attestations: write
       id-token: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      SOURCE: ${{ inputs.source }}
-      VERSION: ${{ inputs.version }}
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          ref: ${{ inputs.source }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Recheck source against current main before executing repository code
-        run: *admit_source
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+          path: target/dist
+          merge-multiple: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
-          pattern: native-products-${{ inputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: target/qualified-products
-          merge-multiple: false
-          digest-mismatch: error
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: floor-smoke-${{ inputs.source }}-*-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: target/desktop-qualification
-          merge-multiple: false
-          digest-mismatch: error
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: picker-qualification-${{ inputs.source }}-macos-x86_64-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: target/picker-qualification/picker-qualification-${{ inputs.source }}-macos-x86_64-r${{ github.run_id }}-a${{ github.run_attempt }}
-          digest-mismatch: error
-      - name: Freeze the exact qualified product set and qualification identity
+          subject-path: target/dist/*
+      - name: Draft the GitHub release
         env:
-          DISPATCH_SHA: ${{ github.sha }}
-          WORKFLOW_REF: ${{ github.workflow_ref }}
-          WORKFLOW_SHA: ${{ github.workflow_sha }}
-        run: |
-          cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission.json
-          cargo xtask distribution > target/release-distribution.json
-          mkdir target/release-input
-          : > target/release-desktop-records.jsonl
-          mapfile -t files < <(find target/qualified-products -type f \( -name '*.zip' -o -name '*.tar.gz' \) | sort)
-          test "${#files[@]}" = 8
-          for file in "${files[@]}"; do
-            name="$(basename "$file")"
-            jq -e --arg name "$name" '[.expected_artifacts[]|select(.name==$name)]|length==1' target/release-distribution.json
-            platform=$(jq -er --arg name "$name" '.expected_artifacts[]|select(.name==$name)|.platform' target/release-distribution.json)
-            role=$(jq -er --arg name "$name" '.expected_artifacts[]|select(.name==$name)|.role' target/release-distribution.json)
-            target=$(jq -er --arg platform "$platform" '.native_targets[]|select(.platform==$platform)|.target' target/release-distribution.json)
-            directory="target/qualified-products/native-products-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
-            [[ "$file" == "$directory/"* ]]
-            digest=$(sha256sum "$file" | cut -d ' ' -f 1)
-            size=$(stat -c %s "$file")
-            if [ "$role" = app ]; then
-              mapfile -t records < <(find "$directory" -type f -name app-result.json)
-              test "${#records[@]}" = 1
-              jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" 'def on_host($major): .host.target==$t and .host.process_os=="macos" and .host.process_architecture==(if $t=="x86_64-apple-darwin" then "x86_64" else "aarch64" end) and .host.kernel_machine==(if $t=="x86_64-apple-darwin" then "x86_64" else "arm64" end) and (.host.product_version|split(".")[0])==$major; .stage=="native_candidate" and .source==$s and .target==$t and .identity.sha256==$digest and .identity.byte_length==$size and .verification.stage=="native_candidate" and on_host("26")' "${records[0]}"
-              mapfile -t references < <(find "$directory" -type f -name "$name.reference.json")
-              test "${#references[@]}" = 1
-              jq -e --arg s "$SOURCE" --arg t "$target" --arg v "$VERSION" '.source==$s and .target==$t and .version==$v' "${references[0]}"
-              floor="target/desktop-qualification/floor-smoke-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT/app-archive-smoke"
-              mapfile -t desktop_records < <(find "$floor" -mindepth 2 -maxdepth 2 -type f -name result.json)
-              test "${#desktop_records[@]}" = 1
-              jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" 'def on_host($major): .host.target==$t and .host.process_os=="macos" and .host.process_architecture==(if $t=="x86_64-apple-darwin" then "x86_64" else "aarch64" end) and .host.kernel_machine==(if $t=="x86_64-apple-darwin" then "x86_64" else "arm64" end) and (.host.product_version|split(".")[0])==$major; def passed: .totalTestCount==1 and .passedTests==1 and .failedTests==0 and .skippedTests==0; .stage=="desktop_qualification" and .source==$s and .target==$t and .verification.stage=="desktop_qualification" and .verification.snapshot.sha256==$digest and .verification.snapshot.byte_length==$size and (.verification.gui_interaction.workflow.summary|passed) and (.verification.gui_interaction.pagination.summary|passed) and (.verification.gui_interaction.appearance.summary|passed) and all(.verification.gui_interaction.publication.cases[]; .summary|passed) and ([.verification.gui_interaction.publication.cases[].case]|sort)==["active-quit","force-stop","published-error","stop"] and on_host("15")' "${desktop_records[0]}"
-              jq -c --arg artifact "$floor" '{stage,source,target,host,archive:.verification.snapshot,artifact:$artifact,workflow:.verification.gui_interaction.workflow.summary,pagination:.verification.gui_interaction.pagination.summary,appearance:.verification.gui_interaction.appearance.summary,publication_cases:[.verification.gui_interaction.publication.cases[]|{case,summary}]}' "${desktop_records[0]}" >> target/release-desktop-records.jsonl
-              if [ "$platform" = macos-x86_64 ]; then
-                picker="target/picker-qualification/picker-qualification-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
-                test -f "$picker/result.json" || { printf 'Missing exact-run picker qualification receipt: %s\n' "$picker/result.json" >&2; exit 1; }
-                test "$(stat -c %s "$picker/result.json")" -le 16777216
-                ref_digest=$(sha256sum "${references[0]}" | cut -d ' ' -f 1)
-                ref_size=$(stat -c %s "${references[0]}")
-                jq -n --arg s "$SOURCE" --arg t "$target" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg digest "$digest" --argjson size "$size" --arg rd "$ref_digest" --argjson rs "$ref_size" --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg workflow_sha "$GITHUB_WORKFLOW_SHA" --slurpfile distribution target/release-distribution.json '{source:$s,target:$t,run:$run,attempt:$attempt,workflow_ref:$workflow_ref,workflow_sha:$workflow_sha,archive:{sha256:$digest,byte_length:$size},reference:{sha256:$rd,byte_length:$rs},picker_host:$distribution[0].picker_host}' > target/release-picker-expected.json
-                jq -e -L .github/scripts --slurpfile e target/release-picker-expected.json 'include "picker-evidence"; qualification($e[0])' "$picker/result.json"
-                jq -c --arg artifact "$picker" '.+{artifact:$artifact}' "$picker/result.json" >> target/release-desktop-records.jsonl
-              fi
-            else
-              mapfile -t records < <(find "$directory" -type f \( -name cli-result.json -o -name qualification.json \))
-              test "${#records[@]}" = 1
-              jq -e --arg s "$SOURCE" --arg t "$target" --arg digest "$digest" --argjson size "$size" '.source==$s and .target==$t and .archive.identity.sha256==$digest and .archive.identity.byte_length==$size' "${records[0]}"
-            fi
-            cp --no-clobber -- "$file" "target/release-input/$name"
-          done
-          for platform in $(jq -er '.native_targets[].platform' target/release-distribution.json); do
-            directory="target/qualified-products/native-products-$SOURCE-$platform-r$GITHUB_RUN_ID-a$GITHUB_RUN_ATTEMPT"
-            test -d "$directory"
-            mapfile -t records < <(find "$directory" -type f \( -name qualification.json -o -name cli-result.json -o -name app-result.json \))
-            test "${#records[@]}" -gt 0
-            for record in "${records[@]}"; do
-              jq -e --arg source "$SOURCE" '.source==$source' "$record"
-            done
-          done
-          cargo xtask stage-release-assets --archives target/release-input --out target/release-assembly > target/release-assembly.json
-          assets="$(jq -er .assets_directory target/release-assembly.json)"
-          printf 'RELEASE_ASSETS=%s\n' "$assets" >> "$GITHUB_ENV"
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" > target/release-native-jobs.json
-          jq -n --arg source "$SOURCE" --arg dispatch "$DISPATCH_SHA" --arg workflow "$WORKFLOW_REF" --arg workflow_sha "$WORKFLOW_SHA" \
-            --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
-            --slurpfile policy target/release-distribution.json --slurpfile assembly target/release-assembly.json --slurpfile desktop target/release-desktop-records.jsonl \
-            '{source:$source,dispatch_sha:$dispatch,workflow_ref:$workflow,workflow_sha:$workflow_sha,qualification_run:$run,policy:$policy[0],assembly:$assembly[0],desktop_qualification:$desktop,scope:"native candidate production, same-archive desktop/picker qualification and exact asset assembly; dispatch workflow identity and artifact source are distinct"}' > target/release-predicate.json
-          awk -v version="$VERSION" 'index($0,"## [" version "] - ")==1 {selected=1; next} selected && /^## / {exit} selected {print}' CHANGELOG.md > target/release-notes.md
-      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2; explicit qualification/source predicate
-        with:
-          subject-path: ${{ env.RELEASE_ASSETS }}/*
-          predicate-type: https://github.com/resoltico/EMLAttachmentRemover/attestations/native-qualification/v1
-          predicate-path: target/release-predicate.json
-          create-storage-record: false
-      - name: Create draft, verify actual server assets, then publish
-        run: |
-          tag="v$VERSION"
-          cargo xtask release-check --source "$SOURCE" --version "$VERSION" > target/release-admission-before-upload.json
-          test "$(jq -er .release.state target/release-admission-before-upload.json)" = absent
-          gh release create "$tag" --draft --target "$SOURCE" --title "$tag" --notes-file target/release-notes.md
-          gh release upload "$tag" "$RELEASE_ASSETS"/*
-          gh release view "$tag" --json databaseId > target/release-draft-lookup.json
-          release_id=$(jq -er '.databaseId|select(type=="number" and .>0 and floor==.)' target/release-draft-lookup.json)
-          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
-          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > target/release-server-before-publish.json
-          jq -e --argjson id "$release_id" '.id==$id' target/release-server-before-publish.json
-          cargo xtask check-release-server --assets "$RELEASE_ASSETS" --release target/release-server-before-publish.json > target/release-server-checked.json
-          gh release edit "$tag" --draft=false --latest
-      - name: Observe server state after success or failure without deleting anything
-        if: ${{ always() }}
-        run: |
-          mkdir -p target
-          gh release view "v$VERSION" --json databaseId > target/release-final-lookup.json 2> target/release-final-lookup-error.txt
-          release_id=$(jq -er '.databaseId|select(type=="number" and .>0 and floor==.)' target/release-final-lookup.json)
-          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
-          gh api --include "repos/$GITHUB_REPOSITORY/releases/$release_id" > target/release-server-final-response.txt 2> target/release-server-final-error.txt
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ always() }}
-        with:
-          name: release-observations-${{ inputs.source }}-r${{ github.run_id }}-a${{ github.run_attempt }}
-          path: |
-            target/release-*.json
-            target/release-*.jsonl
-            target/release-*.txt
-            target/release-*.md
-            target/release-check/**
-          if-no-files-found: error
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --draft --verify-tag --notes-from-tag target/dist/*

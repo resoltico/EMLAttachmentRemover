@@ -136,12 +136,12 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_select_run(move |index| {
             if let Some(c) = weak.upgrade() {
-                if let Ok(index) = usize::try_from(index) {
-                    if index < c.session.borrow().entries.len() {
-                        let mut s = c.session.borrow_mut();
-                        s.selected = index;
-                        s.selected_item = 0;
-                    }
+                if let Ok(index) = usize::try_from(index)
+                    && index < c.session.borrow().entries.len()
+                {
+                    let mut s = c.session.borrow_mut();
+                    s.selected = index;
+                    s.selected_item = 0;
                 }
                 c.refresh();
             }
@@ -211,10 +211,10 @@ impl DesktopController {
         });
         let weak = Rc::downgrade(self);
         self.ui.on_about(move || {
-            if let Some(c) = weak.upgrade() {
-                if let Err(error) = c.about.show() {
-                    c.message(&error.to_string());
-                }
+            if let Some(c) = weak.upgrade()
+                && let Err(error) = c.about.show()
+            {
+                c.message(&error.to_string());
             }
         });
         let weak = Rc::downgrade(self);
@@ -251,10 +251,10 @@ impl DesktopController {
         });
         let weak = Rc::downgrade(self);
         self.ui.window().on_close_requested(move || {
-            if let Some(c) = weak.upgrade() {
-                if !c.request_quit() {
-                    return slint::CloseRequestResponse::KeepWindowShown;
-                }
+            if let Some(c) = weak.upgrade()
+                && !c.request_quit()
+            {
+                return slint::CloseRequestResponse::KeepWindowShown;
             }
             slint::CloseRequestResponse::HideWindow
         });
@@ -301,10 +301,10 @@ impl DesktopController {
             slint::Timer::single_shot(std::time::Duration::ZERO, move || {
                 if let Some(c) = weak.upgrade() {
                     let paths = c.drops.borrow_mut().commit();
-                    if let Some(paths) = paths {
-                        if let Err(error) = c.enqueue(paths) {
-                            c.message(&error.to_string());
-                        }
+                    if let Some(paths) = paths
+                        && let Err(error) = c.enqueue(paths)
+                    {
+                        c.message(&error.to_string());
                     }
                 }
             });

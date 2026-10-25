@@ -155,7 +155,7 @@ mod tests {
     };
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/support/output_writer.rs"
+        "/../eml-protocol/tests/support/output_writer.rs"
     ));
     fn expected_human_start() -> String {
         format!(

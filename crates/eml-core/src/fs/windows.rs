@@ -19,6 +19,7 @@ use windows_sys::Win32::{
 pub(super) struct Directory {
     file: File,
     path: PathBuf,
+    follow: bool,
 }
 pub(super) struct Entries(std::fs::ReadDir);
 fn open(path: &Path, access: u32, creation: u32, follow: bool) -> io::Result<File> {
@@ -87,6 +88,11 @@ pub(super) fn open_directory(
     expression: &Path,
     follow: bool,
 ) -> io::Result<Directory> {
+    if !expression.is_absolute() {
+        if let Some(parent) = parent {
+            current_address(parent)?;
+        }
+    }
     let path = if expression.is_absolute() {
         expression.to_owned()
     } else {
@@ -111,7 +117,23 @@ pub(super) fn open_directory(
             "Destination edge is not an ordinary directory",
         ));
     }
-    Ok(Directory { file, path })
+    Ok(Directory { file, path, follow })
+}
+// Path-based Win32 calls must still address the directory whose handle we hold.
+fn current_address(directory: &Directory) -> io::Result<()> {
+    let current = open(
+        &directory.path,
+        FILE_READ_ATTRIBUTES,
+        OPEN_EXISTING,
+        directory.follow,
+    )?;
+    if identity(&current)? != identity(&directory.file)? {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Directory address changed",
+        ));
+    }
+    Ok(())
 }
 pub(super) fn directory_identity(directory: &Directory) -> io::Result<Identity> {
     if basic(&directory.file)?.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0 {
@@ -161,7 +183,7 @@ pub(super) fn sync_directory(directory: &Directory) -> io::Result<()> {
         &directory.path,
         GENERIC_WRITE | FILE_READ_ATTRIBUTES,
         OPEN_EXISTING,
-        false,
+        directory.follow,
     )?;
     if identity(&writer)? != identity(&directory.file)?
         || basic(&writer)?.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
@@ -174,6 +196,7 @@ pub(super) fn sync_directory(directory: &Directory) -> io::Result<()> {
     flush(&writer)
 }
 pub(super) fn entries(directory: &Directory) -> io::Result<Entries> {
+    current_address(directory)?;
     Ok(Entries(std::fs::read_dir(&directory.path)?))
 }
 pub(super) fn next_entry(entries: &mut Entries) -> Option<io::Result<OsString>> {
@@ -207,6 +230,9 @@ pub(super) fn observe(
     expression: &Path,
     follow: bool,
 ) -> io::Result<EntryObservation> {
+    if !expression.is_absolute() {
+        current_address(directory)?;
+    }
     let file = open(
         &directory.path.join(expression),
         FILE_READ_ATTRIBUTES,
@@ -232,6 +258,7 @@ pub(super) fn observe(
     })
 }
 pub(super) fn open_file(directory: &Directory, name: &OsStr, follow: bool) -> io::Result<File> {
+    current_address(directory)?;
     open(
         &directory.path.join(name),
         GENERIC_READ,
@@ -248,6 +275,7 @@ pub(super) fn sync_existing(
     name: &OsStr,
     expected: Identity,
 ) -> io::Result<()> {
+    current_address(directory)?;
     let writer = open(
         &directory.path.join(name),
         GENERIC_WRITE | FILE_READ_ATTRIBUTES,
@@ -267,9 +295,11 @@ pub(super) fn sync_existing(
     flush(&writer)
 }
 pub(super) fn create_directory(directory: &Directory, name: &OsStr) -> io::Result<()> {
+    current_address(directory)?;
     std::fs::create_dir(directory.path.join(name))
 }
 pub(super) fn create_file(directory: &Directory, name: &OsStr) -> io::Result<File> {
+    current_address(directory)?;
     open(
         &directory.path.join(name),
         GENERIC_READ | GENERIC_WRITE,
@@ -278,6 +308,7 @@ pub(super) fn create_file(directory: &Directory, name: &OsStr) -> io::Result<Fil
     )
 }
 pub(super) fn remove(directory: &Directory, name: &OsStr, is_directory: bool) -> io::Result<()> {
+    current_address(directory)?;
     if is_directory {
         std::fs::remove_dir(directory.path.join(name))
     } else {
@@ -285,6 +316,7 @@ pub(super) fn remove(directory: &Directory, name: &OsStr, is_directory: bool) ->
     }
 }
 pub(super) fn publish(directory: &Directory, from: &OsStr, to: &OsStr) -> io::Result<()> {
+    current_address(directory)?;
     let from = path::openable(&directory.path.join(from))?;
     let to = path::openable(&directory.path.join(to))?;
     // SAFETY: two NUL-terminated native paths. Flags deliberately omit
