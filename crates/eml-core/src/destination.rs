@@ -178,17 +178,24 @@ struct DestinationKey {
 /// duplicate inventory; later execution must revalidate every native binding,
 /// naming assumption and actual no-replace outcome.
 pub fn plan_destinations<'a>(
-    sources: CollectedSources<'a>,
+    mut sources: CollectedSources<'a>,
     control: &RunControl,
 ) -> DestinationPlan<'a> {
+    sources.items.sort_by_cached_key(|item| {
+        crate::collection::native_order_key(item.native_path().as_os_str())
+    });
     let path_bytes = sources.source_path_bytes();
     let records = sources
         .items()
         .iter()
         .map(|item| {
-            DestinationRecord(match item.observation() {
-                CollectedObservation::Failed(error) => Row::Failed(error.clone()),
-                _ => Row::Unplanned,
+            DestinationRecord(if let Some(error) = &item.version_failure {
+                Row::Failed(error.clone())
+            } else {
+                match item.observation() {
+                    CollectedObservation::Failed(error) => Row::Failed(error.clone()),
+                    _ => Row::Unplanned,
+                }
             })
         })
         .collect();
@@ -233,18 +240,46 @@ pub fn plan_destinations<'a>(
             }
         }
     }
+    // Reserve every known edge before execution, including existing hard links
+    // and a final filename used as another contender's mirrored parent.
+    let mut conflicts = HashSet::new();
+    let mut existing: HashMap<Identity, Vec<usize>> = HashMap::new();
+    for (index, record) in result.records.iter().enumerate() {
+        if let Some(info) = record.destination()
+            && let DestinationObservation::Present(entry) = info.observation
+        {
+            existing.entry(entry.identity).or_default().push(index);
+        }
+    }
     for contenders in reservations
         .values()
-        .filter(|contenders| contenders.len() > 1)
+        .chain(existing.values())
+        .filter(|group| group.len() > 1)
     {
-        for &index in contenders {
-            if let Row::Known { failure, .. } = &mut result.records[index].0 {
-                *failure = Some(OperationFailure::new(
-                    ErrorCode::DestinationCollision,
-                    ErrorPhase::Admission,
-                    "Distinct sources contend for the same planned output",
-                ));
+        conflicts.extend(contenders.iter().copied());
+    }
+    for (key, contenders) in &reservations {
+        for parent in Path::new(&key.tail)
+            .ancestors()
+            .skip(1)
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            let ancestor = DestinationKey {
+                closest: key.closest,
+                tail: parent.as_os_str().to_owned(),
+            };
+            if let Some(other) = reservations.get(&ancestor) {
+                conflicts.extend(contenders.iter().chain(other).copied());
             }
+        }
+    }
+    for index in conflicts {
+        if let Row::Known { failure, .. } = &mut result.records[index].0 {
+            *failure = Some(OperationFailure::new(
+                ErrorCode::DestinationCollision,
+                ErrorPhase::Admission,
+                "Distinct sources contend for the same destination edge or identity",
+            ));
         }
     }
     if control.is_stopped() {
@@ -738,6 +773,7 @@ pub(super) fn source_identities(sources: &CollectedSources<'_>) -> HashSet<Ident
             _ => None,
         })
         .collect();
+    ids.extend(sources.observed_identities.iter().copied());
     for root in &sources.roots {
         if let RootKind::File(signature, _) = root.kind {
             ids.insert(signature.identity);

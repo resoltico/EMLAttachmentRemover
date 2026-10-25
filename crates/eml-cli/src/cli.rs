@@ -22,7 +22,7 @@ enum Format {
     Json,
 }
 #[derive(Debug, Parser)]
-#[command(name=env!("CARGO_PKG_NAME"),bin_name=env!("CARGO_PKG_NAME"),version=eml_protocol::product::VERSION_WITH_BUILD.as_str(),about="Create verified body-only EML copies without modifying originals",color=clap::ColorChoice::Never,disable_help_subcommand=true,after_help="Examples:\n  remove-eml-attachments -- message.eml\n  remove-eml-attachments --dry-run --output-dir copies -- mail-folder\n  remove-eml-attachments --format json -- message.eml")]
+#[command(name=env!("CARGO_PKG_NAME"),bin_name=env!("CARGO_PKG_NAME"),version=eml_core::product::VERSION_WITH_BUILD.as_str(),about="Create verified body-only EML copies without modifying originals",color=clap::ColorChoice::Never,disable_help_subcommand=true,after_help="Examples:\n  emlattachmentremover -- message.eml\n  emlattachmentremover --dry-run --output-dir copies -- mail-folder\n  emlattachmentremover --format json -- message.eml")]
 struct Arguments {
     /// Save copies in an existing folder; mirror selected directory trees.
     #[arg(long = "output-dir", value_name = "DIR", conflicts_with = "request")]

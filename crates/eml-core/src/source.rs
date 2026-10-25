@@ -30,14 +30,14 @@ impl SourcePreparationError {
             Self::Binding(BoundFileError::ObservationFailed(_)) | Self::Read(_) => {
                 ErrorCode::ReadFailed
             }
-            Self::Preparation(error) => error.code(),
+            Self::Preparation(error) => ErrorCode::from_preparation(error),
         }
     }
     /// Phase of this preparation operation. Later publication-time source
     /// revalidation returns native facts separately and chooses its own context.
     pub const fn phase(&self) -> ErrorPhase {
         match self {
-            Self::Preparation(error) => error.phase(),
+            Self::Preparation(_) => ErrorPhase::Prepare,
             Self::InterruptedRead | Self::Binding(_) | Self::Read(_) => ErrorPhase::Read,
         }
     }

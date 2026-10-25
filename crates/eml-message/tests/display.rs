@@ -1,5 +1,5 @@
 //! Display metadata does not grant MIME roles or choose operational paths.
-use eml_core::{RemovalReason, RunControl, prepare_message};
+use eml_message::{RemovalReason, RunControl, prepare_message};
 fn metadata(parameters: &str) -> Option<String> {
     let wire = format!(
         "Content-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\n\r\nbody\r\n--B\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; {parameters}\r\n\r\nx\r\n--B--\r\n"

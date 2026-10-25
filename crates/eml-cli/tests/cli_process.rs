@@ -12,7 +12,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-const BIN: &str = env!("CARGO_BIN_EXE_remove-eml-attachments");
+const BIN: &str = env!("CARGO_BIN_EXE_emlattachmentremover");
 const INPUT: &[u8] = include_bytes!("../../../tests/contract/mime/inputs/01-gmail-attachment.eml");
 const GOLDEN: &[u8] = include_bytes!("../../../tests/contract/mime/golden/01-gmail-attachment.eml");
 fn root() -> tempfile::TempDir {
@@ -162,8 +162,8 @@ fn actual_binary_version_help_and_argument_conflicts_have_checked_channel_contra
     assert_eq!(
         version.stdout,
         format!(
-            "remove-eml-attachments {}\n",
-            eml_protocol::product::VERSION_WITH_BUILD.as_str()
+            "emlattachmentremover {}\n",
+            eml_core::product::VERSION_WITH_BUILD.as_str()
         )
         .as_bytes()
     );

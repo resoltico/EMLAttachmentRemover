@@ -73,7 +73,7 @@ mod tests {
     ));
     fn expected_json_start() -> String {
         format!(
-            "{{\"type\":\"start\",\"protocol\":1,\"program\":\"remove-eml-attachments\",\"version\":\"{}\",\"dry_run\":true,\"total\":1,\"collection_complete\":true}}\n",
+            "{{\"type\":\"start\",\"protocol\":1,\"program\":\"emlattachmentremover\",\"version\":\"{}\",\"dry_run\":true,\"total\":1,\"collection_complete\":true}}\n",
             env!("CARGO_PKG_VERSION")
         )
     }
@@ -83,7 +83,7 @@ mod tests {
         sink.emit(Event::Start(&start())).unwrap();
         let writer = sink.into_inner();
         let expected = format!(
-            "{{\"type\":\"start\",\"protocol\":1,\"program\":\"remove-eml-attachments\",\"version\":\"{}\",\"dry_run\":true,\"total\":1,\"collection_complete\":true}}\n",
+            "{{\"type\":\"start\",\"protocol\":1,\"program\":\"emlattachmentremover\",\"version\":\"{}\",\"dry_run\":true,\"total\":1,\"collection_complete\":true}}\n",
             env!("CARGO_PKG_VERSION")
         );
         assert_eq!(writer.bytes, expected.as_bytes());

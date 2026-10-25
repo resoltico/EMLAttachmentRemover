@@ -100,7 +100,7 @@ pub(crate) fn checked_tests(
         {
             command.args([
                 "--features",
-                "eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures",
+                "eml-core/native-fixtures,eml-windows/native-fixtures,emlattachmentremover/native-fixtures",
             ]);
             if release {
                 command.env(

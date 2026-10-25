@@ -118,7 +118,7 @@ fn preparation_failure(error: SourcePreparationError) -> Box<ItemFailure<'static
             interrupted(ErrorPhase::Prepare)
         }
         SourcePreparationError::Preparation(error @ PreparationError::Refused { .. }) => {
-            let code = error.code();
+            let code = ErrorCode::from_preparation(&error);
             let PreparationError::Refused {
                 detail, section, ..
             } = error

@@ -265,7 +265,7 @@ fn failed_explicit_root_emits_only_its_gapped_known_position() {
     assert_eq!(outcome.counts().failed(), 1);
     assert_eq!(outcome.counts().not_processed(), 2);
     assert_eq!(sink.items.len(), 1);
-    assert_eq!(sink.items[0].index, 1);
+    assert_eq!(sink.items[0].index, 2);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
     root.close().unwrap();
 }
@@ -656,11 +656,11 @@ fn actual_mime_refusals_are_started_failures_and_do_not_hide_later_plans() {
     assert_eq!(outcome.counts().planned(), 1);
     assert_eq!(outcome.counts().not_processed(), 0);
     assert_eq!(
-        sink.items[0].error,
+        sink.items[1].error,
         Some((ErrorCode::Protected, ErrorPhase::Prepare))
     );
     assert_eq!(
-        sink.items[1].error,
+        sink.items[0].error,
         Some((ErrorCode::NoBody, ErrorPhase::Prepare))
     );
     assert_eq!(sink.items[2].action, Some(PlanAction::Create));

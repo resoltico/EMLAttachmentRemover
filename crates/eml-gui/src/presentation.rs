@@ -75,7 +75,7 @@ fn size_comparison(item: &eml_protocol::records::ItemRecord, smaller_by: u64) ->
 fn run_problem(summary: Option<&eml_protocol::records::SummaryRecord>) -> Option<String> {
     let error = summary?.run_error.value()?;
     let mut text = DisplayText::new(&error.detail).to_string();
-    if let Some(hint) = eml_protocol::user_messages::recovery_hint(&error.code) {
+    if let Some(hint) = eml_core::vocabulary::recovery_hint(&error.code) {
         text.push('\n');
         text.push_str(hint);
     }
@@ -278,7 +278,7 @@ fn item_detail(item: &ItemRecord, part_page: usize, smaller_by: Option<u64>) -> 
     }
     if let Some(error) = item.error.value() {
         text.push_str(&format!("{}\n", DisplayText::new(&error.detail)));
-        if let Some(hint) = eml_protocol::user_messages::recovery_hint(&error.code) {
+        if let Some(hint) = eml_core::vocabulary::recovery_hint(&error.code) {
             text.push_str(&format!("{hint}\n"));
         }
         text.push_str("Original message unchanged.\n");
@@ -323,9 +323,9 @@ fn item_detail(item: &ItemRecord, part_page: usize, smaller_by: Option<u64>) -> 
         .any(|p| p.reason == eml_protocol::records::Removal::RelatedResource)
     {
         text.push_str(if copy_was_materialized(item) {
-            eml_protocol::user_messages::RELATED_RESOURCE_NOTICE
+            eml_core::vocabulary::RELATED_RESOURCE_NOTICE
         } else {
-            eml_protocol::user_messages::PREPARED_RELATED_RESOURCE_NOTICE
+            eml_core::vocabulary::PREPARED_RELATED_RESOURCE_NOTICE
         });
         text.push('\n');
     }
@@ -696,12 +696,12 @@ mod tests {
         item.removed[0].reason = eml_protocol::records::Removal::RelatedResource;
         let text = item_detail(&item, 0, Some(165));
         assert!(text.contains("Related image or resource"));
-        assert!(text.contains(eml_protocol::user_messages::PREPARED_RELATED_RESOURCE_NOTICE));
+        assert!(text.contains(eml_core::vocabulary::PREPARED_RELATED_RESOURCE_NOTICE));
         item.publication.state = eml_protocol::records::Publication::Published;
         let text = item_detail(&item, 0, Some(165));
         assert!(text.contains("Removed parts"));
         assert!(text.contains("Removed stale fields: Content-MD5"));
-        assert!(text.contains(eml_protocol::user_messages::RELATED_RESOURCE_NOTICE));
+        assert!(text.contains(eml_core::vocabulary::RELATED_RESOURCE_NOTICE));
     }
     #[test]
     fn unpublished_and_unknown_copies_do_not_claim_realized_savings() {
@@ -766,7 +766,7 @@ mod tests {
             );
         }
         assert!(run_problem(None).is_none());
-        assert!(eml_protocol::user_messages::recovery_hint("FUTURE_CODE").is_none());
+        assert!(eml_core::vocabulary::recovery_hint("FUTURE_CODE").is_none());
     }
     #[test]
     fn run_errors_without_failed_items_are_not_presented_as_success() {

@@ -20,7 +20,7 @@ unprovable memory lifetime must not fabricate an unpublished receipt.
 
 ## Request decoding
 
-The `remove-eml-attachments` executable delegates shared transport to
+The `emlattachmentremover` executable delegates shared transport to
 `eml-protocol`. Its `decode_request` accepts a complete byte buffer plus the captured
 absolute working directory. It checks the 8 MiB limit, strict protocol-1 JSON,
 required fields (including explicit null for absent output directory), duplicate
@@ -140,6 +140,7 @@ enforces that condition and preserves all observed publication effects.
 | MALFORMED | prepare |
 | LIMIT_EXCEEDED | prepare |
 | PROTECTED | prepare |
+| UNSUPPORTED_MIME | prepare |
 | NO_BODY | prepare |
 | INTERNAL | prepare |
 | INPUT_ADMISSION_FAILED | admission/collection |

@@ -537,7 +537,7 @@ fn counterfeit_controls(
             || document(&log)?
                 != format!(
                     "{program} {version} (Build {})\n",
-                    eml_protocol::product::BUILD_NUMBER
+                    eml_core::product::BUILD_NUMBER
                 )
                 .as_bytes()
             || !document(&log.with_extension("stderr"))?.is_empty()
@@ -740,7 +740,7 @@ fn verify_version(
         || document(&version_log)?
             != format!(
                 "{program} {version} (Build {})\n",
-                eml_protocol::product::BUILD_NUMBER
+                eml_core::product::BUILD_NUMBER
             )
             .as_bytes()
         || !document(&version_log.with_extension("stderr"))?.is_empty()
@@ -844,7 +844,7 @@ mod tests {
         assert!(
             verify(
                 owned.path(),
-                "remove-eml-attachments",
+                "emlattachmentremover",
                 "6.0.0",
                 Case::Created,
                 &encode(&events),
@@ -857,7 +857,7 @@ mod tests {
         assert_eq!(
             kind(verify(
                 owned.path(),
-                "remove-eml-attachments",
+                "emlattachmentremover",
                 "6.0.0",
                 Case::Created,
                 &encode(&events),
@@ -880,7 +880,7 @@ mod tests {
         assert_eq!(
             kind(verify(
                 counterfeit.path(),
-                "remove-eml-attachments",
+                "emlattachmentremover",
                 "6.0.0",
                 Case::Created,
                 &trace,
@@ -913,7 +913,7 @@ mod tests {
             assert_eq!(
                 kind(verify(
                     owned.path(),
-                    "remove-eml-attachments",
+                    "emlattachmentremover",
                     "6.0.0",
                     Case::Created,
                     &encode(&changed),

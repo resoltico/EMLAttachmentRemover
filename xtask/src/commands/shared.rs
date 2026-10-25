@@ -42,7 +42,7 @@ pub(super) fn cli_smoke(root: &Path, executable: &Path, out: &Path) -> Result<()
     let result = smoke::run(
         root,
         &executable.canonicalize()?,
-        "remove-eml-attachments",
+        "emlattachmentremover",
         env!("CARGO_PKG_VERSION"),
         owned.path(),
         &out.join("behavior"),

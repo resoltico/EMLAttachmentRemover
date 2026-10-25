@@ -245,7 +245,7 @@ pub(crate) fn unknown_input_control(
         );
     }
     let rejected =
-        xtask::archive::ByteIdentity::of(&fs::read(attempt.join("remove-eml-attachments.exe"))?);
+        xtask::archive::ByteIdentity::of(&fs::read(attempt.join("emlattachmentremover.exe"))?);
     if receipt["linked_image"] != serde_json::to_value(&rejected)? {
         return Err(
             "Rejected native input trace is not bound to the actual control executable".into(),
@@ -262,7 +262,7 @@ pub(crate) fn artifact(root: &Path, output: &[u8]) -> Result<PathBuf> {
         output,
         "crates/eml-cli/Cargo.toml",
         "crates/eml-cli/src/main.rs",
-        "remove-eml-attachments",
+        "emlattachmentremover",
     )
 }
 pub(crate) fn named_artifact(
@@ -365,7 +365,7 @@ fn compile_cli(
             "--locked",
             "--release",
             "--package",
-            "remove-eml-attachments",
+            "emlattachmentremover",
             "--target",
             target,
             "--message-format=json",
@@ -373,7 +373,7 @@ fn compile_cli(
         .env("CARGO_TARGET_DIR", cargo);
     #[cfg(windows)]
     command
-        .args(["--bin", "remove-eml-attachments", "--", "-C"])
+        .args(["--bin", "emlattachmentremover", "--", "-C"])
         .arg(format!(
             "linker={}",
             wrapper
@@ -433,9 +433,9 @@ fn freeze_cli_bytes(
     #[cfg(not(target_os = "macos"))]
     let _ = root;
     let destination = out.join(if os == "windows" {
-        "remove-eml-attachments.exe"
+        "emlattachmentremover.exe"
     } else {
-        "remove-eml-attachments"
+        "emlattachmentremover"
     });
     let mut source = fs::File::open(compiled)?;
     let mut owned = fs::OpenOptions::new()
@@ -598,7 +598,7 @@ mod tests {
             .unwrap()
             .canonicalize()
             .unwrap();
-        let artifact = serde_json::json!({"reason":"compiler-artifact","manifest_path":root.join("crates/eml-cli/Cargo.toml"),"target":{"name":"remove-eml-attachments","kind":["bin"],"src_path":root.join("crates/eml-cli/src/main.rs")},"profile":{"test":false},"executable":root.join("target/owned-test-executable")});
+        let artifact = serde_json::json!({"reason":"compiler-artifact","manifest_path":root.join("crates/eml-cli/Cargo.toml"),"target":{"name":"emlattachmentremover","kind":["bin"],"src_path":root.join("crates/eml-cli/src/main.rs")},"profile":{"test":false},"executable":root.join("target/owned-test-executable")});
         let finished = serde_json::json!({"reason":"build-finished","success":true});
         let encode = |values: &[serde_json::Value]| {
             values

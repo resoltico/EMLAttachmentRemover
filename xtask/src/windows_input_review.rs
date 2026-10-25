@@ -483,10 +483,10 @@ mod tests {
             let stem = application_stem(&basename).unwrap();
             let object = format!("{stem}.remove_eml_attachments.2f7a-cgu.0.rcgu.o");
             assert!(object.starts_with(&format!("{stem}.")));
-            assert!(!object.starts_with("remove-eml-attachments."));
+            assert!(!object.starts_with("emlattachmentremover."));
         }
         for invalid in [
-            "remove-eml-attachments.exe",
+            "emlattachmentremover.exe",
             "../remove_eml_attachments-43ccdf81f9fa5803.exe",
             "C:remove_eml_attachments-43ccdf81f9fa5803.exe",
             "remove_eml_attachments-43ccdf81f9fa5803/other.exe",

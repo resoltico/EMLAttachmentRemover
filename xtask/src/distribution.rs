@@ -8,7 +8,7 @@ use std::{
     process::Command,
 };
 
-const CLI_PACKAGE: &str = "remove-eml-attachments";
+const CLI_PACKAGE: &str = "emlattachmentremover";
 const MAX_PLAN_BYTES: usize = 16 * 1024;
 
 #[derive(Deserialize)]
@@ -317,7 +317,7 @@ impl Distribution {
                 platform: row.platform.clone(),
                 role: "cli",
                 executable: if family == Family::Windows {
-                    "remove-eml-attachments.exe"
+                    "emlattachmentremover.exe"
                 } else {
                     CLI_PACKAGE
                 },
@@ -571,7 +571,7 @@ mod tests {
         serde_json::json!({
             "workspace_root": root,
             "workspace_members": ["owned-workspace-cli"],
-            "packages": [{"id":"owned-workspace-cli", "name":"remove-eml-attachments",
+            "packages": [{"id":"owned-workspace-cli", "name":"emlattachmentremover",
                 "version":version, "source":null,
                 "manifest_path":root.join("crates/eml-cli/Cargo.toml")}]
         })
@@ -647,12 +647,12 @@ mod tests {
             [
                 "EML-Attachment-Remover-6.0.0-macos-aarch64.zip",
                 "EML-Attachment-Remover-6.0.0-macos-x86_64.zip",
-                "remove-eml-attachments-6.0.0-linux-aarch64.tar.gz",
-                "remove-eml-attachments-6.0.0-linux-x86_64.tar.gz",
-                "remove-eml-attachments-6.0.0-macos-aarch64.zip",
-                "remove-eml-attachments-6.0.0-macos-x86_64.zip",
-                "remove-eml-attachments-6.0.0-windows-aarch64.zip",
-                "remove-eml-attachments-6.0.0-windows-x86_64.zip",
+                "emlattachmentremover-6.0.0-linux-aarch64.tar.gz",
+                "emlattachmentremover-6.0.0-linux-x86_64.tar.gz",
+                "emlattachmentremover-6.0.0-macos-aarch64.zip",
+                "emlattachmentremover-6.0.0-macos-x86_64.zip",
+                "emlattachmentremover-6.0.0-windows-aarch64.zip",
+                "emlattachmentremover-6.0.0-windows-x86_64.zip",
             ]
         );
         assert_eq!(
@@ -672,9 +672,9 @@ mod tests {
                 assert_eq!(
                     artifact.executable,
                     if artifact.platform.starts_with("windows-") {
-                        "remove-eml-attachments.exe"
+                        "emlattachmentremover.exe"
                     } else {
-                        "remove-eml-attachments"
+                        "emlattachmentremover"
                     }
                 );
             }

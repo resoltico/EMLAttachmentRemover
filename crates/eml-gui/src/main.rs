@@ -92,7 +92,7 @@ fn secondary_windows(
     let about = view::AboutWindow::new()?;
     about.set_interface_font_family(interface_font_family.clone());
     about.set_interface_font_size(interface_font_size);
-    about.set_version_label(eml_protocol::product::VERSION_WITH_BUILD.as_str().into());
+    about.set_version_label(eml_core::product::VERSION_WITH_BUILD.as_str().into());
     let copyright = include_str!("../../../LICENSE")
         .lines()
         .find_map(|line| line.strip_prefix("Copyright (c) "))

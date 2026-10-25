@@ -274,7 +274,7 @@ pub(crate) fn icon_outputs(root: &Path, icons: &Path, build: &macos::MacBuild) -
 }
 
 pub(crate) fn app_metadata(version: &str, minimum: &str) -> Value {
-    json!({"CFBundleIdentifier":"io.github.resoltico.emlattachmentremover","CFBundleName":"EML Attachment Remover","CFBundleDisplayName":"EML Attachment Remover","CFBundleExecutable":"EMLAttachmentRemover","CFBundlePackageType":"APPL","CFBundleDevelopmentRegion":"en","LSApplicationCategoryType":"public.app-category.utilities","CFBundleShortVersionString":version,"CFBundleVersion":eml_protocol::product::BUILD_NUMBER.to_string(),"LSMinimumSystemVersion":minimum,"NSHighResolutionCapable":true,"CFBundleIconName":"EML","NSServices":[{"NSMenuItem":{"default":"Create EML Copies Without Attachments"},"NSMessage":"createEMLCopies","NSPortName":"EMLAttachmentRemover","NSSendTypes":["public.file-url"],"NSSendFileTypes":["public.email-message","public.folder"],"NSRestricted":true,"NSRequiredContext":{}}],"CFBundleDocumentTypes":[{"CFBundleTypeName":"EML message","CFBundleTypeExtensions":["eml"],"LSItemContentTypes":["public.email-message"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"},{"CFBundleTypeName":"Folder containing EML messages","LSItemContentTypes":["public.folder"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"}]})
+    json!({"CFBundleIdentifier":"io.github.resoltico.emlattachmentremover","CFBundleName":"EML Attachment Remover","CFBundleDisplayName":"EML Attachment Remover","CFBundleExecutable":"EMLAttachmentRemover","CFBundlePackageType":"APPL","CFBundleDevelopmentRegion":"en","LSApplicationCategoryType":"public.app-category.utilities","CFBundleShortVersionString":version,"CFBundleVersion":eml_core::product::BUILD_NUMBER.to_string(),"LSMinimumSystemVersion":minimum,"NSHighResolutionCapable":true,"CFBundleIconName":"EML","NSServices":[{"NSMenuItem":{"default":"Create EML Copies Without Attachments"},"NSMessage":"createEMLCopies","NSPortName":"EMLAttachmentRemover","NSSendTypes":["public.file-url"],"NSSendFileTypes":["public.email-message","public.folder"],"NSRestricted":true,"NSRequiredContext":{}}],"CFBundleDocumentTypes":[{"CFBundleTypeName":"EML message","CFBundleTypeExtensions":["eml"],"LSItemContentTypes":["public.email-message"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"},{"CFBundleTypeName":"Folder containing EML messages","LSItemContentTypes":["public.folder"],"CFBundleTypeRole":"Viewer","LSHandlerRank":"None"}]})
 }
 
 #[cfg(test)]
@@ -290,9 +290,9 @@ mod tests {
         assert_eq!(value["CFBundleShortVersionString"], "7.2.1");
         assert_eq!(
             value["CFBundleVersion"],
-            eml_protocol::product::BUILD_NUMBER.to_string()
+            eml_core::product::BUILD_NUMBER.to_string()
         );
-        assert!((1..=9999).contains(&eml_protocol::product::BUILD_NUMBER));
+        assert!((1..=9999).contains(&eml_core::product::BUILD_NUMBER));
         assert_eq!(value["LSMinimumSystemVersion"], "15.0");
         assert_eq!(value["NSServices"][0]["NSMessage"], "createEMLCopies");
         assert_eq!(

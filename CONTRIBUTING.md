@@ -13,7 +13,7 @@ from a clean checkout:
 ```sh
 rustup show
 cargo test --locked --workspace
-cargo build --locked --release -p remove-eml-attachments
+cargo build --locked --release -p emlattachmentremover
 cargo xtask distribution
 ```
 

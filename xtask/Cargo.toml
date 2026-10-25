@@ -7,6 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+eml-core = { path = "../crates/eml-core" }
 syn = { version = "=3.0.9", features = ["full", "visit"] }
 proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
 quote = "=1.0.47"
@@ -33,7 +34,6 @@ rustix = { version = "1.1.5", features = ["process", "fs"] }
 eml-windows = { path = "../crates/eml-windows" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-eml-core = { path = "../crates/eml-core" }
 eml-app = { path = "../crates/eml-app" }
 eml-macos = { path = "../crates/eml-macos", features = ["native-fixtures"] }
 

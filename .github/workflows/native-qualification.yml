@@ -181,13 +181,13 @@ jobs:
           $testTarget = [string] $tests.cargo_target_directory
           if ([string]::IsNullOrWhiteSpace($testTarget) -or !(Test-Path -LiteralPath $testTarget -PathType Container)) { throw 'Missing canonical native test build directory' }
           $env:CARGO_TARGET_DIR = $testTarget
-          $arguments = @('test', '--workspace', '--locked', '--features', 'eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures', '--target', '${{ matrix.target }}')
+          $arguments = @('test', '--workspace', '--locked', '--features', 'eml-core/native-fixtures,eml-windows/native-fixtures,emlattachmentremover/native-fixtures', '--target', '${{ matrix.target }}')
           $ignored = & cargo @arguments -- --list --ignored --color never 2>&1
           $code = $LASTEXITCODE
           if ($code -ne 0) { exit $code }
           $ignored | Set-Content -Encoding utf8 target/ignored.list
           & ./tests/windows/assert-test-sentinels.ps1 -Listing target/native-tests/native-test-discovery.log -IgnoredListing target/ignored.list
-          cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures,remove-eml-attachments/native-fixtures --target '${{ matrix.target }}' -- -D warnings
+          cargo clippy --workspace --locked --all-targets --features eml-core/native-fixtures,eml-windows/native-fixtures,emlattachmentremover/native-fixtures --target '${{ matrix.target }}' -- -D warnings
           $code = $LASTEXITCODE
           if ($code -ne 0) { exit $code }
           cargo clippy --locked --manifest-path tests/native-filesystem/Cargo.toml --all-targets --target '${{ matrix.target }}' -- -D warnings

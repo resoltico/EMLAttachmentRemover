@@ -15,13 +15,13 @@ for execution results.
 Install rustup, then build from a checkout. `rust-toolchain.toml` selects Rust:
 
 ```sh
-cargo build --locked --release -p remove-eml-attachments
-./target/release/remove-eml-attachments --help
-./target/release/remove-eml-attachments --dry-run -- message.eml
-./target/release/remove-eml-attachments -- message.eml
+cargo build --locked --release -p emlattachmentremover
+./target/release/emlattachmentremover --help
+./target/release/emlattachmentremover --dry-run -- message.eml
+./target/release/emlattachmentremover -- message.eml
 mkdir copies
-./target/release/remove-eml-attachments --output-dir copies -- selected-folder
-./target/release/remove-eml-attachments --format json -- message.eml
+./target/release/emlattachmentremover --output-dir copies -- selected-folder
+./target/release/emlattachmentremover --format json -- message.eml
 ```
 
 On Windows the executable ends in `.exe`; native GNU LLVM builds also require

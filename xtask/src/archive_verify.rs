@@ -287,7 +287,7 @@ fn verify(
 
 pub(crate) fn cli_readme(version: &str, platform_text: &str) -> String {
     format!(
-        "EML Attachment Remover {version}\n\n{platform_text}\n\nRun ./remove-eml-attachments --help (remove-eml-attachments.exe on Windows).\nCreate copies: remove-eml-attachments PATH...\nInspect without writes: remove-eml-attachments --dry-run PATH...\nOriginal messages remain unchanged; existing different copies are never replaced.\n\nSource and documentation: https://github.com/resoltico/EMLAttachmentRemover\nSoftware/artwork terms: LICENSE. Complete third-party materials: THIRD-PARTY-NOTICES.txt and licenses/.\nmacOS binaries are ad hoc signed, without Developer ID or notarization; first launch may require the system's Open Anyway choice.\n"
+        "EML Attachment Remover {version}\n\n{platform_text}\n\nRun ./emlattachmentremover --help (emlattachmentremover.exe on Windows).\nCreate copies: emlattachmentremover PATH...\nInspect without writes: emlattachmentremover --dry-run PATH...\nOriginal messages remain unchanged; existing different copies are never replaced.\n\nSource and documentation: https://github.com/resoltico/EMLAttachmentRemover\nSoftware/artwork terms: LICENSE. Complete third-party materials: THIRD-PARTY-NOTICES.txt and licenses/.\nmacOS binaries are ad hoc signed, without Developer ID or notarization; first launch may require the system's Open Anyway choice.\n"
     )
 }
 

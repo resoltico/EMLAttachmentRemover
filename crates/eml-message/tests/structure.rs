@@ -1,5 +1,5 @@
 //! Context precedence, opaque descendants and exact structural boundaries.
-use eml_core::{PreparationError, Refusal, RemovalReason, RunControl, prepare_message};
+use eml_message::{PreparationError, Refusal, RemovalReason, RunControl, prepare_message};
 fn refusal(wire: &[u8], kind: Refusal) {
     assert!(
         matches!(prepare_message(wire,&RunControl::default()),Err(PreparationError::Refused{kind:actual,..}) if actual==kind)
@@ -182,8 +182,8 @@ fn nonidentity_messages_are_opaque_and_digest_defaults_reset() {
     assert!(result.removed().is_empty());
 }
 #[test]
-fn unknown_multipart_and_report_recurse_in_source_order() {
-    for subtype in ["report", "parallel", "x-unknown"] {
+fn generic_multipart_subtypes_recurse_in_source_order() {
+    for subtype in ["parallel", "x-unknown"] {
         let wire = format!(
             "Content-Type: multipart/{subtype}; boundary=R\r\n\r\n--R\r\n\r\ntext\r\n--R\r\nContent-Type: message/delivery-status\r\n\r\nstatus\r\n--R\r\nContent-Type: message/rfc822\r\n\r\nSubject: forwarded\r\n\r\nforwarded body\r\n--R--\r\n"
         );
@@ -336,4 +336,10 @@ fn cr_child_ending_and_lf_frame_merge_into_one_crlf_terminator() {
         result.as_bytes(),
         b"Content-Type: multipart/mixed; boundary=B\n\n--B\n\nbody\n--B--\n"
     );
+}
+
+#[test]
+fn ambiguous_ancestor_closing_boundary_never_becomes_an_inner_opening() {
+    let wire=b"Content-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\nContent-Type: multipart/mixed; boundary=\"B--\"\r\n\r\n--B--\r\n\r\nbody\r\n--B----\r\n--B--\r\n";
+    refusal(wire, Refusal::Malformed);
 }

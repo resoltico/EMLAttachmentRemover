@@ -1,5 +1,5 @@
 //! Resource boundaries independent of the production parser's counting helpers.
-use eml_core::{MAX_MESSAGE_BYTES, PreparationError, Refusal, RunControl, prepare_message};
+use eml_message::{MAX_MESSAGE_BYTES, PreparationError, Refusal, RunControl, prepare_message};
 fn accepted(bytes: &[u8]) {
     let prepared = prepare_message(bytes, &RunControl::default()).unwrap();
     assert!(prepared.as_bytes() == bytes);

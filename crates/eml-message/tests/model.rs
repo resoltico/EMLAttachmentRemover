@@ -1,10 +1,35 @@
 //! Independent semantic tree -> wire/expected-copy oracle. No production parser,
 //! policy constants, classification helpers or edit vectors are used by the oracle.
-use eml_core::{
+use eml_message::{
     PreparationError, Refusal, RemovalReason, RemovedPart, RunControl, prepare_message,
 };
 use proptest::prelude::*;
-use std::collections::BTreeSet;
+#[path = "support/property_config.rs"]
+mod property_config;
+use std::{collections::BTreeSet, path::Path, sync::LazyLock};
+static MODEL_SEEDS: LazyLock<String> = LazyLock::new(|| {
+    property_config::seed_path(Path::new(env!("CARGO_MANIFEST_DIR")), "model.txt")
+});
+#[derive(Clone, Copy, Debug)]
+enum Disposition {
+    Absent,
+    Inline,
+    Attachment,
+    Extension,
+}
+impl Disposition {
+    fn is_attachment(self) -> bool {
+        matches!(self, Self::Attachment | Self::Extension)
+    }
+}
+fn dispositions() -> impl Strategy<Value = Disposition> {
+    prop::sample::select(vec![
+        Disposition::Absent,
+        Disposition::Inline,
+        Disposition::Attachment,
+        Disposition::Extension,
+    ])
+}
 #[derive(Clone, Debug)]
 enum Shape {
     Leaf(u8, Vec<u8>),
@@ -14,7 +39,7 @@ enum Shape {
 #[derive(Clone, Debug)]
 struct Model {
     shape: Shape,
-    attachment: bool,
+    disposition: Disposition,
     stale: bool,
     transport: u8,
 }
@@ -23,10 +48,10 @@ fn models() -> BoxedStrategy<Model> {
         prop::sample::select(vec![0, 255, b'a', b'=', b'<', b'>', 0xc3, 0x85]),
         0..24,
     );
-    let leaf = (0u8..7, payload, any::<bool>(), any::<bool>(), 0u8..3).prop_map(
-        |(kind, payload, attachment, stale, transport)| Model {
+    let leaf = (0u8..7, payload, dispositions(), any::<bool>(), 0u8..3).prop_map(
+        |(kind, payload, disposition, stale, transport)| Model {
             shape: Shape::Leaf(kind, payload),
-            attachment,
+            disposition,
             stale,
             transport,
         },
@@ -37,22 +62,22 @@ fn models() -> BoxedStrategy<Model> {
                 0u8..6,
                 any::<bool>(),
                 prop::collection::vec(inner.clone(), 1..4),
-                any::<bool>(),
+                dispositions(),
                 any::<bool>(),
                 0u8..3
             )
-                .prop_map(|(kind, last, children, attachment, stale, transport)| {
+                .prop_map(|(kind, last, children, disposition, stale, transport)| {
                     Model {
                         shape: Shape::Multipart(kind, last, children),
-                        attachment,
+                        disposition,
                         stale,
                         transport,
                     }
                 }),
-            (any::<bool>(), inner, any::<bool>(), any::<bool>(), 0u8..3).prop_map(
-                |(identity, child, attachment, stale, transport)| Model {
+            (any::<bool>(), inner, dispositions(), any::<bool>(), 0u8..3).prop_map(
+                |(identity, child, disposition, stale, transport)| Model {
                     shape: Shape::Forward(identity, Box::new(child)),
-                    attachment,
+                    disposition,
                     stale,
                     transport
                 }
@@ -66,7 +91,7 @@ struct Rendered {
     fields: Vec<(&'static str, Vec<u8>)>,
     separator: Vec<u8>,
     media: &'static str,
-    attachment: bool,
+    disposition: Disposition,
     root: bool,
     section: String,
     kind: RenderedKind,
@@ -198,7 +223,7 @@ fn render(
         fields,
         separator: ending.to_vec(),
         media,
-        attachment: model.attachment,
+        disposition: model.disposition,
         root,
         section,
         kind,
@@ -228,11 +253,14 @@ fn render_fields(
     if !omit_type {
         add("Content-Type", content_type);
     }
-    if model.attachment {
-        add(
-            "Content-Disposition",
-            "attachment; filename=part.bin".into(),
-        );
+    if !matches!(model.disposition, Disposition::Absent) {
+        let token = match model.disposition {
+            Disposition::Inline => "inline",
+            Disposition::Attachment => "attachment",
+            Disposition::Extension => "x-unknown",
+            Disposition::Absent => unreachable!(),
+        };
+        add("Content-Disposition", format!("{token}; filename=part.bin"));
     }
     if let Some(cid) = cid {
         add("Content-ID", format!("<{cid}>"));
@@ -273,7 +301,7 @@ fn removal(node: &Rendered, reason: RemovalReason) -> Expected {
         removals: vec![RemovedPart {
             section: node.section.clone(),
             content_type: node.media.into(),
-            filename: node.attachment.then(|| "part.bin".into()),
+            filename: (!matches!(node.disposition, Disposition::Absent)).then(|| "part.bin".into()),
             bytes: node.wire.len() as u64,
             reason,
         }],
@@ -281,11 +309,14 @@ fn removal(node: &Rendered, reason: RemovalReason) -> Expected {
     }
 }
 fn expected(node: &Rendered) -> Result<Expected, Refusal> {
-    if node.attachment && !node.root {
+    if node.disposition.is_attachment() && !node.root {
         return Ok(removal(node, RemovalReason::Attachment));
     }
     if ["multipart/signed", "application/pkcs7-mime"].contains(&node.media) {
         return Err(Refusal::Protected);
+    }
+    if node.media == "multipart/report" {
+        return Err(Refusal::UnsupportedMime);
     }
     if ["text/plain", "text/html"].contains(&node.media) {
         return Ok(Expected {
@@ -383,13 +414,7 @@ fn model_config() -> ProptestConfig {
     // PROPTEST_CASES can extend scheduled coverage without weakening normal checks
     // or allowing an unbounded campaign through an inherited environment value.
     config.cases = config.cases.clamp(256, 4096);
-    config.failure_persistence = Some(Box::new(
-        proptest::test_runner::FileFailurePersistence::Direct(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../target/proptest/model.txt"
-        )),
-    ));
-    config
+    property_config::bounded(config, &MODEL_SEEDS)
 }
 proptest! {
     #![proptest_config(model_config())]
@@ -401,11 +426,21 @@ proptest! {
             Ok(Expected{copy:None,..})=>prop_assert!(matches!(actual,Err(PreparationError::Refused{kind:Refusal::NoBody,..})), "Expected no supported body"),
             Ok(Expected{copy:Some(copy),removals,stripped})=>{
                 let actual=actual.map_err(|error|TestCaseError::fail(error.to_string()))?;
-                prop_assert_eq!(actual.as_bytes(),copy.as_slice());prop_assert_eq!(actual.removed(),removals.as_slice());
+                prop_assert!(
+                    actual.as_bytes() == copy.as_slice(),
+                    "Prepared bytes differ from model: prepared length {}; model length {}",
+                    actual.as_bytes().len(), copy.len()
+                );
+                prop_assert_eq!(actual.removed(),removals.as_slice());
                 let stripped: Vec<_> = stripped.into_iter().collect();
                 prop_assert_eq!(actual.stripped_fields(),stripped.as_slice());
                 let again=prepare_message(actual.as_bytes(),&RunControl::default()).map_err(|error|TestCaseError::fail(error.to_string()))?;
-                prop_assert_eq!(again.as_bytes(),actual.as_bytes());prop_assert!(again.removed().is_empty());prop_assert!(again.stripped_fields().is_empty());
+                prop_assert!(
+                    again.as_bytes() == actual.as_bytes(),
+                    "Fixed-point bytes differ: second length {}; first length {}",
+                    again.as_bytes().len(), actual.as_bytes().len()
+                );
+                prop_assert!(again.removed().is_empty());prop_assert!(again.stripped_fields().is_empty());
             }
         }
     }

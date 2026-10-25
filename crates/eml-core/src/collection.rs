@@ -105,6 +105,7 @@ pub struct CollectedSource<'a> {
     native: Cow<'a, Path>,
     origin: SourceOrigin,
     observation: CollectedObservation,
+    pub(super) version_failure: Option<OperationFailure>,
 }
 impl CollectedSource<'_> {
     /// Explicit selection versus descendant discovery provenance.
@@ -114,6 +115,10 @@ impl CollectedSource<'_> {
     /// Actual inventory metadata or typed collection failure.
     pub fn observation(&self) -> &CollectedObservation {
         &self.observation
+    }
+    /// A changed observation of this same entry; the initial signature is retained.
+    pub fn version_failure(&self) -> Option<&OperationFailure> {
+        self.version_failure.as_ref()
     }
     /// Admitted reported native expression, or intended failed-root input.
     pub fn native_path(&self) -> &Path {
@@ -140,12 +145,13 @@ pub struct CollectedSources<'a> {
     pub(super) context: Option<WorkingContext>,
     pub(super) output: Option<BoundDirectory>,
     pub(super) roots: Vec<Root>,
-    items: Vec<CollectedSource<'a>>,
+    pub(super) items: Vec<CollectedSource<'a>>,
     state: CollectionState,
     complete: bool,
     examined: usize,
     path_bytes: usize,
     error: Option<OperationFailure>,
+    pub(super) observed_identities: std::collections::HashSet<Identity>,
 }
 impl<'a> CollectedSources<'a> {
     fn empty(request: &'a RunRequest) -> Self {
@@ -160,6 +166,7 @@ impl<'a> CollectedSources<'a> {
             examined: 0,
             path_bytes: 0,
             error: None,
+            observed_identities: std::collections::HashSet::new(),
         }
     }
     /// Authoritative outcome; Ok from collect_sources does not imply completion.
@@ -271,7 +278,7 @@ fn collect_with_hash<'a>(
         result: empty,
         control,
         hash,
-        seen: HashMap::new(),
+        entries: HashMap::new(),
         unknown: false,
     };
     if !collector.checkpoint() {
@@ -366,11 +373,21 @@ fn selection_failure(phase: ErrorPhase, error: SelectionError) -> OperationFailu
         ),
     }
 }
+#[derive(PartialEq, Eq)]
+struct SourceEntryKey {
+    parent: Identity,
+    basename: OsString,
+}
+struct EntryOccurrence {
+    key: SourceEntryKey,
+    index: usize,
+    signature: FileSignature,
+}
 struct Collector<'a, 'c, F> {
     result: CollectedSources<'a>,
     control: &'c RunControl,
     hash: F,
-    seen: HashMap<u64, Vec<usize>>,
+    entries: HashMap<u64, Vec<EntryOccurrence>>,
     unknown: bool,
 }
 impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
@@ -593,13 +610,13 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
             self.limit("Discovered path exceeds native spelling bounds");
             return;
         }
-        let (native, key_available) = match self.context().operand(expression, &suffix) {
-            Ok(path) => (path, true),
+        let native = match self.context().operand(expression, &suffix) {
+            Ok(path) => path,
             Err(_)
                 if origin == SourceOrigin::Explicit
                     && matches!(observation, CollectedObservation::Failed(_)) =>
             {
-                (expression.to_owned(), false)
+                expression.to_owned()
             }
             Err(error) => {
                 self.unverified(
@@ -614,37 +631,97 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
             self.limit("Reported native path exceeds the native unit bound");
             return;
         }
-        // A failed requested-root binding is a mandatory diagnostic, not another
-        // admitted file-work occurrence. It must neither be suppressed by nor
-        // become a representative in the ordinary work dedupe index.
-        let admitted_work = key_available
-            && !(origin == SourceOrigin::Explicit
-                && matches!(observation, CollectedObservation::Failed(_)));
-        let key = admitted_work.then(|| self.context().key(&native));
-        let hash = key.as_ref().map(|key| (self.hash)(key.as_os_str()));
-        for &old in hash
-            .and_then(|hash| self.seen.get(&hash))
-            .into_iter()
-            .flatten()
+        // Entry equivalence requires the actual parent and exact native basename;
+        // file identity alone must not merge distinct hard-link names.
+        let binding = match &observation {
+            CollectedObservation::File { signature, parent } => {
+                self.result.observed_identities.insert(signature.identity);
+                native.file_name().map(|name| {
+                    (
+                        SourceEntryKey {
+                            parent: *parent,
+                            basename: name.to_owned(),
+                        },
+                        *signature,
+                    )
+                })
+            }
+            _ => None,
+        };
+        let hash = (self.hash)(native.file_name().unwrap_or(native.as_os_str()));
+        if !self.checkpoint() {
+            return;
+        }
+        let mut replace = None;
+        if let Some((key, signature)) = &binding
+            && let Some(previous) = self
+                .entries
+                .get(&hash)
+                .into_iter()
+                .flatten()
+                .find(|previous| previous.key == *key)
         {
-            if self.control.is_stopped() {
-                self.checkpoint();
+            let (old, previous_signature) = (previous.index, previous.signature);
+            if *signature != previous_signature {
+                self.result.items[old].version_failure = Some(OperationFailure::new(
+                    ErrorCode::SourceChanged,
+                    ErrorPhase::Collection,
+                    "The same source entry changed between selection observations",
+                ));
                 return;
             }
             let previous = &self.result.items[old];
-            if self.context().same_spelling(&previous.native, &native)
-                && (previous.native.is_absolute() == native.is_absolute()
-                    || same_file_binding(&previous.observation, &observation))
+            if previous.version_failure.is_some()
+                || matches!(previous.observation, CollectedObservation::Failed(_))
             {
                 return;
             }
+            let previous_root = self.expression(previous.root);
+            let precedence = |origin, suffix: &Path, native: &Path, selected: &Path| {
+                (
+                    origin != SourceOrigin::Explicit,
+                    if origin == SourceOrigin::Walked {
+                        suffix.components().count()
+                    } else {
+                        0
+                    },
+                    native_order_key(
+                        if native.is_absolute() {
+                            native.to_path_buf()
+                        } else {
+                            append(&self.result.request.working_directory, native)
+                        }
+                        .as_os_str(),
+                    ),
+                    native_order_key(selected.as_os_str()),
+                    native_order_key(suffix.as_os_str()),
+                )
+            };
+            if precedence(origin, &suffix, &native, expression)
+                >= precedence(
+                    previous.origin,
+                    &previous.suffix,
+                    &previous.native,
+                    previous_root,
+                )
+            {
+                return;
+            }
+            replace = Some(old);
         }
-        if self.result.items.len() == MAX_COLLECTED_ITEMS {
+        if replace.is_none() && self.result.items.len() == MAX_COLLECTED_ITEMS {
             self.limit("Collected work exceeds the item bound");
             return;
         }
-        let Some(total) = path_total(self.result.path_bytes, native_bytes(&display), native_size)
-        else {
+        let prior_charge = replace.map_or(0, |old| {
+            native_bytes(&self.result.items[old].native)
+                .max(native_bytes(&self.result.display_path(old).unwrap()))
+        });
+        let Some(total) = path_total(
+            self.result.path_bytes - prior_charge,
+            native_bytes(&display),
+            native_size,
+        ) else {
             self.limit("Collected source paths exceed the report budget");
             return;
         };
@@ -657,17 +734,36 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
             } else {
                 Cow::Owned(native)
             };
-        let index = self.result.items.len();
-        self.result.items.push(CollectedSource {
+        let index = replace.unwrap_or(self.result.items.len());
+        let item = CollectedSource {
             root,
             suffix,
             native,
             origin,
             observation,
-        });
+            version_failure: None,
+        };
+        if replace.is_some() {
+            self.result.items[index] = item;
+        } else {
+            self.result.items.push(item);
+        }
         self.result.path_bytes = total;
-        if let Some(hash) = hash {
-            self.seen.entry(hash).or_default().push(index);
+        if let Some((key, signature)) = binding {
+            let bucket = self.entries.entry(hash).or_default();
+            if let Some(previous) = bucket.iter_mut().find(|previous| previous.key == key) {
+                *previous = EntryOccurrence {
+                    key,
+                    index,
+                    signature,
+                };
+            } else {
+                bucket.push(EntryOccurrence {
+                    key,
+                    index,
+                    signature,
+                });
+            }
         }
     }
 }
@@ -679,8 +775,19 @@ pub(super) fn path_total(current: usize, display: usize, native: usize) -> Optio
         .checked_add(display.max(native))
         .filter(|total| *total <= MAX_COLLECTED_PATH_BYTES)
 }
-fn same_file_binding(left: &CollectedObservation, right: &CollectedObservation) -> bool {
-    matches!((left, right), (CollectedObservation::File { signature: a, parent: ap }, CollectedObservation::File { signature: b, parent: bp }) if a == b && ap == bp)
+pub(super) fn native_order_key(name: &OsStr) -> Vec<u32> {
+    #[cfg(unix)]
+    {
+        name.as_encoded_bytes()
+            .iter()
+            .map(|byte| u32::from(*byte))
+            .collect()
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        name.encode_wide().map(u32::from).collect()
+    }
 }
 fn eml_name(name: &OsStr) -> bool {
     ascii_suffix(name, b".eml")

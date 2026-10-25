@@ -1,5 +1,5 @@
 //! Independent synthetic golden and MIME policy contracts.
-use eml_core::{
+use eml_message::{
     PreparationError, Refusal, RemovalReason as Reason, RemovedPart, RunControl, prepare_message,
 };
 macro_rules! fixture {

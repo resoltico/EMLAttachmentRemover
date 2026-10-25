@@ -1,0 +1,13 @@
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary=B
+
+--B
+Content-Type: text/plain
+
+Main body
+--B
+Content-Type: text/plain
+Content-Disposition: attachment; filename=secret.txt
+
+Secret attachment payload
+--B--

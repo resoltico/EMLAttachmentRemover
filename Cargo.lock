@@ -1222,12 +1222,8 @@ dependencies = [
 name = "eml-core"
 version = "6.0.0"
 dependencies = [
- "base64",
  "eml-fs",
- "encoding_rs",
- "mail-parser",
- "memchr",
- "proptest",
+ "eml-message",
  "tempfile",
 ]
 
@@ -1273,6 +1269,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "eml-message"
+version = "6.0.0"
+dependencies = [
+ "base64",
+ "encoding_rs",
+ "mail-parser",
+ "memchr",
+ "proptest",
+]
+
+[[package]]
 name = "eml-protocol"
 version = "6.0.0"
 dependencies = [
@@ -1302,6 +1309,21 @@ dependencies = [
  "eml-fs",
  "eml-macos",
  "eml-protocol",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "emlattachmentremover"
+version = "6.0.0"
+dependencies = [
+ "base64",
+ "clap",
+ "ctrlc",
+ "eml-core",
+ "eml-protocol",
+ "eml-windows",
+ "rustix 1.1.5",
  "serde_json",
  "tempfile",
 ]
@@ -3837,21 +3859,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "remove-eml-attachments"
-version = "6.0.0"
-dependencies = [
- "base64",
- "clap",
- "ctrlc",
- "eml-core",
- "eml-protocol",
- "eml-windows",
- "rustix 1.1.5",
- "serde_json",
- "tempfile",
-]
 
 [[package]]
 name = "renderdoc-sys"
