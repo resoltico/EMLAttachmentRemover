@@ -13,7 +13,6 @@ use slint::{ComponentHandle, Model};
 use std::{
     ffi::OsString,
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     rc::Rc,
     thread,
@@ -34,10 +33,9 @@ fn print(value: &str) -> String {
     format!("printf '%s' {}\n", quote(value))
 }
 fn script(root: &Path, body: &str) -> PathBuf {
-    let path = root.join("fixture-cli");
+    let path = root.join("fixture.sh");
     fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-    path
+    PathBuf::from(env!("CARGO_BIN_EXE_eml-gui-cli-fixture"))
 }
 fn completed(root: &Path, name: &str) -> PathBuf {
     script(

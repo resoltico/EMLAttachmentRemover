@@ -46,9 +46,18 @@ pub(crate) fn build(
             target,
             "-p",
             "emlattachmentremover",
+            "--bin",
+            "emlattachmentremover",
         ]);
         if app {
-            command.args(["-p", "eml-gui", "--features", "eml-gui/desktop"]);
+            command.args([
+                "-p",
+                "eml-gui",
+                "--bin",
+                "emlattachmentremover-gui",
+                "--features",
+                "eml-gui/desktop",
+            ]);
         }
         if mac {
             command.env("MACOSX_DEPLOYMENT_TARGET", "15.0");

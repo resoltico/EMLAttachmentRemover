@@ -21,3 +21,9 @@ tempfile.workspace = true
 
 [lints]
 workspace = true
+
+# Cargo builds this stable test executable before spawning parallel tests.
+[[bin]]
+name = "eml-app-cli-fixture"
+path = "tests/support/cli_fixture.rs"
+test = false

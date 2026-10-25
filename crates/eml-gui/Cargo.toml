@@ -44,3 +44,9 @@ required-features = ["desktop"]
 
 [lints]
 workspace = true
+
+# Cargo builds this stable test executable before spawning parallel tests.
+[[bin]]
+name = "eml-gui-cli-fixture"
+path = "../eml-app/tests/support/cli_fixture.rs"
+test = false

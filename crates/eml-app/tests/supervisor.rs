@@ -7,7 +7,7 @@ use eml_app::{
 use eml_core::RunMode;
 use std::{
     fs,
-    os::unix::{fs::PermissionsExt, process::ExitStatusExt},
+    os::unix::process::ExitStatusExt,
     path::{Path, PathBuf},
     thread,
     time::{Duration, Instant},
@@ -27,13 +27,12 @@ fn print(value: &str) -> String {
     format!("printf '%s' {}\n", quoted(value))
 }
 fn script(root: &Path, body: &str) -> PathBuf {
-    let path = root.join("fixture-cli");
+    let path = root.join("fixture.sh");
     let code = format!(
         "#!/bin/sh\n[ \"$#\" -eq 4 ] && [ \"$1\" = --format ] && [ \"$2\" = json ] && [ \"$3\" = --request ] && [ \"$4\" = - ] || exit 91\n{body}"
     );
     fs::write(&path, code).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-    path
+    PathBuf::from(env!("CARGO_BIN_EXE_eml-app-cli-fixture"))
 }
 fn request(root: &Path, mode: RunMode) -> RequestSnapshot {
     RequestSnapshot::new(vec![root.join("message.eml")], None, mode).unwrap()
@@ -240,25 +239,26 @@ fn identity_malformed_records_and_eof_without_summary_are_rejected_and_reaped() 
 #[test]
 fn checking_then_creating_sends_two_fresh_requests_and_export_never_replaces() {
     let root = tempfile::tempdir().unwrap();
+    let capture = root.path().join("received-request.json");
+    let cli = script(
+        root.path(),
+        &format!(
+            "request=$(cat)\nprintf '%s' \"$request\" >{}\ncase \"$request\" in *'\"dry_run\":true'*) {} ;; *) {} ;; esac\n",
+            quoted(capture.to_str().unwrap()),
+            print(&fixture("planned-create-unix")),
+            print(&fixture("created"))
+        ),
+    );
     for (mode, name) in [
         (RunMode::DryRun, "planned-create-unix"),
         (RunMode::Create, "created"),
     ] {
-        let capture = root.path().join("received-request.json");
         let bytes = fixture(name);
-        let cli = script(
-            root.path(),
-            &format!(
-                "cat >{}\n{}exit 0\n",
-                quoted(capture.to_str().unwrap()),
-                print(&bytes)
-            ),
-        );
         let mut run = WorkerRun::start(&cli, &request(root.path(), mode), root.path()).unwrap();
         let completion = finish(&mut run);
         assert_eq!(completion.state, WorkerState::Completed);
         let encoded: serde_json::Value =
-            serde_json::from_slice(&fs::read(capture).unwrap()).unwrap();
+            serde_json::from_slice(&fs::read(&capture).unwrap()).unwrap();
         assert_eq!(encoded["dry_run"], mode == RunMode::DryRun);
         let export = root.path().join(format!("{name}.jsonl"));
         export_report(&export, &completion.jsonl).unwrap();

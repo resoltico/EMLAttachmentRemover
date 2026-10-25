@@ -117,6 +117,26 @@ fn handled_staging_failure_cleans_its_file_and_never_sweeps_prior_residue() {
 }
 
 #[test]
+fn cleanup_refuses_a_replaced_staging_name_and_preserves_both_files() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = BoundDirectory::open(root.path()).unwrap();
+    let ready = directory.stage_bytes(b"owned staging", || Ok(())).unwrap();
+    let staging = fs::read_dir(root.path())
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let displaced = root.path().join("displaced-staging");
+    fs::rename(&staging, &displaced).unwrap();
+    fs::write(&staging, b"unrelated winner").unwrap();
+    assert_eq!(ready.cleanup().state, CleanupState::Unknown);
+    assert_eq!(fs::read(staging).unwrap(), b"unrelated winner");
+    assert_eq!(fs::read(displaced).unwrap(), b"owned staging");
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
+}
+
+#[test]
 fn a_changed_source_signature_is_refused_after_an_actual_read() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("source.eml"), MESSAGE).unwrap();
@@ -205,28 +225,29 @@ fn a_destination_junction_is_refused_without_writing_into_its_target() {
 
 #[cfg(windows)]
 #[test]
-fn moved_parent_never_reports_staging_cleanup_as_complete_at_a_replacement_address() {
+fn moved_directory_address_is_refused_before_staging_or_child_observation() {
     let root = tempfile::tempdir().unwrap();
     let parent = root.path().join("out");
     let moved = root.path().join("moved");
     fs::create_dir(&parent).unwrap();
     let directory = BoundDirectory::open(&parent).unwrap();
-    let ready = directory.stage_bytes(b"owned staging", || Ok(())).unwrap();
+    // Windows forbids moving a directory with an open child file. Move while
+    // only the directory is held, before attempting staging at its old address.
     fs::rename(&parent, &moved).unwrap();
     fs::create_dir(&parent).unwrap();
     fs::write(parent.join("unrelated"), b"winner").unwrap();
-    let cleanup = ready.cleanup();
-    assert_eq!(cleanup.state, CleanupState::Unknown);
+    assert!(!directory.check_requested_address().unwrap());
+    let refusal = directory
+        .stage_bytes(b"must not enter the replacement", || Ok(()))
+        .err()
+        .expect("Staging must refuse the changed directory address");
+    assert_eq!(refusal.error.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(refusal.cleanup.state, CleanupState::NotNeeded);
+    let observation = directory
+        .observe_child_if_present("missing-stage.tmp".as_ref())
+        .unwrap_err();
+    assert_eq!(observation.kind(), io::ErrorKind::InvalidData);
     assert_eq!(fs::read(parent.join("unrelated")).unwrap(), b"winner");
     assert_eq!(fs::read_dir(&parent).unwrap().count(), 1);
-    let residue: Vec<_> = fs::read_dir(&moved).unwrap().collect();
-    assert_eq!(residue.len(), 1);
-    assert!(
-        residue[0]
-            .as_ref()
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .starts_with(".emlattachmentremover-")
-    );
+    assert_eq!(fs::read_dir(&moved).unwrap().count(), 0);
 }

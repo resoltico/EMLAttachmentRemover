@@ -47,7 +47,9 @@ findings fail. Inline exceptions use `#[expect(..., reason = "...")]`.
 `cargo xtask ci --rust-only` runs the native Clippy/test portion used by matrix
 jobs. On Windows CI it runs through an explicitly targeted MSVC xtask executable.
 Windows checks run on both native CPU architectures. GUI tests use Slint's testing
-backend, with no OS UI automation. CLI tests cross the real subprocess boundary.
+backend, with no OS UI automation. CLI tests cross the real subprocess boundary. Supervisor/GUI process fixtures use
+a Cargo-built launcher and per-test script data; distribution selects only the
+public product binaries.
 
 Merge CI restores caches on every producer and saves them only on main. The
 [CI workflow](.github/workflows/ci.yml) and `cargo xtask ci` own the commands;
