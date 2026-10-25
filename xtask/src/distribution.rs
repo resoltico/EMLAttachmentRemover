@@ -123,43 +123,10 @@ struct Plan {
     expected_artifacts: Vec<ExpectedArtifact>,
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Xcode {
-    version: String,
-    build: String,
-}
-impl Xcode {
-    fn parse(input: &str) -> Result<Self> {
-        let document: toml::Value = toml::from_str(input)?;
-        let selected: Self = document
-            .get("xcode")
-            .ok_or("Missing Xcode build input")?
-            .clone()
-            .try_into()?;
-        let pieces: Vec<_> = selected.version.split('.').collect();
-        if !(2..=3).contains(&pieces.len())
-            || selected.version.len() > 16
-            || pieces
-                .iter()
-                .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
-            || selected.build.is_empty()
-            || selected.build.len() > 32
-            || !selected
-                .build
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric())
-        {
-            return Err("Invalid Xcode version/build input".into());
-        }
-        Ok(selected)
-    }
-}
 #[derive(Serialize)]
 struct BuildPlan {
     #[serde(flatten)]
     distribution: Plan,
-    xcode: Xcode,
     tools: BTreeMap<String, String>,
 }
 
@@ -439,7 +406,6 @@ pub(crate) fn run(root: &Path) -> Result<()> {
     let tool_input = std::fs::read_to_string(root.join("xtask/tools.toml"))?;
     let plan = BuildPlan {
         distribution: plan,
-        xcode: Xcode::parse(&tool_input)?,
         tools: tool_versions(&tool_input)?,
     };
     let mut bytes = serde_json::to_vec(&plan)?;
@@ -493,24 +459,6 @@ mod tests {
             "[versions]\ncargo_about='1 2'",
         ] {
             assert!(tool_versions(invalid).is_err());
-        }
-    }
-
-    #[test]
-    fn xcode_input_rejects_missing_unknown_and_unsafe_path_components() {
-        assert!(Xcode::parse(include_str!("../tools.toml")).is_ok());
-        for input in [
-            "[versions]\ntool='1'",
-            "[xcode]\nversion='26.3'",
-            "[xcode]\nversion='../26.3'\nbuild='17C529'",
-            "[xcode]\nversion='26.3'\nbuild=''",
-            "[xcode]\nversion='26.3'\nbuild='17C529'\nextra=true",
-            "[xcode]\nversion=26.3\nbuild='17C529'",
-        ] {
-            assert!(
-                Xcode::parse(input).is_err(),
-                "Accepted invalid input: {input}"
-            );
         }
     }
 

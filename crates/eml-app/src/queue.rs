@@ -5,6 +5,8 @@ use serde::Serialize;
 use std::{collections::VecDeque, path::PathBuf};
 /// Maximum admitted waiting selections, excluding the one active run.
 pub const MAX_WAITING_REQUESTS: usize = 8;
+/// Maximum retained complete or active reports.
+pub const MAX_RETAINED_REPORTS: usize = 2;
 
 /// Session-local identity; never derived from a displayed filename or queue index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -154,7 +156,7 @@ impl RunQueue {
         Ok(Some(next))
     }
     fn report_capacity_full(&self) -> bool {
-        self.reports.len() >= 2
+        self.reports.len() >= MAX_RETAINED_REPORTS
     }
     /// Waiting work cannot start until a retained report is dismissed.
     /// This uses the same reservation rule as start_next, without mutating it.

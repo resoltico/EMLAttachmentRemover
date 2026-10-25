@@ -235,10 +235,10 @@ pub struct OutcomeMeaning {
     /// Related-resource notice appropriate to this exact qualification.
     pub related_notice: Option<&'static str>,
 }
-impl OutcomeMeaning {
+impl MeaningKind {
     /// Canonical concise result label.
-    pub const fn label(&self) -> &'static str {
-        match self.kind {
+    pub const fn label(self) -> &'static str {
+        match self {
             MeaningKind::Prepared => "Prepared only",
             MeaningKind::Comparison => "Existing candidate to verify",
             MeaningKind::Created => "Created",
@@ -249,6 +249,12 @@ impl OutcomeMeaning {
             MeaningKind::NotPublished => "No new copy published",
             MeaningKind::Unestablished => "Outcome cannot be established",
         }
+    }
+}
+impl OutcomeMeaning {
+    /// Canonical concise result label.
+    pub const fn label(&self) -> &'static str {
+        self.kind.label()
     }
 }
 /// Existing files are never replaced, including by report export.
@@ -657,6 +663,17 @@ mod tests {
 /// Labels shared by run counts and result summaries.
 #[derive(Clone, Copy, Debug)]
 pub enum CountKind {
+    /// Collected source positions known to the producer.
+    KnownItems,
+    /// Selected file or folder operands, before discovery.
+    Selections,
+    /// Original source storage length.
+    SourceBytes,
+    /// Verified candidate storage length.
+    CopyBytes,
+    /// MIME entity bytes described by removal metadata.
+    PartBytes,
+
     /// New copies published successfully.
     Created,
     /// Existing matching copies verified.
@@ -672,6 +689,12 @@ impl CountKind {
     /// User-facing count label.
     pub const fn label(self) -> &'static str {
         match self {
+            Self::KnownItems => "known items",
+            Self::Selections => "Selections",
+            Self::SourceBytes => SOURCE_BYTES_LABEL,
+            Self::CopyBytes => COPY_BYTES_LABEL,
+            Self::PartBytes => "Bytes",
+
             Self::Created => "Created",
             Self::UpToDate => "up to date",
             Self::Planned => "planned",
@@ -705,4 +728,91 @@ pub const fn removal_reason(reason: crate::RemovalReason) -> &'static str {
         crate::RemovalReason::RelatedResource => "Related image or resource",
         crate::RemovalReason::NonBodyPart => "Other non-body content",
     }
+}
+
+/// Desktop lifecycle labels shared with CLI outcome wording.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunStatus {
+    /// Waiting selection.
+    Queued,
+    /// Read-only work is in flight.
+    Checking,
+    /// Copy creation is in flight.
+    Creating,
+    /// Successful terminal run.
+    Completed,
+    /// Terminal run containing failures.
+    CompletedWithFailures,
+    /// Cooperative interruption settled.
+    Stopped,
+    /// Interruption before a start record.
+    StoppedBeforeStart,
+    /// Forced termination with incomplete transport.
+    ForceStopped,
+    /// CLI admission refused the request.
+    RequestRefused,
+    /// Missing or invalid terminal observations.
+    Incomplete,
+    /// Bundled CLI identity differed.
+    IdentityFailure,
+    /// CLI could not be launched.
+    StartFailed,
+    /// A cooperative interrupt was requested.
+    StopRequested,
+    /// A forced termination was requested.
+    ForceStopRequested,
+}
+impl RunStatus {
+    /// Canonical user-facing lifecycle name.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Queued => "Not started",
+            Self::Checking => "Checking",
+            Self::Creating => "Creating copies",
+            Self::Completed => "Completed",
+            Self::CompletedWithFailures => "Completed with failures",
+            Self::Stopped => "Stopped",
+            Self::StoppedBeforeStart => "Stopped before start",
+            Self::ForceStopped => "Force stopped; report incomplete",
+            Self::RequestRefused => "Request refused",
+            Self::Incomplete => "Incomplete report",
+            Self::IdentityFailure => "Worker identity mismatch",
+            Self::StartFailed => "Could not start the bundled CLI",
+            Self::StopRequested => "Stop requested",
+            Self::ForceStopRequested => "Force Stop requested",
+        }
+    }
+}
+/// The public name of a processing mode.
+pub const fn mode_label(mode: crate::RunMode) -> &'static str {
+    match mode {
+        crate::RunMode::Create => "Create copies",
+        crate::RunMode::DryRun => "Check only",
+    }
+}
+/// Accessible count text, derived from the same count label as visible output.
+pub fn count_label(kind: CountKind, value: u32) -> String {
+    format!("{}: {value}", kind.label())
+}
+/// Selection snapshots are unaffected by later preference changes.
+pub const DESTINATION_SCOPE: &str = "Destination changes apply to new requests.";
+/// Incomplete reports retain accepted observations, without asserting what was not reported.
+pub const INCOMPLETE_REPORT_NOTICE: &str = "Earlier results are retained. Work without a reported result is unknown; inspect the destination before retrying.";
+/// A force-stopped process can leave recognizable staging residue.
+pub const FORCE_STOP_NOTICE: &str = "A staging file named .emlattachmentremover-<random>.tmp may remain. It is never deleted automatically.";
+/// Plain metadata count heading.
+pub const SOURCE_BYTES_LABEL: &str = "Source bytes";
+/// Prepared-byte count heading.
+pub const COPY_BYTES_LABEL: &str = "Prepared copy bytes";
+
+/// Successful report export.
+pub const REPORT_SAVED: &str = "Report saved";
+/// Failed report export without a completion observation.
+pub const REPORT_EXPORT_FAILED: &str = "Report export did not complete";
+/// Recovery from a bundled CLI identity mismatch.
+pub const WORKER_IDENTITY_HINT: &str =
+    "Install the app and its bundled CLI from the same download.";
+/// Explain a paused serial queue using its actual report capacity.
+pub fn report_space_notice(capacity: usize) -> String {
+    format!("{capacity} reports are retained. Dismiss a report to start the waiting selection.")
 }

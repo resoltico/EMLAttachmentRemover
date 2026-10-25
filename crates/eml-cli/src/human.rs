@@ -72,9 +72,10 @@ fn write_human(writer: &mut impl Write, event: Event<'_>) -> io::Result<()> {
     match event {
         Event::Start(value) => writeln!(
             writer,
-            "{} {} — known items: {}; discovery {}{}",
+            "{} {} — {}: {}; discovery {}{}",
             env!("CARGO_PKG_NAME"),
             eml_core::product::VERSION_WITH_BUILD.as_str(),
+            eml_core::vocabulary::CountKind::KnownItems.label(),
             value.total,
             if value.collection_complete {
                 "complete"
@@ -123,9 +124,12 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
     if let Some(data) = metadata {
         writeln!(
             writer,
-            "  Source bytes: {}; prepared copy bytes: {}; parts selected for removal: {}",
+            "  {}: {}; {}: {}; {}: {}",
+            eml_core::vocabulary::SOURCE_BYTES_LABEL,
             data.source_bytes,
+            eml_core::vocabulary::COPY_BYTES_LABEL,
             data.copy_bytes,
+            meaning.removal_mode.parts(),
             data.removed.len()
         )?;
     }
