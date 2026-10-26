@@ -347,7 +347,9 @@ export component MainWindow inherits Window {
                             }
                         }
                     }
-                    Rectangle { min-height: root.item-attention ? max(190px, root.ui-size * 11) : max(140px, root.ui-size * 8); vertical-stretch: 1; border-width: 1px; border-color: Palette.border; background: Palette.alternate-background;
+                    Rectangle { preferred-height: root.item-attention || root.details.length > 0 ? max(190px, root.ui-size * 11) : max(140px, root.ui-size * 8);
+                    min-height: root.item-attention || root.details.length > 0 ? self.preferred-height : 100px;
+                    vertical-stretch: 1; border-width: 1px; border-color: Palette.border; background: Palette.alternate-background;
                     VerticalBox { padding: 12px; spacing: 8px;
                         HorizontalBox { padding: 0px; spacing: 12px; vertical-stretch: 0;
                             Label { text: "Message details"; font-weight: 600; vertical-alignment: center; horizontal-stretch: 0; accessible-label: "Message details heading"; }
