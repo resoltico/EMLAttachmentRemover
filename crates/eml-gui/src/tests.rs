@@ -28,6 +28,8 @@ fn confirmed_force_quit_waits_for_an_owned_report_export_to_settle() {
     assert!(!controller.request_quit());
     controller.window().invoke_force_and_quit();
     let waited_for_export = !controller.should_exit();
+    let ignored_repeated_quit =
+        !controller.request_quit() && controller.window().get_confirmation() == Confirmation::None;
     release.send(()).unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while controller.is_busy() {
@@ -38,6 +40,10 @@ fn confirmed_force_quit_waits_for_an_owned_report_export_to_settle() {
     assert!(
         waited_for_export,
         "Quit must not abandon an owned export thread"
+    );
+    assert!(
+        ignored_repeated_quit,
+        "A committed shutdown must not reopen a contradictory Quit decision"
     );
     assert!(controller.should_exit());
 }

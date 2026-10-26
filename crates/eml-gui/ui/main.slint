@@ -42,6 +42,7 @@ component FileName inherits Rectangle {
 component FileButton inherits Rectangle {
     in property <PathView> path;
     in property <bool> selected;
+    in property <string> description;
     callback clicked();
     height: 34px;
     min-width: 0px;
@@ -49,6 +50,7 @@ component FileButton inherits Rectangle {
     forward-focus: keyboard;
     accessible-role: button;
     accessible-label: root.path.full;
+    accessible-description: root.description;
     accessible-item-selectable: true; accessible-item-selected: root.selected;
     accessible-action-default => { keyboard.focus(); root.clicked(); }
     keyboard := FocusScope {
@@ -79,12 +81,14 @@ export component MainWindow inherits Window {
     preferred-width: 1060px; preferred-height: 760px;
     min-width: 780px; min-height: 600px;
     in property <bool> native-about;
+    in property <bool> closing;
     in-out property <bool> check-only;
     in property <string> destination-label;
     in property <[PathView]> selection;
     in property <bool> reviewing;
     in property <bool> can-start;
     in property <string> start-label;
+    in property <string> start-reason;
     in property <bool> has-reports;
     in property <bool> show-sidebar;
     in property <int> report-capacity;
@@ -144,17 +148,17 @@ export component MainWindow inherits Window {
     VerticalBox { padding: 0px; spacing: 0px;
         toolbar := HorizontalBox { padding: 16px; spacing: 12px; vertical-stretch: 0;
             Label { text: "Next request"; vertical-alignment: center; horizontal-stretch: 0; }
-            ActionButton { text: "Create copies"; checked: !root.check-only; accessible-checkable: true; accessible-label: self.text;
+            ActionButton { text: "Create copies"; enabled: !root.closing; checked: !root.check-only; accessible-checkable: true; accessible-label: self.text;
                 clicked => { root.mode-changed(false); }
             }
-            ActionButton { text: "Check only"; checked: root.check-only; accessible-checkable: true; accessible-label: self.text;
+            ActionButton { text: "Check only"; enabled: !root.closing; checked: root.check-only; accessible-checkable: true; accessible-label: self.text;
                 clicked => { root.mode-changed(true); }
             }
             VerticalBox { padding: 0px; spacing: 2px; horizontal-stretch: 1; min-width: 0px;
                 Label { text: root.check-only ? "Check destination" : "Save copies"; font-size: 12px; }
                 Label { text: root.destination-label; overflow: elide; Tooltip { text: @markdown("\{root.destination-label}"); } }
             }
-            change-destination := ActionButton { text: "Change…"; accessible-label: "Change destination";
+            change-destination := ActionButton { text: "Change…"; enabled: !root.closing; accessible-label: "Change destination";
                 clicked => { destination-menu.show(); }
 
             }
@@ -214,8 +218,8 @@ export component MainWindow inherits Window {
                     Label { text: "Choose messages to begin"; font-size: 18px; font-weight: 600; horizontal-alignment: center; }
                     Label { text: "Drop .eml files or a folder here."; horizontal-alignment: center; }
                     HorizontalBox { padding: 0px; alignment: center; spacing: 8px;
-                        ActionButton { text: "Choose files…"; accessible-label: self.text; clicked => { root.choose-files(); } }
-                        ActionButton { text: "Choose folder…"; accessible-label: self.text; clicked => { root.choose-folder(); } }
+                        ActionButton { text: "Choose files…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-files(); } }
+                        ActionButton { text: "Choose folder…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-folder(); } }
                     }
                     Label { text: "Review the selection, then " + (root.check-only ? "check the messages." : "create the copies."); horizontal-alignment: center; wrap: word-wrap; }
                 }
@@ -225,8 +229,8 @@ export component MainWindow inherits Window {
                             Label { text: root.selection.length + (root.selection.length == 1 ? " selection ready" : " selections ready"); font-size: 17px; font-weight: 600; }
                             Label { text: "Folders are scanned when the request starts."; wrap: word-wrap; }
                         }
-                        ActionButton { text: "Add files…"; accessible-label: self.text; clicked => { root.choose-files(); } }
-                        ActionButton { text: "Add folder…"; accessible-label: self.text; clicked => { root.choose-folder(); } }
+                        ActionButton { text: "Add files…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-files(); } }
+                        ActionButton { text: "Add folder…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-folder(); } }
                     }
                     ListView { content-width: self.visible-width; accessible-role: list; accessible-label: "Selection ready to start";
                         for path[index] in root.selection: HorizontalBox { padding: 0px;
@@ -234,6 +238,7 @@ export component MainWindow inherits Window {
                             ActionButton { text: "Remove"; accessible-label: "Remove selection " + path.full; clicked => { root.remove-selection(index); } }
                         }
                     }
+                    if !root.can-start: Label { text: root.start-reason; wrap: word-wrap; color: root.attention-color; }
                     Label { text: root.check-only ? "Check only. No copy will be created." : "Copies use name.no-attachments.eml. Original messages stay unchanged."; wrap: word-wrap; }
                 }
                 if root.has-reports && !root.reviewing: VerticalBox { padding: 0px; spacing: 8px;
@@ -242,8 +247,8 @@ export component MainWindow inherits Window {
                             Label { text: root.run-label + " · " + root.run-status; color: root.run-attention ? root.attention-color : Palette.foreground; font-size: 17px; font-weight: 600; wrap: word-wrap; }
                             Label { text: root.run-context; overflow: elide; Tooltip { text: @markdown("\{root.run-context}"); } }
                         }
-                        ActionButton { text: "Add files…"; accessible-label: self.text; clicked => { root.choose-files(); } }
-                        ActionButton { text: "Add folder…"; accessible-label: self.text; clicked => { root.choose-folder(); } }
+                        ActionButton { text: "Add files…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-files(); } }
+                        ActionButton { text: "Add folder…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-folder(); } }
                     }
                     HorizontalBox { padding: 0px; spacing: 8px;
                         for count in root.counts: Label {
@@ -275,9 +280,10 @@ export component MainWindow inherits Window {
                             background: root.selected-item == index ? Palette.alternate-background : transparent;
                             border-width: root.selected-item == index ? 1px : 0px;
                             border-color: Palette.accent-background;
+                            TouchArea { clicked => { file-select.focus(); root.select-item(index); } }
                             message-row := HorizontalBox { width: parent.width; height: parent.height; spacing: 8px;
                                 VerticalBox { padding: 0px; spacing: 0px;
-                                    FileButton { path: item.path; selected: index == root.selected-item; clicked => { root.select-item(index); } }
+                                    file-select := FileButton { path: item.path; description: item.status + "; " + item.removed; selected: index == root.selected-item; clicked => { root.select-item(index); } }
                                     Label { text: item.path.directory; font-size: 12px; overflow: elide; Tooltip { text: @markdown("\{item.path.full}"); } }
                                 }
                                 Label { text: item.status; color: item.attention ? root.attention-color : Palette.foreground; width: 135px; wrap: word-wrap; horizontal-stretch: 0; vertical-alignment: center; }
@@ -323,9 +329,9 @@ export component MainWindow inherits Window {
 
             }
             if root.worker-running: ActionButton { text: "Stop"; accessible-label: self.text; clicked => { root.stop(); } }
-            if root.reviewing: ActionButton { text: root.start-label; enabled: root.can-start; primary: true; accessible-label: "Start selection"; accessible-description: root.start-label + " using the reviewed paths and current destination"; clicked => { root.start-selection(); } }
-            if root.has-reports && !root.reviewing: ActionButton { text: "Save JSONL report…"; enabled: root.can-export; accessible-label: "Save JSONL report"; clicked => { root.export-report(); } }
-            if root.has-reports && !root.reviewing && root.can-create: ActionButton { text: "Create copies…"; accessible-label: "Create copies from this selection"; clicked => { root.create-copies(); } }
+            if root.reviewing: ActionButton { text: root.start-label; enabled: root.can-start; primary: true; accessible-label: "Start selection"; accessible-description: root.start-reason; clicked => { root.start-selection(); } }
+            if root.has-reports && !root.reviewing: ActionButton { text: "Save JSONL report…"; enabled: root.can-export && !root.closing; accessible-label: "Save JSONL report"; clicked => { root.export-report(); } }
+            if root.has-reports && !root.reviewing && root.can-create: ActionButton { text: "Create copies…"; enabled: root.selection.length == 0 && !root.closing; accessible-description: root.closing ? root.start-reason : root.selection.length > 0 ? "Finish or clear the current reviewed selection first." : "Review this Check’s paths before starting a new Create request."; accessible-label: "Create copies from this selection"; clicked => { root.create-copies(); } }
             if root.has-reports && !root.reviewing && !root.can-create: ActionButton { text: "Show copy"; enabled: root.can-reveal; accessible-label: self.text; clicked => { root.reveal(); }
                 Tooltip { text: root.can-reveal ? @markdown("Reveal the verified copy in the file manager.") : @markdown("No verified copy is available for the selected message."); }
             }
@@ -336,7 +342,7 @@ export component MainWindow inherits Window {
                     Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border;
                         VerticalBox { padding: 8px; spacing: 6px;
                             ActionButton { text: "Beside originals"; accessible-label: self.text; clicked => { destination-menu.close(); root.beside-source(); } }
-                            ActionButton { text: "Choose folder…"; accessible-label: "Choose destination folder"; clicked => { destination-menu.close(); root.choose-destination(); } }
+                            ActionButton { text: "Choose folder…"; enabled: !root.closing; accessible-label: "Choose destination folder"; clicked => { destination-menu.close(); root.choose-destination(); } }
                         }
                     }
                 }
@@ -354,8 +360,8 @@ export component MainWindow inherits Window {
         accessible-role: groupbox; accessible-label: root.confirmation == Confirmation.quit ? "Quit confirmation" : "Force Stop confirmation";
         Rectangle { background: Palette.background;
             VerticalBox { padding: 24px; spacing: 16px;
-                Label { text: root.confirmation == Confirmation.quit ? "A run or report export is still in progress. Completed copies and original messages will be retained." : root.force-notice; wrap: word-wrap; }
-                if root.confirmation == Confirmation.quit: ActionButton { text: "Stop and wait"; accessible-label: self.text; clicked => { root.stop-and-quit(); } }
+                Label { text: root.confirmation == Confirmation.quit ? (root.worker-running || root.activity-label != "" ? "A run or report export is still in progress. Quitting cancels waiting requests; completed copies and original messages are retained." : root.waiting.length + (root.waiting.length == 1 ? " request is waiting." : " requests are waiting.") + " Quitting cancels this queued work; originals and completed copies are retained.") : root.force-notice; wrap: word-wrap; }
+                if root.confirmation == Confirmation.quit: ActionButton { text: root.worker-running ? "Stop and wait" : (root.activity-label != "" ? "Finish export and quit" : "Cancel waiting and quit"); accessible-label: self.text; clicked => { root.stop-and-quit(); } }
                 ActionButton { text: root.confirmation == Confirmation.quit ? "Force Stop and quit" : "Force Stop now"; enabled: root.worker-running; accessible-description: "Force Stop applies to the message worker. Report exports are allowed to finish."; accessible-label: self.text; clicked => { if root.confirmation == Confirmation.quit { root.force-and-quit(); } else { root.confirm-force-stop(); } } }
                 ActionButton { text: "Keep running"; accessible-label: self.text; clicked => { root.keep-running(); } }
             }

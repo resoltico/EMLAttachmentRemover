@@ -75,7 +75,8 @@ mode and destination; changes afterwards do not alter active or queued requests.
 Up to eight requests wait behind the active run. Two retained reports pause the
 queue until a completed report is dismissed. Queue refusals retain the reviewed
 selection. A settled Check's **Create copies…** returns its paths to review in
-Create mode; it does not write until Start is pressed again.
+Create mode; it does not write until Start is pressed again. Finish or clear any
+other reviewed selection first; Check-to-Create never merges unrelated paths.
 
 The empty window offers file/folder selection without inactive report controls.
 Reports and waiting requests appear in the sidebar only when there is work to
@@ -91,7 +92,11 @@ active run even while another report or selection is being reviewed. **More… �
 Force Stop…** requires confirmation. Completed copies remain after either Stop.
 Busy Quit offers Stop and wait, confirmed Force Stop and quit, or Keep running;
 Quit waits for worker and report-export settlement, including after a confirmed
-Force Stop. Force Stop is unavailable when only a report export is active. **Save JSONL report…** writes
+Force Stop. When only an export is active, Finish export and quit waits for it;
+Force Stop is unavailable.
+Waiting requests also require a Quit decision; they are not silently discarded.
+Once shutdown is confirmed, further Quit requests do not reopen the decision,
+and new selections or late file-dialog submissions cannot start more work. **Save JSONL report…** writes
 the run's original protocol-1 stream captured when Save is clicked, including
 partial results after failure. Navigating to another report while choosing the
 filename does not change the captured export.

@@ -74,6 +74,14 @@ struct Session {
     force_quit: bool,
     should_exit: bool,
 }
+impl Session {
+    fn is_closing(&self) -> bool {
+        self.quit_when_idle || self.force_quit || self.should_exit
+    }
+    fn needs_quit_confirmation(&self) -> bool {
+        self.active.is_some() || self.export.is_some() || self.queue.waiting() > 0
+    }
+}
 // Accepted records append; unchanged facts do not rebuild the Slint models.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct PresentationRevision {
@@ -281,12 +289,41 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_force_stop(move || {
             if let Some(c) = weak.upgrade() {
+                if c.ui.get_confirmation() != Confirmation::None {
+                    return;
+                }
+                let notice = {
+                    let s = c.session.borrow();
+                    if s.is_closing() {
+                        return;
+                    }
+                    let Some(active) = &s.active else {
+                        return;
+                    };
+                    let source = s
+                        .entries
+                        .iter()
+                        .find(|entry| entry.id == active.id)
+                        .and_then(|entry| entry.request.request().paths.first())
+                        .map(|path| eml_protocol::TerminalPath::new(path).to_string())
+                        .unwrap_or_default();
+                    format!(
+                        "{}\n\nRun {} · {}",
+                        vocabulary::FORCE_STOP_NOTICE,
+                        active.id,
+                        source
+                    )
+                };
+                c.ui.set_force_notice(notice.into());
                 c.ui.set_confirmation(Confirmation::ForceStop);
             }
         });
         let weak = Rc::downgrade(self);
         self.ui.on_confirm_force_stop(move || {
             if let Some(c) = weak.upgrade() {
+                if c.ui.get_confirmation() != Confirmation::ForceStop {
+                    return;
+                }
                 c.ui.set_confirmation(Confirmation::None);
                 c.force_stop();
             }
@@ -340,6 +377,9 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_stop_and_quit(move || {
             if let Some(c) = weak.upgrade() {
+                if c.ui.get_confirmation() != Confirmation::Quit {
+                    return;
+                }
                 {
                     let mut s = c.session.borrow_mut();
                     s.quit_when_idle = true;
@@ -353,6 +393,9 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_force_and_quit(move || {
             if let Some(c) = weak.upgrade() {
+                if c.ui.get_confirmation() != Confirmation::Quit {
+                    return;
+                }
                 {
                     let mut s = c.session.borrow_mut();
                     s.force_quit = true;
@@ -402,6 +445,9 @@ impl DesktopController {
     /// Exact duplicate paths are shown once; filesystem aliases remain core-owned.
     pub fn stage(&self, paths: Vec<PathBuf>) -> Result<(), QueueError> {
         let mut s = self.session.borrow_mut();
+        if s.is_closing() {
+            return Err(QueueError::ShuttingDown);
+        }
         let mut selection = s.selection.clone();
         for path in paths {
             if !selection.contains(&path) {
@@ -427,6 +473,9 @@ impl DesktopController {
         self.clear_operation();
         let id = {
             let mut s = self.session.borrow_mut();
+            if s.is_closing() {
+                return Err(QueueError::ShuttingDown);
+            }
             let request = RequestSnapshot::new(
                 s.selection.clone(),
                 s.preferences.destination().map(Path::to_owned),
@@ -464,11 +513,7 @@ impl DesktopController {
     }
     fn start_next(&self) {
         let mut s = self.session.borrow_mut();
-        if s.quit_when_idle
-            || s.force_quit
-            || s.should_exit
-            || self.ui.get_confirmation() == Confirmation::Quit
-        {
+        if s.is_closing() || self.ui.get_confirmation() == Confirmation::Quit {
             return;
         }
         let next = match s.queue.start_next() {
@@ -513,7 +558,7 @@ impl DesktopController {
             s.follow_run = None;
         }
         self.clear_operation();
-        platform::set_busy(s.active.is_some() || s.export.is_some());
+        platform::set_busy(s.needs_quit_confirmation());
     }
     /// Poll actual child/pipe and export settlement without blocking the event loop.
     pub fn tick(&self) {
@@ -570,6 +615,7 @@ impl DesktopController {
             if self.ui.get_confirmation() == Confirmation::Quit
                 && s.active.is_none()
                 && s.export.is_none()
+                && s.queue.waiting() == 0
             {
                 self.ui.set_confirmation(Confirmation::None);
                 s.should_exit = true;
@@ -577,7 +623,7 @@ impl DesktopController {
             if (s.quit_when_idle || s.force_quit) && s.active.is_none() && s.export.is_none() {
                 s.should_exit = true;
             }
-            platform::set_busy(s.active.is_some() || s.export.is_some());
+            platform::set_busy(s.needs_quit_confirmation());
         }
         self.start_next();
         if refresh_needed {
@@ -589,9 +635,21 @@ impl DesktopController {
         let s = self.session.borrow();
         s.active.is_some() || s.export.is_some()
     }
-    /// Return true for idle Quit, otherwise show an in-app confirmation.
+    /// Confirm owned tasks or waiting requests; repeated committed Quit stays closed.
     pub fn request_quit(&self) -> bool {
-        if self.is_busy() {
+        let s = self.session.borrow();
+        if s.is_closing() {
+            return false;
+        }
+        let needs_confirmation = s.needs_quit_confirmation();
+        drop(s);
+        if needs_confirmation {
+            let _ = self.about.hide();
+            let _ = self.licenses.hide();
+            if let Err(error) = self.ui.show() {
+                self.message(&error.to_string());
+            }
+            self.ui.window().set_minimized(false);
             self.ui.set_confirmation(Confirmation::Quit);
             false
         } else {
@@ -643,6 +701,17 @@ impl DesktopController {
     }
     /// Review a fresh Create selection from a settled Check; Start repeats admission.
     pub fn create_copies(&self) {
+        {
+            let s = self.session.borrow();
+            if s.is_closing() {
+                self.message(&QueueError::ShuttingDown.to_string());
+                return;
+            }
+            if !s.selection.is_empty() {
+                self.message("A selection is already being reviewed. Finish or clear it before creating copies from this Check; the reviewed paths were preserved.");
+                return;
+            }
+        }
         let paths = {
             let s = self.session.borrow();
             s.entries
@@ -661,7 +730,7 @@ impl DesktopController {
     /// Capture the selected settled stream before presenting a native file dialog.
     pub fn capture_export(&self) -> Option<ReportExport> {
         let mut s = self.session.borrow_mut();
-        if s.export.is_some() {
+        if s.export.is_some() || s.is_closing() {
             return None;
         }
         let entry = s.entries.get(s.selected)?;
@@ -682,6 +751,10 @@ impl DesktopController {
     /// Existing files are never replaced.
     pub fn start_captured_export(&self, source: ReportExport, path: PathBuf) {
         self.clear_operation();
+        if self.session.borrow().is_closing() {
+            self.message(&QueueError::ShuttingDown.to_string());
+            return;
+        }
         if self.session.borrow().export.is_some() {
             self.message("A report export is already running. Wait for it to finish before saving another report.");
             return;
@@ -741,6 +814,8 @@ impl DesktopController {
     }
     fn refresh(&self) {
         let s = self.session.borrow();
+        platform::set_busy(s.needs_quit_confirmation());
+        self.ui.set_closing(s.is_closing());
         self.ui.set_check_only(s.mode == RunMode::DryRun);
         self.ui.set_selection(update_model(
             self.ui.get_selection(),
@@ -771,9 +846,20 @@ impl DesktopController {
         self.ui.set_can_start(
             !s.selection.is_empty()
                 && s.queue.waiting() < eml_app::MAX_WAITING_REQUESTS
-                && !s.quit_when_idle
-                && !s.force_quit
-                && !s.should_exit,
+                && !s.is_closing(),
+        );
+        self.ui.set_start_reason(
+            if s.is_closing() {
+                QueueError::ShuttingDown.to_string()
+            } else if s.queue.waiting() >= eml_app::MAX_WAITING_REQUESTS {
+                QueueError::Full.to_string()
+            } else {
+                format!(
+                    "{} using the reviewed paths and current destination",
+                    self.ui.get_start_label()
+                )
+            }
+            .into(),
         );
         let activity = s
             .active

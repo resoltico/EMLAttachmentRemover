@@ -7,6 +7,8 @@ Notable changes to this project are documented in this file. The format is based
 - Desktop selections are reviewed before explicit Start; new-request settings stay
   separate from captured queued/active requests. The focused result list and
   aligned footer expose Stop, reports and copy actions in their relevant states.
+  Result rows remain focusable across updates and select from any column;
+  queued Quit, delayed dialogs and Check-to-Create preserve explicit user intent.
 - About moves to the standard OS menu and matches the Auditory Lab Slint layout;
   software/artwork licenses are readable in a dedicated window. Toolkit sources
   remain upstream and unchanged.

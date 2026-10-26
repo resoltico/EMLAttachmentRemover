@@ -374,6 +374,25 @@ fn create_after_check_sends_a_fresh_request_and_uses_the_current_destination() {
         vocabulary::MeaningKind::Prepared.label()
     );
     assert!(ui.get_can_create());
+    let unrelated = root.path().join("unrelated.eml");
+    controller.stage(vec![unrelated.clone()]).unwrap();
+    ui.invoke_select_run(0);
+    controller.create_copies();
+    assert_eq!(
+        ui.get_selection().row_count(),
+        1,
+        "Check-to-Create must not merge into another pending selection"
+    );
+    assert_eq!(
+        ui.get_selection().row_data(0).unwrap().full.as_str(),
+        unrelated.to_str().unwrap()
+    );
+    assert!(
+        ui.get_check_only(),
+        "A refused derivation must not change the next-request mode"
+    );
+    assert_eq!(fs::read_to_string(&requests).unwrap().lines().count(), 1);
+    ui.invoke_clear_selection();
     let output = root.path().join("copies");
     fs::create_dir(&output).unwrap();
     controller.set_destination(Some(output.clone()));
@@ -791,6 +810,19 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
             selected_row.is_valid(),
             "Unchanged refresh must not replace row delegates"
         );
+        ui.invoke_select_item(0);
+        mock_elapsed_time(Duration::from_millis(5));
+        let status_cell =
+            ElementHandle::find_by_accessible_label(&ui, vocabulary::MeaningKind::Created.label())
+                .nth(1)
+                .unwrap();
+        status_cell.mock_single_click(slint::platform::PointerEventButton::Left);
+        mock_elapsed_time(Duration::from_millis(5));
+        assert_eq!(
+            ui.get_item_source().as_str(),
+            sources[1],
+            "The whole result row, including its status, must select the message"
+        );
     }
 }
 
@@ -872,6 +904,22 @@ fn full_queue_retains_review_and_waiting_snapshots_do_not_follow_new_settings() 
     ui.invoke_remove_waiting(0);
     assert!(ui.get_can_start());
     assert_eq!(ui.get_selection().row_count(), 1);
+    assert!(!c.is_busy(), "Report-space pause owns no running worker");
+    assert!(
+        !c.request_quit(),
+        "Waiting accepted requests require a Quit decision"
+    );
+    c.tick();
+    assert!(
+        !c.should_exit(),
+        "Paused queued work must not be silently discarded"
+    );
+    ui.invoke_keep_running();
+    assert!(!c.should_exit());
+    assert!(!c.request_quit());
+    ui.invoke_stop_and_quit();
+    assert!(c.should_exit());
+    assert_eq!(ui.get_waiting().row_count(), 0);
 }
 
 #[test]
@@ -1002,4 +1050,70 @@ fn save_dialog_captures_the_report_and_navigation_is_not_stolen_by_waiting_work(
     pump(&c, || !c.is_busy());
     assert_eq!(c.window().get_run_label().as_str(), "Run 2");
     assert_eq!(c.window().get_runs().row_count(), 2);
+}
+
+#[test]
+fn committed_quit_rejects_late_dialog_exports_and_new_selections() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    c.submit(vec![root.path().join("first.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let captured = c.capture_export().unwrap();
+    assert!(c.request_quit());
+    assert!(matches!(
+        c.stage(vec![root.path().join("late.eml")]),
+        Err(eml_app::QueueError::ShuttingDown)
+    ));
+    assert!(matches!(
+        c.start_selection(),
+        Err(eml_app::QueueError::ShuttingDown)
+    ));
+    assert!(c.capture_export().is_none());
+    let output = root.path().join("late.jsonl");
+    c.start_captured_export(captured, output.clone());
+    assert!(!c.is_busy());
+    assert!(!output.exists());
+    assert_eq!(
+        c.window().get_operation_feedback().as_str(),
+        eml_app::QueueError::ShuttingDown.to_string()
+    );
+}
+
+#[test]
+fn a_closed_force_stop_prompt_cannot_kill_the_next_queued_worker() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let records = fixture("started-preedge-cancellation");
+    let (start, rest) = records.split_once('\n').unwrap();
+    let stop = print(rest) + "exit 130";
+    let body = format!(
+        "if mkdir {} 2>/dev/null; then trap {} INT; else trap '' INT; fi\ncat >/dev/null\n{}while :; do :; done\n",
+        quote(root.path().join("first-worker").to_str().unwrap()),
+        quote(&stop),
+        print(&(start.to_owned() + "\n"))
+    );
+    let c = controller(root.path(), script(root.path(), &body));
+    c.submit(vec![root.path().join("first.eml")]).unwrap();
+    wait_started(&c);
+    c.submit(vec![root.path().join("second.eml")]).unwrap();
+    let ui = c.window();
+    ui.invoke_force_stop();
+    assert!(ui.get_confirmation() == Confirmation::ForceStop);
+    c.stop();
+    pump(&c, || {
+        ui.get_run_label().as_str() == "Run 2"
+            && c.is_busy()
+            && has_label(&ui, &vocabulary::count_label(CountKind::KnownItems, 1))
+    });
+    let prompt_closed = ui.get_confirmation() == Confirmation::None;
+    ui.invoke_confirm_force_stop();
+    let next_worker_unchanged = ui.get_run_status().as_str() == RunStatus::Creating.label();
+    c.force_stop();
+    pump(&c, || !c.is_busy());
+    assert!(prompt_closed);
+    assert!(
+        next_worker_unchanged,
+        "A stale prompt answer must not stop another worker"
+    );
 }

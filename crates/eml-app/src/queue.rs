@@ -34,6 +34,8 @@ pub enum QueueError {
     InactiveRun,
     /// The finite session identity space has been exhausted.
     IdentityLimit,
+    /// The frontend has committed to closing and cannot admit more work.
+    ShuttingDown,
 }
 impl std::fmt::Display for QueueError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -48,6 +50,7 @@ impl std::fmt::Display for QueueError {
             Self::ReportSpace => f.write_str(&eml_core::vocabulary::report_space_notice(MAX_RETAINED_REPORTS)),
             Self::InactiveRun => f.write_str("The completion does not belong to the active request."),
             Self::IdentityLimit => f.write_str("This session cannot start another request. Save needed reports and restart the application."),
+            Self::ShuttingDown => f.write_str("The application is closing. Reopen it before starting another request."),
         }
     }
 }
