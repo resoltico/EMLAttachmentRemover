@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ingress::install_native(&controller)?;
     let paths = ingress::launch_paths(std::env::args_os().skip(1), &std::env::current_dir()?)?;
     if !paths.is_empty()
-        && let Err(error) = controller.enqueue(paths)
+        && let Err(error) = controller.stage(paths)
     {
         controller.message(&error.to_string());
     }

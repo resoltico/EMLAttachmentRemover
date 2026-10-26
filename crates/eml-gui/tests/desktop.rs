@@ -18,6 +18,19 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+trait SubmitSelection {
+    fn submit(&self, paths: Vec<PathBuf>) -> Result<eml_app::RunId, eml_app::QueueError>;
+}
+impl SubmitSelection for DesktopController {
+    fn submit(&self, paths: Vec<PathBuf>) -> Result<eml_app::RunId, eml_app::QueueError> {
+        self.stage(paths)?;
+        self.start_selection()
+    }
+}
+fn force_prompt(ui: &MainWindow) {
+    click(ui, "More run actions");
+    click(ui, "Force Stop");
+}
 fn fixture(name: &str) -> String {
     fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -130,7 +143,10 @@ fn launch_operands_form_one_request_and_psn_or_missing_operands_do_not_add_work(
         paths,
         vec![root.path().join("one.eml"), root.path().join("two.eml")]
     );
-    controller.enqueue(paths).unwrap();
+    controller.stage(paths).unwrap();
+    assert_eq!(controller.window().get_runs().row_count(), 0);
+    assert_eq!(controller.window().get_selection().row_count(), 2);
+    click(&controller.window(), "Start selection");
     assert_eq!(controller.window().get_runs().row_count(), 1);
     assert_eq!(
         controller
@@ -148,7 +164,7 @@ fn launch_operands_form_one_request_and_psn_or_missing_operands_do_not_add_work(
             .is_empty()
     );
     assert!(launch_paths([OsString::from("one.eml")], Path::new("relative")).is_err());
-    assert!(controller.enqueue(Vec::new()).is_err());
+    assert!(controller.submit(Vec::new()).is_err());
     assert_eq!(controller.window().get_runs().row_count(), 1);
     pump(&controller, || !controller.is_busy());
 }
@@ -162,6 +178,9 @@ fn deferred_drop_batches_are_distinct_and_cancelled_hover_does_not_queue() {
     }
     assert_eq!(controller.window().get_runs().row_count(), 0);
     mock_elapsed_time(Duration::from_millis(1));
+    assert_eq!(controller.window().get_runs().row_count(), 0);
+    assert_eq!(controller.window().get_selection().row_count(), 3);
+    click(&controller.window(), "Start selection");
     assert_eq!(controller.window().get_runs().row_count(), 1);
     assert_eq!(
         controller
@@ -175,6 +194,9 @@ fn deferred_drop_batches_are_distinct_and_cancelled_hover_does_not_queue() {
     );
     controller.deliver_drop(root.path().join("four.eml"));
     mock_elapsed_time(Duration::from_millis(1));
+    assert_eq!(controller.window().get_selection().row_count(), 1);
+    assert_eq!(controller.window().get_waiting().row_count(), 0);
+    click(&controller.window(), "Start selection");
     assert_eq!(controller.window().get_waiting().row_count(), 1);
     controller.deliver_drop(root.path().join("cancelled.eml"));
     controller.cancel_drop();
@@ -190,7 +212,7 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
     {
         let controller = controller(root.path(), completed(root.path(), "created-attachment"));
         controller
-            .enqueue(vec![root.path().join("source.eml")])
+            .submit(vec![root.path().join("source.eml")])
             .unwrap();
         pump(&controller, || !controller.is_busy());
         let ui = controller.window();
@@ -203,6 +225,7 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
             &ui,
             &vocabulary::count_label(CountKind::Created, 1)
         ));
+        click(&ui, "Message technical details");
         let scroller = ElementHandle::find_by_accessible_label(&ui, "Message details")
             .next()
             .unwrap();
@@ -220,7 +243,7 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
             &ui,
             vocabulary::removal_reason(RemovalReason::Attachment)
         ));
-        click(&ui, "About");
+        ui.invoke_about();
         mock_elapsed_time(Duration::from_millis(1));
         assert!(
             ElementHandle::find_by_accessible_label(&controller.about_window(), "#MadeWithSlint")
@@ -234,7 +257,7 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
     );
     let controller = controller(root.path(), cli);
     controller
-        .enqueue(vec![root.path().join("source.eml")])
+        .submit(vec![root.path().join("source.eml")])
         .unwrap();
     pump(&controller, || !controller.is_busy());
     assert_eq!(
@@ -254,18 +277,18 @@ fn stop_and_confirmed_force_stop_show_settled_states_and_cancel_keeps_work_runni
         let root = tempfile::tempdir().unwrap();
         let controller = controller(root.path(), controlled(root.path(), force));
         controller
-            .enqueue(vec![root.path().join("source.eml")])
+            .submit(vec![root.path().join("source.eml")])
             .unwrap();
         wait_started(&controller);
         let ui = controller.window();
         if force {
-            click(&ui, "Force Stop");
+            force_prompt(&ui);
             assert!((ui.get_confirmation() == Confirmation::ForceStop));
             assert!(controller.is_busy());
             click(&ui, "Keep running");
             assert!(!(ui.get_confirmation() == Confirmation::ForceStop));
             assert!(controller.is_busy());
-            click(&ui, "Force Stop");
+            force_prompt(&ui);
             click(&ui, "Force Stop now");
         } else {
             click(&ui, "Stop");
@@ -300,7 +323,7 @@ fn idle_quit_is_immediate_while_busy_quit_requires_a_real_decision() {
     let root = tempfile::tempdir().unwrap();
     let controller = controller(root.path(), controlled(root.path(), false));
     controller
-        .enqueue(vec![root.path().join("source.eml")])
+        .submit(vec![root.path().join("source.eml")])
         .unwrap();
     wait_started(&controller);
     assert!(!controller.request_quit());
@@ -343,7 +366,7 @@ fn create_after_check_sends_a_fresh_request_and_uses_the_current_destination() {
     click(&ui, "Check only");
     assert!(ui.get_check_only());
     controller
-        .enqueue(vec![root.path().join("source.eml")])
+        .submit(vec![root.path().join("source.eml")])
         .unwrap();
     pump(&controller, || !controller.is_busy());
     assert_eq!(
@@ -355,6 +378,10 @@ fn create_after_check_sends_a_fresh_request_and_uses_the_current_destination() {
     fs::create_dir(&output).unwrap();
     controller.set_destination(Some(output.clone()));
     click(&ui, "Create copies from this selection");
+    assert!(!controller.is_busy());
+    assert_eq!(fs::read_to_string(&requests).unwrap().lines().count(), 1);
+    assert_eq!(ui.get_selection().row_count(), 1);
+    click(&ui, "Start selection");
     pump(&controller, || !controller.is_busy());
     let docs: Vec<serde_json::Value> = fs::read_to_string(requests)
         .unwrap()
@@ -391,7 +418,7 @@ fn export_preserves_existing_bytes_and_busy_export_keeps_quit_confirmation() {
     let root = tempfile::tempdir().unwrap();
     let controller = controller(root.path(), completed(root.path(), "created"));
     controller
-        .enqueue(vec![root.path().join("source.eml")])
+        .submit(vec![root.path().join("source.eml")])
         .unwrap();
     pump(&controller, || !controller.is_busy());
     let existing = root.path().join("existing.jsonl");
@@ -407,7 +434,10 @@ fn export_preserves_existing_bytes_and_busy_export_keeps_quit_confirmation() {
         fs::metadata(&existing).unwrap().modified().unwrap(),
         modified
     );
-    assert!(has_label(&controller.window(), vocabulary::NO_REPLACEMENT));
+    assert!(has_label(
+        &controller.window(),
+        &format!("Export for Run 1: {}", vocabulary::NO_REPLACEMENT)
+    ));
     let saved = root.path().join("saved.jsonl");
     controller.start_export(saved.clone());
     pump(&controller, || !controller.is_busy());
@@ -503,7 +533,7 @@ fn run_failure_without_items_explains_incomplete_discovery_without_failed_items(
     );
     let c = controller(root.path(), cli);
     click(&c.window(), "Check only");
-    c.enqueue(vec![root.path().join("overflow")]).unwrap();
+    c.submit(vec![root.path().join("overflow")]).unwrap();
     pump(&c, || !c.is_busy());
     let ui = c.window();
     assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
@@ -524,8 +554,8 @@ fn run_failure_without_items_explains_incomplete_discovery_without_failed_items(
     assert_eq!(ui.get_items().row_count(), 0);
     // A complete successful report must clear the run-error and discovery notices.
     completed(root.path(), "created");
-    click(&ui, "Check only");
-    c.enqueue(vec![root.path().join("ordinary.eml")]).unwrap();
+    click(&ui, "Create copies");
+    c.submit(vec![root.path().join("ordinary.eml")]).unwrap();
     pump(&c, || !c.is_busy());
     assert_eq!(ui.get_report_diagnostics().row_count(), 0);
     assert!(has_label(
@@ -548,9 +578,9 @@ fn report_warnings_survive_switching_and_export_feedback() {
     );
     let c = controller(root.path(), cli);
     let ui = c.window();
-    c.enqueue(vec![root.path().join("first.eml")]).unwrap();
+    c.submit(vec![root.path().join("first.eml")]).unwrap();
     wait_started(&c);
-    click(&ui, "Force Stop");
+    force_prompt(&ui);
     click(&ui, "Force Stop now");
     pump(&c, || !c.is_busy());
     assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
@@ -573,7 +603,7 @@ fn report_warnings_survive_switching_and_export_feedback() {
         &("cat >/dev/null\n".to_owned() + &print(&fixture("collection-limit")) + "exit 1\n"),
     );
     click(&ui, "Check only");
-    c.enqueue(vec![root.path().join("overflow")]).unwrap();
+    c.submit(vec![root.path().join("overflow")]).unwrap();
     pump(&c, || !c.is_busy());
     assert_eq!(ui.get_operation_feedback().as_str(), "");
     assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
@@ -644,7 +674,7 @@ fn unavailable_settings_launch_with_preserved_objects_and_session_only_destinati
         let ui = c.window();
         ui.window().set_size(slint::LogicalSize::new(780.0, 600.0));
         for name in ["first.eml", "second.eml"] {
-            c.enqueue(vec![root.path().join(name)]).unwrap();
+            c.submit(vec![root.path().join(name)]).unwrap();
             pump(&c, || !c.is_busy());
         }
         mock_elapsed_time(Duration::from_millis(5));
@@ -721,7 +751,7 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
             &("cat >/dev/null\n".to_owned() + &print(&stream)),
         ),
     );
-    c.enqueue(vec![root.path().join("selection")]).unwrap();
+    c.submit(vec![root.path().join("selection")]).unwrap();
     pump(&c, || !c.is_busy());
     let ui = c.window();
     for width in [780.0, 1240.0] {
@@ -746,7 +776,230 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
 
         assert_eq!(a.path.full.as_str(), sources[0]);
         assert_eq!(b.path.full.as_str(), sources[1]);
+        let selected_row = ElementHandle::find_by_accessible_label(&ui, &sources[1])
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .unwrap();
         click(&ui, &sources[1]);
         assert_eq!(ui.get_item_source().as_str(), sources[1]);
+        assert!(
+            selected_row.is_valid(),
+            "Selecting a row must preserve its control and keyboard focus"
+        );
+        c.tick();
+        mock_elapsed_time(Duration::from_millis(5));
+        assert!(
+            selected_row.is_valid(),
+            "Unchanged refresh must not replace row delegates"
+        );
     }
+}
+
+#[test]
+fn reviewed_selection_does_not_spawn_and_start_captures_current_settings() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let requests = root.path().join("requests.jsonl");
+    let body = format!(
+        "cat >{}\n{}",
+        quote(requests.to_str().unwrap()),
+        print(&fixture("planned-create-unix"))
+    );
+    let c = controller(root.path(), script(root.path(), &body));
+    let ui = c.window();
+    let first = root.path().join("one.eml");
+    c.stage(vec![first.clone(), first.clone()]).unwrap();
+    c.tick();
+    assert!(!requests.exists());
+    assert!(!c.is_busy());
+    assert_eq!(ui.get_runs().row_count(), 0);
+    assert_eq!(ui.get_selection().row_count(), 1);
+    assert!(c.stage(vec![PathBuf::from("relative.eml")]).is_err());
+    assert_eq!(ui.get_selection().row_count(), 1);
+    let destination = root.path().join("reviewed-copies");
+    fs::create_dir(&destination).unwrap();
+    c.set_destination(Some(destination.clone()));
+    click(&ui, "Check only");
+    assert!(!requests.exists());
+    click(&ui, "Start selection");
+    pump(&c, || !c.is_busy());
+    let request: serde_json::Value = serde_json::from_slice(&fs::read(requests).unwrap()).unwrap();
+    assert_eq!(request["dry_run"], true);
+    assert_eq!(
+        request["output_directory"],
+        serde_json::to_value(eml_protocol::NativePathValue::new(&destination)).unwrap()
+    );
+    assert_eq!(ui.get_selection().row_count(), 0);
+    assert!(ui.get_run_context().contains(destination.to_str().unwrap()));
+    c.stage(vec![first]).unwrap();
+    click(&ui, "Clear selection");
+    assert!(!ui.get_reviewing());
+    assert_eq!(ui.get_selection().row_count(), 0);
+    assert_eq!(ui.get_runs().row_count(), 1);
+}
+
+#[test]
+fn full_queue_retains_review_and_waiting_snapshots_do_not_follow_new_settings() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let ui = c.window();
+    for name in ["first.eml", "second.eml"] {
+        c.submit(vec![root.path().join(name)]).unwrap();
+        pump(&c, || !c.is_busy());
+    }
+    for index in 0..eml_app::MAX_WAITING_REQUESTS {
+        c.submit(vec![root.path().join(format!("waiting-{index}.eml"))])
+            .unwrap();
+    }
+    assert_eq!(ui.get_waiting().row_count(), eml_app::MAX_WAITING_REQUESTS);
+    c.stage(vec![root.path().join("retain-on-refusal.eml")])
+        .unwrap();
+    assert!(matches!(
+        c.start_selection(),
+        Err(eml_app::QueueError::Full)
+    ));
+    assert_eq!(ui.get_selection().row_count(), 1);
+    assert!(ui.get_reviewing());
+    assert!(!ui.get_can_start());
+    click(&ui, "Check only");
+    c.set_destination(Some(root.path().join("later-destination")));
+    let waiting = ui.get_waiting().row_data(0).unwrap();
+    assert_eq!(
+        waiting.mode.as_str(),
+        vocabulary::mode_label(RunMode::Create)
+    );
+    assert_eq!(waiting.destination.as_str(), "Beside originals");
+    ui.invoke_remove_waiting(0);
+    assert!(ui.get_can_start());
+    assert_eq!(ui.get_selection().row_count(), 1);
+}
+
+#[test]
+fn footer_actions_share_geometry_and_about_matches_the_reference_layout() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    c.submit(vec![root.path().join("source.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    for (width, font) in [(780.0, 13.0), (1060.0, 13.0), (780.0, 20.0)] {
+        ui.set_ui_size(font);
+        ui.window().set_size(slint::LogicalSize::new(width, 600.0));
+        mock_elapsed_time(Duration::from_millis(5));
+        let mut geometry = Vec::new();
+        for name in ["Dismiss report", "Save JSONL report", "Show copy"] {
+            let e = ElementHandle::find_by_accessible_label(&ui, name)
+                .next()
+                .unwrap();
+            assert!(e.size().height >= 32.0);
+            assert!(e.absolute_position().y + e.size().height <= 600.1);
+            assert!(e.absolute_position().x + e.size().width <= width + 0.1);
+            geometry.push((e.absolute_position().y, e.size().height));
+        }
+        assert!(
+            geometry
+                .iter()
+                .all(|(top, height)| (top - geometry[0].0).abs() < 0.1
+                    && (height - geometry[0].1).abs() < 0.1),
+            "{geometry:?}"
+        );
+    }
+    controlled(root.path(), false);
+    c.submit(vec![root.path().join("running.eml")]).unwrap();
+    wait_started(&c);
+    ui.invoke_select_run(0);
+    mock_elapsed_time(Duration::from_millis(5));
+    let mut active_geometry = Vec::new();
+    for name in [
+        "Dismiss report",
+        "Save JSONL report",
+        "Show copy",
+        "More run actions",
+        "Stop",
+    ] {
+        let e = ElementHandle::find_by_accessible_label(&ui, name)
+            .next()
+            .unwrap();
+        assert!(
+            e.absolute_position().x + e.size().width <= 780.1,
+            "{name}: {:?} {:?}",
+            e.absolute_position(),
+            e.size()
+        );
+        assert!(e.absolute_position().y + e.size().height <= 600.1);
+        active_geometry.push((e.absolute_position().y, e.size().height));
+    }
+    assert!(
+        active_geometry
+            .iter()
+            .all(|(top, height)| (top - active_geometry[0].0).abs() < 0.1
+                && (height - active_geometry[0].1).abs() < 0.1),
+        "{active_geometry:?}"
+    );
+    click(&ui, "Stop");
+    pump(&c, || !c.is_busy());
+    assert_eq!(ui.get_run_label().as_str(), "Run 1");
+    assert_eq!(ui.get_run_status().as_str(), RunStatus::Completed.label());
+    assert!(
+        !ElementHandle::find_by_accessible_label(&ui, "About")
+            .any(|e| e.accessible_role() == Some(AccessibleRole::Button))
+    );
+    ui.invoke_about();
+    mock_elapsed_time(Duration::from_millis(5));
+    let about = c.about_window();
+    // Native menus sit outside the client area; the testing backend inlines
+    // them. Reserve that measured menu height, then verify the reference content.
+    let focus = ElementHandle::find_by_element_id(&about, "AboutWindow::about-focus")
+        .next()
+        .unwrap();
+    let menu_height = focus.absolute_position().y;
+    about
+        .window()
+        .set_size(slint::LogicalSize::new(420.0, 410.0 + menu_height));
+    mock_elapsed_time(Duration::from_millis(5));
+    assert_eq!(focus.size(), slint::LogicalSize::new(420.0, 410.0));
+    for label in ["Project website", "Licenses"] {
+        assert!(
+            ElementHandle::find_by_accessible_label(&about, label)
+                .any(|e| e.accessible_role() == Some(AccessibleRole::Button))
+        );
+    }
+    about.invoke_licenses();
+    assert!(
+        c.license_window()
+            .get_licenses()
+            .contains("Mozilla Public License")
+    );
+}
+
+#[test]
+fn save_dialog_captures_the_report_and_navigation_is_not_stolen_by_waiting_work() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    c.submit(vec![root.path().join("first.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let saved = c.capture_export().unwrap();
+    // A different report becomes selected while the first report's dialog is open.
+    completed(root.path(), "planned-create-unix");
+    click(&c.window(), "Check only");
+    c.submit(vec![root.path().join("second.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_run_label().as_str(), "Run 2");
+    let output = root.path().join("captured.jsonl");
+    c.start_captured_export(saved, output.clone());
+    pump(&c, || !c.is_busy());
+    assert_eq!(fs::read(output).unwrap(), fixture("created").as_bytes());
+    assert_eq!(
+        c.window().get_operation_label().as_str(),
+        "Export for Run 1"
+    );
+    // Queue a request behind two retained reports, then explicitly dismiss Run 1.
+    // The remaining Run 2 must keep the view when waiting work starts.
+    c.submit(vec![root.path().join("third.eml")]).unwrap();
+    c.window().invoke_select_run(0);
+    c.window().invoke_dismiss();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_run_label().as_str(), "Run 2");
+    assert_eq!(c.window().get_runs().row_count(), 2);
 }

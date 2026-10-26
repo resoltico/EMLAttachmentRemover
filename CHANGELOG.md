@@ -4,6 +4,13 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+- Desktop selections are reviewed before explicit Start; new-request settings stay
+  separate from captured queued/active requests. The focused result list and
+  aligned footer expose Stop, reports and copy actions in their relevant states.
+- About moves to the standard OS menu and matches the Auditory Lab Slint layout;
+  software/artwork licenses are readable in a dedicated window. Toolkit sources
+  remain upstream and unchanged.
+
 ## [7.0.0] - Unreleased
 
 ### Changed

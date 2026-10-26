@@ -29,7 +29,7 @@ opener = { version = "0.8.5", features = ["reveal"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6.5", optional = true }
-objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSApplication"] }
+objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSApplication", "NSMenu", "NSMenuItem"] }
 
 [build-dependencies]
 slint-build = { version = "=1.18.1", default-features = false, features = ["compat-1-18"] }

@@ -42,7 +42,12 @@ impl std::fmt::Display for QueueError {
                 f,
                 "{MAX_WAITING_REQUESTS} requests are already waiting. Remove a waiting run before adding another."
             ),
-            _ => write!(f, "Application admission: {self:?}"),
+            Self::AbsoluteSelectionRequired => f.write_str("Select at least one file or folder using absolute paths."),
+            Self::InvalidRequest(error) => write!(f, "Cannot add this selection: {error}"),
+            Self::RequestEncoding => f.write_str("Cannot encode this selection. Select fewer paths or shorten folder names and try again."),
+            Self::ReportSpace => f.write_str(&eml_core::vocabulary::report_space_notice(MAX_RETAINED_REPORTS)),
+            Self::InactiveRun => f.write_str("The completion does not belong to the active request."),
+            Self::IdentityLimit => f.write_str("This session cannot start another request. Save needed reports and restart the application."),
         }
     }
 }

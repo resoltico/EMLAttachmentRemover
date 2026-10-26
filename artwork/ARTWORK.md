@@ -95,3 +95,9 @@ The owner-supplied icon uses AI-assisted coordinate construction defining four p
 The source palette is Royal blue with white and yellow halves, a darker navy background for dark appearance, and reduced yellow-layer opacity in tinted appearance. Background colours use `extended-srgb`; SVG assets use their explicit fills without an untagged colour-space setting. Actual compilation, not an unofficial schema, is the integration gate.
 
 Apple permits system-provided symbols inside applications for the corresponding Apple platforms, subject to symbol-specific restrictions, and prohibits their use or confusingly similar images in app icons, logos and other trademark uses. See sections 2.4 and 2.10 of the [Xcode and Apple SDKs Agreement](https://www.apple.com/legal/sla/docs/xcode.pdf) and [SF Symbols guidance](https://developer.apple.com/design/human-interface-guidelines/sf-symbols). This application retains custom interface artwork and does not copy or reference SF Symbols.
+
+## About window icon
+
+`crates/eml-gui/ui/eml-icon.png` is the unchanged 1024-pixel PNG payload (`ic10`)
+inside `artwork/EML.icns`, embedded by Slint for the window/About icon. It preserves
+the existing artwork bytes and is covered by the same root LICENSE terms.

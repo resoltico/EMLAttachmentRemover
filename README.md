@@ -62,22 +62,49 @@ and reported cleanup failures before retrying. Recognizable staging files use
 
 ## Desktop app
 
-Add files or folders using the buttons or drop paths into the window. Choose
-Create or Check and the destination before adding a selection. Each queued request
-captures those settings; up to eight requests wait behind the active run. Two
-retained reports pause the queue until a completed report is dismissed.
+Add files or folders with the buttons, window drops or launch arguments. These
+paths enter a review selection; no worker starts until **Create copies** or
+**Check selection** is pressed in the footer. Exact duplicate paths appear once.
+Folders are scanned only after Start, so selection counts are not message counts.
+Remove individual selections or Clear selection before starting.
 
-Select a report to inspect results, removals and its retained diagnostics. Run-level
-discovery failures are explained even when no item results exist. Export feedback
-is labeled separately from report warnings. Long filenames retain their suffixes;
-full paths remain available through tooltips and accessibility text. A settled
-Check with a valid final report enables Create Copies, which starts a fresh request using the current
-destination. Stop asks the worker to finish cooperatively; Force Stop requires
-confirmation. Busy Quit offers Wait, Stop & Quit, or confirmed Force Stop & Quit.
-Quit waits for worker and report-export settlement. Export Report saves the run's
-original protocol-1 JSONL stream, including a partial stream after failure.
+Choose Create copies or Check only and the destination in **Next request**. Check
+also verifies the chosen destination without writing copies. **Change…** offers
+Beside originals or an existing output folder. Start captures the current paths,
+mode and destination; changes afterwards do not alter active or queued requests.
+Up to eight requests wait behind the active run. Two retained reports pause the
+queue until a completed report is dismissed. Queue refusals retain the reviewed
+selection. A settled Check's **Create copies…** returns its paths to review in
+Create mode; it does not write until Start is pressed again.
 
-Use Help → About for AboutSlint, the project website and third-party notices.
+The empty window offers file/folder selection without inactive report controls.
+Reports and waiting requests appear in the sidebar only when there is work to
+navigate. Choosing a report keeps that view when queued work starts. A report shows its captured settings, counts, message results and selected
+message details. Errors, recovery guidance and run-level discovery failures remain
+visible; removal metadata and byte counts expand under **Parts and technical details**. Long filenames retain their distinguishing suffixes, with
+full paths in tooltips and accessibility text. Report-export feedback is separate
+from retained run warnings. **Dismiss report** removes the report from this
+session, never the original messages or copies.
+
+The full-width footer keeps actions on one aligned row. **Stop** addresses the
+active run even while another report or selection is being reviewed. **More… →
+Force Stop…** requires confirmation. Completed copies remain after either Stop.
+Busy Quit offers Stop and wait, confirmed Force Stop and quit, or Keep running;
+Quit waits for worker and report-export settlement, including after a confirmed
+Force Stop. Force Stop is unavailable when only a report export is active. **Save JSONL report…** writes
+the run's original protocol-1 stream captured when Save is clicked, including
+partial results after failure. Navigating to another report while choosing the
+filename does not change the captured export.
+**Show copy** is available only for a verified copy receipt.
+
+On macOS, open **EML Attachment Remover → About EML Attachment Remover** in the
+system menu bar. Other desktops use **Help → About**. The main window contains
+no duplicate product/version banner or About button. About uses the same centered
+Slint layout as Auditory Lab: the application icon, version/build, two purpose
+lines, copyright, Project website and Licenses, then AboutSlint. Licenses shows
+read-only software/artwork terms with a separate third-party notices action.
+Escape closes either auxiliary window.
+
 Saved destinations use the platform configuration folder's
 `EMLAttachmentRemover/preferences.json`. Earlier NSUserDefaults settings are not
 imported; choose the destination again. Unreadable or corrupt preferences are preserved. The app starts with defaults and

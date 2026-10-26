@@ -150,6 +150,14 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
         status: meaning(item)
             .map_or(MeaningKind::Unestablished.label(), |value| value.label())
             .into(),
+        attention: meaning(item)
+            .is_none_or(|value| value.severity == vocabulary::Severity::Attention),
+        removed: meaning(item)
+            .map_or_else(
+                || "—".into(),
+                |value| value.removal_mode.count_label(item.removed.len()),
+            )
+            .into(),
     }
 }
 /// Counts come from a summary or from individually accepted results while running.
@@ -172,11 +180,7 @@ pub(crate) fn counts(report: &eml_app::RunReport) -> Vec<CountView> {
     let mut counts: Vec<_> = kinds
         .into_iter()
         .zip(values)
-        .map(|(kind, value)| CountView {
-            label: kind.label().into(),
-            value: value as i32,
-            accessible: vocabulary::count_label(kind, value).into(),
-        })
+        .map(|(kind, value)| count(kind, value))
         .collect();
     if let Some(start) = report.start() {
         counts.insert(0, count(CountKind::KnownItems, start.total));
@@ -184,11 +188,7 @@ pub(crate) fn counts(report: &eml_app::RunReport) -> Vec<CountView> {
     if let Some(summary) = report.summary() {
         let kind = CountKind::NotProcessed;
         let value = summary.counts.not_processed;
-        counts.push(CountView {
-            label: kind.label().into(),
-            value: value as i32,
-            accessible: vocabulary::count_label(kind, value).into(),
-        });
+        counts.push(count(kind, value));
     }
     counts
 }
@@ -197,6 +197,7 @@ pub(crate) fn count(kind: CountKind, value: u32) -> CountView {
         label: kind.label().into(),
         value: value as i32,
         accessible: vocabulary::count_label(kind, value).into(),
+        attention: matches!(kind, CountKind::Failed) && value > 0,
     }
 }
 pub(crate) fn byte_counts(item: &wire::ItemRecord) -> Vec<CountView> {

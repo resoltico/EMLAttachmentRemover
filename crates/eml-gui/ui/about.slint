@@ -1,0 +1,74 @@
+// Copyright 2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
+import { AboutSlint, Button, TextEdit, VerticalBox, HorizontalBox, Palette } from "std-widgets.slint";
+component AboutLabel inherits TextInput {
+    read-only: true; single-line: true; horizontal-alignment: center;
+    accessible-label: self.text; vertical-stretch: 0;
+}
+export component AboutWindow inherits Window {
+    in property <string> product-name;
+    in property <string> version;
+    in property <string> copyright;
+    title: "About " + root.product-name;
+    icon: @image-url("eml-icon.png");
+    in property <length> ui-size: 13px;
+    default-font-size: root.ui-size;
+    preferred-width: max(420px, root.ui-size * 30);
+    preferred-height: max(410px, root.ui-size * 27);
+    callback website(); callback licenses(); callback dismiss();
+    MenuBar { Menu { title: "Edit";
+        MenuItem { title: "Copy"; shortcut: @keys(Control + C);
+            enabled: name-text.has-focus || version-text.has-focus || purpose-text.has-focus || copyright-text.has-focus;
+            activated => { if name-text.has-focus { name-text.copy(); } if version-text.has-focus { version-text.copy(); } if purpose-text.has-focus { purpose-text.copy(); } if copyright-text.has-focus { copyright-text.copy(); } }
+        }
+        MenuItem { title: "Select All"; shortcut: @keys(Control + A);
+            enabled: name-text.has-focus || version-text.has-focus || purpose-text.has-focus || copyright-text.has-focus;
+            activated => { if name-text.has-focus { name-text.select-all(); } if version-text.has-focus { version-text.select-all(); } if purpose-text.has-focus { purpose-text.select-all(); } if copyright-text.has-focus { copyright-text.select-all(); } }
+        }
+    } }
+    forward-focus: about-focus;
+    about-focus := FocusScope {
+        key-pressed(event) => { if event.text == Key.Escape { root.dismiss(); return accept; } return reject; }
+        VerticalBox { padding: 24px; spacing: 12px; alignment: center;
+            HorizontalBox { alignment: center; padding: 0px;
+                Image { source: root.icon; width: 64px; height: 64px; image-fit: contain; accessible-label: "Application icon"; }
+            }
+            name-text := AboutLabel { text: root.product-name; font-size: 18px; font-weight: 600; }
+            version-text := AboutLabel { text: "Version " + root.version; }
+            purpose-text := AboutLabel { text: "Create body-only copies of EML messages.\nKeep original messages unchanged."; single-line: false; }
+            copyright-text := AboutLabel { text: root.copyright; }
+            HorizontalBox { alignment: center; spacing: 12px; padding: 0px;
+                website := Button { text: "Project website"; clicked => { root.website(); } }
+                Button { text: "Licenses"; clicked => { root.licenses(); } }
+            }
+            HorizontalBox { alignment: center; vertical-stretch: 0; padding: 0px;
+                AboutSlint { width: 280px; height: 100px; horizontal-stretch: 0; vertical-stretch: 0; }
+            }
+        }
+    }
+}
+export component LicenseWindow inherits Window {
+    title: "Software and artwork licenses";
+    icon: @image-url("eml-icon.png");
+    preferred-width: 720px; preferred-height: 560px;
+    in property <string> licenses;
+    in property <string> notice: "Third-party terms and source references are included with the application.";
+    default-font-size: 13px;
+    callback third-party(); callback dismiss();
+    MenuBar { Menu { title: "Edit";
+        MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: license-text.has-focus; activated => { license-text.copy(); } }
+        MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: license-text.has-focus; activated => { license-text.select-all(); } }
+    } }
+    forward-focus: license-focus;
+    license-focus := FocusScope {
+        forward-focus: license-text;
+        key-pressed(event) => { if event.text == Key.Escape { root.dismiss(); return accept; } return reject; }
+        VerticalBox {
+            license-text := TextEdit { text: root.licenses; read-only: true; accessible-label: "Software and artwork license terms"; }
+            HorizontalBox { padding: 12px; spacing: 12px; vertical-stretch: 0;
+                Text { text: root.notice; wrap: word-wrap; horizontal-stretch: 1; }
+                Button { text: "Third-party licenses…"; clicked => { root.third-party(); } }
+            }
+        }
+    }
+}

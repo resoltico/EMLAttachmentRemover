@@ -67,13 +67,14 @@ See the [threat model](threat-model.md) for the supported environment.
 
 ## Desktop boundary
 
-The desktop runs the public CLI from `Contents/Helpers`, never PATH. Each selection
-captures absolute paths, destination and mode in a protocol request. At most eight
+The desktop runs the public CLI from `Contents/Helpers`, never PATH. Native ingress stages absolute paths without starting a worker. Explicit Start
+captures the reviewed selection, current destination and mode in a protocol request. At most eight
 requests wait, and two retained reports reserve display capacity. A serial worker
 runs one request at a time; dismissing a completed report releases capacity.
 
 `WorkerRun` owns `std::process::Child`; background threads write/close stdin and
-drain stdout/stderr. The UI polls without blocking. Stop sends SIGINT once; Force
+drain stdout/stderr. The UI polls without blocking. Derived Slint rows update in place, preserving
+controls and keyboard focus across selection and append-only result updates. Stop sends SIGINT once; Force
 Stop kills the child; completion includes reaping and reader settlement. Partial
 accepted records survive malformed tails and worker failures. Exports write the
 exact retained stream to a new file in a background thread. Busy Quit waits for
@@ -82,7 +83,9 @@ worker/export settlement or follows the user's confirmed stop choice.
 Slint view data comes from the shared vocabulary. Headless tests drive accessible
 actions through Slint's testing backend and mock time. Native ingress delivers
 launch arguments, batches window drops with a zero-delay timer, and parents rfd
-asynchronous dialogs to the retained window. Only the small macOS Quit shim uses
-unsafe Objective-C calls. Dock/Finder/Services integration and private worker
+asynchronous dialogs to the retained window. Only the small macOS application-menu About and Quit adapters use
+unsafe Objective-C calls. The About adapter routes the focused window’s standard
+application-menu item to the application-owned Slint About window; it does not
+modify or fork the toolkit. Dock/Finder/Services integration and private worker
 protocols are removed. The software renderer is the default; Skia remains an
 explicit build feature for measurement. Builds use upstream crates without forks.

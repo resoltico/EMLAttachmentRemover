@@ -38,4 +38,4 @@ defenses outside it without changing it first.
 ## Owner decisions in force
 
 Slint is the GUI toolkit (a cross-platform GUI is planned). Signing is ad hoc only.
-Intel Macs are supported. No macOS-only integration beyond the Quit shim.
+Intel Macs are supported. macOS-only integration is limited to application-menu About routing and the Quit shim.

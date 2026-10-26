@@ -91,7 +91,7 @@ pub fn install_native(
                 .add_filter("EML messages", &["eml"])
                 .pick_files()
                 .await
-                && let Err(error) = controller.enqueue(
+                && let Err(error) = controller.stage(
                     files
                         .into_iter()
                         .map(|file| file.path().to_owned())
@@ -121,7 +121,7 @@ pub fn install_native(
                 .set_parent(parent.as_ref())
                 .pick_folder()
                 .await
-                && let Err(error) = controller.enqueue(vec![folder.path().to_owned()])
+                && let Err(error) = controller.stage(vec![folder.path().to_owned()])
             {
                 controller.message(&error.to_string());
             }
@@ -156,6 +156,9 @@ pub fn install_native(
         let Some(controller) = weak.upgrade() else {
             return;
         };
+        let Some(source) = controller.capture_export() else {
+            return;
+        };
         let ui = controller.window();
         let _ = slint::spawn_local(async move {
             // rfd needs both native handle traits; keep the winit owner alive.
@@ -168,12 +171,12 @@ pub fn install_native(
             };
             if let Some(file) = rfd::AsyncFileDialog::new()
                 .set_parent(parent.as_ref())
-                .set_file_name("eml-report.jsonl")
+                .set_file_name(format!("eml-run-{}.jsonl", source.run_id()))
                 .add_filter("JSON Lines", &["jsonl"])
                 .save_file()
                 .await
             {
-                controller.start_export(file.path().to_owned());
+                controller.start_captured_export(source, file.path().to_owned());
             }
         });
     });
@@ -201,11 +204,18 @@ pub fn install_native(
         .ok_or("Desktop executable has no Contents directory")?
         .join("Resources/THIRD-PARTY-NOTICES.txt");
     let weak = Rc::downgrade(controller);
-    about.on_licenses(move || {
+    controller.license_window().on_third_party(move || {
         if let Err(error) = opener::open(&notices)
             && let Some(controller) = weak.upgrade()
         {
-            controller.message(&error.to_string());
+            let feedback = format!(
+                "Cannot open bundled third-party notices at {}: {error}",
+                notices.display()
+            );
+            controller
+                .license_window()
+                .set_notice(eml_protocol::DisplayText::new(&feedback).to_string().into());
+            controller.message(&feedback);
         }
     });
     Ok(())
