@@ -1505,6 +1505,9 @@ fn known_prepublication_causes_are_specific_and_published_failures_keep_qualific
         ("PROTECTED", "prepare", "Protected content"),
         ("UNSUPPORTED_MIME", "prepare", "Unsupported content"),
         ("INTERRUPTED", "prepare", "Interrupted"),
+        ("STAGE_FAILED", "stage", "Cannot create copy"),
+        ("WRITE_FAILED", "write", "Copy write failed"),
+        ("SOURCE_CHANGED", "read", "Source changed"),
         ("FUTURE_ERROR", "prepare", "No new copy published"),
     ] {
         let root = tempfile::tempdir().unwrap();
@@ -1530,6 +1533,34 @@ fn known_prepublication_causes_are_specific_and_published_failures_keep_qualific
         assert_eq!(c.window().get_item_status().as_str(), label, "{code}");
         assert!(!c.window().get_can_reveal());
     }
+    let existing_root = tempfile::tempdir().unwrap();
+    let mut existing: Vec<serde_json::Value> = fixture("existing-sync-failure")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    existing[1]["error"]["code"] = "INTERRUPTED".into();
+    existing[1]["error"]["phase"] = "existing".into();
+    existing[2]["interrupted"] = true.into();
+    existing[2]["exit_code"] = 130.into();
+    let stream = existing
+        .iter()
+        .map(|record| format!("{record}\n"))
+        .collect::<String>();
+    let c = controller(
+        existing_root.path(),
+        script(
+            existing_root.path(),
+            &("cat >/dev/null\n".to_owned() + &print(&stream) + "exit 130\n"),
+        ),
+    );
+    c.submit(vec![existing_root.path().join("existing.eml")])
+        .unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        c.window().get_item_status().as_str(),
+        "Existing bytes matched"
+    );
+    assert!(!c.window().get_can_reveal());
     let root = tempfile::tempdir().unwrap();
     let c = controller(root.path(), completed(root.path(), "published-with-error"));
     c.submit(vec![root.path().join("source.eml")]).unwrap();

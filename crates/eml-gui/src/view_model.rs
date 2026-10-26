@@ -136,6 +136,39 @@ fn facts(item: &wire::ItemRecord) -> Option<OutcomeFacts> {
 fn meaning(item: &wire::ItemRecord) -> Option<vocabulary::OutcomeMeaning> {
     facts(item).map(|facts| vocabulary::classify(&facts))
 }
+// The core enum owns wire spellings; this match owns only concise desktop wording.
+fn failure_label(code: &str) -> Option<&'static str> {
+    use eml_core::ErrorCode::*;
+    Some(match eml_core::ErrorCode::from_wire_name(code)? {
+        ReadFailed => "Cannot read source",
+        SourceNotRegular => "Not a regular file",
+        SourceChanged => "Source changed",
+        Malformed => "Malformed message",
+        LimitExceeded => "Message limit",
+        Protected => "Protected content",
+        UnsupportedMime => "Unsupported content",
+        NoBody => "No supported body",
+        Internal => "Verification error",
+        InputAdmissionFailed => "Input unavailable",
+        InputLimitExceeded => "Input limit reached",
+        NoInputs => "No messages found",
+        OutputOverlap => "Output overlap",
+        DestinationCollision | DestinationExists => "Destination conflict",
+        SourceDestinationAlias => "Path alias",
+        DestinationUnsupported => "Unsupported target",
+        BindFailed => "Path unavailable",
+        StageFailed => "Cannot create copy",
+        WriteFailed => "Copy write failed",
+        FileSyncFailed => "Copy sync failed",
+        NamespaceSyncFailed => "Folder sync failed",
+        AddressChanged => "Path changed",
+        AddressUnverified => "Path unverified",
+        CleanupFailed => "Cleanup incomplete",
+        ExistingSyncFailed => "Existing sync failed",
+        Interrupted => "Interrupted",
+        OutputFailed => "Delivery failed",
+    })
+}
 /// Concise desktop labels preserve the core qualification and typed failure facts.
 pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
     ItemView {
@@ -150,19 +183,11 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
             .into(),
         status: if item.status == wire::ItemStatus::Failed
             && item.publication.state == wire::Publication::NotPublished
+            && meaning(item).is_some_and(|value| matches!(value.kind, MeaningKind::NotPublished))
         {
             item.error
                 .value()
-                .and_then(|error| match error.code.as_str() {
-                    "DESTINATION_EXISTS" | "DESTINATION_COLLISION" => Some("Destination conflict"),
-                    "MALFORMED" => Some("Malformed message"),
-                    "NO_BODY" => Some("No supported body"),
-                    "PROTECTED" => Some("Protected content"),
-                    "UNSUPPORTED_MIME" => Some("Unsupported content"),
-                    "READ_FAILED" => Some("Cannot read source"),
-                    "INTERRUPTED" => Some("Interrupted"),
-                    _ => None,
-                })
+                .and_then(|error| failure_label(&error.code))
                 .unwrap_or_else(|| {
                     meaning(item).map_or(MeaningKind::Unestablished.label(), |value| value.label())
                 })
