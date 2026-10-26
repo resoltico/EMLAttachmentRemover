@@ -5,8 +5,8 @@ Copies retain supported plain-text and HTML bodies, including their encoded byte
 attachments and other non-body MIME parts are removed. Retained HTML can still
 contain remote references or unsafe content. See the [MIME policy](docs/mime.md).
 
-This branch documents unreleased 7.0.0. For existing downloads, use the
-documentation at their matching release tag.
+This documentation describes the source in this checkout. For downloads, use the
+documentation at the matching release tag.
 
 ## Install
 
@@ -71,18 +71,18 @@ Select a report to inspect results, removals and its retained diagnostics. Run-l
 discovery failures are explained even when no item results exist. Export feedback
 is labeled separately from report warnings. Long filenames retain their suffixes;
 full paths remain available through tooltips and accessibility text. A settled
-Check with a valid final report enables Create Copies, which starts a fresh request using the current
-destination. Stop asks the worker to finish cooperatively; Force Stop requires
-confirmation. Busy Quit offers Wait, Stop & Quit, or confirmed Force Stop & Quit.
+Check with a valid final report enables Create Copies, which starts a fresh
+request using the current destination. Stop asks the worker to finish
+cooperatively; Force Stop requires confirmation. Busy Quit offers Wait, Stop & Quit, or confirmed Force Stop & Quit.
 Quit waits for worker and report-export settlement. Export Report saves the run's
 original protocol-1 JSONL stream, including a partial stream after failure.
 
 Use Help → About for AboutSlint, the project website and third-party notices.
 Saved destinations use the platform configuration folder's
-`EMLAttachmentRemover/preferences.json`. Earlier NSUserDefaults settings are not
-imported; choose the destination again. Unreadable or corrupt preferences are preserved. The app starts with defaults and
-shows the exact path and recovery guidance. Destination changes remain session-only
-until the settings problem is corrected and the app restarted.
+`EMLAttachmentRemover/preferences.json`. Unreadable or corrupt preferences are
+preserved. The app starts with defaults and shows the exact path and recovery
+guidance. Destination changes remain session-only until the settings problem is
+corrected and the app restarted.
 
 The app accepts launch arguments, for example:
 
@@ -90,9 +90,9 @@ The app accepts launch arguments, for example:
 open -n -a '/Applications/EML Attachment Remover.app' --args "$PWD/message.eml"
 ```
 
-Dock-icon drop, Finder Services and Finder Open With integration are removed.
-Native file dialogs use the toolkit/platform implementation; clipboard shortcuts
-in their Go-To fields may differ from earlier releases.
+The app supports window drops and launch arguments. Dock-icon drop, Finder
+Services and Finder Open With are unsupported. File and folder selection uses
+parented native dialogs.
 
 ## Limits and filesystem behavior
 
@@ -112,8 +112,8 @@ publication. Ordinary owned folders are the supported environment; see the
 
 See [CONTRIBUTING](CONTRIBUTING.md) for the shortest build and check commands,
 [architecture](docs/architecture.md) for crate boundaries, and the
-[changelog](CHANGELOG.md) for breaking changes. MPL-2.0-covered source is available
-in this repository; redistributors must preserve notices and corresponding source
+[release guide](docs/release.md) for packaging and release checks. MPL-2.0-covered
+source is available in this repository; redistributors must preserve notices and corresponding source
 availability. Slint's desktop license and AboutSlint requirements also apply;
 see [legal materials](legal/README.md). Editable artwork, construction references
 and platform exports are documented in the [artwork guide](artwork/README.md).

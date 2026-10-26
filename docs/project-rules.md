@@ -35,7 +35,8 @@ crates. Remove machinery that loses its reason in the same PR.
 `docs/threat-model.md` defines what the filesystem code defends against. Do not add
 defenses outside it without changing it first.
 
-## Owner decisions in force
+## Product constraints
 
-Slint is the GUI toolkit (a cross-platform GUI is planned). Signing is ad hoc only.
-Intel Macs are supported. No macOS-only integration beyond the Quit shim.
+Slint is the GUI toolkit. Desktop development supports macOS and Linux; desktop
+distribution targets macOS. Signing is ad hoc only. Intel Macs are supported.
+No macOS-only integration beyond the Quit shim.

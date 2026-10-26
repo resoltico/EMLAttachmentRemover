@@ -16,12 +16,16 @@ Tools with the native x64 or ARM64 MSVC tools. CI builds a static CRT.
 ```sh
 cargo build --locked -p emlattachmentremover
 cargo test --locked --workspace
-cargo run --locked -p eml-gui --features desktop --bin emlattachmentremover-gui
+cargo build --locked -p eml-gui --features desktop --bin emlattachmentremover-gui
 ```
 
-The desktop development command applies to macOS and Linux. Distributed desktop
-apps currently target macOS. On Windows, exclude `eml-app` and `eml-gui` from
-workspace commands and use `--target` with your native MSVC triple so host
+The desktop compile command applies to macOS and Linux. To run the desktop app
+on macOS, build and extract the bundle using the distribution commands below,
+then open `target/smoke/EML Attachment Remover.app`. The executable resolves its
+CLI helper and notices relative to the bundle; `cargo run` alone does not supply
+that layout. Distribution packages desktop apps only for macOS.
+
+On Windows, exclude `eml-app` and `eml-gui` from workspace commands and use `--target` with your native MSVC triple so host
 procedural macros are built independently of static-CRT target flags.
 
 ## Checks
@@ -54,8 +58,9 @@ public product binaries.
 Merge CI restores caches on every producer and saves them only on main. The
 [CI workflow](.github/workflows/ci.yml) and `cargo xtask ci` own the commands;
 [project rules](docs/project-rules.md) define the verification budget. The budget
-script measures committed files, so stage/commit intended inputs before using it
-as delivered-state evidence.
+script reads `HEAD` by default, or the Git ref supplied as its argument. Staging
+files does not change its inputs; use a commit containing the intended inputs
+when checking the delivered state.
 
 ## Distribution and notices
 
@@ -65,11 +70,14 @@ On macOS:
 cargo xtask dist --cli --app --universal --out target/dist
 mkdir -p target/smoke
 tar -xzf target/dist/emlattachmentremover-*-macos-universal.tar.gz -C target/smoke
+ditto -x -k target/dist/emlattachmentremover-gui-*-macos-universal.zip target/smoke
 scripts/smoke-cli.sh target/smoke/emlattachmentremover tests/contract/mime
 ```
 
 Use a fresh output folder: distribution refuses existing archive files. Linux and
-Windows use `cargo xtask dist --cli --target <native-triple> --out <fresh-folder>`.
+Windows use native target builds. On Linux, run
+`cargo xtask dist --cli --target <native-triple> --out <fresh-folder>`. On Windows,
+run `cargo run --locked -p xtask --target <native-triple> -- dist --cli --target <native-triple> --out <fresh-folder>`.
 Windows triples end in `pc-windows-msvc`; `.cargo/config.toml` sets `+crt-static`.
 See [release instructions](docs/release.md) for exact-archive floor smoke and the
 manual checklist. Build requirements and actual release acceptance are separate:

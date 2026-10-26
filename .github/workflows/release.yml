@@ -145,6 +145,34 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Extract the tagged version's changelog entry
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git show HEAD:CHANGELOG.md | awk -v version="${TAG#v}" '
+            BEGIN { heading = "## [" version "]" }
+            /^##([[:space:]]|$)/ {
+              inside = ($0 == heading || index($0, heading " ") == 1)
+              if (inside) {
+                matches++
+                date = substr($0, length(heading) + 1)
+                if (date !~ /^ - [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) invalid = 1
+              }
+              next
+            }
+            inside {
+              notes = notes $0 "\n"
+              if ($0 ~ /[^[:space:]]/) content = 1
+            }
+            END {
+              if (matches != 1 || invalid || !content) {
+                print "Expected one nonempty dated CHANGELOG.md entry for " version > "/dev/stderr"
+                exit 1
+              }
+              printf "%s", notes
+            }
+          ' > "$RUNNER_TEMP/release-notes.md"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           path: target/dist
@@ -156,4 +184,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --draft --verify-tag --notes-from-tag target/dist/*
+        run: gh release create "$TAG" --draft --verify-tag --notes-file "$RUNNER_TEMP/release-notes.md" target/dist/*

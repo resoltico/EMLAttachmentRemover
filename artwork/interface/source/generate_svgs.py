@@ -1,8 +1,9 @@
 """Exports the status artwork from Artwork.swift's geometry as SVG reference files.
 
 Mirrors Artwork.swift exactly (100-unit square; Swift uses a bottom-left origin, SVG a
-top-left one, so every y here is 100 - y_swift). Artwork.swift remains the runtime source;
-these SVGs are design references and must be regenerated if the Swift geometry changes.
+top-left one, so every y here is 100 - y_swift). Both are reference construction
+helpers; the editable SVGs are the drawing authority.
+The Slint application does not load these drawings. See ../GEOMETRY.md.
 """
 import math, os
 

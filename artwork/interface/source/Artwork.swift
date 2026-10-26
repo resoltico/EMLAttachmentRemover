@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ervins Strauhmanis.
 // SPDX-License-Identifier: LicenseRef-Proprietary-Artwork
-// Original geometric artwork. See ARTWORK.md and the proprietary terms in LICENSE.
+// Original geometric artwork. See ../GEOMETRY.md and the proprietary terms in the root LICENSE.
 import AppKit
 
 /// Status artwork: one unchanging envelope with a same-size status badge in its corner.
@@ -48,7 +48,7 @@ enum Artwork {
     }
   }
 
-  /// Measured sRGB colours. ARTWORK.md lists every contrast ratio.
+  /// Explicit sRGB colours for the reference drawing appearances.
   enum Palette {
     // Order in every table: light, dark, high-contrast light, high-contrast dark.
     private static let envelopeHex: [UInt32] = [0x63_6366, 0xAE_AEB2, 0x3A_3A3C, 0xE5_E5EA]

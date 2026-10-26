@@ -1,7 +1,7 @@
 # Architecture
 
-The core owns MIME policy, collection, destinations, execution facts and human
-outcome vocabulary. Frontends adapt inputs and render those facts.
+The business libraries own MIME policy, collection, destinations, execution facts
+and human outcome vocabulary. Frontends adapt inputs and render those facts.
 
 | Crate | Responsibility |
 |---|---|
@@ -83,6 +83,6 @@ Slint view data comes from the shared vocabulary. Headless tests drive accessibl
 actions through Slint's testing backend and mock time. Native ingress delivers
 launch arguments, batches window drops with a zero-delay timer, and parents rfd
 asynchronous dialogs to the retained window. Only the small macOS Quit shim uses
-unsafe Objective-C calls. Dock/Finder/Services integration and private worker
-protocols are removed. The software renderer is the default; Skia remains an
+unsafe Objective-C calls. The worker uses the public protocol-1 CLI. The software
+renderer is the default; Skia is an
 explicit build feature for measurement. Builds use upstream crates without forks.

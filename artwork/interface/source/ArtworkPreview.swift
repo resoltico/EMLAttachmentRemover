@@ -13,7 +13,7 @@ struct ArtworkPreview {
     )?.retagging(with: .sRGB)
   }
 
-  /// The tone each state uses in the application's most common presentation.
+  /// Default tone for each state in the reference previews.
   @MainActor static func defaultTone(_ kind: Artwork.Kind) -> Artwork.Tone {
     switch kind {
     case .identity, .processing: return .accent

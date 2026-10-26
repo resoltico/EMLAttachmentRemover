@@ -4,7 +4,6 @@ The public `emlattachmentremover` CLI and the desktop's bundled CLI use the same
 protocol. Invoke `--format json` for LF-delimited UTF-8 start/item/summary events.
 The GUI invokes its bundle-relative `Contents/Helpers/emlattachmentremover` with
 `--request - --format json`, writes one request, closes stdin, and reads the stream.
-No private control-byte channel or separate worker executable exists.
 
 ## Requests
 
