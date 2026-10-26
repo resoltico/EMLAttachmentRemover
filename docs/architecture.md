@@ -24,6 +24,10 @@ manifest owns the release version.
 The caller captures an absolute working directory once. Validation checks native
 resource limits before I/O. Collection observes selected files and directory roots,
 coalesces proven identities, sorts native names and retains failures as known work.
+Explicit ordinary leaf names use a canonical spelling only when canonical parent
+identity and complete file signature prove the same captured entry. Unproven or
+long-path canonicalization retains conservative spelling without a new admission
+error; final symlink entries and distinct hard-link names are not merged by inode.
 Explicit files take precedence; the deepest selected root owns a walked file.
 Selected directory aliases can be followed; links encountered during a walk are
 excluded. Destination links and reparse edges are refused.
@@ -77,7 +81,11 @@ drain stdout/stderr. The UI polls without blocking. Derived Slint rows update in
 controls and keyboard focus across selection and append-only result updates. Stop sends SIGINT once; Force
 Stop kills the child; completion includes reaping and reader settlement. Partial
 accepted records survive malformed tails and worker failures. Exports write the
-exact retained stream to a new file in a background thread. Busy Quit waits for
+exact retained stream to a new file in a background thread. An export draft owns
+captured immutable bytes independently of report navigation; its folder-picker
+lifetime token rejects callbacks for a cancelled/replaced draft. Name collisions
+stay in the application-owned naming window; the native folder chooser never
+offers an overwrite policy the backend cannot honor. Busy Quit waits for
 worker/export settlement or follows the user's confirmed stop choice.
 
 Slint qualifications come from the shared vocabulary; desktop-only concise

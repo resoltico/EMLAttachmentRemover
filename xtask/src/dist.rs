@@ -1,5 +1,5 @@
 use crate::{Result, archive, host, notices, run};
-use eml_core::product::{BUILD_NUMBER, CLI_NAME, VERSION};
+use eml_core::product::{BUILD_NUMBER, CLI_NAME, DISPLAY_NAME, VERSION};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -173,8 +173,8 @@ fn plist() -> String {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>io.github.resoltico.emlattachmentremover</string>
-<key>CFBundleName</key><string>EML Attachment Remover</string>
-<key>CFBundleDisplayName</key><string>EML Attachment Remover</string>
+<key>CFBundleName</key><string>{DISPLAY_NAME}</string>
+<key>CFBundleDisplayName</key><string>{DISPLAY_NAME}</string>
 <key>CFBundleExecutable</key><string>EMLAttachmentRemover</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>{VERSION}</string>

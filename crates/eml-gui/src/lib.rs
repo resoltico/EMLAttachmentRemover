@@ -48,6 +48,7 @@ struct ExportJob {
     task: JoinHandle<io::Result<()>>,
 }
 /// Exact settled report retained while a native Save dialog is open.
+#[derive(Clone)]
 pub struct ReportExport {
     run: RunId,
     jsonl: std::sync::Arc<[u8]>,
@@ -57,6 +58,15 @@ impl ReportExport {
     pub fn run_id(&self) -> RunId {
         self.run
     }
+}
+/// Opaque lifetime of one export draft's native folder request.
+pub struct ExportFolderRequest {
+    token: std::rc::Weak<()>,
+}
+struct ExportDraft {
+    token: Rc<()>,
+    source: ReportExport,
+    directory: PathBuf,
 }
 struct Session {
     selection: Vec<PathBuf>,
@@ -99,6 +109,9 @@ pub struct DesktopController {
     ui: MainWindow,
     about: AboutWindow,
     licenses: LicenseWindow,
+    export_ui: ExportWindow,
+    export_draft: RefCell<Option<ExportDraft>>,
+    export_directory: RefCell<PathBuf>,
     session: RefCell<Session>,
     drops: RefCell<ingress::DropBatch>,
     cli: PathBuf,
@@ -134,6 +147,7 @@ impl DesktopController {
         let ui = MainWindow::new()?;
         let about = AboutWindow::new()?;
         let licenses = LicenseWindow::new()?;
+        let export_ui = ExportWindow::new()?;
         licenses.set_licenses(include_str!("../../../LICENSE").into());
         about.set_copyright(
             include_str!("../../../LICENSE")
@@ -151,6 +165,9 @@ impl DesktopController {
         ui.set_force_notice(vocabulary::FORCE_STOP_NOTICE.into());
         let controller = Rc::new(Self {
             last_view: RefCell::new(None),
+            export_ui,
+            export_draft: RefCell::new(None),
+            export_directory: RefCell::new(home.clone()),
             ui,
             about,
             licenses,
@@ -179,6 +196,28 @@ impl DesktopController {
         Ok(controller)
     }
     fn bind(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        self.export_ui.on_create_report(move || {
+            if let Some(c) = weak.upgrade() {
+                c.create_export();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.export_ui.on_cancel(move || {
+            if let Some(c) = weak.upgrade() {
+                c.cancel_export();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.export_ui.window().on_close_requested(move || {
+            if let Some(c) = weak.upgrade() {
+                if c.export_ui.get_busy() {
+                    return slint::CloseRequestResponse::KeepWindowShown;
+                }
+                c.cancel_export();
+            }
+            slint::CloseRequestResponse::HideWindow
+        });
         let weak = Rc::downgrade(self);
         self.ui.on_start_selection(move || {
             if let Some(c) = weak.upgrade()
@@ -431,6 +470,9 @@ impl DesktopController {
         self.ui.on_keep_running(move || {
             if let Some(c) = weak.upgrade() {
                 c.ui.set_confirmation(Confirmation::None);
+                if c.export_draft.borrow().is_some() {
+                    let _ = c.export_ui.show();
+                }
             }
         });
         let weak = Rc::downgrade(self);
@@ -660,6 +702,7 @@ impl DesktopController {
             if s.export.as_ref().is_some_and(|job| job.task.is_finished()) {
                 let job = s.export.take().expect("finished export");
                 let result = job.task.join();
+                let saved = matches!(&result, Ok(Ok(())));
                 let message = match result {
                     Ok(Ok(())) => vocabulary::REPORT_SAVED.into(),
                     Ok(Err(error)) if error.kind() == io::ErrorKind::AlreadyExists => {
@@ -668,6 +711,25 @@ impl DesktopController {
                     Ok(Err(error)) => error.to_string(),
                     Err(_) => vocabulary::REPORT_EXPORT_FAILED.to_owned(),
                 };
+                if self
+                    .export_draft
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|draft| draft.source.run == job.run)
+                {
+                    self.export_ui.set_busy(false);
+                    if saved {
+                        self.export_draft.borrow_mut().take();
+                        let _ = self.export_ui.hide();
+                    } else {
+                        self.export_ui.set_notice(
+                            format!(
+                                "{message} Choose a different file name or folder, then try again."
+                            )
+                            .into(),
+                        );
+                    }
+                }
                 self.operation(&format!("Export for Run {}", job.run), &message);
             }
 
@@ -705,6 +767,7 @@ impl DesktopController {
         if needs_confirmation {
             let _ = self.about.hide();
             let _ = self.licenses.hide();
+            let _ = self.export_ui.hide();
             if let Err(error) = self.ui.show() {
                 self.message(&error.to_string());
             }
@@ -712,6 +775,7 @@ impl DesktopController {
             self.ui.set_confirmation(Confirmation::Quit);
             false
         } else {
+            self.cancel_export();
             self.session.borrow_mut().should_exit = true;
             true
         }
@@ -786,7 +850,148 @@ impl DesktopController {
             }
         }
     }
-    /// Capture the selected settled stream before presenting a native file dialog.
+    /// The application-owned no-replace report naming window.
+    pub fn export_window(&self) -> ExportWindow {
+        self.export_ui.clone_strong()
+    }
+    /// Open a draft pinned to the exact current report, independently of navigation.
+    pub fn begin_export(&self) {
+        if self.session.borrow().is_closing() {
+            return;
+        }
+        if self.export_draft.borrow().is_some() {
+            let _ = self.export_ui.show();
+            return;
+        }
+        let Some(source) = self.capture_export() else {
+            return;
+        };
+        let directory = self.export_directory.borrow().clone();
+        self.export_ui
+            .set_run_label(format!("Run {}", source.run).into());
+        self.export_ui
+            .set_file_name(format!("eml-run-{}.jsonl", source.run).into());
+        self.export_ui.set_directory(
+            eml_protocol::TerminalPath::new(&directory)
+                .to_string()
+                .into(),
+        );
+        self.export_ui
+            .set_notice("Choose a new file name. Existing entries remain unchanged.".into());
+        self.export_ui.set_busy(false);
+        *self.export_draft.borrow_mut() = Some(ExportDraft {
+            token: Rc::new(()),
+            source,
+            directory,
+        });
+        if let Err(error) = self.export_ui.show() {
+            self.cancel_export();
+            self.message(&error.to_string());
+        }
+        self.refresh();
+    }
+    /// Capture folder-dialog ownership before an asynchronous native call.
+    pub fn capture_export_folder(&self) -> Option<ExportFolderRequest> {
+        if self.session.borrow().is_closing() || self.export_ui.get_busy() {
+            return None;
+        }
+        self.export_draft
+            .borrow()
+            .as_ref()
+            .map(|draft| ExportFolderRequest {
+                token: Rc::downgrade(&draft.token),
+            })
+    }
+    fn export_folder_is_current(&self, request: &ExportFolderRequest) -> bool {
+        request.token.upgrade().is_some_and(|token| {
+            self.export_draft
+                .borrow()
+                .as_ref()
+                .is_some_and(|draft| Rc::ptr_eq(&token, &draft.token))
+        })
+    }
+    /// Apply a native folder choice only to the originating, still-open draft.
+    pub fn set_export_directory(&self, request: &ExportFolderRequest, directory: PathBuf) {
+        if self.session.borrow().is_closing()
+            || self.export_ui.get_busy()
+            || !directory.is_absolute()
+            || !self.export_folder_is_current(request)
+        {
+            return;
+        }
+        if let Some(draft) = self.export_draft.borrow_mut().as_mut() {
+            draft.directory = directory.clone();
+            *self.export_directory.borrow_mut() = directory.clone();
+            self.export_ui.set_directory(
+                eml_protocol::TerminalPath::new(&directory)
+                    .to_string()
+                    .into(),
+            );
+        }
+    }
+    /// Surface folder-dialog errors inside the export flow.
+    pub fn export_notice(&self, request: &ExportFolderRequest, notice: &str) {
+        if self.session.borrow().is_closing() || !self.export_folder_is_current(request) {
+            return;
+        }
+        self.export_ui
+            .set_notice(eml_protocol::DisplayText::new(notice).to_string().into());
+    }
+    /// Cancel a draft without cancelling an already-owned physical export.
+    pub fn cancel_export(&self) {
+        self.export_draft.borrow_mut().take();
+        let _ = self.export_ui.hide();
+        self.refresh();
+    }
+    fn create_export(&self) {
+        if self.session.borrow().is_closing() || self.session.borrow().export.is_some() {
+            return;
+        }
+        let name = self.export_ui.get_file_name();
+        let path = Path::new(name.as_str());
+        if name.contains('\0')
+            || path.components().count() != 1
+            || !matches!(
+                path.components().next(),
+                Some(std::path::Component::Normal(_))
+            )
+        {
+            self.export_ui
+                .set_notice("Enter one file name, without a folder or path separator.".into());
+            return;
+        }
+        let Some((source, target)) = self
+            .export_draft
+            .borrow()
+            .as_ref()
+            .map(|draft| (draft.source.clone(), draft.directory.join(path)))
+        else {
+            return;
+        };
+        self.export_ui.set_busy(true);
+        self.export_ui.set_notice("Creating the report…".into());
+        self.start_captured_export(source, target);
+        if self.session.borrow().export.is_none() {
+            self.export_ui.set_busy(false);
+        }
+    }
+    /// Native path for copying, without granting reveal qualification.
+    pub fn selected_path(&self, destination: bool) -> Option<PathBuf> {
+        let s = self.session.borrow();
+        s.entries
+            .get(s.selected)?
+            .report
+            .as_ref()?
+            .with_report(|report| {
+                if destination {
+                    report.destination_path(s.selected_item)
+                } else {
+                    report.source_path(s.selected_item)
+                }
+            })
+            .flatten()
+    }
+    /// Capture the selected settled stream before presenting an export draft.
     pub fn capture_export(&self) -> Option<ReportExport> {
         let mut s = self.session.borrow_mut();
         if s.export.is_some() || s.is_closing() {
@@ -875,6 +1080,10 @@ impl DesktopController {
         let s = self.session.borrow();
         platform::set_busy(s.needs_quit_confirmation());
         self.ui.set_closing(s.is_closing());
+        if s.is_closing() {
+            self.export_draft.borrow_mut().take();
+            let _ = self.export_ui.hide();
+        }
         self.ui.set_check_only(s.mode == RunMode::DryRun);
         self.ui.set_selection(update_model(
             self.ui.get_selection(),
@@ -1010,8 +1219,11 @@ impl DesktopController {
                 .as_ref()
                 .is_some_and(|active| active.id == entry.id),
         );
-        self.ui
-            .set_can_export(entry.completion.is_some() && s.export.is_none());
+        self.ui.set_can_export(
+            entry.completion.is_some()
+                && s.export.is_none()
+                && self.export_draft.borrow().is_none(),
+        );
         self.ui
             .set_can_dismiss(entry.completion.is_some() || entry.launch_error.is_some());
         self.ui.set_can_create(can_create(entry));
@@ -1103,11 +1315,25 @@ impl DesktopController {
             self.ui
                 .set_can_reveal(report.reveal_path(s.selected_item).is_some());
             let Some(item) = report.items().get(s.selected_item) else {
+                self.ui.set_can_copy_source(false);
+                self.ui.set_can_copy_destination(false);
                 self.ui.set_has_item(false);
                 return;
             };
             let view = view_model::item(item);
             self.ui.set_has_item(true);
+            self.ui.set_can_copy_source(
+                report
+                    .source_path(s.selected_item)
+                    .and_then(|p| p.into_os_string().into_string().ok())
+                    .is_some(),
+            );
+            self.ui.set_can_copy_destination(
+                report
+                    .destination_path(s.selected_item)
+                    .and_then(|p| p.into_os_string().into_string().ok())
+                    .is_some(),
+            );
             self.ui.set_item_source(view.source);
             self.ui.set_item_source_path(view.path);
             self.ui
@@ -1150,6 +1376,8 @@ impl DesktopController {
             .set_items(update_model(self.ui.get_items(), Vec::new()));
         self.ui
             .set_counts(update_model(self.ui.get_counts(), Vec::new()));
+        self.ui.set_can_copy_source(false);
+        self.ui.set_can_copy_destination(false);
         self.ui.set_has_item(false);
         self.ui.set_item_attention(false);
         self.ui

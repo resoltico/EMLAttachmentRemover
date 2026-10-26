@@ -1,6 +1,6 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { Button, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette } from "std-widgets.slint";
+import { Button, TextEdit, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette } from "std-widgets.slint";
 export enum Confirmation { none, force-stop, quit }
 export struct CountView { label: string, value: int, accessible: string, attention: bool }
 export struct PathView { prefix: string, suffix: string, directory: string, full: string }
@@ -80,6 +80,7 @@ component PathLabel inherits VerticalBox {
 }
 component ActionButton inherits Button { horizontal-stretch: 0; vertical-stretch: 0; preferred-width: self.min-width; max-width: self.min-width; preferred-height: self.min-height; max-height: self.min-height; }
 export { AboutWindow, LicenseWindow } from "about.slint";
+export { ExportWindow } from "export.slint";
 export component MainWindow inherits Window {
     in property <string> product-name;
     title: root.product-name;
@@ -114,6 +115,9 @@ export component MainWindow inherits Window {
     in property <[CountView]> counts;
     in property <[DetailView]> report-diagnostics;
     in property <string> settings-warning;
+    in property <bool> can-copy-source;
+    in property <bool> can-copy-destination;
+    callback copy-source-path(); callback copy-destination-path();
     in property <string> operation-label;
     in property <string> operation-feedback;
     in property <PathView> item-source-path;
@@ -204,12 +208,11 @@ export component MainWindow inherits Window {
             Label { text: root.check-only ? "Check sources and destinations. No copies will be written." : "Original messages stay unchanged. Existing copies are never overwritten.";
                 wrap: word-wrap; min-height: 30px; vertical-alignment: center; font-size: 12px; }
         }
-        if root.settings-warning != "": ScrollView {
-            preferred-height: min(80px, settings-text.preferred-height + 16px); min-height: 0px; vertical-stretch: 0;
-            content-width: self.visible-width; content-height: settings-text.preferred-height;
-            accessible-role: list; accessible-label: "Destination settings warning";
-            settings-text := Label { x: 20px; width: max(0px, parent.visible-width - 40px); height: self.preferred-height;
-                text: "Destination settings: " + root.settings-warning; wrap: word-wrap; }
+        if root.settings-warning != "": VerticalBox { padding: 12px; padding-top: 6px; padding-bottom: 6px; spacing: 4px; vertical-stretch: 0;
+            HorizontalBox { padding: 0px; spacing: 8px;
+                Label { text: "Settings unavailable — destination changes won't be saved"; color: root.attention-color; font-weight: 600; wrap: word-wrap; }
+                ActionButton { text: "Details…"; accessible-label: "Settings warning details"; clicked => { settings-popup.show(); } }
+            }
         }
         if root.operation-feedback != "": ScrollView {
             preferred-height: min(80px, operation-text.preferred-height + 8px); min-height: 0px; vertical-stretch: 0;
@@ -222,7 +225,7 @@ export component MainWindow inherits Window {
         }
         HorizontalBox { padding: 0px; spacing: 0px; vertical-stretch: 1;
             if root.show-sidebar: Rectangle { width: 210px; horizontal-stretch: 0; border-width: 1px; border-color: Palette.border;
-                VerticalBox { padding: 12px; spacing: 8px; alignment: start;
+                VerticalBox { padding: 12px; spacing: 8px;
                     if root.selection.length > 0: ActionButton { text: "Review selection (" + root.selection.length + ")"; accessible-label: "Review selection"; clicked => { root.review-selection(); } }
                     if root.runs.length > 0: Label { text: "Reports · " + root.runs.length + " of " + root.report-capacity; font-weight: 600; }
                     ListView { preferred-height: min(250px, root.runs.length * max(110px, root.ui-size * 7)); min-height: 0px; vertical-stretch: 0;
@@ -246,8 +249,9 @@ export component MainWindow inherits Window {
                         }
                     }
                     if root.waiting.length > 0: Label { text: "Waiting · " + root.waiting.length; font-weight: 600; }
-                    if root.waiting.length > 0: ListView { min-height: 0px; content-width: self.visible-width; accessible-role: list; accessible-label: "Waiting selections";
-                        for run[index] in root.waiting: VerticalBox { padding: 0px; spacing: 3px;
+                    if root.queue-notice != "": Label { text: "Paused — dismiss a report to continue."; wrap: word-wrap; min-height: max(36px, root.ui-size * 4); accessible-description: root.queue-notice; Tooltip { text: @markdown("\{root.queue-notice}"); } }
+                    if root.waiting.length > 0: ListView { preferred-height: min(280px, root.waiting.length * 140px); min-height: 64px; vertical-stretch: 1; content-width: self.visible-width; accessible-role: list; accessible-label: "Waiting selections";
+                        for run[index] in root.waiting: VerticalBox { height: max(140px, root.ui-size * 11); padding: 0px; spacing: 3px; alignment: start;
                             Label { text: run.label + " · " + run.mode; wrap: word-wrap; }
                             Label { text: run.destination; overflow: elide; Tooltip { text: @markdown("\{run.destination}"); } }
                             PathLabel { path: run.selection; }
@@ -255,10 +259,10 @@ export component MainWindow inherits Window {
                             ActionButton { text: "Remove from queue"; accessible-label: "Remove " + run.label; clicked => { root.remove-waiting(index); } }
                         }
                     }
+                    if root.waiting.length == 0: Rectangle { vertical-stretch: 1; }
                 }
             }
-            VerticalBox { padding: 12px; spacing: 8px;
-                if root.queue-notice != "": Label { text: root.queue-notice; wrap: word-wrap; }
+            VerticalBox { padding: 12px; padding-top: 8px; padding-bottom: 8px; spacing: 8px;
                 if !root.has-reports && root.selection.length == 0: VerticalBox { padding: 0px; alignment: center; spacing: 12px;
                     Label { text: "Choose messages to begin"; font-size: 18px; font-weight: 600; horizontal-alignment: center; }
                     Label { text: "Drop .eml files or a folder here."; horizontal-alignment: center; }
@@ -286,7 +290,7 @@ export component MainWindow inherits Window {
                     if !root.can-start: Label { text: root.start-reason; wrap: word-wrap; color: root.attention-color; }
                     Label { text: root.check-only ? "Check only. No copy will be created." : "Copies use name.no-attachments.eml. Original messages stay unchanged."; wrap: word-wrap; }
                 }
-                if root.has-reports && !root.reviewing: VerticalBox { padding: 0px; spacing: 8px;
+                if root.has-reports && !root.reviewing: VerticalBox { padding: 0px; spacing: 6px;
                     HorizontalBox { padding: 0px; vertical-stretch: 0;
                         VerticalBox { padding: 0px; spacing: 4px;
                             Label { text: root.run-label + " · " + root.run-status; color: root.run-attention ? root.attention-color : Palette.foreground; font-size: 17px; font-weight: 600; wrap: word-wrap; }
@@ -361,9 +365,9 @@ export component MainWindow inherits Window {
                             }
                             if root.details-expanded: VerticalBox { padding: 0px; spacing: 6px;
                             Label { text: "Source"; font-weight: 600; }
-                            PathLabel { path: root.item-source-path; text-size: root.ui-size; }
-                            if root.item-destination != "": Label { text: "Destination"; font-weight: 600; }
-                            if root.item-destination != "": PathLabel { path: root.item-destination-path; text-size: root.ui-size; }
+                            HorizontalBox { padding: 0px; PathLabel { path: root.item-source-path; text-size: root.ui-size; } ActionButton { text: "Copy path"; accessible-label: "Copy source path"; enabled: root.can-copy-source; clicked => { root.copy-source-path(); } } }
+                            if root.item-destination != "": Label { text: root.can-reveal ? "Reported copy path" : "Intended destination path"; font-weight: 600; }
+                            if root.item-destination != "": HorizontalBox { padding: 0px; PathLabel { path: root.item-destination-path; text-size: root.ui-size; } ActionButton { text: "Copy path"; accessible-label: "Copy destination path"; enabled: root.can-copy-destination; clicked => { root.copy-destination-path(); } } }
                             for count in root.byte-counts: Label { text: count.label + ": " + count.value; accessible-label: count.accessible; }
                             if root.removals.length > 0: Label { text: root.removal-heading; font-weight: 600; }
                             for part in root.removals: VerticalBox { padding: 0px; spacing: 2px;
@@ -380,7 +384,7 @@ export component MainWindow inherits Window {
             }
         }
         Rectangle { height: 1px; background: Palette.border; }
-        footer := HorizontalBox { padding-top: 14px; padding-bottom: 14px; padding-left: 20px; padding-right: 20px; spacing: 8px; vertical-stretch: 0; min-height: 60px;
+        footer := HorizontalBox { padding-top: 12px; padding-bottom: 12px; padding-left: 20px; padding-right: 20px; spacing: 8px; vertical-stretch: 0; min-height: 56px;
             if root.has-reports && !root.reviewing: ActionButton { text: "Dismiss report"; enabled: root.can-dismiss; accessible-label: self.text; clicked => { root.dismiss(); } }
             if root.reviewing: ActionButton { text: "Clear selection"; accessible-label: self.text; clicked => { root.clear-selection(); } }
             Label { text: root.activity-label != "" ? root.activity-label : (root.reviewing ? "Not started" : (root.has-reports ? root.run-status : "No messages selected")); wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
@@ -393,6 +397,21 @@ export component MainWindow inherits Window {
             if root.has-reports && !root.reviewing && root.can-create: ActionButton { text: "Create copies…"; enabled: root.selection.length == 0 && !root.closing; accessible-description: root.closing ? root.start-reason : root.selection.length > 0 ? "Finish or clear the current reviewed selection first." : "Review this Check’s paths before starting a new Create request."; accessible-label: "Create copies from this selection"; clicked => { root.create-copies(); } }
             if root.has-reports && !root.reviewing && !root.can-create: ActionButton { text: "Show copy"; enabled: root.can-reveal; accessible-label: self.text; clicked => { root.reveal(); }
                 Tooltip { text: root.can-reveal ? @markdown("Reveal the verified copy in the file manager.") : @markdown("No verified copy is available for the selected message."); }
+            }
+        }
+    }
+    settings-popup := PopupWindow {
+        width: min(720px, root.width - 40px); height: min(360px, root.height - 80px);
+        x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;
+        close-policy: close-on-click-outside;
+        Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border;
+            FocusScope { forward-focus: settings-details-text;
+                key-pressed(event) => { if event.text == Key.Escape { settings-popup.close(); return accept; } return reject; }
+                VerticalBox { padding: 20px; spacing: 12px;
+                    Label { text: "Destination settings"; font-weight: 600; }
+                    settings-details-text := TextEdit { text: root.settings-warning; read-only: true; accessible-label: "Settings error and recovery details"; }
+                    ActionButton { text: "Close"; accessible-label: "Close settings details"; clicked => { settings-popup.close(); } }
+                }
             }
         }
     }

@@ -150,16 +150,26 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
             .into(),
         status: if item.status == wire::ItemStatus::Failed
             && item.publication.state == wire::Publication::NotPublished
-            && item
-                .error
-                .value()
-                .is_some_and(|error| error.code == "DESTINATION_EXISTS")
         {
-            "Destination conflict"
+            item.error
+                .value()
+                .and_then(|error| match error.code.as_str() {
+                    "DESTINATION_EXISTS" | "DESTINATION_COLLISION" => Some("Destination conflict"),
+                    "MALFORMED" => Some("Malformed message"),
+                    "NO_BODY" => Some("No supported body"),
+                    "PROTECTED" => Some("Protected content"),
+                    "UNSUPPORTED_MIME" => Some("Unsupported content"),
+                    "READ_FAILED" => Some("Cannot read source"),
+                    "INTERRUPTED" => Some("Interrupted"),
+                    _ => None,
+                })
+                .unwrap_or_else(|| {
+                    meaning(item).map_or(MeaningKind::Unestablished.label(), |value| value.label())
+                })
         } else {
             meaning(item).map_or(MeaningKind::Unestablished.label(), |value| {
                 match value.kind {
-                    MeaningKind::Prepared => "Removal planned",
+                    MeaningKind::Prepared => "Copy planned",
                     MeaningKind::Comparison => "Verification planned",
                     _ => value.label(),
                 }

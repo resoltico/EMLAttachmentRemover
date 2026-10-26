@@ -369,7 +369,7 @@ fn create_after_check_sends_a_fresh_request_and_uses_the_current_destination() {
         .submit(vec![root.path().join("source.eml")])
         .unwrap();
     pump(&controller, || !controller.is_busy());
-    assert_eq!(ui.get_item_status().as_str(), "Removal planned");
+    assert_eq!(ui.get_item_status().as_str(), "Copy planned");
     assert!(ui.get_can_create());
     let unrelated = root.path().join("unrelated.eml");
     controller.stage(vec![unrelated.clone()]).unwrap();
@@ -1324,4 +1324,255 @@ fn empty_failed_filter_clears_the_inspector_and_all_messages_restores_it() {
     assert_eq!(ui.get_items().row_count(), 1);
     assert!(ui.get_has_item());
     assert_eq!(ui.get_selected_item(), 0);
+}
+
+#[test]
+fn paused_queue_renders_removal_and_settings_summary_survives_report_layout() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let prefs = root.path().join("preferences.json");
+    fs::write(&prefs, b"{broken owned settings").unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    c.submit(vec![root.path().join("one.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.submit(vec![root.path().join("two.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let queued = c.submit(vec![root.path().join("waiting.eml")]).unwrap();
+    let ui = c.window();
+    assert_eq!(ui.get_waiting().row_count(), 1);
+    for (width, height, font) in [
+        (1060.0, 760.0, 13.0),
+        (780.0, 600.0, 13.0),
+        (780.0, 600.0, 20.0),
+    ] {
+        ui.set_ui_size(font);
+        ui.window().set_size(slint::LogicalSize::new(width, height));
+        mock_elapsed_time(Duration::from_millis(5));
+        let warning = ElementHandle::find_by_accessible_label(
+            &ui,
+            "Settings unavailable — destination changes won't be saved",
+        )
+        .next()
+        .unwrap();
+        assert!(warning.size().height > 0.0 && warning.absolute_position().y >= 0.0);
+        assert!(warning.absolute_position().y + warning.size().height < height);
+        let footer = ElementHandle::find_by_accessible_label(&ui, "Dismiss report")
+            .next()
+            .unwrap();
+        assert!(
+            footer.absolute_position().y + footer.size().height <= height + 0.1,
+            "{font}: footer {:?} {:?}",
+            footer.absolute_position(),
+            footer.size()
+        );
+        let waiting = ElementHandle::find_by_accessible_label(&ui, "Waiting selections")
+            .next()
+            .unwrap();
+        assert!(
+            waiting.size().height >= 60.0,
+            "Waiting work must receive actual viewport space"
+        );
+        let label = format!("Remove Run {queued}");
+        for _ in 0..8 {
+            if ElementHandle::find_by_accessible_label(&ui, &label).any(|button| {
+                button.absolute_position().y >= waiting.absolute_position().y
+                    && button.absolute_position().y + button.size().height
+                        <= waiting.absolute_position().y + waiting.size().height + 0.1
+            }) {
+                break;
+            }
+            waiting.scroll(0.0, -waiting.size().height / 2.0);
+            mock_elapsed_time(Duration::from_millis(5));
+        }
+        let remove = ElementHandle::find_by_accessible_label(&ui, &label)
+            .next()
+            .unwrap();
+        assert!(remove.absolute_position().y >= waiting.absolute_position().y - 0.1);
+        assert!(
+            remove.absolute_position().y + remove.size().height
+                <= waiting.absolute_position().y + waiting.size().height + 0.1
+        );
+    }
+    click(&ui, "Settings warning details");
+    mock_elapsed_time(Duration::from_millis(5));
+    let details =
+        ElementHandle::find_by_accessible_label(&ui, "Settings error and recovery details")
+            .next()
+            .unwrap();
+    assert!(
+        details.size().height > 0.0
+            && details.absolute_position().y >= 0.0
+            && details.absolute_position().y + details.size().height <= 600.1
+    );
+    let footer = ElementHandle::find_by_accessible_label(&ui, "Dismiss report")
+        .next()
+        .unwrap();
+    assert!(
+        footer.absolute_position().y + footer.size().height <= 600.1,
+        "Opening warning details must not hide the action row"
+    );
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: slint::platform::Key::Escape.into(),
+        });
+    mock_elapsed_time(Duration::from_millis(5));
+    click(&ui, &format!("Remove Run {queued}"));
+    assert_eq!(ui.get_waiting().row_count(), 0);
+    assert!(!c.is_busy());
+    assert_eq!(fs::read(prefs).unwrap(), b"{broken owned settings");
+}
+
+#[test]
+fn export_naming_retries_exclusively_keeps_capture_and_rejects_stale_folder_choices() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    c.submit(vec![root.path().join("one.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.begin_export();
+    let window = c.export_window();
+    window.set_file_name("../escape.jsonl".into());
+    window.invoke_create_report();
+    assert!(!c.is_busy());
+    assert!(window.get_notice().contains("one file name"));
+    let stale = c.capture_export_folder().unwrap();
+    c.cancel_export();
+    c.begin_export();
+    let original_folder = window.get_directory();
+    c.set_export_directory(&stale, root.path().join("wrong"));
+    assert_eq!(window.get_directory(), original_folder);
+    let existing = root.path().join("existing.jsonl");
+    fs::write(&existing, b"preserved report").unwrap();
+    window.set_file_name("existing.jsonl".into());
+    window.invoke_create_report();
+    pump(&c, || !c.is_busy());
+    assert!(!window.get_busy());
+    assert!(window.get_notice().contains("never replaced"));
+    assert_eq!(fs::read(&existing).unwrap(), b"preserved report");
+    completed(root.path(), "created-attachment");
+    c.submit(vec![root.path().join("two.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    window.set_file_name("captured.jsonl".into());
+    window.invoke_create_report();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        fs::read_to_string(root.path().join("captured.jsonl")).unwrap(),
+        fixture("created")
+    );
+    c.begin_export();
+    let late = c.capture_export_folder().unwrap();
+    assert!(c.request_quit());
+    c.set_export_directory(&late, root.path().join("late"));
+    window.set_file_name("late.jsonl".into());
+    window.invoke_create_report();
+    assert!(!root.path().join("late.jsonl").exists());
+    assert!(!c.is_busy());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_raw_launch_is_rejected_before_ui_and_bundle_layout_is_admitted() {
+    let root = tempfile::tempdir().unwrap();
+    assert!(
+        eml_gui::platform::validate_launch(
+            &root.path().join("emlattachmentremover-gui"),
+            &root.path().join("emlattachmentremover")
+        )
+        .is_err()
+    );
+    let contents = root.path().join("EML Attachment Remover.app/Contents");
+    fs::create_dir_all(contents.join("MacOS")).unwrap();
+    fs::create_dir_all(contents.join("Helpers")).unwrap();
+    fs::write(contents.join("Info.plist"), b"owned fixture").unwrap();
+    let helper = contents.join("Helpers/emlattachmentremover");
+    fs::write(&helper, b"owned fixture").unwrap();
+    assert!(
+        eml_gui::platform::validate_launch(&contents.join("MacOS/EMLAttachmentRemover"), &helper)
+            .is_ok()
+    );
+}
+
+#[test]
+fn known_prepublication_causes_are_specific_and_published_failures_keep_qualification() {
+    init_no_event_loop();
+    for (code, phase, label) in [
+        ("MALFORMED", "prepare", "Malformed message"),
+        ("NO_BODY", "prepare", "No supported body"),
+        ("PROTECTED", "prepare", "Protected content"),
+        ("UNSUPPORTED_MIME", "prepare", "Unsupported content"),
+        ("INTERRUPTED", "prepare", "Interrupted"),
+        ("FUTURE_ERROR", "prepare", "No new copy published"),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let mut records: Vec<serde_json::Value> = fixture("prepublication-failure")
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        records[1]["error"]["code"] = code.into();
+        records[1]["error"]["phase"] = phase.into();
+        let stream = records
+            .iter()
+            .map(|record| format!("{record}\n"))
+            .collect::<String>();
+        let c = controller(
+            root.path(),
+            script(
+                root.path(),
+                &("cat >/dev/null\n".to_owned() + &print(&stream) + "exit 1\n"),
+            ),
+        );
+        c.submit(vec![root.path().join("source.eml")]).unwrap();
+        pump(&c, || !c.is_busy());
+        assert_eq!(c.window().get_item_status().as_str(), label, "{code}");
+        assert!(!c.window().get_can_reveal());
+    }
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "published-with-error"));
+    c.submit(vec![root.path().join("source.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        c.window().get_item_status().as_str(),
+        "Complete copy published; qualification incomplete"
+    );
+}
+
+#[test]
+fn copying_paths_uses_native_values_without_granting_unverified_reveal() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut records: Vec<serde_json::Value> = fixture("prepublication-failure")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let source = "/owned/日本語\n\u{202e}.eml";
+    let destination = "/owned/日本語\n\u{202e}.no-attachments.eml";
+    for (field, native) in [("source", source), ("destination", destination)] {
+        records[1][field]["display"] = eml_protocol::TerminalPath::new(Path::new(native))
+            .to_string()
+            .into();
+        records[1][field]["native"]["base64"] = STANDARD.encode(native.as_bytes()).into();
+    }
+    let stream = records
+        .iter()
+        .map(|record| format!("{record}\n"))
+        .collect::<String>();
+    let c = controller(
+        root.path(),
+        script(
+            root.path(),
+            &("cat >/dev/null\n".to_owned() + &print(&stream) + "exit 1\n"),
+        ),
+    );
+    c.submit(vec![root.path().join("source.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.selected_path(false).as_deref(), Some(Path::new(source)));
+    assert_eq!(
+        c.selected_path(true).as_deref(),
+        Some(Path::new(destination))
+    );
+    assert_ne!(c.window().get_item_source().as_str(), source);
+    assert!(c.window().get_can_copy_source() && c.window().get_can_copy_destination());
+    assert!(!c.window().get_can_reveal());
+    assert!(c.selected_copy().is_none());
 }

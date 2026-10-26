@@ -629,7 +629,13 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
                     (
                         SourceEntryKey {
                             parent: *parent,
-                            basename: name.to_owned(),
+                            basename: if origin == SourceOrigin::Explicit {
+                                self.context()
+                                    .entry_name(&native, *signature, *parent)
+                                    .unwrap_or_else(|| name.to_owned())
+                            } else {
+                                name.to_owned()
+                            },
                         },
                         *signature,
                     )
@@ -637,7 +643,12 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
             }
             _ => None,
         };
-        let hash = (self.hash)(native.file_name().unwrap_or(native.as_os_str()));
+        let hash = (self.hash)(
+            binding
+                .as_ref()
+                .map(|(key, _)| key.basename.as_os_str())
+                .unwrap_or_else(|| native.file_name().unwrap_or(native.as_os_str())),
+        );
         if !self.checkpoint() {
             return;
         }

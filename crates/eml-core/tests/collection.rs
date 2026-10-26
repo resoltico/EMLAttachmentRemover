@@ -557,3 +557,53 @@ fn actual_directory_entry_bound_accepts_exact_total_and_refuses_next_name() {
     drop(found);
     root.close().unwrap();
 }
+
+#[test]
+fn native_entry_spelling_coalesces_aliases_but_keeps_distinct_hard_link_names() {
+    let root = scratch();
+    let source = root.path().join("café.eml");
+    fs::write(&source, b"owned source").unwrap();
+    let decomposed = root.path().join("cafe\u{301}.eml");
+    let unicode_entries = if decomposed.exists() {
+        1
+    } else {
+        fs::hard_link(&source, &decomposed).unwrap();
+        2 // A case/normalization-sensitive filesystem has two actual leaf names.
+    };
+    fs::hard_link(&source, root.path().join("distinct.eml")).unwrap();
+    let req = request(
+        root.path(),
+        &["café.eml", "cafe\u{301}.eml", "café.eml", "distinct.eml"],
+    );
+    let found = collect_sources(&req, &RunControl::default()).unwrap();
+    assert_eq!(found.items().len(), unicode_entries + 1);
+    fs::write(root.path().join("Mixed.EML"), b"case source").unwrap();
+    let lower = root.path().join("mixed.eml");
+    let case_entries = if lower.exists() {
+        1
+    } else {
+        fs::hard_link(root.path().join("Mixed.EML"), &lower).unwrap();
+        2
+    };
+    let req = request(root.path(), &["Mixed.EML", "mixed.eml"]);
+    assert_eq!(
+        collect_sources(&req, &RunControl::default())
+            .unwrap()
+            .items()
+            .len(),
+        case_entries
+    );
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink("café.eml", root.path().join("link.eml")).unwrap();
+        let req = request(root.path(), &["café.eml", "link.eml"]);
+        assert_eq!(
+            collect_sources(&req, &RunControl::default())
+                .unwrap()
+                .items()
+                .len(),
+            2,
+            "A distinct symlink leaf is not the same directory entry as its target"
+        );
+    }
+}

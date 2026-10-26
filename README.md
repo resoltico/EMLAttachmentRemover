@@ -65,7 +65,8 @@ and reported cleanup failures before retrying. Recognizable staging files use
 Add files or folders with the buttons, window drops or launch arguments. These
 paths enter a review selection; no worker starts until **Create copies** or
 **Check selection** is pressed in the footer. Exact duplicate paths appear once.
-Folders are scanned only after Start, so selection counts are not message counts.
+Collection coalesces proven native aliases of the same directory entry; distinct
+hard-link names remain separate. Folders are scanned only after Start, so selection counts are not message counts.
 Remove individual selections or Clear selection before starting.
 
 Choose Create copies or Check only and the destination in **Next request**. Check
@@ -73,7 +74,8 @@ also verifies the chosen destination without writing copies. **Change…** offer
 Beside originals or an existing output folder. Start captures the current paths,
 mode and destination; changes afterwards do not alter active or queued requests.
 Up to eight requests wait behind the active run. Two retained reports pause the
-queue until a completed report is dismissed. Queue refusals retain the reviewed
+queue until a completed report is dismissed. Waiting requests have their own
+scrollable sidebar list and **Remove from queue** action. Queue refusals retain the reviewed
 selection. A settled Check's **Create copies…** returns its paths to review in
 Create mode; it does not write until Start is pressed again. Finish or clear any
 other reviewed selection first; Check-to-Create never merges unrelated paths.
@@ -88,7 +90,8 @@ Paths, removal metadata and byte counts expand under **Paths, parts and technica
 Toggle **Failed only** off to restore the list. Up/Down/Home/End move through visible messages
 and reveal the selected row. **File → Open files…** uses Cmd-O on macOS (Ctrl-O
 on other desktops); **File → Add folder…** opens folder selection. Long filenames retain their distinguishing suffixes, with
-full paths in tooltips and accessibility text. Report-export feedback is separate
+full paths in tooltips and accessibility text. Expanded metadata offers **Copy path**
+for the source and intended destination; it copies the native path, not escaped display text. Report-export feedback is separate
 from retained run warnings. **Dismiss report** removes the report from this
 session, never the original messages or copies.
 
@@ -103,8 +106,10 @@ Waiting requests also require a Quit decision; they are not silently discarded.
 Once shutdown is confirmed, further Quit requests do not reopen the decision,
 and new selections or late file-dialog submissions cannot start more work. **Save JSONL report…** writes
 the run's original protocol-1 stream captured when Save is clicked, including
-partial results after failure. Navigating to another report while choosing the
-filename does not change the captured export.
+partial results after failure. **Export new report** captures that run, offers a native
+folder chooser and a file name, then **Create report** writes exclusively. Existing
+names are refused inline so you can correct the name without reopening the flow;
+there is no Replace action. Navigating between reports does not retarget this draft.
 **Show copy** is available only for a verified copy receipt.
 
 On macOS, open **EML Attachment Remover → About EML Attachment Remover** in the
@@ -114,6 +119,10 @@ Slint layout as Auditory Lab: the application icon, version/build, two purpose
 lines, copyright, Project website and Licenses, then AboutSlint. Licenses shows
 read-only software/artwork terms with a separate third-party notices action.
 Escape closes either auxiliary window.
+
+A persistent **Settings unavailable** summary means destination changes are session-only.
+**Details…** opens the preserved cause, path and recovery in a bounded popup.
+The summary remains visible in review and report views.
 
 Saved destinations use the platform configuration folder's
 `EMLAttachmentRemover/preferences.json`. Earlier NSUserDefaults settings are not

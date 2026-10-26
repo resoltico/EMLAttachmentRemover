@@ -16,11 +16,23 @@ Tools with the native x64 or ARM64 MSVC tools. CI builds a static CRT.
 ```sh
 cargo build --locked -p emlattachmentremover
 cargo test --locked --workspace
-cargo run --locked -p eml-gui --features desktop --bin emlattachmentremover-gui
 ```
 
-The desktop development command applies to macOS and Linux. Distributed desktop
-apps currently target macOS. On Windows, exclude `eml-app` and `eml-gui` from
+For a native GUI on macOS, build and open the actual app bundle so OS identity,
+resources and the helper CLI use their supported layout:
+
+```sh
+cargo xtask dist --app --out target/desktop
+mkdir -p target/desktop/app
+ditto -x -k target/desktop/emlattachmentremover-gui-*-macos-universal.zip target/desktop/app
+open "target/desktop/app/EML Attachment Remover.app"
+```
+
+Use a fresh output directory on subsequent distributions. The bare Cargo GUI
+executable is not a supported launch path and fails before opening a window when
+its macOS bundle/helper context is missing. Cross-platform GUI library/testing
+backend development is available; distributed native GUI apps currently target
+macOS, and native GUI packaging on other platforms remains planned. On Windows, exclude `eml-app` and `eml-gui` from
 workspace commands and use `--target` with your native MSVC triple so host
 procedural macros are built independently of static-CRT target flags.
 

@@ -156,30 +156,74 @@ pub fn install_native(
         let Some(controller) = weak.upgrade() else {
             return;
         };
-        let Some(source) = controller.capture_export() else {
+        controller.begin_export();
+    });
+    let weak = Rc::downgrade(controller);
+    controller.export_window().on_choose_directory(move || {
+        let Some(controller) = weak.upgrade() else {
             return;
         };
-        let ui = controller.window();
+        let Some(request) = controller.capture_export_folder() else {
+            return;
+        };
+        let export = controller.export_window();
         let _ = slint::spawn_local(async move {
-            // rfd needs both native handle traits; keep the winit owner alive.
-            let parent = match ui.window().winit_window().await {
+            let parent = match export.window().winit_window().await {
                 Ok(parent) => parent,
                 Err(error) => {
-                    controller.message(&error.to_string());
+                    controller.export_notice(&request, &error.to_string());
                     return;
                 }
             };
-            if let Some(file) = rfd::AsyncFileDialog::new()
+            if let Some(folder) = rfd::AsyncFileDialog::new()
                 .set_parent(parent.as_ref())
-                .set_file_name(format!("eml-run-{}.jsonl", source.run_id()))
-                .add_filter("JSON Lines", &["jsonl"])
-                .save_file()
+                .pick_folder()
                 .await
             {
-                controller.start_captured_export(source, file.path().to_owned());
+                controller.set_export_directory(&request, folder.path().to_owned());
             }
         });
     });
+    // Keep clipboard ownership alive for backends that serve requests asynchronously.
+    let clipboard = Rc::new(std::cell::RefCell::new(None::<arboard::Clipboard>));
+    for destination in [false, true] {
+        let clipboard = clipboard.clone();
+        let weak = Rc::downgrade(controller);
+        let copy = move || {
+            let Some(controller) = weak.upgrade() else {
+                return;
+            };
+            let Some(path) = controller
+                .selected_path(destination)
+                .and_then(|p| p.into_os_string().into_string().ok())
+            else {
+                return;
+            };
+            let result = (|| {
+                let mut context = clipboard.borrow_mut();
+                if context.is_none() {
+                    *context = Some(arboard::Clipboard::new()?);
+                }
+                context
+                    .as_mut()
+                    .expect("clipboard initialized")
+                    .set_text(path)
+            })();
+            match result {
+                Ok(()) => controller.message(if destination {
+                    "Destination path copied."
+                } else {
+                    "Source path copied."
+                }),
+                Err(error) => controller.message(&format!("Cannot copy path: {error}")),
+            }
+        };
+        if destination {
+            ui.on_copy_destination_path(copy);
+        } else {
+            ui.on_copy_source_path(copy);
+        }
+    }
     let weak = Rc::downgrade(controller);
     ui.on_reveal(move || {
         if let Some(controller) = weak.upgrade()

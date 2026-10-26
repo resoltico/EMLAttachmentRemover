@@ -4,6 +4,13 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+- Fixed native filename aliases becoming duplicate work, invisible queued-request
+  controls and settings warnings that vanished in report view. Report export now
+  uses a no-replace naming flow with inline correction, captured report ownership
+  and stale-dialog guards. Copy paths use native values; planning/failure labels
+  are specific and preserve publication qualifications. Native GUI launch now
+  requires its supported macOS app/helper layout and uses the product bundle name.
+
 - The desktop inspector has an explicit boundary and places failure causes and
   recovery before collapsed path metadata. Compact whole-card reports, typed
   conflict/planning labels, a failed-message filter, arrow/Home/End navigation

@@ -125,6 +125,31 @@ impl WorkingContext {
         }
         Ok(observed.identity)
     }
+    /// Use a native leaf spelling only when it proves the same captured entry.
+    /// Failure leaves spelling conservative: long/unreadable paths gain no new error.
+    pub(super) fn entry_name(
+        &self,
+        expression: &Path,
+        signature: crate::fs::FileSignature,
+        parent: crate::fs::Identity,
+    ) -> Option<std::ffi::OsString> {
+        let operand = self.operand(expression, Path::new("")).ok()?;
+        if self.cwd.observe_entry(&operand).ok()?.kind != EntryKind::File {
+            return None;
+        }
+        let absolute = if operand.is_absolute() {
+            operand
+        } else {
+            self.cwd.requested_path().join(operand)
+        };
+        let canonical = std::fs::canonicalize(absolute).ok()?;
+        if self.parent_identity(&canonical).ok()? != parent
+            || self.observe(&canonical).ok()?.file != Some(signature)
+        {
+            return None;
+        }
+        canonical.file_name().map(std::ffi::OsStr::to_owned)
+    }
     pub(super) fn check_working_address(&self) -> io::Result<bool> {
         #[cfg(unix)]
         {
