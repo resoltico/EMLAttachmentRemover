@@ -26,6 +26,7 @@ Use concise bullets without category labels or subheadings, grouping related cha
 - Reports expose failure causes and recovery before expandable metadata; failed-only filtering and keyboard navigation preserve result identity and complete exports.
 - Native filename aliases coalesce only when they identify the same directory entry; distinct hard-link names remain separate work items.
 - Queued requests can be removed; settings warnings remain visible across report views. Quit decisions cover waiting work and reject late selections and dialog callbacks.
+- Successful-report inspectors leave room for queue controls and footer actions at the minimum window size with enlarged text; attention states retain extra explanatory space.
 - Report export captures the selected run and refuses existing names inline. Switching reports or completing a stale folder dialog cannot retarget the export.
 - Long filenames keep distinguishing suffixes and full accessible paths. Copy path uses native values; Show copy requires a verified receipt.
 - About uses the standard macOS application menu; software/artwork terms have a dedicated window. Native GUI launch requires the app bundle and its helper layout.

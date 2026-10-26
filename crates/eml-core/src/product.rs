@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Distributed product revision. Increase before distributing changed binaries;
 /// never increment during compilation or reset on a release-version change.
-pub const BUILD_NUMBER: u16 = checked_build_number(43);
+pub const BUILD_NUMBER: u16 = checked_build_number(44);
 const fn checked_build_number(value: u16) -> u16 {
     assert!(
         value > 0 && value <= 9999,
