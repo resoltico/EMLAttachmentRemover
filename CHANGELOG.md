@@ -8,6 +8,8 @@ Use concise bullets without category labels or subheadings, grouping related cha
 
 ## [7.0.0] - 2026-10-26
 
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v7.0.0).
+
 - Rename the CLI to `emlattachmentremover` with no old-name alias; update scripts that invoke `remove-eml-attachments`.
 - Protocol-1 `program` now identifies `emlattachmentremover`; update consumers that validate CLI identity. Event shapes and exit codes are unchanged.
 - Download names use the new command prefix; macOS CLI and app archives are universal. See [installation](README.md#install).
@@ -282,7 +284,7 @@ This tagged candidate's release workflow stopped before asset publication; its c
 
 - First public release.
 
-[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v6.0.0...HEAD
+[Unreleased]: https://github.com/resoltico/EMLAttachmentRemover/compare/v7.0.0...HEAD
 [6.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v5.0.0...v6.0.0
 [5.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/resoltico/EMLAttachmentRemover/compare/v3.0.6...v4.0.0
