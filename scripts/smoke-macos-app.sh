@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Release floor smoke for the macOS app: no UI automation.
 # Proves: the bundle verifies (ad hoc), contains both CPU slices, launches on
-# this OS, accepts input paths as launch arguments and produces one copy per
-# input, then quits on an idle Quit request.
+# this OS with launch operands and quits on an idle Quit request without writing.
+# The bundled CLI helper produces verified copies; desktop Start is tested through
+# Slint and the manual release checklist.
 # Usage: smoke-macos-app.sh APP_BUNDLE FIXTURE.eml [expected_archs]
 set -euo pipefail
 app=$(cd "$1" && pwd)
@@ -34,15 +35,9 @@ cp "${fixture}" "${work}/two.eml"
 open -n -a "${app}" --args "${work}/one.eml" "${work}/two.eml"
 
 deadline=$((SECONDS + 90))
-while :; do
-  copies=$(find "${work}" -maxdepth 1 -name '*.no-attachments.eml' | wc -l | tr -d ' ')
-  [[ "${copies}" -eq 2 ]] && break
-  [[ "${SECONDS}" -lt "${deadline}" ]] || { echo "expected 2 copies, found ${copies}" >&2; ls -la "${work}" >&2; exit 1; }
+until pgrep -f "${app}/Contents/MacOS/${executable}" >/dev/null; do
+  [[ "${SECONDS}" -lt "${deadline}" ]] || { echo "app did not launch" >&2; exit 1; }
   sleep 1
-done
-for original in "${work}/one.eml" "${work}/two.eml"; do
-  cmp -s "${golden}" "${original%.eml}.no-attachments.eml" || { echo "copy differs from golden" >&2; exit 1; }
-  cmp -s "${fixture}" "${original}" || { echo "an original changed: ${original}" >&2; exit 1; }
 done
 
 osascript -e "tell application id \"${bundle_id}\" to quit"
@@ -50,6 +45,15 @@ deadline=$((SECONDS + 30))
 while pgrep -f "${app}/Contents/MacOS/${executable}" >/dev/null; do
   [[ "${SECONDS}" -lt "${deadline}" ]] || { echo "app did not quit" >&2; exit 1; }
   sleep 1
+done
+for original in "${work}/one.eml" "${work}/two.eml"; do
+  [[ ! -e "${original%.eml}.no-attachments.eml" ]] || { echo "app wrote a copy without Start" >&2; exit 1; }
+  cmp -s "${fixture}" "${original}" || { echo "an original changed: ${original}" >&2; exit 1; }
+done
+"${app}/Contents/Helpers/emlattachmentremover" -- "${work}/one.eml" "${work}/two.eml"
+for original in "${work}/one.eml" "${work}/two.eml"; do
+  cmp -s "${golden}" "${original%.eml}.no-attachments.eml" || { echo "helper copy differs from golden" >&2; exit 1; }
+  cmp -s "${fixture}" "${original}" || { echo "an original changed: ${original}" >&2; exit 1; }
 done
 os_version=$(sw_vers -productVersion)
 architecture=$(uname -m)

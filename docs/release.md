@@ -21,22 +21,25 @@ Use a fresh output folder. The CLI archive is flat: executable, LICENSE and
 THIRD-PARTY-NOTICES.txt. The app ZIP contains `EML Attachment Remover.app`, with
 GUI executable `Contents/MacOS/EMLAttachmentRemover`, public CLI helper
 `Contents/Helpers/emlattachmentremover`, and icon/notices/LICENSE in Resources.
-The GUI Cargo target is `emlattachmentremover-gui`; the bundle name, executable
-and ID retain their public identity. There are no Services/document declarations
-or Assets.car. The icon is the committed complete ICNS; re-exporting its editable
+The GUI Cargo target is `emlattachmentremover-gui`; the bundle identifier is
+`io.github.resoltico.emlattachmentremover`. The bundle has no Services/document
+declarations or Assets.car. The icon is the committed complete ICNS; re-exporting its editable
 source is an artwork-maintenance task, described in
-[ARTWORK.md](../artwork/ARTWORK.md).
+[artwork guide](../artwork/README.md).
 
 Both Mac executables contain arm64 and x86_64 slices with deployment minimum 15.0.
 The helper is ad hoc signed first, then the bundle, followed by deep strict
-signature verification. Archive timestamps use the built commit's UTC timestamp
-(the SOURCE_DATE_EPOCH value); ZIP timestamps round down to two-second precision.
+signature verification. Archive timestamps use the `HEAD` commit's UTC committer
+time from Git; ZIP timestamps round down to two-second precision. Commit intended
+release inputs before building so that timestamp and source revision agree.
 
 Linux x86_64/aarch64 CLI builds use Ubuntu 22.04 and tar.gz. Windows x86_64/aarch64
-CLI builds use native MSVC with static CRT and ZIP. Run
-`cargo xtask dist --cli --target <native-triple> --out <fresh-folder>` on those
-hosts. Each archive includes notices for its selected normal/build dependency
-graph and Rust standard-library material. App notices cover both executables and
+CLI builds use native MSVC with static CRT and ZIP. On Linux run
+`cargo xtask dist --cli --target <native-triple> --out <fresh-folder>`. On Windows
+run `cargo run --locked -p xtask --target <native-triple> -- dist --cli --target <native-triple> --out <fresh-folder>`
+so host procedural macros are built separately from static-CRT target flags.
+Each archive includes notices for its selected normal/build dependency graph and
+Rust standard-library material. App notices cover both executables and
 both CPU slices, with required upstream supplements. See
 [legal materials](../legal/README.md).
 
@@ -46,21 +49,30 @@ The [release workflow](../.github/workflows/release.yml) builds archives once,
 smokes those exact bytes, and runs the universal CLI/app on macos-15 and
 macos-15-intel. CLI smoke compares every MIME fixture with its golden bytes or
 expected refusal and checks original bytes. App smoke verifies signatures and CPU
-slices, launches two paths, compares their copies with a golden, then requests
-idle Quit. It does not automate Finder, Dock, file dialogs or other OS UI.
+slices, launches with two selected paths and requests idle Quit without writing
+copies. It then invokes the bundled CLI helper and compares copies with a golden. It does not automate Finder, Dock, file dialogs or other OS UI.
 
 A branch `workflow_dispatch` builds, smokes and uploads archives and SHA256SUMS.
-It skips attestation and draft-release creation. On an existing `v*` tag, successful
+Producer archives and CLI extraction folders use runner-temporary directories
+outside restored Cargo caches. A branch run skips attestation and draft-release
+creation. On an existing `v*` tag, successful
 build/floor jobs also attest artifacts and create a draft GitHub release using
-`--verify-tag`. The workflow never creates tags. Publishing the draft is an owner
-action. Caches restore on producers; only main can save caches.
+`--verify-tag`. Draft notes come from the dated `CHANGELOG.md` entry matching the
+tag version in the checked-out release commit, passed through `--notes-file`.
+A missing, duplicate, undated or whitespace-only entry fails before attestation
+or draft creation. The workflow never creates tags. Publishing the draft is an
+owner action. Caches restore on producers; only main can save caches.
 
 Before the owner tags or publishes:
 
-1. Confirm the intended source, version, build number and consolidated changelog.
+1. Confirm the intended source, version, build number and release notes.
+   Move the reviewed `Unreleased` bullets into `## [VERSION] - YYYY-MM-DD`, leaving
+   an empty `Unreleased` section above it. Commit that entry before creating the
+   matching `vVERSION` tag; tag annotations do not supply the release notes.
    Review the final PR's native CI and both macOS floor-smoke results.
 2. On Intel and Apple Silicon, manually check real window drag delivery, native
-   file/folder dialogs and destination selection, keyboard navigation, appearance,
+   file/folder dialogs, selection review, explicit Start and destination selection,
+   keyboard navigation, appearance,
    AboutSlint, Stop/Force Stop, busy Quit and technical report export. Check
    non-Unicode/long paths and a realistic mailbox selection where practical.
 3. Review the software-renderer screenshots and retained upstream license texts.

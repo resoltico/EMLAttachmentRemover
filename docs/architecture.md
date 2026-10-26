@@ -1,7 +1,7 @@
 # Architecture
 
-The core owns MIME policy, collection, destinations, execution facts and human
-outcome vocabulary. Frontends adapt inputs and render those facts.
+The business libraries own MIME policy, collection, destinations, execution facts
+and human outcome vocabulary. Frontends adapt inputs and render those facts.
 
 | Crate | Responsibility |
 |---|---|
@@ -10,7 +10,7 @@ outcome vocabulary. Frontends adapt inputs and render those facts.
 | `eml-protocol` | Strict protocol-1 request decoding, native path encoding, typed JSONL events and bounded checked output |
 | `emlattachmentremover` | Public CLI arguments, request transport, signals and human/JSON sinks |
 | `eml-app` | Immutable queued requests, bounded report reducer and std child-process supervision |
-| `eml-gui` | Slint view/controller, desktop ingress, configuration and the small macOS Quit shim |
+| `eml-gui` | Slint view/controller, desktop ingress, configuration and the macOS About/Quit adapters |
 | `xtask` | Distribution archives, notices and the local merge gate |
 
 `eml-message` has no filesystem or platform dependency. Fuzzing targets that crate;
@@ -24,6 +24,10 @@ manifest owns the release version.
 The caller captures an absolute working directory once. Validation checks native
 resource limits before I/O. Collection observes selected files and directory roots,
 coalesces proven identities, sorts native names and retains failures as known work.
+Explicit ordinary leaf names use a canonical spelling only when canonical parent
+identity and complete file signature prove the same captured entry. Unproven or
+long-path canonicalization retains conservative spelling without a new admission
+error; final symlink entries and distinct hard-link names are not merged by inode.
 Explicit files take precedence; the deepest selected root owns a walked file.
 Selected directory aliases can be followed; links encountered during a walk are
 excluded. Destination links and reparse edges are refused.
@@ -67,22 +71,31 @@ See the [threat model](threat-model.md) for the supported environment.
 
 ## Desktop boundary
 
-The desktop runs the public CLI from `Contents/Helpers`, never PATH. Each selection
-captures absolute paths, destination and mode in a protocol request. At most eight
+The desktop runs the public CLI from `Contents/Helpers`, never PATH. Native ingress stages absolute paths without starting a worker. Explicit Start
+captures the reviewed selection, current destination and mode in a protocol request. At most eight
 requests wait, and two retained reports reserve display capacity. A serial worker
 runs one request at a time; dismissing a completed report releases capacity.
 
 `WorkerRun` owns `std::process::Child`; background threads write/close stdin and
-drain stdout/stderr. The UI polls without blocking. Stop sends SIGINT once; Force
+drain stdout/stderr. The UI polls without blocking. Derived Slint rows update in place, preserving
+controls and keyboard focus across selection and append-only result updates. Stop sends SIGINT once; Force
 Stop kills the child; completion includes reaping and reader settlement. Partial
 accepted records survive malformed tails and worker failures. Exports write the
-exact retained stream to a new file in a background thread. Busy Quit waits for
+exact retained stream to a new file in a background thread. An export draft owns
+captured immutable bytes independently of report navigation; its folder-picker
+lifetime token rejects callbacks for a cancelled/replaced draft. Name collisions
+stay in the application-owned naming window; the native folder chooser never
+offers an overwrite policy the backend cannot honor. Busy Quit waits for
 worker/export settlement or follows the user's confirmed stop choice.
 
-Slint view data comes from the shared vocabulary. Headless tests drive accessible
+Slint qualifications come from the shared vocabulary; desktop-only concise
+planning/conflict labels retain those facts. Filtered rows carry original report
+offsets (not potentially sparse wire indexes), so navigation and reveal keep the
+same item identity. Filtering never changes the retained stream used for export. Headless tests drive accessible
 actions through Slint's testing backend and mock time. Native ingress delivers
 launch arguments, batches window drops with a zero-delay timer, and parents rfd
-asynchronous dialogs to the retained window. Only the small macOS Quit shim uses
-unsafe Objective-C calls. Dock/Finder/Services integration and private worker
-protocols are removed. The software renderer is the default; Skia remains an
+asynchronous dialogs to the retained window. Only the small macOS application-menu About and Quit adapters use
+unsafe Objective-C calls. The About adapter routes the focused window’s standard
+application-menu item to the application-owned Slint About window; it does not
+modify or fork the toolkit. The worker uses the public protocol-1 CLI. The software renderer is the default; Skia remains an
 explicit build feature for measurement. Builds use upstream crates without forks.

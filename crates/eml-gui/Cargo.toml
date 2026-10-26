@@ -10,7 +10,7 @@ publish.workspace = true
 default = ["renderer-software"]
 renderer-software = ["slint/renderer-software"]
 renderer-skia = ["slint/renderer-skia"]
-desktop = ["slint/backend-winit", "slint/raw-window-handle-06", "slint/unstable-winit-030", "dep:rfd", "dep:opener", "dep:objc2", "dep:objc2-app-kit"]
+desktop = ["slint/backend-winit", "slint/raw-window-handle-06", "slint/unstable-winit-030", "dep:rfd", "dep:opener", "dep:arboard", "dep:objc2", "dep:objc2-app-kit"]
 
 [dependencies]
 eml-app = { path = "../eml-app" }
@@ -23,13 +23,14 @@ base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
-dirs = "6.0.0"
+dirs = "7.0.0"
 rfd = { version = "0.17.2", optional = true }
-opener = { version = "0.8.5", features = ["reveal"], optional = true }
+arboard = { version = "=3.7.0", default-features = false, optional = true }
+opener = { version = "0.9.0", features = ["reveal"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6.5", optional = true }
-objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSApplication"] }
+objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSApplication", "NSMenu", "NSMenuItem"] }
 
 [build-dependencies]
 slint-build = { version = "=1.18.1", default-features = false, features = ["compat-1-18"] }

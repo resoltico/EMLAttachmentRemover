@@ -2,9 +2,16 @@
 #![deny(unsafe_code)]
 use eml_gui::{DesktopController, ingress, platform, preferences::Preferences};
 use slint::ComponentHandle;
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("{}: {error}", eml_core::product::DISPLAY_NAME);
+        std::process::exit(1);
+    }
+}
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let executable = std::env::current_exe()?;
     let cli = eml_app::bundled_cli(&executable)?;
+    platform::validate_launch(&executable, &cli)?;
     let home = dirs::home_dir().ok_or("Cannot locate your home folder")?;
     let preferences = Preferences::load(Preferences::default_path()?);
     let controller = DesktopController::new(cli, home, preferences)?;
@@ -14,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ingress::install_native(&controller)?;
     let paths = ingress::launch_paths(std::env::args_os().skip(1), &std::env::current_dir()?)?;
     if !paths.is_empty()
-        && let Err(error) = controller.enqueue(paths)
+        && let Err(error) = controller.stage(paths)
     {
         controller.message(&error.to_string());
     }

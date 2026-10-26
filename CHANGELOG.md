@@ -1,26 +1,46 @@
 # Changelog
 
-Notable changes to this project are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+`Unreleased` summarizes implemented changes intended for the next release, including relevant uncommitted work, cumulatively against the preceding published non-prerelease version; the first release describes implemented scope. Verify actual publication rather than inferring it from headings, tags or workflow status; public prereleases do not reset this baseline. Check claims and material omissions against implementation, contracts, tests and documentation; commits and plans are leads. Describe consequences for users, operators, integrators or contributors, preserving material compatibility effects, limitations and required action, including for prerelease users. Exclude development chronology, superseded changes and verification logs.
+
+Use concise bullets without category labels or subheadings, grouping related changes and putting breaking changes and required actions first. Each bullet occupies one physical line, at most 200 characters including Markdown but excluding its `- ` marker: a ceiling, not a target. Shorten or split without losing material consequences. Use technical names when helpful; link to existing relevant documentation, without assuming paths or creating documents merely to satisfy this rule. Keep `## [Unreleased]` above dated `## [version] - YYYY-MM-DD` headings, newest first; retain existing release-note links. This file is authoritative for release summaries and their writing rules; derive published summaries from it and leave unrelated history unchanged. Review accuracy, completeness, duplication, compatibility and format; report unresolved evidence gaps outside this file and run applicable existing checks. Versioning, dating and publication require release authorization.
 
 ## [Unreleased]
 
-## [7.0.0] - Unreleased
-
-### Changed
-
-- **Breaking command and download names:** `emlattachmentremover` replaces `remove-eml-attachments`, without an alias. macOS CLI archives are universal tar.gz files; the universal app is `emlattachmentremover-gui-VERSION-macos-universal.zip`. Linux CLI downloads use tar.gz and Windows downloads use ZIP. Windows builds now use `*-pc-windows-msvc` with a static CRT. See [installation](README.md#install).
-- **Breaking desktop integration changes:** the app runs the bundled public CLI through protocol 1. The private worker/control protocol, Dock-icon drop, Finder Services and Finder Open With integration are removed. Use the window's selection controls, window drop or explicit launch arguments. Native dialog clipboard behavior can differ. Saved destinations reset because NSUserDefaults preferences are no longer imported; choose the destination again. Unreadable/corrupt settings are preserved and the app remains usable with defaults, an actionable path-specific warning and session-only destination changes.
-- The desktop presents typed run/item counts, removal details and diagnostics using the core's shared vocabulary. Run-level discovery failures and each report's stderr/incomplete-result warnings remain visible independently of export feedback. Filename-first rows retain distinguishing suffixes with full-path tooltips and accessibility text. Check and Create are separate queued requests; Create after Check repeats admission with the current destination. Busy Quit offers Wait, Stop & Quit and confirmed Force Stop & Quit, and waits for worker/export settlement. **Technical report export now saves the original protocol-1 JSONL stream**, including partial output after failure, instead of an app-owned report document.
-- Valid non-inline extension dispositions are removed as whole non-body entities, just like attachments. Retained-body `multipart/report` is refused with `UNSUPPORTED_MIME`; attached or nonselected related reports can be removed whole. Plain-text/HTML payload bytes remain unchanged and retained HTML is not sanitized. See [MIME behavior](docs/mime.md).
-- Collection uses deterministic source ownership and preflights all known destination contenders, including file/mirrored-folder conflicts and existing object aliases. Copy names remain `<stem>.no-attachments.eml`, with existing root/relative layout; conflicts are refused without route tokens, counters or digest filenames.
-- Filesystem execution targets ordinary user-owned folders. Sources remain read-only, existing destinations stay intact, and complete verified staging files publish without replacement. Recognizable staging residue can remain after force kill or crash and is never automatically swept. Hostile local namespace/ACL races are outside the [threat model](docs/threat-model.md); reported publication, synchronization, address and cleanup facts remain separate.
-- **Contributor requirements:** full Xcode is no longer required to build the app. Command Line Tools suffice on macOS; upstream Slint/winit/Parley replace repository forks. The software renderer is the default. Standard Cargo tools, headless Slint tests and native CLI tests replace OS UI qualification and evidence machinery. See [contributor setup](CONTRIBUTING.md).
-
-### Internal
-
-- Distribution, notices and host verification use `cargo xtask dist`, `notices` and `ci`. Native CI covers macOS, Linux x86_64/aarch64 and Windows MSVC x86_64/aarch64; release checks smoke exact universal archives on both macOS 15 CPU hosts. The merge gate enforces a harness smaller than product code. License notices include the selected Rust sysroot and required upstream legal supplements.
+- Rename the CLI to `emlattachmentremover` with no old-name alias; update scripts that invoke `remove-eml-attachments`.
+- Protocol-1 `program` now identifies `emlattachmentremover`; update consumers that validate CLI identity. Event shapes and exit codes are unchanged.
+- Download names use the new command prefix; macOS CLI and app archives are universal. See [installation](README.md#install).
+- Windows CLI builds switch to native MSVC with a static CRT; Linux CLI archives remain tar.gz and Windows archives remain ZIP.
+- The desktop uses the bundled public CLI instead of the private worker/control protocol; integrations must use [protocol 1](docs/protocol.md).
+- Dock-icon drops, Finder Services and Open With integration are removed. Use window drops, selection buttons or launch arguments.
+- Technical report export changes from an app-owned JSON document to the original protocol-1 JSONL stream, including partial output after failure.
+- Saved NSUserDefaults destinations are not imported into JSON preferences; choose the destination again.
+- Corrupt or unreadable preferences are preserved. The app starts with defaults and recovery guidance; destination changes stay session-only until recovery and restart.
+- Ordinary non-root entities with valid non-inline dispositions, including extension tokens, are removed whole without parsing their interiors.
+- Body-context `multipart/report` is refused with `UNSUPPORTED_MIME`; attached and nonselected related reports can be removed whole. Retained HTML is not sanitized. See [MIME policy](docs/mime.md).
+- Filesystem protection assumes stable user-owned folders. POSIX owner/mode/ACL admission is removed; hostile local actors are outside the [scope](docs/threat-model.md).
+- Staging uses `.emlattachmentremover-<random>.tmp` files. A crash or forced stop can leave residue; inspect it after processing settles. Abandoned files are never swept.
+- Library integrations must adapt to removed platform/worker crates and revised APIs; pure MIME preparation lives in `eml-message`, filesystem execution in `eml-core`.
+- Overlapping selections use deterministic ownership: explicit files take precedence, otherwise the deepest selected root owns each walked entry.
+- Destination preflight refuses all known contenders, including existing hard-linked outputs and file/mirror-prefix conflicts, before writes.
+- Desktop inputs enter review before explicit Start. Mode and destination changes affect only the next request; Check-to-Create returns paths to review without writing copies.
+- Reports expose failure causes and recovery before expandable metadata; failed-only filtering and keyboard navigation preserve result identity and complete exports.
+- Native filename aliases coalesce only when they identify the same directory entry; distinct hard-link names remain separate work items.
+- Queued requests can be removed; settings warnings remain visible across report views. Quit decisions cover waiting work and reject late selections and dialog callbacks.
+- Successful-report inspectors leave room for queue controls and footer actions at the minimum window size with enlarged text; attention states retain extra explanatory space.
+- Report export captures the selected run and refuses existing names inline. Switching reports or completing a stale folder dialog cannot retarget the export.
+- Long filenames keep distinguishing suffixes and full accessible paths. Copy path uses native values; Show copy requires a verified receipt.
+- About uses the standard macOS application menu; software/artwork terms have a dedicated window. Native GUI launch requires the app bundle and its helper layout.
+- Standard Slint widgets and toolkit typography replace custom native presentation; file dialogs use parented platform dialogs and clipboard behavior can differ.
+- The software renderer is the default. Upstream Slint, winit and Parley replace repository forks; app builds need macOS Command Line Tools rather than full Xcode.
+- Distribution, notices and host checks use `cargo xtask dist`, `notices` and `ci`; headless Slint and native CLI tests replace OS UI qualification. See [setup](CONTRIBUTING.md).
+- Release checks smoke-test exact archives, app launch/idle Quit and bundled CLI copies on both macOS 15 CPU hosts, then attest and draft tagged releases. Owners publish the draft.
+- CI archive outputs and extraction folders live outside restored build caches, preventing stale archives from blocking no-overwrite distribution or contaminating smoke checks.
+- GitHub draft notes use the tagged commit's dated changelog entry; missing, duplicate or empty entries stop draft creation. Finalize the version entry before tagging.
+- Distribution notices include the selected Rust sysroot and required upstream license supplements; editable artwork and export guidance are consolidated in the [artwork guide](artwork/README.md).
 
 ## [6.0.0] - 2026-10-21
+
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v6.0.0).
 
 ### Changed
 
@@ -49,6 +69,8 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [5.0.0] - 2026-10-15
 
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v5.0.0).
+
 ### Changed
 
 - **Breaking for native app users on macOS 14:** Apple Silicon and Intel app builds now require macOS 15.0 or later. Upgrade macOS before installing these builds; published v4.0.0 apps retain their macOS 14 requirement and remain unchanged. Pull-request and tagged-release compatibility checks cover macOS 15 Apple Silicon, macOS 15 Intel and Xcode 27, with additional Intel checks through Rosetta on Apple Silicon. See the [native release requirements](https://github.com/resoltico/EMLAttachmentRemover/blob/f7adf489734beff3ca94f829f8db1c110be316f4/integrations/macos-ui/RELEASE.md#minimum-native-macos-release-150-sequoia) and [Issue #29](https://github.com/resoltico/EMLAttachmentRemover/issues/29).
@@ -74,6 +96,8 @@ Notable changes to this project are documented in this file. The format is based
 - Native tool downloads enforce pinned archive sizes while verifying SHA-256, and swift-format fetches only its pinned source revision with disposable build caches. CI reuses the small installed quality-tool binaries through exact platform/source cache keys and still checks their versions; the compiler installation is excluded. The local Linux mutation cache prunes dangling UV entries while retaining reusable wheels.
 
 ## [4.0.0] - 2026-10-06
+
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v4.0.0).
 
 ### Added
 
@@ -132,6 +156,8 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [3.0.6] - 2026-09-21
 
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v3.0.6).
+
 ### Changed
 
 - Unsupported legacy CLI options receive the standard current parser error instead of migration guidance.
@@ -144,6 +170,8 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [3.0.5] - 2026-09-20
 
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v3.0.5).
+
 ### Changed
 
 - GitHub release notes come exclusively from the categorized Markdown beneath the tagged changelog version heading, using an immutable publisher instead of maintained per-release note files.
@@ -153,6 +181,8 @@ Notable changes to this project are documented in this file. The format is based
 - Release publication validates tag targets, draft metadata, verified asset identities, publication read-back and concurrent-writer reconciliation before making a release public.
 
 ## [3.0.4] - 2026-09-20
+
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v3.0.4).
 
 This normal release includes the corrections recorded under v3.0.1–v3.0.3, whose release workflows stopped before asset publication.
 
@@ -206,6 +236,8 @@ This tagged candidate's release workflow stopped before asset publication; its c
 
 ## [3.0.0] - 2026-09-13
 
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v3.0.0).
+
 ### Added
 
 - Added raw-span candidate construction, source/candidate payload fingerprints, independent reparse verification, schema-3 batch ledger reports, and atomic no-replace output publication.
@@ -224,11 +256,15 @@ This tagged candidate's release workflow stopped before asset publication; its c
 
 ## [2.0.1] - 2026-08-20
 
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v2.0.1).
+
 ### Fixed
 
 - Equivalent plain/HTML alternatives now retain readable paragraph, list, and quotation boundaries in the canonical text-only output. The selected plain body remains the source-content precondition; HTML is used only as a local formatting projection after exact non-whitespace text equality is proven.
 
 ## [2.0.0] - 2026-08-20
+
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v2.0.0).
 
 ### Changed
 
@@ -239,6 +275,8 @@ This tagged candidate's release workflow stopped before asset publication; its c
 - The Finder Quick Action is now named **Create Text-Only EML Copy** and reports created outputs separately from unverified existing outputs that were skipped.
 
 ## [1.0.0] - 2026-08-15
+
+[Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v1.0.0).
 
 - First public release.
 

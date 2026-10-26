@@ -34,6 +34,10 @@ inside an already removed related resource can instead be removed whole. A
 disposition on a top-level or embedded message root does not make that root an
 ordinary attachment.
 
+Retained-body `multipart/report` is refused with `UNSUPPORTED_MIME`: a body-only
+copy cannot preserve its required machine-readable parts. Attached reports and
+nonselected related reports remain opaque removable entities.
+
 Stale length/checksum fields are removed from changed retained ancestors, and
 stale authentication fields from changed message roots. Unchanged siblings retain
 their fields. Independent source authorization and byte/structure verification
@@ -71,7 +75,3 @@ underscore-as-space are decoded. Invalid or undecodable words remain literal.
 Whitespace is suppressed only between two successfully decoded adjacent words,
 including folded linear whitespace after header unfolding. The scanner's
 lookahead is bounded even for long repeated unterminated prefixes.
-
-Retained-body `multipart/report` is refused with `UNSUPPORTED_MIME`: a body-only
-copy cannot preserve its required machine-readable parts. Attached reports and
-nonselected related reports remain opaque removable entities.

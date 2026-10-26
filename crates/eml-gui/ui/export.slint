@@ -1,0 +1,43 @@
+// Copyright 2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
+import { Button, LineEdit, TextEdit, VerticalBox, HorizontalBox, Palette } from "std-widgets.slint";
+export component ExportWindow inherits Window {
+    title: "Export new report";
+    icon: @image-url("eml-icon.png");
+    in property <length> ui-size: 13px;
+    default-font-size: root.ui-size;
+    preferred-width: max(520px, root.ui-size * 30);
+    preferred-height: max(420px, root.ui-size * 24);
+    min-width: max(480px, root.ui-size * 28); min-height: max(420px, root.ui-size * 24);
+    in property <string> run-label;
+    in property <string> directory;
+    in-out property <string> file-name;
+    in property <string> notice;
+    in property <bool> busy;
+    callback choose-directory(); callback create-report(); callback cancel();
+    MenuBar { Menu { title: "Edit";
+        MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: name.has-focus || feedback.has-focus; activated => { if name.has-focus { name.copy(); } else { feedback.copy(); } } }
+        MenuItem { title: "Paste"; shortcut: @keys(Control + V); enabled: !root.busy && name.has-focus; activated => { name.paste(); } }
+        MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: name.has-focus || feedback.has-focus; activated => { if name.has-focus { name.select-all(); } else { feedback.select-all(); } } }
+    } }
+    forward-focus: export-focus;
+    export-focus := FocusScope {
+        forward-focus: name;
+        key-pressed(event) => { if event.text == Key.Escape && !root.busy { root.cancel(); return accept; } return reject; }
+        VerticalBox { padding: 20px; spacing: 12px;
+            Text { text: "Export " + root.run-label; font-size: 17px; font-weight: 600; color: Palette.foreground; }
+            Text { text: "Create a new JSONL report. Existing files are never replaced."; wrap: word-wrap; color: Palette.foreground; }
+            HorizontalBox { padding: 0px; spacing: 8px;
+                Text { text: root.directory; overflow: elide; horizontal-stretch: 1; min-width: 0px; color: Palette.foreground; accessible-label: "Report folder: " + root.directory; Tooltip { text: @markdown("\{root.directory}"); } }
+                Button { text: "Choose folder…"; enabled: !root.busy; accessible-label: "Choose report folder"; clicked => { root.choose-directory(); } }
+            }
+            Text { text: "File name"; color: Palette.foreground; }
+            name := LineEdit { text <=> root.file-name; enabled: !root.busy; accessible-label: "Report file name"; accepted => { if !root.busy { root.create-report(); } } }
+            feedback := TextEdit { text: root.notice; read-only: true; accessible-label: "Report export feedback"; min-height: 48px; }
+            HorizontalBox { padding: 0px; alignment: end; spacing: 8px;
+                Button { text: "Cancel"; enabled: !root.busy; clicked => { root.cancel(); } }
+                Button { text: root.busy ? "Creating…" : "Create report"; enabled: !root.busy; primary: true; accessible-label: "Create report"; clicked => { root.create-report(); } }
+            }
+        }
+    }
+}

@@ -157,6 +157,17 @@ pub enum RemovalMode {
     Absent,
 }
 impl RemovalMode {
+    /// Compact count with the actual selected/removed/verified-absent meaning.
+    pub fn count_label(self, count: usize) -> String {
+        format!(
+            "{count} {}",
+            match self {
+                Self::Selected => "selected",
+                Self::Removed => "removed",
+                Self::Absent => "absent",
+            }
+        )
+    }
     /// Canonical part heading.
     pub const fn parts(self) -> &'static str {
         match self {
@@ -689,17 +700,17 @@ impl CountKind {
     /// User-facing count label.
     pub const fn label(self) -> &'static str {
         match self {
-            Self::KnownItems => "known items",
+            Self::KnownItems => "Known items",
             Self::Selections => "Selections",
             Self::SourceBytes => SOURCE_BYTES_LABEL,
             Self::CopyBytes => COPY_BYTES_LABEL,
             Self::PartBytes => "Bytes",
 
             Self::Created => "Created",
-            Self::UpToDate => "up to date",
-            Self::Planned => "planned",
-            Self::Failed => "failed",
-            Self::NotProcessed => "not processed",
+            Self::UpToDate => "Up to date",
+            Self::Planned => "Planned",
+            Self::Failed => "Failed",
+            Self::NotProcessed => "Not processed",
         }
     }
 }
