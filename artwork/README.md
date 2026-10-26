@@ -1,4 +1,11 @@
-# Original artwork and provenance
+# Artwork sources and exports
+
+Artwork is grouped by responsibility, as in Auditory Lab: editable source stays with its platform exports and provenance. The applications keep their own artwork and build requirements.
+
+- [Application icon](app-icon/): the editable Icon Composer package, committed macOS export and [construction reference](app-icon/GEOMETRY.md). Distribution consumes the committed icon export.
+- [Interface drawings](interface/): [editable SVGs](interface/svg/), [supplied construction source](interface/source/), [preview](interface/preview.png) and [originality account](interface/ORIGINALITY.md). These are retained design references; Slint does not load them.
+
+## Original artwork and provenance
 
 The retained interface drawings are original geometric artwork authored for this project. The visual language is a single fixed envelope with a same-size status badge in its lower-right corner. The envelope never changes; only the badge colour and its mark show the state:
 - **Identity:** a brand-blue badge with a yellow "snip," echoing the split-paperclip app icon.
@@ -11,16 +18,30 @@ The supplied account states that the drawings were constructed from coordinates 
 
 ## Interface design references
 
-The editable SVG drawings in `artwork-svg/` are retained design references. The current desktop interface uses standard Slint widgets and structured text; it does not embed this envelope-and-badge set.
+The editable SVG drawings in `interface/svg/` are retained design references. The current desktop interface uses standard Slint widgets and structured text; it does not embed this envelope-and-badge set.
 
-`artwork-svg/` holds supplied SVG reference exports of the drawing geometry, for design review and documentation:
+`interface/svg/` holds supplied SVG reference exports of the drawing geometry, for design review and documentation:
 - **Folders:** `regular/` covers 24 pt and up, `compact/` covers below 24 pt, and each has `light`, `dark`, `hc-light` and `hc-dark`.
-- **Geometry:** `ARTWORK-GEOMETRY.md` describes the source role and required native visual checks. Update drawings deliberately when changing production geometry.
+- **Geometry:** `interface/GEOMETRY.md` describes the source role and required native visual checks. Update drawings deliberately when changing production geometry.
 - **Use:** retain the supplied geometry and palettes when working with these reference drawings.
+
+### Preserved construction source
+
+The owner-supplied `EML-interface-artwork.zip` contains the original `Artwork.swift`, `ArtworkPreview.swift`, `generate_svgs.py`, reference `ARTWORK.md`, originality account and raster preview. They are retained unchanged under `interface/`, alongside the SVG exports.
+
+`interface/source/ARTWORK.md` describes the retired AppKit frontend and its former build process. Its runtime, testing and build statements are historical context, not requirements for the current Slint application. The SVGs remain the editable drawing authority. Swift construction and preview code are optional reference material, with no role in Cargo builds or merge checks. The supplying agent’s originality account is provenance, not independently verified authorship or legal certification.
+
+The supplied Python generator writes beside itself. To review its output without overwriting retained files, copy it into a fresh directory under `target/`, then run that copy with Python 3 (standard library only):
+
+```sh
+mkdir -p target/interface-artwork-review
+cp artwork/interface/source/generate_svgs.py target/interface-artwork-review/
+python3 target/interface-artwork-review/generate_svgs.py
+```
 
 ### Geometry
 
-The [SVG inputs](artwork-svg/) are authoritative for coordinates, transforms,
+The [SVG inputs](interface/svg/) are authoritative for coordinates, transforms,
 stroke widths and fills. Their coordinate system has y increasing downward.
 Preserve their view boxes and aspect ratio. Regular, compact and Increase
 Contrast variants carry their own drawing weights; do not duplicate those
@@ -62,9 +83,9 @@ The envelope-and-badge set is custom artwork with AI assistance (Claude, Anthrop
 
 ## Application icon
 
-`EML.icon` is the editable Icon Composer source package for the macOS application icon. Its SVG assets contain only the authored foreground geometry on a 1024-pixel design canvas; the package defines the brand background and foreground layers. The source does not contain a rounded-rectangle mask. Apple tooling and macOS apply the final enclosure and appearance rendering.
+`app-icon/EML.icon` is the editable Icon Composer source package for the macOS application icon. Its SVG assets contain only the authored foreground geometry on a 1024-pixel design canvas; the package defines the brand background and foreground layers. The source does not contain a rounded-rectangle mask. Apple tooling and macOS apply the final enclosure and appearance rendering.
 
-The build copies the committed `EML.icns`; it runs no `actool`, `iconutil` or Xcode command. The file contains all ten 16, 32, 128, 256 and 512 pixel icon slots at 1x and 2x. It is a flat default-appearance export. The editable source also retains dark and tinted appearance definitions; macOS may frame the flat icon on newer systems.
+The build copies the committed `app-icon/EML.icns`; it runs no `actool`, `iconutil` or Xcode command. The file contains all ten 16, 32, 128, 256 and 512 pixel icon slots at 1x and 2x. It is a flat default-appearance export. The editable source also retains dark and tinted appearance definitions; macOS may frame the flat icon on newer systems.
 
 ### Re-export after an approved design change
 
@@ -72,7 +93,7 @@ Export once with full Xcode, then commit the resulting `.icns`. The compatibilit
 
 ```sh
 mkdir -p target/icon-export
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun actool artwork/EML.icon \
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun actool artwork/app-icon/EML.icon \
   --compile target/icon-export --output-format human-readable-text \
   --app-icon EML --include-all-app-icons --target-device mac \
   --minimum-deployment-target 10.12 --platform macosx \
@@ -80,17 +101,17 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun actool artwork/EM
 iconutil -c iconset target/icon-export/EML.icns -o target/icon-export/EML.iconset
 ```
 
-Inspect the ten PNGs, including the 1024×1024 `icon_512x512@2x.png`, then copy `target/icon-export/EML.icns` to `artwork/EML.icns`. The current export used Apple's actool 27.1 from the unchanged source. `EML.icon` and its SVG layers remain the editable design authority.
+Inspect the ten PNGs, including the 1024×1024 `icon_512x512@2x.png`, then copy `target/icon-export/EML.icns` to `artwork/app-icon/EML.icns`. The current export used Apple's actool 27.1 from the unchanged source. `app-icon/EML.icon` and its SVG layers remain the editable design authority.
 
 ## License
 
-The icon document, SVG layers, reference SVGs in `artwork-svg/`, retained construction material in `ICON-GEOMETRY.md` and `ARTWORK-GEOMETRY.md`, and generated artwork use the proprietary artwork terms in the root `LICENSE`. Other application, preview and build code remains MPL-covered. Keep the artwork unchanged when redistributing it with the application; independent reuse or modification requires permission. Previously granted permissions remain valid. This notice records licensing intent, not a certification of copyright ownership or trademark clearance.
+The application icon, interface drawings, construction material and generated artwork use the proprietary artwork terms in the root [LICENSE](../LICENSE), which identifies the covered files. Other application, preview and build code remains MPL-covered. Keep the artwork unchanged when redistributing it with the application; independent reuse or modification requires permission. Previously granted permissions remain valid. This notice records licensing intent, not a certification of copyright ownership or trademark clearance.
 
 The application uses Slint widgets, native system dialogs, windowing and fonts at runtime. Those operating-system components are not copied into the artwork or redistributed under this project's MPL 2.0 license. Compiler/SDK and operating-system use remain subject to their respective vendor terms.
 
 ## Split-paperclip icon provenance
 
-The owner-supplied icon uses AI-assisted coordinate construction defining four parallel wires and three semicircular turns. `ICON-GEOMETRY.md` documents the geometry; the SVG files are the editable drawing. The supplied account states that this geometry is independently drawn. File hashes establish identity, not originality or ownership; AI assistance and generic geometry limit any claim of exclusive copyright.
+The owner-supplied icon uses AI-assisted coordinate construction defining four parallel wires and three semicircular turns. `app-icon/GEOMETRY.md` documents the geometry; the SVG files are the editable drawing. The supplied account states that this geometry is independently drawn. File hashes establish identity, not originality or ownership; AI assistance and generic geometry limit any claim of exclusive copyright.
 
 The source palette is Royal blue with white and yellow halves, a darker navy background for dark appearance, and reduced yellow-layer opacity in tinted appearance. Background colours use `extended-srgb`; SVG assets use their explicit fills without an untagged colour-space setting. Actual compilation, not an unofficial schema, is the integration gate.
 

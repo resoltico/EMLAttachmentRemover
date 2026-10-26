@@ -4,6 +4,10 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+### Internal
+
+- Group application icon and interface artwork separately, retaining the supplied drawing source, generator and preview alongside editable SVGs. Update distribution and license paths without changing artwork geometry or app behavior.
+
 ## [7.0.0] - Unreleased
 
 ### Changed

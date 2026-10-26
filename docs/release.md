@@ -25,7 +25,7 @@ The GUI Cargo target is `emlattachmentremover-gui`; the bundle name, executable
 and ID retain their public identity. There are no Services/document declarations
 or Assets.car. The icon is the committed complete ICNS; re-exporting its editable
 source is an artwork-maintenance task, described in
-[ARTWORK.md](../artwork/ARTWORK.md).
+[artwork guide](../artwork/README.md).
 
 Both Mac executables contain arm64 and x86_64 slices with deployment minimum 15.0.
 The helper is ad hoc signed first, then the bundle, followed by deep strict

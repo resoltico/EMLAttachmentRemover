@@ -124,7 +124,10 @@ pub(crate) fn build(
             binaries.join("emlattachmentremover-gui"),
             contents.join("MacOS/EMLAttachmentRemover"),
         )?;
-        fs::copy("artwork/EML.icns", contents.join("Resources/EML.icns"))?;
+        fs::copy(
+            "artwork/app-icon/EML.icns",
+            contents.join("Resources/EML.icns"),
+        )?;
         fs::copy("LICENSE", contents.join("Resources/LICENSE"))?;
         notices::write(
             true,

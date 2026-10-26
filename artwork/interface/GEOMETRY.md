@@ -1,9 +1,9 @@
 # Interface artwork geometry
 
-The editable SVGs in `artwork-svg/` are the authoritative drawing inputs. They
+The editable SVGs in `svg/` are the authoritative drawing inputs. They
 retain the supplied coordinates, strokes, view boxes and appearance palettes.
 Use them unchanged at the intended aspect ratio; do not redraw their shapes in
-frontend code. `ARTWORK.md` describes visual roles, spacing and palette intent.
+frontend code. `../README.md` describes visual roles, spacing and palette intent.
 
 Regular and compact variants supply light, dark and increased-contrast forms for
 identity, processing, success, stopped and attention outcomes. Native screenshots

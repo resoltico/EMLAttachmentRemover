@@ -115,4 +115,5 @@ See [CONTRIBUTING](CONTRIBUTING.md) for the shortest build and check commands,
 [changelog](CHANGELOG.md) for breaking changes. MPL-2.0-covered source is available
 in this repository; redistributors must preserve notices and corresponding source
 availability. Slint's desktop license and AboutSlint requirements also apply;
-see [legal materials](legal/README.md).
+see [legal materials](legal/README.md). Editable artwork, construction references
+and platform exports are documented in the [artwork guide](artwork/README.md).
