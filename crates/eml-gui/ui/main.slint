@@ -299,7 +299,7 @@ export component MainWindow inherits Window {
                         for count in root.counts: Label {
                             text: count.label + ": " + count.value; color: count.attention ? root.attention-color : Palette.foreground; accessible-label: count.accessible; wrap: word-wrap; min-width: 0px; vertical-alignment: center;
                         }
-                        ActionButton { text: root.failures-only ? "✓ Failed only" : "Failed only"; checked: root.failures-only; accessible-label: "Filter failed messages"; accessible-description: root.failures-only ? "Show all messages" : "Show failed messages"; clicked => { root.keyboard-navigation = false; root.filter-failures(!root.failures-only); } }
+                        ActionButton { text: root.failures-only ? "✓ Failed only" : "Failed only"; checked: root.failures-only; accessible-checkable: true; accessible-label: "Filter failed messages"; accessible-description: root.failures-only ? "Show all messages" : "Show failed messages"; clicked => { root.keyboard-navigation = false; root.filter-failures(!root.failures-only); } }
                     }
                     if root.report-diagnostics.length > 0: ScrollView {
                         preferred-height: min(100px, diagnostics.preferred-height); min-height: 0px; vertical-stretch: 0;
@@ -343,7 +343,7 @@ export component MainWindow inherits Window {
                             }
                         }
                     }
-                    Rectangle { min-height: max(190px, root.ui-size * 11); vertical-stretch: 1; border-width: 1px; border-color: Palette.border; background: Palette.alternate-background;
+                    Rectangle { min-height: root.item-attention || root.details.length > 0 ? max(190px, root.ui-size * 11) : max(140px, root.ui-size * 8); vertical-stretch: 1; border-width: 1px; border-color: Palette.border; background: Palette.alternate-background;
                     VerticalBox { padding: 12px; spacing: 8px;
                         HorizontalBox { padding: 0px; spacing: 12px; vertical-stretch: 0;
                             Label { text: "Message details"; font-weight: 600; vertical-alignment: center; horizontal-stretch: 0; accessible-label: "Message details heading"; }
@@ -401,7 +401,7 @@ export component MainWindow inherits Window {
                     Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border;
                         VerticalBox { padding: 8px; spacing: 6px;
                             Label { text: root.destination-beside ? "Current: beside originals" : "Current: chosen folder"; opacity: 0.72; }
-                            ActionButton { text: root.destination-beside ? "✓ Beside originals" : "Beside originals"; checked: root.destination-beside; accessible-label: "Beside originals"; clicked => { destination-menu.close(); root.beside-source(); } }
+                            ActionButton { text: root.destination-beside ? "✓ Beside originals" : "Beside originals"; checked: root.destination-beside; accessible-checkable: true; accessible-label: "Beside originals"; clicked => { destination-menu.close(); root.beside-source(); } }
                             ActionButton { text: "Choose folder…"; enabled: !root.closing; accessible-label: "Choose destination folder"; clicked => { destination-menu.close(); root.choose-destination(); } }
                         }
                     }

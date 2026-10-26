@@ -956,7 +956,12 @@ fn footer_actions_share_geometry_and_about_matches_the_reference_layout() {
                 .next()
                 .unwrap();
             assert!(e.size().height >= 32.0);
-            assert!(e.absolute_position().y + e.size().height <= 600.1);
+            assert!(
+                e.absolute_position().y + e.size().height <= 600.1,
+                "{width}/{font}: {name}: {:?} {:?}",
+                e.absolute_position(),
+                e.size()
+            );
             assert!(e.absolute_position().x + e.size().width <= width + 0.1);
             geometry.push((e.absolute_position().y, e.size().height));
         }
