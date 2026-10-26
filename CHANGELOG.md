@@ -34,6 +34,7 @@ Use concise bullets without category labels or subheadings, grouping related cha
 - The software renderer is the default. Upstream Slint, winit and Parley replace repository forks; app builds need macOS Command Line Tools rather than full Xcode.
 - Distribution, notices and host checks use `cargo xtask dist`, `notices` and `ci`; headless Slint and native CLI tests replace OS UI qualification. See [setup](CONTRIBUTING.md).
 - Release checks smoke-test exact archives, app launch/idle Quit and bundled CLI copies on both macOS 15 CPU hosts, then attest and draft tagged releases. Owners publish the draft.
+- CI archive outputs and extraction folders live outside restored build caches, preventing stale archives from blocking no-overwrite distribution or contaminating smoke checks.
 - GitHub draft notes use the tagged commit's dated changelog entry; missing, duplicate or empty entries stop draft creation. Finalize the version entry before tagging.
 - Distribution notices include the selected Rust sysroot and required upstream license supplements; editable artwork and export guidance are consolidated in the [artwork guide](artwork/README.md).
 

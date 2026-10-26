@@ -48,21 +48,21 @@ jobs:
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
-      - run: cargo run --locked -p xtask --target ${{ matrix.target }} -- dist --cli --target ${{ matrix.target }} --out target/dist
+      - run: cargo run --locked -p xtask --target ${{ matrix.target }} -- dist --cli --target ${{ matrix.target }} --out "$RUNNER_TEMP/dist"
       - name: Smoke the exact CLI archive
         shell: bash
         run: |
-          mkdir -p target/smoke
-          archive=$(find target/dist -type f | head -1)
+          mkdir -p "$RUNNER_TEMP/smoke"
+          archive=$(find "$RUNNER_TEMP/dist" -type f | head -1)
           case "$archive" in
-            *.zip) unzip "$archive" -d target/smoke ;;
-            *) tar -xzf "$archive" -C target/smoke ;;
+            *.zip) unzip "$archive" -d "$RUNNER_TEMP/smoke" ;;
+            *) tar -xzf "$archive" -C "$RUNNER_TEMP/smoke" ;;
           esac
-          scripts/smoke-cli.sh "$(find target/smoke -maxdepth 1 -type f -name 'emlattachmentremover*' | head -1)" tests/contract/mime
+          scripts/smoke-cli.sh "$(find "$RUNNER_TEMP/smoke" -maxdepth 1 -type f -name 'emlattachmentremover*' | head -1)" tests/contract/mime
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: cli-${{ matrix.target }}
-          path: target/dist/*
+          path: ${{ runner.temp }}/dist/*
           if-no-files-found: error
   macos:
     runs-on: macos-26
@@ -91,11 +91,11 @@ jobs:
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - run: cargo xtask dist --cli --app --universal --out target/dist
+      - run: cargo xtask dist --cli --app --universal --out "$RUNNER_TEMP/dist"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos-universal
-          path: target/dist/*
+          path: ${{ runner.temp }}/dist/*
           if-no-files-found: error
   floor-smoke:
     needs: macos

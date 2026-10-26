@@ -53,7 +53,9 @@ slices, launches with two selected paths and requests idle Quit without writing
 copies. It then invokes the bundled CLI helper and compares copies with a golden. It does not automate Finder, Dock, file dialogs or other OS UI.
 
 A branch `workflow_dispatch` builds, smokes and uploads archives and SHA256SUMS.
-It skips attestation and draft-release creation. On an existing `v*` tag, successful
+Producer archives and CLI extraction folders use runner-temporary directories
+outside restored Cargo caches. A branch run skips attestation and draft-release
+creation. On an existing `v*` tag, successful
 build/floor jobs also attest artifacts and create a draft GitHub release using
 `--verify-tag`. Draft notes come from the dated `CHANGELOG.md` entry matching the
 tag version in the checked-out release commit, passed through `--notes-file`.
