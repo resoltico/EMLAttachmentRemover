@@ -307,6 +307,10 @@ fn stop_and_confirmed_force_stop_show_settled_states_and_cancel_keeps_work_runni
                 &ui,
                 &vocabulary::count_label(CountKind::NotProcessed, 1)
             ));
+            assert!(
+                has_label(&ui, "No message results were reported."),
+                "A settled report must not promise future results"
+            );
         }
     }
 }

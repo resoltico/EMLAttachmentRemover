@@ -324,7 +324,7 @@ export component MainWindow inherits Window {
                         Label { text: "Result"; width: 135px; horizontal-stretch: 0; }
                         Label { text: "Parts"; width: 76px; horizontal-stretch: 0; }
                     } }
-                    if root.items.length == 0: Label { text: root.failures-only ? "No failed messages in this report." : "No message results yet."; wrap: word-wrap; }
+                    if root.items.length == 0: Label { text: root.failures-only ? "No failed messages in this report." : (root.report-running ? "No message results yet." : "No message results were reported."); wrap: word-wrap; }
                     message-list := ListView { content-y <=> root.messages-scroll-y; changed height => { root.messages-view-height = self.height; }
                         preferred-height: root.items.length > 0 ? min(240px, root.items.length * root.message-row-height) : 0px; min-height: root.items.length > 0 ? root.message-row-height : 0px; vertical-stretch: 1;
                         content-width: self.visible-width; accessible-role: list; accessible-label: "Message results";
