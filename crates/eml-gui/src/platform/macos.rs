@@ -108,11 +108,13 @@ pub(super) fn refresh_menu() {
         return;
     };
     let app = NSApplication::sharedApplication(main);
+    // Menus can be empty during launch/focus replacement. Indexed NSMenu access
+    // raises an Objective-C exception; firstObject is nil-safe for both levels.
     let Some(item) = app
         .mainMenu()
-        .and_then(|menu| menu.itemAtIndex(0))
+        .and_then(|menu| menu.itemArray().firstObject())
         .and_then(|item| item.submenu())
-        .and_then(|menu| menu.itemAtIndex(0))
+        .and_then(|menu| menu.itemArray().firstObject())
     else {
         return;
     };
