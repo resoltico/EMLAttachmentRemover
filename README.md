@@ -82,7 +82,12 @@ The empty window offers file/folder selection without inactive report controls.
 Reports and waiting requests appear in the sidebar only when there is work to
 navigate. Choosing a report keeps that view when queued work starts. A report shows its captured settings, counts, message results and selected
 message details. Errors, recovery guidance and run-level discovery failures remain
-visible; removal metadata and byte counts expand under **Parts and technical details**. Long filenames retain their distinguishing suffixes, with
+visible in a separately bordered **Message details** inspector, before provenance.
+Paths, removal metadata and byte counts expand under **Paths, parts and technical details**.
+**Failed only** filters the table without changing the full report or its export;
+Toggle **Failed only** off to restore the list. Up/Down/Home/End move through visible messages
+and reveal the selected row. **File → Open files…** uses Cmd-O on macOS (Ctrl-O
+on other desktops); **File → Add folder…** opens folder selection. Long filenames retain their distinguishing suffixes, with
 full paths in tooltips and accessibility text. Report-export feedback is separate
 from retained run warnings. **Dismiss report** removes the report from this
 session, never the original messages or copies.

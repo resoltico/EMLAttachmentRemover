@@ -136,9 +136,10 @@ fn facts(item: &wire::ItemRecord) -> Option<OutcomeFacts> {
 fn meaning(item: &wire::ItemRecord) -> Option<vocabulary::OutcomeMeaning> {
     facts(item).map(|facts| vocabulary::classify(&facts))
 }
-/// One accepted message result, with all wording delegated to the core.
+/// Concise desktop labels preserve the core qualification and typed failure facts.
 pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
     ItemView {
+        original_index: 0,
         source: item.source.display.clone().into(),
         path: path(&item.source.display),
         destination: item
@@ -147,15 +148,36 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
             .map(|p| p.display.clone())
             .unwrap_or_default()
             .into(),
-        status: meaning(item)
-            .map_or(MeaningKind::Unestablished.label(), |value| value.label())
-            .into(),
+        status: if item.status == wire::ItemStatus::Failed
+            && item.publication.state == wire::Publication::NotPublished
+            && item
+                .error
+                .value()
+                .is_some_and(|error| error.code == "DESTINATION_EXISTS")
+        {
+            "Destination conflict"
+        } else {
+            meaning(item).map_or(MeaningKind::Unestablished.label(), |value| {
+                match value.kind {
+                    MeaningKind::Prepared => "Removal planned",
+                    MeaningKind::Comparison => "Verification planned",
+                    _ => value.label(),
+                }
+            })
+        }
+        .into(),
         attention: meaning(item)
             .is_none_or(|value| value.severity == vocabulary::Severity::Attention),
         removed: meaning(item)
             .map_or_else(
                 || "—".into(),
-                |value| value.removal_mode.count_label(item.removed.len()),
+                |value| {
+                    if matches!(value.kind, MeaningKind::Prepared | MeaningKind::Comparison) {
+                        format!("{} to remove", item.removed.len())
+                    } else {
+                        value.removal_mode.count_label(item.removed.len())
+                    }
+                },
             )
             .into(),
     }
@@ -180,6 +202,7 @@ pub(crate) fn counts(report: &eml_app::RunReport) -> Vec<CountView> {
     let mut counts: Vec<_> = kinds
         .into_iter()
         .zip(values)
+        .filter(|(kind, value)| *value > 0 || matches!(kind, CountKind::Failed))
         .map(|(kind, value)| count(kind, value))
         .collect();
     if let Some(start) = report.start() {
@@ -188,7 +211,9 @@ pub(crate) fn counts(report: &eml_app::RunReport) -> Vec<CountView> {
     if let Some(summary) = report.summary() {
         let kind = CountKind::NotProcessed;
         let value = summary.counts.not_processed;
-        counts.push(count(kind, value));
+        if value > 0 {
+            counts.push(count(kind, value));
+        }
     }
     counts
 }

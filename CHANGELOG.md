@@ -4,6 +4,12 @@ Notable changes to this project are documented in this file. The format is based
 
 ## [Unreleased]
 
+- The desktop inspector has an explicit boundary and places failure causes and
+  recovery before collapsed path metadata. Compact whole-card reports, typed
+  conflict/planning labels, a failed-message filter, arrow/Home/End navigation
+  and File-menu Open improve scanning and keyboard use. Filtering preserves
+  original result identity and exports the complete report.
+
 - Desktop selections are reviewed before explicit Start; new-request settings stay
   separate from captured queued/active requests. The focused result list and
   aligned footer expose Stop, reports and copy actions in their relevant states.

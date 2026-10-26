@@ -80,7 +80,10 @@ accepted records survive malformed tails and worker failures. Exports write the
 exact retained stream to a new file in a background thread. Busy Quit waits for
 worker/export settlement or follows the user's confirmed stop choice.
 
-Slint view data comes from the shared vocabulary. Headless tests drive accessible
+Slint qualifications come from the shared vocabulary; desktop-only concise
+planning/conflict labels retain those facts. Filtered rows carry original report
+offsets (not potentially sparse wire indexes), so navigation and reveal keep the
+same item identity. Filtering never changes the retained stream used for export. Headless tests drive accessible
 actions through Slint's testing backend and mock time. Native ingress delivers
 launch arguments, batches window drops with a zero-delay timer, and parents rfd
 asynchronous dialogs to the retained window. Only the small macOS application-menu About and Quit adapters use

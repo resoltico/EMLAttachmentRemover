@@ -1,4 +1,4 @@
-//! Eight desktop contracts through the real Slint testing backend and stub CLI processes.
+//! Desktop contracts through the real Slint testing backend and stub CLI processes.
 use eml_core::{
     RemovalReason, RunMode,
     vocabulary::{self, CountKind, RunStatus},
@@ -369,10 +369,7 @@ fn create_after_check_sends_a_fresh_request_and_uses_the_current_destination() {
         .submit(vec![root.path().join("source.eml")])
         .unwrap();
     pump(&controller, || !controller.is_busy());
-    assert_eq!(
-        ui.get_item_status().as_str(),
-        vocabulary::MeaningKind::Prepared.label()
-    );
+    assert_eq!(ui.get_item_status().as_str(), "Removal planned");
     assert!(ui.get_can_create());
     let unrelated = root.path().join("unrelated.eml");
     controller.stage(vec![unrelated.clone()]).unwrap();
@@ -816,12 +813,31 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
             ElementHandle::find_by_accessible_label(&ui, vocabulary::MeaningKind::Created.label())
                 .nth(1)
                 .unwrap();
+        let viewport = ElementHandle::find_by_accessible_label(&ui, "Message results")
+            .next()
+            .unwrap();
+        let overflow = status_cell.absolute_position().y + status_cell.size().height
+            - viewport.absolute_position().y
+            - viewport.size().height;
+        if overflow > 0.0 {
+            viewport.scroll(0.0, -overflow - 1.0);
+            mock_elapsed_time(Duration::from_millis(5));
+        }
+        assert!(
+            status_cell.absolute_position().y + status_cell.size().height
+                <= viewport.absolute_position().y + viewport.size().height + 0.1
+        );
         status_cell.mock_single_click(slint::platform::PointerEventButton::Left);
         mock_elapsed_time(Duration::from_millis(5));
         assert_eq!(
             ui.get_item_source().as_str(),
             sources[1],
-            "The whole result row, including its status, must select the message"
+            "The whole result row, including its status, must select the message; status {:?} {:?}; all statuses {:?}",
+            status_cell.absolute_position(),
+            status_cell.size(),
+            ElementHandle::find_by_accessible_label(&ui, vocabulary::MeaningKind::Created.label())
+                .map(|e| (e.absolute_position(), e.size()))
+                .collect::<Vec<_>>()
         );
     }
 }
@@ -1126,4 +1142,181 @@ fn a_closed_force_stop_prompt_cannot_kill_the_next_queued_worker() {
         next_worker_unchanged,
         "A stale prompt answer must not stop another worker"
     );
+}
+
+#[test]
+fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_original_identity() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use serde_json::{Value, json};
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let created: Vec<Value> = fixture("created-attachment")
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let failed: Vec<Value> = fixture("prepublication-failure")
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let mut start = created[0].clone();
+    start["total"] = json!(16);
+    let mut events = vec![start];
+    for index in 0..8 {
+        let mut item = if index == 7 {
+            failed[1].clone()
+        } else {
+            created[1].clone()
+        };
+        // Wire indexes deliberately have gaps: selection must use report offsets.
+        item["index"] = json!(index * 2);
+        for (field, suffix) in [("source", ".eml"), ("destination", ".no-attachments.eml")] {
+            let path = format!("/mail/message-{index}{suffix}");
+            item[field] = json!({"display":path,"native":{"encoding":"unix-bytes","base64":STANDARD.encode(path.as_bytes())}});
+        }
+        if index == 7 {
+            item["error"] = json!({"code":"DESTINATION_EXISTS","phase":"existing","detail":"A different file already exists at the destination.","section":null});
+        }
+        events.push(item);
+    }
+    events.push(json!({"type":"summary","counts":{"created":7,"up_to_date":0,"planned":0,"failed":1,"not_processed":8},"interrupted":false,"collection_complete":true,"run_error":null,"exit_code":1}));
+    let bytes = events.iter().map(|v| format!("{v}\n")).collect::<String>();
+    let cli = script(
+        root.path(),
+        &("cat >/dev/null\n".to_owned() + &print(&bytes) + "exit 1\n"),
+    );
+    let c = controller(root.path(), cli);
+    c.submit(vec![root.path().join("source.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.submit(vec![root.path().join("second-selection.eml")])
+        .unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    assert_eq!(ui.get_runs().row_count(), 2);
+    assert_eq!(ui.get_items().row_count(), 8);
+    click(&ui, "Filter failed messages");
+    assert_eq!(ui.get_items().row_count(), 1);
+    assert_eq!(ui.get_selected_item(), 7);
+    assert_eq!(ui.get_item_source().as_str(), "/mail/message-7.eml");
+    assert_eq!(ui.get_item_status().as_str(), "Destination conflict");
+    assert!(c.selected_copy().is_none());
+    click(&ui, "Filter failed messages");
+    assert_eq!(ui.get_items().row_count(), 8);
+    for (width, font) in [(1060.0, 13.0), (780.0, 13.0), (780.0, 20.0)] {
+        ui.set_ui_size(font);
+        ui.window().set_size(slint::LogicalSize::new(width, 600.0));
+        mock_elapsed_time(Duration::from_millis(5));
+        let viewport = ElementHandle::find_by_accessible_label(&ui, "Message details")
+            .next()
+            .unwrap();
+        let heading = ElementHandle::find_by_accessible_label(&ui, "Message details heading")
+            .next()
+            .unwrap();
+        assert!(heading.absolute_position().y < viewport.absolute_position().y);
+        let list = ElementHandle::find_by_accessible_label(&ui, "Message results")
+            .next()
+            .unwrap();
+        let result_header = ElementHandle::find_by_accessible_label(&ui, "Result")
+            .next()
+            .unwrap();
+        let result_cell = ElementHandle::find_by_accessible_label(&ui, "Destination conflict")
+            .next()
+            .unwrap();
+        assert!(
+            (result_header.absolute_position().x - result_cell.absolute_position().x).abs() < 1.0,
+            "Result column header and cells must align"
+        );
+        let selected = ElementHandle::find_by_accessible_label(&ui, "/mail/message-7.eml")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .unwrap();
+        assert!(
+            selected.absolute_position().y >= list.absolute_position().y - 0.1
+                && selected.absolute_position().y + selected.size().height
+                    <= list.absolute_position().y + list.size().height + 0.1,
+            "{font}: selected filename must remain visible: {:?} {:?}, list {:?} {:?}",
+            selected.absolute_position(),
+            selected.size(),
+            list.absolute_position(),
+            list.size()
+        );
+        for text in [
+            "A different file already exists at the destination.",
+            vocabulary::recovery_hint("DESTINATION_EXISTS").unwrap(),
+        ] {
+            let line = ElementHandle::find_by_accessible_label(&ui, text)
+                .next()
+                .unwrap();
+            assert!(
+                line.absolute_position().y >= viewport.absolute_position().y - 0.1,
+                "{font}: {text}"
+            );
+            assert!(
+                line.absolute_position().y + line.size().height
+                    <= viewport.absolute_position().y + viewport.size().height + 0.1,
+                "{width}/{font}: recovery must be visible: {:?} {:?}, viewport {:?} {:?}",
+                line.absolute_position(),
+                line.size(),
+                viewport.absolute_position(),
+                viewport.size()
+            );
+        }
+        assert!(viewport.absolute_position().y + viewport.size().height < 600.0);
+    }
+    click(&ui, "Filter failed messages");
+    assert_eq!(
+        ui.get_messages_scroll_y(),
+        0.0,
+        "Filtering must not retain a stale offset"
+    );
+    // Filtering the UI must not filter the exported report.
+    let exported = root.path().join("all-results.jsonl");
+    c.start_export(exported.clone());
+    pump(&c, || !c.is_busy());
+    assert_eq!(fs::read_to_string(exported).unwrap(), bytes);
+    click(&ui, "Filter failed messages");
+    assert_eq!(ui.get_selected_item(), 7);
+    ui.set_ui_size(13.0);
+    mock_elapsed_time(Duration::from_millis(5));
+    // Focus the failed result, then exercise actual Slint key events.
+    ui.set_keyboard_navigation(true);
+    mock_elapsed_time(Duration::from_millis(5));
+    let key = |key: slint::platform::Key| {
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: key.into() });
+        ui.window()
+            .dispatch_event(slint::platform::WindowEvent::KeyReleased { text: key.into() });
+        mock_elapsed_time(Duration::from_millis(5));
+    };
+    key(slint::platform::Key::Home);
+    assert_eq!(ui.get_selected_item(), 0);
+    key(slint::platform::Key::DownArrow);
+    assert_eq!(ui.get_selected_item(), 1);
+    key(slint::platform::Key::End);
+    assert_eq!(ui.get_selected_item(), 7);
+    assert_eq!(ui.get_item_source().as_str(), "/mail/message-7.eml");
+    assert!(ui.get_messages_scroll_y() < 0.0);
+    key(slint::platform::Key::UpArrow);
+    assert_eq!(ui.get_selected_item(), 6);
+    assert_eq!(
+        c.selected_copy().unwrap(),
+        Path::new("/mail/message-6.no-attachments.eml")
+    );
+}
+
+#[test]
+fn empty_failed_filter_clears_the_inspector_and_all_messages_restores_it() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    c.submit(vec![root.path().join("source.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    click(&ui, "Filter failed messages");
+    assert_eq!(ui.get_items().row_count(), 0);
+    assert!(!ui.get_has_item());
+    assert!(!ui.get_can_reveal());
+    assert!(has_label(&ui, "No failed messages in this report."));
+    click(&ui, "Filter failed messages");
+    assert_eq!(ui.get_items().row_count(), 1);
+    assert!(ui.get_has_item());
+    assert_eq!(ui.get_selected_item(), 0);
 }

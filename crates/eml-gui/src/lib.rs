@@ -87,6 +87,7 @@ impl Session {
 struct PresentationRevision {
     run: RunId,
     item: usize,
+    failures_only: bool,
     started: bool,
     items: usize,
     summary: bool,
@@ -255,6 +256,64 @@ impl DesktopController {
                     s.follow_run = None;
                 }
                 c.refresh();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_filter_failures(move |enabled| {
+            if let Some(c) = weak.upgrade() {
+                c.ui.set_messages_scroll_y(0.0);
+                c.ui.set_failures_only(enabled);
+                let mut s = c.session.borrow_mut();
+                if enabled
+                    && let Some(handle) = s
+                        .entries
+                        .get(s.selected)
+                        .and_then(|entry| entry.report.as_ref())
+                {
+                    let selected = s.selected_item;
+                    let first = handle.with_report(|report| {
+                        if report.items().get(selected).is_some_and(|item| {
+                            item.status == eml_protocol::records::ItemStatus::Failed
+                        }) {
+                            Some(selected)
+                        } else {
+                            report.items().iter().position(|item| {
+                                item.status == eml_protocol::records::ItemStatus::Failed
+                            })
+                        }
+                    });
+                    // No selection when the failed-only view has no results.
+                    s.selected_item = first.flatten().unwrap_or(usize::MAX);
+                }
+                if !enabled && s.selected_item == usize::MAX {
+                    s.selected_item = 0;
+                }
+                s.follow_run = None;
+                drop(s);
+                c.refresh();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_navigate_message(move |direction| {
+            if let Some(c) = weak.upgrade() {
+                let rows = c.ui.get_items();
+                if rows.row_count() == 0 {
+                    return;
+                }
+                let selected = c.session.borrow().selected_item as i32;
+                let current = rows
+                    .iter()
+                    .position(|row| row.original_index == selected)
+                    .unwrap_or(0);
+                let next = match direction {
+                    -2 => 0,
+                    2 => rows.row_count() - 1,
+                    -1 => current.saturating_sub(1),
+                    _ => (current + 1).min(rows.row_count() - 1),
+                };
+                if let Some(row) = rows.row_data(next) {
+                    c.ui.invoke_select_item(row.original_index);
+                }
             }
         });
         let weak = Rc::downgrade(self);
@@ -893,6 +952,8 @@ impl DesktopController {
             } else {
                 "".into()
             });
+        self.ui
+            .set_destination_beside(s.preferences.destination().is_none());
         self.ui.set_destination_label(
             s.preferences
                 .destination()
@@ -997,6 +1058,7 @@ impl DesktopController {
             let revision = PresentationRevision {
                 run: entry.id,
                 item: s.selected_item,
+                failures_only: self.ui.get_failures_only(),
                 started: report.start().is_some(),
                 items: report.items().len(),
                 summary: report.summary().is_some(),
@@ -1012,8 +1074,28 @@ impl DesktopController {
 
             self.ui.set_items(update_model(
                 self.ui.get_items(),
-                report.items().iter().map(view_model::item).collect(),
+                report
+                    .items()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| {
+                        !self.ui.get_failures_only()
+                            || item.status == eml_protocol::records::ItemStatus::Failed
+                    })
+                    .map(|(index, item)| {
+                        let mut row = view_model::item(item);
+                        row.original_index = index as i32;
+                        row
+                    })
+                    .collect(),
             ));
+            self.ui.set_selected_visible_row(
+                self.ui
+                    .get_items()
+                    .iter()
+                    .position(|row| row.original_index == s.selected_item as i32)
+                    .map_or(-1, |index| index as i32),
+            );
             self.ui.set_counts(update_model(
                 self.ui.get_counts(),
                 view_model::counts(report),
@@ -1058,6 +1140,10 @@ impl DesktopController {
         });
     }
     fn clear_items(&self) {
+        self.ui.set_keyboard_navigation(false);
+        self.ui.set_messages_scroll_y(0.0);
+        self.ui.set_failures_only(false);
+        self.ui.set_selected_visible_row(-1);
         self.ui.set_work_total(0);
         self.ui.set_work_completed(0);
         self.ui
