@@ -957,6 +957,16 @@ fn footer_actions_share_geometry_and_about_matches_the_reference_layout() {
     wait_started(&c);
     ui.invoke_select_run(0);
     mock_elapsed_time(Duration::from_millis(5));
+    let reports = ElementHandle::find_by_accessible_label(&ui, "Retained reports")
+        .next()
+        .unwrap();
+    let first_report = ElementHandle::find_by_accessible_label(&ui, "Run 1")
+        .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+        .unwrap();
+    assert!(
+        first_report.absolute_position().y - reports.absolute_position().y < 48.0,
+        "Report cards must start at the top of the retained-report list"
+    );
     let mut active_geometry = Vec::new();
     for name in [
         "Dismiss report",
