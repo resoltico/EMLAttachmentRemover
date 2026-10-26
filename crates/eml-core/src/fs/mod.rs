@@ -184,6 +184,10 @@ impl BoundDirectory {
     pub fn observe_selected(&self, expression: &Path) -> io::Result<EntryObservation> {
         backend::observe(&self.inner, expression, true)
     }
+    /// Observe an admitted expression without following its final link.
+    pub(crate) fn observe_entry(&self, expression: &Path) -> io::Result<EntryObservation> {
+        backend::observe(&self.inner, expression, false)
+    }
     /// Observe one child without following links.
     pub fn observe_child(&self, name: &OsStr) -> io::Result<EntryObservation> {
         component(name)?;

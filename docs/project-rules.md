@@ -37,6 +37,7 @@ defenses outside it without changing it first.
 
 ## Product constraints
 
-Slint is the GUI toolkit. Desktop development supports macOS and Linux; desktop
-distribution targets macOS. Signing is ad hoc only. Intel Macs are supported.
-No macOS-only integration beyond the Quit shim.
+Slint is the GUI toolkit. Desktop library and headless development supports
+macOS and Linux; native desktop distribution targets macOS. Signing is ad hoc
+only. Intel Macs are supported. macOS-only integration is limited to
+application-menu About routing and the Quit shim.

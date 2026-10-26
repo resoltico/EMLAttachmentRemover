@@ -22,12 +22,17 @@ Use concise bullets without category labels or subheadings, grouping related cha
 - Library integrations must adapt to removed platform/worker crates and revised APIs; pure MIME preparation lives in `eml-message`, filesystem execution in `eml-core`.
 - Overlapping selections use deterministic ownership: explicit files take precedence, otherwise the deepest selected root owns each walked entry.
 - Destination preflight refuses all known contenders, including existing hard-linked outputs and file/mirror-prefix conflicts, before writes.
-- The desktop adds queued Check requests. Create after Check repeats admission and verification using the current destination.
-- Reports distinguish run/item counts, discovery failures and retained diagnostics from export feedback. Long filenames keep suffixes, with full paths in tooltips and accessible text.
+- Desktop inputs enter review before explicit Start. Mode and destination changes affect only the next request; Check-to-Create returns paths to review without writing copies.
+- Reports expose failure causes and recovery before expandable metadata; failed-only filtering and keyboard navigation preserve result identity and complete exports.
+- Native filename aliases coalesce only when they identify the same directory entry; distinct hard-link names remain separate work items.
+- Queued requests can be removed; settings warnings remain visible across report views. Quit decisions cover waiting work and reject late selections and dialog callbacks.
+- Report export captures the selected run and refuses existing names inline. Switching reports or completing a stale folder dialog cannot retarget the export.
+- Long filenames keep distinguishing suffixes and full accessible paths. Copy path uses native values; Show copy requires a verified receipt.
+- About uses the standard macOS application menu; software/artwork terms have a dedicated window. Native GUI launch requires the app bundle and its helper layout.
 - Standard Slint widgets and toolkit typography replace custom native presentation; file dialogs use parented platform dialogs and clipboard behavior can differ.
 - The software renderer is the default. Upstream Slint, winit and Parley replace repository forks; app builds need macOS Command Line Tools rather than full Xcode.
 - Distribution, notices and host checks use `cargo xtask dist`, `notices` and `ci`; headless Slint and native CLI tests replace OS UI qualification. See [setup](CONTRIBUTING.md).
-- Release builds smoke-test the exact archives, including the universal app on both macOS 15 CPU hosts, then attest and draft tagged releases. Publishing the draft remains an owner action.
+- Release checks smoke-test exact archives, app launch/idle Quit and bundled CLI copies on both macOS 15 CPU hosts, then attest and draft tagged releases. Owners publish the draft.
 - GitHub draft notes use the tagged commit's dated changelog entry; missing, duplicate or empty entries stop draft creation. Finalize the version entry before tagging.
 - Distribution notices include the selected Rust sysroot and required upstream license supplements; editable artwork and export guidance are consolidated in the [artwork guide](artwork/README.md).
 

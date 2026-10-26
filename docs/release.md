@@ -49,8 +49,8 @@ The [release workflow](../.github/workflows/release.yml) builds archives once,
 smokes those exact bytes, and runs the universal CLI/app on macos-15 and
 macos-15-intel. CLI smoke compares every MIME fixture with its golden bytes or
 expected refusal and checks original bytes. App smoke verifies signatures and CPU
-slices, launches two paths, compares their copies with a golden, then requests
-idle Quit. It does not automate Finder, Dock, file dialogs or other OS UI.
+slices, launches with two selected paths and requests idle Quit without writing
+copies. It then invokes the bundled CLI helper and compares copies with a golden. It does not automate Finder, Dock, file dialogs or other OS UI.
 
 A branch `workflow_dispatch` builds, smokes and uploads archives and SHA256SUMS.
 It skips attestation and draft-release creation. On an existing `v*` tag, successful
@@ -69,7 +69,8 @@ Before the owner tags or publishes:
    matching `vVERSION` tag; tag annotations do not supply the release notes.
    Review the final PR's native CI and both macOS floor-smoke results.
 2. On Intel and Apple Silicon, manually check real window drag delivery, native
-   file/folder dialogs and destination selection, keyboard navigation, appearance,
+   file/folder dialogs, selection review, explicit Start and destination selection,
+   keyboard navigation, appearance,
    AboutSlint, Stop/Force Stop, busy Quit and technical report export. Check
    non-Unicode/long paths and a realistic mailbox selection where practical.
 3. Review the software-renderer screenshots and retained upstream license texts.

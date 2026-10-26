@@ -1,18 +1,19 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { AboutSlint, Button, CheckBox, HorizontalBox, VerticalBox, ListView, ScrollView, Palette } from "std-widgets.slint";
+import { Button, TextEdit, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette } from "std-widgets.slint";
 export enum Confirmation { none, force-stop, quit }
-export struct CountView { label: string, value: int, accessible: string }
+export struct CountView { label: string, value: int, accessible: string, attention: bool }
 export struct PathView { prefix: string, suffix: string, directory: string, full: string }
-export struct RunView { label: string, status: string, mode: string, selection: PathView, selections: CountView }
-export struct ItemView { source: string, destination: string, status: string, path: PathView }
+export struct RunView { label: string, status: string, mode: string, destination: string, selection: PathView, selections: CountView }
+export struct ItemView { original-index: int, source: string, destination: string, status: string, removed: string, attention: bool, path: PathView }
 export struct DetailView { text: string }
 export struct RemovalView { section: string, filename: string, media: string, bytes: int, byte-label: string, byte-accessible: string, reason: string }
-component Label inherits Text { color: Palette.foreground; accessible-role: text; accessible-label: self.text; }
+component Label inherits Text { vertical-stretch: 0; min-width: 0px; color: Palette.foreground; accessible-role: text; accessible-label: self.text; }
 // Text measures its own glyphs; the suffix stays visible as the prefix elides.
 component FileName inherits Rectangle {
     in property <PathView> path;
-    height: 22px;
+    in property <length> text-size: 13px;
+    height: max(22px, root.text-size * 1.4);
     horizontal-stretch: 1;
     min-width: 0px;
     accessible-role: text;
@@ -21,6 +22,7 @@ component FileName inherits Rectangle {
         x: 0px;
         horizontal-alignment: left;
         color: Palette.foreground;
+        font-size: root.text-size;
         text: root.path.prefix;
         width: min(self.preferred-width, max(0px, root.width - suffix.width));
         height: parent.height;
@@ -29,6 +31,7 @@ component FileName inherits Rectangle {
     }
     suffix := Text {
         color: Palette.foreground;
+        font-size: root.text-size;
         text: root.path.suffix;
         x: prefix.width;
         width: min(self.preferred-width, root.path.prefix == "" ? root.width : root.width * 0.6);
@@ -41,68 +44,80 @@ component FileName inherits Rectangle {
 }
 component FileButton inherits Rectangle {
     in property <PathView> path;
+    in property <bool> selected;
+    in property <string> description;
     callback clicked();
-    height: 34px;
+    callback navigate(int);
+    in property <bool> focus-requested;
+    changed focus-requested => { if root.focus-requested { keyboard.focus(); } }
+    init => { if root.focus-requested { keyboard.focus(); } }
+    in property <length> text-size: 13px;
+    height: max(32px, root.text-size * 1.7);
     min-width: 0px;
     horizontal-stretch: 1;
-    forward-focus: control;
+    forward-focus: keyboard;
     accessible-role: button;
     accessible-label: root.path.full;
-    accessible-action-default => { root.clicked(); }
-    control := Button {
-        text: ""; width: parent.width; height: parent.height;
-        accessible-role: none;
-        clicked => { root.clicked(); }
+    accessible-description: root.description;
+    accessible-item-selectable: true; accessible-item-selected: root.selected;
+    accessible-action-default => { keyboard.focus(); root.clicked(); }
+    keyboard := FocusScope {
+        key-pressed(event) => { if event.text == Key.DownArrow { root.navigate(1); return accept; } if event.text == Key.UpArrow { root.navigate(-1); return accept; } if event.text == Key.Home { root.navigate(-2); return accept; } if event.text == Key.End { root.navigate(2); return accept; } if event.text == Key.Return || event.text == Key.Space { root.clicked(); return accept; } return reject; }
     }
-    FileName { path: root.path; x: 12px; y: (parent.height - self.height) / 2; width: max(0px, parent.width - 24px); }
+    TouchArea { clicked => { keyboard.focus(); root.clicked(); } }
+    border-width: keyboard.has-focus ? 1px : 0px;
+    border-color: Palette.accent-background;
+
+    FileName { path: root.path; text-size: root.text-size; x: 12px; y: (parent.height - self.height) / 2; width: max(0px, parent.width - 24px); }
     Tooltip { text: @markdown("\{root.path.full}"); }
 }
 component PathLabel inherits VerticalBox {
     in property <PathView> path;
-    spacing: 0px;
-    FileName { path: root.path; }
-    Label { text: root.path.directory; font-size: 12px; overflow: elide; min-width: 0px; Tooltip { text: @markdown("\{root.path.full}"); } }
+    in property <length> text-size: 13px;
+    padding: 0px; spacing: 0px;
+    FileName { path: root.path; text-size: root.text-size; }
+    Label { text: root.path.directory; font-size: max(12px, root.text-size * 0.9); opacity: 0.72; overflow: elide; min-width: 0px; Tooltip { text: @markdown("\{root.path.full}"); } }
 }
-export component AboutWindow inherits Window {
-    in property <string> product-name;
-    title: "About " + root.product-name;
-    background: Palette.background;
-    default-font-size: 14px;
-    preferred-width: 440px; preferred-height: 330px;
-    in property <string> version;
-    callback website(); callback licenses();
-    VerticalBox { padding: 24px; spacing: 16px;
-        Label { text: root.product-name; font-size: 22px; font-weight: 600; }
-        Label { text: root.version; }
-        HorizontalBox {
-            Button { text: "Project website"; accessible-role: button; accessible-label: self.text; clicked => { root.website(); } }
-            Button { text: "Third-party notices"; accessible-role: button; accessible-label: self.text; clicked => { root.licenses(); } }
-        }
-        AboutSlint { height: 100px; }
-    }
-}
+component ActionButton inherits Button { horizontal-stretch: 0; vertical-stretch: 0; preferred-width: self.min-width; max-width: self.min-width; preferred-height: self.min-height; max-height: self.min-height; }
+export { AboutWindow, LicenseWindow } from "about.slint";
+export { ExportWindow } from "export.slint";
 export component MainWindow inherits Window {
     in property <string> product-name;
     title: root.product-name;
+    icon: @image-url("eml-icon.png");
     background: Palette.background;
-    default-font-size: 14px;
+    in property <length> ui-size: 13px;
+    default-font-size: root.ui-size;
     preferred-width: 1060px; preferred-height: 760px;
     min-width: 780px; min-height: 600px;
-    in property <string> version;
+    in property <bool> native-about;
+    in property <bool> closing;
     in-out property <bool> check-only;
-    in property <string> mode-label;
     in property <string> destination-label;
-    in property <string> destination-scope;
+    in property <[PathView]> selection;
+    in property <bool> reviewing;
+    in property <bool> can-start;
+    in property <string> start-label;
+    in property <string> start-reason;
+    in property <bool> has-reports;
+    in property <bool> show-sidebar;
+    in property <int> report-capacity;
+    in property <bool> worker-running;
+    in property <string> activity-label;
     in property <string> run-label;
     in property <string> run-status;
+    in property <string> run-context;
     in property <string> queue-notice;
-    in-out property <length> details-scroll-y <=> details-view.content-y;
+    in-out property <length> details-scroll-y: 0px;
     in property <[RunView]> runs;
     in property <[RunView]> waiting;
     in property <[ItemView]> items;
     in property <[CountView]> counts;
     in property <[DetailView]> report-diagnostics;
     in property <string> settings-warning;
+    in property <bool> can-copy-source;
+    in property <bool> can-copy-destination;
+    callback copy-source-path(); callback copy-destination-path();
     in property <string> operation-label;
     in property <string> operation-feedback;
     in property <PathView> item-source-path;
@@ -117,7 +132,38 @@ export component MainWindow inherits Window {
     in property <string> item-destination;
     in property <string> item-status;
     in property <bool> has-item;
-    in property <bool> running;
+    in property <bool> item-attention;
+    in property <bool> run-attention;
+    private property <brush> attention-color: Palette.color-scheme == ColorScheme.dark ? #ffb4ab : #9f2424;
+    in property <int> selected-item;
+    in property <int> selected-visible-row: -1;
+    in-out property <bool> failures-only;
+    in-out property <bool> keyboard-navigation;
+    in property <bool> destination-beside;
+    private property <length> message-row-height: max(64px, root.ui-size * 3.2);
+    callback filter-failures(bool); callback navigate-message(int);
+    in-out property <length> messages-scroll-y;
+    in-out property <length> messages-view-height;
+    function reveal-selected() {
+        if root.selected-visible-row >= 0 {
+            if root.messages-scroll-y + root.selected-visible-row * root.message-row-height < 0px {
+                root.messages-scroll-y = -root.selected-visible-row * root.message-row-height;
+            }
+            if root.messages-scroll-y + (root.selected-visible-row + 1) * root.message-row-height > root.messages-view-height {
+                root.messages-scroll-y = root.messages-view-height - (root.selected-visible-row + 1) * root.message-row-height;
+            }
+        }
+    }
+    changed selected-visible-row => { root.reveal-selected(); }
+    changed messages-view-height => { root.reveal-selected(); }
+    changed message-row-height => { root.reveal-selected(); }
+    changed keyboard-navigation => { if root.keyboard-navigation { root.reveal-selected(); } }
+
+    in property <int> selected-run;
+    in property <int> work-total;
+    in property <int> work-completed;
+    in-out property <bool> details-expanded: false;
+    in property <bool> report-running;
     in property <bool> can-export;
     in property <bool> can-create;
     in property <bool> can-reveal;
@@ -125,157 +171,279 @@ export component MainWindow inherits Window {
     in-out property <Confirmation> confirmation;
     in property <string> force-notice;
     callback choose-files(); callback choose-folder(); callback choose-destination(); callback beside-source();
+    callback start-selection(); callback clear-selection(); callback review-selection(); callback remove-selection(int);
     callback mode-changed(bool); callback select-run(int); callback select-item(int); callback remove-waiting(int);
     callback stop(); callback force-stop(); callback export-report(); callback reveal(); callback create-copies(); callback dismiss();
     callback confirm-force-stop();
     callback about(); callback keep-running(); callback stop-and-quit(); callback force-and-quit();
-    MenuBar { Menu { title: "Help"; MenuItem { title: "About"; activated => { root.about(); } } } }
-    VerticalBox { padding: 20px; spacing: 12px;
-        HorizontalBox {
-            Label { text: root.product-name; font-size: 24px; font-weight: 600; }
-            Label { text: root.version; horizontal-alignment: right; }
-            Button { text: "About"; accessible-role: button; accessible-label: self.text; clicked => { root.about(); } }
+    MenuBar {
+        Menu { title: "File";
+            MenuItem { title: "Open files…"; shortcut: @keys(Control + O); enabled: !root.closing && root.confirmation == Confirmation.none; activated => { root.choose-files(); } }
+            MenuItem { title: "Add folder…"; enabled: !root.closing && root.confirmation == Confirmation.none; activated => { root.choose-folder(); } }
         }
-        HorizontalBox {
-            Button { text: "Choose files"; accessible-role: button; accessible-label: self.text; clicked => { root.choose-files(); } }
-            Button { text: "Choose folder"; accessible-role: button; accessible-label: self.text; clicked => { root.choose-folder(); } }
-            CheckBox { text: "Check only"; accessible-role: checkbox; accessible-label: self.text; checked <=> root.check-only; toggled => { root.mode-changed(self.checked); } }
-            Label { text: root.mode-label; horizontal-alignment: right; }
+        if !root.native-about: Menu { title: "Help";
+            MenuItem { title: "About"; activated => { root.about(); } }
         }
-        HorizontalBox {
-            Label { text: "Destination"; }
-            Label { text: root.destination-label; overflow: elide; }
-            Button { text: "Change destination"; accessible-role: button; accessible-label: self.text; clicked => { root.choose-destination(); } }
-            Button { text: "Beside originals"; accessible-role: button; accessible-label: self.text; clicked => { root.beside-source(); } }
-        }
-        Label { text: root.destination-scope; font-size: 12px; }
-        if root.queue-notice != "": Label { text: root.queue-notice; wrap: word-wrap; }
-        if root.settings-warning != "": VerticalBox {
-            spacing: 2px;
-            Label { text: "Destination settings"; font-weight: 600; }
-            settings-view := ScrollView {
-                preferred-height: min(100px, settings-text.preferred-height);
-                min-height: 0px; vertical-stretch: 0;
-                content-width: self.visible-width;
-                content-height: settings-text.preferred-height;
-                accessible-role: list; accessible-label: "Destination settings warning";
-                settings-text := Label {
-                    width: settings-view.visible-width;
-                    height: self.preferred-height;
-                    text: root.settings-warning; wrap: word-wrap;
-                }
+    }
+    VerticalBox { padding: 0px; spacing: 0px;
+        toolbar := HorizontalBox { padding: 16px; spacing: 12px; vertical-stretch: 0;
+            Label { text: "Next request"; vertical-alignment: center; horizontal-stretch: 0; }
+            ActionButton { text: "Create copies"; enabled: !root.closing; checked: !root.check-only; accessible-checkable: true; accessible-label: self.text;
+                clicked => { root.mode-changed(false); }
+            }
+            ActionButton { text: "Check only"; enabled: !root.closing; checked: root.check-only; accessible-checkable: true; accessible-label: self.text;
+                clicked => { root.mode-changed(true); }
+            }
+            VerticalBox { padding: 0px; spacing: 2px; horizontal-stretch: 1; min-width: 0px;
+                Label { text: root.check-only ? "Check destination" : "Save copies"; font-size: 12px; }
+                Label { text: root.destination-label; overflow: elide; Tooltip { text: @markdown("\{root.destination-label}"); } }
+            }
+            change-destination := ActionButton { text: "Change…"; enabled: !root.closing; accessible-label: "Change destination";
+                clicked => { destination-menu.show(); }
+
             }
         }
-        if root.operation-feedback != "": HorizontalBox {
-            Label { text: root.operation-label; font-weight: 600; }
-            Label { text: root.operation-feedback; wrap: word-wrap; }
+        Rectangle { height: 1px; background: Palette.border; }
+        HorizontalBox { padding-left: 20px; padding-right: 20px; padding-top: 0px; padding-bottom: 0px; vertical-stretch: 0;
+            Label { text: root.check-only ? "Check sources and destinations. No copies will be written." : "Original messages stay unchanged. Existing copies are never overwritten.";
+                wrap: word-wrap; min-height: 30px; vertical-alignment: center; font-size: 12px; }
         }
-        HorizontalBox { vertical-stretch: 1;
-            VerticalBox { width: 205px; horizontal-stretch: 0;
-                Label { text: "Reports"; font-weight: 600; }
-                ListView {
-                    preferred-height: min(330px, root.runs.length * 145px);
-                    min-height: 0px; vertical-stretch: 0;
-                    content-width: self.visible-width;
-                    accessible-role: list; accessible-label: "Retained reports";
-                for run[index] in root.runs: VerticalBox {
-                    spacing: 4px;
-                    Button { text: run.label; accessible-role: button; accessible-label: run.label; clicked => { root.select-run(index); } }
-                    Label { text: run.status; wrap: word-wrap; }
-                    Label { text: run.mode; }
-                    PathLabel { path: run.selection; }
-                    HorizontalBox { Label { text: run.selections.label; } Label { text: run.selections.value; accessible-label: run.selections.accessible; } }
-                }
-                }
-                Label { text: "Waiting selections"; font-weight: 600; }
-                ListView { min-height: 0px; accessible-role: list; accessible-label: "Waiting selections";
-                    for run[index] in root.waiting: HorizontalBox {
-                        Label { text: run.label; }
-                        Label { text: run.mode; }
-                        Label { text: run.selections.value; accessible-label: run.selections.accessible; }
-                        Button { text: "Remove"; accessible-role: button; accessible-label: "Remove " + run.label; clicked => { root.remove-waiting(index); } }
-                    }
-                }
-                Button { text: "Dismiss report"; enabled: root.can-dismiss; accessible-role: button; accessible-label: self.text; clicked => { root.dismiss(); } }
+        if root.settings-warning != "": VerticalBox { padding: 12px; padding-top: 6px; padding-bottom: 6px; spacing: 4px; vertical-stretch: 0;
+            HorizontalBox { padding: 0px; spacing: 8px;
+                Label { text: "Settings unavailable — destination changes won't be saved"; color: root.attention-color; font-weight: 600; wrap: word-wrap; }
+                ActionButton { text: "Details…"; accessible-label: "Settings warning details"; clicked => { settings-popup.show(); } }
             }
-            VerticalBox {
-                HorizontalBox { Label { text: root.run-label; font-weight: 600; } Label { text: root.run-status; } }
-                HorizontalBox {
-                    for count in root.counts: VerticalBox {
-                        Label { text: count.label; }
-                        Label { text: count.value; font-size: 21px; accessible-label: count.accessible; }
-                    }
-                }
-                if root.report-diagnostics.length > 0: VerticalBox {
-                    Label { text: "Run diagnostics"; font-weight: 600; }
-                    ListView {
-                        preferred-height: min(160px, root.report-diagnostics.length * 42px); min-height: 0px; vertical-stretch: 0;
-                        content-width: self.visible-width;
-                        accessible-role: list; accessible-label: "Run diagnostics";
-                        for row in root.report-diagnostics: Label { text: row.text; wrap: word-wrap; }
-                    }
-                }
-                ListView { preferred-height: root.items.length > 0 ? 145px : 0px; min-height: 0px; vertical-stretch: 0; content-width: self.visible-width; accessible-role: list; accessible-label: "Message results";
-                    for item[index] in root.items: VerticalBox {
-                        spacing: 2px;
-                        FileButton { path: item.path; clicked => { root.select-item(index); } }
-                        Label { text: item.path.directory; font-size: 12px; overflow: elide; min-width: 0px; Tooltip { text: @markdown("\{item.path.full}"); } }
-                        Label { text: item.status; }
-                    }
-                }
-                details-view := ScrollView { min-height: 0px; vertical-stretch: 1; accessible-role: list; accessible-label: "Message details";
-                    content-width: self.visible-width;
-                    content-height: root.has-item ? detail-content.height : 0px;
-                detail-content := VerticalBox {
-                    visible: root.has-item;
-                    width: details-view.visible-width;
-                    height: self.preferred-height;
-                    Label { text: "Source"; font-weight: 600; }
-                    PathLabel { path: root.item-source-path; }
-                    if root.item-destination != "": Label { text: "Destination"; font-weight: 600; }
-                    if root.item-destination != "": PathLabel { path: root.item-destination-path; }
-                    Label { text: root.item-status; font-weight: 600; }
-                    for count in root.byte-counts: HorizontalBox { Label { text: count.label; } Label { text: count.value; accessible-label: count.accessible; } }
-                    for detail in root.details: Label { text: detail.text; wrap: word-wrap; }
-                    Label { text: root.removal-heading; font-weight: 600; }
-                    ListView { height: 150px; vertical-stretch: 0; accessible-role: list; accessible-label: root.removal-heading;
-                        for part in root.removals: VerticalBox {
-                            HorizontalBox { Label { text: part.section; } Label { text: part.filename; } Label { text: part.media; } }
-                            HorizontalBox { Label { text: part.reason; } Label { text: part.byte-label; } Label { text: part.bytes; accessible-label: part.byte-accessible; } }
+        }
+        if root.operation-feedback != "": ScrollView {
+            preferred-height: min(80px, operation-text.preferred-height + 8px); min-height: 0px; vertical-stretch: 0;
+            content-width: self.visible-width; content-height: operation-text.preferred-height;
+            accessible-role: list; accessible-label: "Operation feedback";
+            operation-text := Label { x: 20px; width: max(0px, parent.visible-width - 40px); height: self.preferred-height;
+                text: root.operation-label + ": " + root.operation-feedback; wrap: word-wrap;
+                accessible-label: self.text;
+            }
+        }
+        HorizontalBox { padding: 0px; spacing: 0px; vertical-stretch: 1;
+            if root.show-sidebar: Rectangle { width: 210px; horizontal-stretch: 0; border-width: 1px; border-color: Palette.border;
+                VerticalBox { padding: 12px; spacing: 8px;
+                    if root.selection.length > 0: ActionButton { text: "Review selection (" + root.selection.length + ")"; accessible-label: "Review selection"; clicked => { root.review-selection(); } }
+                    if root.runs.length > 0: Label { text: "Reports · " + root.runs.length + " of " + root.report-capacity; font-weight: 600; }
+                    ListView { preferred-height: min(250px, root.runs.length * max(110px, root.ui-size * 7)); min-height: 0px; vertical-stretch: 0;
+                        content-width: self.visible-width; accessible-role: list; accessible-label: "Retained reports";
+                        for run[index] in root.runs: Rectangle {
+                            height: root.ui-size > 16px ? root.ui-size * 10 : 110px; min-width: 0px;
+                            background: index == root.selected-run && !root.reviewing ? Palette.alternate-background : transparent;
+                            border-width: 1px; border-color: report-keyboard.has-focus || (index == root.selected-run && !root.reviewing) ? Palette.accent-background : Palette.border;
+                            accessible-role: button; accessible-item-selectable: true; accessible-item-selected: index == root.selected-run && !root.reviewing;
+                            accessible-action-default => { report-keyboard.focus(); root.select-run(index); }
+                            report-keyboard := FocusScope { key-pressed(event) => { if event.text == Key.Return || event.text == Key.Space { root.select-run(index); return accept; } return reject; } }
+                            TouchArea { clicked => { report-keyboard.focus(); root.select-run(index); } }
+                            accessible-label: run.label; accessible-description: run.status + "; " + run.mode + "; " + run.selection.full + "; " + run.selections.accessible;
+                            VerticalBox { padding: 10px; spacing: 4px; alignment: start;
+                                Label { text: run.label + " · " + run.mode; font-weight: 600; wrap: word-wrap; }
+                                Label { text: run.status; wrap: word-wrap; }
+                                FileName { path: run.selection; text-size: root.ui-size; opacity: 0.72; }
+                                Label { text: run.selections.accessible; opacity: 0.72; }
+                            }
+                            Tooltip { text: @markdown("\{run.selection.full} · \{run.destination}"); }
                         }
                     }
-                    Label { text: root.field-heading; font-weight: 600; }
-                    for field in root.stripped: Label { text: field.text; }
+                    if root.waiting.length > 0: Label { text: "Waiting · " + root.waiting.length; font-weight: 600; }
+                    if root.queue-notice != "": Label { text: "Paused — dismiss a report to continue."; wrap: word-wrap; min-height: max(36px, root.ui-size * 4); accessible-description: root.queue-notice; Tooltip { text: @markdown("\{root.queue-notice}"); } }
+                    if root.waiting.length > 0: ListView { preferred-height: min(280px, root.waiting.length * 140px); min-height: 64px; vertical-stretch: 1; content-width: self.visible-width; accessible-role: list; accessible-label: "Waiting selections";
+                        for run[index] in root.waiting: VerticalBox { height: max(140px, root.ui-size * 11); padding: 0px; spacing: 3px; alignment: start;
+                            Label { text: run.label + " · " + run.mode; wrap: word-wrap; }
+                            Label { text: run.destination; overflow: elide; Tooltip { text: @markdown("\{run.destination}"); } }
+                            PathLabel { path: run.selection; }
+                            Label { text: run.selections.accessible; }
+                            ActionButton { text: "Remove from queue"; accessible-label: "Remove " + run.label; clicked => { root.remove-waiting(index); } }
+                        }
+                    }
+                    if root.waiting.length == 0: Rectangle { vertical-stretch: 1; }
                 }
+            }
+            VerticalBox { padding: 12px; padding-top: 8px; padding-bottom: 8px; spacing: 8px;
+                if !root.has-reports && root.selection.length == 0: VerticalBox { padding: 0px; alignment: center; spacing: 12px;
+                    Label { text: "Choose messages to begin"; font-size: 18px; font-weight: 600; horizontal-alignment: center; }
+                    Label { text: "Drop .eml files or a folder here."; horizontal-alignment: center; }
+                    HorizontalBox { padding: 0px; alignment: center; spacing: 8px;
+                        ActionButton { text: "Choose files…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-files(); } }
+                        ActionButton { text: "Choose folder…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-folder(); } }
+                    }
+                    Label { text: "Review the selection, then " + (root.check-only ? "check the messages." : "create the copies."); horizontal-alignment: center; wrap: word-wrap; }
                 }
-                HorizontalBox {
-                    Button { text: "Stop"; enabled: root.running; accessible-role: button; accessible-label: self.text; clicked => { root.stop(); } }
-                    Button { text: "Force Stop"; enabled: root.running; accessible-role: button; accessible-label: self.text; clicked => { root.force-stop(); } }
-                    Button { text: "Save JSONL report"; enabled: root.can-export; accessible-role: button; accessible-label: self.text; clicked => { root.export-report(); } }
-                    Button { text: "Reveal copy"; enabled: root.can-reveal; accessible-role: button; accessible-label: self.text; clicked => { root.reveal(); } }
+                if root.reviewing && root.selection.length > 0: VerticalBox { padding: 0px; spacing: 12px;
+                    HorizontalBox { padding: 0px; vertical-stretch: 0;
+                        VerticalBox { padding: 0px; spacing: 4px;
+                            Label { text: root.selection.length + (root.selection.length == 1 ? " selection ready" : " selections ready"); font-size: 17px; font-weight: 600; }
+                            Label { text: "Folders are scanned when the request starts."; wrap: word-wrap; }
+                        }
+                        ActionButton { text: "Add files…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-files(); } }
+                        ActionButton { text: "Add folder…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-folder(); } }
+                    }
+                    ListView { content-width: self.visible-width; accessible-role: list; accessible-label: "Selection ready to start";
+                        for path[index] in root.selection: HorizontalBox { padding: 0px;
+                            PathLabel { path: path; }
+                            ActionButton { text: "Remove"; accessible-label: "Remove selection " + path.full; clicked => { root.remove-selection(index); } }
+                        }
+                    }
+                    if !root.can-start: Label { text: root.start-reason; wrap: word-wrap; color: root.attention-color; }
+                    Label { text: root.check-only ? "Check only. No copy will be created." : "Copies use name.no-attachments.eml. Original messages stay unchanged."; wrap: word-wrap; }
                 }
-                if root.can-create: Button { text: "Create copies from this selection"; accessible-role: button; accessible-label: self.text; clicked => { root.create-copies(); } }
+                if root.has-reports && !root.reviewing: VerticalBox { padding: 0px; spacing: 6px;
+                    HorizontalBox { padding: 0px; vertical-stretch: 0;
+                        VerticalBox { padding: 0px; spacing: 4px;
+                            Label { text: root.run-label + " · " + root.run-status; color: root.run-attention ? root.attention-color : Palette.foreground; font-size: 17px; font-weight: 600; wrap: word-wrap; }
+                            Label { text: root.run-context; overflow: elide; Tooltip { text: @markdown("\{root.run-context}"); } }
+                        }
+                        ActionButton { text: "Add files…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-files(); } }
+                        ActionButton { text: "Add folder…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-folder(); } }
+                    }
+                    HorizontalBox { padding: 0px; spacing: 8px; vertical-stretch: 0;
+                        for count in root.counts: Label {
+                            text: count.label + ": " + count.value; color: count.attention ? root.attention-color : Palette.foreground; accessible-label: count.accessible; wrap: word-wrap; min-width: 0px; vertical-alignment: center;
+                        }
+                        ActionButton { text: root.failures-only ? "✓ Failed only" : "Failed only"; checked: root.failures-only; accessible-checkable: true; accessible-label: "Filter failed messages"; accessible-description: root.failures-only ? "Show all messages" : "Show failed messages"; clicked => { root.keyboard-navigation = false; root.filter-failures(!root.failures-only); } }
+                    }
+                    if root.report-diagnostics.length > 0: ScrollView {
+                        preferred-height: min(100px, diagnostics.preferred-height); min-height: 0px; vertical-stretch: 0;
+                        content-width: self.visible-width; content-height: diagnostics.preferred-height;
+                        accessible-role: list; accessible-label: "Run diagnostics";
+                        diagnostics := VerticalBox { width: parent.visible-width; height: self.preferred-height; padding: 0px; spacing: 4px;
+                            for row in root.report-diagnostics: Label { text: row.text; wrap: word-wrap; }
+                        }
+                    }
+                    if root.report-running: ProgressIndicator {
+                        progress: root.work-total > 0 ? (root.work-completed * 1.0) / root.work-total : 0;
+                        indeterminate: root.work-total == 0;
+                        accessible-label: root.work-total > 0 ? root.work-completed + " of " + root.work-total + " messages processed" : "Discovering messages";
+                    }
+                    Rectangle { height: max(28px, root.ui-size * 1.7); background: Palette.alternate-background; border-width: 1px; border-color: Palette.border;
+                    HorizontalBox { padding-top: 0px; padding-bottom: 0px; padding-left: 12px; padding-right: 8px; spacing: 8px;
+                        Label { text: "Message"; horizontal-stretch: 1; }
+                        Label { text: "Result"; width: 135px; horizontal-stretch: 0; }
+                        Label { text: "Parts"; width: 76px; horizontal-stretch: 0; }
+                    } }
+                    if root.items.length == 0: Label { text: root.failures-only ? "No failed messages in this report." : (root.report-running ? "No message results yet." : "No message results were reported."); wrap: word-wrap; }
+                    message-list := ListView { content-y <=> root.messages-scroll-y; changed height => { root.messages-view-height = self.height; }
+                        preferred-height: root.items.length > 0 ? min(240px, root.items.length * root.message-row-height) : 0px; min-height: root.items.length > 0 ? root.message-row-height : 0px; vertical-stretch: 1;
+                        content-width: self.visible-width; accessible-role: list; accessible-label: "Message results";
+                        for item[index] in root.items: Rectangle {
+                            height: root.message-row-height;
+                            background: root.selected-item == item.original-index ? Palette.alternate-background : transparent;
+                            border-width: 1px;
+                            border-color: root.selected-item == item.original-index ? Palette.accent-background : Palette.border;
+                            TouchArea { clicked => { root.keyboard-navigation = false; file-select.focus(); root.select-item(item.original-index); } }
+                            message-row := HorizontalBox { width: parent.width; height: parent.height; padding: 0px; padding-right: 8px; spacing: 8px;
+                                VerticalBox { padding: 0px; spacing: 0px; alignment: center;
+                                    file-select := FileButton { path: item.path; text-size: root.ui-size; description: item.status + "; " + item.removed; selected: item.original-index == root.selected-item; focus-requested: root.keyboard-navigation && self.selected;
+                                        clicked => { root.keyboard-navigation = false; root.select-item(item.original-index); }
+                                        navigate(direction) => { root.keyboard-navigation = true; root.navigate-message(direction); root.reveal-selected(); }
+                                    }
+                                    Label { text: item.path.directory; opacity: 0.65; font-size: max(12px, root.ui-size * 0.9); overflow: elide; Tooltip { text: @markdown("\{item.path.full}"); } }
+                                }
+                                Label { text: item.status; color: item.attention ? root.attention-color : Palette.foreground; width: 135px; wrap: word-wrap; horizontal-stretch: 0; vertical-alignment: center; }
+                                Label { text: item.removed; width: 76px; horizontal-stretch: 0; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                    Rectangle { min-height: root.item-attention || root.details.length > 0 ? max(190px, root.ui-size * 11) : max(140px, root.ui-size * 8); vertical-stretch: 1; border-width: 1px; border-color: Palette.border; background: Palette.alternate-background;
+                    VerticalBox { padding: 12px; spacing: 8px;
+                        HorizontalBox { padding: 0px; spacing: 12px; vertical-stretch: 0;
+                            Label { text: "Message details"; font-weight: 600; vertical-alignment: center; horizontal-stretch: 0; accessible-label: "Message details heading"; }
+                            FileName { path: root.item-source-path; text-size: root.ui-size; visible: root.has-item; }
+                        }
+                        if !root.has-item: Label { text: "Select a message to inspect."; opacity: 0.72; }
+                        details-view := ScrollView { content-y <=> root.details-scroll-y; min-height: 0px; vertical-stretch: 1; accessible-role: list; accessible-label: "Message details";
+                        content-width: self.visible-width; content-height: detail-content.preferred-height;
+                        detail-content := VerticalBox { visible: root.has-item; width: details-view.visible-width; height: self.preferred-height; padding: 0px; spacing: 6px;
+                            Label { text: root.item-status; color: root.item-attention ? root.attention-color : Palette.foreground; font-weight: 600; wrap: word-wrap; }
+                            for detail in root.details: Label { text: detail.text; wrap: word-wrap; }
+                            ActionButton { text: root.details-expanded ? "▾ Paths, parts and technical details" : "▸ Paths, parts and technical details";
+                                accessible-label: "Message technical details"; accessible-expandable: true; accessible-expanded: root.details-expanded;
+                                clicked => { root.details-expanded = !root.details-expanded; }
+                            }
+                            if root.details-expanded: VerticalBox { padding: 0px; spacing: 6px;
+                            Label { text: "Source"; font-weight: 600; }
+                            HorizontalBox { padding: 0px; PathLabel { path: root.item-source-path; text-size: root.ui-size; } ActionButton { text: "Copy path"; accessible-label: "Copy source path"; enabled: root.can-copy-source; clicked => { root.copy-source-path(); } } }
+                            if root.item-destination != "": Label { text: root.can-reveal ? "Reported copy path" : "Intended destination path"; font-weight: 600; }
+                            if root.item-destination != "": HorizontalBox { padding: 0px; PathLabel { path: root.item-destination-path; text-size: root.ui-size; } ActionButton { text: "Copy path"; accessible-label: "Copy destination path"; enabled: root.can-copy-destination; clicked => { root.copy-destination-path(); } } }
+                            for count in root.byte-counts: Label { text: count.label + ": " + count.value; accessible-label: count.accessible; }
+                            if root.removals.length > 0: Label { text: root.removal-heading; font-weight: 600; }
+                            for part in root.removals: VerticalBox { padding: 0px; spacing: 2px;
+                                Label { text: part.section + " · " + part.filename + " · " + part.media; wrap: word-wrap; }
+                                Label { text: part.reason; wrap: word-wrap; }
+                                Label { text: part.byte-accessible; }
+                            }
+                            if root.stripped.length > 0: Label { text: root.field-heading; font-weight: 600; }
+                            for field in root.stripped: Label { text: field.text; wrap: word-wrap; }
+                            }
+                        }
+                    } } }
+                }
+            }
+        }
+        Rectangle { height: 1px; background: Palette.border; }
+        footer := HorizontalBox { padding-top: 12px; padding-bottom: 12px; padding-left: 20px; padding-right: 20px; spacing: 8px; vertical-stretch: 0; min-height: 56px;
+            if root.has-reports && !root.reviewing: ActionButton { text: "Dismiss report"; enabled: root.can-dismiss; accessible-label: self.text; clicked => { root.dismiss(); } }
+            if root.reviewing: ActionButton { text: "Clear selection"; accessible-label: self.text; clicked => { root.clear-selection(); } }
+            Label { text: root.activity-label != "" ? root.activity-label : (root.reviewing ? "Not started" : (root.has-reports ? root.run-status : "No messages selected")); wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
+            if root.worker-running: ActionButton { text: "More…"; accessible-label: "More run actions"; clicked => { more-menu.show(); }
+
+            }
+            if root.worker-running: ActionButton { text: "Stop"; accessible-label: self.text; clicked => { root.stop(); } }
+            if root.reviewing: ActionButton { text: root.start-label; enabled: root.can-start; primary: true; accessible-label: "Start selection"; accessible-description: root.start-reason; clicked => { root.start-selection(); } }
+            if root.has-reports && !root.reviewing: ActionButton { text: "Save JSONL report…"; enabled: root.can-export && !root.closing; accessible-label: "Save JSONL report"; clicked => { root.export-report(); } }
+            if root.has-reports && !root.reviewing && root.can-create: ActionButton { text: "Create copies…"; enabled: root.selection.length == 0 && !root.closing; accessible-description: root.closing ? root.start-reason : root.selection.length > 0 ? "Finish or clear the current reviewed selection first." : "Review this Check’s paths before starting a new Create request."; accessible-label: "Create copies from this selection"; clicked => { root.create-copies(); } }
+            if root.has-reports && !root.reviewing && !root.can-create: ActionButton { text: "Show copy"; enabled: root.can-reveal; accessible-label: self.text; clicked => { root.reveal(); }
+                Tooltip { text: root.can-reveal ? @markdown("Reveal the verified copy in the file manager.") : @markdown("No verified copy is available for the selected message."); }
             }
         }
     }
-    changed confirmation => {
-        decision.close();
-        if root.confirmation != Confirmation.none { decision.show(); }
-    }
-    decision := PopupWindow {
-        x: (root.width - self.width) / 2;
-        y: (root.height - self.height) / 2;
-        width: 480px; height: 250px;
-        close-policy: PopupClosePolicy.no-auto-close;
-        accessible-role: groupbox;
-        accessible-label: root.confirmation == Confirmation.quit ? "Quit confirmation" : "Force Stop confirmation";
-        Rectangle { background: Palette.background;
-        VerticalBox { padding: 24px; spacing: 16px;
-            Label { text: root.confirmation == Confirmation.quit ? "A run or report export is still in progress." : root.force-notice; wrap: word-wrap; }
-            if root.confirmation == Confirmation.quit: Button { text: "Stop and wait"; accessible-role: button; accessible-label: self.text; clicked => { root.stop-and-quit(); } }
-            Button { text: root.confirmation == Confirmation.quit ? "Force Stop and quit" : "Force Stop now"; accessible-role: button; accessible-label: self.text; clicked => { if root.confirmation == Confirmation.quit { root.force-and-quit(); } else { root.confirm-force-stop(); } } }
-            Button { text: "Keep running"; accessible-role: button; accessible-label: self.text; clicked => { root.keep-running(); } }
+    settings-popup := PopupWindow {
+        width: min(720px, root.width - 40px); height: min(360px, root.height - 80px);
+        x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;
+        close-policy: close-on-click-outside;
+        Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border;
+            FocusScope { forward-focus: settings-details-text;
+                key-pressed(event) => { if event.text == Key.Escape { settings-popup.close(); return accept; } return reject; }
+                VerticalBox { padding: 20px; spacing: 12px;
+                    Label { text: "Destination settings"; font-weight: 600; }
+                    settings-details-text := TextEdit { text: root.settings-warning; read-only: true; accessible-label: "Settings error and recovery details"; }
+                    ActionButton { text: "Close"; accessible-label: "Close settings details"; clicked => { settings-popup.close(); } }
+                }
+            }
         }
+    }
+                destination-menu := PopupWindow { x: root.width - self.width - 20px; y: toolbar.height;
+                    width: max(250px, root.ui-size * 18); height: max(116px, root.ui-size * 7);
+                    Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border;
+                        VerticalBox { padding: 8px; spacing: 6px;
+                            Label { text: root.destination-beside ? "Current: beside originals" : "Current: chosen folder"; opacity: 0.72; }
+                            ActionButton { text: root.destination-beside ? "✓ Beside originals" : "Beside originals"; checked: root.destination-beside; accessible-checkable: true; accessible-label: "Beside originals"; clicked => { destination-menu.close(); root.beside-source(); } }
+                            ActionButton { text: "Choose folder…"; enabled: !root.closing; accessible-label: "Choose destination folder"; clicked => { destination-menu.close(); root.choose-destination(); } }
+                        }
+                    }
+                }
+                more-menu := PopupWindow { x: root.width - self.width - 20px; y: root.height - footer.height - self.height - 4px; width: 180px; height: 52px;
+                    Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border;
+                        VerticalBox { padding: 8px;
+                            ActionButton { text: "Force Stop…"; accessible-label: "Force Stop"; clicked => { more-menu.close(); root.force-stop(); } }
+                        }
+                    }
+                }
+    changed confirmation => { decision.close(); if root.confirmation != Confirmation.none { decision.show(); } }
+    decision := PopupWindow {
+        x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;
+        width: max(480px, root.ui-size * 30); height: max(250px, root.ui-size * 23); close-policy: PopupClosePolicy.no-auto-close;
+        accessible-role: groupbox; accessible-label: root.confirmation == Confirmation.quit ? "Quit confirmation" : "Force Stop confirmation";
+        Rectangle { background: Palette.background;
+            VerticalBox { padding: 24px; spacing: 16px;
+                Label { text: root.confirmation == Confirmation.quit ? (root.worker-running || root.activity-label != "" ? "A run or report export is still in progress. Quitting cancels waiting requests; completed copies and original messages are retained." : root.waiting.length + (root.waiting.length == 1 ? " request is waiting." : " requests are waiting.") + " Quitting cancels this queued work; originals and completed copies are retained.") : root.force-notice; wrap: word-wrap; }
+                if root.confirmation == Confirmation.quit: ActionButton { text: root.worker-running ? "Stop and wait" : (root.activity-label != "" ? "Finish export and quit" : "Cancel waiting and quit"); accessible-label: self.text; clicked => { root.stop-and-quit(); } }
+                ActionButton { text: root.confirmation == Confirmation.quit ? "Force Stop and quit" : "Force Stop now"; enabled: root.worker-running; accessible-description: "Force Stop applies to the message worker. Report exports are allowed to finish."; accessible-label: self.text; clicked => { if root.confirmation == Confirmation.quit { root.force-and-quit(); } else { root.confirm-force-stop(); } } }
+                ActionButton { text: "Keep running"; accessible-label: self.text; clicked => { root.keep-running(); } }
+            }
         }
     }
 }

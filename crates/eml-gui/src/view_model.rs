@@ -136,9 +136,43 @@ fn facts(item: &wire::ItemRecord) -> Option<OutcomeFacts> {
 fn meaning(item: &wire::ItemRecord) -> Option<vocabulary::OutcomeMeaning> {
     facts(item).map(|facts| vocabulary::classify(&facts))
 }
-/// One accepted message result, with all wording delegated to the core.
+// The core enum owns wire spellings; this match owns only concise desktop wording.
+fn failure_label(code: &str) -> Option<&'static str> {
+    use eml_core::ErrorCode::*;
+    Some(match eml_core::ErrorCode::from_wire_name(code)? {
+        ReadFailed => "Cannot read source",
+        SourceNotRegular => "Not a regular file",
+        SourceChanged => "Source changed",
+        Malformed => "Malformed message",
+        LimitExceeded => "Message limit",
+        Protected => "Protected content",
+        UnsupportedMime => "Unsupported content",
+        NoBody => "No supported body",
+        Internal => "Verification error",
+        InputAdmissionFailed => "Input unavailable",
+        InputLimitExceeded => "Input limit reached",
+        NoInputs => "No messages found",
+        OutputOverlap => "Output overlap",
+        DestinationCollision | DestinationExists => "Destination conflict",
+        SourceDestinationAlias => "Path alias",
+        DestinationUnsupported => "Unsupported target",
+        BindFailed => "Path unavailable",
+        StageFailed => "Cannot create copy",
+        WriteFailed => "Copy write failed",
+        FileSyncFailed => "Copy sync failed",
+        NamespaceSyncFailed => "Folder sync failed",
+        AddressChanged => "Path changed",
+        AddressUnverified => "Path unverified",
+        CleanupFailed => "Cleanup incomplete",
+        ExistingSyncFailed => "Existing sync failed",
+        Interrupted => "Interrupted",
+        OutputFailed => "Delivery failed",
+    })
+}
+/// Concise desktop labels preserve the core qualification and typed failure facts.
 pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
     ItemView {
+        original_index: 0,
         source: item.source.display.clone().into(),
         path: path(&item.source.display),
         destination: item
@@ -147,8 +181,39 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
             .map(|p| p.display.clone())
             .unwrap_or_default()
             .into(),
-        status: meaning(item)
-            .map_or(MeaningKind::Unestablished.label(), |value| value.label())
+        status: if item.status == wire::ItemStatus::Failed
+            && item.publication.state == wire::Publication::NotPublished
+            && meaning(item).is_some_and(|value| matches!(value.kind, MeaningKind::NotPublished))
+        {
+            item.error
+                .value()
+                .and_then(|error| failure_label(&error.code))
+                .unwrap_or_else(|| {
+                    meaning(item).map_or(MeaningKind::Unestablished.label(), |value| value.label())
+                })
+        } else {
+            meaning(item).map_or(MeaningKind::Unestablished.label(), |value| {
+                match value.kind {
+                    MeaningKind::Prepared => "Copy planned",
+                    MeaningKind::Comparison => "Verification planned",
+                    _ => value.label(),
+                }
+            })
+        }
+        .into(),
+        attention: meaning(item)
+            .is_none_or(|value| value.severity == vocabulary::Severity::Attention),
+        removed: meaning(item)
+            .map_or_else(
+                || "—".into(),
+                |value| {
+                    if matches!(value.kind, MeaningKind::Prepared | MeaningKind::Comparison) {
+                        format!("{} to remove", item.removed.len())
+                    } else {
+                        value.removal_mode.count_label(item.removed.len())
+                    }
+                },
+            )
             .into(),
     }
 }
@@ -172,11 +237,8 @@ pub(crate) fn counts(report: &eml_app::RunReport) -> Vec<CountView> {
     let mut counts: Vec<_> = kinds
         .into_iter()
         .zip(values)
-        .map(|(kind, value)| CountView {
-            label: kind.label().into(),
-            value: value as i32,
-            accessible: vocabulary::count_label(kind, value).into(),
-        })
+        .filter(|(kind, value)| *value > 0 || matches!(kind, CountKind::Failed))
+        .map(|(kind, value)| count(kind, value))
         .collect();
     if let Some(start) = report.start() {
         counts.insert(0, count(CountKind::KnownItems, start.total));
@@ -184,11 +246,9 @@ pub(crate) fn counts(report: &eml_app::RunReport) -> Vec<CountView> {
     if let Some(summary) = report.summary() {
         let kind = CountKind::NotProcessed;
         let value = summary.counts.not_processed;
-        counts.push(CountView {
-            label: kind.label().into(),
-            value: value as i32,
-            accessible: vocabulary::count_label(kind, value).into(),
-        });
+        if value > 0 {
+            counts.push(count(kind, value));
+        }
     }
     counts
 }
@@ -197,6 +257,7 @@ pub(crate) fn count(kind: CountKind, value: u32) -> CountView {
         label: kind.label().into(),
         value: value as i32,
         accessible: vocabulary::count_label(kind, value).into(),
+        attention: matches!(kind, CountKind::Failed) && value > 0,
     }
 }
 pub(crate) fn byte_counts(item: &wire::ItemRecord) -> Vec<CountView> {

@@ -91,7 +91,7 @@ pub fn install_native(
                 .add_filter("EML messages", &["eml"])
                 .pick_files()
                 .await
-                && let Err(error) = controller.enqueue(
+                && let Err(error) = controller.stage(
                     files
                         .into_iter()
                         .map(|file| file.path().to_owned())
@@ -121,7 +121,7 @@ pub fn install_native(
                 .set_parent(parent.as_ref())
                 .pick_folder()
                 .await
-                && let Err(error) = controller.enqueue(vec![folder.path().to_owned()])
+                && let Err(error) = controller.stage(vec![folder.path().to_owned()])
             {
                 controller.message(&error.to_string());
             }
@@ -156,27 +156,74 @@ pub fn install_native(
         let Some(controller) = weak.upgrade() else {
             return;
         };
-        let ui = controller.window();
+        controller.begin_export();
+    });
+    let weak = Rc::downgrade(controller);
+    controller.export_window().on_choose_directory(move || {
+        let Some(controller) = weak.upgrade() else {
+            return;
+        };
+        let Some(request) = controller.capture_export_folder() else {
+            return;
+        };
+        let export = controller.export_window();
         let _ = slint::spawn_local(async move {
-            // rfd needs both native handle traits; keep the winit owner alive.
-            let parent = match ui.window().winit_window().await {
+            let parent = match export.window().winit_window().await {
                 Ok(parent) => parent,
                 Err(error) => {
-                    controller.message(&error.to_string());
+                    controller.export_notice(&request, &error.to_string());
                     return;
                 }
             };
-            if let Some(file) = rfd::AsyncFileDialog::new()
+            if let Some(folder) = rfd::AsyncFileDialog::new()
                 .set_parent(parent.as_ref())
-                .set_file_name("eml-report.jsonl")
-                .add_filter("JSON Lines", &["jsonl"])
-                .save_file()
+                .pick_folder()
                 .await
             {
-                controller.start_export(file.path().to_owned());
+                controller.set_export_directory(&request, folder.path().to_owned());
             }
         });
     });
+    // Keep clipboard ownership alive for backends that serve requests asynchronously.
+    let clipboard = Rc::new(std::cell::RefCell::new(None::<arboard::Clipboard>));
+    for destination in [false, true] {
+        let clipboard = clipboard.clone();
+        let weak = Rc::downgrade(controller);
+        let copy = move || {
+            let Some(controller) = weak.upgrade() else {
+                return;
+            };
+            let Some(path) = controller
+                .selected_path(destination)
+                .and_then(|p| p.into_os_string().into_string().ok())
+            else {
+                return;
+            };
+            let result = (|| {
+                let mut context = clipboard.borrow_mut();
+                if context.is_none() {
+                    *context = Some(arboard::Clipboard::new()?);
+                }
+                context
+                    .as_mut()
+                    .expect("clipboard initialized")
+                    .set_text(path)
+            })();
+            match result {
+                Ok(()) => controller.message(if destination {
+                    "Destination path copied."
+                } else {
+                    "Source path copied."
+                }),
+                Err(error) => controller.message(&format!("Cannot copy path: {error}")),
+            }
+        };
+        if destination {
+            ui.on_copy_destination_path(copy);
+        } else {
+            ui.on_copy_source_path(copy);
+        }
+    }
     let weak = Rc::downgrade(controller);
     ui.on_reveal(move || {
         if let Some(controller) = weak.upgrade()
@@ -201,11 +248,18 @@ pub fn install_native(
         .ok_or("Desktop executable has no Contents directory")?
         .join("Resources/THIRD-PARTY-NOTICES.txt");
     let weak = Rc::downgrade(controller);
-    about.on_licenses(move || {
+    controller.license_window().on_third_party(move || {
         if let Err(error) = opener::open(&notices)
             && let Some(controller) = weak.upgrade()
         {
-            controller.message(&error.to_string());
+            let feedback = format!(
+                "Cannot open bundled third-party notices at {}: {error}",
+                notices.display()
+            );
+            controller
+                .license_window()
+                .set_notice(eml_protocol::DisplayText::new(&feedback).to_string().into());
+            controller.message(&feedback);
         }
     });
     Ok(())

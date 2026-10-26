@@ -122,7 +122,20 @@ impl RunReport {
         {
             return None;
         }
-        let native = &item.destination.value()?.native;
+        self.destination_path(position)
+    }
+    /// Native intended source path, without claiming current existence or identity.
+    pub fn source_path(&self, position: usize) -> Option<std::path::PathBuf> {
+        Self::native_absolute_path(&self.items.get(position)?.source)
+    }
+    /// Native intended destination, independent of publication/reveal qualification.
+    pub fn destination_path(&self, position: usize) -> Option<std::path::PathBuf> {
+        Self::native_absolute_path(self.items.get(position)?.destination.value()?)
+    }
+    fn native_absolute_path(
+        path: &eml_protocol::records::ReportPathRecord,
+    ) -> Option<std::path::PathBuf> {
+        let native = &path.native;
         let bytes = validate_native(native, MAX_COLLECTED_PATH_BYTES).ok()?;
         #[cfg(unix)]
         let path: std::path::PathBuf = {

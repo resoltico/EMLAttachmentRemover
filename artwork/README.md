@@ -36,6 +36,12 @@ Inspect the ten PNGs, including the 1024×1024 `icon_512x512@2x.png`, then copy
 `target/icon-export/EML.icns` to `artwork/app-icon/EML.icns`.
 The Icon Composer package and its SVG layers define the editable design.
 
+## About window icon
+
+`../crates/eml-gui/ui/eml-icon.png` embeds the unchanged 1024-pixel PNG payload
+(`ic10`) from `app-icon/EML.icns` for the Slint window/About icon. It is covered
+by the same root LICENSE artwork terms.
+
 ## Interface reference drawings
 
 [Interface geometry](interface/GEOMETRY.md) describes the SVG variants,

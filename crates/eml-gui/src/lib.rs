@@ -12,7 +12,7 @@ use eml_core::{
     RunMode,
     vocabulary::{self, CountKind, RunStatus},
 };
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::{
     cell::RefCell,
     io,
@@ -47,7 +47,31 @@ struct ExportJob {
     run: RunId,
     task: JoinHandle<io::Result<()>>,
 }
+/// Exact settled report retained while a native Save dialog is open.
+#[derive(Clone)]
+pub struct ReportExport {
+    run: RunId,
+    jsonl: std::sync::Arc<[u8]>,
+}
+impl ReportExport {
+    /// Captured run identity for the suggested filename and completion feedback.
+    pub fn run_id(&self) -> RunId {
+        self.run
+    }
+}
+/// Opaque lifetime of one export draft's native folder request.
+pub struct ExportFolderRequest {
+    token: std::rc::Weak<()>,
+}
+struct ExportDraft {
+    token: Rc<()>,
+    source: ReportExport,
+    directory: PathBuf,
+}
 struct Session {
+    selection: Vec<PathBuf>,
+    reviewing: bool,
+    follow_run: Option<RunId>,
     queue: RunQueue,
     entries: Vec<Entry>,
     active: Option<Active>,
@@ -60,11 +84,20 @@ struct Session {
     force_quit: bool,
     should_exit: bool,
 }
+impl Session {
+    fn is_closing(&self) -> bool {
+        self.quit_when_idle || self.force_quit || self.should_exit
+    }
+    fn needs_quit_confirmation(&self) -> bool {
+        self.active.is_some() || self.export.is_some() || self.queue.waiting() > 0
+    }
+}
 // Accepted records append; unchanged facts do not rebuild the Slint models.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct PresentationRevision {
     run: RunId,
     item: usize,
+    failures_only: bool,
     started: bool,
     items: usize,
     summary: bool,
@@ -75,14 +108,35 @@ pub struct DesktopController {
     last_view: RefCell<Option<PresentationRevision>>,
     ui: MainWindow,
     about: AboutWindow,
+    licenses: LicenseWindow,
+    export_ui: ExportWindow,
+    export_draft: RefCell<Option<ExportDraft>>,
+    export_directory: RefCell<PathBuf>,
     session: RefCell<Session>,
     drops: RefCell<ingress::DropBatch>,
     cli: PathBuf,
     home: PathBuf,
 }
-fn model<T: Clone + 'static>(values: Vec<T>) -> ModelRc<T> {
-    Rc::new(VecModel::from(values)).into()
+// Update data in place: polling must not discard row controls, keyboard focus,
+// or accessibility nodes when accepted facts are unchanged or append-only.
+fn update_model<T: Clone + PartialEq + 'static>(current: ModelRc<T>, values: Vec<T>) -> ModelRc<T> {
+    let Some(rows) = current.as_any().downcast_ref::<VecModel<T>>() else {
+        return Rc::new(VecModel::from(values)).into();
+    };
+    for (index, value) in values.iter().take(rows.row_count()).enumerate() {
+        if rows.row_data(index).as_ref() != Some(value) {
+            rows.set_row_data(index, value.clone());
+        }
+    }
+    while rows.row_count() > values.len() {
+        rows.remove(values.len());
+    }
+    for value in values.into_iter().skip(rows.row_count()) {
+        rows.push(value);
+    }
+    current
 }
+
 impl DesktopController {
     /// Create the real UI around the bundled CLI and destination settings.
     pub fn new(
@@ -92,20 +146,38 @@ impl DesktopController {
     ) -> Result<Rc<Self>, slint::PlatformError> {
         let ui = MainWindow::new()?;
         let about = AboutWindow::new()?;
+        let licenses = LicenseWindow::new()?;
+        let export_ui = ExportWindow::new()?;
+        licenses.set_licenses(include_str!("../../../LICENSE").into());
+        about.set_copyright(
+            include_str!("../../../LICENSE")
+                .lines()
+                .nth(1)
+                .unwrap_or_default()
+                .replace("(c)", "©")
+                .into(),
+        );
         ui.set_product_name(eml_core::product::DISPLAY_NAME.into());
         about.set_product_name(eml_core::product::DISPLAY_NAME.into());
-        ui.set_version(eml_core::product::VERSION_WITH_BUILD.as_str().into());
+        ui.set_native_about(cfg!(all(feature = "desktop", target_os = "macos")));
         about.set_version(eml_core::product::VERSION_WITH_BUILD.as_str().into());
-        ui.set_destination_scope(vocabulary::DESTINATION_SCOPE.into());
+        ui.set_report_capacity(eml_app::MAX_RETAINED_REPORTS as i32);
         ui.set_force_notice(vocabulary::FORCE_STOP_NOTICE.into());
         let controller = Rc::new(Self {
             last_view: RefCell::new(None),
+            export_ui,
+            export_draft: RefCell::new(None),
+            export_directory: RefCell::new(home.clone()),
             ui,
             about,
+            licenses,
             cli,
             home,
             drops: RefCell::default(),
             session: RefCell::new(Session {
+                selection: Vec::new(),
+                reviewing: false,
+                follow_run: None,
                 queue: RunQueue::default(),
                 entries: Vec::new(),
                 active: None,
@@ -124,6 +196,67 @@ impl DesktopController {
         Ok(controller)
     }
     fn bind(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        self.export_ui.on_create_report(move || {
+            if let Some(c) = weak.upgrade() {
+                c.create_export();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.export_ui.on_cancel(move || {
+            if let Some(c) = weak.upgrade() {
+                c.cancel_export();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.export_ui.window().on_close_requested(move || {
+            if let Some(c) = weak.upgrade() {
+                if c.export_ui.get_busy() {
+                    return slint::CloseRequestResponse::KeepWindowShown;
+                }
+                c.cancel_export();
+            }
+            slint::CloseRequestResponse::HideWindow
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_start_selection(move || {
+            if let Some(c) = weak.upgrade()
+                && let Err(error) = c.start_selection()
+            {
+                c.message(&error.to_string());
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_clear_selection(move || {
+            if let Some(c) = weak.upgrade() {
+                let mut s = c.session.borrow_mut();
+                s.selection.clear();
+                s.reviewing = false;
+                drop(s);
+                c.refresh();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_review_selection(move || {
+            if let Some(c) = weak.upgrade() {
+                c.session.borrow_mut().reviewing = true;
+                c.refresh();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_remove_selection(move |index| {
+            if let Some(c) = weak.upgrade() {
+                let mut s = c.session.borrow_mut();
+                if let Ok(index) = usize::try_from(index)
+                    && index < s.selection.len()
+                {
+                    s.selection.remove(index);
+                }
+                s.reviewing = !s.selection.is_empty();
+                drop(s);
+                c.refresh();
+            }
+        });
         let weak = Rc::downgrade(self);
         self.ui.on_mode_changed(move |check| {
             if let Some(c) = weak.upgrade() {
@@ -145,6 +278,8 @@ impl DesktopController {
                     let mut s = c.session.borrow_mut();
                     s.selected = index;
                     s.selected_item = 0;
+                    s.reviewing = false;
+                    s.follow_run = None;
                     c.clear_operation();
                 }
                 c.refresh();
@@ -155,9 +290,69 @@ impl DesktopController {
             if let Some(c) = weak.upgrade() {
                 if let Ok(index) = usize::try_from(index) {
                     c.clear_operation();
-                    c.session.borrow_mut().selected_item = index;
+                    let mut s = c.session.borrow_mut();
+                    s.selected_item = index;
+                    s.follow_run = None;
                 }
                 c.refresh();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_filter_failures(move |enabled| {
+            if let Some(c) = weak.upgrade() {
+                c.ui.set_messages_scroll_y(0.0);
+                c.ui.set_failures_only(enabled);
+                let mut s = c.session.borrow_mut();
+                if enabled
+                    && let Some(handle) = s
+                        .entries
+                        .get(s.selected)
+                        .and_then(|entry| entry.report.as_ref())
+                {
+                    let selected = s.selected_item;
+                    let first = handle.with_report(|report| {
+                        if report.items().get(selected).is_some_and(|item| {
+                            item.status == eml_protocol::records::ItemStatus::Failed
+                        }) {
+                            Some(selected)
+                        } else {
+                            report.items().iter().position(|item| {
+                                item.status == eml_protocol::records::ItemStatus::Failed
+                            })
+                        }
+                    });
+                    // No selection when the failed-only view has no results.
+                    s.selected_item = first.flatten().unwrap_or(usize::MAX);
+                }
+                if !enabled && s.selected_item == usize::MAX {
+                    s.selected_item = 0;
+                }
+                s.follow_run = None;
+                drop(s);
+                c.refresh();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_navigate_message(move |direction| {
+            if let Some(c) = weak.upgrade() {
+                let rows = c.ui.get_items();
+                if rows.row_count() == 0 {
+                    return;
+                }
+                let selected = c.session.borrow().selected_item as i32;
+                let current = rows
+                    .iter()
+                    .position(|row| row.original_index == selected)
+                    .unwrap_or(0);
+                let next = match direction {
+                    -2 => 0,
+                    2 => rows.row_count() - 1,
+                    -1 => current.saturating_sub(1),
+                    _ => (current + 1).min(rows.row_count() - 1),
+                };
+                if let Some(row) = rows.row_data(next) {
+                    c.ui.invoke_select_item(row.original_index);
+                }
             }
         });
         let weak = Rc::downgrade(self);
@@ -192,12 +387,41 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_force_stop(move || {
             if let Some(c) = weak.upgrade() {
+                if c.ui.get_confirmation() != Confirmation::None {
+                    return;
+                }
+                let notice = {
+                    let s = c.session.borrow();
+                    if s.is_closing() {
+                        return;
+                    }
+                    let Some(active) = &s.active else {
+                        return;
+                    };
+                    let source = s
+                        .entries
+                        .iter()
+                        .find(|entry| entry.id == active.id)
+                        .and_then(|entry| entry.request.request().paths.first())
+                        .map(|path| eml_protocol::TerminalPath::new(path).to_string())
+                        .unwrap_or_default();
+                    format!(
+                        "{}\n\nRun {} · {}",
+                        vocabulary::FORCE_STOP_NOTICE,
+                        active.id,
+                        source
+                    )
+                };
+                c.ui.set_force_notice(notice.into());
                 c.ui.set_confirmation(Confirmation::ForceStop);
             }
         });
         let weak = Rc::downgrade(self);
         self.ui.on_confirm_force_stop(move || {
             if let Some(c) = weak.upgrade() {
+                if c.ui.get_confirmation() != Confirmation::ForceStop {
+                    return;
+                }
                 c.ui.set_confirmation(Confirmation::None);
                 c.force_stop();
             }
@@ -223,14 +447,40 @@ impl DesktopController {
             }
         });
         let weak = Rc::downgrade(self);
+        self.about.on_dismiss(move || {
+            if let Some(c) = weak.upgrade() {
+                let _ = c.about.hide();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.about.on_licenses(move || {
+            if let Some(c) = weak.upgrade()
+                && let Err(error) = c.licenses.show()
+            {
+                c.message(&error.to_string());
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.licenses.on_dismiss(move || {
+            if let Some(c) = weak.upgrade() {
+                let _ = c.licenses.hide();
+            }
+        });
+        let weak = Rc::downgrade(self);
         self.ui.on_keep_running(move || {
             if let Some(c) = weak.upgrade() {
                 c.ui.set_confirmation(Confirmation::None);
+                if c.export_draft.borrow().is_some() {
+                    let _ = c.export_ui.show();
+                }
             }
         });
         let weak = Rc::downgrade(self);
         self.ui.on_stop_and_quit(move || {
             if let Some(c) = weak.upgrade() {
+                if c.ui.get_confirmation() != Confirmation::Quit {
+                    return;
+                }
                 {
                     let mut s = c.session.borrow_mut();
                     s.quit_when_idle = true;
@@ -244,6 +494,9 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_force_and_quit(move || {
             if let Some(c) = weak.upgrade() {
+                if c.ui.get_confirmation() != Confirmation::Quit {
+                    return;
+                }
                 {
                     let mut s = c.session.borrow_mut();
                     s.force_quit = true;
@@ -272,6 +525,10 @@ impl DesktopController {
     pub fn about_window(&self) -> AboutWindow {
         self.about.clone_strong()
     }
+    /// Readable software/artwork terms and the packaged third-party notices action.
+    pub fn license_window(&self) -> LicenseWindow {
+        self.licenses.clone_strong()
+    }
     /// Apply a future-request destination; existing queue snapshots stay unchanged.
     pub fn set_destination(&self, destination: Option<PathBuf>) {
         self.clear_operation();
@@ -285,17 +542,51 @@ impl DesktopController {
         }
         self.refresh();
     }
-    /// Enqueue one complete selection in the currently selected processing mode.
-    pub fn enqueue(&self, paths: Vec<PathBuf>) -> Result<RunId, QueueError> {
+    /// Review native selections without starting a worker or touching source files.
+    /// Exact duplicate paths are shown once; filesystem aliases remain core-owned.
+    pub fn stage(&self, paths: Vec<PathBuf>) -> Result<(), QueueError> {
+        let mut s = self.session.borrow_mut();
+        if s.is_closing() {
+            return Err(QueueError::ShuttingDown);
+        }
+        let mut selection = s.selection.clone();
+        for path in paths {
+            if !selection.contains(&path) {
+                selection.push(path);
+            }
+        }
+        RequestSnapshot::new(
+            selection.clone(),
+            s.preferences.destination().map(Path::to_owned),
+            s.mode,
+        )?;
+        s.selection = selection;
+        s.reviewing = true;
+        s.follow_run = None;
+        drop(s);
+        self.clear_operation();
+        self.refresh();
+        Ok(())
+    }
+    /// Capture the reviewed selection's current settings and explicitly submit it.
+    /// Refused admission retains every staged path for correction or retry.
+    pub fn start_selection(&self) -> Result<RunId, QueueError> {
         self.clear_operation();
         let id = {
             let mut s = self.session.borrow_mut();
+            if s.is_closing() {
+                return Err(QueueError::ShuttingDown);
+            }
             let request = RequestSnapshot::new(
-                paths,
+                s.selection.clone(),
                 s.preferences.destination().map(Path::to_owned),
                 s.mode,
             )?;
-            s.queue.enqueue(request)?
+            let id = s.queue.enqueue(request)?;
+            s.follow_run = Some(id);
+            s.selection.clear();
+            s.reviewing = false;
+            id
         };
         self.start_next();
         self.refresh();
@@ -309,7 +600,7 @@ impl DesktopController {
                 if let Some(c) = weak.upgrade() {
                     let paths = c.drops.borrow_mut().commit();
                     if let Some(paths) = paths
-                        && let Err(error) = c.enqueue(paths)
+                        && let Err(error) = c.stage(paths)
                     {
                         c.message(&error.to_string());
                     }
@@ -323,11 +614,7 @@ impl DesktopController {
     }
     fn start_next(&self) {
         let mut s = self.session.borrow_mut();
-        if s.quit_when_idle
-            || s.force_quit
-            || s.should_exit
-            || self.ui.get_confirmation() == Confirmation::Quit
-        {
+        if s.is_closing() || self.ui.get_confirmation() == Confirmation::Quit {
             return;
         }
         let next = match s.queue.start_next() {
@@ -366,13 +653,20 @@ impl DesktopController {
             }
         }
         s.entries.push(entry);
-        s.selected = s.entries.len() - 1;
-        s.selected_item = 0;
+        if s.follow_run == Some(id) || s.entries.len() == 1 {
+            s.selected = s.entries.len() - 1;
+            s.selected_item = 0;
+            s.follow_run = None;
+        }
         self.clear_operation();
-        platform::set_busy(s.active.is_some() || s.export.is_some());
+        platform::set_busy(s.needs_quit_confirmation());
     }
     /// Poll actual child/pipe and export settlement without blocking the event loop.
     pub fn tick(&self) {
+        platform::refresh_menu();
+        if platform::take_about() {
+            self.ui.invoke_about();
+        }
         if platform::take_quit() {
             self.request_quit();
         }
@@ -408,6 +702,7 @@ impl DesktopController {
             if s.export.as_ref().is_some_and(|job| job.task.is_finished()) {
                 let job = s.export.take().expect("finished export");
                 let result = job.task.join();
+                let saved = matches!(&result, Ok(Ok(())));
                 let message = match result {
                     Ok(Ok(())) => vocabulary::REPORT_SAVED.into(),
                     Ok(Err(error)) if error.kind() == io::ErrorKind::AlreadyExists => {
@@ -416,27 +711,40 @@ impl DesktopController {
                     Ok(Err(error)) => error.to_string(),
                     Err(_) => vocabulary::REPORT_EXPORT_FAILED.to_owned(),
                 };
-                if s.entries
-                    .get(s.selected)
-                    .is_some_and(|entry| entry.id == job.run)
+                if self
+                    .export_draft
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|draft| draft.source.run == job.run)
                 {
-                    self.operation(&format!("Export for Run {}", job.run), &message);
+                    self.export_ui.set_busy(false);
+                    if saved {
+                        self.export_draft.borrow_mut().take();
+                        let _ = self.export_ui.hide();
+                    } else {
+                        self.export_ui.set_notice(
+                            format!(
+                                "{message} Choose a different file name or folder, then try again."
+                            )
+                            .into(),
+                        );
+                    }
                 }
+                self.operation(&format!("Export for Run {}", job.run), &message);
             }
 
             if self.ui.get_confirmation() == Confirmation::Quit
                 && s.active.is_none()
                 && s.export.is_none()
+                && s.queue.waiting() == 0
             {
                 self.ui.set_confirmation(Confirmation::None);
                 s.should_exit = true;
             }
-            if (s.quit_when_idle && s.active.is_none() && s.export.is_none())
-                || (s.force_quit && s.active.is_none())
-            {
+            if (s.quit_when_idle || s.force_quit) && s.active.is_none() && s.export.is_none() {
                 s.should_exit = true;
             }
-            platform::set_busy(s.active.is_some() || s.export.is_some());
+            platform::set_busy(s.needs_quit_confirmation());
         }
         self.start_next();
         if refresh_needed {
@@ -448,12 +756,26 @@ impl DesktopController {
         let s = self.session.borrow();
         s.active.is_some() || s.export.is_some()
     }
-    /// Return true for idle Quit, otherwise show an in-app confirmation.
+    /// Confirm owned tasks or waiting requests; repeated committed Quit stays closed.
     pub fn request_quit(&self) -> bool {
-        if self.is_busy() {
+        let s = self.session.borrow();
+        if s.is_closing() {
+            return false;
+        }
+        let needs_confirmation = s.needs_quit_confirmation();
+        drop(s);
+        if needs_confirmation {
+            let _ = self.about.hide();
+            let _ = self.licenses.hide();
+            let _ = self.export_ui.hide();
+            if let Err(error) = self.ui.show() {
+                self.message(&error.to_string());
+            }
+            self.ui.window().set_minimized(false);
             self.ui.set_confirmation(Confirmation::Quit);
             false
         } else {
+            self.cancel_export();
             self.session.borrow_mut().should_exit = true;
             true
         }
@@ -500,8 +822,19 @@ impl DesktopController {
             entry.worker_error.get_or_insert_with(|| error.to_string());
         }
     }
-    /// Start a new Create request on the selected Check's paths, repeating admission.
+    /// Review a fresh Create selection from a settled Check; Start repeats admission.
     pub fn create_copies(&self) {
+        {
+            let s = self.session.borrow();
+            if s.is_closing() {
+                self.message(&QueueError::ShuttingDown.to_string());
+                return;
+            }
+            if !s.selection.is_empty() {
+                self.message("A selection is already being reviewed. Finish or clear it before creating copies from this Check; the reviewed paths were preserved.");
+                return;
+            }
+        }
         let paths = {
             let s = self.session.borrow();
             s.entries
@@ -512,27 +845,185 @@ impl DesktopController {
         if let Some(paths) = paths {
             self.session.borrow_mut().mode = RunMode::Create;
             self.ui.set_check_only(false);
-            if let Err(error) = self.enqueue(paths) {
+            if let Err(error) = self.stage(paths) {
                 self.message(&error.to_string());
             }
         }
     }
-    /// Save the selected settled stream in a background thread, never replacing a file.
-    pub fn start_export(&self, path: PathBuf) {
-        self.clear_operation();
-        let selected = {
-            let s = self.session.borrow();
-            if s.export.is_some() {
-                return;
-            }
-            s.entries
-                .get(s.selected)
-                .and_then(|entry| entry.completion.as_ref())
-                .map(|completion| (s.entries[s.selected].id, completion.jsonl.clone()))
-        };
-        let Some((run, jsonl)) = selected else {
+    /// The application-owned no-replace report naming window.
+    pub fn export_window(&self) -> ExportWindow {
+        self.export_ui.clone_strong()
+    }
+    /// Open a draft pinned to the exact current report, independently of navigation.
+    pub fn begin_export(&self) {
+        if self.session.borrow().is_closing() {
+            return;
+        }
+        if self.export_draft.borrow().is_some() {
+            let _ = self.export_ui.show();
+            return;
+        }
+        let Some(source) = self.capture_export() else {
             return;
         };
+        let directory = self.export_directory.borrow().clone();
+        self.export_ui
+            .set_run_label(format!("Run {}", source.run).into());
+        self.export_ui
+            .set_file_name(format!("eml-run-{}.jsonl", source.run).into());
+        self.export_ui.set_directory(
+            eml_protocol::TerminalPath::new(&directory)
+                .to_string()
+                .into(),
+        );
+        self.export_ui
+            .set_notice("Choose a new file name. Existing entries remain unchanged.".into());
+        self.export_ui.set_busy(false);
+        *self.export_draft.borrow_mut() = Some(ExportDraft {
+            token: Rc::new(()),
+            source,
+            directory,
+        });
+        if let Err(error) = self.export_ui.show() {
+            self.cancel_export();
+            self.message(&error.to_string());
+        }
+        self.refresh();
+    }
+    /// Capture folder-dialog ownership before an asynchronous native call.
+    pub fn capture_export_folder(&self) -> Option<ExportFolderRequest> {
+        if self.session.borrow().is_closing() || self.export_ui.get_busy() {
+            return None;
+        }
+        self.export_draft
+            .borrow()
+            .as_ref()
+            .map(|draft| ExportFolderRequest {
+                token: Rc::downgrade(&draft.token),
+            })
+    }
+    fn export_folder_is_current(&self, request: &ExportFolderRequest) -> bool {
+        request.token.upgrade().is_some_and(|token| {
+            self.export_draft
+                .borrow()
+                .as_ref()
+                .is_some_and(|draft| Rc::ptr_eq(&token, &draft.token))
+        })
+    }
+    /// Apply a native folder choice only to the originating, still-open draft.
+    pub fn set_export_directory(&self, request: &ExportFolderRequest, directory: PathBuf) {
+        if self.session.borrow().is_closing()
+            || self.export_ui.get_busy()
+            || !directory.is_absolute()
+            || !self.export_folder_is_current(request)
+        {
+            return;
+        }
+        if let Some(draft) = self.export_draft.borrow_mut().as_mut() {
+            draft.directory = directory.clone();
+            *self.export_directory.borrow_mut() = directory.clone();
+            self.export_ui.set_directory(
+                eml_protocol::TerminalPath::new(&directory)
+                    .to_string()
+                    .into(),
+            );
+        }
+    }
+    /// Surface folder-dialog errors inside the export flow.
+    pub fn export_notice(&self, request: &ExportFolderRequest, notice: &str) {
+        if self.session.borrow().is_closing() || !self.export_folder_is_current(request) {
+            return;
+        }
+        self.export_ui
+            .set_notice(eml_protocol::DisplayText::new(notice).to_string().into());
+    }
+    /// Cancel a draft without cancelling an already-owned physical export.
+    pub fn cancel_export(&self) {
+        self.export_draft.borrow_mut().take();
+        let _ = self.export_ui.hide();
+        self.refresh();
+    }
+    fn create_export(&self) {
+        if self.session.borrow().is_closing() || self.session.borrow().export.is_some() {
+            return;
+        }
+        let name = self.export_ui.get_file_name();
+        let path = Path::new(name.as_str());
+        if name.contains('\0')
+            || path.components().count() != 1
+            || !matches!(
+                path.components().next(),
+                Some(std::path::Component::Normal(_))
+            )
+        {
+            self.export_ui
+                .set_notice("Enter one file name, without a folder or path separator.".into());
+            return;
+        }
+        let Some((source, target)) = self
+            .export_draft
+            .borrow()
+            .as_ref()
+            .map(|draft| (draft.source.clone(), draft.directory.join(path)))
+        else {
+            return;
+        };
+        self.export_ui.set_busy(true);
+        self.export_ui.set_notice("Creating the report…".into());
+        self.start_captured_export(source, target);
+        if self.session.borrow().export.is_none() {
+            self.export_ui.set_busy(false);
+        }
+    }
+    /// Native path for copying, without granting reveal qualification.
+    pub fn selected_path(&self, destination: bool) -> Option<PathBuf> {
+        let s = self.session.borrow();
+        s.entries
+            .get(s.selected)?
+            .report
+            .as_ref()?
+            .with_report(|report| {
+                if destination {
+                    report.destination_path(s.selected_item)
+                } else {
+                    report.source_path(s.selected_item)
+                }
+            })
+            .flatten()
+    }
+    /// Capture the selected settled stream before presenting an export draft.
+    pub fn capture_export(&self) -> Option<ReportExport> {
+        let mut s = self.session.borrow_mut();
+        if s.export.is_some() || s.is_closing() {
+            return None;
+        }
+        let entry = s.entries.get(s.selected)?;
+        let source = ReportExport {
+            run: entry.id,
+            jsonl: entry.completion.as_ref()?.jsonl.clone(),
+        };
+        s.follow_run = None;
+        Some(source)
+    }
+    /// Save the currently selected settled stream without a file-dialog delay.
+    pub fn start_export(&self, path: PathBuf) {
+        if let Some(source) = self.capture_export() {
+            self.start_captured_export(source, path);
+        }
+    }
+    /// Write the exact captured report, even if selection changed during the dialog.
+    /// Existing files are never replaced.
+    pub fn start_captured_export(&self, source: ReportExport, path: PathBuf) {
+        self.clear_operation();
+        if self.session.borrow().is_closing() {
+            self.message(&QueueError::ShuttingDown.to_string());
+            return;
+        }
+        if self.session.borrow().export.is_some() {
+            self.message("A report export is already running. Wait for it to finish before saving another report.");
+            return;
+        }
+        let ReportExport { run, jsonl } = source;
         match std::thread::Builder::new()
             .name("report-export".into())
             .spawn(move || eml_app::export_report(&path, &jsonl))
@@ -587,6 +1078,81 @@ impl DesktopController {
     }
     fn refresh(&self) {
         let s = self.session.borrow();
+        platform::set_busy(s.needs_quit_confirmation());
+        self.ui.set_closing(s.is_closing());
+        if s.is_closing() {
+            self.export_draft.borrow_mut().take();
+            let _ = self.export_ui.hide();
+        }
+        self.ui.set_check_only(s.mode == RunMode::DryRun);
+        self.ui.set_selection(update_model(
+            self.ui.get_selection(),
+            s.selection
+                .iter()
+                .map(|path| view_model::path(&eml_protocol::TerminalPath::new(path).to_string()))
+                .collect(),
+        ));
+        self.ui.set_reviewing(s.reviewing);
+        self.ui.set_selected_item(s.selected_item as i32);
+        self.ui.set_selected_run(s.selected as i32);
+        self.ui.set_has_reports(!s.entries.is_empty());
+        self.ui.set_worker_running(s.active.is_some());
+        self.ui.set_show_sidebar(
+            s.entries.len() > 1
+                || s.queue.waiting() > 0
+                || (!s.selection.is_empty() && !s.entries.is_empty()),
+        );
+        self.ui.set_start_label(
+            if s.active.is_some() || s.entries.len() >= eml_app::MAX_RETAINED_REPORTS {
+                "Queue request".into()
+            } else if s.mode == RunMode::DryRun {
+                "Check selection".into()
+            } else {
+                "Create copies".into()
+            },
+        );
+        self.ui.set_can_start(
+            !s.selection.is_empty()
+                && s.queue.waiting() < eml_app::MAX_WAITING_REQUESTS
+                && !s.is_closing(),
+        );
+        self.ui.set_start_reason(
+            if s.is_closing() {
+                QueueError::ShuttingDown.to_string()
+            } else if s.queue.waiting() >= eml_app::MAX_WAITING_REQUESTS {
+                QueueError::Full.to_string()
+            } else {
+                format!(
+                    "{} using the reviewed paths and current destination",
+                    self.ui.get_start_label()
+                )
+            }
+            .into(),
+        );
+        let activity = s
+            .active
+            .as_ref()
+            .and_then(|active| s.entries.iter().find(|e| e.id == active.id))
+            .map(|entry| {
+                format!(
+                    "Run {} · {}",
+                    entry.id,
+                    status(entry, s.active.as_ref()).label()
+                )
+            })
+            .unwrap_or_else(|| {
+                s.export.as_ref().map_or_else(String::new, |job| {
+                    if s.quit_when_idle || s.force_quit {
+                        format!(
+                            "Finishing report export for Run {} before quitting",
+                            job.run
+                        )
+                    } else {
+                        format!("Saving report for Run {}", job.run)
+                    }
+                })
+            });
+        self.ui.set_activity_label(activity.into());
         self.ui
             .set_settings_warning(s.preferences.warning().unwrap_or_default().into());
         self.ui
@@ -596,7 +1162,7 @@ impl DesktopController {
                 "".into()
             });
         self.ui
-            .set_mode_label(vocabulary::mode_label(s.mode).into());
+            .set_destination_beside(s.preferences.destination().is_none());
         self.ui.set_destination_label(
             s.preferences
                 .destination()
@@ -604,7 +1170,8 @@ impl DesktopController {
                 .unwrap_or_else(|| "Beside originals".into())
                 .into(),
         );
-        self.ui.set_runs(model(
+        self.ui.set_runs(update_model(
+            self.ui.get_runs(),
             s.entries
                 .iter()
                 .map(|entry| {
@@ -616,7 +1183,8 @@ impl DesktopController {
                 })
                 .collect(),
         ));
-        self.ui.set_waiting(model(
+        self.ui.set_waiting(update_model(
+            self.ui.get_waiting(),
             s.queue
                 .waiting_requests()
                 .map(|(id, request)| run_view(id, request, RunStatus::Queued.label()))
@@ -627,15 +1195,35 @@ impl DesktopController {
             return;
         };
         self.ui.set_run_label(format!("Run {}", entry.id).into());
-        self.ui
-            .set_run_status(status(entry, s.active.as_ref()).label().into());
-        self.ui.set_running(
+        self.ui.set_run_context(
+            format!(
+                "{} · {}",
+                vocabulary::mode_label(entry.request.request().mode),
+                request_destination(&entry.request)
+            )
+            .into(),
+        );
+        let run_status = status(entry, s.active.as_ref());
+        self.ui.set_run_status(run_status.label().into());
+        self.ui.set_run_attention(matches!(
+            run_status,
+            RunStatus::CompletedWithFailures
+                | RunStatus::StartFailed
+                | RunStatus::IdentityFailure
+                | RunStatus::ForceStopped
+                | RunStatus::RequestRefused
+                | RunStatus::Incomplete
+        ));
+        self.ui.set_report_running(
             s.active
                 .as_ref()
                 .is_some_and(|active| active.id == entry.id),
         );
-        self.ui
-            .set_can_export(entry.completion.is_some() && s.export.is_none());
+        self.ui.set_can_export(
+            entry.completion.is_some()
+                && s.export.is_none()
+                && self.export_draft.borrow().is_none(),
+        );
         self.ui
             .set_can_dismiss(entry.completion.is_some() || entry.launch_error.is_some());
         self.ui.set_can_create(can_create(entry));
@@ -653,7 +1241,8 @@ impl DesktopController {
         if let Some(handle) = &entry.report {
             handle.with_report(|report| diagnostics.extend(view_model::report_diagnostics(report)));
         }
-        self.ui.set_report_diagnostics(model(
+        self.ui.set_report_diagnostics(update_model(
+            self.ui.get_report_diagnostics(),
             diagnostics
                 .into_iter()
                 .map(|row| DetailView {
@@ -663,13 +1252,15 @@ impl DesktopController {
                 })
                 .collect(),
         ));
-        if self
-            .last_view
-            .borrow()
-            .is_some_and(|revision| revision.run != entry.id || revision.item != s.selected_item)
+        let previous = *self.last_view.borrow();
+        if let Some(previous) = previous
+            && (previous.run != entry.id || previous.item != s.selected_item)
         {
             self.ui.set_details_scroll_y(0.0);
-            self.clear_items();
+            self.ui.set_details_expanded(false);
+            if previous.run != entry.id {
+                self.clear_items();
+            }
         }
         let Some(handle) = &entry.report else {
             self.clear_items();
@@ -679,6 +1270,7 @@ impl DesktopController {
             let revision = PresentationRevision {
                 run: entry.id,
                 item: s.selected_item,
+                failures_only: self.ui.get_failures_only(),
                 started: report.start().is_some(),
                 items: report.items().len(),
                 summary: report.summary().is_some(),
@@ -688,32 +1280,82 @@ impl DesktopController {
                 return;
             }
             *self.last_view.borrow_mut() = Some(revision);
-
             self.ui
-                .set_items(model(report.items().iter().map(view_model::item).collect()));
-            self.ui.set_counts(model(view_model::counts(report)));
+                .set_work_total(report.start().map_or(0, |s| s.total as i32));
+            self.ui.set_work_completed(report.items().len() as i32);
+
+            self.ui.set_items(update_model(
+                self.ui.get_items(),
+                report
+                    .items()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| {
+                        !self.ui.get_failures_only()
+                            || item.status == eml_protocol::records::ItemStatus::Failed
+                    })
+                    .map(|(index, item)| {
+                        let mut row = view_model::item(item);
+                        row.original_index = index as i32;
+                        row
+                    })
+                    .collect(),
+            ));
+            self.ui.set_selected_visible_row(
+                self.ui
+                    .get_items()
+                    .iter()
+                    .position(|row| row.original_index == s.selected_item as i32)
+                    .map_or(-1, |index| index as i32),
+            );
+            self.ui.set_counts(update_model(
+                self.ui.get_counts(),
+                view_model::counts(report),
+            ));
             self.ui
                 .set_can_reveal(report.reveal_path(s.selected_item).is_some());
             let Some(item) = report.items().get(s.selected_item) else {
+                self.ui.set_can_copy_source(false);
+                self.ui.set_can_copy_destination(false);
                 self.ui.set_has_item(false);
                 return;
             };
             let view = view_model::item(item);
             self.ui.set_has_item(true);
+            self.ui.set_can_copy_source(
+                report
+                    .source_path(s.selected_item)
+                    .and_then(|p| p.into_os_string().into_string().ok())
+                    .is_some(),
+            );
+            self.ui.set_can_copy_destination(
+                report
+                    .destination_path(s.selected_item)
+                    .and_then(|p| p.into_os_string().into_string().ok())
+                    .is_some(),
+            );
             self.ui.set_item_source(view.source);
             self.ui.set_item_source_path(view.path);
             self.ui
                 .set_item_destination_path(view_model::path(view.destination.as_str()));
             self.ui.set_item_destination(view.destination);
             self.ui.set_item_status(view.status);
+            self.ui.set_item_attention(view.attention);
             let (details, parts, fields) = view_model::details(item);
-            self.ui.set_details(model(details));
             self.ui
-                .set_byte_counts(model(view_model::byte_counts(item)));
+                .set_details(update_model(self.ui.get_details(), details));
+            self.ui.set_byte_counts(update_model(
+                self.ui.get_byte_counts(),
+                view_model::byte_counts(item),
+            ));
             self.ui.set_removal_heading(parts.into());
             self.ui.set_field_heading(fields.into());
-            self.ui.set_removals(model(view_model::removals(item)));
-            self.ui.set_stripped(model(
+            self.ui.set_removals(update_model(
+                self.ui.get_removals(),
+                view_model::removals(item),
+            ));
+            self.ui.set_stripped(update_model(
+                self.ui.get_stripped(),
                 item.stripped_fields
                     .iter()
                     .map(|name| DetailView {
@@ -724,26 +1366,52 @@ impl DesktopController {
         });
     }
     fn clear_items(&self) {
-        self.ui.set_items(model(Vec::new()));
-        self.ui.set_counts(model(Vec::new()));
+        self.ui.set_keyboard_navigation(false);
+        self.ui.set_messages_scroll_y(0.0);
+        self.ui.set_failures_only(false);
+        self.ui.set_selected_visible_row(-1);
+        self.ui.set_work_total(0);
+        self.ui.set_work_completed(0);
+        self.ui
+            .set_items(update_model(self.ui.get_items(), Vec::new()));
+        self.ui
+            .set_counts(update_model(self.ui.get_counts(), Vec::new()));
+        self.ui.set_can_copy_source(false);
+        self.ui.set_can_copy_destination(false);
         self.ui.set_has_item(false);
-        self.ui.set_details(model(Vec::new()));
-        self.ui.set_removals(model(Vec::new()));
-        self.ui.set_stripped(model(Vec::new()));
-        self.ui.set_byte_counts(model(Vec::new()));
+        self.ui.set_item_attention(false);
+        self.ui
+            .set_details(update_model(self.ui.get_details(), Vec::new()));
+        self.ui
+            .set_removals(update_model(self.ui.get_removals(), Vec::new()));
+        self.ui
+            .set_stripped(update_model(self.ui.get_stripped(), Vec::new()));
+        self.ui
+            .set_byte_counts(update_model(self.ui.get_byte_counts(), Vec::new()));
         *self.last_view.borrow_mut() = None;
         self.ui.set_can_reveal(false);
     }
     fn clear_report(&self) {
-        self.ui.set_report_diagnostics(model(Vec::new()));
+        self.ui
+            .set_report_diagnostics(update_model(self.ui.get_report_diagnostics(), Vec::new()));
         self.clear_items();
         self.ui
             .set_run_label("Drop messages or choose files to begin".into());
         self.ui.set_run_status("".into());
-        self.ui.set_running(false);
+        self.ui.set_run_attention(false);
+        self.ui.set_run_context("".into());
+        self.ui.set_report_running(false);
         self.ui.set_can_export(false);
         self.ui.set_can_dismiss(false);
         self.ui.set_can_create(false);
+    }
+}
+fn request_destination(request: &RequestSnapshot) -> String {
+    match &request.request().output {
+        eml_core::OutputLocation::BesideSource => "Beside originals".into(),
+        eml_core::OutputLocation::Directory(path) => {
+            eml_protocol::TerminalPath::new(path).to_string()
+        }
     }
 }
 fn run_view(id: RunId, request: &RequestSnapshot, status: &str) -> RunView {
@@ -751,6 +1419,7 @@ fn run_view(id: RunId, request: &RequestSnapshot, status: &str) -> RunView {
         label: format!("Run {id}").into(),
         status: status.into(),
         mode: vocabulary::mode_label(request.request().mode).into(),
+        destination: request_destination(request).into(),
         selection: view_model::path(
             &request
                 .request()
@@ -806,3 +1475,6 @@ fn can_create(entry: &Entry) -> bool {
                 )
         })
 }
+
+#[cfg(test)]
+mod tests;

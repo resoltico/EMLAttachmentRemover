@@ -159,7 +159,7 @@ mod tests {
     ));
     fn expected_human_start() -> String {
         format!(
-            "emlattachmentremover {} — known items: 1; discovery complete; dry run\n",
+            "emlattachmentremover {} — Known items: 1; discovery complete; dry run\n",
             eml_core::product::VERSION_WITH_BUILD.as_str()
         )
     }

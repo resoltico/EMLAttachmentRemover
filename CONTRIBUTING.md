@@ -16,16 +16,25 @@ Tools with the native x64 or ARM64 MSVC tools. CI builds a static CRT.
 ```sh
 cargo build --locked -p emlattachmentremover
 cargo test --locked --workspace
-cargo build --locked -p eml-gui --features desktop --bin emlattachmentremover-gui
 ```
 
-The desktop compile command applies to macOS and Linux. To run the desktop app
-on macOS, build and extract the bundle using the distribution commands below,
-then open `target/smoke/EML Attachment Remover.app`. The executable resolves its
-CLI helper and notices relative to the bundle; `cargo run` alone does not supply
-that layout. Distribution packages desktop apps only for macOS.
+Install the tools listed under Checks first. For a native GUI on macOS, build
+and open the actual app bundle so OS identity,
+resources and the helper CLI use their supported layout:
 
-On Windows, exclude `eml-app` and `eml-gui` from workspace commands and use `--target` with your native MSVC triple so host
+```sh
+cargo xtask dist --app --out target/desktop
+mkdir -p target/desktop/app
+ditto -x -k target/desktop/emlattachmentremover-gui-*-macos-universal.zip target/desktop/app
+open "target/desktop/app/EML Attachment Remover.app"
+```
+
+Use a fresh output directory on subsequent distributions. The bare Cargo GUI
+executable is not a supported launch path and fails before opening a window when
+its macOS bundle/helper context is missing. Cross-platform GUI library/testing
+backend development is available; distributed native GUI apps currently target
+macOS. On Windows, exclude `eml-app` and `eml-gui` from workspace commands
+and use `--target` with your native MSVC triple so host
 procedural macros are built independently of static-CRT target flags.
 
 ## Checks
