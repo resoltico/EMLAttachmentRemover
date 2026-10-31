@@ -28,7 +28,7 @@ jobs:
             test -n "$value"
             echo "$key=$value" >> "$GITHUB_OUTPUT"
           done
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32
         with:
           tool: cargo-deny@${{ steps.tools.outputs.cargo_deny }},shellcheck@${{ steps.tools.outputs.shellcheck }}
       - name: Install pinned actionlint from its upstream release
@@ -137,7 +137,7 @@ jobs:
             test -n "$value"
             echo "$key=$value" >> "$GITHUB_OUTPUT"
           done
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
