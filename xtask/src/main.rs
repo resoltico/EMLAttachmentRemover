@@ -6,7 +6,10 @@ mod notices;
 mod source;
 
 use clap::{Parser, Subcommand};
-use std::{path::PathBuf, process::Command};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Parser)]
@@ -51,7 +54,7 @@ fn main() {
     }
 }
 fn execute() -> Result<()> {
-    std::env::set_current_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap())?;
+    std::env::set_current_dir(workspace_root(&std::env::current_dir()?)?)?;
     match Arguments::parse().command {
         Task::Dist {
             cli,
@@ -64,6 +67,20 @@ fn execute() -> Result<()> {
         Task::Ci { rust_only } => ci::run(rust_only),
     }
 }
+fn workspace_root(from: &Path) -> Result<PathBuf> {
+    // A cached executable can have been compiled in another worktree. Cargo's
+    // runtime workspace owns this invocation, not an embedded source directory.
+    let manifest = capture(
+        Command::new("cargo")
+            .args(["locate-project", "--workspace", "--message-format", "plain"])
+            .current_dir(from),
+    )?;
+    Path::new(&manifest)
+        .parent()
+        .map(Path::to_owned)
+        .ok_or_else(|| "Cargo did not return a workspace manifest path".into())
+}
+
 fn run(command: &mut Command) -> Result<()> {
     eprintln!("+ {command:?}");
     let status = command.status()?;
@@ -103,4 +120,36 @@ fn tool(name: &str, key: &str) -> Result<()> {
         return Err(format!("Install {name} {expected} (xtask/tools.toml); found {actual}").into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    #[test]
+    fn invocation_workspace_is_independent_of_the_executables_build_directory() {
+        for _ in 0..2 {
+            let root = tempfile::tempdir().unwrap();
+            let source = root.path().join("member/src");
+            std::fs::create_dir_all(&source).unwrap();
+            std::fs::write(
+                root.path().join("Cargo.toml"),
+                "[workspace]\nmembers=[\"member\"]\nresolver=\"3\"\n",
+            )
+            .unwrap();
+            std::fs::write(
+                root.path().join("member/Cargo.toml"),
+                "[package]\nname=\"workspace-root-fixture\"\nversion=\"0.0.0\"\nedition=\"2024\"\n",
+            )
+            .unwrap();
+            std::fs::write(source.join("lib.rs"), "").unwrap();
+            for invocation in [root.path(), source.as_path()] {
+                assert_eq!(
+                    super::workspace_root(invocation)
+                        .unwrap()
+                        .canonicalize()
+                        .unwrap(),
+                    root.path().canonicalize().unwrap()
+                );
+            }
+        }
+    }
 }
