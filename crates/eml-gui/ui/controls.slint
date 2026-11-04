@@ -29,7 +29,7 @@ export component TextButton inherits Rectangle {
     out property <bool> has-focus: keys.has-focus;
     callback clicked();
     min-width: caption.preferred-width + 16px;
-    min-height: max(32px, caption.preferred-height + 8px);
+    min-height: max(32px, caption.preferred-height + 10px);
     preferred-width: self.min-width;
     max-width: self.min-width;
     preferred-height: self.min-height;

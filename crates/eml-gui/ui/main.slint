@@ -347,7 +347,7 @@ export component MainWindow inherits Window {
                         accessible-role: list; accessible-label: "Message details";
                         content-width: self.visible-width; content-height: detail-content.preferred-height;
                         detail-content := VerticalBox { width: details-view.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.label-gap;
-                            Label { text: root.item-status + (root.selected-removals != "" ? " · " + root.selected-removals : ""); color: root.item-attention ? root.attention-color : Palette.foreground; font-weight: 600; wrap: word-wrap; }
+                            if root.removals.length > 0: Label { text: root.selected-removals; color: root.item-attention ? root.attention-color : Palette.foreground; font-weight: 600; wrap: word-wrap; }
                             for detail in root.details: Label { text: detail.text; wrap: word-wrap; }
                             TextButton { text: root.details-expanded ? "▾ Hide technical details" : "▸ Technical details";
                                 accessible-label: "Message technical details"; expandable: true; expanded: root.details-expanded;
