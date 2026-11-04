@@ -14,7 +14,7 @@ use eml_core::{
 };
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     io,
     path::{Path, PathBuf},
     rc::Rc,
@@ -36,6 +36,21 @@ struct Entry {
     completion: Option<WorkerCompletion>,
     launch_error: Option<String>,
     worker_error: Option<String>,
+    user_selected_item: bool,
+    stored: Option<eml_app::StoredReport>,
+    saved_report: Option<PathBuf>,
+}
+enum ReportTask {
+    Store(RunId, JoinHandle<io::Result<eml_app::StoredReport>>),
+    Load(RunId, JoinHandle<io::Result<WorkerCompletion>>),
+}
+impl ReportTask {
+    fn is_finished(&self) -> bool {
+        match self {
+            Self::Store(_, task) => task.is_finished(),
+            Self::Load(_, task) => task.is_finished(),
+        }
+    }
 }
 struct Active {
     id: RunId,
@@ -45,7 +60,22 @@ struct Active {
 }
 struct ExportJob {
     run: RunId,
+    path: PathBuf,
     task: JoinHandle<io::Result<()>>,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OpenTarget {
+    Main,
+    #[cfg(feature = "desktop")]
+    About,
+    #[cfg(any(feature = "desktop", test))]
+    Licenses,
+}
+struct OpenJob {
+    target: OpenTarget,
+    serial: u64,
+    failure: &'static str,
+    task: JoinHandle<Result<(), String>>,
 }
 /// Exact settled report retained while a native Save dialog is open.
 #[derive(Clone)]
@@ -83,6 +113,8 @@ struct Session {
     quit_when_idle: bool,
     force_quit: bool,
     should_exit: bool,
+    report_task: Option<ReportTask>,
+    storage_error: Option<(RunId, String)>,
 }
 impl Session {
     fn is_closing(&self) -> bool {
@@ -97,7 +129,7 @@ impl Session {
 struct PresentationRevision {
     run: RunId,
     item: usize,
-    failures_only: bool,
+    attention_only: bool,
     started: bool,
     items: usize,
     summary: bool,
@@ -116,6 +148,8 @@ pub struct DesktopController {
     drops: RefCell<ingress::DropBatch>,
     cli: PathBuf,
     home: PathBuf,
+    open_jobs: RefCell<Vec<OpenJob>>,
+    operation_serial: Cell<u64>,
 }
 // Update data in place: polling must not discard row controls, keyboard focus,
 // or accessibility nodes when accepted facts are unchanged or append-only.
@@ -161,7 +195,6 @@ impl DesktopController {
         about.set_product_name(eml_core::product::DISPLAY_NAME.into());
         ui.set_native_about(cfg!(all(feature = "desktop", target_os = "macos")));
         about.set_version(eml_core::product::ABOUT_VERSION.as_str().into());
-        ui.set_report_capacity(eml_app::MAX_RETAINED_REPORTS as i32);
         ui.set_force_notice(vocabulary::FORCE_STOP_NOTICE.into());
         let controller = Rc::new(Self {
             last_view: RefCell::new(None),
@@ -174,6 +207,8 @@ impl DesktopController {
             cli,
             home,
             drops: RefCell::default(),
+            open_jobs: RefCell::default(),
+            operation_serial: Cell::new(0),
             session: RefCell::new(Session {
                 selection: Vec::new(),
                 reviewing: false,
@@ -189,6 +224,8 @@ impl DesktopController {
                 quit_when_idle: false,
                 force_quit: false,
                 should_exit: false,
+                report_task: None,
+                storage_error: None,
             }),
         });
         controller.bind();
@@ -196,6 +233,37 @@ impl DesktopController {
         Ok(controller)
     }
     fn bind(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        self.ui.on_allow_report_storage(move || {
+            if let Some(c) = weak.upgrade() {
+                if !c.session.borrow().is_closing() {
+                    c.session.borrow_mut().queue.enable_report_storage();
+                    c.maintain_reports();
+                    c.refresh();
+                }
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_retry_report_storage(move || {
+            if let Some(c) = weak.upgrade() {
+                c.session.borrow_mut().storage_error = None;
+                c.maintain_reports();
+                c.refresh();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_new_request(move || {
+            if let Some(c) = weak.upgrade() {
+                let mut s = c.session.borrow_mut();
+                if !s.is_closing() {
+                    s.reviewing = true;
+                    s.follow_run = None;
+                }
+                drop(s);
+                c.clear_operation();
+                c.refresh();
+            }
+        });
         let weak = Rc::downgrade(self);
         self.export_ui.on_create_report(move || {
             if let Some(c) = weak.upgrade() {
@@ -231,7 +299,7 @@ impl DesktopController {
             if let Some(c) = weak.upgrade() {
                 let mut s = c.session.borrow_mut();
                 s.selection.clear();
-                s.reviewing = false;
+                s.reviewing = true;
                 drop(s);
                 c.refresh();
             }
@@ -252,7 +320,7 @@ impl DesktopController {
                 {
                     s.selection.remove(index);
                 }
-                s.reviewing = !s.selection.is_empty();
+                s.reviewing = true;
                 drop(s);
                 c.refresh();
             }
@@ -280,6 +348,12 @@ impl DesktopController {
                     s.selected_item = 0;
                     s.reviewing = false;
                     s.follow_run = None;
+                    if let Some(entry) = s.entries.get_mut(index) {
+                        entry.user_selected_item = false;
+                        if let Some(handle) = &entry.report {
+                            s.selected_item = first_attention(handle).unwrap_or(0);
+                        }
+                    }
                     c.clear_operation();
                 }
                 c.refresh();
@@ -293,15 +367,19 @@ impl DesktopController {
                     let mut s = c.session.borrow_mut();
                     s.selected_item = index;
                     s.follow_run = None;
+                    let selected = s.selected;
+                    if let Some(entry) = s.entries.get_mut(selected) {
+                        entry.user_selected_item = true;
+                    }
                 }
                 c.refresh();
             }
         });
         let weak = Rc::downgrade(self);
-        self.ui.on_filter_failures(move |enabled| {
+        self.ui.on_filter_attention(move |enabled| {
             if let Some(c) = weak.upgrade() {
                 c.ui.set_messages_scroll_y(0.0);
-                c.ui.set_failures_only(enabled);
+                c.ui.set_attention_only(enabled);
                 let mut s = c.session.borrow_mut();
                 if enabled
                     && let Some(handle) = s
@@ -311,14 +389,17 @@ impl DesktopController {
                 {
                     let selected = s.selected_item;
                     let first = handle.with_report(|report| {
-                        if report.items().get(selected).is_some_and(|item| {
-                            item.status == eml_protocol::records::ItemStatus::Failed
-                        }) {
+                        if report
+                            .items()
+                            .get(selected)
+                            .is_some_and(|item| view_model::item(item).attention)
+                        {
                             Some(selected)
                         } else {
-                            report.items().iter().position(|item| {
-                                item.status == eml_protocol::records::ItemStatus::Failed
-                            })
+                            report
+                                .items()
+                                .iter()
+                                .position(|item| view_model::item(item).attention)
                         }
                     });
                     // No selection when the failed-only view has no results.
@@ -369,6 +450,7 @@ impl DesktopController {
                 if let Some(id) = id {
                     c.session.borrow_mut().queue.remove_waiting(id);
                 }
+                c.clear_operation();
                 c.refresh();
             }
         });
@@ -427,9 +509,9 @@ impl DesktopController {
             }
         });
         let weak = Rc::downgrade(self);
-        self.ui.on_create_copies(move || {
+        self.ui.on_review_request(move || {
             if let Some(c) = weak.upgrade() {
-                c.create_copies();
+                c.review_request();
             }
         });
         let weak = Rc::downgrade(self);
@@ -471,10 +553,11 @@ impl DesktopController {
             }
         });
         let weak = Rc::downgrade(self);
-        self.ui.on_keep_running(move || {
+        self.ui.on_cancel_confirmation(move || {
             if let Some(c) = weak.upgrade() {
+                let restore_export = c.ui.get_confirmation() == Confirmation::Quit;
                 c.ui.set_confirmation(Confirmation::None);
-                if c.export_draft.borrow().is_some() {
+                if restore_export && c.export_draft.borrow().is_some() {
                     let _ = c.export_ui.show();
                 }
             }
@@ -630,7 +713,15 @@ impl DesktopController {
     }
     fn start_next(&self) {
         let mut s = self.session.borrow_mut();
-        if s.is_closing() || self.ui.get_confirmation() == Confirmation::Quit {
+        if s.is_closing()
+            || self.ui.get_confirmation() == Confirmation::Quit
+            || (s.queue.report_storage_enabled()
+                && (s.report_task.is_some()
+                    || s.storage_error.is_some()
+                    || s.entries
+                        .iter()
+                        .any(|entry| entry.completion.is_some() && entry.stored.is_none())))
+        {
             return;
         }
         let next = match s.queue.start_next() {
@@ -652,6 +743,9 @@ impl DesktopController {
             completion: None,
             launch_error: None,
             worker_error: None,
+            user_selected_item: false,
+            stored: None,
+            saved_report: None,
         };
         match WorkerRun::start(&self.cli, &entry.request, &self.home) {
             Ok(worker) => {
@@ -677,6 +771,95 @@ impl DesktopController {
         self.clear_operation();
         platform::set_busy(s.needs_quit_confirmation());
     }
+    // One bounded IO job. Keep originals until storage succeeds; only the active
+    // and inspected reports remain resident between jobs. Export owns at most one
+    // additional immutable stream, independently of navigation or dismissal.
+    fn maintain_reports(&self) {
+        let mut s = self.session.borrow_mut();
+        if s.is_closing() || !s.queue.report_storage_enabled() {
+            return;
+        }
+        if s.report_task.as_ref().is_some_and(ReportTask::is_finished) {
+            let task = s.report_task.take().expect("finished report task");
+            match task {
+                ReportTask::Store(id, task) => {
+                    let result = task.join().unwrap_or_else(|_| {
+                        Err(io::Error::other(
+                            "The session report writer did not complete.",
+                        ))
+                    });
+                    if let Some(entry) = s.entries.iter_mut().find(|entry| entry.id == id) {
+                        match result {
+                            Ok(stored) => entry.stored = Some(stored),
+                            Err(error) => s.storage_error = Some((id, error.to_string())),
+                        }
+                    }
+                }
+                ReportTask::Load(id, task) => {
+                    let result = task.join().unwrap_or_else(|_| {
+                        Err(io::Error::other(
+                            "The session report reader did not complete.",
+                        ))
+                    });
+                    let selected = s.selected;
+                    if let Some(entry) = s.entries.get_mut(selected).filter(|entry| entry.id == id)
+                    {
+                        match result {
+                            Ok(completion) => {
+                                entry.report = Some(completion.report.clone());
+                                entry.completion = Some(completion);
+                                s.selected_item = first_attention(
+                                    s.entries[selected].report.as_ref().expect("loaded report"),
+                                )
+                                .unwrap_or(0);
+                            }
+                            Err(error) => s.storage_error = Some((id, error.to_string())),
+                        }
+                    }
+                }
+            }
+        }
+        let selected = s.selected;
+        for (index, entry) in s.entries.iter_mut().enumerate() {
+            if index != selected && entry.stored.is_some() {
+                entry.completion = None;
+                entry.report = None;
+            }
+        }
+        if s.report_task.is_some() || s.storage_error.is_some() {
+            return;
+        }
+        if let Some(entry) = s
+            .entries
+            .iter()
+            .find(|entry| entry.completion.is_some() && entry.stored.is_none())
+        {
+            let id = entry.id;
+            let completion = entry.completion.as_ref().expect("settled report").clone();
+            let mode = entry.request.request().mode;
+            match std::thread::Builder::new()
+                .name("session-report-write".into())
+                .spawn(move || eml_app::StoredReport::write(&completion, mode))
+            {
+                Ok(task) => s.report_task = Some(ReportTask::Store(id, task)),
+                Err(error) => s.storage_error = Some((id, error.to_string())),
+            }
+        } else if let Some(entry) = s
+            .entries
+            .get(selected)
+            .filter(|entry| entry.report.is_none())
+            && let Some(stored) = entry.stored.clone()
+        {
+            let id = entry.id;
+            match std::thread::Builder::new()
+                .name("session-report-read".into())
+                .spawn(move || stored.load())
+            {
+                Ok(task) => s.report_task = Some(ReportTask::Load(id, task)),
+                Err(error) => s.storage_error = Some((id, error.to_string())),
+            }
+        }
+    }
     /// Poll actual child/pipe and export settlement without blocking the event loop.
     pub fn tick(&self) {
         platform::refresh_menu();
@@ -689,7 +872,7 @@ impl DesktopController {
         let refresh_needed;
         {
             let mut s = self.session.borrow_mut();
-            refresh_needed = s.active.is_some() || s.export.is_some();
+            refresh_needed = s.active.is_some() || s.export.is_some() || s.report_task.is_some();
             let completed = if let Some(active) = &mut s.active {
                 match active.worker.poll() {
                     Ok(completion) => completion.map(|c| (active.id, c)),
@@ -712,6 +895,13 @@ impl DesktopController {
                 if let Some(entry) = s.entries.iter_mut().find(|entry| entry.id == id) {
                     entry.completion = Some(completion);
                 }
+                if let Some(entry) = s.entries.get(s.selected)
+                    && entry.id == id
+                    && !entry.user_selected_item
+                    && let Some(handle) = &entry.report
+                {
+                    s.selected_item = first_attention(handle).unwrap_or(0);
+                }
                 let _ = s.queue.complete(id);
                 s.active = None;
             }
@@ -720,7 +910,16 @@ impl DesktopController {
                 let result = job.task.join();
                 let saved = matches!(&result, Ok(Ok(())));
                 let message = match result {
-                    Ok(Ok(())) => vocabulary::REPORT_SAVED.into(),
+                    Ok(Ok(())) => {
+                        if let Some(entry) = s.entries.iter_mut().find(|entry| entry.id == job.run)
+                        {
+                            entry.saved_report = Some(job.path.clone());
+                        }
+                        format!(
+                            "Report saved: {}",
+                            eml_protocol::TerminalPath::new(&job.path)
+                        )
+                    }
                     Ok(Err(error)) if error.kind() == io::ErrorKind::AlreadyExists => {
                         vocabulary::NO_REPLACEMENT.into()
                     }
@@ -762,7 +961,9 @@ impl DesktopController {
             }
             platform::set_busy(s.needs_quit_confirmation());
         }
+        self.maintain_reports();
         self.start_next();
+        self.poll_open_jobs();
         if refresh_needed {
             self.refresh();
         }
@@ -770,7 +971,13 @@ impl DesktopController {
     /// Whether Quit must wait for a running process or report export.
     pub fn is_busy(&self) -> bool {
         let s = self.session.borrow();
-        s.active.is_some() || s.export.is_some()
+        s.active.is_some()
+            || s.export.is_some()
+            || (!s.is_closing()
+                && (s.report_task.is_some()
+                    || (s.queue.report_storage_enabled()
+                        && s.storage_error.is_none()
+                        && s.queue.waiting() > 0)))
     }
     /// Confirm owned tasks or waiting requests; repeated committed Quit stays closed.
     pub fn request_quit(&self) -> bool {
@@ -838,8 +1045,8 @@ impl DesktopController {
             entry.worker_error.get_or_insert_with(|| error.to_string());
         }
     }
-    /// Review a fresh Create selection from a settled Check; Start repeats admission.
-    pub fn create_copies(&self) {
+    /// Review original roots again under current destination settings; never auto-run.
+    pub fn review_request(&self) {
         {
             let s = self.session.borrow();
             if s.is_closing() {
@@ -847,7 +1054,7 @@ impl DesktopController {
                 return;
             }
             if !s.selection.is_empty() {
-                self.message("A selection is already being reviewed. Finish or clear it before creating copies from this Check; the reviewed paths were preserved.");
+                self.message("A draft already contains selected paths. Finish or clear it before reviewing this request again; the draft was preserved.");
                 return;
             }
         }
@@ -855,12 +1062,26 @@ impl DesktopController {
             let s = self.session.borrow();
             s.entries
                 .get(s.selected)
-                .filter(|entry| can_create(entry))
-                .map(|entry| entry.request.request().paths.clone())
+                .filter(|entry| {
+                    entry.completion.is_some()
+                        || entry.stored.is_some()
+                        || entry.launch_error.is_some()
+                })
+                .map(|entry| {
+                    (
+                        entry.request.request().paths.clone(),
+                        if can_create(entry) {
+                            RunMode::Create
+                        } else {
+                            entry.request.request().mode
+                        },
+                    )
+                })
         };
-        if let Some(paths) = paths {
-            self.session.borrow_mut().mode = RunMode::Create;
-            self.ui.set_check_only(false);
+        if let Some((paths, mode)) = paths {
+            // Only the explicit completed-Check conversion changes operation.
+            // Generic recovery retains the request's mode for correction.
+            self.session.borrow_mut().mode = mode;
             if let Err(error) = self.stage(paths) {
                 self.message(&error.to_string());
             }
@@ -1014,6 +1235,9 @@ impl DesktopController {
             return None;
         }
         let entry = s.entries.get(s.selected)?;
+        if entry.completion.as_ref()?.jsonl.is_empty() {
+            return None;
+        }
         let source = ReportExport {
             run: entry.id,
             jsonl: entry.completion.as_ref()?.jsonl.clone(),
@@ -1040,15 +1264,24 @@ impl DesktopController {
             return;
         }
         let ReportExport { run, jsonl } = source;
+        let target = path.clone();
         match std::thread::Builder::new()
             .name("report-export".into())
             .spawn(move || eml_app::export_report(&path, &jsonl))
         {
             Ok(job) => {
-                self.session.borrow_mut().export = Some(ExportJob { run, task: job });
+                self.session.borrow_mut().export = Some(ExportJob {
+                    run,
+                    path: target,
+                    task: job,
+                });
                 platform::set_busy(true);
             }
-            Err(error) => self.message(&error.to_string()),
+            Err(error) => {
+                let message = format!("Could not start report export: {error}. Try again.");
+                self.export_ui.set_notice(message.clone().into());
+                self.message(&message);
+            }
         }
         self.refresh();
     }
@@ -1062,18 +1295,116 @@ impl DesktopController {
             .with_report(|report| report.reveal_path(s.selected_item))
             .flatten()
     }
+    /// Last successfully saved report, kept as a native path for advisory reveal.
+    pub fn saved_report_path(&self) -> Option<PathBuf> {
+        let s = self.session.borrow();
+        s.entries.get(s.selected)?.saved_report.clone()
+    }
+    // At most one OS launch request per initiating view. Launch acceptance is
+    // advisory: it neither verifies the viewer nor changes processing receipts.
+    #[cfg(any(feature = "desktop", test))]
+    pub(crate) fn open_advisory(
+        &self,
+        target: OpenTarget,
+        failure: &'static str,
+        open: impl FnOnce() -> Result<(), String> + Send + 'static,
+    ) {
+        if self.session.borrow().is_closing()
+            || self
+                .open_jobs
+                .borrow()
+                .iter()
+                .any(|job| job.target == target)
+        {
+            return;
+        }
+        self.set_open_feedback(target, "Sending open request…", "");
+        let serial = self.operation_serial.get();
+        match std::thread::Builder::new()
+            .name("native-open".into())
+            .spawn(open)
+        {
+            Ok(task) => {
+                self.open_jobs.borrow_mut().push(OpenJob {
+                    target,
+                    serial,
+                    failure,
+                    task,
+                });
+                self.refresh();
+            }
+            Err(error) => self.set_open_feedback(target, failure, &error.to_string()),
+        }
+    }
+    fn poll_open_jobs(&self) {
+        let mut completed = Vec::new();
+        {
+            let mut jobs = self.open_jobs.borrow_mut();
+            let mut index = 0;
+            while index < jobs.len() {
+                if jobs[index].task.is_finished() {
+                    completed.push(jobs.remove(index));
+                } else {
+                    index += 1;
+                }
+            }
+        }
+        let changed = !completed.is_empty();
+        for job in completed {
+            if job.target == OpenTarget::Main && job.serial != self.operation_serial.get() {
+                continue;
+            }
+            match job.task.join() {
+                Ok(Ok(())) => self.set_open_feedback(job.target, "Open request sent.", ""),
+                Ok(Err(error)) => self.set_open_feedback(job.target, job.failure, &error),
+                Err(_) => self.set_open_feedback(
+                    job.target,
+                    job.failure,
+                    "The native launch task did not complete.",
+                ),
+            }
+        }
+        if changed {
+            self.refresh();
+        }
+    }
+    fn set_open_feedback(&self, target: OpenTarget, message: &str, detail: &str) {
+        let detail = eml_protocol::DisplayText::new(detail).to_string();
+        match target {
+            OpenTarget::Main => {
+                self.message(message);
+                self.ui.set_operation_details(detail.into());
+            }
+            #[cfg(feature = "desktop")]
+            OpenTarget::About => {
+                self.about.set_notice(message.into());
+                self.about.set_notice_details(detail.into());
+            }
+            #[cfg(any(feature = "desktop", test))]
+            OpenTarget::Licenses => {
+                self.licenses.set_notice(message.into());
+                self.licenses.set_notice_details(detail.into());
+            }
+        }
+    }
     /// Show transient feedback for the current user operation, separate from run facts.
     pub fn message(&self, message: &str) {
         self.operation("Operation status", message);
     }
     fn operation(&self, label: &str, message: &str) {
+        self.operation_serial
+            .set(self.operation_serial.get().wrapping_add(1));
+        self.ui.set_operation_details("".into());
         self.ui.set_operation_label(label.into());
         self.ui
             .set_operation_feedback(eml_protocol::DisplayText::new(message).to_string().into());
     }
     fn clear_operation(&self) {
+        self.operation_serial
+            .set(self.operation_serial.get().wrapping_add(1));
         self.ui.set_operation_label("".into());
         self.ui.set_operation_feedback("".into());
+        self.ui.set_operation_details("".into());
     }
     fn dismiss(&self) {
         self.clear_operation();
@@ -1086,16 +1417,29 @@ impl DesktopController {
                     s.entries.remove(selected);
                     s.selected = selected.min(s.entries.len().saturating_sub(1));
                     s.selected_item = 0;
+                    if s.storage_error.as_ref().is_some_and(|(run, _)| *run == id) {
+                        s.storage_error = None;
+                    }
                 }
             }
         }
+        self.maintain_reports();
         self.start_next();
         self.refresh();
     }
     fn refresh(&self) {
         let s = self.session.borrow();
+        let main_open_pending = self
+            .open_jobs
+            .borrow()
+            .iter()
+            .any(|job| job.target == OpenTarget::Main);
+        self.ui.set_native_open_pending(main_open_pending);
         platform::set_busy(s.needs_quit_confirmation());
         self.ui.set_closing(s.is_closing());
+        self.ui
+            .set_report_storage_enabled(s.queue.report_storage_enabled());
+        self.ui.set_storage_retry(s.storage_error.is_some());
         if s.is_closing() {
             self.export_draft.borrow_mut().take();
             let _ = self.export_ui.hide();
@@ -1108,35 +1452,35 @@ impl DesktopController {
                 .map(|path| view_model::path(&eml_protocol::TerminalPath::new(path).to_string()))
                 .collect(),
         ));
-        self.ui.set_reviewing(s.reviewing);
+        self.ui.set_reviewing(s.reviewing || s.entries.is_empty());
+        self.ui.set_export_running(s.export.is_some());
+        self.ui.set_stop_requested(
+            s.active
+                .as_ref()
+                .is_some_and(|a| a.stop_requested || a.force_requested),
+        );
         self.ui.set_selected_item(s.selected_item as i32);
         self.ui.set_selected_run(s.selected as i32);
         self.ui.set_has_reports(!s.entries.is_empty());
         self.ui.set_worker_running(s.active.is_some());
-        self.ui.set_show_sidebar(
-            s.entries.len() > 1
-                || s.queue.waiting() > 0
-                || (!s.selection.is_empty() && !s.entries.is_empty()),
-        );
         self.ui.set_start_label(
-            if s.active.is_some() || s.entries.len() >= eml_app::MAX_RETAINED_REPORTS {
+            if s.active.is_some() || s.report_task.is_some() || s.queue.is_paused_for_report_space()
+            {
                 "Queue request".into()
             } else if s.mode == RunMode::DryRun {
-                "Check selection".into()
+                "Start check".into()
             } else {
                 "Create copies".into()
             },
         );
         self.ui.set_can_start(
-            !s.selection.is_empty()
-                && s.queue.waiting() < eml_app::MAX_WAITING_REQUESTS
-                && !s.is_closing(),
+            !s.selection.is_empty() && s.queue.capacity_error().is_none() && !s.is_closing(),
         );
         self.ui.set_start_reason(
             if s.is_closing() {
                 QueueError::ShuttingDown.to_string()
-            } else if s.queue.waiting() >= eml_app::MAX_WAITING_REQUESTS {
-                QueueError::Full.to_string()
+            } else if let Some(error) = s.queue.capacity_error() {
+                error.to_string()
             } else {
                 format!(
                     "{} using the reviewed paths and current destination",
@@ -1172,8 +1516,10 @@ impl DesktopController {
         self.ui
             .set_settings_warning(s.preferences.warning().unwrap_or_default().into());
         self.ui
-            .set_queue_notice(if s.queue.is_paused_for_report_space() {
-                vocabulary::report_space_notice(eml_app::MAX_RETAINED_REPORTS).into()
+            .set_queue_notice(if let Some((run, error)) = &s.storage_error {
+                format!("Session report storage for Run {run} is unavailable: {}. Its available report is preserved. Retry storage or close that result to continue.", eml_protocol::DisplayText::new(error)).into()
+            } else if s.queue.is_paused_for_report_space() {
+                "Queue paused: close a completed result, or allow temporary report storage from a new request.".into()
             } else {
                 "".into()
             });
@@ -1210,6 +1556,20 @@ impl DesktopController {
             self.clear_report();
             return;
         };
+        self.ui
+            .set_report_loading(entry.stored.is_some() && entry.report.is_none());
+        self.ui.set_report_load_notice(if let Some((run, _)) = &s.storage_error {
+            format!("This report is not loaded because session storage for Run {run} is unavailable. Retry storage or close the affected result; retained reports have not been discarded.")
+        } else { "Loading report…".into() }.into());
+        self.ui.set_can_reveal_report(entry.saved_report.is_some());
+        self.ui.set_saved_report_label(
+            entry
+                .saved_report
+                .as_ref()
+                .map(|path| format!("Saved report: {}", eml_protocol::TerminalPath::new(path)))
+                .unwrap_or_default()
+                .into(),
+        );
         self.ui.set_run_label(format!("Run {}", entry.id).into());
         self.ui.set_run_context(
             format!(
@@ -1236,13 +1596,38 @@ impl DesktopController {
                 .is_some_and(|active| active.id == entry.id),
         );
         self.ui.set_can_export(
-            entry.completion.is_some()
+            entry
+                .completion
+                .as_ref()
+                .is_some_and(|c| !c.jsonl.is_empty())
                 && s.export.is_none()
                 && self.export_draft.borrow().is_none(),
         );
-        self.ui
-            .set_can_dismiss(entry.completion.is_some() || entry.launch_error.is_some());
+        self.ui.set_can_dismiss(
+            entry.completion.is_some() || entry.stored.is_some() || entry.launch_error.is_some(),
+        );
         self.ui.set_can_create(can_create(entry));
+        self.ui.set_can_review(
+            entry.completion.is_some() || entry.stored.is_some() || entry.launch_error.is_some(),
+        );
+        self.ui.set_review_label(
+            if can_create(entry) {
+                "Review for copy creation"
+            } else {
+                "Review inputs again"
+            }
+            .into(),
+        );
+        self.ui.set_report_details(
+            entry
+                .completion
+                .as_ref()
+                .map(|c| {
+                    eml_protocol::DisplayText::new(&String::from_utf8_lossy(&c.stderr)).to_string()
+                })
+                .unwrap_or_default()
+                .into(),
+        );
         let mut diagnostics = entry
             .completion
             .as_ref()
@@ -1283,10 +1668,12 @@ impl DesktopController {
             return;
         };
         handle.with_report(|report| {
+            self.ui
+                .set_can_reveal(report.reveal_path(s.selected_item).is_some());
             let revision = PresentationRevision {
                 run: entry.id,
                 item: s.selected_item,
-                failures_only: self.ui.get_failures_only(),
+                attention_only: self.ui.get_attention_only(),
                 started: report.start().is_some(),
                 items: report.items().len(),
                 summary: report.summary().is_some(),
@@ -1307,8 +1694,7 @@ impl DesktopController {
                     .iter()
                     .enumerate()
                     .filter(|(_, item)| {
-                        !self.ui.get_failures_only()
-                            || item.status == eml_protocol::records::ItemStatus::Failed
+                        !self.ui.get_attention_only() || view_model::item(item).attention
                     })
                     .map(|(index, item)| {
                         let mut row = view_model::item(item);
@@ -1328,8 +1714,6 @@ impl DesktopController {
                 self.ui.get_counts(),
                 view_model::counts(report),
             ));
-            self.ui
-                .set_can_reveal(report.reveal_path(s.selected_item).is_some());
             let Some(item) = report.items().get(s.selected_item) else {
                 self.ui.set_can_copy_source(false);
                 self.ui.set_can_copy_destination(false);
@@ -1384,7 +1768,7 @@ impl DesktopController {
     fn clear_items(&self) {
         self.ui.set_keyboard_navigation(false);
         self.ui.set_messages_scroll_y(0.0);
-        self.ui.set_failures_only(false);
+        self.ui.set_attention_only(false);
         self.ui.set_selected_visible_row(-1);
         self.ui.set_work_total(0);
         self.ui.set_work_completed(0);
@@ -1408,6 +1792,10 @@ impl DesktopController {
         self.ui.set_can_reveal(false);
     }
     fn clear_report(&self) {
+        self.ui.set_can_reveal_report(false);
+        self.ui.set_saved_report_label("".into());
+        self.ui.set_report_loading(false);
+        self.ui.set_report_details("".into());
         self.ui
             .set_report_diagnostics(update_model(self.ui.get_report_diagnostics(), Vec::new()));
         self.clear_items();
@@ -1420,7 +1808,18 @@ impl DesktopController {
         self.ui.set_can_export(false);
         self.ui.set_can_dismiss(false);
         self.ui.set_can_create(false);
+        self.ui.set_can_review(false);
     }
+}
+fn first_attention(handle: &eml_app::ReportHandle) -> Option<usize> {
+    handle
+        .with_report(|report| {
+            report
+                .items()
+                .iter()
+                .position(|item| view_model::item(item).attention)
+        })
+        .flatten()
 }
 fn request_destination(request: &RequestSnapshot) -> String {
     match &request.request().output {
@@ -1451,11 +1850,11 @@ fn status(entry: &Entry, active: Option<&Active>) -> RunStatus {
     if entry.launch_error.is_some() {
         return RunStatus::StartFailed;
     }
-    if let Some(completion) = &entry.completion {
-        if completion.failure == Some(WorkerFailure::Identity) {
+    if let Some((state, failure)) = completion_state(entry) {
+        if failure == Some(WorkerFailure::Identity) {
             return RunStatus::IdentityFailure;
         }
-        return match completion.state {
+        return match state {
             WorkerState::Completed => RunStatus::Completed,
             WorkerState::CompletedWithFailures => RunStatus::CompletedWithFailures,
             WorkerState::Stopped => RunStatus::Stopped,
@@ -1483,13 +1882,20 @@ fn status(entry: &Entry, active: Option<&Active>) -> RunStatus {
 
 fn can_create(entry: &Entry) -> bool {
     entry.request.request().mode == RunMode::DryRun
-        && entry.completion.as_ref().is_some_and(|completion| {
-            completion.failure.is_none()
+        && completion_state(entry).is_some_and(|(state, failure)| {
+            failure.is_none()
                 && matches!(
-                    completion.state,
+                    state,
                     WorkerState::Completed | WorkerState::CompletedWithFailures
                 )
         })
+}
+fn completion_state(entry: &Entry) -> Option<(WorkerState, Option<WorkerFailure>)> {
+    entry
+        .completion
+        .as_ref()
+        .map(|c| (c.state, c.failure))
+        .or_else(|| entry.stored.as_ref().map(|c| (c.state(), c.failure())))
 }
 
 #[cfg(test)]

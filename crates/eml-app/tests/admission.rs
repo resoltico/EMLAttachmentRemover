@@ -68,6 +68,44 @@ fn waiting_capacity_cancellation_and_removal_do_not_discard_active_results() {
     assert!(queue.dismiss(active));
 }
 #[test]
+fn authorized_storage_reserves_finite_results_before_admitting_waiting_work() {
+    let mut queue = RunQueue::default();
+    for _ in 0..2 {
+        let id = queue.enqueue(request()).unwrap();
+        assert_eq!(queue.start_next().unwrap().unwrap().0, id);
+        queue.complete(id).unwrap();
+    }
+    let mut waiting = Vec::new();
+    for _ in 0..8 {
+        waiting.push(queue.enqueue(request()).unwrap());
+    }
+    assert!(queue.is_paused_for_report_space());
+    assert!(!queue.report_storage_enabled());
+    queue.enable_report_storage();
+    assert!(queue.report_storage_enabled());
+    assert_eq!(queue.report_capacity(), 10);
+    assert!(!queue.is_paused_for_report_space());
+    for id in waiting {
+        assert_eq!(queue.start_next().unwrap().unwrap().0, id);
+        // Starting a reservation does not free admission capacity.
+        assert!(matches!(
+            queue.enqueue(request()),
+            Err(QueueError::SessionFull)
+        ));
+        queue.complete(id).unwrap();
+    }
+    assert_eq!(queue.reports().len(), 10);
+    assert_eq!(queue.waiting(), 0);
+    assert!(matches!(
+        queue.capacity_error(),
+        Some(QueueError::SessionFull)
+    ));
+    let closed = queue.reports()[0];
+    assert!(queue.dismiss(closed));
+    assert!(queue.capacity_error().is_none());
+    queue.enqueue(request()).unwrap();
+}
+#[test]
 fn destination_is_a_snapshot_and_wire_contains_required_null() {
     let destination = path("copies");
     let selected = RequestSnapshot::new(

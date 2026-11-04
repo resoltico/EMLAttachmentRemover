@@ -6,6 +6,12 @@ Use concise bullets without category labels or subheadings, grouping related cha
 
 ## [Unreleased]
 
+- Rework desktop requests, results and task navigation with consistent spacing, aligned rows, compact details and separately scoped worker controls.
+- Allow private session-only report storage by consent so queued work continues without closing results; cap the session at ten tasks/results.
+- Recover refused requests by reviewing original roots under current settings; preserve operation for retries and require explicit Start.
+- Publish exported reports only after complete writes, preserve filename/location receipts, and keep existing files unchanged on failed saves.
+- Correct native-open feedback after retries, keep launcher work off the GUI thread, and support safe keyboard cancellation of Stop/Quit decisions.
+- Preserve literal punctuation in packaged plaintext license notices.
 - Ignore destination-dialog results after Quit is committed, preserving saved settings during shutdown.
 - Bound selection deduplication before request admission; repeated paths still coalesce in their first-seen order.
 

@@ -207,10 +207,25 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
             .map_or_else(
                 || "—".into(),
                 |value| {
+                    let count = item.removed.len();
+                    let part = if count == 1 { "part" } else { "parts" };
                     if matches!(value.kind, MeaningKind::Prepared | MeaningKind::Comparison) {
-                        format!("{} to remove", item.removed.len())
+                        format!("{count} {part} to remove")
                     } else {
-                        value.removal_mode.count_label(item.removed.len())
+                        match value.removal_mode {
+                            vocabulary::RemovalMode::Selected if count == 0 => {
+                                "No removal details reported".into()
+                            }
+                            vocabulary::RemovalMode::Selected => {
+                                format!("{count} {part} selected for removal")
+                            }
+                            vocabulary::RemovalMode::Removed => {
+                                format!("{count} {part} removed from copy")
+                            }
+                            vocabulary::RemovalMode::Absent => {
+                                format!("{count} {part} verified absent from existing copy")
+                            }
+                        }
                     }
                 },
             )
@@ -355,6 +370,14 @@ pub(crate) fn report_diagnostics(report: &eml_app::RunReport) -> Vec<DetailView>
 /// Retained process/transport diagnostics belong to the completed report.
 pub(crate) fn completion_diagnostics(completion: &eml_app::WorkerCompletion) -> Vec<DetailView> {
     let mut rows = Vec::new();
+    if completion.jsonl.is_empty() {
+        rows.push(DetailView { text: "No protocol report was received, so there is no JSONL report to save. Available failure information is shown here and under Failure details.".into() });
+    }
+    if completion.state == eml_app::WorkerState::RequestRefused {
+        rows.push(DetailView {
+            text: "The request could not start. Check that the selected inputs still exist and choose an existing, writable destination. Use Review inputs again to correct the request.".into(),
+        });
+    }
     if completion.failure == Some(eml_app::WorkerFailure::Identity) {
         rows.push(DetailView {
             text: vocabulary::WORKER_IDENTITY_HINT.into(),
@@ -373,11 +396,6 @@ pub(crate) fn completion_diagnostics(completion: &eml_app::WorkerCompletion) -> 
             text: vocabulary::FORCE_STOP_NOTICE.into(),
         });
     }
-    rows.extend(
-        String::from_utf8_lossy(&completion.stderr)
-            .lines()
-            .map(|text| DetailView { text: text.into() }),
-    );
     if completion.stderr_truncated {
         rows.push(DetailView {
             text: vocabulary::STDERR_TRUNCATED_NOTICE.into(),

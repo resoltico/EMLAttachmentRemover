@@ -5,8 +5,11 @@ use serde::Serialize;
 use std::{collections::VecDeque, path::PathBuf};
 /// Maximum admitted waiting selections, excluding the one active run.
 pub const MAX_WAITING_REQUESTS: usize = 8;
-/// Maximum retained complete or active reports.
+/// Maximum complete or active report reservations before temporary-storage consent.
 pub const MAX_RETAINED_REPORTS: usize = 2;
+/// Maximum admitted requests and retained results in one session.
+/// Temporary report storage changes residency, not this finite reservation budget.
+pub const MAX_SESSION_REQUESTS: usize = 10;
 
 /// Session-local identity; never derived from a displayed filename or queue index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -30,6 +33,8 @@ pub enum QueueError {
     Full,
     /// Two full reports are reserved; explicit dismissal is needed.
     ReportSpace,
+    /// All session result reservations are occupied, including waiting requests.
+    SessionFull,
     /// Completion does not belong to the active run.
     InactiveRun,
     /// The finite session identity space has been exhausted.
@@ -48,6 +53,7 @@ impl std::fmt::Display for QueueError {
             Self::InvalidRequest(error) => write!(f, "Cannot add this selection: {error}"),
             Self::RequestEncoding => f.write_str("Cannot encode this selection. Select fewer paths or shorten folder names and try again."),
             Self::ReportSpace => f.write_str(&eml_core::vocabulary::report_space_notice(MAX_RETAINED_REPORTS)),
+            Self::SessionFull => write!(f, "This session already holds {MAX_SESSION_REQUESTS} tasks and results. Close a result or remove a waiting task before adding another."),
             Self::InactiveRun => f.write_str("The completion does not belong to the active request."),
             Self::IdentityLimit => f.write_str("This session cannot start another request. Save needed reports and restart the application."),
             Self::ShuttingDown => f.write_str("The application is closing. Reopen it before starting another request."),
@@ -132,12 +138,41 @@ pub struct RunQueue {
     waiting: VecDeque<(RunId, RequestSnapshot)>,
     active: Option<RunId>,
     reports: Vec<RunId>,
+    report_storage: bool,
 }
 impl RunQueue {
+    /// Allow completed results to use private session-only backing after consent.
+    /// The owner must settle storage before launching work that would exceed its
+    /// in-memory residency budget; this queue owns reservations, not I/O.
+    pub fn enable_report_storage(&mut self) {
+        self.report_storage = true;
+    }
+    /// Whether session-only report backing was authorized for this queue.
+    pub fn report_storage_enabled(&self) -> bool {
+        self.report_storage
+    }
+    /// Maximum report reservations with the current retention policy.
+    pub fn report_capacity(&self) -> usize {
+        if self.report_storage {
+            MAX_SESSION_REQUESTS
+        } else {
+            MAX_RETAINED_REPORTS
+        }
+    }
+    /// Current admission refusal without changing captured requests.
+    pub fn capacity_error(&self) -> Option<QueueError> {
+        if self.waiting.len() >= MAX_WAITING_REQUESTS {
+            Some(QueueError::Full)
+        } else if self.reports.len() + self.waiting.len() >= MAX_SESSION_REQUESTS {
+            Some(QueueError::SessionFull)
+        } else {
+            None
+        }
+    }
     /// Admit up to eight waiting immutable requests in selection order.
     pub fn enqueue(&mut self, request: RequestSnapshot) -> Result<RunId, QueueError> {
-        if self.waiting.len() >= MAX_WAITING_REQUESTS {
-            return Err(QueueError::Full);
+        if let Some(error) = self.capacity_error() {
+            return Err(error);
         }
         let next = self
             .sequence
@@ -149,6 +184,7 @@ impl RunQueue {
         Ok(id)
     }
     /// Reserve a report before removing the next request; pause without data loss.
+    /// With temporary storage enabled, admission already reserved every result.
     pub fn start_next(&mut self) -> Result<Option<(RunId, RequestSnapshot)>, QueueError> {
         if self.active.is_some() || self.waiting.is_empty() {
             return Ok(None);
@@ -164,9 +200,9 @@ impl RunQueue {
         Ok(Some(next))
     }
     fn report_capacity_full(&self) -> bool {
-        self.reports.len() >= MAX_RETAINED_REPORTS
+        self.reports.len() >= self.report_capacity()
     }
-    /// Waiting work cannot start until a retained report is dismissed.
+    /// Waiting work lacks a result reservation under the current retention policy.
     /// This uses the same reservation rule as start_next, without mutating it.
     pub fn is_paused_for_report_space(&self) -> bool {
         self.active.is_none() && !self.waiting.is_empty() && self.report_capacity_full()

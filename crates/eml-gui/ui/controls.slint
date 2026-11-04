@@ -1,0 +1,66 @@
+// Copyright 2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
+import { Button, Palette } from "std-widgets.slint";
+
+// Application relationships, rather than independent per-window magic numbers.
+export global UiMetrics {
+    out property <length> gutter: 24px;
+    out property <length> inset: 16px;
+    out property <length> gap: 8px;
+    out property <length> label-gap: 4px;
+    out property <brush> attention: Palette.color-scheme == ColorScheme.dark ? #ffb4ab : #9f2424;
+}
+export component ActionButton inherits Button {
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    preferred-width: self.min-width;
+    max-width: self.min-width;
+    preferred-height: self.min-height;
+    max-height: self.min-height;
+}
+// Fluent has no borderless button variant. Keep the small utility/disclosure role
+// separate from committing buttons, with the same keyboard and AX activation.
+export component TextButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> expanded;
+    in property <bool> expandable;
+    in property <bool> danger;
+    out property <bool> has-focus: keys.has-focus;
+    callback clicked();
+    min-width: caption.preferred-width + 16px;
+    min-height: max(32px, caption.preferred-height + 8px);
+    preferred-width: self.min-width;
+    max-width: self.min-width;
+    preferred-height: self.min-height;
+    max-height: self.min-height;
+    horizontal-stretch: 0; vertical-stretch: 0;
+    border-radius: 4px;
+    background: pointer.has-hover && root.enabled ? Palette.alternate-background : transparent;
+    border-width: keys.has-focus && root.enabled ? 1px : 0px;
+    border-color: Palette.accent-background;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-expandable: root.expandable;
+    accessible-expanded: root.expanded;
+    accessible-action-default => { if root.enabled { keys.focus(); root.clicked(); } }
+    forward-focus: keys;
+    keys := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Space || event.text == Key.Return {
+                root.clicked(); return accept;
+            }
+            return reject;
+        }
+    }
+    caption := Text {
+        text: root.text; color: root.danger ? UiMetrics.attention : Palette.foreground;
+        opacity: root.enabled ? 1 : 0.5;
+        x: 8px; width: max(0px, parent.width - 16px); height: parent.height;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+    pointer := TouchArea { enabled: root.enabled; clicked => { keys.focus(); root.clicked(); } }
+}

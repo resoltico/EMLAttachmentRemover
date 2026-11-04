@@ -53,8 +53,40 @@ impl ReportHandle {
     pub fn with_report<T>(&self, render: impl FnOnce(&RunReport) -> T) -> Option<T> {
         self.0.try_lock().ok().map(|report| render(&report))
     }
+    pub(crate) fn with_settled_report<T>(
+        &self,
+        render: impl FnOnce(&RunReport) -> T,
+    ) -> io::Result<T> {
+        self.0
+            .lock()
+            .map(|report| render(&report))
+            .map_err(|_| io::Error::other("The settled report is unavailable."))
+    }
+    pub(crate) fn replay(jsonl: &[u8], dry_run: bool, exit: ExitStatus) -> Self {
+        let handle = Self(Arc::new(Mutex::new(RunReport::for_native_worker(
+            eml_core::product::VERSION,
+        ))));
+        let mut framing = FrameSplitter::default();
+        for chunk in jsonl.chunks(16 * 1024) {
+            if framing
+                .append(chunk, |frame| accept_output_frame(&handle, dry_run, frame))
+                .is_err()
+            {
+                break;
+            }
+        }
+        let tail = framing.finish();
+        // This handle is private and has never crossed a thread boundary.
+        let _ = handle
+            .0
+            .lock()
+            .expect("new replay report")
+            .finish(exit.code(), tail);
+        handle
+    }
 }
 /// Settled process and pipe observations, plus the exact bounded stream for export.
+#[derive(Clone)]
 pub struct WorkerCompletion {
     /// Terminal lifecycle state.
     pub state: WorkerState,
@@ -349,19 +381,7 @@ fn read_output(
         }
         jsonl.extend_from_slice(&buffer[..count]);
         let accepted = framing.append(&buffer[..count], |frame| {
-            let mut report = report.0.lock().map_err(|_| WorkerFailure::Transport)?;
-            let first = report.start().is_none();
-            report.accept_frame(frame).map_err(|error| {
-                if first {
-                    WorkerFailure::Identity
-                } else {
-                    WorkerFailure::Protocol(error)
-                }
-            })?;
-            if report.start().is_some_and(|start| start.dry_run != dry_run) {
-                return Err(WorkerFailure::Protocol(ProtocolFailure::InvalidOrder));
-            }
-            Ok::<_, WorkerFailure>(())
+            accept_output_frame(&report, dry_run, frame)
         });
         if let Err(error) = accepted {
             failure = Some(
@@ -381,6 +401,25 @@ fn read_output(
         tail,
         failure,
     }
+}
+fn accept_output_frame(
+    handle: &ReportHandle,
+    dry_run: bool,
+    frame: &[u8],
+) -> Result<(), WorkerFailure> {
+    let mut report = handle.0.lock().map_err(|_| WorkerFailure::Transport)?;
+    let first = report.start().is_none();
+    report.accept_frame(frame).map_err(|error| {
+        if first {
+            WorkerFailure::Identity
+        } else {
+            WorkerFailure::Protocol(error)
+        }
+    })?;
+    if report.start().is_some_and(|start| start.dry_run != dry_run) {
+        return Err(WorkerFailure::Protocol(ProtocolFailure::InvalidOrder));
+    }
+    Ok(())
 }
 fn read_diagnostics(mut reader: impl Read) -> io::Result<Diagnostics> {
     let mut diagnostics = Diagnostics {

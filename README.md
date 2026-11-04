@@ -64,45 +64,55 @@ and reported cleanup failures before retrying. Recognizable staging files use
 
 Add files or folders with the buttons, window drops or launch arguments. These
 paths enter a review selection; no worker starts until **Create copies** or
-**Check selection** is pressed in the footer. Exact duplicate paths appear once.
+**Start check** is pressed. Exact duplicate paths appear once.
 Collection coalesces proven native aliases of the same directory entry; distinct
 hard-link names remain separate. Folders are scanned only after Start, so selection counts are not message counts.
 Remove individual selections or Clear selection before starting.
 
-Choose Create copies or Check only and the destination in **Next request**. Check
+Choose Create copies or Check only and the destination in the request draft. Check
 also verifies the chosen destination without writing copies. **Change…** offers
 Beside originals or an existing output folder. Start captures the current paths,
 mode and destination; changes afterwards do not alter active or queued requests.
-Up to eight requests wait behind the active run. Two retained reports pause the
-queue until a completed report is dismissed. Waiting requests have their own
-scrollable sidebar list and **Remove from queue** action. Queue refusals retain the reviewed
-selection. A settled Check's **Create copies…** returns its paths to review in
-Create mode; it does not write until Start is pressed again. Finish or clear any
-other reviewed selection first; Check-to-Create never merges unrelated paths.
+Up to eight requests wait behind the active run. **Tasks** opens waiting requests
+and session results; **Remove from queue** cancels only the chosen waiting request.
+Queue refusals retain the draft. By default, two retained results pause further
+work until a result is closed. **Allow temporary storage…** offers an explicit
+choice for this session: exact diagnostic reports are backed by private, unnamed
+temporary files so accepted queued work can continue without closing results.
+There are at most ten admitted tasks/results, with less than 256 MiB per report
+stream (at most 2.5 GiB of raw backing). Files disappear when their results close
+or the session exits; there is no persistent history. Storage failure preserves
+available reports and pauses new launches with **Retry storage** guidance.
+**Review inputs again** restores original selected file/folder roots under current
+settings for correction; a completed Check offers **Review for copy creation**.
+Both require explicit Start. Finish or clear an existing draft first; reviewing
+a previous request never silently merges or replaces its selected paths.
 
 The empty window offers file/folder selection without inactive report controls.
-Reports and waiting requests appear in the sidebar only when there is work to
-navigate. Choosing a report keeps that view when queued work starts. A report shows its captured settings, counts, message results and selected
-message details. Errors, recovery guidance and run-level discovery failures remain
-visible in a separately bordered **Message details** inspector, before provenance.
+The compact task drawer keeps navigation separate from the workspace. Choosing a
+result keeps that view when queued work starts. A result shows its captured
+settings, counts and message outcomes. Initial completion selects a message that
+needs attention unless the user already selected one. Errors and recovery guidance
+appear in content-sized message details before optional technical provenance.
 Paths, removal metadata and byte counts expand under **Paths, parts and technical details**.
-**Failed only** filters the table without changing the full report or its export;
-Toggle **Failed only** off to restore the list. Up/Down/Home/End move through visible messages
+**Needs attention only** filters the table without changing the full report or its export;
+toggle it off to restore the list. Up/Down/Home/End move through visible messages
 and reveal the selected row. **File → Open files…** uses Cmd-O on macOS (Ctrl-O
 on other desktops); **File → Add folder…** opens folder selection. Long filenames retain their distinguishing suffixes, with
 full paths in tooltips and accessibility text. Expanded metadata offers **Copy path**
 for the source and intended destination; it copies the native path, not escaped display text. Report-export feedback is separate
-from retained run warnings. **Dismiss report** removes the report from this
+from retained run warnings. **Close result** removes the report from this
 session, never the original messages or copies.
 
-The full-width footer keeps actions on one aligned row. **Stop** addresses the
-active run even while another report or selection is being reviewed. **More… →
-Force Stop…** requires confirmation. Completed copies remain after either Stop.
-Busy Quit offers Stop and wait, confirmed Force Stop and quit, or Keep running;
+The active-task strip names the run addressed by **Stop**, independently of the
+inspected result or draft. **Force Stop…** requires confirmation. Completed copies remain after either Stop.
+Busy Quit offers Stop and wait, confirmed Force Stop and quit, or Cancel;
 Quit waits for worker and report-export settlement, including after a confirmed
 Force Stop. When only an export is active, Finish export and quit waits for it;
 Force Stop is unavailable.
 Waiting requests also require a Quit decision; they are not silently discarded.
+Decision dialogs start on Cancel and Escape cancels the decision. Cancelling a
+Force Stop decision does not undo a cooperative Stop already requested.
 Once shutdown is confirmed, further Quit requests do not reopen the decision,
 and new selections or late file-dialog submissions cannot start more work. **Save JSONL report…** writes
 the run's original protocol-1 stream captured when Save is clicked, including
@@ -110,6 +120,11 @@ partial results after failure. **Export new report** captures that run, offers a
 folder chooser and a file name, then **Create report** writes exclusively. Existing
 names are refused inline so you can correct the name without reopening the flow;
 there is no Replace action. Navigating between reports does not retarget this draft.
+Failed physical writes leave no partial final report; complete bytes are synchronized
+before publication. A crash can leave a private staging file, and directory-entry
+survival across power loss is not promised. A saved result retains its filename and
+location with **Show report**. Refusals before any protocol bytes have no JSONL to save;
+their available diagnostics remain under **Failure details**.
 **Show copy** is available only for a verified copy receipt.
 
 On macOS, open **EML Attachment Remover → About EML Attachment Remover** in the

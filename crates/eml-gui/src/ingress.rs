@@ -228,18 +228,35 @@ pub fn install_native(
     ui.on_reveal(move || {
         if let Some(controller) = weak.upgrade()
             && let Some(path) = controller.selected_copy()
-            && let Err(error) = opener::reveal(path)
         {
-            controller.message(&error.to_string());
+            controller.open_advisory(
+                crate::OpenTarget::Main,
+                "Could not show the copy. Check that it still exists, then try again.",
+                move || opener::reveal(path).map_err(|error| error.to_string()),
+            );
+        }
+    });
+    let weak = Rc::downgrade(controller);
+    ui.on_reveal_report(move || {
+        if let Some(controller) = weak.upgrade()
+            && let Some(path) = controller.saved_report_path()
+        {
+            controller.open_advisory(
+                crate::OpenTarget::Main,
+                "Could not show the saved report. Check that it still exists, then try again.",
+                move || opener::reveal(path).map_err(|error| error.to_string()),
+            );
         }
     });
     let about = controller.about_window();
     let weak = Rc::downgrade(controller);
     about.on_website(move || {
-        if let Err(error) = opener::open(eml_core::product::WEBSITE)
-            && let Some(controller) = weak.upgrade()
-        {
-            controller.message(&error.to_string());
+        if let Some(controller) = weak.upgrade() {
+            controller.open_advisory(
+                crate::OpenTarget::About,
+                "Could not open the project website. Check your browser, then try again.",
+                || opener::open(eml_core::product::WEBSITE).map_err(|error| error.to_string()),
+            );
         }
     });
     let notices = std::env::current_exe()?
@@ -249,17 +266,11 @@ pub fn install_native(
         .join("Resources/THIRD-PARTY-NOTICES.txt");
     let weak = Rc::downgrade(controller);
     controller.license_window().on_third_party(move || {
-        if let Err(error) = opener::open(&notices)
-            && let Some(controller) = weak.upgrade()
-        {
-            let feedback = format!(
-                "Cannot open bundled third-party notices at {}: {error}",
-                notices.display()
-            );
-            controller
-                .license_window()
-                .set_notice(eml_protocol::DisplayText::new(&feedback).to_string().into());
-            controller.message(&feedback);
+        if let Some(controller) = weak.upgrade() {
+            let path = notices.clone();
+            controller.open_advisory(crate::OpenTarget::Licenses,
+                "Could not open bundled third-party notices. Check the app installation, then try again.",
+                move || opener::open(path).map_err(|error| error.to_string()));
         }
     });
     Ok(())
