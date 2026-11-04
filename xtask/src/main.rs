@@ -3,6 +3,7 @@ mod archive;
 mod ci;
 mod dist;
 mod notices;
+mod source;
 
 use clap::{Parser, Subcommand};
 use std::{path::PathBuf, process::Command};

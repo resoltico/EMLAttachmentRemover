@@ -3,20 +3,27 @@ use std::sync::LazyLock;
 
 /// Release version inherited from the authoritative workspace package version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-/// Distributed product revision. Increase before distributing changed binaries;
-/// never increment during compilation or reset on a release-version change.
-pub const BUILD_NUMBER: u16 = checked_build_number(44);
-const fn checked_build_number(value: u16) -> u16 {
-    assert!(
-        value > 0 && value <= 9999,
-        "Product build number must be in 1..=9999"
-    );
-    value
-}
+/// Full source revision when supplied by CI or distribution; ordinary builds may omit it.
+pub const SOURCE_REVISION: Option<&str> = if env!("EML_SOURCE_REVISION").is_empty() {
+    None
+} else {
+    Some(env!("EML_SOURCE_REVISION"))
+};
 
-/// Human-facing identity; protocol version fields retain the release version.
-pub static VERSION_WITH_BUILD: LazyLock<String> =
-    LazyLock::new(|| format!("{VERSION} (Build {BUILD_NUMBER})"));
+/// Full human-facing source identity; protocol fields retain the release version.
+pub static VERSION_WITH_REVISION: LazyLock<String> =
+    LazyLock::new(|| version_text(VERSION, SOURCE_REVISION));
+
+/// Compact About identity using the first twelve characters of a supplied revision.
+pub static ABOUT_VERSION: LazyLock<String> =
+    LazyLock::new(|| version_text(VERSION, SOURCE_REVISION.map(|value| &value[..12])));
+
+fn version_text(version: &str, revision: Option<&str>) -> String {
+    revision.map_or_else(
+        || version.to_owned(),
+        |value| format!("{version} ({value})"),
+    )
+}
 
 /// Canonical public CLI executable/command and protocol-1 program identity.
 /// The desktop executable and bundle use the display name.
@@ -31,13 +38,16 @@ pub const WEBSITE: &str = "https://github.com/resoltico/EMLAttachmentRemover";
 mod tests {
     use super::*;
     #[test]
-    fn product_revision_range_has_checked_constant_boundaries() {
-        const FIRST: u16 = checked_build_number(1);
-        const LAST: u16 = checked_build_number(9999);
-        assert_eq!(FIRST, 1);
-        assert_eq!(LAST, 9999);
-        for invalid in [0, 10000, u16::MAX] {
-            assert!(std::panic::catch_unwind(|| checked_build_number(invalid)).is_err());
-        }
+    fn full_source_identity_and_compact_about_identity_share_the_release_version() {
+        let revision = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(version_text("7.0.0", None), "7.0.0");
+        assert_eq!(
+            version_text("7.0.0", Some(revision)),
+            "7.0.0 (0123456789abcdef0123456789abcdef01234567)"
+        );
+        assert_eq!(
+            version_text("7.0.0", Some(&revision[..12])),
+            "7.0.0 (0123456789ab)"
+        );
     }
 }

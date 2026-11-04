@@ -160,7 +160,7 @@ impl DesktopController {
         ui.set_product_name(eml_core::product::DISPLAY_NAME.into());
         about.set_product_name(eml_core::product::DISPLAY_NAME.into());
         ui.set_native_about(cfg!(all(feature = "desktop", target_os = "macos")));
-        about.set_version(eml_core::product::VERSION_WITH_BUILD.as_str().into());
+        about.set_version(eml_core::product::ABOUT_VERSION.as_str().into());
         ui.set_report_capacity(eml_app::MAX_RETAINED_REPORTS as i32);
         ui.set_force_notice(vocabulary::FORCE_STOP_NOTICE.into());
         let controller = Rc::new(Self {
@@ -440,10 +440,12 @@ impl DesktopController {
         });
         let weak = Rc::downgrade(self);
         self.ui.on_about(move || {
-            if let Some(c) = weak.upgrade()
-                && let Err(error) = c.about.show()
-            {
-                c.message(&error.to_string());
+            if let Some(c) = weak.upgrade() {
+                c.about.set_ui_size(c.ui.get_ui_size());
+                match c.about.show() {
+                    Ok(()) => c.about.invoke_focus_website(),
+                    Err(error) => c.message(&error.to_string()),
+                }
             }
         });
         let weak = Rc::downgrade(self);
@@ -454,10 +456,12 @@ impl DesktopController {
         });
         let weak = Rc::downgrade(self);
         self.about.on_licenses(move || {
-            if let Some(c) = weak.upgrade()
-                && let Err(error) = c.licenses.show()
-            {
-                c.message(&error.to_string());
+            if let Some(c) = weak.upgrade() {
+                c.licenses.set_ui_size(c.about.get_ui_size());
+                match c.licenses.show() {
+                    Ok(()) => c.licenses.invoke_focus_start(),
+                    Err(error) => c.message(&error.to_string()),
+                }
             }
         });
         let weak = Rc::downgrade(self);
@@ -531,6 +535,9 @@ impl DesktopController {
     }
     /// Apply a future-request destination; existing queue snapshots stay unchanged.
     pub fn set_destination(&self, destination: Option<PathBuf>) {
+        if self.session.borrow().is_closing() {
+            return;
+        }
         self.clear_operation();
         if let Err(error) = self
             .session
@@ -549,12 +556,21 @@ impl DesktopController {
         if s.is_closing() {
             return Err(QueueError::ShuttingDown);
         }
-        let mut selection = s.selection.clone();
-        for path in paths {
-            if !selection.contains(&path) {
-                selection.push(path);
-            }
+        // Preserve request admission's absolute-path error before limiting count.
+        if paths.iter().any(|path| !path.is_absolute()) {
+            return Err(QueueError::AbsoluteSelectionRequired);
         }
+        let selection = {
+            let mut seen = std::collections::HashSet::new();
+            s.selection
+                .iter()
+                .chain(&paths)
+                .filter(|path| seen.insert(*path))
+                // Keep one excess unique path so core rejects, rather than truncates.
+                .take(eml_core::MAX_INPUT_PATHS + 1)
+                .cloned()
+                .collect::<Vec<_>>()
+        };
         RequestSnapshot::new(
             selection.clone(),
             s.preferences.destination().map(Path::to_owned),

@@ -16,8 +16,9 @@ and human outcome vocabulary. Frontends adapt inputs and render those facts.
 `eml-message` has no filesystem or platform dependency. Fuzzing targets that crate;
 its independent model and verifier check retained bodies and removed parts.
 `eml_core::vocabulary` maps typed facts to human labels for both CLI and GUI.
-`eml_core::product` owns the command/display names and build number; the workspace
-manifest owns the release version.
+`eml_core::product` owns the command/display names and source-identity formatting;
+the workspace manifest owns the release version. `EML_SOURCE_REVISION` optionally
+embeds a full commit ID for both frontends; About displays its first 12 characters.
 
 ## Execution
 

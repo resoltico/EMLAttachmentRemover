@@ -890,6 +890,63 @@ fn reviewed_selection_does_not_spawn_and_start_captures_current_settings() {
 }
 
 #[test]
+fn selection_count_admission_preserves_duplicates_order_and_previous_review() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let first = root.path().join("first.eml");
+    c.stage(vec![first.clone(); eml_core::MAX_INPUT_PATHS + 100])
+        .unwrap();
+    assert_eq!(c.window().get_selection().row_count(), 1);
+    let oversized: Vec<_> = (0..10_000)
+        .map(|index| root.path().join(format!("item-{index}.eml")))
+        .collect();
+    let refused = c.stage(oversized.clone());
+    assert!(matches!(
+        refused,
+        Err(eml_app::QueueError::InvalidRequest(
+            eml_core::RequestPathError::TooManyInputs
+        ))
+    ));
+    assert_eq!(c.window().get_selection().row_count(), 1);
+    let mut invalid = oversized;
+    invalid.push(PathBuf::from("relative.eml"));
+    assert!(matches!(
+        c.stage(invalid),
+        Err(eml_app::QueueError::AbsoluteSelectionRequired)
+    ));
+    c.stage(
+        (0..eml_core::MAX_INPUT_PATHS - 1)
+            .map(|index| root.path().join(format!("accepted-{index}.eml")))
+            .collect(),
+    )
+    .unwrap();
+    let selection = c.window().get_selection();
+    assert_eq!(selection.row_count(), eml_core::MAX_INPUT_PATHS);
+    assert_eq!(
+        selection.row_data(0).unwrap().full.as_str(),
+        first.to_str().unwrap()
+    );
+    assert!(
+        selection
+            .row_data(1)
+            .unwrap()
+            .full
+            .ends_with("accepted-0.eml")
+    );
+    assert!(matches!(
+        c.stage(vec![root.path().join("one-too-many.eml")]),
+        Err(eml_app::QueueError::InvalidRequest(
+            eml_core::RequestPathError::TooManyInputs
+        ))
+    ));
+    assert_eq!(
+        c.window().get_selection().row_count(),
+        eml_core::MAX_INPUT_PATHS
+    );
+}
+
+#[test]
 fn full_queue_retains_review_and_waiting_snapshots_do_not_follow_new_settings() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
@@ -943,7 +1000,7 @@ fn full_queue_retains_review_and_waiting_snapshots_do_not_follow_new_settings() 
 }
 
 #[test]
-fn footer_actions_share_geometry_and_about_matches_the_reference_layout() {
+fn footer_actions_share_geometry() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let c = controller(root.path(), completed(root.path(), "created"));
@@ -1027,32 +1084,150 @@ fn footer_actions_share_geometry_and_about_matches_the_reference_layout() {
         !ElementHandle::find_by_accessible_label(&ui, "About")
             .any(|e| e.accessible_role() == Some(AccessibleRole::Button))
     );
-    ui.invoke_about();
-    mock_elapsed_time(Duration::from_millis(5));
+}
+
+#[test]
+fn about_contents_and_actions_fit_font_and_display_scales() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
     let about = c.about_window();
-    // Native menus sit outside the client area; the testing backend inlines
-    // them. Reserve that measured menu height, then verify the reference content.
-    let focus = ElementHandle::find_by_element_id(&about, "AboutWindow::about-focus")
-        .next()
-        .unwrap();
-    let menu_height = focus.absolute_position().y;
-    about
-        .window()
-        .set_size(slint::LogicalSize::new(420.0, 410.0 + menu_height));
-    mock_elapsed_time(Duration::from_millis(5));
-    assert_eq!(focus.size(), slint::LogicalSize::new(420.0, 410.0));
-    for label in ["Project website", "Licenses"] {
-        assert!(
-            ElementHandle::find_by_accessible_label(&about, label)
-                .any(|e| e.accessible_role() == Some(AccessibleRole::Button))
-        );
+    for scale in [1.0, 2.0] {
+        about
+            .window()
+            .dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged {
+                scale_factor: scale,
+            });
+        for font in [13.0_f32, 26.0, 40.0] {
+            c.window().set_ui_size(font);
+            c.window().invoke_about();
+            mock_elapsed_time(Duration::from_millis(5));
+            let content = ElementHandle::find_by_element_id(&about, "AboutWindow::about-focus")
+                .next()
+                .unwrap();
+            // The test backend inlines the menu that native windows place outside
+            // the client area. Measure it before sizing the actual About content.
+            let menu_height = content.absolute_position().y;
+            let width = 420.0_f32.max(font * 30.0);
+            let height = 410.0_f32.max(font * 27.0) + menu_height;
+            about
+                .window()
+                .set_size(slint::LogicalSize::new(width, height));
+            mock_elapsed_time(Duration::from_millis(5));
+            let version = format!("Version {}", about.get_version());
+            for label in [
+                "Application icon",
+                eml_core::product::DISPLAY_NAME,
+                version.as_str(),
+                "Create body-only copies of EML messages.\nKeep original messages unchanged.",
+                about.get_copyright().as_str(),
+                "Project website",
+                "Licenses",
+                "#MadeWithSlint",
+            ] {
+                let item = ElementHandle::find_by_accessible_label(&about, label)
+                    .next()
+                    .unwrap_or_else(|| panic!("Missing About content: {label}"));
+                let position = item.absolute_position();
+                let size = item.size();
+                assert!(
+                    position.x >= 0.0
+                        && position.y >= menu_height - 0.1
+                        && size.width > 0.0
+                        && size.height > 0.0
+                        && position.x + size.width <= width + 0.1
+                        && position.y + size.height <= height + 0.1,
+                    "{label} clipped at font {font}, scale {scale}: {position:?}, {size:?}"
+                );
+                if matches!(label, "Project website" | "Licenses") {
+                    assert!((size.height - (font * 2.5).max(32.0)).abs() < 0.1);
+                }
+            }
+            about.invoke_licenses();
+            assert_eq!(c.license_window().get_ui_size(), font);
+            c.license_window().invoke_dismiss();
+            about.invoke_dismiss();
+        }
     }
+}
+
+#[test]
+fn about_and_licenses_restore_focus_selection_and_scroll_on_reopen() {
+    use i_slint_core::{items::TextInput, window::WindowInner};
+    use slint::platform::{Key, PointerEventButton, WindowEvent};
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let about = c.about_window();
+    let visits = Rc::new(std::cell::Cell::new(0));
+    let observed = visits.clone();
+    about.on_website(move || observed.set(observed.get() + 1));
+    let key = |window: &slint::Window, value: Key| {
+        window.dispatch_event(WindowEvent::KeyPressed { text: value.into() });
+        window.dispatch_event(WindowEvent::KeyReleased { text: value.into() });
+        mock_elapsed_time(Duration::from_millis(5));
+    };
+    for expected in 1..=2 {
+        c.window().invoke_about();
+        key(about.window(), Key::Return);
+        assert_eq!(visits.get(), expected, "Website has initial keyboard focus");
+        ElementHandle::find_by_accessible_label(&about, eml_core::product::DISPLAY_NAME)
+            .next()
+            .unwrap()
+            .mock_single_click(PointerEventButton::Left);
+        let focused = WindowInner::from_pub(about.window())
+            .focus_item
+            .borrow()
+            .upgrade()
+            .unwrap();
+        assert!(
+            focused.downcast::<TextInput>().is_some(),
+            "Move focus away before reopening"
+        );
+        about.invoke_dismiss();
+        assert!(!about.window().is_visible());
+    }
+    c.window().invoke_about();
     about.invoke_licenses();
-    assert!(
-        c.license_window()
-            .get_licenses()
-            .contains("Mozilla Public License")
+    let licenses = c.license_window();
+    mock_elapsed_time(Duration::from_millis(5));
+    assert_eq!(
+        licenses.get_licenses().as_str(),
+        include_str!("../../../LICENSE")
     );
+    let input_item = WindowInner::from_pub(licenses.window())
+        .focus_item
+        .borrow()
+        .upgrade()
+        .unwrap();
+    let input = input_item
+        .downcast::<TextInput>()
+        .expect("License text has initial focus");
+    let initial_y = input_item.map_to_window(input_item.geometry().origin).y;
+    let text =
+        ElementHandle::find_by_accessible_label(&licenses, "Software and artwork license terms")
+            .next()
+            .unwrap();
+    text.set_accessible_selection_offsets(3, 20);
+    assert_eq!(input.as_pin_ref().anchor_position_byte_offset(), 3);
+    assert_eq!(input.as_pin_ref().cursor_position_byte_offset(), 20);
+    text.scroll(0.0, -200.0);
+    mock_elapsed_time(Duration::from_millis(5));
+    assert!(
+        input_item.map_to_window(input_item.geometry().origin).y < initial_y - 1.0,
+        "Move the license viewport away from the start before reopening"
+    );
+    licenses.invoke_dismiss();
+    assert!(!licenses.window().is_visible());
+    about.invoke_licenses();
+    mock_elapsed_time(Duration::from_millis(5));
+    assert_eq!(input.as_pin_ref().anchor_position_byte_offset(), 0);
+    assert_eq!(input.as_pin_ref().cursor_position_byte_offset(), 0);
+    assert!((input_item.map_to_window(input_item.geometry().origin).y - initial_y).abs() < 0.1);
+    key(licenses.window(), Key::Escape);
+    assert!(!licenses.window().is_visible());
+    key(about.window(), Key::Escape);
+    assert!(!about.window().is_visible());
 }
 
 #[test]
@@ -1095,7 +1270,16 @@ fn committed_quit_rejects_late_dialog_exports_and_new_selections() {
     c.submit(vec![root.path().join("first.eml")]).unwrap();
     pump(&c, || !c.is_busy());
     let captured = c.capture_export().unwrap();
+    c.set_destination(Some(root.path().join("chosen")));
+    let preferences = fs::read(root.path().join("preferences.json")).unwrap();
+    let destination_label = c.window().get_destination_label();
     assert!(c.request_quit());
+    c.set_destination(Some(root.path().join("late-folder")));
+    assert_eq!(
+        fs::read(root.path().join("preferences.json")).unwrap(),
+        preferences
+    );
+    assert_eq!(c.window().get_destination_label(), destination_label);
     assert!(matches!(
         c.stage(vec![root.path().join("late.eml")]),
         Err(eml_app::QueueError::ShuttingDown)

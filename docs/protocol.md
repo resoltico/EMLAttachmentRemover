@@ -36,7 +36,7 @@ path bytes are admitted. Each expression is bounded by 32,768 native units and
 | `summary` | `counts`, `interrupted`, `collection_complete`, `run_error`, `exit_code` |
 
 `program` is `emlattachmentremover`. `version` is the workspace release version;
-human headers and `--version` also include the shared product build number.
+human headers and CLI/GUI `--version` also include the full source revision when supplied.
 Counts contain `created`, `up_to_date`, `planned`, `failed`, `not_processed`.
 Unobserved nullable fields are present as explicit null. Nested records and enums
 are defined in [records.rs](../crates/eml-protocol/src/records.rs), with independent

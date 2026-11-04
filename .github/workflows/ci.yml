@@ -13,6 +13,7 @@ concurrency:
   cancel-in-progress: true
 env:
   CARGO_TERM_COLOR: never
+  EML_SOURCE_REVISION: ${{ github.sha }}
 jobs:
   lint:
     runs-on: ubuntu-22.04
@@ -51,7 +52,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-lint-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-lint-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
           restore-keys: cargo-lint-${{ runner.os }}-${{ runner.arch }}-
       - run: cargo fmt --all --check
       - run: cargo deny --all-features --locked check
@@ -90,7 +91,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
           restore-keys: cargo-test-${{ runner.os }}-${{ runner.arch }}-
       - name: Native prerequisites
         shell: bash
@@ -127,7 +128,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
           restore-keys: cargo-app-${{ runner.os }}-${{ runner.arch }}-
       - name: Read tool versions
         id: tools

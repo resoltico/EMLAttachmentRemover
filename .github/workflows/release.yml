@@ -7,6 +7,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  EML_SOURCE_REVISION: ${{ github.sha }}
 defaults:
   run:
     shell: bash
@@ -34,7 +36,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-release-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-release-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
           restore-keys: cargo-release-cli-${{ runner.os }}-${{ runner.arch }}-
       - name: Read tool versions
         id: tools
@@ -76,7 +78,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-release-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-release-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
           restore-keys: cargo-release-app-${{ runner.os }}-${{ runner.arch }}-
       - name: Read tool versions
         id: tools

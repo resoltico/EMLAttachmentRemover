@@ -1,8 +1,10 @@
 # Distribution and release
 
-The workspace manifest owns the release version; `eml_core::product` owns the
-monotonic build number and names. The compiler comes from rust-toolchain.toml and
-developer tools from xtask/tools.toml. Distribution requires native platform
+The workspace manifest owns the only maintained release version;
+`eml_core::product` owns names and shared source-identity formatting.
+The CLI and GUI `--version` retain a supplied full source revision; About uses
+its first 12 characters. There is no separate manually maintained build counter.
+The compiler comes from rust-toolchain.toml and developer tools from xtask/tools.toml. Distribution requires native platform
 linkers; macOS uses Command Line Tools rather than a full Xcode installation.
 
 ## Build and inspect locally
@@ -17,6 +19,11 @@ scripts/smoke-cli.sh target/smoke/emlattachmentremover tests/contract/mime
 scripts/smoke-macos-app.sh 'target/smoke/EML Attachment Remover.app' tests/contract/mime/inputs/01-gmail-attachment.eml
 ```
 
+Distribution uses the `dist` Cargo profile: checked release arithmetic, Thin LTO,
+one codegen unit and stripped symbols. Ordinary development builds keep their
+existing debug/incremental settings. Cargo metadata supplies the actual target
+directory, including Cargo configuration overrides.
+
 Use a fresh output folder. The CLI archive is flat: executable, LICENSE and
 THIRD-PARTY-NOTICES.txt. The app ZIP contains `EML Attachment Remover.app`, with
 GUI executable `Contents/MacOS/EMLAttachmentRemover`, public CLI helper
@@ -29,9 +36,20 @@ source is an artwork-maintenance task, described in
 
 Both Mac executables contain arm64 and x86_64 slices with deployment minimum 15.0.
 The helper is ad hoc signed first, then the bundle, followed by deep strict
-signature verification. Archive timestamps use the `HEAD` commit's UTC committer
-time from Git; ZIP timestamps round down to two-second precision. Commit intended
-release inputs before building so that timestamp and source revision agree.
+signature verification. Distribution resolves `HEAD` once, embeds that full revision
+in both binaries for every CPU target, and uses its UTC committer time for archives.
+A conflicting `EML_SOURCE_REVISION` is rejected; empty or absent values are omitted
+from ordinary Cargo builds. Supplied revisions must contain 40 or 64 ASCII
+hexadecimal characters. ZIP timestamps round down to two-second precision.
+Commit reviewed inputs before distributing: packages built from a dirty checkout
+carry the base revision and are development evidence, not exact source snapshots.
+
+`CFBundleShortVersionString` is the workspace version. `CFBundleVersion` is derived
+as `major * 10000 + minor * 100 + patch` (7.0.0 becomes 70000, greater than the old
+Build 44). App packaging requires X.Y.Z without suffixes, minor/patch at most 99,
+and a result representable as a u32. These bounds keep the mapping ordered and
+collision-free. Increase the release version before distributing changed builds;
+changing only the source hash does not increase the native bundle version.
 
 Linux x86_64/aarch64 CLI builds use Ubuntu 22.04 and tar.gz. Windows x86_64/aarch64
 CLI builds use native MSVC with static CRT and ZIP. On Linux run
@@ -65,7 +83,7 @@ owner action. Caches restore on producers; only main can save caches.
 
 Before the owner tags or publishes:
 
-1. Confirm the intended source, version, build number and release notes.
+1. Confirm the intended source revision, version and release notes.
    Move the reviewed `Unreleased` bullets into `## [VERSION] - YYYY-MM-DD`, leaving
    an empty `Unreleased` section above it. Commit that entry before creating the
    matching `vVERSION` tag; tag annotations do not supply the release notes.

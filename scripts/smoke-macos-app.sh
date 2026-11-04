@@ -26,6 +26,10 @@ for binary in "${app}/Contents/MacOS/${executable}" "${app}/Contents/Helpers/eml
     [[ "${slices}" == *" ${arch} "* ]] || { echo "missing CPU slice ${arch}: ${binary}" >&2; exit 1; }
   done
 done
+helper_version=$("${app}/Contents/Helpers/emlattachmentremover" --version)
+gui_version=$("${app}/Contents/MacOS/${executable}" --version)
+[[ "${gui_version}" == "emlattachmentremover-gui ${helper_version#emlattachmentremover }" ]] \
+  || { echo "GUI and helper source identities differ" >&2; exit 1; }
 
 work=$(mktemp -d)
 trap 'osascript -e "tell application id \"$bundle_id\" to quit" >/dev/null 2>&1 || true; rm -rf "$work"' EXIT

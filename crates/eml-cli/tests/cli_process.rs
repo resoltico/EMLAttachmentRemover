@@ -163,7 +163,7 @@ fn actual_binary_version_help_and_argument_conflicts_have_checked_channel_contra
         version.stdout,
         format!(
             "emlattachmentremover {}\n",
-            eml_core::product::VERSION_WITH_BUILD.as_str()
+            eml_core::product::VERSION_WITH_REVISION.as_str()
         )
         .as_bytes()
     );

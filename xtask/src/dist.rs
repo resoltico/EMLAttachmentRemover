@@ -1,5 +1,5 @@
 use crate::{Result, archive, host, notices, run};
-use eml_core::product::{BUILD_NUMBER, CLI_NAME, DISPLAY_NAME, VERSION};
+use eml_core::product::{CLI_NAME, DISPLAY_NAME, VERSION};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -27,10 +27,13 @@ pub(crate) fn build(
             "x86_64-apple-darwin".to_owned(),
         ]
     } else {
-        vec![target.unwrap_or(host)]
+        vec![target.unwrap_or_else(|| host.clone())]
     };
     let include_cli = cli || !app;
-    let stamp = archive::Timestamp::commit()?;
+    let revision = crate::source::revision()?;
+    let stamp = archive::Timestamp::for_revision(&revision)?;
+    let bundle_version = app.then(|| native_bundle_version(VERSION)).transpose()?;
+    let cargo_target = target_directory(&mut Command::new("cargo"))?;
     fs::create_dir_all(out)?;
     let scratch = tempfile::tempdir()?;
     let binaries = scratch.path().join("binaries");
@@ -40,7 +43,8 @@ pub(crate) fn build(
         let mut command = Command::new("cargo");
         command.args([
             "build",
-            "--release",
+            "--profile",
+            "dist",
             "--locked",
             "--target",
             target,
@@ -49,6 +53,7 @@ pub(crate) fn build(
             "--bin",
             "emlattachmentremover",
         ]);
+        command.env("EML_SOURCE_REVISION", &revision);
         if app {
             command.args([
                 "-p",
@@ -70,15 +75,12 @@ pub(crate) fn build(
         ""
     };
     let executable = format!("{CLI_NAME}{extension}");
-    let cargo_target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("target"));
     for name in if app {
         vec![executable.as_str(), "emlattachmentremover-gui"]
     } else {
         vec![executable.as_str()]
     } {
-        let input = |target: &str| cargo_target.join(target).join("release").join(name);
+        let input = |target: &str| cargo_target.join(target).join("dist").join(name);
         if targets.len() == 2 {
             run(Command::new("lipo")
                 .arg("-create")
@@ -87,6 +89,25 @@ pub(crate) fn build(
                 .arg(binaries.join(name)))?;
         } else {
             fs::copy(input(&targets[0]), binaries.join(name))?;
+        }
+    }
+    if targets.contains(&host) {
+        for (name, command_name) in if app {
+            vec![
+                (executable.as_str(), CLI_NAME),
+                ("emlattachmentremover-gui", "emlattachmentremover-gui"),
+            ]
+        } else {
+            vec![(executable.as_str(), CLI_NAME)]
+        } {
+            let actual = crate::capture(Command::new(binaries.join(name)).arg("--version"))?;
+            let expected = format!("{command_name} {VERSION} ({revision})");
+            if actual != expected {
+                return Err(format!(
+                    "Built {name} identity differs: expected {expected:?}, found {actual:?}"
+                )
+                .into());
+            }
         }
     }
     let suffix = if targets.len() == 2 {
@@ -111,7 +132,7 @@ pub(crate) fn build(
             &stamp,
         )?;
     }
-    if app {
+    if let Some(bundle_version) = bundle_version {
         let stage = scratch.path().join("gui");
         let bundle = stage.join("EML Attachment Remover.app");
         let contents = bundle.join("Contents");
@@ -134,7 +155,7 @@ pub(crate) fn build(
             &targets,
             &contents.join("Resources/THIRD-PARTY-NOTICES.txt"),
         )?;
-        fs::write(contents.join("Info.plist"), plist())?;
+        fs::write(contents.join("Info.plist"), plist(bundle_version))?;
         run(Command::new("codesign")
             .args(["--force", "-s", "-"])
             .arg(&helper))?;
@@ -170,7 +191,42 @@ fn platform(target: &str) -> Result<String> {
     };
     Ok(format!("{os}-{arch}"))
 }
-fn plist() -> String {
+fn target_directory(cargo: &mut Command) -> Result<PathBuf> {
+    let metadata =
+        crate::capture(cargo.args(["metadata", "--no-deps", "--locked", "--format-version", "1"]))?;
+    let metadata: serde_json::Value = serde_json::from_str(&metadata)?;
+    Ok(PathBuf::from(metadata["target_directory"].as_str().ok_or(
+        "Cargo metadata did not report its target_directory",
+    )?))
+}
+
+fn native_bundle_version(version: &str) -> Result<u32> {
+    let parts = version
+        .split('.')
+        .map(|part| {
+            if part.is_empty()
+                || (part.len() > 1 && part.starts_with('0'))
+                || !part.bytes().all(|byte| byte.is_ascii_digit())
+            {
+                return Err("Native packaging requires X.Y.Z without suffixes".into());
+            }
+            part.parse::<u32>().map_err(Into::into)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let [major, minor, patch] = parts.as_slice() else {
+        return Err("Native packaging requires X.Y.Z without suffixes".into());
+    };
+    if *minor > 99 || *patch > 99 {
+        return Err("The native build mapping requires minor and patch at most 99".into());
+    }
+    major
+        .checked_mul(10_000)
+        .and_then(|value| value.checked_add(minor * 100))
+        .and_then(|value| value.checked_add(*patch))
+        .ok_or_else(|| "Native bundle version overflow".into())
+}
+
+fn plist(bundle_version: u32) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -181,7 +237,7 @@ fn plist() -> String {
 <key>CFBundleExecutable</key><string>EMLAttachmentRemover</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>{VERSION}</string>
-<key>CFBundleVersion</key><string>{BUILD_NUMBER}</string>
+<key>CFBundleVersion</key><string>{bundle_version}</string>
 <key>CFBundleIconFile</key><string>EML</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSHighResolutionCapable</key><true/>
@@ -208,9 +264,56 @@ mod tests {
         ] {
             assert!(validate_target(target).is_err());
         }
-        let plist = plist();
+        let plist = plist(native_bundle_version(VERSION).unwrap());
         assert!(!plist.contains("NSServices"));
         assert!(!plist.contains("CFBundleDocumentTypes"));
         assert!(plist.contains("<string>EMLAttachmentRemover</string>"));
+    }
+
+    #[test]
+    fn native_build_mapping_preserves_version_order_and_rejects_collisions() {
+        assert_eq!(native_bundle_version("7.0.0").unwrap(), 70_000);
+        assert_eq!(native_bundle_version("7.0.1").unwrap(), 70_001);
+        assert_eq!(native_bundle_version("7.99.99").unwrap(), 79_999);
+        assert_eq!(native_bundle_version("8.0.0").unwrap(), 80_000);
+        for version in [
+            "7.100.0",
+            "7.0.100",
+            "7.0",
+            "07.0.0",
+            "7.0.0-rc.1",
+            "7.0.0+source",
+            "429496730.0.0",
+        ] {
+            assert!(native_bundle_version(version).is_err(), "{version}");
+        }
+    }
+
+    #[test]
+    fn cargo_config_target_directory_is_used_for_artifact_lookup() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join(".cargo")).unwrap();
+        fs::create_dir(root.path().join("src")).unwrap();
+        fs::write(root.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname = \"artifact-lookup\"\nversion = \"0.0.0\"\n[workspace]\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join(".cargo/config.toml"),
+            "[build]\ntarget-dir = \"artifacts\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            target_directory(
+                Command::new("cargo")
+                    .current_dir(root.path())
+                    .env_remove("CARGO_TARGET_DIR")
+                    .env_remove("CARGO_BUILD_TARGET_DIR")
+            )
+            .unwrap(),
+            root.path().canonicalize().unwrap().join("artifacts")
+        );
     }
 }

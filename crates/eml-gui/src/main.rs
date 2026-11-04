@@ -2,6 +2,7 @@
 #![deny(unsafe_code)]
 use eml_gui::{DesktopController, ingress, platform, preferences::Preferences};
 use slint::ComponentHandle;
+use std::io::Write;
 fn main() {
     if let Err(error) = run() {
         eprintln!("{}: {error}", eml_core::product::DISPLAY_NAME);
@@ -9,6 +10,15 @@ fn main() {
     }
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    if arguments.len() == 1 && (arguments[0] == "--version" || arguments[0] == "-V") {
+        writeln!(
+            std::io::stdout().lock(),
+            "emlattachmentremover-gui {}",
+            eml_core::product::VERSION_WITH_REVISION.as_str()
+        )?;
+        return Ok(());
+    }
     let executable = std::env::current_exe()?;
     let cli = eml_app::bundled_cli(&executable)?;
     platform::validate_launch(&executable, &cli)?;
@@ -19,7 +29,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     ui.show()?;
     platform::install()?;
     ingress::install_native(&controller)?;
-    let paths = ingress::launch_paths(std::env::args_os().skip(1), &std::env::current_dir()?)?;
+    let paths = ingress::launch_paths(arguments, &std::env::current_dir()?)?;
     if !paths.is_empty()
         && let Err(error) = controller.stage(paths)
     {
