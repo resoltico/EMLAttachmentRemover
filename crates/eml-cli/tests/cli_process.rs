@@ -417,7 +417,8 @@ fn first_stop_interrupts_unfinished_request_fifo_after_real_reader_handshake() {
         assert!(child.0.try_wait().unwrap().is_none());
         assert_eq!(observed.load(Ordering::Relaxed), 0);
         signal(&child.0, delivered);
-        assert_eq!(wait(&mut child.0).code(), Some(130));
+        let status = wait(&mut child.0);
+        assert_eq!(status.code(), Some(130), "after {delivered:?}: {status}");
         drop(input);
         assert!(stdout.join().unwrap().is_empty());
         assert!(stderr.join().unwrap().is_empty());

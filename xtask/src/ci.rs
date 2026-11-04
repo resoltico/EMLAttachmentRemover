@@ -7,7 +7,14 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
         tool("cargo-deny", "cargo_deny")?;
         tool("actionlint", "actionlint")?;
         tool("shellcheck", "shellcheck")?;
-        command(Command::new("cargo").args(["deny", "--locked", "check"]))?;
+        command(Command::new("cargo").args(["deny", "--all-features", "--locked", "check"]))?;
+        command(Command::new("cargo").args([
+            "deny",
+            "--manifest-path",
+            "fuzz/Cargo.toml",
+            "--locked",
+            "check",
+        ]))?;
         command(&mut Command::new("actionlint"))?;
         command(Command::new("bash").args(["-c", "git ls-files -z '*.sh' | xargs -0 shellcheck"]))?;
         command(Command::new("bash").arg("scripts/check-budget.sh"))?;
