@@ -195,7 +195,6 @@ impl DesktopController {
         about.set_product_name(eml_core::product::DISPLAY_NAME.into());
         ui.set_native_about(cfg!(all(feature = "desktop", target_os = "macos")));
         about.set_version(eml_core::product::ABOUT_VERSION.as_str().into());
-        ui.set_force_notice(vocabulary::FORCE_STOP_NOTICE.into());
         let controller = Rc::new(Self {
             last_view: RefCell::new(None),
             export_ui,
@@ -480,18 +479,10 @@ impl DesktopController {
                     let Some(active) = &s.active else {
                         return;
                     };
-                    let source = s
-                        .entries
-                        .iter()
-                        .find(|entry| entry.id == active.id)
-                        .and_then(|entry| entry.request.request().paths.first())
-                        .map(|path| eml_protocol::TerminalPath::new(path).to_string())
-                        .unwrap_or_default();
                     format!(
-                        "{}\n\nRun {} · {}",
-                        vocabulary::FORCE_STOP_NOTICE,
+                        "Run {}\n\nStops only this task immediately. Waiting requests are not cancelled. Any completed copies remain. The report may be incomplete, and the state of unreported work is unknown.\n\n{}",
                         active.id,
-                        source
+                        vocabulary::FORCE_STOP_NOTICE
                     )
                 };
                 c.ui.set_force_notice(notice.into());
@@ -911,14 +902,14 @@ impl DesktopController {
                 let saved = matches!(&result, Ok(Ok(())));
                 let message = match result {
                     Ok(Ok(())) => {
-                        if let Some(entry) = s.entries.iter_mut().find(|entry| entry.id == job.run)
-                        {
+                        let retained = s.entries.iter_mut().find(|entry| entry.id == job.run);
+                        let display = if let Some(entry) = retained {
                             entry.saved_report = Some(job.path.clone());
-                        }
-                        format!(
-                            "Report saved: {}",
-                            eml_protocol::TerminalPath::new(&job.path)
-                        )
+                            job.path.file_name().map(Path::new).unwrap_or(&job.path)
+                        } else {
+                            &job.path
+                        };
+                        format!("Report saved: {}", eml_protocol::TerminalPath::new(display))
                     }
                     Ok(Err(error)) if error.kind() == io::ErrorKind::AlreadyExists => {
                         vocabulary::NO_REPLACEMENT.into()
@@ -1519,7 +1510,7 @@ impl DesktopController {
             .set_queue_notice(if let Some((run, error)) = &s.storage_error {
                 format!("Session report storage for Run {run} is unavailable: {}. Its available report is preserved. Retry storage or close that result to continue.", eml_protocol::DisplayText::new(error)).into()
             } else if s.queue.is_paused_for_report_space() {
-                "Queue paused: close a completed result, or allow temporary report storage from a new request.".into()
+                "Queue paused: close a completed result, or allow temporary report storage from Tasks.".into()
             } else {
                 "".into()
             });
@@ -1562,13 +1553,12 @@ impl DesktopController {
             format!("This report is not loaded because session storage for Run {run} is unavailable. Retry storage or close the affected result; retained reports have not been discarded.")
         } else { "Loading report…".into() }.into());
         self.ui.set_can_reveal_report(entry.saved_report.is_some());
-        self.ui.set_saved_report_label(
+        self.ui.set_saved_report_path(
             entry
                 .saved_report
                 .as_ref()
-                .map(|path| format!("Saved report: {}", eml_protocol::TerminalPath::new(path)))
-                .unwrap_or_default()
-                .into(),
+                .map(|path| view_model::path(&eml_protocol::TerminalPath::new(path).to_string()))
+                .unwrap_or_default(),
         );
         self.ui.set_run_label(format!("Run {}", entry.id).into());
         self.ui.set_run_context(
@@ -1793,7 +1783,7 @@ impl DesktopController {
     }
     fn clear_report(&self) {
         self.ui.set_can_reveal_report(false);
-        self.ui.set_saved_report_label("".into());
+        self.ui.set_saved_report_path(PathView::default());
         self.ui.set_report_loading(false);
         self.ui.set_report_details("".into());
         self.ui

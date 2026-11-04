@@ -114,14 +114,25 @@ export component MainWindow inherits Window {
     in-out property <length> messages-scroll-y;
     out property <length> messages-view-height;
     function reveal-selected() {
-        if root.selected-visible-row >= 0 {
-            if root.messages-scroll-y + root.selected-visible-row * root.message-row-height < 0px {
-                root.messages-scroll-y = -root.selected-visible-row * root.message-row-height;
+        if root.messages-view-height > 0px {
+            // Selection and viewport can arrive on different layout updates.
+            if root.selected-visible-row >= 0 && root.selected-visible-row < root.items.length {
+                if root.messages-scroll-y + root.selected-visible-row * root.message-row-height < 0px {
+                    root.messages-scroll-y = -root.selected-visible-row * root.message-row-height;
+                } else if root.messages-scroll-y + (root.selected-visible-row + 1) * root.message-row-height > root.messages-view-height {
+                    root.messages-scroll-y = max(-root.selected-visible-row * root.message-row-height,
+                        root.messages-view-height - (root.selected-visible-row + 1) * root.message-row-height);
+                }
             }
-            if root.messages-scroll-y + (root.selected-visible-row + 1) * root.message-row-height > root.messages-view-height {
-                root.messages-scroll-y = root.messages-view-height - (root.selected-visible-row + 1) * root.message-row-height;
-            }
+            // Revealing a row must never scroll past the current content extent.
+            root.messages-scroll-y = max(min(0px, root.messages-view-height - root.items.length * root.message-row-height),
+                min(0px, root.messages-scroll-y));
         }
+    }
+    // MainWindow survives the task drawer that this transition closes.
+    function show-storage-confirmation() {
+        tasks.close();
+        storage-confirm.show();
     }
     changed selected-visible-row => { root.reveal-selected(); }
     changed messages-view-height => { root.reveal-selected(); }
@@ -158,7 +169,7 @@ export component MainWindow inherits Window {
     in property <bool> storage-retry;
     in property <string> operation-details;
     in property <string> report-details;
-    in property <string> saved-report-label;
+    in property <PathView> saved-report-path;
     callback new-request(); callback reveal-report(); callback allow-report-storage();
     callback retry-report-storage();
     private property <bool> operation-details-expanded: false;
@@ -236,7 +247,7 @@ export component MainWindow inherits Window {
                 }
                 if !root.report-storage-enabled: HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
                     Label { text: "Let queued work continue without closing results by keeping session reports in private temporary storage."; wrap: word-wrap; opacity: 0.75; horizontal-stretch: 1; }
-                    TextButton { text: "Allow temporary storage…"; enabled: !root.closing; clicked => { storage-confirm.show(); } }
+                    TextButton { text: "Allow temporary storage…"; enabled: !root.closing; clicked => { root.show-storage-confirmation(); } }
                 }
                 if root.report-storage-enabled: HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
                     Label { text: "Private temporary report storage is enabled for this session."; font-size: max(12px, root.ui-size * 0.86); opacity: 0.75; horizontal-stretch: 1; }
@@ -259,8 +270,9 @@ export component MainWindow inherits Window {
                     if root.can-review: ActionButton { text: root.review-label; enabled: root.selection.length == 0 && !root.closing; primary: root.can-create; accessible-label: "Review these inputs again"; accessible-description: root.selection.length > 0 ? "Finish or clear the current reviewed selection first." : "Review the original selected roots and current settings before starting another request."; clicked => { root.review-request(); } }
                     TextButton { text: "Close result"; enabled: root.can-dismiss; accessible-label: "Dismiss report"; clicked => { root.dismiss(); } }
                 }
-                if root.saved-report-label != "": HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    Label { text: root.saved-report-label; overflow: elide; horizontal-stretch: 1; Tooltip { text: @markdown("\{root.saved-report-label}"); } }
+                if root.saved-report-path.full != "": HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+                    Label { text: "Saved report"; horizontal-stretch: 0; }
+                    PathLabel { path: root.saved-report-path; text-size: root.ui-size; }
                     TextButton { text: "Show report"; enabled: root.can-reveal-report && !root.native-open-pending && !root.closing; accessible-label: "Show saved report"; clicked => { root.reveal-report(); } }
                 }
                 if root.report-loading: Label { text: root.report-load-notice; wrap: word-wrap; accessible-live-region: polite; }
@@ -406,6 +418,11 @@ export component MainWindow inherits Window {
                     }
                     if root.selection.length > 0: ActionButton { text: "Review selection (" + root.selection.length + ")"; accessible-label: "Review selection"; clicked => { tasks.close(); root.review-selection(); } }
                     if root.queue-notice != "": Label { text: root.queue-notice; wrap: word-wrap; color: root.attention-color; }
+                    if root.queue-notice != "" && !root.report-storage-enabled: ActionButton {
+                        text: "Allow temporary storage…";
+                        enabled: !root.closing;
+                        clicked => { root.show-storage-confirmation(); }
+                    }
                     if root.storage-retry: ActionButton { text: "Retry storage"; clicked => { root.retry-report-storage(); } }
                     ScrollView { accessible-role: list; accessible-label: "Session tasks"; content-width: self.visible-width; content-height: task-content.preferred-height;
                         task-content := VerticalBox { width: parent.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.inset;

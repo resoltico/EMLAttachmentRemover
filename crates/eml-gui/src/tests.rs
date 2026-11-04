@@ -30,6 +30,20 @@ fn confirmed_force_quit_waits_for_an_owned_report_export_to_settle() {
         task,
     });
     assert!(!controller.request_quit());
+    i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(5));
+    controller
+        .window()
+        .window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: slint::platform::Key::Escape.into(),
+        });
+    assert_eq!(controller.window().get_confirmation(), Confirmation::None);
+    assert!(
+        !controller.should_exit(),
+        "Escape cancels the decision, not its owned export"
+    );
+    assert!(controller.is_busy());
+    assert!(!controller.request_quit());
     controller.window().invoke_force_and_quit();
     let waited_for_export = !controller.should_exit();
     let ignored_repeated_quit =

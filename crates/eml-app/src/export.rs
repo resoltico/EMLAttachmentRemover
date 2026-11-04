@@ -19,6 +19,7 @@ pub fn export_report(path: &Path, jsonl: &[u8]) -> io::Result<()> {
         .suffix(".tmp")
         .tempfile_in(directory)?;
     if let Err(error) = stage
+        .as_file_mut()
         .write_all(jsonl)
         .and_then(|()| stage.as_file().sync_all())
     {

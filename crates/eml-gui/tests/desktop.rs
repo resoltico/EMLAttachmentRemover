@@ -117,15 +117,27 @@ fn consented_session_reports_drain_queue_and_reload_exact_old_results() {
     c.window().invoke_select_run(0);
     pump(&c, || !c.window().get_report_loading());
     assert_eq!(c.window().get_run_status(), RunStatus::Completed.label());
-    let output = root.path().join("old-result.jsonl");
+    let folder = root.path().join("long-folder-context-".repeat(8));
+    fs::create_dir(&folder).unwrap();
+    let output = folder.join("Saved-报告-Rīga.jsonl");
     c.start_export(output.clone());
     pump(&c, || !c.is_busy());
-    assert_eq!(fs::read(output).unwrap(), fixture("created").as_bytes());
+    assert_eq!(fs::read(&output).unwrap(), fixture("created").as_bytes());
     assert!(c.window().get_can_reveal_report());
     assert!(
         c.window()
-            .get_saved_report_label()
-            .contains("old-result.jsonl")
+            .get_saved_report_path()
+            .full
+            .contains("Saved-报告-Rīga.jsonl")
+    );
+    let receipt = c.window().get_saved_report_path();
+    assert_eq!(
+        receipt.suffix, "Saved-报告-Rīga.jsonl",
+        "The filename must remain visible independently of long folder context"
+    );
+    assert_eq!(
+        receipt.full,
+        eml_protocol::TerminalPath::new(&output).to_string()
     );
     c.window().invoke_select_run(8);
     pump(&c, || !c.window().get_report_loading());
@@ -348,6 +360,11 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
         RunStatus::IdentityFailure.label()
     );
     assert_eq!(controller.window().get_items().row_count(), 0);
+    assert_eq!(
+        controller.window().get_counts().row_count(),
+        0,
+        "No trusted start record must not be presented as zero work failures"
+    );
     assert!(!has_label(
         &controller.window(),
         &vocabulary::count_label(CountKind::Created, 1)
@@ -697,7 +714,7 @@ fn report_warnings_survive_switching_and_export_feedback() {
         ui.get_operation_feedback()
             .contains(vocabulary::REPORT_SAVED)
     );
-    assert!(ui.get_saved_report_label().contains("first.jsonl"));
+    assert!(ui.get_saved_report_path().full.contains("first.jsonl"));
     assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
     c.start_export(root.path().join("first.jsonl"));
     pump(&c, || !c.is_busy());
@@ -1736,6 +1753,164 @@ fn initial_result_viewport_matches_layout_and_keeps_first_selection_visible() {
     );
 }
 
+fn mixed_check_after_empty_active_layout(root: &Path) -> (Rc<DesktopController>, Vec<PathBuf>) {
+    let planned: Vec<serde_json::Value> = fixture("planned-create-unix")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let failed: Vec<serde_json::Value> = fixture("prepublication-failure")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let mut start = planned[0].clone();
+    start["total"] = 3.into();
+    let mut records = vec![start];
+    let mut inputs = Vec::new();
+    for index in 0..3 {
+        let source = root.join(format!("mixed-{index}.eml"));
+        let destination = root.join(format!("mixed-{index}.no-attachments.eml"));
+        let mut item = if index == 1 {
+            failed[1].clone()
+        } else {
+            planned[1].clone()
+        };
+        item["index"] = index.into();
+        if index == 1 {
+            item["error"]["code"] = "PROTECTED".into();
+            item["error"]["detail"] = "Digitally signed message cannot be changed".into();
+        }
+        for (field, path) in [("source", &source), ("destination", &destination)] {
+            item[field] = serde_json::json!({"display":path.to_str().unwrap(),"native":eml_protocol::NativePathValue::new(path)});
+        }
+        inputs.push(source);
+        records.push(item);
+    }
+    let mut summary = planned[2].clone();
+    summary["counts"]["planned"] = 2.into();
+    summary["counts"]["failed"] = 1.into();
+    summary["exit_code"] = 1.into();
+    records.push(summary);
+    let bytes = records
+        .iter()
+        .map(|record| format!("{record}\n"))
+        .collect::<String>();
+    let gate = root.join("release-mixed-report");
+    let cli = script(
+        root,
+        &format!(
+            "cat >/dev/null\nwhile [ ! -f {} ]; do :; done\n{}exit 1\n",
+            quote(gate.to_str().unwrap()),
+            print(&bytes)
+        ),
+    );
+    let c = DesktopController::new(
+        cli,
+        root.to_owned(),
+        Preferences::load(root.join("preferences.json")),
+    )
+    .unwrap();
+    let ui = c.window();
+    ui.window().set_size(slint::LogicalSize::new(960.0, 680.0));
+    ui.show().unwrap();
+    mock_elapsed_time(Duration::from_millis(5));
+    ui.invoke_mode_changed(true);
+    c.submit(inputs.clone()).unwrap();
+    // Render the active report's empty list before the controlled producer
+    // releases its three results, matching discovery followed by completion.
+    mock_elapsed_time(Duration::from_millis(5));
+    assert_eq!(ui.get_items().row_count(), 0);
+    fs::write(gate, b"release").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while c.is_busy() {
+        c.tick();
+        assert!(
+            Instant::now() < deadline,
+            "Mixed fixture did not finish after its discovery layout"
+        );
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(ui.get_items().row_count(), 3);
+    assert_eq!(
+        ui.get_selected_item(),
+        1,
+        "Initial attention selects the protected middle row"
+    );
+    mock_elapsed_time(Duration::from_millis(5));
+    (c, inputs)
+}
+
+#[test]
+fn fitted_mixed_result_keeps_all_rows_visible_with_a_middle_selection() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let (c, inputs) = mixed_check_after_empty_active_layout(root.path());
+    let ui = c.window();
+    let viewport = ElementHandle::find_by_accessible_label(&ui, "Message results")
+        .next()
+        .unwrap();
+    assert!(
+        viewport.size().height >= 168.0 - 0.1,
+        "All three56px rows fit"
+    );
+    assert_eq!(
+        ui.get_messages_scroll_y(),
+        0.0,
+        "Fitted3-row viewport {} must not scroll past its first row",
+        ui.get_messages_view_height()
+    );
+    for path in inputs {
+        let row = ElementHandle::find_by_accessible_label(&ui, path.to_str().unwrap())
+            .find(|e| e.accessible_role() == Some(AccessibleRole::ListItem))
+            .unwrap();
+        assert!(row.absolute_position().y >= viewport.absolute_position().y - 0.1);
+        assert!(
+            row.absolute_position().y + row.size().height
+                <= viewport.absolute_position().y + viewport.size().height + 0.1
+        );
+    }
+}
+
+#[test]
+fn fitted_mixed_result_attention_filter_keeps_its_only_row_visible() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let (c, inputs) = mixed_check_after_empty_active_layout(root.path());
+    let ui = c.window();
+    click(&ui, "Filter messages needing attention");
+    mock_elapsed_time(Duration::from_millis(5));
+    assert_eq!(ui.get_items().row_count(), 1);
+    assert_eq!(
+        ui.get_selected_item(),
+        1,
+        "Filtering retains original report identity"
+    );
+    assert_eq!(ui.get_selected_visible_row(), 0);
+    let viewport = ElementHandle::find_by_accessible_label(&ui, "Message results")
+        .next()
+        .unwrap();
+    assert!(viewport.size().height > 0.0);
+    assert_eq!(
+        ui.get_messages_scroll_y(),
+        0.0,
+        "One-row filtered viewport {} must not contain a stale negative offset",
+        ui.get_messages_view_height()
+    );
+    let row = ElementHandle::find_by_accessible_label(&ui, inputs[1].to_str().unwrap())
+        .find(|e| e.accessible_role() == Some(AccessibleRole::ListItem))
+        .unwrap_or_else(|| {
+            panic!(
+                "Filtered model has one row but its AX list is empty: y{}, viewport{}",
+                ui.get_messages_scroll_y(),
+                ui.get_messages_view_height()
+            )
+        });
+    assert!(row.absolute_position().y >= viewport.absolute_position().y - 0.1);
+    assert!(
+        row.absolute_position().y + row.size().height
+            <= viewport.absolute_position().y + viewport.size().height + 0.1
+    );
+}
+
 #[test]
 fn empty_failed_filter_clears_the_inspector_and_all_messages_restores_it() {
     init_no_event_loop();
@@ -1808,6 +1983,25 @@ fn paused_queue_drawer_keeps_removal_and_settings_recovery_visible() {
     }
     let queued = c.submit(vec![root.path().join("waiting.eml")]).unwrap();
     let ui = c.window();
+    assert_eq!(ui.get_waiting().row_count(), 1);
+    let selected = ui.get_run_label();
+    click(&ui, "Tasks");
+    click(&ui, "Allow temporary storage…");
+    assert!(has_label(&ui, "Allow temporary report storage?"));
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: slint::platform::Key::Escape.into(),
+        });
+    mock_elapsed_time(Duration::from_millis(5));
+    assert!(
+        !ui.get_report_storage_enabled(),
+        "Only explicit consent may write session reports"
+    );
+    assert_eq!(ui.get_run_label(), selected);
+    assert!(
+        !ui.get_reviewing(),
+        "Queue recovery must not force an unrelated empty draft"
+    );
     assert_eq!(ui.get_waiting().row_count(), 1);
     for (width, height, font) in [
         (1060.0, 760.0, 14.0),

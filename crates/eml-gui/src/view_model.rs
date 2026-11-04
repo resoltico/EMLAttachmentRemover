@@ -234,6 +234,9 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
 }
 /// Counts come from a summary or from individually accepted results while running.
 pub(crate) fn counts(report: &eml_app::RunReport) -> Vec<CountView> {
+    let Some(start) = report.start() else {
+        return Vec::new();
+    };
     let mut values = [0u32; 4];
     for item in report.items() {
         values[match item.status {
@@ -255,9 +258,7 @@ pub(crate) fn counts(report: &eml_app::RunReport) -> Vec<CountView> {
         .filter(|(kind, value)| *value > 0 || matches!(kind, CountKind::Failed))
         .map(|(kind, value)| count(kind, value))
         .collect();
-    if let Some(start) = report.start() {
-        counts.insert(0, count(CountKind::KnownItems, start.total));
-    }
+    counts.insert(0, count(CountKind::KnownItems, start.total));
     if let Some(summary) = report.summary() {
         let kind = CountKind::NotProcessed;
         let value = summary.counts.not_processed;
@@ -371,7 +372,9 @@ pub(crate) fn report_diagnostics(report: &eml_app::RunReport) -> Vec<DetailView>
 pub(crate) fn completion_diagnostics(completion: &eml_app::WorkerCompletion) -> Vec<DetailView> {
     let mut rows = Vec::new();
     if completion.jsonl.is_empty() {
-        rows.push(DetailView { text: "No protocol report was received, so there is no JSONL report to save. Available failure information is shown here and under Failure details.".into() });
+        rows.push(DetailView {
+            text: "No protocol report was received, so there is no JSONL report to save.".into(),
+        });
     }
     if completion.state == eml_app::WorkerState::RequestRefused {
         rows.push(DetailView {
