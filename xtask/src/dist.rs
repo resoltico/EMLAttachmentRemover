@@ -294,6 +294,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir(root.path().join(".cargo")).unwrap();
         fs::create_dir(root.path().join("src")).unwrap();
+        fs::create_dir(root.path().join("artifacts")).unwrap();
         fs::write(root.path().join("src/main.rs"), "fn main() {}\n").unwrap();
         fs::write(
             root.path().join("Cargo.toml"),
@@ -312,8 +313,10 @@ mod tests {
                     .env_remove("CARGO_TARGET_DIR")
                     .env_remove("CARGO_BUILD_TARGET_DIR")
             )
+            .unwrap()
+            .canonicalize()
             .unwrap(),
-            root.path().canonicalize().unwrap().join("artifacts")
+            root.path().join("artifacts").canonicalize().unwrap()
         );
     }
 }
