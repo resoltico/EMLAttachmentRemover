@@ -6,6 +6,7 @@ Use concise bullets without category labels or subheadings, grouping related cha
 
 ## [Unreleased]
 
+- Match desktop accessible action names to visible captions, including the current operation and state.
 - Resolve build commands from the invoking Cargo workspace, so a shared target cache cannot silently package a different worktree.
 - Rework desktop requests, results and task navigation with consistent spacing, aligned rows, compact details and separately scoped worker controls.
 - Allow private session-only report storage by consent so queued work continues without closing results; cap the session at ten tasks/results.

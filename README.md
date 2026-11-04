@@ -76,7 +76,8 @@ mode and destination; changes afterwards do not alter active or queued requests.
 Up to eight requests wait behind the active run. **Tasks** opens waiting requests
 and session results; **Remove from queue** cancels only the chosen waiting request.
 Queue refusals retain the draft. By default, two retained results pause further
-work until a result is closed. **Allow temporary storage…** offers an explicit
+work until a result is closed. **Allow temporary storage…**, in a draft or the
+paused Tasks drawer, offers an explicit
 choice for this session: exact diagnostic reports are backed by private, unnamed
 temporary files so accepted queued work can continue without closing results.
 There are at most ten admitted tasks/results, with less than 256 MiB per report
@@ -94,7 +95,7 @@ result keeps that view when queued work starts. A result shows its captured
 settings, counts and message outcomes. Initial completion selects a message that
 needs attention unless the user already selected one. Errors and recovery guidance
 appear in content-sized message details before optional technical provenance.
-Paths, removal metadata and byte counts expand under **Paths, parts and technical details**.
+Paths, removal metadata and byte counts expand under **Technical details**.
 **Needs attention only** filters the table without changing the full report or its export;
 toggle it off to restore the list. Up/Down/Home/End move through visible messages
 and reveal the selected row. **File → Open files…** uses Cmd-O on macOS (Ctrl-O
@@ -106,7 +107,7 @@ session, never the original messages or copies.
 
 The active-task strip names the run addressed by **Stop**, independently of the
 inspected result or draft. **Force Stop…** requires confirmation. Completed copies remain after either Stop.
-Busy Quit offers Stop and wait, confirmed Force Stop and quit, or Cancel;
+Busy Quit offers Stop and wait, confirmed Force Stop and quit, or **Cancel quit**;
 Quit waits for worker and report-export settlement, including after a confirmed
 Force Stop. When only an export is active, Finish export and quit waits for it;
 Force Stop is unavailable.
@@ -114,10 +115,10 @@ Waiting requests also require a Quit decision; they are not silently discarded.
 Decision dialogs start on Cancel and Escape cancels the decision. Cancelling a
 Force Stop decision does not undo a cooperative Stop already requested.
 Once shutdown is confirmed, further Quit requests do not reopen the decision,
-and new selections or late file-dialog submissions cannot start more work. **Save JSONL report…** writes
+and new selections or late file-dialog submissions cannot start more work. **Save report…** writes
 the run's original protocol-1 stream captured when Save is clicked, including
 partial results after failure. **Export new report** captures that run, offers a native
-folder chooser and a file name, then **Create report** writes exclusively. Existing
+folder chooser and a file name, then **Save report** writes exclusively. Existing
 names are refused inline so you can correct the name without reopening the flow;
 there is no Replace action. Navigating between reports does not retarget this draft.
 Failed physical writes leave no partial final report; complete bytes are synchronized
