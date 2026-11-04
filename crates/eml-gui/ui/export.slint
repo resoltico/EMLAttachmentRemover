@@ -30,10 +30,10 @@ export component ExportWindow inherits Window {
             Text { text: "Save the exact diagnostic JSONL. Existing files are never replaced."; wrap: word-wrap; color: Palette.foreground; }
             HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
                 Text { text: root.directory; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; min-width: 0px; color: Palette.foreground; accessible-label: "Report folder: " + root.directory; Tooltip { text: @markdown("\{root.directory}"); } }
-                ActionButton { text: "Choose folder…"; enabled: !root.busy; accessible-label: "Choose report folder"; clicked => { root.choose-directory(); } }
+                ActionButton { text: "Choose folder…"; enabled: !root.busy; accessible-description: "Choose the report export folder."; clicked => { root.choose-directory(); } }
             }
             Text { text: "File name"; color: Palette.foreground; }
-            name := LineEdit { text <=> root.file-name; enabled: !root.busy; accessible-label: "Report file name"; accepted => { if !root.busy { root.create-report(); } } }
+            name := LineEdit { text <=> root.file-name; enabled: !root.busy; accessible-label: "File name"; accessible-description: "Name of the new diagnostic JSONL report."; accepted => { if !root.busy { root.create-report(); } } }
             ScrollView { preferred-height: min(88px, feedback.preferred-height); min-height: min(44px, feedback.preferred-height); vertical-stretch: 0;
                 content-width: self.visible-width; content-height: feedback.preferred-height;
                 feedback := TextInput { text: root.notice; read-only: true; wrap: word-wrap; color: Palette.foreground;
@@ -44,7 +44,7 @@ export component ExportWindow inherits Window {
             Rectangle { vertical-stretch: 1; }
             HorizontalBox { padding: 0px; alignment: end; spacing: UiMetrics.gap;
                 ActionButton { text: "Cancel"; enabled: !root.busy; clicked => { root.cancel(); } }
-                ActionButton { text: root.busy ? "Saving…" : "Save report"; enabled: !root.busy; primary: true; accessible-label: "Create report"; clicked => { root.create-report(); } }
+                ActionButton { text: root.busy ? "Saving…" : "Save report"; enabled: !root.busy; primary: true; accessible-description: "Save the exact captured diagnostic JSONL."; clicked => { root.create-report(); } }
             }
         }
     }

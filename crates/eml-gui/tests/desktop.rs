@@ -28,7 +28,7 @@ impl SubmitSelection for DesktopController {
     }
 }
 fn force_prompt(ui: &MainWindow) {
-    click(ui, "Force Stop");
+    click(ui, "Force stop…");
 }
 fn fixture(name: &str) -> String {
     fs::read_to_string(
@@ -206,6 +206,35 @@ fn click(ui: &MainWindow, label: &str) {
         .unwrap_or_else(|| panic!("Missing accessible control: {label}"))
         .invoke_accessible_default_action();
 }
+fn click_role(ui: &MainWindow, label: &str, role: AccessibleRole) {
+    mock_elapsed_time(Duration::from_millis(1));
+    ElementHandle::find_by_accessible_label(ui, label)
+        .find(|element| element.accessible_role() == Some(role))
+        .unwrap_or_else(|| panic!("Missing {role:?}: {label}"))
+        .invoke_accessible_default_action();
+}
+fn start_reviewed_selection(ui: &MainWindow) {
+    click_role(ui, ui.get_start_label().as_str(), AccessibleRole::Button);
+}
+fn choose_operation(ui: &MainWindow, label: &str) {
+    click_role(ui, label, AccessibleRole::RadioButton);
+}
+fn open_tasks(ui: &MainWindow) {
+    let waiting = ui.get_waiting().row_count();
+    let caption = if waiting == 0 {
+        "Tasks".into()
+    } else {
+        format!("Tasks · {waiting} waiting")
+    };
+    click_role(ui, &caption, AccessibleRole::Button);
+}
+fn result_caption(ui: &MainWindow, index: usize) -> String {
+    let run = ui.get_runs().row_data(index).unwrap();
+    format!("{} · {}", run.label, run.mode)
+}
+fn choose_result(ui: &MainWindow, index: usize) {
+    click_role(ui, &result_caption(ui, index), AccessibleRole::Button);
+}
 fn has_label(ui: &MainWindow, label: &str) -> bool {
     ElementHandle::find_by_accessible_label(ui, label)
         .next()
@@ -218,6 +247,37 @@ fn wait_started(controller: &DesktopController) {
             &vocabulary::count_label(CountKind::KnownItems, 1),
         )
     });
+}
+
+#[test]
+fn visible_action_names_distinguish_mode_from_start_and_expose_destination_state() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let ui = c.window();
+    c.stage(vec![root.path().join("source.eml")]).unwrap();
+    for role in [AccessibleRole::RadioButton, AccessibleRole::Button] {
+        assert!(
+            ElementHandle::find_by_accessible_label(&ui, "Create copies")
+                .any(|element| element.accessible_role() == Some(role)),
+            "The mode and committing action retain their visible name and distinct roles"
+        );
+    }
+    click(&ui, "Change…");
+    let beside = ElementHandle::find_by_accessible_label(&ui, "Beside originals")
+        .find(|element| element.accessible_role() == Some(AccessibleRole::Button))
+        .unwrap();
+    assert_eq!(beside.accessible_checkable(), Some(true));
+    assert_eq!(beside.accessible_checked(), Some(true));
+    click(&ui, "Beside originals");
+    let output = root.path().join("copies");
+    fs::create_dir(&output).unwrap();
+    c.set_destination(Some(output));
+    click(&ui, "Change…");
+    let beside = ElementHandle::find_by_accessible_label(&ui, "Beside originals")
+        .find(|element| element.accessible_role() == Some(AccessibleRole::Button))
+        .unwrap();
+    assert_eq!(beside.accessible_checked(), Some(false));
 }
 
 #[test]
@@ -241,7 +301,7 @@ fn launch_operands_form_one_request_and_psn_or_missing_operands_do_not_add_work(
     controller.stage(paths).unwrap();
     assert_eq!(controller.window().get_runs().row_count(), 0);
     assert_eq!(controller.window().get_selection().row_count(), 2);
-    click(&controller.window(), "Start selection");
+    start_reviewed_selection(&controller.window());
     assert_eq!(controller.window().get_runs().row_count(), 1);
     assert_eq!(
         controller
@@ -275,7 +335,7 @@ fn deferred_drop_batches_are_distinct_and_cancelled_hover_does_not_queue() {
     mock_elapsed_time(Duration::from_millis(1));
     assert_eq!(controller.window().get_runs().row_count(), 0);
     assert_eq!(controller.window().get_selection().row_count(), 3);
-    click(&controller.window(), "Start selection");
+    start_reviewed_selection(&controller.window());
     assert_eq!(controller.window().get_runs().row_count(), 1);
     assert_eq!(
         controller
@@ -291,7 +351,7 @@ fn deferred_drop_batches_are_distinct_and_cancelled_hover_does_not_queue() {
     mock_elapsed_time(Duration::from_millis(1));
     assert_eq!(controller.window().get_selection().row_count(), 1);
     assert_eq!(controller.window().get_waiting().row_count(), 0);
-    click(&controller.window(), "Start selection");
+    start_reviewed_selection(&controller.window());
     assert_eq!(controller.window().get_waiting().row_count(), 1);
     controller.deliver_drop(root.path().join("cancelled.eml"));
     controller.cancel_drop();
@@ -320,7 +380,7 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
             &ui,
             &vocabulary::count_label(CountKind::Created, 1)
         ));
-        click(&ui, "Message technical details");
+        click(&ui, "Technical details");
         let scroller = ElementHandle::find_by_accessible_label(&ui, "Message details")
             .next()
             .unwrap();
@@ -389,7 +449,7 @@ fn stop_and_confirmed_force_stop_show_settled_states_and_cancel_keeps_work_runni
             assert!(!(ui.get_confirmation() == Confirmation::ForceStop));
             assert!(controller.is_busy());
             force_prompt(&ui);
-            click(&ui, "Force Stop now");
+            click(&ui, "Force stop now");
         } else {
             click(&ui, "Stop");
         }
@@ -467,7 +527,7 @@ fn create_after_check_sends_a_fresh_request_and_uses_the_current_destination() {
     );
     let controller = controller(root.path(), script(root.path(), &body));
     let ui = controller.window();
-    click(&ui, "Check only");
+    choose_operation(&ui, "Check only");
     assert!(ui.get_check_only());
     controller
         .submit(vec![root.path().join("source.eml")])
@@ -475,6 +535,7 @@ fn create_after_check_sends_a_fresh_request_and_uses_the_current_destination() {
     pump(&controller, || !controller.is_busy());
     assert_eq!(ui.get_item_status().as_str(), "Copy planned");
     assert!(ui.get_can_create());
+    assert_eq!(ui.get_review_label(), "Review for copy creation");
     let unrelated = root.path().join("unrelated.eml");
     controller.stage(vec![unrelated.clone()]).unwrap();
     ui.invoke_select_run(0);
@@ -494,16 +555,16 @@ fn create_after_check_sends_a_fresh_request_and_uses_the_current_destination() {
     );
     assert_eq!(fs::read_to_string(&requests).unwrap().lines().count(), 1);
     ui.invoke_clear_selection();
-    click(&ui, "Tasks");
-    click(&ui, "Run 1");
+    open_tasks(&ui);
+    choose_result(&ui, 0);
     let output = root.path().join("copies");
     fs::create_dir(&output).unwrap();
     controller.set_destination(Some(output.clone()));
-    click(&ui, "Review these inputs again");
+    click_role(&ui, ui.get_review_label().as_str(), AccessibleRole::Button);
     assert!(!controller.is_busy());
     assert_eq!(fs::read_to_string(&requests).unwrap().lines().count(), 1);
     assert_eq!(ui.get_selection().row_count(), 1);
-    click(&ui, "Start selection");
+    start_reviewed_selection(&ui);
     pump(&controller, || !controller.is_busy());
     let docs: Vec<serde_json::Value> = fs::read_to_string(requests)
         .unwrap()
@@ -654,7 +715,7 @@ fn run_failure_without_items_explains_incomplete_discovery_without_failed_items(
         &("cat >/dev/null\n".to_owned() + &print(&fixture("collection-limit")) + "exit 1\n"),
     );
     let c = controller(root.path(), cli);
-    click(&c.window(), "Check only");
+    choose_operation(&c.window(), "Check only");
     c.submit(vec![root.path().join("overflow")]).unwrap();
     pump(&c, || !c.is_busy());
     let ui = c.window();
@@ -677,7 +738,7 @@ fn run_failure_without_items_explains_incomplete_discovery_without_failed_items(
     // A complete successful report must clear the run-error and discovery notices.
     completed(root.path(), "created");
     click(&ui, "New request");
-    click(&ui, "Create copies");
+    choose_operation(&ui, "Create copies");
     c.submit(vec![root.path().join("ordinary.eml")]).unwrap();
     pump(&c, || !c.is_busy());
     assert_eq!(ui.get_report_diagnostics().row_count(), 0);
@@ -704,7 +765,7 @@ fn report_warnings_survive_switching_and_export_feedback() {
     c.submit(vec![root.path().join("first.eml")]).unwrap();
     wait_started(&c);
     force_prompt(&ui);
-    click(&ui, "Force Stop now");
+    click(&ui, "Force stop now");
     pump(&c, || !c.is_busy());
     assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
     assert!(ui.get_report_details().contains("earlier CLI diagnostic"));
@@ -727,15 +788,15 @@ fn report_warnings_survive_switching_and_export_feedback() {
         &("cat >/dev/null\n".to_owned() + &print(&fixture("collection-limit")) + "exit 1\n"),
     );
     click(&ui, "New request");
-    click(&ui, "Check only");
+    choose_operation(&ui, "Check only");
     c.submit(vec![root.path().join("overflow")]).unwrap();
     pump(&c, || !c.is_busy());
     assert_eq!(ui.get_operation_feedback().as_str(), "");
     assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
     assert!(!has_label(&ui, vocabulary::NO_REPLACEMENT));
     assert!(!ui.get_report_details().contains("earlier CLI diagnostic"));
-    click(&ui, "Tasks");
-    click(&ui, "Run 1");
+    open_tasks(&ui);
+    choose_result(&ui, 0);
     assert_eq!(
         ui.get_run_label(),
         "Run 1",
@@ -744,8 +805,8 @@ fn report_warnings_survive_switching_and_export_feedback() {
     assert!(ui.get_report_details().contains("earlier CLI diagnostic"));
     assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
     assert!(!has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
-    click(&ui, "Tasks");
-    click(&ui, "Run 2");
+    open_tasks(&ui);
+    choose_result(&ui, 1);
     assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
     assert!(!has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
 }
@@ -810,7 +871,7 @@ fn unavailable_settings_launch_with_preserved_objects_and_session_only_destinati
             pump(&c, || !c.is_busy());
         }
         mock_elapsed_time(Duration::from_millis(5));
-        for label in ["Dismiss report", "Save JSONL report"] {
+        for label in ["Close result", "Save report…"] {
             let element = ElementHandle::find_by_accessible_label(&ui, label)
                 .next()
                 .unwrap();
@@ -982,9 +1043,9 @@ fn reviewed_selection_does_not_spawn_and_start_captures_current_settings() {
     let destination = root.path().join("reviewed-copies");
     fs::create_dir(&destination).unwrap();
     c.set_destination(Some(destination.clone()));
-    click(&ui, "Check only");
+    choose_operation(&ui, "Check only");
     assert!(!requests.exists());
-    click(&ui, "Start selection");
+    start_reviewed_selection(&ui);
     pump(&c, || !c.is_busy());
     let request: serde_json::Value = serde_json::from_slice(&fs::read(requests).unwrap()).unwrap();
     assert_eq!(request["dry_run"], true);
@@ -1086,7 +1147,7 @@ fn full_queue_retains_review_and_waiting_snapshots_do_not_follow_new_settings() 
     assert_eq!(ui.get_selection().row_count(), 1);
     assert!(ui.get_reviewing());
     assert!(!ui.get_can_start());
-    click(&ui, "Check only");
+    choose_operation(&ui, "Check only");
     c.set_destination(Some(root.path().join("later-destination")));
     let waiting = ui.get_waiting().row_data(0).unwrap();
     assert_eq!(
@@ -1159,9 +1220,9 @@ fn task_actions_result_actions_and_inspector_have_distinct_visible_scopes() {
             );
             element
         };
-        let save = inside("Save JSONL report");
-        let review = inside("Review these inputs again");
-        let close = inside("Dismiss report");
+        let save = inside("Save report…");
+        let review = inside(ui.get_review_label().as_str());
+        let close = inside("Close result");
         assert!(
             ui.get_can_reveal(),
             "Qualified absolute fixture must offer reveal; path {:?}, hasitem{},status{},loading{}",
@@ -1198,10 +1259,10 @@ fn task_actions_result_actions_and_inspector_have_distinct_visible_scopes() {
     wait_started(&c);
     ui.invoke_select_run(0);
     mock_elapsed_time(Duration::from_millis(5));
-    let save = ElementHandle::find_by_accessible_label(&ui, "Save JSONL report")
+    let save = ElementHandle::find_by_accessible_label(&ui, "Save report…")
         .next()
         .unwrap();
-    for name in ["Stop", "Force Stop"] {
+    for name in ["Stop", "Force stop…"] {
         let action = ElementHandle::find_by_accessible_label(&ui, name)
             .next()
             .unwrap();
@@ -1212,17 +1273,17 @@ fn task_actions_result_actions_and_inspector_have_distinct_visible_scopes() {
             "Active-worker {name} must be separate from the selected result actions"
         );
     }
-    click(&ui, "Tasks");
+    open_tasks(&ui);
     let reports = ElementHandle::find_by_accessible_label(&ui, "Retained reports")
         .next()
         .unwrap();
-    let first = ElementHandle::find_by_accessible_label(&ui, "Run 1")
+    let first = ElementHandle::find_by_accessible_label(&ui, &result_caption(&ui, 0))
         .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
         .unwrap();
     assert!(first.absolute_position().y >= reports.absolute_position().y);
     assert!(first.absolute_position().y + first.size().height <= 600.1);
     assert_eq!(first.accessible_item_selected(), Some(true));
-    click(&ui, "Run 1");
+    choose_result(&ui, 0);
     assert!(
         !has_label(&ui, "Retained reports"),
         "Task navigation closes its drawer"
@@ -1304,7 +1365,7 @@ fn about_contents_and_actions_fit_font_and_display_scales() {
                 .set_size(slint::LogicalSize::new(width.max(560.0), height));
             export.show().unwrap();
             mock_elapsed_time(Duration::from_millis(5));
-            let export_action = ElementHandle::find_by_accessible_label(&export, "Create report")
+            let export_action = ElementHandle::find_by_accessible_label(&export, "Save report")
                 .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
                 .unwrap();
             assert!(
@@ -1410,7 +1471,7 @@ fn save_dialog_captures_the_report_and_navigation_is_not_stolen_by_waiting_work(
     // A different report becomes selected while the first report's dialog is open.
     completed(root.path(), "planned-create-unix");
     click(&c.window(), "New request");
-    click(&c.window(), "Check only");
+    choose_operation(&c.window(), "Check only");
     c.submit(vec![root.path().join("second.eml")]).unwrap();
     pump(&c, || !c.is_busy());
     assert_eq!(c.window().get_run_label().as_str(), "Run 2");
@@ -1556,13 +1617,13 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
     let ui = c.window();
     assert_eq!(ui.get_runs().row_count(), 2);
     assert_eq!(ui.get_items().row_count(), 8);
-    click(&ui, "Filter messages needing attention");
+    click(&ui, "Needs attention only");
     assert_eq!(ui.get_items().row_count(), 1);
     assert_eq!(ui.get_selected_item(), 7);
     assert_eq!(ui.get_item_source().as_str(), "/mail/message-7.eml");
     assert_eq!(ui.get_item_status().as_str(), "Destination conflict");
     assert!(c.selected_copy().is_none());
-    click(&ui, "Filter messages needing attention");
+    click(&ui, "Needs attention only");
     assert_eq!(ui.get_items().row_count(), 8);
     for (width, font) in [(1060.0, 13.0), (780.0, 13.0), (780.0, 20.0)] {
         ui.set_ui_size(font);
@@ -1571,7 +1632,7 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
         let viewport = ElementHandle::find_by_accessible_label(&ui, "Message details")
             .next()
             .unwrap();
-        let heading = ElementHandle::find_by_accessible_label(&ui, "Message details heading")
+        let heading = ElementHandle::find_by_accessible_label(&ui, "Selected message")
             .next()
             .unwrap();
         assert!(heading.absolute_position().y < viewport.absolute_position().y);
@@ -1624,7 +1685,7 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
         }
         assert!(viewport.absolute_position().y + viewport.size().height < 600.0);
     }
-    click(&ui, "Filter messages needing attention");
+    click(&ui, "Needs attention only");
     assert_eq!(
         ui.get_messages_scroll_y(),
         0.0,
@@ -1635,7 +1696,7 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
     c.start_export(exported.clone());
     pump(&c, || !c.is_busy());
     assert_eq!(fs::read_to_string(exported).unwrap(), bytes);
-    click(&ui, "Filter messages needing attention");
+    click(&ui, "Needs attention only");
     assert_eq!(ui.get_selected_item(), 7);
     ui.set_ui_size(13.0);
     mock_elapsed_time(Duration::from_millis(5));
@@ -1876,7 +1937,7 @@ fn fitted_mixed_result_attention_filter_keeps_its_only_row_visible() {
     let root = tempfile::tempdir().unwrap();
     let (c, inputs) = mixed_check_after_empty_active_layout(root.path());
     let ui = c.window();
-    click(&ui, "Filter messages needing attention");
+    click(&ui, "Needs attention only");
     mock_elapsed_time(Duration::from_millis(5));
     assert_eq!(ui.get_items().row_count(), 1);
     assert_eq!(
@@ -1919,12 +1980,12 @@ fn empty_failed_filter_clears_the_inspector_and_all_messages_restores_it() {
     c.submit(vec![root.path().join("source.eml")]).unwrap();
     pump(&c, || !c.is_busy());
     let ui = c.window();
-    click(&ui, "Filter messages needing attention");
+    click(&ui, "Needs attention only");
     assert_eq!(ui.get_items().row_count(), 0);
     assert!(!ui.get_has_item());
     assert!(!ui.get_can_reveal());
     assert!(has_label(&ui, "No reported messages need attention."));
-    click(&ui, "Filter messages needing attention");
+    click(&ui, "Needs attention only");
     assert_eq!(ui.get_items().row_count(), 1);
     assert!(ui.get_has_item());
     assert_eq!(ui.get_selected_item(), 0);
@@ -1948,7 +2009,7 @@ fn attention_filter_preserves_publication_qualification_and_valid_sync_success()
         pump(&c, || !c.is_busy());
         let ui = c.window();
         assert_eq!(ui.get_items().row_count(), 1);
-        click(&ui, "Filter messages needing attention");
+        click(&ui, "Needs attention only");
         assert_eq!(ui.get_items().row_count(), expected_rows, "{name}");
         if expected_rows == 1 {
             assert_eq!(
@@ -1965,7 +2026,7 @@ fn attention_filter_preserves_publication_qualification_and_valid_sync_success()
                 "Successful fsync fallback is not a fabricated failure"
             );
         }
-        click(&ui, "Filter messages needing attention");
+        click(&ui, "Needs attention only");
         assert_eq!(ui.get_items().row_count(), 1);
     }
 }
@@ -1981,11 +2042,17 @@ fn paused_queue_drawer_keeps_removal_and_settings_recovery_visible() {
         c.submit(vec![root.path().join(name)]).unwrap();
         pump(&c, || !c.is_busy());
     }
-    let queued = c.submit(vec![root.path().join("waiting.eml")]).unwrap();
+    c.stage(vec![root.path().join("waiting.eml")]).unwrap();
     let ui = c.window();
+    assert_eq!(ui.get_start_label(), "Queue request");
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "Queue request")
+            .any(|element| element.accessible_role() == Some(AccessibleRole::Button))
+    );
+    let queued = c.start_selection().unwrap();
     assert_eq!(ui.get_waiting().row_count(), 1);
     let selected = ui.get_run_label();
-    click(&ui, "Tasks");
+    open_tasks(&ui);
     click(&ui, "Allow temporary storage…");
     assert!(has_label(&ui, "Allow temporary report storage?"));
     ui.window()
@@ -2019,11 +2086,11 @@ fn paused_queue_drawer_keeps_removal_and_settings_recovery_visible() {
         .unwrap();
         assert!(warning.size().height > 0.0 && warning.absolute_position().y >= 0.0);
         assert!(warning.absolute_position().y + warning.size().height < height);
-        let close = ElementHandle::find_by_accessible_label(&ui, "Dismiss report")
+        let close = ElementHandle::find_by_accessible_label(&ui, "Close result")
             .next()
             .unwrap();
         assert!(close.absolute_position().y + close.size().height <= height + 0.1);
-        click(&ui, "Tasks");
+        open_tasks(&ui);
         let viewport = ElementHandle::find_by_accessible_label(&ui, "Session tasks")
             .next()
             .unwrap();
@@ -2065,7 +2132,7 @@ fn paused_queue_drawer_keeps_removal_and_settings_recovery_visible() {
         mock_elapsed_time(Duration::from_millis(5));
         assert!(!has_label(&ui, "Session tasks"));
     }
-    click(&ui, "Settings warning details");
+    click(&ui, "Details… — destination settings");
     mock_elapsed_time(Duration::from_millis(5));
     let details =
         ElementHandle::find_by_accessible_label(&ui, "Settings error and recovery details")
@@ -2085,7 +2152,7 @@ fn paused_queue_drawer_keeps_removal_and_settings_recovery_visible() {
             text: slint::platform::Key::Escape.into(),
         });
     mock_elapsed_time(Duration::from_millis(5));
-    click(&ui, "Tasks");
+    open_tasks(&ui);
     click(&ui, &format!("Remove Run {queued}"));
     assert_eq!(ui.get_waiting().row_count(), 0);
     assert!(!c.is_busy());

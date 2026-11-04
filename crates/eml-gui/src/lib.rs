@@ -1455,7 +1455,10 @@ impl DesktopController {
         self.ui.set_has_reports(!s.entries.is_empty());
         self.ui.set_worker_running(s.active.is_some());
         self.ui.set_start_label(
-            if s.active.is_some() || s.report_task.is_some() || s.queue.is_paused_for_report_space()
+            if s.active.is_some()
+                || s.report_task.is_some()
+                || s.storage_error.is_some()
+                || s.queue.reports().len() >= s.queue.report_capacity()
             {
                 "Queue request".into()
             } else if s.mode == RunMode::DryRun {

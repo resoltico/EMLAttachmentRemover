@@ -143,6 +143,7 @@ export component MainWindow inherits Window {
     in property <int> work-total;
     in property <int> work-completed;
     in-out property <bool> details-expanded: false;
+    private property <string> technical-details-label: root.details-expanded ? "Hide technical details" : "Technical details";
     in property <bool> report-running;
     in property <bool> can-export;
     in property <bool> can-create;
@@ -189,7 +190,7 @@ export component MainWindow inherits Window {
     }
     VerticalBox { padding: 0px; spacing: 0px;
         header := HorizontalBox { padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: 12px; padding-bottom: 12px; spacing: UiMetrics.gap; vertical-stretch: 0;
-            ActionButton { text: "Tasks" + (root.waiting.length > 0 ? " · " + root.waiting.length + " waiting" : ""); accessible-label: "Tasks"; clicked => { tasks.show(); } }
+            ActionButton { text: "Tasks" + (root.waiting.length > 0 ? " · " + root.waiting.length + " waiting" : ""); clicked => { tasks.show(); } }
             Rectangle { horizontal-stretch: 1; }
             ActionButton { text: "New request"; enabled: !root.closing; accessible-label: self.text; clicked => { root.new-request(); } }
         }
@@ -197,13 +198,13 @@ export component MainWindow inherits Window {
         if root.worker-running || root.export-running: HorizontalBox {
             padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: UiMetrics.gap; padding-bottom: UiMetrics.gap; spacing: UiMetrics.gap; vertical-stretch: 0;
             Label { text: root.activity-label; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; accessible-label: "Active task: " + root.activity-label; }
-            if root.worker-running: TextButton { text: "Force stop…"; danger: true; enabled: !root.closing; accessible-label: "Force Stop"; clicked => { root.force-stop(); } }
-            if root.worker-running: ActionButton { text: root.stop-requested ? "Stopping…" : "Stop"; enabled: !root.stop-requested && !root.closing; accessible-label: "Stop"; clicked => { root.stop(); } }
+            if root.worker-running: TextButton { text: "Force stop…"; danger: true; enabled: !root.closing; clicked => { root.force-stop(); } }
+            if root.worker-running: ActionButton { text: root.stop-requested ? "Stopping…" : "Stop"; enabled: !root.stop-requested && !root.closing; clicked => { root.stop(); } }
         }
         if root.settings-warning != "": HorizontalBox {
             padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: UiMetrics.label-gap; padding-bottom: UiMetrics.label-gap; spacing: UiMetrics.gap; vertical-stretch: 0;
             Label { text: "Settings unavailable — destination changes won't be saved"; wrap: word-wrap; color: root.attention-color; horizontal-stretch: 1; }
-            TextButton { text: "Details…"; accessible-label: "Settings warning details"; clicked => { settings-popup.show(); } }
+            TextButton { text: "Details…"; accessible-label: self.text + " — destination settings"; clicked => { settings-popup.show(); } }
         }
         if root.operation-feedback != "": VerticalBox {
             padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: UiMetrics.label-gap; padding-bottom: UiMetrics.label-gap; spacing: UiMetrics.label-gap; vertical-stretch: 0;
@@ -233,7 +234,7 @@ export component MainWindow inherits Window {
                         Label { text: root.check-only ? "Check destination" : "Save copies"; font-weight: 600; }
                         Label { text: root.destination-label; overflow: elide; Tooltip { text: @markdown("\{root.destination-label}"); } }
                     }
-                    ActionButton { text: "Change…"; enabled: !root.closing; accessible-label: "Change destination"; clicked => { destination-menu.show(); } }
+                    ActionButton { text: "Change…"; enabled: !root.closing; accessible-description: "Choose the destination for this request."; clicked => { destination-menu.show(); } }
                 }
                 ListView { content-width: self.visible-width; accessible-role: list; accessible-label: "Selection ready to start";
                     preferred-height: min(240px, root.selection.length * root.message-row-height); min-height: 0px; vertical-stretch: 1;
@@ -257,7 +258,7 @@ export component MainWindow inherits Window {
                 HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
                     Label { text: root.check-only ? "No copies will be written." : "Copies use name.no-attachments.eml."; wrap: word-wrap; opacity: 0.75; horizontal-stretch: 1; vertical-alignment: center; }
                     if root.selection.length > 0: TextButton { text: "Clear selection"; enabled: !root.closing; accessible-label: self.text; clicked => { root.clear-selection(); } }
-                    ActionButton { text: root.start-label; enabled: root.can-start; primary: true; accessible-label: "Start selection"; accessible-description: root.start-reason; clicked => { root.start-selection(); } }
+                    ActionButton { text: root.start-label; enabled: root.can-start; primary: true; accessible-description: root.start-reason; clicked => { root.start-selection(); } }
                 }
             }
             if root.has-reports && !root.reviewing: VerticalBox { padding: 0px; spacing: UiMetrics.gap; alignment: start;
@@ -266,14 +267,14 @@ export component MainWindow inherits Window {
                     Label { text: root.run-context; overflow: elide; opacity: 0.75; Tooltip { text: @markdown("\{root.run-context}"); } }
                 }
                 HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    ActionButton { text: "Save report…"; enabled: root.can-export && !root.closing; accessible-label: "Save JSONL report"; clicked => { root.export-report(); } }
-                    if root.can-review: ActionButton { text: root.review-label; enabled: root.selection.length == 0 && !root.closing; primary: root.can-create; accessible-label: "Review these inputs again"; accessible-description: root.selection.length > 0 ? "Finish or clear the current reviewed selection first." : "Review the original selected roots and current settings before starting another request."; clicked => { root.review-request(); } }
-                    TextButton { text: "Close result"; enabled: root.can-dismiss; accessible-label: "Dismiss report"; clicked => { root.dismiss(); } }
+                    ActionButton { text: "Save report…"; enabled: root.can-export && !root.closing; accessible-description: "Save the selected result's exact diagnostic JSONL."; clicked => { root.export-report(); } }
+                    if root.can-review: ActionButton { text: root.review-label; enabled: root.selection.length == 0 && !root.closing; primary: root.can-create; accessible-description: root.selection.length > 0 ? "Finish or clear the current reviewed selection first." : "Review the original selected roots and current settings before starting another request."; clicked => { root.review-request(); } }
+                    TextButton { text: "Close result"; enabled: root.can-dismiss; accessible-description: "Close this result. Original messages, created copies and saved reports stay unchanged."; clicked => { root.dismiss(); } }
                 }
                 if root.saved-report-path.full != "": HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    Label { text: "Saved report"; horizontal-stretch: 0; }
+                    Label { text: "Saved report"; min-width: self.preferred-width; horizontal-stretch: 0; }
                     PathLabel { path: root.saved-report-path; text-size: root.ui-size; }
-                    TextButton { text: "Show report"; enabled: root.can-reveal-report && !root.native-open-pending && !root.closing; accessible-label: "Show saved report"; clicked => { root.reveal-report(); } }
+                    TextButton { text: "Show report"; enabled: root.can-reveal-report && !root.native-open-pending && !root.closing; accessible-description: "Reveal the saved diagnostic report in the file manager."; clicked => { root.reveal-report(); } }
                 }
                 if root.report-loading: Label { text: root.report-load-notice; wrap: word-wrap; accessible-live-region: polite; }
                 if !root.report-loading: HorizontalBox { padding: 0px; spacing: UiMetrics.inset; vertical-stretch: 0;
@@ -300,7 +301,7 @@ export component MainWindow inherits Window {
                     accessible-label: root.work-total > 0 ? root.work-completed + " of " + root.work-total + " messages processed" : "Discovering messages";
                 }
                 if !root.report-loading: HorizontalBox { padding: 0px; alignment: end; vertical-stretch: 0;
-                    CheckBox { text: "Needs attention only"; checked: root.attention-only; accessible-label: "Filter messages needing attention"; toggled => { root.keyboard-navigation = false; root.filter-attention(self.checked); } }
+                    CheckBox { text: "Needs attention only"; checked: root.attention-only; accessible-description: "Show only messages whose outcome needs attention."; toggled => { root.keyboard-navigation = false; root.filter-attention(self.checked); } }
                 }
                 if !root.report-loading && root.items.length > 0: HorizontalBox {
                     padding: 0px; padding-left: 12px; padding-right: 12px; spacing: UiMetrics.inset; vertical-stretch: 0;
@@ -349,7 +350,7 @@ export component MainWindow inherits Window {
                 }
                 if !root.report-loading && root.has-item: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; vertical-stretch: 0;
                     HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                        Label { text: "Selected message"; font-weight: 600; horizontal-stretch: 0; accessible-label: "Message details heading"; vertical-alignment: center; }
+                        Label { text: "Selected message"; font-weight: 600; horizontal-stretch: 0; vertical-alignment: center; }
                         FileName { path: root.item-source-path; text-size: root.ui-size; }
                         if root.can-reveal: TextButton { text: "Show copy"; enabled: !root.native-open-pending && !root.closing; accessible-label: self.text; clicked => { root.reveal(); } }
                     }
@@ -361,22 +362,22 @@ export component MainWindow inherits Window {
                         detail-content := VerticalBox { width: details-view.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.label-gap;
                             if root.removals.length > 0: Label { text: root.selected-removals; color: root.item-attention ? root.attention-color : Palette.foreground; font-weight: 600; wrap: word-wrap; }
                             for detail in root.details: Label { text: detail.text; wrap: word-wrap; }
-                            TextButton { text: root.details-expanded ? "▾ Hide technical details" : "▸ Technical details";
-                                accessible-label: "Message technical details"; expandable: true; expanded: root.details-expanded;
+                            TextButton { text: (root.details-expanded ? "▾ " : "▸ ") + root.technical-details-label;
+                                accessible-label: root.technical-details-label; accessible-description: "Paths, byte counts and removal provenance for the selected message."; expandable: true; expanded: root.details-expanded;
                                 clicked => { root.details-expanded = !root.details-expanded; }
                             }
                             if root.details-expanded: VerticalBox { padding: 0px; spacing: UiMetrics.gap;
                                 Label { text: "Source"; font-weight: 600; }
                                 HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
                                     PathLabel { path: root.item-source-path; text-size: root.ui-size; }
-                                    TextButton { text: "Copy path"; accessible-label: "Copy source path"; enabled: root.can-copy-source; accessible-description: root.can-copy-source ? "Copy the source path as text." : "This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."; clicked => { root.copy-source-path(); }
+                                    TextButton { text: "Copy path"; accessible-label: self.text + " — source"; enabled: root.can-copy-source; accessible-description: root.can-copy-source ? "Copy the source path as text." : "This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."; clicked => { root.copy-source-path(); }
                                         Tooltip { text: root.can-copy-source ? @markdown("Copy the source path as text.") : @markdown("This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."); }
                                     }
                                 }
                                 if root.item-destination != "": Label { text: root.can-reveal ? "Reported copy path" : "Intended destination path"; font-weight: 600; }
                                 if root.item-destination != "": HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
                                     PathLabel { path: root.item-destination-path; text-size: root.ui-size; }
-                                    TextButton { text: "Copy path"; accessible-label: "Copy destination path"; enabled: root.can-copy-destination; accessible-description: root.can-copy-destination ? "Copy the destination path as text." : "This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."; clicked => { root.copy-destination-path(); }
+                                    TextButton { text: "Copy path"; accessible-label: self.text + " — destination"; enabled: root.can-copy-destination; accessible-description: root.can-copy-destination ? "Copy the destination path as text." : "This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."; clicked => { root.copy-destination-path(); }
                                         Tooltip { text: root.can-copy-destination ? @markdown("Copy the destination path as text.") : @markdown("This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."); }
                                     }
                                 }
@@ -416,7 +417,7 @@ export component MainWindow inherits Window {
                         Label { text: "Tasks"; font-size: root.ui-size * 1.15; font-weight: 600; horizontal-stretch: 1; }
                         TextButton { text: "Close"; clicked => { tasks.close(); } }
                     }
-                    if root.selection.length > 0: ActionButton { text: "Review selection (" + root.selection.length + ")"; accessible-label: "Review selection"; clicked => { tasks.close(); root.review-selection(); } }
+                    if root.selection.length > 0: ActionButton { text: "Review selection (" + root.selection.length + ")"; accessible-description: "Return to the current input draft."; clicked => { tasks.close(); root.review-selection(); } }
                     if root.queue-notice != "": Label { text: root.queue-notice; wrap: word-wrap; color: root.attention-color; }
                     if root.queue-notice != "" && !root.report-storage-enabled: ActionButton {
                         text: "Allow temporary storage…";
@@ -430,7 +431,7 @@ export component MainWindow inherits Window {
                             VerticalBox { padding: 0px; spacing: UiMetrics.gap; accessible-role: list; accessible-label: "Retained reports";
                                 for run[index] in root.runs: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap;
                                     TextButton { text: (index == root.selected-run && !root.reviewing ? "✓ " : "") + run.label + " · " + run.mode;
-                                        accessible-label: run.label; accessible-description: run.status + "; " + run.mode + "; " + run.selection.full + "; " + run.selections.accessible;
+                                        accessible-label: run.label + " · " + run.mode; accessible-description: run.status + "; " + run.selection.full + "; " + run.selections.accessible;
                                         accessible-item-selectable: true; accessible-item-selected: index == root.selected-run && !root.reviewing;
                                         clicked => { root.select-run(index); tasks.close(); }
                                         Tooltip { text: @markdown("\{run.selection.full} · \{run.destination}"); }
@@ -467,7 +468,7 @@ export component MainWindow inherits Window {
                 VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.inset;
                     Label { text: "Destination settings"; font-weight: 600; }
                     settings-details-text := TextEdit { text: root.settings-warning; read-only: true; accessible-label: "Settings error and recovery details"; }
-                    ActionButton { text: "Close"; accessible-label: "Close settings details"; clicked => { settings-popup.close(); } }
+                    ActionButton { text: "Close"; accessible-description: "Close destination settings details."; clicked => { settings-popup.close(); } }
                 }
             }
         }
@@ -479,8 +480,8 @@ export component MainWindow inherits Window {
             FocusScope { key-pressed(event) => { if event.text == Key.Escape { destination-menu.close(); return accept; } return reject; }
                 VerticalBox { padding: UiMetrics.inset; spacing: UiMetrics.gap;
                     Label { text: "Copy destination"; font-weight: 600; }
-                    TextButton { text: root.destination-beside ? "✓ Beside originals" : "Beside originals"; accessible-label: "Beside originals"; clicked => { destination-menu.close(); root.beside-source(); } }
-                    ActionButton { text: "Choose folder…"; enabled: !root.closing; accessible-label: "Choose destination folder"; clicked => { destination-menu.close(); root.choose-destination(); } }
+                    TextButton { text: root.destination-beside ? "✓ Beside originals" : "Beside originals"; accessible-label: "Beside originals"; accessible-checkable: true; accessible-checked: root.destination-beside; clicked => { destination-menu.close(); root.beside-source(); } }
+                    ActionButton { text: "Choose folder…"; enabled: !root.closing; accessible-description: "Choose the copy destination folder."; clicked => { destination-menu.close(); root.choose-destination(); } }
                 }
             }
         }
@@ -532,7 +533,7 @@ export component MainWindow inherits Window {
                     Label { text: root.confirmation == Confirmation.quit ? "Quit with unfinished work?" : "Force stop this task?"; font-size: root.ui-size * 1.15; font-weight: 600; wrap: word-wrap; }
                     Label { text: root.confirmation == Confirmation.quit ? (root.worker-running || root.export-running ? "A task or report export is still in progress. Quitting cancels waiting requests; completed copies and original messages are retained." : root.waiting.length + (root.waiting.length == 1 ? " request is waiting." : " requests are waiting.") + " Quitting cancels this queued work; originals and completed copies are retained.") : root.force-notice; wrap: word-wrap; }
                     if root.confirmation == Confirmation.quit: ActionButton { text: root.worker-running ? "Stop and wait" : (root.export-running ? "Finish export and quit" : "Cancel waiting and quit"); accessible-label: self.text; clicked => { root.stop-and-quit(); } }
-                    if root.worker-running: TextButton { text: root.confirmation == Confirmation.quit ? "Force stop and quit" : "Force stop now"; danger: true; accessible-label: root.confirmation == Confirmation.quit ? "Force Stop and quit" : "Force Stop now"; accessible-description: "Stops the message worker abruptly. Any report export is allowed to finish."; clicked => { if root.confirmation == Confirmation.quit { root.force-and-quit(); } else { root.confirm-force-stop(); } } }
+                    if root.worker-running: TextButton { text: root.confirmation == Confirmation.quit ? "Force stop and quit" : "Force stop now"; danger: true; accessible-description: "Stops the message worker abruptly. Any report export is allowed to finish."; clicked => { if root.confirmation == Confirmation.quit { root.force-and-quit(); } else { root.confirm-force-stop(); } } }
                     cancel-decision := ActionButton { text: root.confirmation == Confirmation.quit ? "Cancel quit" : "Cancel force stop"; accessible-label: self.text; clicked => { root.cancel-confirmation(); } }
                 }
             }
