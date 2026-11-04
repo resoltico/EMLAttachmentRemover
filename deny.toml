@@ -1,10 +1,19 @@
 # Applies to normal, build, dev, fuzz and repository-tool dependency graphs.
 [advisories]
-ignore = []
+# Owner-approved maintenance-only exceptions; remove when upstream consumers migrate.
+ignore = [
+  # Slint 1.18.1 -> winit 0.30 -> sctk-adwaita -> ab_glyph -> owned_ttf_parser.
+  { id = "RUSTSEC-2026-0192", reason = "ttf-parser has no patched release; current Slint/winit still require it for Linux window decorations." },
+  # Slint/winit/AccessKit and opener require zbus 5; zbus 6 merged these crates.
+  { id = "RUSTSEC-2026-0370", reason = "zvariant remains required by the current Linux desktop stack until its consumers migrate to zbus 6." },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names remains required by the current Linux desktop stack until its consumers migrate to zbus 6." },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive remains required by the current Linux desktop stack until its consumers migrate to zbus 6." },
+]
 
 # Repository/tool approval is distinct from the shipped target notice closure.
+# BSL-1.0 is already accepted for shipped binaries in legal/about.toml.
 [licenses]
-allow = ["MPL-2.0", "MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0", "ISC", "Zlib", "Apache-2.0 WITH LLVM-exception", "CDLA-Permissive-2.0"]
+allow = ["MPL-2.0", "MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0", "ISC", "Zlib", "Apache-2.0 WITH LLVM-exception", "CDLA-Permissive-2.0", "BSL-1.0"]
 exceptions = [
   { crate = "i-slint-backend-testing@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
   # The macOS About screen displays AboutSlint under the royalty-free desktop license.
@@ -16,6 +25,7 @@ exceptions = [
   { crate = "i-slint-core@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
   { crate = "i-slint-core-macros@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
   { crate = "i-slint-renderer-software@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { crate = "i-slint-renderer-skia@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
   { crate = "slint@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
   { crate = "slint-build@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
   { crate = "slint-macros@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },

@@ -1,6 +1,6 @@
 use super::*;
 use crate::RunControl;
-use mail_parser::{MessageParser, MimeHeaders, PartType};
+use mail_parser::{MessageParser, MessagePart, PartKind, Source};
 use proptest::prelude::*;
 #[path = "../../tests/support/property_config.rs"]
 mod property_config;
@@ -21,9 +21,9 @@ proptest! {
         let control=RunControl::default();let ours=parse(&wire,&control).unwrap();
         let independent=MessageParser::default().parse(&wire).unwrap();
         let mut actual:Vec<_>=ours.nodes.iter().filter(|node|matches!(node.kind,Kind::Leaf)).map(|node|(node.media.clone(),node.body.clone())).collect();
-        let mut expected:Vec<_>=independent.parts.iter().filter(|part|!matches!(part.body,PartType::Multipart(_) | PartType::Message(_))).map(|part| {
+        let mut expected:Vec<_>=independent.parts().filter(|part|!matches!(part.kind(),PartKind::Multipart | PartKind::Message(_))).map(|part| {
             let media=part.content_type().unwrap();
-            (format!("{}/{}",media.c_type,media.c_subtype.as_deref().unwrap()),part.offset_body as usize..part.offset_end as usize)
+            (format!("{}/{}",media.ctype(),media.subtype().unwrap()),part.offset_body() as usize..part.offset_end() as usize)
         }).collect();
         actual.sort_by_key(|(_,span)|span.start); expected.sort_by_key(|(_,span)|span.start);
         prop_assert_eq!(actual.len(),3);prop_assert_eq!(actual.len(),expected.len());
@@ -57,43 +57,41 @@ fn literal_span(source: &[u8], literal: &[u8]) -> Span {
 }
 
 fn comparator_leaves(
-    message: &mail_parser::Message<'_>,
-    id: usize,
+    part: MessagePart<'_>,
     source: &[u8],
     path: &mut Vec<usize>,
     leaves: &mut Vec<SourceLeaf>,
     containers: &mut Vec<(Vec<usize>, String)>,
 ) -> usize {
-    // mail-parser 0.11.9 keeps the complete original raw_message and absolute
-    // source offsets in its identity-encoded forwarded-message branch. A nested
-    // message has the SAME origin, not parent.offset_body. Assert that API premise
-    // rather than accepting decoded/local coordinates or guessing a correction.
-    assert_eq!(message.raw_message.as_ref(), source);
-    let part = &message.parts[id];
-    assert!(!part.is_encoding_problem);
+    // Identity-encoded nested messages retain offsets in the original source
+    // buffer. Reject decoded/local coordinates rather than guessing a correction.
+    assert!(matches!(part.message().source(), Source::Raw));
+    assert_eq!(part.message().source_bytes(), source);
+    assert!(part.flags().is_empty());
+    assert!(part.decoded_checked().1.is_empty());
     let media = part.content_type().unwrap();
-    let media = format!("{}/{}", media.c_type, media.c_subtype.as_deref().unwrap());
-    match &part.body {
-        PartType::Message(nested) => {
+    let media = format!("{}/{}", media.ctype(), media.subtype().unwrap());
+    match part.kind() {
+        PartKind::Message(nested) => {
             assert!(matches!(
                 media.as_str(),
                 "message/rfc822" | "message/global"
             ));
-            assert!(nested.parts[0].offset_header >= part.offset_body);
-            assert!(nested.parts[0].offset_end <= part.offset_end);
+            assert!(nested.root_part().offset_header() >= part.offset_body());
+            assert!(nested.root_part().offset_end() <= part.offset_end());
             containers.push((path.clone(), media));
             path.push(0); // The embedded physical root, not a multipart sibling.
-            let forwarded = 1 + comparator_leaves(nested, 0, source, path, leaves, containers);
+            let forwarded =
+                1 + comparator_leaves(nested.root_part(), source, path, leaves, containers);
             path.pop();
             forwarded
         }
-        PartType::Multipart(children) => {
+        PartKind::Multipart => {
             containers.push((path.clone(), media));
             let mut forwarded = 0;
-            for (index, child) in children.iter().enumerate() {
+            for (index, child) in part.children().enumerate() {
                 path.push(index);
-                forwarded +=
-                    comparator_leaves(message, *child as usize, source, path, leaves, containers);
+                forwarded += comparator_leaves(child, source, path, leaves, containers);
                 path.pop();
             }
             forwarded
@@ -102,8 +100,8 @@ fn comparator_leaves(
             leaves.push(SourceLeaf {
                 path: path.clone(),
                 media,
-                entity: part.offset_header as usize..part.offset_end as usize,
-                body: part.offset_body as usize..part.offset_end as usize,
+                entity: part.offset_header() as usize..part.offset_end() as usize,
+                body: part.offset_body() as usize..part.offset_end() as usize,
             });
             0
         }
@@ -188,8 +186,7 @@ fn compare_literal_leaves(
     let mut comparison_containers = Vec::new();
     assert_eq!(
         comparator_leaves(
-            &independent,
-            0,
+            independent.root().root_part(),
             source,
             &mut Vec::new(),
             &mut comparison,

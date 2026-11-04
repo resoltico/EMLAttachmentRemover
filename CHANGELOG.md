@@ -6,6 +6,10 @@ Use concise bullets without category labels or subheadings, grouping related cha
 
 ## [Unreleased]
 
+- Update runtime and developer dependencies, including encoding_rs, rustix, mail-parser, TOML, ZIP and cargo-about.
+- Restore nightly AddressSanitizer fuzzing on GNU Linux, include retained MIME seeds, save crash artifacts and fix its build cache.
+- Audit desktop features and the separate fuzz lockfile; accept four unmaintained Linux desktop dependencies pending upstream migration, with reasons in [dependency policy](deny.toml).
+
 ## [7.0.0] - 2026-10-26
 
 [Published release notes](https://github.com/resoltico/EMLAttachmentRemover/releases/tag/v7.0.0).

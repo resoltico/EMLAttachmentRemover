@@ -45,14 +45,15 @@ from the repository on Unix:
 
 ```sh
 cargo install --locked cargo-deny --version "$(awk -F '"' '/^cargo_deny = / {print $2}' xtask/tools.toml)"
-cargo install --locked cargo-about --version "$(awk -F '"' '/^cargo_about = / {print $2}' xtask/tools.toml)"
+cargo install --locked cargo-about --features cli --version "$(awk -F '"' '/^cargo_about = / {print $2}' xtask/tools.toml)"
 rustup target add aarch64-apple-darwin x86_64-apple-darwin # macOS distribution
 cargo xtask ci
 ```
 
 Obtain actionlint and shellcheck from their upstream releases or a package manager,
 using the versions in tools.toml. `cargo xtask ci` checks tool versions, formatting,
-dependency policy, workflows, shell scripts and the committed verification budget;
+dependency policy for all workspace features and the separate fuzz lockfile,
+workflows, shell scripts and the committed verification budget;
 then runs Clippy and tests. On macOS it also builds the signed universal app in a
 fresh temporary directory. Structural complexity thresholds warn; other Clippy
 findings fail. Inline exceptions use `#[expect(..., reason = "...")]`.
@@ -104,8 +105,18 @@ verification check body retention and removals. Real contract fixtures live in
 [tests/contract](tests/contract); the extracted CLI smoke uses their golden bytes.
 Keep oracles independent of the parser under test.
 
-Fuzz with the compiler and cargo-fuzz versions in tools.toml, using
-`cargo +<fuzz-compiler> fuzz run preparation`. To investigate a MIME change with
+Fuzz with the compiler and cargo-fuzz versions in tools.toml. Select the native
+target explicitly because prebuilt cargo-fuzz binaries can default to their own
+build target (for example, musl on a GNU Linux host). Include the retained seeds
+alongside a writable corpus:
+
+```sh
+mkdir -p fuzz/corpus/preparation
+cargo +<fuzz-compiler> fuzz run --target <native-triple> preparation fuzz/corpus/preparation fuzz/seeds -- -max_total_time=900
+```
+
+The nightly runs on `x86_64-unknown-linux-gnu` with AddressSanitizer and retains
+crashing inputs as workflow artifacts. To investigate a MIME change with
 mutation testing, install the pinned cargo-mutants and run
 `cargo mutants -p eml-message`. These are focused/manual tools; nightly fuzzing
 runs for 15 minutes. Avoid adding campaign, evidence or native UI qualification

@@ -8,3 +8,5 @@ Thumbs.db
 .idea/
 .vscode/
 target/
+/fuzz/corpus/
+/fuzz/artifacts/
