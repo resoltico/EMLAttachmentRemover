@@ -115,9 +115,12 @@ there is no Replace action. Navigating between reports does not retarget this dr
 On macOS, open **EML Attachment Remover → About EML Attachment Remover** in the
 system menu bar. Other desktops use **Help → About**. The main window contains
 no duplicate product/version banner or About button. About uses a centered
-Slint layout with: the application icon, version/build, two purpose
-lines, copyright, Project website and Licenses, then AboutSlint. Licenses shows
-read-only software/artwork terms with a separate third-party notices action.
+Slint layout with the application icon, release version and optional 12-character
+source revision, two purpose lines, copyright, Project website and Licenses, then
+AboutSlint. CLI and GUI `--version` (or `-V`) retain the full source revision.
+Project website receives keyboard focus when About opens. Licenses shows read-only
+software/artwork terms with a separate third-party notices action; reopening it
+focuses the text and resets selection and scrolling to the start.
 Escape closes either auxiliary window.
 
 A persistent **Settings unavailable** summary means destination changes are session-only.

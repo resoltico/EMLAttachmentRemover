@@ -6,6 +6,14 @@ Use concise bullets without category labels or subheadings, grouping related cha
 
 ## [Unreleased]
 
+- Ignore destination-dialog results after Quit is committed, preserving saved settings during shutdown.
+- Bound selection deduplication before request admission; repeated paths still coalesce in their first-seen order.
+
+- Replace the manual build counter with one release version and optional source revision; CLI/GUI --version shows the full hash and About shows 12 characters. Protocol version fields remain unchanged.
+- Derive the macOS bundle build from semver; increase semver before distributing changed binaries. See [release identity](docs/release.md).
+- Match Auditory Lab’s About focus, scaled buttons and license-view reset behavior while retaining EML content and licenses.
+- Optimize distribution builds with Thin LTO and stripped symbols, and honor Cargo-configured artifact directories.
+
 - Update runtime and developer dependencies, including encoding_rs, rustix, mail-parser, TOML, ZIP and cargo-about.
 - Restore nightly AddressSanitizer fuzzing on GNU Linux, include retained MIME seeds, save crash artifacts and fix its build cache.
 - Audit desktop features and the separate fuzz lockfile; accept four unmaintained Linux desktop dependencies pending upstream migration, with reasons in [dependency policy](deny.toml).

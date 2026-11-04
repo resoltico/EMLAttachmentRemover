@@ -1,6 +1,10 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { AboutSlint, Button, TextEdit, VerticalBox, HorizontalBox, Palette } from "std-widgets.slint";
+import { AboutSlint, Button, TextEdit, VerticalBox, HorizontalBox } from "std-widgets.slint";
+component DialogButton inherits Button {
+    min-height: max(32px, 2.5rem);
+    max-height: self.min-height;
+}
 component AboutLabel inherits TextInput {
     read-only: true; single-line: true; horizontal-alignment: center;
     accessible-label: self.text; vertical-stretch: 0;
@@ -16,6 +20,8 @@ export component AboutWindow inherits Window {
     preferred-width: max(420px, root.ui-size * 30);
     preferred-height: max(410px, root.ui-size * 27);
     callback website(); callback licenses(); callback dismiss();
+    callback focus-website();
+    focus-website => { website.focus(); }
     MenuBar { Menu { title: "Edit";
         MenuItem { title: "Copy"; shortcut: @keys(Control + C);
             enabled: name-text.has-focus || version-text.has-focus || purpose-text.has-focus || copyright-text.has-focus;
@@ -38,8 +44,8 @@ export component AboutWindow inherits Window {
             purpose-text := AboutLabel { text: "Create body-only copies of EML messages.\nKeep original messages unchanged."; single-line: false; }
             copyright-text := AboutLabel { text: root.copyright; }
             HorizontalBox { alignment: center; spacing: 12px; padding: 0px;
-                website := Button { text: "Project website"; clicked => { root.website(); } }
-                Button { text: "Licenses"; clicked => { root.licenses(); } }
+                website := DialogButton { text: "Project website"; clicked => { root.website(); } }
+                DialogButton { text: "Licenses"; clicked => { root.licenses(); } }
             }
             HorizontalBox { alignment: center; vertical-stretch: 0; padding: 0px;
                 AboutSlint { width: 280px; height: 100px; horizontal-stretch: 0; vertical-stretch: 0; }
@@ -51,10 +57,17 @@ export component LicenseWindow inherits Window {
     title: "Software and artwork licenses";
     icon: @image-url("eml-icon.png");
     preferred-width: 720px; preferred-height: 560px;
+    in property <length> ui-size: 13px;
     in property <string> licenses;
     in property <string> notice: "Third-party terms and source references are included with the application.";
-    default-font-size: 13px;
+    default-font-size: root.ui-size;
     callback third-party(); callback dismiss();
+    callback focus-start();
+    focus-start => {
+        license-text.focus();
+        license-text.set-selection-offsets(0, 0);
+        license-text.content-y = 0px;
+    }
     MenuBar { Menu { title: "Edit";
         MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: license-text.has-focus; activated => { license-text.copy(); } }
         MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: license-text.has-focus; activated => { license-text.select-all(); } }
@@ -67,7 +80,7 @@ export component LicenseWindow inherits Window {
             license-text := TextEdit { text: root.licenses; read-only: true; accessible-label: "Software and artwork license terms"; }
             HorizontalBox { padding: 12px; spacing: 12px; vertical-stretch: 0;
                 Text { text: root.notice; wrap: word-wrap; horizontal-stretch: 1; }
-                Button { text: "Third-party licenses…"; clicked => { root.third-party(); } }
+                DialogButton { text: "Third-party licenses…"; clicked => { root.third-party(); } }
             }
         }
     }

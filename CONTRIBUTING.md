@@ -8,7 +8,11 @@ must agree. Keep product code separate from transport and platform presentation.
 
 Install Rust with rustup and a native C/C++ linker. The compiler and components
 come from [rust-toolchain.toml](rust-toolchain.toml); rustup selects them when Cargo
-runs here. On macOS, install Command Line Tools (`xcode-select --install`); full
+runs here. `EML_SOURCE_REVISION` optionally supplies a full 40/64-character commit
+ID; CI sets it from its checked-out revision. Without it, ordinary builds display
+only the workspace version. Distribution resolves and supplies HEAD for both
+frontends, using the optimized `dist` profile (see [release identity](docs/release.md)).
+On macOS, install Command Line Tools (`xcode-select --install`); full
 Xcode is unnecessary for builds. Ubuntu desktop development needs `pkg-config`
 and `libfontconfig1-dev`. Windows CLI development uses Visual Studio C++ Build
 Tools with the native x64 or ARM64 MSVC tools. CI builds a static CRT.
@@ -29,8 +33,8 @@ ditto -x -k target/desktop/emlattachmentremover-gui-*-macos-universal.zip target
 open "target/desktop/app/EML Attachment Remover.app"
 ```
 
-Use a fresh output directory on subsequent distributions. The bare Cargo GUI
-executable is not a supported launch path and fails before opening a window when
+Use a fresh output directory on subsequent distributions. Apart from `--version`
+and `-V`, the bare Cargo GUI executable is not a supported macOS launch path and fails before opening a window when
 its macOS bundle/helper context is missing. Cross-platform GUI library/testing
 backend development is available; distributed native GUI apps currently target
 macOS. On Windows, exclude `eml-app` and `eml-gui` from workspace commands

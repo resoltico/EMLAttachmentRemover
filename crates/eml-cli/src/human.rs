@@ -74,7 +74,7 @@ fn write_human(writer: &mut impl Write, event: Event<'_>) -> io::Result<()> {
             writer,
             "{} {} — {}: {}; discovery {}{}",
             env!("CARGO_PKG_NAME"),
-            eml_core::product::VERSION_WITH_BUILD.as_str(),
+            eml_core::product::VERSION_WITH_REVISION.as_str(),
             eml_core::vocabulary::CountKind::KnownItems.label(),
             value.total,
             if value.collection_complete {
@@ -160,7 +160,7 @@ mod tests {
     fn expected_human_start() -> String {
         format!(
             "emlattachmentremover {} — Known items: 1; discovery complete; dry run\n",
-            eml_core::product::VERSION_WITH_BUILD.as_str()
+            eml_core::product::VERSION_WITH_REVISION.as_str()
         )
     }
     #[test]

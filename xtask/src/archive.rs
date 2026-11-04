@@ -11,15 +11,15 @@ pub(crate) struct Timestamp {
     zip: zip::DateTime,
 }
 impl Timestamp {
-    pub(crate) fn commit() -> Result<Self> {
+    pub(crate) fn for_revision(revision: &str) -> Result<Self> {
         let epoch =
-            capture(Command::new("git").args(["show", "-s", "--format=%ct", "HEAD"]))?.parse()?;
+            capture(Command::new("git").args(["show", "-s", "--format=%ct", revision]))?.parse()?;
         let date = capture(Command::new("git").env("TZ", "UTC").args([
             "show",
             "-s",
             "--date=format-local:%Y %m %d %H %M %S",
             "--format=%cd",
-            "HEAD",
+            revision,
         ]))?;
         let parts = date
             .split_whitespace()
@@ -116,7 +116,7 @@ mod tests {
         let stage = scratch.path().join("stage");
         fs::create_dir(&stage).unwrap();
         fs::write(stage.join("LICENSE"), b"license text").unwrap();
-        let stamp = Timestamp::commit().unwrap();
+        let stamp = Timestamp::for_revision(&crate::source::revision().unwrap()).unwrap();
         for extension in ["tar.gz", "zip"] {
             let path = scratch.path().join(format!("test.{extension}"));
             write(&stage, &path, &stamp).unwrap();

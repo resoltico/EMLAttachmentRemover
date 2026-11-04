@@ -42,6 +42,12 @@ cognitive_complexity = "warn"
 [profile.release]
 overflow-checks = true
 
+[profile.dist]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+strip = true
+
 [profile.mutants]
 inherits = "test"
 debug = false
