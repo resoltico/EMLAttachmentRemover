@@ -235,12 +235,12 @@ impl DesktopController {
     fn bind(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         self.ui.on_allow_report_storage(move || {
-            if let Some(c) = weak.upgrade() {
-                if !c.session.borrow().is_closing() {
-                    c.session.borrow_mut().queue.enable_report_storage();
-                    c.maintain_reports();
-                    c.refresh();
-                }
+            if let Some(c) = weak.upgrade()
+                && !c.session.borrow().is_closing()
+            {
+                c.session.borrow_mut().queue.enable_report_storage();
+                c.maintain_reports();
+                c.refresh();
             }
         });
         let weak = Rc::downgrade(self);
