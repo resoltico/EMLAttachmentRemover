@@ -343,14 +343,20 @@ impl DesktopController {
                     && index < c.session.borrow().entries.len()
                 {
                     let mut s = c.session.borrow_mut();
+                    let same_context = s.selected == index;
                     s.selected = index;
-                    s.selected_item = 0;
                     s.reviewing = false;
                     s.follow_run = None;
-                    if let Some(entry) = s.entries.get_mut(index) {
-                        entry.user_selected_item = false;
-                        if let Some(handle) = &entry.report {
-                            s.selected_item = first_attention(handle).unwrap_or(0);
+                    // A report keeps its view state when reselected, including
+                    // after the draft temporarily hid that workspace.
+                    if !same_context {
+                        s.selected_item = 0;
+                        if let Some(entry) = s.entries.get_mut(index) {
+                            entry.user_selected_item = false;
+                            if let Some(handle) = &entry.report {
+                                // Refresh resets the previous report's filter.
+                                s.selected_item = default_item_selection(handle, false);
+                            }
                         }
                     }
                     c.clear_operation();
@@ -799,10 +805,10 @@ impl DesktopController {
                             Ok(completion) => {
                                 entry.report = Some(completion.report.clone());
                                 entry.completion = Some(completion);
-                                s.selected_item = first_attention(
+                                s.selected_item = default_item_selection(
                                     s.entries[selected].report.as_ref().expect("loaded report"),
-                                )
-                                .unwrap_or(0);
+                                    self.ui.get_attention_only(),
+                                );
                             }
                             Err(error) => s.storage_error = Some((id, error.to_string())),
                         }
@@ -891,7 +897,7 @@ impl DesktopController {
                     && !entry.user_selected_item
                     && let Some(handle) = &entry.report
                 {
-                    s.selected_item = first_attention(handle).unwrap_or(0);
+                    s.selected_item = default_item_selection(handle, self.ui.get_attention_only());
                 }
                 let _ = s.queue.complete(id);
                 s.active = None;
@@ -1813,6 +1819,10 @@ fn first_attention(handle: &eml_app::ReportHandle) -> Option<usize> {
                 .position(|item| view_model::item(item).attention)
         })
         .flatten()
+}
+// Attention-only views have no healthy fallback message.
+fn default_item_selection(handle: &eml_app::ReportHandle, attention_only: bool) -> usize {
+    first_attention(handle).unwrap_or(if attention_only { usize::MAX } else { 0 })
 }
 fn request_destination(request: &RequestSnapshot) -> String {
     match &request.request().output {

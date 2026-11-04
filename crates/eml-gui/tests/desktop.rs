@@ -1973,7 +1973,7 @@ fn fitted_mixed_result_attention_filter_keeps_its_only_row_visible() {
 }
 
 #[test]
-fn empty_failed_filter_clears_the_inspector_and_all_messages_restores_it() {
+fn report_selection_empty_filter_survives_current_task_reselection() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let c = controller(root.path(), completed(root.path(), "created"));
@@ -1985,10 +1985,119 @@ fn empty_failed_filter_clears_the_inspector_and_all_messages_restores_it() {
     assert!(!ui.get_has_item());
     assert!(!ui.get_can_reveal());
     assert!(has_label(&ui, "No reported messages need attention."));
+    let selection = ui.get_selected_item();
+    open_tasks(&ui);
+    choose_result(&ui, 0);
+    assert!(
+        ui.get_attention_only(),
+        "Selecting the current task retains its view filter"
+    );
+    assert_eq!(
+        ui.get_selected_item(),
+        selection,
+        "An empty view retains no message selection"
+    );
+    assert_eq!(ui.get_items().row_count(), 0);
+    assert_eq!(ui.get_selected_visible_row(), -1);
+    assert!(
+        !ui.get_has_item(),
+        "The inspector cannot show a healthy item outside the empty filtered list"
+    );
+    assert!(!ui.get_can_reveal());
+    click(&ui, "New request");
+    assert!(ui.get_reviewing());
+    open_tasks(&ui);
+    choose_result(&ui, 0);
+    assert!(!ui.get_reviewing());
+    assert!(
+        ui.get_attention_only(),
+        "An empty draft does not replace the retained report's filter"
+    );
+    assert_eq!(ui.get_selected_item(), selection);
+    assert_eq!(ui.get_items().row_count(), 0);
+    assert!(!ui.get_has_item());
     click(&ui, "Needs attention only");
     assert_eq!(ui.get_items().row_count(), 1);
     assert!(ui.get_has_item());
     assert_eq!(ui.get_selected_item(), 0);
+}
+
+#[test]
+fn report_selection_keeps_explicit_item_on_current_task_reselection() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let (c, inputs) = mixed_check_after_empty_active_layout(root.path());
+    let ui = c.window();
+    click(&ui, inputs[2].to_str().unwrap());
+    click(&ui, "Technical details");
+    assert_eq!(ui.get_selected_item(), 2);
+    assert!(ui.get_details_expanded());
+    open_tasks(&ui);
+    choose_result(&ui, 0);
+    assert_eq!(
+        ui.get_selected_item(),
+        2,
+        "Choosing the current task does not replace an explicit item with its default"
+    );
+    assert!(
+        ui.get_details_expanded(),
+        "Same-context selection preserves expanded details"
+    );
+    assert_eq!(ui.get_item_source(), inputs[2].to_str().unwrap());
+    click(&ui, "New request");
+    assert!(ui.get_reviewing());
+    open_tasks(&ui);
+    choose_result(&ui, 0);
+    assert_eq!(
+        ui.get_selected_item(),
+        2,
+        "Returning from an empty draft preserves that report's explicit item"
+    );
+    assert!(ui.get_details_expanded());
+}
+
+#[test]
+fn report_selection_respects_filter_on_healthy_completion() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let gate = root.path().join("release-healthy-report");
+    let cli = script(
+        root.path(),
+        &format!(
+            "cat >/dev/null\nwhile [ ! -f {} ]; do :; done\n{}exit 0\n",
+            quote(gate.to_str().unwrap()),
+            print(&fixture("created"))
+        ),
+    );
+    let c = controller(root.path(), cli);
+    c.submit(vec![root.path().join("source.eml")]).unwrap();
+    let ui = c.window();
+    mock_elapsed_time(Duration::from_millis(5));
+    click(&ui, "Needs attention only");
+    assert!(ui.get_attention_only());
+    assert!(!ui.get_has_item());
+    let selection = ui.get_selected_item();
+    fs::write(gate, b"release").unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(ui.get_run_status(), RunStatus::Completed.label());
+    assert!(
+        ui.get_attention_only(),
+        "Completion does not reset the explicit filter"
+    );
+    assert_eq!(ui.get_items().row_count(), 0);
+    assert_eq!(
+        ui.get_selected_item(),
+        selection,
+        "Completion cannot select a healthy item excluded by the current filter"
+    );
+    assert!(!ui.get_has_item());
+    assert_eq!(ui.get_selected_visible_row(), -1);
+    click(&ui, "Needs attention only");
+    assert_eq!(ui.get_items().row_count(), 1);
+    assert!(
+        ui.get_has_item(),
+        "Removing the filter restores the real healthy result"
+    );
 }
 
 #[test]
