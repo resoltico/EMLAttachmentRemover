@@ -344,7 +344,7 @@ pub(crate) fn completion_diagnostics(completion: &eml_app::WorkerCompletion) -> 
     }
     if completion.state == eml_app::WorkerState::RequestRefused {
         rows.push(DetailView {
-            text: "The request could not start. Check that the selected inputs still exist and choose an existing, writable destination. Use Run Again… to correct the files, folders or destination.".into(),
+            text: "The request could not start. Check that the selected inputs still exist and choose an existing, writable destination. Use Review Request… to correct the files, folders or destination.".into(),
         });
     }
     if completion.failure == Some(eml_app::WorkerFailure::Identity) {

@@ -71,7 +71,7 @@ The session sidebar appears after the first run. Up to eight requests wait behin
 one active run; the session holds up to 20 runs and 2.5 GiB of stored report bytes.
 Reports are stored automatically in private unnamed files and disappear on close
 or exit. There is no persistent history. Storage failure keeps the report in
-memory; close finished results if asked for space. **Close Result** removes only session information. **Run Again…** restores the captured draft; a finished
+memory; close finished results if asked for space. **Close Result** removes only session information. **Review Request…** restores the captured draft; a finished
 Check offers **Create Copies…**. Replacing a non-empty draft requires confirmation.
 
 Results show progress, outcome filters, naturally sorted messages and an inspector.

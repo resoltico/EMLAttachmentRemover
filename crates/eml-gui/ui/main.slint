@@ -6,7 +6,7 @@ import { DraftPane } from "draft.slint";
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
 import { TextEdit, HorizontalBox, VerticalBox, Palette } from "std-widgets.slint";
-import { ActionButton, TextButton, UiMetrics, Label } from "controls.slint";
+import { ActionButton, TextButton, UiMetrics, Label, FileName } from "controls.slint";
 import { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, DetailView, RemovalView, Tone, ChipView } from "models.slint";
 export { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, DetailView, RemovalView, Tone, ChipView } from "models.slint";
 export { Palette } from "std-widgets.slint";
@@ -24,7 +24,8 @@ export component MainWindow inherits Window {
     in property <bool> native-about;
     in property <bool> closing;
     in-out property <bool> check-only;
-    in property <string> destination-label;
+    in property <PathView> destination;
+    out property <string> destination-label: root.destination.full;
     in property <[SelectionView]> selection;
     in property <bool> reviewing;
     in property <bool> can-start;
@@ -91,7 +92,7 @@ export component MainWindow inherits Window {
     callback confirm-force-stop();
     callback about(); callback cancel-confirmation(); callback stop-and-quit(); callback force-and-quit();
     // Distinct task lifetimes and action targets are supplied by the controller.
-    in property <string> review-label: "Run Again…";
+    in property <string> review-label: "Review Request…";
     in property <bool> can-review;
     in property <bool> stop-requested;
     in property <bool> export-running;
@@ -104,15 +105,19 @@ export component MainWindow inherits Window {
     private property <bool> operation-details-expanded: false;
     private property <bool> report-details-expanded: false;
     changed selected-run => { root.report-details-expanded = false; }
+    changed reviewing => { if !root.reviewing { destination-menu.close(); } }
     callback new-request(); callback reveal-report();
-    callback open-destination();
-    open-destination => { destination-menu.show(); }
+    private property <length> destination-anchor-x;
+    private property <length> destination-anchor-y;
+    private property <length> destination-anchor-height;
+    callback open-destination(length,length,length);
+    open-destination(x,y,height) => { root.destination-anchor-x = x - main-scope.absolute-position.x; root.destination-anchor-y = y - main-scope.absolute-position.y; root.destination-anchor-height = height; destination-menu.show(); }
 
     in property <bool> session-started;
     in property <bool> can-edit;
     in property <bool> drop-hovered;
     in property <string> starts-after;
-    in property <[string]> recent-destinations;
+    in property <[PathView]> recent-destinations;
     callback recent-destination(int);
     callback confirm-replace-draft(); callback create-from-check();
     in property <string> run-title;
@@ -220,13 +225,13 @@ export component MainWindow inherits Window {
                 policy-expanded <=> root.draft-policy-expanded;
                 selection: root.selection; check-only: root.check-only; can-start: root.can-start;
                 can-edit: root.can-edit; drop-hovered: root.drop-hovered; ui-size: root.ui-size;
-                destination-label: root.destination-label; start-label: root.start-label;
+                destination: root.destination; start-label: root.start-label;
                 start-reason: root.start-reason; starts-after: root.starts-after;
                 choose-files() => { root.choose-files(); }
                 choose-folder() => { root.choose-folder(); }
                 clear-selection() => { root.clear-selection(); }
                 mode-changed(value) => { root.mode-changed(value); }
-                open-destination() => { root.open-destination(); }
+                open-destination(x,y,height) => { root.open-destination(x,y,height); }
                 remove-selection(index) => { root.remove-selection(index); }
                 start-selection() => { root.start-selection(); }
             }
@@ -267,6 +272,7 @@ if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
         can-reveal-report: root.can-reveal-report;
         operation-tone: root.operation-tone;
         can-reveal-output : root.can-reveal-output;
+        has-verified-output: root.output-roots.length > 0 || root.extra-output-roots > 0;
         reveal-output-label : root.reveal-output-label;
         review-label : root.review-label;
         work-total : root.work-total;
@@ -324,6 +330,24 @@ if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
         copy-destination-path() => { root.copy-destination-path(); }
             }
         }
+    destination-menu := PopupWindow {
+        width: min(420px, main-scope.width - 16px); height: 114px + root.recent-destinations.length * 40px;
+        x: max(8px,min(root.destination-anchor-x, main-scope.width - self.width - 8px));
+        y: root.destination-anchor-y + root.destination-anchor-height + 4px + self.height <= main-scope.height - 8px ? root.destination-anchor-y + root.destination-anchor-height + 4px : max(8px, root.destination-anchor-y - self.height - 4px);
+        Rectangle { background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 8px;
+            FocusScope {
+                key-pressed(event) => { if event.text == Key.Escape { destination-menu.close(); return accept; } return reject; }
+                VerticalBox { padding: 12px; spacing: 6px;
+                    TextButton { text: "Next to originals"; accessible-checkable: true; accessible-checked: root.destination-beside; clicked => { destination-menu.close(); root.beside-source(); } }
+                    for folder[index] in root.recent-destinations: TextButton { text: folder.full; show-caption: false; min-width: 0px; horizontal-stretch: 1; clicked => { destination-menu.close(); root.recent-destination(index); }
+                        FileName { path: folder; x: 8px; width: max(0px,parent.width - 16px); height: parent.height; text-size: root.ui-size; }
+                    }
+                    ActionButton { text: "Choose Folder…"; enabled: root.can-edit; clicked => { destination-menu.close(); root.choose-destination(); } }
+                }
+            }
+        }
+    }
+
             Rectangle { width: parent.width; height: parent.height; background: transparent; border-width: main-scope.has-focus ? 1px : 0px; border-color: Theme.accent; }
         }
 
@@ -351,25 +375,11 @@ if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
             }
         }
     }
-    destination-menu := PopupWindow {
-        width: min(420px, root.width - 40px); height: 114px + root.recent-destinations.length * 40px;
-        x: root.width - self.width - 20px; y: max(20px, root.height - self.height - 80px);
-        Rectangle { background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 8px;
-            FocusScope {
-                key-pressed(event) => { if event.text == Key.Escape { destination-menu.close(); return accept; } return reject; }
-                VerticalBox { padding: 12px; spacing: 6px;
-                    TextButton { text: "Next to originals"; accessible-checkable: true; accessible-checked: root.destination-beside; clicked => { destination-menu.close(); root.beside-source(); } }
-                    for folder[index] in root.recent-destinations: TextButton { text: folder; min-width: 0px; horizontal-stretch: 1; clicked => { destination-menu.close(); root.recent-destination(index); } }
-                    ActionButton { text: "Choose Folder…"; enabled: root.can-edit; clicked => { destination-menu.close(); root.choose-destination(); } }
-                }
-            }
-        }
-    }
     changed confirmation => { decision.close(); if root.confirmation != Confirmation.none { decision.show(); } }
     decision := PopupWindow {
         x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;
         width: min(max(500px, root.ui-size * 31), root.width - UiMetrics.gutter * 2); height: max(300px, root.ui-size * 21); close-policy: PopupClosePolicy.no-auto-close;
-        accessible-role: groupbox; accessible-label: root.confirmation == Confirmation.quit ? "Quit confirmation" : "Force Stop confirmation";
+        accessible-role: groupbox; accessible-label: root.confirmation == Confirmation.quit ? "Quit confirmation" : root.confirmation == Confirmation.replace-draft ? "Replace Draft confirmation" : "Force Stop confirmation";
         DecisionContent {
         confirm-replace-draft() => { root.confirm-replace-draft(); }
         replace-count: root.selection.length;

@@ -101,10 +101,9 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
         );
         ui.invoke_select_item(0);
         mock_elapsed_time(Duration::from_millis(5));
-        let status_cell =
-            ElementHandle::find_by_accessible_label(&ui, "Created · no parts removed")
-                .nth(1)
-                .unwrap();
+        let status_cell = ElementHandle::find_by_accessible_label(&ui, "Created · 0 removed")
+            .nth(1)
+            .unwrap();
         let viewport = ElementHandle::find_by_accessible_label(&ui, "Message results")
             .next()
             .unwrap();
@@ -127,7 +126,7 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
             "The whole result row, including its status, must select the message; status {:?} {:?}; all statuses {:?}",
             status_cell.absolute_position(),
             status_cell.size(),
-            ElementHandle::find_by_accessible_label(&ui, "Created · no parts removed")
+            ElementHandle::find_by_accessible_label(&ui, "Created · 0 removed")
                 .map(|e| (e.absolute_position(), e.size()))
                 .collect::<Vec<_>>()
         );

@@ -92,7 +92,7 @@ pub(super) fn failure(code: ErrorCode) -> Words {
                 words(
                     "No message text",
                     "There is no supported message text to keep",
-                    "There is nothing safe to copy.",
+                    "Add an email containing a plain-text or HTML body.",
                 )
             }
         }
@@ -342,13 +342,7 @@ pub(super) fn outcome(kind: MeaningKind, error: Option<ErrorCode>, removed: usiz
         value = failure(ErrorCode::Interrupted);
     }
     let verdict = match kind {
-        MeaningKind::Created => {
-            if removed == 0 {
-                "Created · no parts removed".into()
-            } else {
-                format!("Created · {removed} removed")
-            }
-        }
+        MeaningKind::Created => format!("Created · {removed} removed"),
         MeaningKind::Prepared => format!("Ready · {removed} to remove"),
         MeaningKind::Comparison
         | MeaningKind::ExistingVerified
@@ -408,7 +402,7 @@ pub(super) fn run_title(
         ),
         RunStatus::Completed => format!("Done — {} already up to date", tally.up_to_date),
         RunStatus::CompletedWithFailures if tally.attention > 0 => {
-            format!("Finished — {} need attention", tally.attention)
+            format!("Finished — {}", attention_count(tally.attention))
         }
         RunStatus::CompletedWithFailures => "Couldn’t finish".into(),
         RunStatus::Stopped | RunStatus::StoppedBeforeStart => total.map_or_else(
@@ -424,6 +418,13 @@ pub(super) fn run_title(
     };
     format!("Run {id} · {verdict}")
 }
+fn attention_count(count: u32) -> String {
+    format!(
+        "{count} {} attention",
+        if count == 1 { "needs" } else { "need" }
+    )
+}
+
 pub(super) fn sidebar(
     status: RunStatus,
     mode: RunMode,
@@ -455,7 +456,11 @@ pub(super) fn sidebar(
                 format!("{} up to date", tally.up_to_date)
             };
             if tally.attention > 0 {
-                format!("{good} · {} need attention", tally.attention)
+                if tally.created + tally.up_to_date + tally.checked == 0 {
+                    attention_count(tally.attention)
+                } else {
+                    format!("{good} · {}", attention_count(tally.attention))
+                }
             } else {
                 good
             }

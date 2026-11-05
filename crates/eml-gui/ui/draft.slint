@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MPL-2.0
 import { HorizontalBox, VerticalBox, ListView, ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { SelectionView } from "models.slint";
-import { ActionButton, PrimaryButton, TextButton, IconButton, Icon, IconKind, Label, PathLabel, Segmented, PopupButton, UiMetrics } from "controls.slint";
+import { SelectionView, PathView } from "models.slint";
+import { ActionButton, PrimaryButton, TextButton, IconButton, Icon, IconKind, Label, PathLabel, Segmented, DestinationButton, UiMetrics } from "controls.slint";
 
 export component DraftPane inherits ScrollView {
     in property <[SelectionView]> selection;
@@ -13,17 +13,17 @@ export component DraftPane inherits ScrollView {
     in property <bool> can-edit;
     in property <bool> check-only;
     in property <bool> drop-hovered;
-    in property <string> destination-label;
+    in property <PathView> destination;
     in property <string> start-label;
     in property <string> start-reason;
     in property <string> starts-after;
     in property <length> ui-size;
     callback choose-files(); callback choose-folder(); callback clear-selection();
-    callback mode-changed(bool); callback open-destination();
+    callback mode-changed(bool); callback open-destination(length,length,length);
     callback remove-selection(int); callback start-selection();
     content-width: self.visible-width;
     content-height: content.height;
-    content := VerticalBox { width: parent.visible-width; height: max(parent.visible-height,max(self.min-height,self.preferred-height));
+    content := VerticalBox { x: UiMetrics.overlay-scrollbar-width; width: max(0px,root.visible-width - UiMetrics.overlay-scrollbar-width * 2); height: max(parent.visible-height,max(self.min-height,self.preferred-height));
     padding: 0px; spacing: 16px;
 
     HorizontalBox { padding: 0px; spacing: 8px; vertical-stretch: 0;
@@ -68,27 +68,29 @@ export component DraftPane inherits ScrollView {
         }
     }
     if root.selection.length > 0: Label { text: "Drop more files or folders anywhere in this window."; color: Theme.muted; wrap: word-wrap; }
-    Rectangle {
+    settings := Rectangle {
         private property <length> action-width: max(260px, root.ui-size * 20);
-        private property <length> control-height: max(32px, root.ui-size * 1.4 + 10px);
+        private property <length> control-height: max(36px, root.ui-size * 1.4 + 10px);
         private property <length> group-height: root.ui-size * 1.4 + 6px + self.control-height;
         private property <bool> stacked: self.width < self.action-width + 236px;
         height: self.stacked ? self.group-height * 2 + 10px : self.group-height;
         horizontal-stretch: 1;
         VerticalBox { x: 0px; y: 0px; width: min(parent.width, parent.action-width); height: parent.group-height; padding: 0px; spacing: 6px;
-            Label { text: "Action"; color: Theme.muted; }
-            Segmented { check-only: root.check-only; enabled: root.can-edit; changed(value) => { root.mode-changed(value); } }
+            Label { height: root.ui-size * 1.4; text: "Action"; color: Theme.muted; }
+            Segmented { min-height: settings.control-height; max-height: self.min-height; preferred-height: self.min-height; check-only: root.check-only; enabled: root.can-edit; changed(value) => { root.mode-changed(value); } }
         }
         VerticalBox { x: parent.stacked ? 0px : parent.action-width + 16px;
             y: parent.stacked ? parent.group-height + 10px : 0px;
             width: min(max(220px, root.ui-size * 16), parent.width - self.x); height: parent.group-height;
             padding: 0px; spacing: 6px;
-            Label { text: root.check-only ? "Check against" : "Save copies"; color: Theme.muted; }
-            PopupButton { text: root.destination-label; enabled: root.can-edit; accessible-label: "Copy destination: " + root.destination-label; clicked => { root.open-destination(); } }
+            Label { height: root.ui-size * 1.4; text: root.check-only ? "Check against" : "Save copies"; color: Theme.muted; }
+            destination-button := DestinationButton { path: root.destination; text-size: root.ui-size; min-height: settings.control-height; enabled: root.can-edit; accessible-label: "Copy destination: " + root.destination.full; clicked => { root.open-destination(self.absolute-position.x, self.absolute-position.y, self.height); } }
         }
     }
     if root.selection.length > 0: Label { text: root.scope; color: Theme.muted; wrap: word-wrap; }
-    TextButton { text: "What copies keep"; expandable: true; expanded: root.policy-expanded; clicked => { root.policy-expanded = !root.policy-expanded; } }
+    TextButton { text: "What copies keep"; horizontal-inset: 0px; leading-inset: 24px; expandable: true; expanded: root.policy-expanded; clicked => { root.policy-expanded = !root.policy-expanded; }
+        Icon { kind: IconKind.chevron; x: 0px; y: (parent.height - self.height) / 2; commands: root.policy-expanded ? "M6 9 L12 15 L18 9" : "M9 6 L15 12 L9 18"; }
+    }
     if root.policy-expanded: Label { text: "Copies retain supported plain-text and HTML message bodies. Attachments, inline images and resources, calendar parts and other non-body content are omitted. No copy is made when no supported body remains. Protected or unsupported structures may be refused. HTML is retained as-is: remote references and unsafe content are not sanitized. Check only plans the same omissions and writes nothing."; wrap: word-wrap; }
     if root.selection.length > 0 && !root.can-start: Label { text: root.start-reason; color: Theme.warn; wrap: word-wrap; accessible-live-region: polite; }
     if root.selection.length > 0: HorizontalBox { padding: 0px; spacing: 12px; vertical-stretch: 0;
