@@ -58,3 +58,12 @@ pub fn validate_launch(executable: &std::path::Path, cli: &std::path::Path) -> s
     let _ = (executable, cli);
     Ok(())
 }
+
+/// Platform-appropriate output-folder action label, without native service policy.
+pub fn file_manager_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Show in Finder"
+    } else {
+        "Show in File Manager"
+    }
+}

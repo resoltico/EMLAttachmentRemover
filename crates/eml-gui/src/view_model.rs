@@ -172,6 +172,13 @@ fn failure_label(code: &str) -> Option<&'static str> {
 /// Concise desktop labels preserve the core qualification and typed failure facts.
 pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
     ItemView {
+        folder: "—".into(),
+        tone: match category(item) {
+            crate::state::Category::Created | crate::state::Category::UpToDate => crate::Tone::Ok,
+            crate::state::Category::Checked => crate::Tone::Neutral,
+            crate::state::Category::Attention => crate::Tone::Attention,
+            crate::state::Category::NotProcessed => crate::Tone::Stopped,
+        },
         original_index: 0,
         source: item.source.display.clone().into(),
         path: path(&item.source.display),
@@ -201,8 +208,7 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
             })
         }
         .into(),
-        attention: meaning(item)
-            .is_none_or(|value| value.severity == vocabulary::Severity::Attention),
+        attention: category(item) == crate::state::Category::Attention,
         removed: meaning(item)
             .map_or_else(
                 || "—".into(),
@@ -232,41 +238,36 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
             .into(),
     }
 }
-/// Counts come from a summary or from individually accepted results while running.
-pub(crate) fn counts(report: &eml_app::RunReport) -> Vec<CountView> {
-    let Some(start) = report.start() else {
-        return Vec::new();
+pub(super) fn category(item: &wire::ItemRecord) -> crate::state::Category {
+    crate::state::category(
+        meaning(item).map(|value| (value.kind, value.severity)),
+        item.error
+            .value()
+            .and_then(|error| eml_core::ErrorCode::from_wire_name(&error.code)),
+    )
+}
+pub(super) fn report_facts(
+    report: &eml_app::RunReport,
+) -> (
+    Vec<crate::state::Category>,
+    crate::state::Tally,
+    Option<u32>,
+) {
+    let total = report.start().map(|start| start.total);
+    let categories: Vec<_> = report.items().iter().map(category).collect();
+    let mut tally = crate::state::Tally {
+        all: total.unwrap_or(categories.len() as u32),
+        ..Default::default()
     };
-    let mut values = [0u32; 4];
-    for item in report.items() {
-        values[match item.status {
-            wire::ItemStatus::Created => 0,
-            wire::ItemStatus::UpToDate => 1,
-            wire::ItemStatus::Planned => 2,
-            wire::ItemStatus::Failed => 3,
-        }] += 1;
+    for category in &categories {
+        tally.observe(*category);
     }
-    let kinds = [
-        CountKind::Created,
-        CountKind::UpToDate,
-        CountKind::Planned,
-        CountKind::Failed,
-    ];
-    let mut counts: Vec<_> = kinds
-        .into_iter()
-        .zip(values)
-        .filter(|(kind, value)| *value > 0 || matches!(kind, CountKind::Failed))
-        .map(|(kind, value)| count(kind, value))
-        .collect();
-    counts.insert(0, count(CountKind::KnownItems, start.total));
-    if let Some(summary) = report.summary() {
-        let kind = CountKind::NotProcessed;
-        let value = summary.counts.not_processed;
-        if value > 0 {
-            counts.push(count(kind, value));
-        }
-    }
-    counts
+    // Only an accepted summary establishes that missing messages were not processed.
+    // Missing results after a forced stop or transport failure remain unknown.
+    tally.not_processed += report
+        .summary()
+        .map_or(0, |summary| summary.counts.not_processed);
+    (categories, tally, total)
 }
 pub(crate) fn count(kind: CountKind, value: u32) -> CountView {
     CountView {

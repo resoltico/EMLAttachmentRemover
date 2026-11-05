@@ -249,6 +249,31 @@ pub fn install_native(
         }
     });
     let weak = Rc::downgrade(controller);
+    ui.on_reveal_original(move || {
+        if let Some(controller) = weak.upgrade()
+            && let Some(path) = controller.selected_original()
+        {
+            controller.open_advisory(
+                crate::OpenTarget::Main,
+                "Could not show the original. Check that it still exists, then try again.",
+                move || opener::reveal(path).map_err(|error| error.to_string()),
+            );
+        }
+    });
+    let weak = Rc::downgrade(controller);
+    ui.on_reveal_output(move |index| {
+        if let Some(controller) = weak.upgrade()
+            && let Ok(index) = usize::try_from(index)
+            && let Some(path) = controller.output_roots().get(index).cloned()
+        {
+            controller.open_advisory(
+                crate::OpenTarget::Main,
+                "Could not open the output folder. Check that it still exists, then try again.",
+                move || opener::open(path).map_err(|error| error.to_string()),
+            );
+        }
+    });
+    let weak = Rc::downgrade(controller);
     ui.on_reveal_report(move || {
         if let Some(controller) = weak.upgrade()
             && let Some(path) = controller.saved_report_path()

@@ -7,8 +7,8 @@ import { DraftPane } from "draft.slint";
 // SPDX-License-Identifier: MPL-2.0
 import { TextEdit, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette, RadioGroup, CheckBox } from "std-widgets.slint";
 import { ActionButton, TextButton, UiMetrics, Label, FileName, PathLabel } from "controls.slint";
-import { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, DetailView, RemovalView, Tone } from "models.slint";
-export { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, DetailView, RemovalView, Tone } from "models.slint";
+import { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, DetailView, RemovalView, Tone, ChipView } from "models.slint";
+export { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, DetailView, RemovalView, Tone, ChipView } from "models.slint";
 export { Palette } from "std-widgets.slint";
 export { Theme } from "theme.slint";
 export { AboutWindow, LicenseWindow } from "about.slint";
@@ -42,7 +42,7 @@ export component MainWindow inherits Window {
     in property <[RunView]> runs;
     in property <[RunView]> waiting;
     in property <[ItemView]> items;
-    in property <[CountView]> counts;
+    in property <[ChipView]> chips;
     in property <[DetailView]> report-diagnostics;
     in property <string> settings-warning;
     in property <bool> can-copy-source;
@@ -67,11 +67,9 @@ export component MainWindow inherits Window {
     private property <brush> attention-color: UiMetrics.attention;
     in property <int> selected-item;
     in property <int> selected-visible-row: -1;
-    in-out property <bool> attention-only;
     in-out property <bool> keyboard-navigation;
     in property <bool> destination-beside;
-    private property <length> message-row-height: 34px;
-    callback filter-attention(bool); callback navigate-message(int);
+    callback navigate-message(int,int);
     in-out property <length> messages-scroll-y;
 
 
@@ -122,6 +120,33 @@ export component MainWindow inherits Window {
     in property <[string]> recent-destinations;
     callback recent-destination(int); callback close-run(int);
     callback confirm-replace-draft(); callback create-from-check();
+    in property <string> run-title;
+    in property <string> run-notice;
+    in property <bool> can-stop;
+    in property <bool> can-force;
+    in property <bool> can-reveal-output;
+    in property <string> reveal-output-label;
+    in property <[string]> output-roots;
+    in property <int> extra-output-roots;
+    in property <string> progress-label;
+    in property <string> estimate;
+    in property <int> filter;
+    in property <int> sort-column;
+    in property <bool> sort-descending;
+    in property <bool> can-reveal-original;
+    callback reveal-output(int);
+    callback filter-results(int);
+    callback sort-results(int);
+    callback type-select(string);
+    callback reveal-original();
+    in property <bool> waiting-view;
+    in property <string> waiting-title;
+    in property <string> waiting-context;
+    in property <int> selected-waiting;
+    callback select-waiting(int);
+    callback select-session(string); callback close-session(string);
+    in property <int> unseen-count;
+    in property <string> waiting-token;
     MenuBar {
         Menu { title: "File";
             MenuItem { title: "New Request"; shortcut: @keys(Control + N); enabled: root.can-edit; activated => { root.new-request(); } }
@@ -131,27 +156,31 @@ export component MainWindow inherits Window {
         if !root.native-about: Menu { title: "Help"; MenuItem { title: "About"; activated => { root.about(); } } }
     }
     HorizontalBox { padding: 0px; spacing: 0px;
-        if root.session-started: Sidebar {
-            runs: root.runs; waiting: root.waiting; selected-run: root.selected-run;
-            reviewing: root.reviewing; can-edit: root.can-edit;
+        sidebar := Sidebar {
+            visible: root.session-started; width: root.session-started ? 230px : 0px;
+            runs: root.runs; selected-index: root.selected-run; unseen-count: root.unseen-count;
+            can-edit: root.can-edit;
             new-request() => { root.new-request(); }
-            select-run(index) => { root.select-run(index); }
-            remove-waiting(index) => { root.remove-waiting(index); }
-            close-run(index) => { root.close-run(index); }
+            select-session(token) => { root.select-session(token); }
+            close-session(token) => { root.close-session(token); }
+            switch-pane() => { main-scope.focus(); }
         }
-        VerticalBox { padding: Theme.pad; spacing: 12px;
-            if root.worker-running || root.export-running: HorizontalBox {
-                padding: 0px; spacing: 8px; vertical-stretch: 0;
-                Label { text: root.activity-label; wrap: word-wrap; horizontal-stretch: 1; accessible-label: "Active task: " + root.activity-label; }
-                if root.worker-running: TextButton { text: "Force stop…"; danger: true; enabled: !root.closing; clicked => { root.force-stop(); } }
-                if root.worker-running: ActionButton { text: root.stop-requested ? "Stopping…" : "Stop"; enabled: !root.stop-requested && !root.closing; clicked => { root.stop(); } }
+
+        main-scope := FocusScope {
+            horizontal-stretch: 1; vertical-stretch: 1; min-width: 0px; focus-on-tab-navigation: false;
+            accessible-role: groupbox; accessible-label: "Main workspace";
+            key-pressed(event) => {
+                if root.session-started && root.can-edit && event.text == Key.Tab && (UiMetrics.macos ? event.modifiers.meta : event.modifiers.control) { sidebar.focus-navigation(); return accept; }
+                return reject;
             }
+        VerticalBox { width: parent.width; height: parent.height; padding: Theme.pad; spacing: 12px;
+
             if root.reviewing && root.settings-warning != "": HorizontalBox {
                 padding: 8px; spacing: 8px; vertical-stretch: 0;
                 Label { text: "Settings unavailable — changes won't be saved"; color: Theme.warn; wrap: word-wrap; accessible-live-region: polite; }
                 TextButton { text: "Details…"; accessible-label: "Details… — destination settings"; clicked => { settings-popup.show(); } }
             }
-            if root.operation-feedback != "": VerticalBox {
+            if (root.reviewing || root.waiting-view) && root.operation-feedback != "": VerticalBox {
                 padding: 0px; spacing: 4px; vertical-stretch: 0;
                 Label { text: (root.operation-label != "" && root.operation-label != "Operation status" ? root.operation-label + ": " : "") + root.operation-feedback; wrap: word-wrap; color: Theme.warn; accessible-live-region: polite; }
                 if root.operation-details != "": TextButton { text: root.operation-details-expanded ? "Hide details" : "Details…"; clicked => { root.operation-details-expanded = !root.operation-details-expanded; } }
@@ -170,69 +199,93 @@ export component MainWindow inherits Window {
                 remove-selection(index) => { root.remove-selection(index); }
                 start-selection() => { root.start-selection(); }
             }
-if root.has-reports && !root.reviewing: RunPane {
-        attention-color : root.attention-color;
-        attention-only <=> root.attention-only;
-        byte-counts : root.byte-counts;
-        can-copy-destination : root.can-copy-destination;
-        can-copy-source : root.can-copy-source;
-        can-create : root.can-create;
-        can-dismiss : root.can-dismiss;
-        can-export : root.can-export;
-        can-reveal : root.can-reveal;
-        can-reveal-report : root.can-reveal-report;
-        can-review : root.can-review;
-        closing : root.closing;
-        copy-destination-path() => { root.copy-destination-path(); }
-        copy-source-path() => { root.copy-source-path(); }
-        counts : root.counts;
-        details : root.details;
-        details-expanded <=> root.details-expanded;
-        details-scroll-y <=> root.details-scroll-y;
-        dismiss() => { root.dismiss(); }
-        export-report() => { root.export-report(); }
-        field-heading : root.field-heading;
-        filter-attention(arg0) => { root.filter-attention(arg0); }
-        has-item : root.has-item;
-        item-attention : root.item-attention;
-        item-destination : root.item-destination;
-        item-destination-path : root.item-destination-path;
-        item-source-path : root.item-source-path;
-        items : root.items;
-        keyboard-navigation <=> root.keyboard-navigation;
-        message-row-height : root.message-row-height;
-        messages-scroll-y <=> root.messages-scroll-y;
-        native-open-pending : root.native-open-pending;
-        navigate-message(arg0) => { root.navigate-message(arg0); }
-        outcome-width : root.outcome-width;
-        removal-heading : root.removal-heading;
-        removals : root.removals;
-        report-details : root.report-details;
-        report-details-expanded <=> root.report-details-expanded;
-        report-diagnostics : root.report-diagnostics;
-        report-load-notice : root.report-load-notice;
-        report-loading : root.report-loading;
-        report-running : root.report-running;
-        reveal() => { root.reveal(); }
-        reveal-report() => { root.reveal-report(); }
-        review-label : root.review-label;
-        review-request() => { root.review-request(); }
-        run-context : root.run-context;
+if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
+                Label { text: root.waiting-title; font-size: 22px; font-weight: 700; accessible-live-region: polite; }
+                Label { text: root.waiting-context; color: Theme.muted; wrap: word-wrap; }
+                Label { text: root.queue-notice != "" ? root.queue-notice : root.starts-after; wrap: word-wrap; color: Theme.muted; }
+                TextButton { text: "Remove from Queue"; clicked => { root.close-session(root.waiting-token); } }
+                Rectangle { vertical-stretch: 1; }
+            }
+            if root.has-reports && !root.reviewing && !root.waiting-view: RunPane {
         run-label : root.run-label;
         run-status : root.run-status;
-        saved-report-path : root.saved-report-path;
-        select-item(arg0) => { root.select-item(arg0); }
-        selected-item : root.selected-item;
-        selected-visible-row: root.selected-visible-row;
-        selected-removals : root.selected-removals;
-        create-from-check() => { root.create-from-check(); }
-        stripped : root.stripped;
-        technical-details-label : root.technical-details-label;
-        ui-size : root.ui-size;
-        work-completed : root.work-completed;
+        run-title : root.run-title;
+        run-context : root.run-context;
+        run-notice : root.run-notice;
+        operation-feedback : root.operation-feedback;
+        operation-label : root.operation-label;
+        operation-details : root.operation-details;
+        report-details : root.report-details;
+        report-diagnostics : root.report-diagnostics;
+        report-running : root.report-running;
+        report-loading : root.report-loading;
+        report-load-notice : root.report-load-notice;
+        closing : root.closing;
+        can-stop : root.can-stop;
+        can-force : root.can-force;
+        stop-requested : root.stop-requested;
+        can-export : root.can-export;
+        can-dismiss : root.can-dismiss;
+        can-review : root.can-review;
+        can-create : root.can-create;
+        can-reveal-output : root.can-reveal-output;
+        reveal-output-label : root.reveal-output-label;
+        output-roots : root.output-roots;
+        extra-output-roots : root.extra-output-roots;
+        review-label : root.review-label;
         work-total : root.work-total;
-    }
+        work-completed : root.work-completed;
+        progress-label : root.progress-label;
+        estimate : root.estimate;
+        chips : root.chips;
+        items : root.items;
+        filter : root.filter;
+        sort-column : root.sort-column;
+        sort-descending : root.sort-descending;
+        selected-item : root.selected-item;
+        selected-visible-row : root.selected-visible-row;
+        item-source-path : root.item-source-path;
+        item-destination-path : root.item-destination-path;
+        item-status : root.item-status;
+        item-attention : root.item-attention;
+        has-item : root.has-item;
+        can-reveal : root.can-reveal;
+        can-reveal-original : root.can-reveal-original;
+        can-copy-source : root.can-copy-source;
+        can-copy-destination : root.can-copy-destination;
+        native-open-pending : root.native-open-pending;
+        details : root.details;
+        byte-counts : root.byte-counts;
+        removals : root.removals;
+        stripped : root.stripped;
+        removal-heading : root.removal-heading;
+        field-heading : root.field-heading;
+        ui-size : root.ui-size;
+        window-width: root.width;
+        details-expanded <=> root.details-expanded;
+        details-scroll-y <=> root.details-scroll-y;
+        messages-scroll-y <=> root.messages-scroll-y;
+        stop() => { root.stop(); }
+        force-stop() => { root.force-stop(); }
+        review-request() => { root.review-request(); }
+        create-from-check() => { root.create-from-check(); }
+        export-report() => { root.export-report(); }
+        dismiss() => { root.dismiss(); }
+        reveal-output(arg0) => { root.reveal-output(arg0); }
+        filter-results(arg0) => { root.filter-results(arg0); }
+        sort-results(arg0) => { root.sort-results(arg0); }
+        select-item(arg0) => { root.select-item(arg0); }
+        navigate-message(arg0, arg1) => { root.navigate-message(arg0, arg1); }
+        type-select(arg0) => { root.type-select(arg0); }
+        reveal() => { root.reveal(); }
+        reveal-original() => { root.reveal-original(); }
+        copy-source-path() => { root.copy-source-path(); }
+        copy-destination-path() => { root.copy-destination-path(); }
+            }
         }
+            Rectangle { width: parent.width; height: parent.height; background: transparent; border-width: main-scope.has-focus ? 1px : 0px; border-color: Theme.accent; }
+        }
+
     }
     settings-popup := PopupWindow {
         width: min(720px, root.width - UiMetrics.gutter * 2); height: min(360px, root.height - 80px);

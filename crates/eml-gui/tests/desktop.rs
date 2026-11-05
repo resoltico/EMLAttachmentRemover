@@ -1,7 +1,7 @@
 //! Desktop contracts through the real Slint testing backend and stub CLI processes.
 use eml_core::{
     RemovalReason, RunMode,
-    vocabulary::{self, CountKind, RunStatus},
+    vocabulary::{self, RunStatus},
 };
 use eml_gui::{
     Confirmation, DesktopController, MainWindow, ingress::launch_paths, preferences::Preferences,
@@ -27,9 +27,21 @@ impl SubmitSelection for DesktopController {
         self.start_selection()
     }
 }
-fn force_prompt(ui: &MainWindow) {
-    click(ui, "Force stop…");
+fn force_prompt(c: &DesktopController) {
+    c.stop();
+    mock_elapsed_time(Duration::from_secs(5));
+    c.tick();
+    click(&c.window(), "Force Stop…");
 }
+fn toggle_attention(ui: &MainWindow) {
+    ui.invoke_filter_results(if ui.get_filter() == 4 { 0 } else { 4 });
+    mock_elapsed_time(Duration::from_millis(1));
+}
+fn report_action(ui: &MainWindow, label: &str) {
+    click(ui, "More actions");
+    click(ui, label);
+}
+
 fn fixture(name: &str) -> String {
     fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -133,7 +145,6 @@ fn s3_window_constraints_allow_resizing_in_every_view() {
 }
 
 #[test]
-#[ignore = "WP0 repro"]
 fn s4_interrupted_message_is_not_an_attention_failure() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
@@ -154,173 +165,66 @@ fn s4_interrupted_message_is_not_an_attention_failure() {
         !ui.get_items().row_data(0).unwrap().attention,
         "User Stop is not an attention failure"
     );
-    let failed = ui
-        .get_counts()
-        .iter()
-        .find(|count| count.label == CountKind::Failed.label())
-        .unwrap();
-    assert_eq!(failed.value, 0);
+    assert!(!ui.get_chips().iter().any(|chip| chip.filter == 4));
+    assert_eq!(
+        ui.get_chips()
+            .iter()
+            .find(|chip| chip.filter == 5)
+            .unwrap()
+            .value,
+        1
+    );
+    assert!(ui.get_run_title().contains("Stopped — 0 of 1 processed"));
 }
 
 #[test]
-#[ignore = "WP0 repro"]
-fn s18_result_rows_do_not_paint_over_inspector() {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-    let capture = std::env::var_os("F3_CAPTURE").map(PathBuf::from);
-    if capture.is_some() {
-        slint::platform::set_platform(Box::new(i_slint_backend_testing::TestingBackend::new(
-            i_slint_backend_testing::TestingBackendOptions {
-                mock_time: true,
-                renderer_name: Some("software".into()),
-                ..Default::default()
-            },
-        )))
-        .unwrap();
-    } else {
-        init_no_event_loop();
-    }
+fn s18_results_and_inspector_never_intersect_at_supported_sizes() {
+    init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let created: Vec<serde_json::Value> = fixture("created")
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    let failed: Vec<serde_json::Value> = fixture("prepublication-failure")
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    let mut start = created[0].clone();
-    start["total"] = 60.into();
-    let mut records = vec![start];
-    for index in 0..60 {
-        let failure = match index {
-            5 => Some("PROTECTED"),
-            8 => Some("NO_BODY"),
-            13 => Some("UNSUPPORTED_MIME"),
-            _ => None,
-        };
-        let mut item = if failure.is_some() {
-            failed[1].clone()
-        } else {
-            created[1].clone()
-        };
-        item["index"] = index.into();
-        if let Some(code) = failure {
-            item["error"]["code"] = code.into();
-        }
-        for (field, name) in [
-            ("source", format!("{index:02}-message.eml")),
-            (
-                "destination",
-                format!("{index:02}-message.no-attachments.eml"),
-            ),
-        ] {
-            let path = root
-                .path()
-                .join("long-folder-context-".repeat(8))
-                .join(name);
-            let value = path.to_str().unwrap();
-            item[field] = serde_json::json!({"display": value, "native": {"encoding": "unix-bytes", "base64": STANDARD.encode(value)}});
-        }
-        records.push(item);
-    }
-    let mut summary = created[2].clone();
-    summary["counts"]["created"] = 57.into();
-    summary["counts"]["failed"] = 3.into();
-    summary["exit_code"] = 1.into();
-    records.push(summary);
-    let stream = records
-        .iter()
-        .map(|record| format!("{record}\n"))
-        .collect::<String>();
-    let stream = std::env::var_os("F3_REPORT")
-        .map(|path| fs::read_to_string(path).unwrap())
-        .unwrap_or(stream);
-    let c = controller(
-        root.path(),
-        script(
-            root.path(),
-            &("cat >/dev/null\n".to_owned() + &print(&stream) + "exit 1\n"),
-        ),
-    );
-    c.submit(vec![root.path().join("inbox")]).unwrap();
-    pump(&c, || !c.is_busy());
+    let (c, _) = mixed_check_after_empty_active_layout(root.path());
     let ui = c.window();
-    ui.invoke_filter_attention(true);
-    assert_eq!(ui.get_items().row_count(), 3);
+    ui.invoke_filter_results(0);
     for (width, height) in [
-        (780.0, 600.0),
-        (780.0, 712.0),
+        (780.0, 520.0),
         (880.0, 600.0),
         (1100.0, 700.0),
+        (1300.0, 800.0),
     ] {
         ui.window().set_size(slint::LogicalSize::new(width, height));
         for expanded in [false, true] {
             ui.set_details_expanded(expanded);
             mock_elapsed_time(Duration::from_millis(5));
-            if let Some(directory) = &capture {
-                use std::io::Write;
-                let pixels = ui.window().take_snapshot().unwrap();
-                fs::create_dir_all(directory).unwrap();
-                let mut file =
-                    fs::File::create(directory.join(format!("{width}-{height}-{expanded}.ppm")))
-                        .unwrap();
-                writeln!(file, "P6\n{} {}\n255", pixels.width(), pixels.height()).unwrap();
-                for pixel in pixels.as_slice() {
-                    file.write_all(&[pixel.r, pixel.g, pixel.b]).unwrap();
-                }
-            }
-            let heading = ElementHandle::find_by_accessible_label(&ui, "Selected message")
+            let table = ElementHandle::find_by_accessible_label(&ui, "Message results")
                 .next()
                 .unwrap();
-            let viewport = ElementHandle::find_by_accessible_label(&ui, "Message results")
+            let inspector = ElementHandle::find_by_accessible_label(&ui, "Message inspector")
                 .next()
                 .unwrap();
-            let top = viewport.absolute_position().y;
-            let bottom = top + viewport.size().height;
+            let (t, i) = (table.absolute_position(), inspector.absolute_position());
             assert!(
-                bottom <= heading.absolute_position().y,
-                "The list viewport must end before the inspector heading"
+                t.x + table.size().width <= i.x || t.y + table.size().height <= i.y,
+                "{width}x{height}, expanded={expanded}: table {t:?} {:?}, inspector {i:?} {:?}",
+                table.size(),
+                inspector.size()
             );
-            let mut checked = 0;
-            for row in [
-                "Protected content",
-                "No supported body",
-                "Unsupported content",
-            ]
-            .into_iter()
-            .flat_map(|label| ElementHandle::find_by_accessible_label(&ui, label))
-            {
-                let y = row.absolute_position().y;
-                if y < bottom && y + row.size().height > top {
-                    checked += 1;
-                    // Slint 1.18.1's Flickable clips its children. Raw text-cell
-                    // bounds may extend outside the viewport without painting
-                    // there; that alone is not evidence of the F3 defect.
-                    assert!(
-                        (y + row.size().height).min(bottom) <= heading.absolute_position().y,
-                        "width={width}, expanded={expanded}: outcome {y}+{} overlaps inspector at {}",
-                        row.size().height,
-                        heading.absolute_position().y
-                    );
-                }
+            if width < 900.0 {
+                assert!(!has_label(&ui, "Folder"));
             }
-            assert!(checked > 0, "Must check visible outcome cells");
+            if width >= 1100.0 {
+                assert!(
+                    i.x >= t.x + table.size().width,
+                    "Wide inspector must be beside the table"
+                );
+            } else {
+                assert!(
+                    i.y >= t.y + table.size().height,
+                    "Narrow inspector must move below the table"
+                );
+            }
         }
     }
-    // The pack's literal F3 overlap was not reproduced after clipping was
-    // accounted for. Independently guard S18's required wide split layout;
-    // today's vertical stack fails this without inventing overlap evidence.
-    let heading = ElementHandle::find_by_accessible_label(&ui, "Selected message")
-        .next()
-        .unwrap();
-    let table = ElementHandle::find_by_accessible_label(&ui, "Message results")
-        .next()
-        .unwrap();
-    assert!(
-        heading.absolute_position().x >= table.absolute_position().x + table.size().width,
-        "S18: a wide result must put the inspector beside the table"
-    );
 }
+
 fn pump(controller: &DesktopController, predicate: impl Fn() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
@@ -423,7 +327,7 @@ fn refused_check_run_again_restores_its_captured_inputs_mode_and_destination() {
     c.set_destination(Some(destination.clone()));
     assert_eq!(
         c.window().get_destination_label(),
-        destination.to_str().unwrap()
+        "~/corrected-destination"
     );
     assert!(!c.is_busy(), "Review must not automatically launch work");
 }
@@ -468,8 +372,10 @@ fn result_caption(ui: &MainWindow, index: usize) -> String {
     let run = ui.get_runs().row_data(index).unwrap();
     format!("{} · {}", run.label, run.mode)
 }
-fn choose_result(ui: &MainWindow, index: usize) {
-    click_role(ui, &result_caption(ui, index), AccessibleRole::ListItem);
+fn choose_result(c: &DesktopController, index: usize) {
+    let ui = c.window();
+    click_role(&ui, &result_caption(&ui, index), AccessibleRole::ListItem);
+    pump(c, || !ui.get_report_loading());
 }
 fn has_label(ui: &MainWindow, label: &str) -> bool {
     ElementHandle::find_by_accessible_label(ui, label)
@@ -477,12 +383,7 @@ fn has_label(ui: &MainWindow, label: &str) -> bool {
         .is_some()
 }
 fn wait_started(controller: &DesktopController) {
-    pump(controller, || {
-        has_label(
-            &controller.window(),
-            &vocabulary::count_label(CountKind::KnownItems, 1),
-        )
-    });
+    pump(controller, || controller.window().get_work_total() == 1);
 }
 
 #[test]
@@ -621,10 +522,7 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
             ui.get_item_status().as_str(),
             vocabulary::MeaningKind::Created.label()
         );
-        assert!(has_label(
-            &ui,
-            &vocabulary::count_label(CountKind::Created, 1)
-        ));
+        assert!(has_label(&ui, "Created 1"));
         click(&ui, "Technical details");
         let scroller = ElementHandle::find_by_accessible_label(&ui, "Message details")
             .next()
@@ -666,14 +564,11 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
     );
     assert_eq!(controller.window().get_items().row_count(), 0);
     assert_eq!(
-        controller.window().get_counts().row_count(),
+        controller.window().get_chips().row_count(),
         0,
         "No trusted start record must not be presented as zero work failures"
     );
-    assert!(!has_label(
-        &controller.window(),
-        &vocabulary::count_label(CountKind::Created, 1)
-    ));
+    assert!(!has_label(&controller.window(), "Created 1"));
 }
 #[test]
 fn stop_and_confirmed_force_stop_show_settled_states_and_cancel_keeps_work_running() {
@@ -687,13 +582,13 @@ fn stop_and_confirmed_force_stop_show_settled_states_and_cancel_keeps_work_runni
         wait_started(&controller);
         let ui = controller.window();
         if force {
-            force_prompt(&ui);
+            force_prompt(&controller);
             assert!((ui.get_confirmation() == Confirmation::ForceStop));
             assert!(controller.is_busy());
             click(&ui, "Cancel force stop");
             assert!(!(ui.get_confirmation() == Confirmation::ForceStop));
             assert!(controller.is_busy());
-            force_prompt(&ui);
+            force_prompt(&controller);
             click(&ui, "Force stop now");
         } else {
             click(&ui, "Stop");
@@ -708,12 +603,9 @@ fn stop_and_confirmed_force_stop_show_settled_states_and_cancel_keeps_work_runni
             }
         );
         if force {
-            assert!(!has_label(
-                &ui,
-                &vocabulary::count_label(CountKind::NotProcessed, 1)
-            ));
+            assert!(!has_label(&ui, "Not processed 1"));
             assert!(
-                has_label(&ui, "No message results were reported."),
+                has_label(&ui, "No per-message results are available in this view."),
                 "A settled report must not promise future results"
             );
         }
@@ -943,6 +835,8 @@ fn run_failure_without_items_explains_incomplete_discovery_without_failed_items(
     c.submit(vec![root.path().join("overflow")]).unwrap();
     pump(&c, || !c.is_busy());
     let ui = c.window();
+    assert!(!ui.get_run_notice().is_empty());
+    click(&ui, "Details");
     assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
     assert!(has_label(&ui, "Collected work exceeds the item bound"));
     assert!(has_label(
@@ -950,14 +844,8 @@ fn run_failure_without_items_explains_incomplete_discovery_without_failed_items(
         vocabulary::recovery_hint("INPUT_LIMIT_EXCEEDED").unwrap()
     ));
     assert!(has_label(&ui, vocabulary::COLLECTION_INCOMPLETE_NOTICE));
-    assert!(has_label(
-        &ui,
-        &vocabulary::count_label(CountKind::Failed, 0)
-    ));
-    assert!(has_label(
-        &ui,
-        &vocabulary::count_label(CountKind::NotProcessed, 4096)
-    ));
+    assert!(!ui.get_chips().iter().any(|chip| chip.filter == 4));
+    assert!(has_label(&ui, "Not processed 4096"));
     assert_eq!(ui.get_items().row_count(), 0);
     // A complete successful report must clear the run-error and discovery notices.
     completed(root.path(), "created");
@@ -966,10 +854,7 @@ fn run_failure_without_items_explains_incomplete_discovery_without_failed_items(
     c.submit(vec![root.path().join("ordinary.eml")]).unwrap();
     pump(&c, || !c.is_busy());
     assert_eq!(ui.get_report_diagnostics().row_count(), 0);
-    assert!(has_label(
-        &ui,
-        &vocabulary::count_label(CountKind::Created, 1)
-    ));
+    assert!(has_label(&ui, "Created 1"));
 }
 
 #[test]
@@ -988,10 +873,14 @@ fn report_warnings_survive_switching_and_export_feedback() {
     let ui = c.window();
     c.submit(vec![root.path().join("first.eml")]).unwrap();
     wait_started(&c);
-    force_prompt(&ui);
+    force_prompt(&c);
     click(&ui, "Force stop now");
     pump(&c, || !c.is_busy());
-    assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
+    assert!(
+        ui.get_report_diagnostics()
+            .iter()
+            .any(|line| line.text == vocabulary::FORCE_STOP_NOTICE)
+    );
     assert!(ui.get_report_details().contains("earlier CLI diagnostic"));
     c.start_export(root.path().join("first.jsonl"));
     pump(&c, || !c.is_busy());
@@ -1000,7 +889,11 @@ fn report_warnings_survive_switching_and_export_feedback() {
             .contains(vocabulary::REPORT_SAVED)
     );
     assert!(ui.get_saved_report_path().full.contains("first.jsonl"));
-    assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
+    assert!(
+        ui.get_report_diagnostics()
+            .iter()
+            .any(|line| line.text == vocabulary::FORCE_STOP_NOTICE)
+    );
     c.start_export(root.path().join("first.jsonl"));
     pump(&c, || !c.is_busy());
     assert_eq!(
@@ -1016,11 +909,15 @@ fn report_warnings_survive_switching_and_export_feedback() {
     c.submit(vec![root.path().join("overflow")]).unwrap();
     pump(&c, || !c.is_busy());
     assert_eq!(ui.get_operation_feedback().as_str(), "");
-    assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
+    assert!(
+        ui.get_report_diagnostics()
+            .iter()
+            .any(|line| line.text == "Run error: INPUT_LIMIT_EXCEEDED")
+    );
     assert!(!has_label(&ui, vocabulary::NO_REPLACEMENT));
     assert!(!ui.get_report_details().contains("earlier CLI diagnostic"));
     assert_sidebar(&ui);
-    choose_result(&ui, 0);
+    choose_result(&c, 0);
     pump(&c, || !ui.get_report_loading());
     assert_eq!(
         ui.get_run_label(),
@@ -1028,13 +925,29 @@ fn report_warnings_survive_switching_and_export_feedback() {
         "Task drawer must activate the requested result"
     );
     assert!(ui.get_report_details().contains("earlier CLI diagnostic"));
-    assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
-    assert!(!has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
+    assert!(
+        ui.get_report_diagnostics()
+            .iter()
+            .any(|line| line.text == vocabulary::FORCE_STOP_NOTICE)
+    );
+    assert!(
+        !ui.get_report_diagnostics()
+            .iter()
+            .any(|line| line.text == "Run error: INPUT_LIMIT_EXCEEDED")
+    );
     assert_sidebar(&ui);
-    choose_result(&ui, 1);
+    choose_result(&c, 1);
     pump(&c, || !ui.get_report_loading());
-    assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
-    assert!(!has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
+    assert!(
+        ui.get_report_diagnostics()
+            .iter()
+            .any(|line| line.text == "Run error: INPUT_LIMIT_EXCEEDED")
+    );
+    assert!(
+        !ui.get_report_diagnostics()
+            .iter()
+            .any(|line| line.text == vocabulary::FORCE_STOP_NOTICE)
+    );
 }
 
 #[test]
@@ -1088,7 +1001,7 @@ fn unavailable_settings_launch_with_preserved_objects_and_session_only_destinati
         c.set_destination(Some(destination.clone()));
         assert_eq!(
             c.window().get_destination_label().as_str(),
-            destination.to_str().unwrap()
+            "~/session-copies"
         );
         assert_eq!(c.window().get_settings_warning(), warning);
         let ui = c.window();
@@ -1098,7 +1011,8 @@ fn unavailable_settings_launch_with_preserved_objects_and_session_only_destinati
             pump(&c, || !c.is_busy());
         }
         mock_elapsed_time(Duration::from_millis(5));
-        for label in ["Close result", "Save report…"] {
+        click(&ui, "More actions");
+        for label in ["Close Result", "Save Report…"] {
             let element = ElementHandle::find_by_accessible_label(&ui, label)
                 .next()
                 .unwrap();
@@ -1182,11 +1096,23 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
         assert!(a.path.suffix.ends_with("A.eml"));
         assert!(b.path.suffix.ends_with("B.eml"));
         assert_ne!(a.path.suffix, b.path.suffix);
-        let prefix = ElementHandle::find_by_accessible_label(&ui, a.path.prefix.as_str())
-            .next()
+        let row = ElementHandle::find_by_accessible_label(&ui, a.path.full.as_str())
+            .find(|element| element.accessible_role() == Some(AccessibleRole::ListItem))
             .unwrap();
-        let suffix = ElementHandle::find_by_accessible_label(&ui, a.path.suffix.as_str())
-            .next()
+        let filename = row
+            .query_descendants()
+            .match_type_name("FileName")
+            .find_first()
+            .unwrap();
+        let prefix = filename
+            .query_descendants()
+            .match_id("FileName::prefix")
+            .find_first()
+            .unwrap();
+        let suffix = filename
+            .query_descendants()
+            .match_id("FileName::suffix-area")
+            .find_first()
             .unwrap();
         assert!(
             prefix.absolute_position().x + prefix.size().width
@@ -1405,121 +1331,31 @@ fn full_queue_retains_review_and_waiting_snapshots_do_not_follow_new_settings() 
 }
 
 #[test]
-fn task_actions_result_actions_and_inspector_have_distinct_visible_scopes() {
+fn run_actions_and_the_inspector_have_distinct_workspaces() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let mut records: Vec<serde_json::Value> = fixture("created")
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    for (field, name) in [
-        ("source", "source.eml"),
-        ("destination", "source.no-attachments.eml"),
-    ] {
-        let path = root.path().join(name);
-        records[1][field] = serde_json::json!({
-            "display": path.to_str().unwrap(),
-            "native": eml_protocol::NativePathValue::new(&path),
-        });
-    }
-    let bytes = records.iter().map(|r| format!("{r}\n")).collect::<String>();
-    let cli = script(
+    let source = root.path().join("source.eml");
+    let stream = created_stream(std::slice::from_ref(&source));
+    let c = controller(
         root.path(),
-        &("cat >/dev/null\n".to_owned() + &print(&bytes)),
+        script(
+            root.path(),
+            &("cat >/dev/null\n".to_owned() + &print(&stream)),
+        ),
     );
-    let c = controller(root.path(), cli);
-    c.submit(vec![root.path().join("source.eml")]).unwrap();
+    c.submit(vec![source]).unwrap();
     pump(&c, || !c.is_busy());
     let ui = c.window();
-    for (width, font) in [(780.0, 14.0), (1060.0, 14.0), (780.0, 20.0)] {
-        ui.set_ui_size(font);
-        ui.window().set_size(slint::LogicalSize::new(width, 600.0));
-        mock_elapsed_time(Duration::from_millis(5));
-        let inside = |name: &str| {
-            let element = ElementHandle::find_by_accessible_label(&ui, name)
-                .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
-                .unwrap_or_else(|| panic!("Missing scoped action: {name}"));
-            let p = element.absolute_position();
-            let z = element.size();
-            assert!(z.height >= 32.0 && z.width > 0.0, "{name}: {z:?}");
-            assert!(
-                p.x >= 0.0 && p.y >= 0.0 && p.x + z.width <= width + 0.1 && p.y + z.height <= 600.1,
-                "{width}/{font}: {name}: {p:?} {z:?}"
-            );
-            element
-        };
-        let save = inside("Save report…");
-        let review = inside(ui.get_review_label().as_str());
-        let close = inside("Close result");
-        assert!(
-            ui.get_can_reveal(),
-            "Qualified absolute fixture must offer reveal; path {:?}, hasitem{},status{},loading{}",
-            c.selected_copy(),
-            ui.get_has_item(),
-            ui.get_item_status(),
-            ui.get_report_loading()
-        );
-        let reveal = inside("Show copy");
-        let list = ElementHandle::find_by_accessible_label(&ui, "Message results")
-            .next()
-            .unwrap();
-        assert!(
-            save.absolute_position().y + save.size().height <= list.absolute_position().y,
-            "Report actions belong before the results"
-        );
-        let centers =
-            [&save, &review, &close].map(|e| e.absolute_position().y + e.size().height / 2.0);
-        assert!(
-            centers.iter().all(|y| (y - centers[0]).abs() < 1.0),
-            "{centers:?}"
-        );
-        assert!(
-            reveal.absolute_position().y >= list.absolute_position().y + list.size().height - 0.1,
-            "Reveal belongs to the inspected message, not the report action row"
-        );
-        assert!(
-            !has_label(&ui, "Stop"),
-            "Settled results do not offer a worker stop"
-        );
-    }
-    controlled(root.path(), false);
-    c.submit(vec![root.path().join("running.eml")]).unwrap();
-    wait_started(&c);
-    ui.invoke_select_run(0);
-    mock_elapsed_time(Duration::from_millis(5));
-    let save = ElementHandle::find_by_accessible_label(&ui, "Save report…")
-        .next()
-        .unwrap();
-    for name in ["Stop", "Force stop…"] {
-        let action = ElementHandle::find_by_accessible_label(&ui, name)
-            .next()
-            .unwrap();
-        assert!(action.size().height >= 32.0);
-        assert!(action.absolute_position().x + action.size().width <= 780.1);
-        assert!(
-            action.absolute_position().y + action.size().height <= save.absolute_position().y,
-            "Active-worker {name} must be separate from the selected result actions"
-        );
-    }
-    assert_sidebar(&ui);
-    let reports = ElementHandle::find_by_accessible_label(&ui, "Session runs")
-        .next()
-        .unwrap();
-    let first = ElementHandle::find_by_accessible_label(&ui, &result_caption(&ui, 0))
-        .find(|e| e.accessible_role() == Some(AccessibleRole::ListItem))
-        .unwrap();
-    assert!(first.absolute_position().y >= reports.absolute_position().y);
-    assert!(first.absolute_position().y + first.size().height <= 600.1);
-    assert_eq!(first.accessible_item_selected(), Some(true));
-    choose_result(&ui, 0);
+    assert!(has_label(&ui, "More actions"));
+    assert!(has_label(&ui, "Show Copy"));
     assert!(
-        has_label(&ui, "Session runs"),
-        "Session navigation stays visible after choosing a run"
+        !has_label(&ui, "Save Report…"),
+        "Report actions live in the overflow menu"
     );
-    click(&ui, "Stop");
-    pump(&c, || !c.is_busy());
-    assert_eq!(ui.get_run_label().as_str(), "Run 1");
-    assert_eq!(ui.get_run_status().as_str(), RunStatus::Completed.label());
+    report_action(&ui, "Close Result");
+    assert_eq!(ui.get_runs().row_count(), 0);
+    assert!(ui.get_reviewing());
+    assert_sidebar(&ui);
 }
 
 #[test]
@@ -1764,35 +1600,40 @@ fn a_closed_force_stop_prompt_cannot_kill_the_next_queued_worker() {
     let root = tempfile::tempdir().unwrap();
     let records = fixture("started-preedge-cancellation");
     let (start, rest) = records.split_once('\n').unwrap();
-    let stop = print(rest) + "exit 130";
+    let gate = root.path().join("finish-first");
     let body = format!(
-        "if mkdir {} 2>/dev/null; then trap {} INT; else trap '' INT; fi\ncat >/dev/null\n{}while :; do :; done\n",
+        "trap '' INT\ncat >/dev/null\n{}if mkdir {} 2>/dev/null; then while [ ! -f {} ]; do :; done; {}exit 130; else while :; do :; done; fi\n",
+        print(&(start.to_owned() + "\n")),
         quote(root.path().join("first-worker").to_str().unwrap()),
-        quote(&stop),
-        print(&(start.to_owned() + "\n"))
+        quote(gate.to_str().unwrap()),
+        print(rest)
     );
     let c = controller(root.path(), script(root.path(), &body));
     c.submit(vec![root.path().join("first.eml")]).unwrap();
     wait_started(&c);
     c.submit(vec![root.path().join("second.eml")]).unwrap();
+    c.window().invoke_select_run(0);
+    force_prompt(&c);
     let ui = c.window();
-    ui.invoke_force_stop();
-    assert!(ui.get_confirmation() == Confirmation::ForceStop);
-    c.stop();
+    assert_eq!(ui.get_confirmation(), Confirmation::ForceStop);
+    fs::write(gate, b"finish").unwrap();
     pump(&c, || {
-        ui.get_run_label().as_str() == "Run 2"
+        ui.get_runs()
+            .row_data(1)
+            .is_some_and(|run| run.status == "0 of 1")
+            && ui.get_confirmation() == Confirmation::None
             && c.is_busy()
-            && has_label(&ui, &vocabulary::count_label(CountKind::KnownItems, 1))
     });
-    let prompt_closed = ui.get_confirmation() == Confirmation::None;
+    ui.invoke_select_run(1);
+    let closed = ui.get_confirmation() == Confirmation::None;
     ui.invoke_confirm_force_stop();
-    let next_worker_unchanged = ui.get_run_status().as_str() == RunStatus::Creating.label();
+    let next_unchanged = ui.get_run_status() == RunStatus::Creating.label();
     c.force_stop();
     pump(&c, || !c.is_busy());
-    assert!(prompt_closed);
+    assert!(closed);
     assert!(
-        next_worker_unchanged,
-        "A stale prompt answer must not stop another worker"
+        next_unchanged,
+        "A stale answer must not stop the next worker"
     );
 }
 
@@ -1844,14 +1685,15 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
     pump(&c, || !c.is_busy());
     let ui = c.window();
     assert_eq!(ui.get_runs().row_count(), 2);
+    ui.invoke_filter_results(0);
     assert_eq!(ui.get_items().row_count(), 8);
-    click(&ui, "Needs attention only");
+    toggle_attention(&ui);
     assert_eq!(ui.get_items().row_count(), 1);
     assert_eq!(ui.get_selected_item(), 7);
     assert_eq!(ui.get_item_source().as_str(), "/mail/message-7.eml");
     assert_eq!(ui.get_item_status().as_str(), "Destination conflict");
     assert!(c.selected_copy().is_none());
-    click(&ui, "Needs attention only");
+    toggle_attention(&ui);
     assert_eq!(ui.get_items().row_count(), 8);
     for (width, font) in [(1060.0, 13.0), (780.0, 13.0), (780.0, 20.0)] {
         ui.set_ui_size(font);
@@ -1860,7 +1702,7 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
         let viewport = ElementHandle::find_by_accessible_label(&ui, "Message details")
             .next()
             .unwrap();
-        let heading = ElementHandle::find_by_accessible_label(&ui, "Selected message")
+        let heading = ElementHandle::find_by_accessible_label(&ui, "Message inspector")
             .next()
             .unwrap();
         assert!(heading.absolute_position().y < viewport.absolute_position().y);
@@ -1890,30 +1732,50 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
             list.absolute_position(),
             list.size()
         );
+        ui.set_details_expanded(true);
+        mock_elapsed_time(Duration::from_millis(1));
         for text in [
             "A different file already exists at the destination.",
             vocabulary::recovery_hint("DESTINATION_EXISTS").unwrap(),
         ] {
-            let line = ElementHandle::find_by_accessible_label(&ui, text)
-                .next()
+            let visible = viewport
+                .query_descendants()
+                .match_type_name("Flickable")
+                .find_first()
                 .unwrap();
+            let mut reached = false;
+            // Scroll through our own bounded inspector content; each wheel gesture
+            // advances Slint's pinned 180ms animation on the virtual clock.
+            for _ in 0..16 {
+                if let Some(line) = ElementHandle::find_by_accessible_label(&ui, text).next() {
+                    let top = line.absolute_position().y;
+                    let bottom = top + line.size().height;
+                    let start = visible.absolute_position().y;
+                    let end = start + visible.size().height;
+                    if top >= start - 0.1 && bottom <= end + 0.1 {
+                        reached = true;
+                        break;
+                    }
+                    let delta = if top < start {
+                        start - top
+                    } else {
+                        end - bottom
+                    };
+                    viewport.scroll(0.0, delta);
+                } else {
+                    viewport.scroll(0.0, -visible.size().height / 2.0);
+                }
+                mock_elapsed_time(Duration::from_millis(180));
+            }
             assert!(
-                line.absolute_position().y >= viewport.absolute_position().y - 0.1,
-                "{font}: {text}"
-            );
-            assert!(
-                line.absolute_position().y + line.size().height
-                    <= viewport.absolute_position().y + viewport.size().height + 0.1,
-                "{width}/{font}: recovery must be visible: {:?} {:?}, viewport {:?} {:?}",
-                line.absolute_position(),
-                line.size(),
-                viewport.absolute_position(),
-                viewport.size()
+                reached,
+                "{width}/{font}: inspector text must remain reachable: {text}; scroll {}",
+                ui.get_details_scroll_y()
             );
         }
         assert!(viewport.absolute_position().y + viewport.size().height < 600.0);
     }
-    click(&ui, "Needs attention only");
+    toggle_attention(&ui);
     assert_eq!(
         ui.get_messages_scroll_y(),
         0.0,
@@ -1924,7 +1786,7 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
     c.start_export(exported.clone());
     pump(&c, || !c.is_busy());
     assert_eq!(fs::read_to_string(exported).unwrap(), bytes);
-    click(&ui, "Needs attention only");
+    toggle_attention(&ui);
     assert_eq!(ui.get_selected_item(), 7);
     ui.set_ui_size(13.0);
     mock_elapsed_time(Duration::from_millis(5));
@@ -2117,7 +1979,8 @@ fn mixed_check_after_empty_active_layout(root: &Path) -> (Rc<DesktopController>,
         );
         thread::sleep(Duration::from_millis(2));
     }
-    assert_eq!(ui.get_items().row_count(), 3);
+    assert_eq!(ui.get_filter(), 4);
+    assert_eq!(ui.get_items().row_count(), 1);
     assert_eq!(
         ui.get_selected_item(),
         1,
@@ -2133,6 +1996,7 @@ fn fitted_mixed_result_keeps_all_rows_visible_with_a_middle_selection() {
     let root = tempfile::tempdir().unwrap();
     let (c, inputs) = mixed_check_after_empty_active_layout(root.path());
     let ui = c.window();
+    ui.invoke_filter_results(0);
     let viewport = ElementHandle::find_by_accessible_label(&ui, "Message results")
         .next()
         .unwrap();
@@ -2164,7 +2028,8 @@ fn fitted_mixed_result_attention_filter_keeps_its_only_row_visible() {
     let root = tempfile::tempdir().unwrap();
     let (c, inputs) = mixed_check_after_empty_active_layout(root.path());
     let ui = c.window();
-    click(&ui, "Needs attention only");
+    ui.invoke_filter_results(0);
+    toggle_attention(&ui);
     mock_elapsed_time(Duration::from_millis(5));
     assert_eq!(ui.get_items().row_count(), 1);
     assert_eq!(
@@ -2207,16 +2072,19 @@ fn report_selection_empty_filter_survives_current_task_reselection() {
     c.submit(vec![root.path().join("source.eml")]).unwrap();
     pump(&c, || !c.is_busy());
     let ui = c.window();
-    click(&ui, "Needs attention only");
+    toggle_attention(&ui);
     assert_eq!(ui.get_items().row_count(), 0);
     assert!(!ui.get_has_item());
     assert!(!ui.get_can_reveal());
-    assert!(has_label(&ui, "No reported messages need attention."));
+    assert!(has_label(
+        &ui,
+        "No per-message results are available in this view."
+    ));
     let selection = ui.get_selected_item();
     assert_sidebar(&ui);
-    choose_result(&ui, 0);
+    choose_result(&c, 0);
     assert!(
-        ui.get_attention_only(),
+        ui.get_filter() == 4,
         "Selecting the current task retains its view filter"
     );
     assert_eq!(
@@ -2234,16 +2102,16 @@ fn report_selection_empty_filter_survives_current_task_reselection() {
     click(&ui, "New Request");
     assert!(ui.get_reviewing());
     assert_sidebar(&ui);
-    choose_result(&ui, 0);
+    choose_result(&c, 0);
     assert!(!ui.get_reviewing());
     assert!(
-        ui.get_attention_only(),
+        ui.get_filter() == 4,
         "An empty draft does not replace the retained report's filter"
     );
     assert_eq!(ui.get_selected_item(), selection);
     assert_eq!(ui.get_items().row_count(), 0);
     assert!(!ui.get_has_item());
-    click(&ui, "Needs attention only");
+    toggle_attention(&ui);
     assert_eq!(ui.get_items().row_count(), 1);
     assert!(ui.get_has_item());
     assert_eq!(ui.get_selected_item(), 0);
@@ -2255,12 +2123,13 @@ fn report_selection_keeps_explicit_item_on_current_task_reselection() {
     let root = tempfile::tempdir().unwrap();
     let (c, inputs) = mixed_check_after_empty_active_layout(root.path());
     let ui = c.window();
+    ui.invoke_filter_results(0);
     click(&ui, inputs[2].to_str().unwrap());
     click(&ui, "Technical details");
     assert_eq!(ui.get_selected_item(), 2);
     assert!(ui.get_details_expanded());
     assert_sidebar(&ui);
-    choose_result(&ui, 0);
+    choose_result(&c, 0);
     pump(&c, || !ui.get_report_loading());
     assert_eq!(
         ui.get_selected_item(),
@@ -2275,7 +2144,7 @@ fn report_selection_keeps_explicit_item_on_current_task_reselection() {
     click(&ui, "New Request");
     assert!(ui.get_reviewing());
     assert_sidebar(&ui);
-    choose_result(&ui, 0);
+    choose_result(&c, 0);
     pump(&c, || !ui.get_report_loading());
     assert_eq!(
         ui.get_selected_item(),
@@ -2302,15 +2171,15 @@ fn report_selection_respects_filter_on_healthy_completion() {
     c.submit(vec![root.path().join("source.eml")]).unwrap();
     let ui = c.window();
     mock_elapsed_time(Duration::from_millis(5));
-    click(&ui, "Needs attention only");
-    assert!(ui.get_attention_only());
+    toggle_attention(&ui);
+    assert!(ui.get_filter() == 4);
     assert!(!ui.get_has_item());
     let selection = ui.get_selected_item();
     fs::write(gate, b"release").unwrap();
     pump(&c, || !c.is_busy());
     assert_eq!(ui.get_run_status(), RunStatus::Completed.label());
     assert!(
-        ui.get_attention_only(),
+        ui.get_filter() == 4,
         "Completion does not reset the explicit filter"
     );
     assert_eq!(ui.get_items().row_count(), 0);
@@ -2321,7 +2190,7 @@ fn report_selection_respects_filter_on_healthy_completion() {
     );
     assert!(!ui.get_has_item());
     assert_eq!(ui.get_selected_visible_row(), -1);
-    click(&ui, "Needs attention only");
+    toggle_attention(&ui);
     assert_eq!(ui.get_items().row_count(), 1);
     assert!(
         ui.get_has_item(),
@@ -2347,24 +2216,30 @@ fn attention_filter_preserves_publication_qualification_and_valid_sync_success()
         pump(&c, || !c.is_busy());
         let ui = c.window();
         assert_eq!(ui.get_items().row_count(), 1);
-        click(&ui, "Needs attention only");
+        toggle_attention(&ui);
         assert_eq!(ui.get_items().row_count(), expected_rows, "{name}");
         if expected_rows == 1 {
             assert_eq!(
                 ui.get_item_status(),
                 "Complete copy published; qualification incomplete"
             );
+            ui.set_details_expanded(true);
+            mock_elapsed_time(Duration::from_millis(1));
             assert!(has_label(
                 &ui,
                 "A complete copy was published; qualification did not complete. Inspect the destination before retrying."
             ));
+            assert!(
+                !ui.get_can_reveal(),
+                "Incomplete qualification must not grant Show Copy"
+            );
         } else {
             assert!(
                 !ui.get_has_item(),
                 "Successful fsync fallback is not a fabricated failure"
             );
         }
-        click(&ui, "Needs attention only");
+        toggle_attention(&ui);
         assert_eq!(ui.get_items().row_count(), 1);
     }
 }
@@ -2829,9 +2704,419 @@ fn capture_redesign_states_in_light_and_dark() {
         fs::create_dir(&folder).unwrap();
         let file = root.path().join("Quarterly invoice.eml");
         fs::write(&file, b"From: sender@example.com\r\n\r\nMessage body\r\n").unwrap();
-        c.stage(vec![folder, file]).unwrap();
+        c.stage(vec![folder.clone(), file.clone()]).unwrap();
         mock_elapsed_time(Duration::from_millis(5));
         capture_window(&ui, &directory, &format!("B-{scheme}"));
+        let mut sources: Vec<_> = (1..=14)
+            .map(|n| folder.join(format!("Quarterly report {n}.eml")))
+            .collect();
+        sources[10] = folder.join("06-signed-message.eml");
+        sources[11] = folder.join("09-attachments-only.eml");
+        sources[12] = folder.join("14-unusual-format.eml");
+        sources.push(file);
+        let stream = mixed_create_stream(&sources);
+        let lines: Vec<_> = stream.lines().collect();
+        let leading = lines[..7].join("\n") + "\n";
+        let remaining = lines[7..].join("\n") + "\n";
+        let gate = root.path().join("finish-run");
+        script(
+            root.path(),
+            &format!(
+                "cat >/dev/null\n{}while [ ! -f {} ]; do :; done\n{}exit 1\n",
+                print(&leading),
+                quote(gate.to_str().unwrap()),
+                print(&remaining)
+            ),
+        );
+        c.start_selection().unwrap();
+        pump(&c, || ui.get_work_completed() == 6);
+        capture_window(&ui, &directory, &format!("C-{scheme}"));
+        fs::write(gate, b"finish").unwrap();
+        pump(&c, || !c.is_busy());
+        capture_window(&ui, &directory, &format!("D-{scheme}"));
         ui.hide().unwrap();
     }
+}
+
+fn created_stream(sources: &[PathBuf]) -> String {
+    let records: Vec<serde_json::Value> = fixture("created")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let mut start = records[0].clone();
+    start["total"] = sources.len().into();
+    let mut stream = format!("{start}\n");
+    for (index, source) in sources.iter().enumerate() {
+        let mut item = records[1].clone();
+        item["index"] = index.into();
+        for (field, path) in [
+            ("source", source.clone()),
+            ("destination", source.with_extension("no-attachments.eml")),
+        ] {
+            item[field] = serde_json::json!({"display":path.to_str().unwrap(),"native":eml_protocol::NativePathValue::new(&path)});
+        }
+        stream.push_str(&format!("{item}\n"));
+    }
+    let mut summary = records[2].clone();
+    summary["counts"]["created"] = sources.len().into();
+    stream + &format!("{summary}\n")
+}
+
+#[test]
+fn s6_table_sorts_naturally_preserves_native_selection_and_exports_original_order() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mail = root.path().join("mail");
+    let sources = [
+        mail.join("a/n1.eml"),
+        mail.join("a/n10.eml"),
+        mail.join("a/n2.eml"),
+        mail.join("b/n1.eml"),
+    ];
+    let stream = created_stream(&sources);
+    let c = controller(
+        root.path(),
+        script(
+            root.path(),
+            &("cat >/dev/null\n".to_owned() + &print(&stream)),
+        ),
+    );
+    c.submit(vec![mail]).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    let order = || {
+        ui.get_items()
+            .iter()
+            .map(|row| row.original_index)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(order(), [0, 2, 1, 3]);
+    assert_eq!(ui.get_items().row_data(0).unwrap().folder, "a");
+    ui.invoke_select_item(2);
+    ui.invoke_sort_results(0);
+    assert_eq!(order(), [0, 3, 2, 1]);
+    ui.invoke_sort_results(0);
+    assert_eq!(order(), [1, 2, 3, 0]);
+    assert_eq!(c.selected_path(false), Some(sources[2].clone()));
+    ui.invoke_type_select("n10".into());
+    assert_eq!(c.selected_path(false), Some(sources[1].clone()));
+    let path = root.path().join("sorted.jsonl");
+    c.start_export(path.clone());
+    pump(&c, || !c.is_busy());
+    assert_eq!(fs::read(path).unwrap(), stream.as_bytes());
+}
+
+#[test]
+fn s7_attention_chip_is_default_and_filter_sort_and_selection_survive_a_draft_visit() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let (c, _) = mixed_check_after_empty_active_layout(root.path());
+    let ui = c.window();
+    assert_eq!(ui.get_filter(), 4);
+    assert_eq!(ui.get_items().row_count(), 1);
+    assert_eq!(ui.get_selected_item(), 1);
+    click(&ui, "All 3");
+    assert_eq!(ui.get_filter(), 0);
+    assert_eq!(ui.get_items().row_count(), 3);
+    click(&ui, "Need attention 1");
+    assert_eq!(ui.get_filter(), 4);
+    ui.invoke_sort_results(0);
+    ui.invoke_sort_results(0);
+    let descending = ui.get_sort_descending();
+    ui.invoke_new_request();
+    ui.invoke_select_run(0);
+    pump(&c, || !ui.get_report_loading());
+    assert_eq!(ui.get_filter(), 4);
+    assert_eq!(ui.get_selected_item(), 1);
+    assert_eq!(ui.get_sort_descending(), descending);
+}
+
+#[test]
+fn s8_force_stop_is_delayed_and_escape_cancels_the_confirmation_without_resuming() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), controlled(root.path(), true));
+    c.submit(vec![root.path().join("source.eml")]).unwrap();
+    wait_started(&c);
+    let ui = c.window();
+    assert!(!has_label(&ui, "Force Stop…"));
+    click(&ui, "Stop");
+    assert!(!ui.get_can_stop());
+    assert!(has_label(&ui, "Stopping…"));
+    mock_elapsed_time(Duration::from_millis(4999));
+    c.tick();
+    assert!(!ui.get_can_force());
+    ui.invoke_force_stop();
+    assert_eq!(ui.get_confirmation(), Confirmation::None);
+    mock_elapsed_time(Duration::from_millis(1));
+    c.tick();
+    assert!(ui.get_can_force());
+    click(&ui, "Force Stop…");
+    assert_eq!(ui.get_confirmation(), Confirmation::ForceStop);
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: slint::platform::Key::Escape.into(),
+        });
+    assert_eq!(ui.get_confirmation(), Confirmation::None);
+    assert!(c.is_busy());
+    assert!(ui.get_stop_requested());
+    c.force_stop();
+    pump(&c, || !c.is_busy());
+}
+
+fn press_key(ui: &MainWindow, text: impl Into<slint::SharedString>) {
+    let text = text.into();
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed { text: text.clone() });
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyReleased { text });
+    mock_elapsed_time(Duration::from_millis(1));
+}
+fn chord(
+    ui: &MainWindow,
+    modifier: impl Into<slint::SharedString>,
+    key: impl Into<slint::SharedString>,
+) {
+    let modifier = modifier.into();
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: modifier.clone(),
+        });
+    press_key(ui, key);
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyReleased { text: modifier });
+}
+
+#[test]
+fn sidebar_keyboard_reveals_first_and_last_runs_and_control_tab_cycles_panes() {
+    use i_slint_core::window::WindowInner;
+    use slint::platform::Key;
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    for n in 0..20 {
+        c.submit(vec![root.path().join(format!("message-{n}.eml"))])
+            .unwrap();
+        pump(&c, || !c.is_busy());
+    }
+    let ui = c.window();
+    ui.window().set_size(slint::LogicalSize::new(1080.0, 700.0));
+    mock_elapsed_time(Duration::from_millis(5));
+    click_role(&ui, &result_caption(&ui, 19), AccessibleRole::ListItem);
+    let viewport = ElementHandle::find_by_accessible_label(&ui, "Session runs")
+        .next()
+        .unwrap();
+    let visible = viewport
+        .query_descendants()
+        .match_type_name("Flickable")
+        .find_first()
+        .unwrap();
+    let inside = |index| {
+        let row = ElementHandle::find_by_accessible_label(&ui, &result_caption(&ui, index))
+            .find(|row| row.accessible_role() == Some(AccessibleRole::ListItem))
+            .unwrap();
+        assert!(row.absolute_position().y >= visible.absolute_position().y - 0.1);
+        assert!(
+            row.absolute_position().y + row.size().height
+                <= visible.absolute_position().y + visible.size().height + 0.1
+        );
+    };
+    inside(19);
+    press_key(&ui, Key::Home);
+    pump(&c, || !ui.get_report_loading());
+    assert_eq!(ui.get_run_label(), "Run 1");
+    inside(0);
+    press_key(&ui, Key::End);
+    pump(&c, || !ui.get_report_loading());
+    assert_eq!(ui.get_run_label(), "Run 20");
+    inside(19);
+    let focus_x = || {
+        let item = WindowInner::from_pub(ui.window())
+            .focus_item
+            .borrow()
+            .upgrade()
+            .unwrap();
+        item.map_to_window(item.geometry().origin).x
+    };
+    let control = if cfg!(target_os = "macos") {
+        Key::Meta
+    } else {
+        Key::Control
+    };
+    chord(&ui, control, Key::Tab);
+    assert!(
+        focus_x() >= 230.0,
+        "Control-Tab must focus the main workspace"
+    );
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: Key::Shift.into(),
+        });
+    chord(&ui, control, Key::Tab);
+    ui.window()
+        .dispatch_event(slint::platform::WindowEvent::KeyReleased {
+            text: Key::Shift.into(),
+        });
+    assert!(
+        focus_x() < 230.0,
+        "Control-Shift-Tab must return to the sidebar"
+    );
+}
+
+#[test]
+fn stale_waiting_removal_token_cannot_cancel_another_queued_run() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), controlled(root.path(), false));
+    c.submit(vec![root.path().join("first.eml")]).unwrap();
+    wait_started(&c);
+    c.submit(vec![root.path().join("second.eml")]).unwrap();
+    let ui = c.window();
+    let second = ui.get_runs().row_data(1).unwrap().token;
+    c.stop();
+    pump(&c, || {
+        ui.get_runs().row_data(1).is_some_and(|run| !run.waiting) && ui.get_work_total() == 1
+    });
+    c.submit(vec![root.path().join("third.eml")]).unwrap();
+    let third = ui.get_runs().row_data(2).unwrap().token;
+    ui.invoke_close_session(second);
+    assert_eq!(ui.get_waiting().row_count(), 1);
+    assert_eq!(ui.get_waiting().row_data(0).unwrap().token, third);
+    ui.invoke_close_session(third);
+    assert_eq!(ui.get_waiting().row_count(), 0);
+    c.force_stop();
+    pump(&c, || !c.is_busy());
+}
+
+#[test]
+fn table_keyboard_typeahead_and_copy_use_the_selected_native_path() {
+    use slint::platform::Key;
+    use std::cell::RefCell;
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let sources = [
+        root.path().join("n1.eml"),
+        root.path().join("n2.eml"),
+        root.path().join("n10.eml"),
+    ];
+    let stream = created_stream(&sources);
+    let c = controller(
+        root.path(),
+        script(
+            root.path(),
+            &("cat >/dev/null\n".to_owned() + &print(&stream)),
+        ),
+    );
+    c.submit(sources.to_vec()).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    let copied = Rc::new(RefCell::new(None));
+    let result = copied.clone();
+    let weak = Rc::downgrade(&c);
+    ui.on_copy_source_path(move || {
+        if let Some(c) = weak.upgrade() {
+            *result.borrow_mut() = c.selected_path(false);
+        }
+    });
+    click_role(&ui, sources[0].to_str().unwrap(), AccessibleRole::ListItem);
+    press_key(&ui, "n");
+    press_key(&ui, "2");
+    assert_eq!(c.selected_path(false), Some(sources[1].clone()));
+    chord(&ui, Key::Control, "c");
+    assert_eq!(*copied.borrow(), Some(sources[1].clone()));
+    press_key(&ui, Key::End);
+    assert_eq!(c.selected_path(false), Some(sources[2].clone()));
+}
+
+#[test]
+fn s7_default_attention_selection_uses_the_first_visible_sorted_row() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let sources = [root.path().join("n10.eml"), root.path().join("n2.eml")];
+    let base: Vec<serde_json::Value> = fixture("prepublication-failure")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let mut start = base[0].clone();
+    start["total"] = 2.into();
+    let mut stream = format!("{start}\n");
+    for (index, source) in sources.iter().enumerate() {
+        let mut item = base[1].clone();
+        item["index"] = index.into();
+        item["error"]["code"] = "PROTECTED".into();
+        item["error"]["detail"] = "Signed message cannot be safely reduced".into();
+        for (field, path) in [
+            ("source", source.clone()),
+            ("destination", source.with_extension("no-attachments.eml")),
+        ] {
+            item[field] = serde_json::json!({"display":path.to_str().unwrap(),"native":eml_protocol::NativePathValue::new(&path)});
+        }
+        stream.push_str(&format!("{item}\n"));
+    }
+    let mut summary = base[2].clone();
+    summary["counts"]["failed"] = 2.into();
+    stream.push_str(&format!("{summary}\n"));
+    let c = controller(
+        root.path(),
+        script(
+            root.path(),
+            &("cat >/dev/null\n".to_owned() + &print(&stream) + "exit 1\n"),
+        ),
+    );
+    c.submit(sources.to_vec()).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    assert_eq!(ui.get_items().row_data(0).unwrap().original_index, 1);
+    assert_eq!(ui.get_selected_item(), 1);
+    assert_eq!(ui.get_selected_visible_row(), 0);
+}
+
+fn mixed_create_stream(sources: &[PathBuf]) -> String {
+    let created: Vec<serde_json::Value> = fixture("created-attachment")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let failed: Vec<serde_json::Value> = fixture("prepublication-failure")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let mut start = created[0].clone();
+    start["total"] = sources.len().into();
+    let mut stream = format!("{start}\n");
+    for (index, source) in sources.iter().enumerate() {
+        let error = match index {
+            10 => Some((
+                "PROTECTED",
+                "Signed or encrypted content cannot be reduced safely",
+            )),
+            11 => Some(("NO_BODY", "This message has only attachments")),
+            12 => Some((
+                "UNSUPPORTED_MIME",
+                "This message format cannot be reduced safely",
+            )),
+            _ => None,
+        };
+        let mut item = if error.is_some() {
+            failed[1].clone()
+        } else {
+            created[1].clone()
+        };
+        item["index"] = index.into();
+        if let Some((code, detail)) = error {
+            item["error"]["code"] = code.into();
+            item["error"]["detail"] = detail.into();
+        }
+        for (field, path) in [
+            ("source", source.clone()),
+            ("destination", source.with_extension("no-attachments.eml")),
+        ] {
+            item[field] = serde_json::json!({"display":path.to_str().unwrap(),"native":eml_protocol::NativePathValue::new(&path)});
+        }
+        stream.push_str(&format!("{item}\n"));
+    }
+    let mut summary = created[2].clone();
+    summary["counts"]["created"] = (sources.len() - 3).into();
+    summary["counts"]["failed"] = 3.into();
+    summary["exit_code"] = 1.into();
+    stream + &format!("{summary}\n")
 }

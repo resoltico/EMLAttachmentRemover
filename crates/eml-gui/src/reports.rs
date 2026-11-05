@@ -41,8 +41,8 @@ impl DesktopController {
                 s.active = Some(Active {
                     id,
                     worker,
-                    stop_requested: false,
-                    force_requested: false,
+                    stop: state::Stop::Running,
+                    estimate: state::ProgressEstimate::start(now_ms()),
                 });
             }
             Err(error) => {
@@ -52,10 +52,8 @@ impl DesktopController {
         }
         s.state.has_started = true;
         s.entries.push(entry);
-        if s.state.follow_run == Some(id) || s.entries.len() == 1 {
-            s.state.selected = s.entries.len() - 1;
-            s.state.selected_item = 0;
-            s.state.follow_run = None;
+        if s.state.view == state::View::Waiting(id) {
+            s.state.view = state::View::Run(id);
         }
         self.clear_operation();
         platform::set_busy(s.needs_quit_confirmation());
@@ -94,17 +92,12 @@ impl DesktopController {
                             "The session report reader did not complete.",
                         ))
                     });
-                    let selected = s.state.selected;
-                    if let Some(entry) = s.entries.get_mut(selected).filter(|entry| entry.id == id)
-                    {
+                    if let Some(entry) = s.selected_entry_mut().filter(|entry| entry.id == id) {
                         match result {
                             Ok(completion) => {
                                 entry.report = Some(completion.report.clone());
                                 entry.completion = Some(completion);
-                                s.state.selected_item = default_item_selection(
-                                    s.entries[selected].report.as_ref().expect("loaded report"),
-                                    self.ui.get_attention_only(),
-                                );
+                                reconcile_entry(entry);
                             }
                             Err(error) => {
                                 s.entries
@@ -118,9 +111,9 @@ impl DesktopController {
                 }
             }
         }
-        let selected = s.state.selected;
+        let selected = s.selected_index();
         for (index, entry) in s.entries.iter_mut().enumerate() {
-            if index != selected && entry.stored.is_some() {
+            if Some(index) != selected && entry.stored.is_some() {
                 entry.completion = None;
                 entry.report = None;
             }
@@ -159,10 +152,10 @@ impl DesktopController {
                         .storage_error = Some(error.to_string())
                 }
             }
-        } else if let Some(entry) = s
-            .entries
-            .get(selected)
-            .filter(|entry| entry.report.is_none() && entry.load_error.is_none())
+        } else if !s.memory_full()
+            && let Some(entry) = s
+                .selected_entry()
+                .filter(|entry| entry.report.is_none() && entry.load_error.is_none())
             && let Some(stored) = entry.stored.clone()
         {
             let id = entry.id;

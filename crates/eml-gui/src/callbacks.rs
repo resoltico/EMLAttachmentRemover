@@ -7,11 +7,11 @@ impl DesktopController {
             if let Some(c) = weak.upgrade() {
                 let mut s = c.session.borrow_mut();
                 if !s.is_closing() && s.state.confirmation.is_none() {
-                    s.state.reviewing = true;
-                    s.state.follow_run = None;
+                    s.state.view = state::View::Draft;
                 }
                 drop(s);
                 c.clear_operation();
+                c.maintain_reports();
                 c.refresh();
             }
         });
@@ -43,6 +43,7 @@ impl DesktopController {
                 && let Err(error) = c.start_selection()
             {
                 c.message(&error.to_string());
+                c.refresh();
             }
         });
         let weak = Rc::downgrade(self);
@@ -53,7 +54,7 @@ impl DesktopController {
                     return;
                 }
                 s.state.selection.clear();
-                s.state.reviewing = true;
+                s.state.view = state::View::Draft;
                 drop(s);
                 c.refresh();
             }
@@ -70,7 +71,7 @@ impl DesktopController {
                 {
                     s.state.selection.remove(index);
                 }
-                s.state.reviewing = true;
+                s.state.view = state::View::Draft;
                 drop(s);
                 c.refresh();
             }
@@ -91,109 +92,63 @@ impl DesktopController {
             }
         });
         let weak = Rc::downgrade(self);
-        self.ui.on_select_run(move |index| {
+        self.ui.on_select_session(move |token| {
             if let Some(c) = weak.upgrade() {
-                if let Ok(index) = usize::try_from(index)
-                    && index < c.session.borrow().entries.len()
-                {
-                    let mut s = c.session.borrow_mut();
-                    let same_context = s.state.selected == index;
-                    s.state.selected = index;
-                    s.state.reviewing = false;
-                    s.entries[index].presentation.visit();
-                    s.state.follow_run = None;
-                    // A report keeps its view state when reselected, including
-                    // after the draft temporarily hid that workspace.
-                    if !same_context {
-                        s.state.selected_item = 0;
-                        if let Some(entry) = s.entries.get_mut(index) {
-                            entry.presentation.user_selected_item = false;
-                            if let Some(handle) = &entry.report {
-                                // Refresh resets the previous report's filter.
-                                s.state.selected_item = default_item_selection(handle, false);
-                            }
-                        }
-                    }
-                    c.clear_operation();
-                }
-                c.refresh();
+                c.select_session(token.as_str());
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_close_session(move |token| {
+            if let Some(c) = weak.upgrade() {
+                c.close_session(token.as_str());
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_select_run(move |index| {
+            if let Some(c) = weak.upgrade()
+                && let Ok(index) = usize::try_from(index)
+            {
+                c.select_run(index);
             }
         });
         let weak = Rc::downgrade(self);
         self.ui.on_select_item(move |index| {
-            if let Some(c) = weak.upgrade() {
-                if let Ok(index) = usize::try_from(index) {
-                    c.clear_operation();
-                    let mut s = c.session.borrow_mut();
-                    s.state.selected_item = index;
-                    s.state.follow_run = None;
-                    let selected = s.state.selected;
-                    if let Some(entry) = s.entries.get_mut(selected) {
-                        entry.presentation.user_selected_item = true;
-                    }
-                }
-                c.refresh();
+            if let Some(c) = weak.upgrade()
+                && let Ok(index) = usize::try_from(index)
+            {
+                c.select_item(index);
             }
         });
         let weak = Rc::downgrade(self);
-        self.ui.on_filter_attention(move |enabled| {
+        self.ui.on_filter_results(move |filter| {
             if let Some(c) = weak.upgrade() {
-                c.ui.set_messages_scroll_y(0.0);
-                c.ui.set_attention_only(enabled);
-                let mut s = c.session.borrow_mut();
-                if enabled
-                    && let Some(handle) = s
-                        .entries
-                        .get(s.state.selected)
-                        .and_then(|entry| entry.report.as_ref())
-                {
-                    let selected = s.state.selected_item;
-                    let first = handle.with_report(|report| {
-                        if report
-                            .items()
-                            .get(selected)
-                            .is_some_and(|item| view_model::item(item).attention)
-                        {
-                            Some(selected)
-                        } else {
-                            report
-                                .items()
-                                .iter()
-                                .position(|item| view_model::item(item).attention)
-                        }
-                    });
-                    // No selection when the failed-only view has no results.
-                    s.state.selected_item = first.flatten().unwrap_or(usize::MAX);
-                }
-                if !enabled && s.state.selected_item == usize::MAX {
-                    s.state.selected_item = 0;
-                }
-                s.state.follow_run = None;
-                drop(s);
-                c.refresh();
+                c.filter_results(filter);
             }
         });
         let weak = Rc::downgrade(self);
-        self.ui.on_navigate_message(move |direction| {
+        self.ui.on_sort_results(move |column| {
             if let Some(c) = weak.upgrade() {
-                let rows = c.ui.get_items();
-                if rows.row_count() == 0 {
-                    return;
-                }
-                let selected = c.session.borrow().state.selected_item as i32;
-                let current = rows
-                    .iter()
-                    .position(|row| row.original_index == selected)
-                    .unwrap_or(0);
-                let next = match direction {
-                    -2 => 0,
-                    2 => rows.row_count() - 1,
-                    -1 => current.saturating_sub(1),
-                    _ => (current + 1).min(rows.row_count() - 1),
-                };
-                if let Some(row) = rows.row_data(next) {
-                    c.ui.invoke_select_item(row.original_index);
-                }
+                c.sort_results(column);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_navigate_message(move |direction, page| {
+            if let Some(c) = weak.upgrade() {
+                c.navigate_message(direction, page.max(1) as usize);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_type_select(move |prefix| {
+            if let Some(c) = weak.upgrade() {
+                c.type_select(prefix.as_str());
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_select_waiting(move |index| {
+            if let Some(c) = weak.upgrade()
+                && let Ok(index) = usize::try_from(index)
+            {
+                c.select_waiting(index);
             }
         });
         let weak = Rc::downgrade(self);
@@ -209,7 +164,11 @@ impl DesktopController {
                         .map(|(id, _)| id)
                 });
                 if let Some(id) = id {
-                    c.session.borrow_mut().state.queue.remove_waiting(id);
+                    let mut s = c.session.borrow_mut();
+                    s.state.queue.remove_waiting(id);
+                    if s.state.view == state::View::Waiting(id) {
+                        s.state.view = state::View::Draft;
+                    }
                 }
                 c.clear_operation();
                 c.refresh();
@@ -238,9 +197,8 @@ impl DesktopController {
                     if s.is_closing() {
                         return;
                     }
-                    let Some(active) = &s.active else {
-                        return;
-                    };
+                    let Some(active) = &s.active else { return; };
+                    if !active.stop.can_force(now_ms()) {return;}
                     format!(
                         "Run {}\n\nStops only this task immediately. Waiting requests are not cancelled. Any completed copies remain. The report may be incomplete, and the state of unreported work is unknown.\n\n{}",
                         active.id,

@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::write(
         out.join("widget-metrics.slint"),
         format!(
-            "export global WidgetMetrics {{ out property <length> scroll-inset: {}px; }}",
+            "export global WidgetMetrics {{ out property <length> scroll-inset: {}px; out property <bool> macos: {macos}; }}",
             if macos { 2 } else { 0 }
         ),
     )?;

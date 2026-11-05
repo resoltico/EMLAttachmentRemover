@@ -20,8 +20,8 @@ export component DraftPane inherits ScrollView {
     callback mode-changed(bool); callback open-destination();
     callback remove-selection(int); callback start-selection();
     content-width: self.visible-width;
-    content-height: max(self.visible-height, content.preferred-height);
-    content := VerticalBox { width: parent.visible-width; height: max(parent.visible-height, self.preferred-height);
+    content-height: content.height;
+    content := VerticalBox { width: parent.visible-width; height: max(parent.visible-height,max(self.min-height,self.preferred-height));
     padding: 0px; spacing: 16px;
 
     HorizontalBox { padding: 0px; spacing: 8px; vertical-stretch: 0;

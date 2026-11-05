@@ -240,6 +240,7 @@ fn storage_failure_preserves_bytes_and_three_memory_reports_block_admission_unti
         preferences::Preferences::load(root.path().join("preferences.json")),
     )
     .unwrap();
+    let mut seed = None;
     for index in 0..3 {
         let request = RequestSnapshot::new(
             vec![root.path().join(format!("{index}.eml"))],
@@ -261,6 +262,9 @@ fn storage_failure_preserves_bytes_and_three_memory_reports_block_admission_unti
             assert!(std::time::Instant::now() < deadline);
             std::thread::yield_now();
         };
+        if seed.is_none() {
+            seed = Some(eml_app::StoredReport::write(&completion, RunMode::Create).unwrap());
+        }
         // Simulate a reader failure that retained observations but lost the
         // corresponding stream: storage must reject replay and keep the original.
         completion.jsonl = b"exact captured partial stream".to_vec().into();
@@ -303,7 +307,64 @@ fn storage_failure_preserves_bytes_and_three_memory_reports_block_admission_unti
             b"exact captured partial stream"
         );
     }
-    c.window().invoke_dismiss();
-    assert!(c.window().get_can_start());
-    assert_eq!(c.session.borrow().entries.len(), 2);
+    // An older backed report must not become a fourth resident report.
+    let request =
+        RequestSnapshot::new(vec![root.path().join("backed.eml")], None, RunMode::Create).unwrap();
+    let token = {
+        let mut s = c.session.borrow_mut();
+        let id = s.state.queue.enqueue(request.clone()).unwrap();
+        s.state.queue.start_next().unwrap();
+        s.state.queue.complete(id).unwrap();
+        s.entries.push(Entry {
+            id,
+            request,
+            report: None,
+            completion: None,
+            launch_error: None,
+            worker_error: None,
+            presentation: state::RunPresentation::default(),
+            storage_error: None,
+            load_error: None,
+            stored: seed,
+            saved_report: None,
+        });
+        id.to_string()
+    };
+    c.window().invoke_select_session(token.into());
+    assert!(
+        c.session
+            .borrow()
+            .selected_entry()
+            .unwrap()
+            .report
+            .is_none()
+    );
+    assert!(c.session.borrow().report_task.is_none());
+    assert!(c.window().get_run_notice().contains("Close a finished run"));
+    let first = c.window().get_runs().row_data(0).unwrap().token;
+    c.window().invoke_close_session(first);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while c.is_busy() {
+        c.tick();
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert!(
+        c.session
+            .borrow()
+            .selected_entry()
+            .unwrap()
+            .report
+            .is_some()
+    );
+    assert!(
+        c.session.borrow().memory_full(),
+        "Loaded backed reports count toward residency too"
+    );
+    c.window().invoke_new_request();
+    assert!(
+        c.window().get_can_start(),
+        "The hidden backed report is evicted before draft admission"
+    );
+    assert_eq!(c.session.borrow().entries.len(), 3);
 }
