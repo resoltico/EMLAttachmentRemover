@@ -5,8 +5,8 @@ import { RunPane } from "run.slint";
 import { DraftPane } from "draft.slint";
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { TextEdit, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette, RadioGroup, CheckBox } from "std-widgets.slint";
-import { ActionButton, TextButton, UiMetrics, Label, FileName, PathLabel } from "controls.slint";
+import { TextEdit, HorizontalBox, VerticalBox, Palette } from "std-widgets.slint";
+import { ActionButton, TextButton, UiMetrics, Label } from "controls.slint";
 import { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, DetailView, RemovalView, Tone, ChipView } from "models.slint";
 export { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, DetailView, RemovalView, Tone, ChipView } from "models.slint";
 export { Palette } from "std-widgets.slint";
@@ -32,14 +32,13 @@ export component MainWindow inherits Window {
     in property <string> start-reason;
     in property <bool> has-reports;
     in property <bool> worker-running;
-    in property <string> activity-label;
     in property <string> run-label;
     in property <string> run-status;
     in property <string> run-context;
     in property <string> queue-notice;
     in-out property <length> details-scroll-y: 0px;
     in property <[RunView]> runs;
-    in property <[RunView]> waiting;
+    in property <int> waiting-count;
     in property <[ItemView]> items;
     in property <[ChipView]> chips;
     in property <[DetailView]> report-diagnostics;
@@ -57,18 +56,13 @@ export component MainWindow inherits Window {
     in property <[DetailView]> stripped;
     in property <string> removal-heading;
     in property <string> field-heading;
-    in property <string> item-source;
-    in property <string> item-destination;
     in property <string> item-status;
     in property <string> item-headline;
     in property <string> item-guidance;
     in property <bool> has-item;
     in property <bool> item-attention;
-    in property <bool> run-attention;
-    private property <brush> attention-color: UiMetrics.attention;
     in property <int> selected-item;
     in property <int> selected-visible-row: -1;
-    in-out property <bool> keyboard-navigation;
     in property <bool> destination-beside;
     callback navigate-message(int,int);
     in-out property <length> messages-scroll-y;
@@ -89,12 +83,12 @@ export component MainWindow inherits Window {
     in property <string> force-notice;
     callback choose-files(); callback choose-folder(); callback choose-destination(); callback beside-source();
     callback start-selection(); callback clear-selection(); callback remove-selection(int);
-    callback mode-changed(bool); callback select-run(int); callback select-item(int); callback remove-waiting(int);
+    callback mode-changed(bool); callback select-item(int);
     callback stop(); callback force-stop(); callback export-report(); callback reveal(); callback review-request(); callback dismiss();
     callback confirm-force-stop();
     callback about(); callback cancel-confirmation(); callback stop-and-quit(); callback force-and-quit();
     // Distinct task lifetimes and action targets are supplied by the controller.
-    in property <string> review-label;
+    in property <string> review-label: "Run Again…";
     in property <bool> can-review;
     in property <bool> stop-requested;
     in property <bool> export-running;
@@ -104,12 +98,9 @@ export component MainWindow inherits Window {
     in property <bool> native-open-pending;
     in property <string> operation-details;
     in property <string> report-details;
-    in property <PathView> saved-report-path;
     private property <bool> operation-details-expanded: false;
     private property <bool> report-details-expanded: false;
     changed selected-run => { root.report-details-expanded = false; }
-    private property <length> outcome-width: max(160px, min(220px, root.ui-size * 12));
-    private property <string> selected-removals: root.selected-visible-row >= 0 && root.selected-visible-row < root.items.length ? root.items[root.selected-visible-row].removed : "";
     callback new-request(); callback reveal-report();
     callback open-destination();
     open-destination => { destination-menu.show(); }
@@ -119,14 +110,14 @@ export component MainWindow inherits Window {
     in property <bool> drop-hovered;
     in property <string> starts-after;
     in property <[string]> recent-destinations;
-    callback recent-destination(int); callback close-run(int);
+    callback recent-destination(int);
     callback confirm-replace-draft(); callback create-from-check();
     in property <string> run-title;
     in property <string> run-notice;
     in property <bool> can-stop;
     in property <bool> can-force;
     in property <bool> can-reveal-output;
-    in property <string> reveal-output-label;
+    in property <string> reveal-output-label: "Show Output Folder";
     in property <[string]> output-roots;
     in property <int> extra-output-roots;
     in property <string> progress-label;
@@ -143,14 +134,13 @@ export component MainWindow inherits Window {
     in property <bool> waiting-view;
     in property <string> waiting-title;
     in property <string> waiting-context;
-    in property <int> selected-waiting;
-    callback select-waiting(int);
     callback select-session(string); callback close-session(string);
     in property <int> unseen-count;
     in property <string> waiting-token;
     in property <bool> can-filter;
     in property <bool> can-sort;
     in property <bool> can-show-copy;
+    in property <bool> can-details;
     in property <bool> can-select-all;
     in property <bool> can-copy-menu;
     in property <bool> is-check-result;
@@ -182,7 +172,7 @@ export component MainWindow inherits Window {
             Menu { title: "View";
                 MenuItem { title: "All Messages"; shortcut: @keys(Control + "1"); enabled: root.can-filter; activated => { root.filter-results(0); } }
                 MenuItem { title: "Need Attention"; shortcut: @keys(Control + "2"); enabled: root.can-filter; activated => { root.filter-results(4); } }
-                MenuItem { title: root.technical-details-label; shortcut: @keys(Control + Alt + I); enabled: root.has-item && root.can-edit; activated => { root.details-expanded = !root.details-expanded; } }
+                MenuItem { title: root.technical-details-label; shortcut: @keys(Control + Alt + I); enabled: root.can-details; activated => { root.details-expanded = !root.details-expanded; } }
             }
             Menu { title: "Window"; MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimize(); } } }
             Menu { title: "Help";
@@ -269,12 +259,11 @@ if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
         can-filter: root.can-filter;
         can-sort: root.can-sort;
         can-show-copy: root.can-show-copy;
+        can-details: root.can-details;
         can-reveal-report: root.can-reveal-report;
         operation-tone: root.operation-tone;
         can-reveal-output : root.can-reveal-output;
         reveal-output-label : root.reveal-output-label;
-        output-roots : root.output-roots;
-        extra-output-roots : root.extra-output-roots;
         review-label : root.review-label;
         work-total : root.work-total;
         work-completed : root.work-completed;
@@ -386,7 +375,7 @@ if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
         force-notice : root.force-notice;
         stop-and-quit() => { root.stop-and-quit(); }
         ui-size : root.ui-size;
-        waiting : root.waiting;
+        waiting-count : root.waiting-count;
         worker-running : root.worker-running;
     }
     }

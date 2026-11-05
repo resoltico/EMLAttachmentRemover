@@ -366,3 +366,73 @@ fn storage_failure_preserves_bytes_and_three_memory_reports_block_admission_unti
     );
     assert_eq!(c.session.borrow().entries.len(), 3);
 }
+
+#[test]
+fn s2_session_and_stored_byte_caps_disable_start_until_a_result_is_closed() {
+    i_slint_backend_testing::init_no_event_loop();
+    for bytes_full in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let c = DesktopController::new(
+            root.path().join("unused-cli"),
+            root.path().into(),
+            preferences::Preferences::load(root.path().join("preferences.json")),
+        )
+        .unwrap();
+        let count = if bytes_full {
+            11
+        } else {
+            eml_app::MAX_SESSION_REQUESTS
+        };
+        let mut last = None;
+        // Seed settled reservations at the pure queue boundary. No multi-GiB
+        // allocation is needed to exercise the GUI's admission and close actions.
+        for index in 0..count {
+            let request = RequestSnapshot::new(
+                vec![root.path().join(format!("{index}.eml"))],
+                None,
+                RunMode::Create,
+            )
+            .unwrap();
+            let mut s = c.session.borrow_mut();
+            let id = s.state.queue.enqueue(request.clone()).unwrap();
+            s.state.queue.start_next().unwrap();
+            s.state.queue.complete(id).unwrap();
+            if bytes_full {
+                let base = eml_app::MAX_STORED_REPORT_BYTES / count as u64;
+                let bytes = if index + 1 == count {
+                    eml_app::MAX_STORED_REPORT_BYTES - base * (count as u64 - 1)
+                } else {
+                    base
+                };
+                s.state.queue.store_report(id, bytes).unwrap();
+            }
+            s.entries.push(Entry {
+                id,
+                request,
+                report: None,
+                completion: None,
+                launch_error: Some("Owned settled fixture".into()),
+                worker_error: None,
+                presentation: state::RunPresentation::default(),
+                storage_error: None,
+                load_error: None,
+                stored: None,
+            });
+            last = Some(id);
+        }
+        c.stage(vec![root.path().join("next.eml")]).unwrap();
+        assert!(!c.window().get_can_start());
+        assert_eq!(
+            c.window().get_start_label(),
+            "Close a finished run to add more"
+        );
+        assert!(matches!(
+            c.start_selection(),
+            Err(QueueError::SessionFull | QueueError::StoredBytesFull)
+        ));
+        c.window()
+            .invoke_close_session(last.unwrap().to_string().into());
+        assert!(c.window().get_can_start());
+        assert_eq!(c.window().get_selection().row_count(), 1);
+    }
+}

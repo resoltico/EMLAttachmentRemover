@@ -111,6 +111,9 @@ impl DesktopController {
         self.ui.set_can_force(self.can_force());
         self.ui.set_can_filter(self.can_filter());
         self.ui.set_can_sort(self.can_sort());
+        self.ui.set_can_details(self.can_details());
+        self.ui
+            .set_reveal_output_label(platform::file_manager_label().into());
         self.ui.set_can_show_copy(self.can_show_copy());
         self.ui.set_can_reveal_original(self.can_show_original());
         self.ui.set_can_copy_source(self.can_copy_path(false));
@@ -156,30 +159,6 @@ impl DesktopController {
                 )
                 .into(),
         );
-        let activity = s
-            .active
-            .as_ref()
-            .and_then(|active| s.entries.iter().find(|e| e.id == active.id))
-            .map(|entry| {
-                format!(
-                    "Run {} · {}",
-                    entry.id,
-                    wording::phase(status(entry, s.active.as_ref()))
-                )
-            })
-            .unwrap_or_else(|| {
-                s.export.as_ref().map_or_else(String::new, |job| {
-                    if s.quit_when_idle || s.force_quit {
-                        format!(
-                            "Finishing report export for Run {} before quitting",
-                            job.run
-                        )
-                    } else {
-                        format!("Saving report for Run {}", job.run)
-                    }
-                })
-            });
-        self.ui.set_activity_label(activity.into());
         self.ui
             .set_settings_warning(s.preferences.warning().unwrap_or_default().into());
         self.ui.set_queue_notice(if s.memory_full() {
@@ -225,29 +204,16 @@ impl DesktopController {
         );
         self.ui
             .set_runs(update_model(self.ui.get_runs(), run_views));
-        self.ui.set_waiting(update_model(
-            self.ui.get_waiting(),
-            s.state
-                .queue
-                .waiting_requests()
-                .map(|(id, request)| run_view(id, request, RunStatus::Queued))
-                .collect(),
-        ));
+        self.ui.set_waiting_count(s.state.queue.waiting() as i32);
         if let state::View::Waiting(id) = s.state.view {
             self.clear_report();
-            if let Some((index, (_, request))) = s
-                .state
-                .queue
-                .waiting_requests()
-                .enumerate()
-                .find(|(_, (run, _))| *run == id)
+            if let Some((_, request)) = s.state.queue.waiting_requests().find(|(run, _)| *run == id)
             {
                 self.ui.set_waiting_token(id.to_string().into());
                 self.ui
                     .set_waiting_title(format!("Run {id} · Waiting").into());
                 self.ui
                     .set_waiting_context(request_destination(request).into());
-                self.ui.set_selected_waiting(index as i32);
             }
             return;
         }
@@ -303,15 +269,6 @@ impl DesktopController {
             .as_ref()
             .is_some_and(|active| active.id == entry.id);
         self.ui.set_report_running(running);
-        self.ui.set_run_attention(matches!(
-            run_status,
-            RunStatus::CompletedWithFailures
-                | RunStatus::StartFailed
-                | RunStatus::IdentityFailure
-                | RunStatus::ForceStopped
-                | RunStatus::RequestRefused
-                | RunStatus::Incomplete
-        ));
         self.ui.set_can_export(self.can_save_report());
         self.ui.set_can_dismiss(self.can_close_run(&s, entry));
         self.ui.set_is_check_result(can_create(entry));
@@ -514,15 +471,17 @@ impl DesktopController {
             };
             let view = view_model::item(item);
             self.ui.set_has_item(true);
-            self.ui.set_item_source(view.source);
             let mut source_view = view.path;
             if let Some(parent) = report.source_path(index).as_deref().and_then(Path::parent) {
                 source_view.directory = folder_label(parent, &self.home).into();
             }
             self.ui.set_item_source_path(source_view);
-            self.ui
-                .set_item_destination_path(view_model::path(view.destination.as_str()));
-            self.ui.set_item_destination(view.destination);
+            self.ui.set_item_destination_path(
+                item.destination
+                    .value()
+                    .map(|path| view_model::path(&path.display))
+                    .unwrap_or_default(),
+            );
             let words = view_model::item_words(item);
             self.ui.set_item_headline(words.headline.into());
             self.ui.set_item_guidance(words.guidance.into());
@@ -590,11 +549,6 @@ impl DesktopController {
             state::FeedbackTone::Attention => Tone::Attention,
         });
         self.ui.set_can_reveal_report(self.can_show_report());
-        self.ui.set_saved_report_path(
-            self.saved_report_path()
-                .map(|path| view_model::path(&eml_protocol::TerminalPath::new(&path).to_string()))
-                .unwrap_or_default(),
-        );
     }
     fn clear_selection(&self) {
         self.ui.set_has_item(false);
@@ -604,8 +558,6 @@ impl DesktopController {
         self.ui.set_can_reveal_original(false);
         self.ui.set_item_source_path(PathView::default());
         self.ui.set_item_destination_path(PathView::default());
-        self.ui.set_item_source("".into());
-        self.ui.set_item_destination("".into());
         self.ui.set_item_status("".into());
         self.ui.set_item_headline("".into());
         self.ui.set_item_guidance("".into());
@@ -628,6 +580,7 @@ impl DesktopController {
         *self.last_view.borrow_mut() = None;
     }
     fn clear_report(&self) {
+        self.ui.set_review_label("Run Again…".into());
         self.ui.set_report_loading(false);
         self.ui.set_report_details("".into());
         self.ui.set_run_notice("".into());

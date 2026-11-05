@@ -102,6 +102,7 @@ component Inspector inherits Rectangle {
     in property <bool> attention;
     in property <bool> can-reveal;
     in property <bool> can-show-copy;
+    in property <bool> can-details;
     in property <bool> can-reveal-original;
     in property <bool> can-copy-source;
     in property <bool> can-copy-destination;
@@ -136,7 +137,7 @@ component Inspector inherits Rectangle {
                 if !root.can-reveal: ActionButton { text: "Show Original"; enabled: root.can-reveal-original; clicked => { root.reveal-original(); } }
                 TextButton { text: "Copy Path"; enabled: root.can-copy-source; accessible-description: "Copy the original message’s native path."; clicked => { root.copy-source(); } }
             }
-            if root.has-item: TextButton { text: root.expanded ? "Hide Technical Details" : "Technical Details"; accessible-label: "Technical details"; expandable: true; expanded: root.expanded; clicked => { root.expanded = !root.expanded; } }
+            if root.has-item: TextButton { enabled: root.can-details; text: root.expanded ? "Hide Technical Details" : "Technical Details"; accessible-label: "Technical details"; expandable: true; expanded: root.expanded; clicked => { root.expanded = !root.expanded; } }
             if root.has-item && root.expanded: VerticalBox { width: parent.width; height: self.preferred-height; padding: 0px; spacing: 8px; vertical-stretch: 0;
                 Label { text: "Source"; font-weight: 600; }
                 Label { text: root.source.full; wrap: word-wrap; }
@@ -179,13 +180,12 @@ export component RunPane inherits ScrollView {
     in property <bool> can-filter;
     in property <bool> can-sort;
     in property <bool> can-show-copy;
+    in property <bool> can-details;
     in property <bool> can-reveal-report;
     in property <Tone> operation-tone;
     callback reveal-report(); callback show-output();
     in property <bool> can-reveal-output;
     in property <string> reveal-output-label;
-    in property <[string]> output-roots;
-    in property <int> extra-output-roots;
     in property <string> review-label;
     in property <int> work-total;
     in property <int> work-completed;
@@ -222,7 +222,7 @@ export component RunPane inherits ScrollView {
     in-out property <length> details-scroll-y;
     in-out property <length> messages-scroll-y;
     callback stop(); callback force-stop(); callback review-request(); callback create-from-check();
-    callback export-report(); callback dismiss(); callback reveal-output(int);
+    callback export-report(); callback dismiss();
     callback filter-results(int); callback sort-results(int); callback select-item(int);
     callback navigate-message(int,int); callback type-select(string);
     callback reveal(); callback reveal-original(); callback copy-source-path(); callback copy-destination-path();
@@ -306,7 +306,7 @@ export component RunPane inherits ScrollView {
                 height: parent.stacked ? parent.height - table.height - 12px : parent.height;
                 has-item: root.has-item; source: root.item-source-path; destination: root.item-destination-path;
                 verdict: root.item-headline; guidance: root.item-guidance; attention: root.item-attention;
-                can-reveal: root.can-reveal; can-show-copy: root.can-show-copy; can-reveal-original: root.can-reveal-original;
+                can-reveal: root.can-reveal; can-show-copy: root.can-show-copy; can-details: root.can-details; can-reveal-original: root.can-reveal-original;
                 can-copy-source: root.can-copy-source; can-copy-destination: root.can-copy-destination;
                 busy: root.native-open-pending || root.closing; details: root.details; byte-counts: root.byte-counts;
                 removals: root.removals; stripped: root.stripped; removal-heading: root.removal-heading; field-heading: root.field-heading;

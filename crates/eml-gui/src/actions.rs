@@ -54,6 +54,14 @@ impl DesktopController {
                 .selected_entry()
                 .is_some_and(|entry| entry.report.is_some())
     }
+    pub(super) fn can_details(&self) -> bool {
+        self.inputs_enabled()
+            && self
+                .session
+                .borrow()
+                .selected_entry()
+                .is_some_and(|entry| entry.presentation.selected.is_some())
+    }
     pub(super) fn can_sort(&self) -> bool {
         self.inputs_enabled()
             && self

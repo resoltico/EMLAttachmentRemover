@@ -16,10 +16,7 @@ mod wording;
 use eml_app::{
     QueueError, RequestSnapshot, RunId, WorkerCompletion, WorkerFailure, WorkerRun, WorkerState,
 };
-use eml_core::{
-    RunMode,
-    vocabulary::{CountKind, RunStatus},
-};
+use eml_core::{RunMode, vocabulary::RunStatus};
 use slint::{ComponentHandle, Model};
 use std::{
     cell::{Cell, RefCell},
@@ -808,16 +805,6 @@ fn run_view(id: RunId, request: &RequestSnapshot, status: RunStatus) -> RunView 
             "Check"
         }
         .into(),
-        destination: request_destination(request).into(),
-        selection: view_model::path(
-            &request
-                .request()
-                .paths
-                .first()
-                .map(|p| eml_protocol::TerminalPath::new(p).to_string())
-                .unwrap_or_default(),
-        ),
-        selections: view_model::count(CountKind::Selections, request.request().paths.len() as u32),
     }
 }
 fn status(entry: &Entry, active: Option<&Active>) -> RunStatus {

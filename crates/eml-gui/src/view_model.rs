@@ -156,43 +156,9 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
             crate::state::Category::NotProcessed => crate::Tone::Stopped,
         },
         original_index: 0,
-        source: item.source.display.clone().into(),
         path: path(&item.source.display),
-        destination: item
-            .destination
-            .value()
-            .map(|p| p.display.clone())
-            .unwrap_or_default()
-            .into(),
         status: item_words(item).verdict.into(),
         attention: category(item) == crate::state::Category::Attention,
-        removed: meaning(item)
-            .map_or_else(
-                || "—".into(),
-                |value| {
-                    let count = item.removed.len();
-                    let part = if count == 1 { "part" } else { "parts" };
-                    if matches!(value.kind, MeaningKind::Prepared | MeaningKind::Comparison) {
-                        format!("{count} {part} to remove")
-                    } else {
-                        match value.removal_mode {
-                            vocabulary::RemovalMode::Selected if count == 0 => {
-                                "No removal details reported".into()
-                            }
-                            vocabulary::RemovalMode::Selected => {
-                                format!("{count} {part} selected for removal")
-                            }
-                            vocabulary::RemovalMode::Removed => {
-                                format!("{count} {part} removed from copy")
-                            }
-                            vocabulary::RemovalMode::Absent => {
-                                format!("{count} {part} verified absent from existing copy")
-                            }
-                        }
-                    }
-                },
-            )
-            .into(),
     }
 }
 pub(super) fn category(item: &wire::ItemRecord) -> crate::state::Category {

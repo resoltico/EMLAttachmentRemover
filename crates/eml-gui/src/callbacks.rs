@@ -82,14 +82,6 @@ impl DesktopController {
             }
         });
         let weak = Rc::downgrade(self);
-        self.ui.on_select_run(move |index| {
-            if let Some(c) = weak.upgrade()
-                && let Ok(index) = usize::try_from(index)
-            {
-                c.select_run(index);
-            }
-        });
-        let weak = Rc::downgrade(self);
         self.ui.on_select_item(move |index| {
             if let Some(c) = weak.upgrade()
                 && let Ok(index) = usize::try_from(index)
@@ -119,37 +111,6 @@ impl DesktopController {
         self.ui.on_type_select(move |prefix| {
             if let Some(c) = weak.upgrade() {
                 c.type_select(prefix.as_str());
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_select_waiting(move |index| {
-            if let Some(c) = weak.upgrade()
-                && let Ok(index) = usize::try_from(index)
-            {
-                c.select_waiting(index);
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_remove_waiting(move |index| {
-            if let Some(c) = weak.upgrade() {
-                let id = usize::try_from(index).ok().and_then(|index| {
-                    c.session
-                        .borrow()
-                        .state
-                        .queue
-                        .waiting_requests()
-                        .nth(index)
-                        .map(|(id, _)| id)
-                });
-                if let Some(id) = id {
-                    let mut s = c.session.borrow_mut();
-                    s.state.queue.remove_waiting(id);
-                    if s.state.view == state::View::Waiting(id) {
-                        s.state.view = state::View::Draft;
-                    }
-                }
-                c.clear_operation();
-                c.refresh();
             }
         });
         let weak = Rc::downgrade(self);
@@ -249,14 +210,6 @@ impl DesktopController {
             }
         });
         let weak = Rc::downgrade(self);
-        self.ui.on_close_run(move |index| {
-            if let Some(c) = weak.upgrade()
-                && let Ok(index) = usize::try_from(index)
-            {
-                c.dismiss_run(index);
-            }
-        });
-        let weak = Rc::downgrade(self);
         self.ui.on_dismiss(move || {
             if let Some(c) = weak.upgrade() {
                 c.dismiss();
@@ -289,6 +242,7 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_licenses(move || {
             if let Some(c) = weak.upgrade() {
+                c.about.set_ui_size(c.ui.get_ui_size());
                 c.about.invoke_licenses();
             }
         });
