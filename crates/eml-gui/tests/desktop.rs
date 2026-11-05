@@ -85,18 +85,17 @@ fn controller(root: &Path, cli: PathBuf) -> Rc<DesktopController> {
 }
 
 #[test]
-#[ignore = "WP0 repro"]
 fn s1_idle_session_starts_work_after_settled_reports() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let c = controller(root.path(), completed(root.path(), "created"));
-    // F1 prevents even the third run from starting; no storage opt-in.
-    for index in 0..2 {
+    // F1 prevents even the third run from starting; the contract covers three settled runs.
+    for index in 0..3 {
         c.submit(vec![root.path().join(format!("source-{index}.eml"))])
             .unwrap();
         pump(&c, || !c.is_busy());
     }
-    c.submit(vec![root.path().join("third.eml")]).unwrap();
+    c.submit(vec![root.path().join("fourth.eml")]).unwrap();
     c.tick();
     assert_eq!(
         c.window().get_waiting().row_count(),
@@ -339,12 +338,10 @@ fn pump(controller: &DesktopController, predicate: impl Fn() -> bool) {
 }
 
 #[test]
-fn consented_session_reports_drain_queue_and_reload_exact_old_results() {
+fn automatic_session_reports_drain_queue_and_reload_exact_old_results() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let c = controller(root.path(), completed(root.path(), "created"));
-    assert!(!c.window().get_report_storage_enabled());
-    c.window().invoke_allow_report_storage();
     for index in 0..9 {
         c.submit(vec![root.path().join(format!("source-{index}.eml"))])
             .unwrap();
@@ -1036,6 +1033,7 @@ fn report_warnings_survive_switching_and_export_feedback() {
     assert!(!ui.get_report_details().contains("earlier CLI diagnostic"));
     open_tasks(&ui);
     choose_result(&ui, 0);
+    pump(&c, || !ui.get_report_loading());
     assert_eq!(
         ui.get_run_label(),
         "Run 1",
@@ -1046,6 +1044,7 @@ fn report_warnings_survive_switching_and_export_feedback() {
     assert!(!has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
     open_tasks(&ui);
     choose_result(&ui, 1);
+    pump(&c, || !ui.get_report_loading());
     assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
     assert!(!has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
 }
@@ -1366,12 +1365,10 @@ fn selection_count_admission_preserves_duplicates_order_and_previous_review() {
 fn full_queue_retains_review_and_waiting_snapshots_do_not_follow_new_settings() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let c = controller(root.path(), completed(root.path(), "created"));
+    let c = controller(root.path(), controlled(root.path(), false));
     let ui = c.window();
-    for name in ["first.eml", "second.eml"] {
-        c.submit(vec![root.path().join(name)]).unwrap();
-        pump(&c, || !c.is_busy());
-    }
+    c.submit(vec![root.path().join("first.eml")]).unwrap();
+    wait_started(&c);
     for index in 0..eml_app::MAX_WAITING_REQUESTS {
         c.submit(vec![root.path().join(format!("waiting-{index}.eml"))])
             .unwrap();
@@ -1397,7 +1394,7 @@ fn full_queue_retains_review_and_waiting_snapshots_do_not_follow_new_settings() 
     ui.invoke_remove_waiting(0);
     assert!(ui.get_can_start());
     assert_eq!(ui.get_selection().row_count(), 1);
-    assert!(!c.is_busy(), "Report-space pause owns no running worker");
+    assert!(c.is_busy(), "The active worker owns this queue");
     assert!(
         !c.request_quit(),
         "Waiting accepted requests require a Quit decision"
@@ -1405,12 +1402,13 @@ fn full_queue_retains_review_and_waiting_snapshots_do_not_follow_new_settings() 
     c.tick();
     assert!(
         !c.should_exit(),
-        "Paused queued work must not be silently discarded"
+        "Accepted queued work must not be silently discarded"
     );
     ui.invoke_cancel_confirmation();
     assert!(!c.should_exit());
     assert!(!c.request_quit());
     ui.invoke_stop_and_quit();
+    pump(&c, || !c.is_busy());
     assert!(c.should_exit());
     assert_eq!(ui.get_waiting().row_count(), 0);
 }
@@ -2278,6 +2276,7 @@ fn report_selection_keeps_explicit_item_on_current_task_reselection() {
     assert!(ui.get_details_expanded());
     open_tasks(&ui);
     choose_result(&ui, 0);
+    pump(&c, || !ui.get_report_loading());
     assert_eq!(
         ui.get_selected_item(),
         2,
@@ -2292,6 +2291,7 @@ fn report_selection_keeps_explicit_item_on_current_task_reselection() {
     assert!(ui.get_reviewing());
     open_tasks(&ui);
     choose_result(&ui, 0);
+    pump(&c, || !ui.get_report_loading());
     assert_eq!(
         ui.get_selected_item(),
         2,
@@ -2385,44 +2385,16 @@ fn attention_filter_preserves_publication_qualification_and_valid_sync_success()
 }
 
 #[test]
-fn paused_queue_drawer_keeps_removal_and_settings_recovery_visible() {
+fn queue_drawer_keeps_removal_and_settings_recovery_visible() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let prefs = root.path().join("preferences.json");
     fs::write(&prefs, b"{broken owned settings").unwrap();
-    let c = controller(root.path(), completed(root.path(), "created"));
-    for name in ["one.eml", "two.eml"] {
-        c.submit(vec![root.path().join(name)]).unwrap();
-        pump(&c, || !c.is_busy());
-    }
-    c.stage(vec![root.path().join("waiting.eml")]).unwrap();
+    let c = controller(root.path(), controlled(root.path(), false));
+    c.submit(vec![root.path().join("one.eml")]).unwrap();
+    wait_started(&c);
+    let queued = c.submit(vec![root.path().join("waiting.eml")]).unwrap();
     let ui = c.window();
-    assert_eq!(ui.get_start_label(), "Queue request");
-    assert!(
-        ElementHandle::find_by_accessible_label(&ui, "Queue request")
-            .any(|element| element.accessible_role() == Some(AccessibleRole::Button))
-    );
-    let queued = c.start_selection().unwrap();
-    assert_eq!(ui.get_waiting().row_count(), 1);
-    let selected = ui.get_run_label();
-    open_tasks(&ui);
-    click(&ui, "Allow temporary storage…");
-    assert!(has_label(&ui, "Allow temporary report storage?"));
-    ui.window()
-        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
-            text: slint::platform::Key::Escape.into(),
-        });
-    mock_elapsed_time(Duration::from_millis(5));
-    assert!(
-        !ui.get_report_storage_enabled(),
-        "Only explicit consent may write session reports"
-    );
-    assert_eq!(ui.get_run_label(), selected);
-    assert!(
-        !ui.get_reviewing(),
-        "Queue recovery must not force an unrelated empty draft"
-    );
-    assert_eq!(ui.get_waiting().row_count(), 1);
     for (width, height, font) in [
         (1060.0, 760.0, 14.0),
         (780.0, 600.0, 14.0),
@@ -2508,7 +2480,8 @@ fn paused_queue_drawer_keeps_removal_and_settings_recovery_visible() {
     open_tasks(&ui);
     click(&ui, &format!("Remove Run {queued}"));
     assert_eq!(ui.get_waiting().row_count(), 0);
-    assert!(!c.is_busy());
+    c.stop();
+    pump(&c, || !c.is_busy());
     assert_eq!(fs::read(prefs).unwrap(), b"{broken owned settings");
 }
 
@@ -2696,4 +2669,37 @@ fn copying_paths_uses_native_values_without_granting_unverified_reveal() {
     assert!(c.window().get_can_copy_source() && c.window().get_can_copy_destination());
     assert!(!c.window().get_can_reveal());
     assert!(c.selected_copy().is_none());
+}
+
+#[test]
+fn s5_background_completion_badge_does_not_steal_the_current_view() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    for name in ["first.eml", "second.eml"] {
+        c.submit(vec![root.path().join(name)]).unwrap();
+        pump(&c, || !c.is_busy());
+    }
+    let gate = root.path().join("finish-third");
+    let records = fixture("created");
+    let (start, rest) = records.split_once('\n').unwrap();
+    script(
+        root.path(),
+        &format!(
+            "cat >/dev/null\n{}while [ ! -f {} ]; do :; done\n{}",
+            print(&(start.to_owned() + "\n")),
+            quote(gate.to_str().unwrap()),
+            print(rest)
+        ),
+    );
+    c.submit(vec![root.path().join("third.eml")]).unwrap();
+    let ui = c.window();
+    ui.invoke_select_run(1);
+    fs::write(gate, b"finish").unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(ui.get_run_label(), "Run 2");
+    assert!(ui.get_runs().row_data(2).unwrap().unseen);
+    ui.invoke_select_run(2);
+    pump(&c, || !ui.get_report_loading());
+    assert!(!ui.get_runs().row_data(2).unwrap().unseen);
 }

@@ -3,7 +3,7 @@
 export enum Confirmation { none, force-stop, quit }
 export struct CountView { label: string, value: int, accessible: string, attention: bool }
 export struct PathView { prefix: string, suffix: string, directory: string, full: string }
-export struct RunView { label: string, status: string, mode: string, destination: string, selection: PathView, selections: CountView }
+export struct RunView { unseen: bool, label: string, status: string, mode: string, destination: string, selection: PathView, selections: CountView }
 export struct ItemView { original-index: int, source: string, destination: string, status: string, removed: string, attention: bool, path: PathView }
 export struct DetailView { text: string }
 export struct RemovalView { section: string, filename: string, media: string, bytes: int, byte-label: string, byte-accessible: string, reason: string }

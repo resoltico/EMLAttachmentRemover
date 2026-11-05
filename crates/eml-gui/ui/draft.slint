@@ -17,10 +17,7 @@ export component DraftPane inherits VerticalBox {
     callback mode-changed(bool);
     callback open-destination();
     callback remove-selection(int);
-    in property <bool> report-storage-enabled;
     in property <[PathView]> selection;
-    callback show-storage-confirmation();
-    callback show-storage-info();
     in property <string> start-label;
     in property <string> start-reason;
     callback start-selection();
@@ -56,14 +53,8 @@ export component DraftPane inherits VerticalBox {
                         Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; opacity: 0.35; }
                     }
                 }
-                if !root.report-storage-enabled: HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    Label { text: "Let queued work continue without closing results by keeping session reports in private temporary storage."; wrap: word-wrap; opacity: 0.75; horizontal-stretch: 1; }
-                    TextButton { text: "Allow temporary storage…"; enabled: !root.closing; clicked => { root.show-storage-confirmation(); } }
-                }
-                if root.report-storage-enabled: HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    Label { text: "Private temporary report storage is enabled for this session."; font-size: max(12px, root.ui-size * 0.86); opacity: 0.75; horizontal-stretch: 1; }
-                    TextButton { text: "Storage details"; clicked => { root.show-storage-info(); } }
-                }
+
+
                 if root.selection.length > 0 && !root.can-start: Label { text: root.start-reason; wrap: word-wrap; color: root.attention-color; }
                 HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
                     Label { text: root.check-only ? "No copies will be written." : "Copies use name.no-attachments.eml."; wrap: word-wrap; opacity: 0.75; horizontal-stretch: 1; vertical-alignment: center; }

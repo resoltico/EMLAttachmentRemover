@@ -12,8 +12,7 @@ use std::{
 
 /// A settled report whose backing file has no filesystem name.
 ///
-/// Call `write` and `load` on a background thread. The owner must obtain consent
-/// before writing diagnostic bytes, bound the number of retained handles and
+/// Call `write` and `load` on a background thread. The owner must bound the number of retained handles and
 /// retain the original in-memory report until `write` succeeds. Dropping the last
 /// clone releases the backing file; this is neither durable history nor recovery.
 #[derive(Clone)]
@@ -125,6 +124,10 @@ impl StoredReport {
             stderr: self.0.stderr.clone(),
             stderr_truncated: self.0.stderr_truncated,
         })
+    }
+    /// Exact stream length charged to the session byte budget.
+    pub fn byte_len(&self) -> u64 {
+        self.0.bytes as u64
     }
     /// Original terminal state, available without loading report bytes.
     pub fn state(&self) -> WorkerState {

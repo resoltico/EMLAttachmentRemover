@@ -823,11 +823,6 @@ pub const REPORT_EXPORT_FAILED: &str = "Report export did not complete";
 /// Recovery from a bundled CLI identity mismatch.
 pub const WORKER_IDENTITY_HINT: &str =
     "Install the app and its bundled CLI from the same download.";
-/// Explain a paused serial queue using its actual report capacity.
-pub fn report_space_notice(capacity: usize) -> String {
-    format!("{capacity} reports are retained. Dismiss a report to start the waiting selection.")
-}
-
 /// Discovery stopped before all selected contents became known work items.
 pub const COLLECTION_INCOMPLETE_NOTICE: &str = "Discovery is incomplete. Counts cover only known inputs; additional messages may not have been discovered.";
 /// Stderr was drained beyond the retained diagnostic bound.

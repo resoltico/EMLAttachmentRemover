@@ -1,5 +1,6 @@
 //! Owned-task settlement across confirmed native Quit decisions.
 use super::*;
+use eml_app::RunQueue;
 use std::sync::mpsc;
 
 #[test]
@@ -226,4 +227,83 @@ fn s14_theme_text_and_status_contrast_in_both_schemes() {
             }
         }
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn storage_failure_preserves_bytes_and_three_memory_reports_block_admission_until_closed() {
+    i_slint_backend_testing::init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = DesktopController::new(
+        root.path().join("unused-cli"),
+        root.path().into(),
+        preferences::Preferences::load(root.path().join("preferences.json")),
+    )
+    .unwrap();
+    for index in 0..3 {
+        let request = RequestSnapshot::new(
+            vec![root.path().join(format!("{index}.eml"))],
+            None,
+            RunMode::Create,
+        )
+        .unwrap();
+        let mut s = c.session.borrow_mut();
+        let id = s.state.queue.enqueue(request.clone()).unwrap();
+        s.state.queue.start_next().unwrap();
+        s.state.queue.complete(id).unwrap();
+        let mut worker =
+            WorkerRun::start(Path::new("/usr/bin/false"), &request, root.path()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut completion = loop {
+            if let Some(completion) = worker.poll().unwrap() {
+                break completion;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        // Simulate a reader failure that retained observations but lost the
+        // corresponding stream: storage must reject replay and keep the original.
+        completion.jsonl = b"exact captured partial stream".to_vec().into();
+        let storage_error = eml_app::StoredReport::write(&completion, RunMode::Create)
+            .err()
+            .expect("non-replayable report")
+            .to_string();
+        s.entries.push(Entry {
+            id,
+            request,
+            report: Some(completion.report.clone()),
+            completion: Some(completion),
+            launch_error: None,
+            worker_error: None,
+            presentation: state::RunPresentation::default(),
+            storage_error: Some(storage_error),
+            load_error: None,
+            stored: None,
+            saved_report: None,
+        });
+    }
+    c.stage(vec![root.path().join("next.eml")]).unwrap();
+    assert!(!c.window().get_can_start());
+    assert_eq!(
+        c.window().get_start_label(),
+        "Waiting for space — close a finished run"
+    );
+    assert!(matches!(
+        c.start_selection(),
+        Err(QueueError::MemoryReportsFull)
+    ));
+    c.maintain_reports();
+    assert!(
+        c.session.borrow().report_task.is_none(),
+        "Failed writes must not retry silently"
+    );
+    for entry in &c.session.borrow().entries {
+        assert_eq!(
+            &*entry.completion.as_ref().unwrap().jsonl,
+            b"exact captured partial stream"
+        );
+    }
+    c.window().invoke_dismiss();
+    assert!(c.window().get_can_start());
+    assert_eq!(c.session.borrow().entries.len(), 2);
 }

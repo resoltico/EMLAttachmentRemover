@@ -9,8 +9,8 @@ mod supervisor;
 pub use export::export_report;
 pub use framing::{FrameError, FrameSplitter};
 pub use queue::{
-    MAX_RETAINED_REPORTS, MAX_SESSION_REQUESTS, MAX_WAITING_REQUESTS, QueueError, RequestSnapshot,
-    RunId, RunQueue,
+    MAX_SESSION_REQUESTS, MAX_STORED_REPORT_BYTES, MAX_WAITING_REQUESTS, QueueError,
+    RequestSnapshot, RunId, RunQueue,
 };
 pub use report::{ProtocolFailure, RunReport};
 pub use session_report::StoredReport;

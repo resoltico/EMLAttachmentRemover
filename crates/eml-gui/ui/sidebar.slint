@@ -10,16 +10,12 @@ export component SessionTasks inherits Rectangle {
     in property <bool> closing;
     in property <string> queue-notice;
     callback remove-waiting(int);
-    in property <bool> report-storage-enabled;
-    callback retry-report-storage();
     callback review-selection();
     in property <bool> reviewing;
     in property <[RunView]> runs;
     callback select-run(int);
     in property <int> selected-run;
     in property <[PathView]> selection;
-    callback show-storage-confirmation();
-    in property <bool> storage-retry;
     in property <length> ui-size;
     in property <[RunView]> waiting;
  background: Palette.background; border-width: 1px; border-color: Palette.border; border-radius: 6px;
@@ -31,12 +27,7 @@ export component SessionTasks inherits Rectangle {
                     }
                     if root.selection.length > 0: ActionButton { text: "Review selection (" + root.selection.length + ")"; accessible-description: "Return to the current input draft."; clicked => { root.close-tasks(); root.review-selection(); } }
                     if root.queue-notice != "": Label { text: root.queue-notice; wrap: word-wrap; color: root.attention-color; }
-                    if root.queue-notice != "" && !root.report-storage-enabled: ActionButton {
-                        text: "Allow temporary storage…";
-                        enabled: !root.closing;
-                        clicked => { root.show-storage-confirmation(); }
-                    }
-                    if root.storage-retry: ActionButton { text: "Retry storage"; clicked => { root.retry-report-storage(); } }
+
                     ScrollView { accessible-role: list; accessible-label: "Session tasks"; content-width: self.visible-width; content-height: task-content.preferred-height;
                         task-content := VerticalBox { width: parent.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.inset;
                             if root.runs.length > 0: Label { text: "Session results · " + root.runs.length; font-weight: 600; }

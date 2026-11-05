@@ -17,26 +17,51 @@ fn request() -> RequestSnapshot {
     RequestSnapshot::new(vec![path("message.eml")], None, RunMode::Create).unwrap()
 }
 #[test]
-fn two_reports_pause_without_eviction_and_explicit_dismissal_resumes_in_order() {
+fn s1_twenty_retained_runs_start_without_consent_and_session_cap_rejects() {
+    let mut queue = RunQueue::default();
+    for _ in 0..20 {
+        let id = queue.enqueue(request()).unwrap();
+        assert_eq!(queue.start_next().unwrap().unwrap().0, id);
+        assert!(queue.start_next().unwrap().is_none());
+        assert!(!queue.dismiss(id));
+        queue.complete(id).unwrap();
+    }
+    assert!(matches!(
+        queue.enqueue(request()),
+        Err(QueueError::SessionFull)
+    ));
+    let first = queue.reports()[0];
+    assert!(queue.dismiss(first));
+    assert!(queue.enqueue(request()).is_ok());
+}
+#[test]
+fn s2_stored_byte_cap_rejects_without_overcharging_and_close_releases_bytes() {
     let mut queue = RunQueue::default();
     let first = queue.enqueue(request()).unwrap();
-    let second = queue.enqueue(request()).unwrap();
-    let third = queue.enqueue(request()).unwrap();
-    assert_eq!(queue.start_next().unwrap().unwrap().0, first);
-    assert!(queue.start_next().unwrap().is_none());
-    assert!(!queue.dismiss(first));
-    assert!(matches!(
-        queue.complete(second),
-        Err(QueueError::InactiveRun)
-    ));
+    queue.start_next().unwrap();
     queue.complete(first).unwrap();
-    assert_eq!(queue.start_next().unwrap().unwrap().0, second);
+    let second = queue.enqueue(request()).unwrap();
+    queue.start_next().unwrap();
     queue.complete(second).unwrap();
-    assert!(matches!(queue.start_next(), Err(QueueError::ReportSpace)));
-    assert_eq!(queue.reports(), &[first, second]);
-    assert_eq!(queue.waiting(), 1);
+    let cap = eml_app::MAX_STORED_REPORT_BYTES;
+    assert!(matches!(
+        queue.store_report(first, cap + 1),
+        Err(QueueError::StoredBytesFull)
+    ));
+    assert_eq!(queue.stored_bytes(), 0);
+    queue.store_report(first, cap).unwrap();
+    assert!(matches!(
+        queue.store_report(second, 1),
+        Err(QueueError::StoredBytesFull)
+    ));
+    assert_eq!(queue.stored_bytes(), cap);
+    assert!(matches!(
+        queue.enqueue(request()),
+        Err(QueueError::StoredBytesFull)
+    ));
     assert!(queue.dismiss(first));
-    assert_eq!(queue.start_next().unwrap().unwrap().0, third);
+    assert_eq!(queue.stored_bytes(), 0);
+    assert!(queue.enqueue(request()).is_ok());
 }
 #[test]
 fn waiting_capacity_cancellation_and_removal_do_not_discard_active_results() {
@@ -66,44 +91,6 @@ fn waiting_capacity_cancellation_and_removal_do_not_discard_active_results() {
     assert!(!queue.dismiss(active));
     queue.complete(active).unwrap();
     assert!(queue.dismiss(active));
-}
-#[test]
-fn authorized_storage_reserves_finite_results_before_admitting_waiting_work() {
-    let mut queue = RunQueue::default();
-    for _ in 0..2 {
-        let id = queue.enqueue(request()).unwrap();
-        assert_eq!(queue.start_next().unwrap().unwrap().0, id);
-        queue.complete(id).unwrap();
-    }
-    let mut waiting = Vec::new();
-    for _ in 0..8 {
-        waiting.push(queue.enqueue(request()).unwrap());
-    }
-    assert!(queue.is_paused_for_report_space());
-    assert!(!queue.report_storage_enabled());
-    queue.enable_report_storage();
-    assert!(queue.report_storage_enabled());
-    assert_eq!(queue.report_capacity(), 10);
-    assert!(!queue.is_paused_for_report_space());
-    for id in waiting {
-        assert_eq!(queue.start_next().unwrap().unwrap().0, id);
-        // Starting a reservation does not free admission capacity.
-        assert!(matches!(
-            queue.enqueue(request()),
-            Err(QueueError::SessionFull)
-        ));
-        queue.complete(id).unwrap();
-    }
-    assert_eq!(queue.reports().len(), 10);
-    assert_eq!(queue.waiting(), 0);
-    assert!(matches!(
-        queue.capacity_error(),
-        Some(QueueError::SessionFull)
-    ));
-    let closed = queue.reports()[0];
-    assert!(queue.dismiss(closed));
-    assert!(queue.capacity_error().is_none());
-    queue.enqueue(request()).unwrap();
 }
 #[test]
 fn destination_is_a_snapshot_and_wire_contains_required_null() {

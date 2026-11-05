@@ -88,10 +88,7 @@ export component MainWindow inherits Window {
         }
     }
     // MainWindow survives the task drawer that this transition closes.
-    function show-storage-confirmation() {
-        root.close-tasks();
-        storage-confirm.show();
-    }
+
     changed selected-visible-row => { root.reveal-selected(); }
     changed messages-view-height => { root.reveal-selected(); }
     changed message-row-height => { root.reveal-selected(); }
@@ -124,13 +121,9 @@ export component MainWindow inherits Window {
     in property <string> report-load-notice;
     in property <bool> can-reveal-report;
     in property <bool> native-open-pending;
-    in property <bool> report-storage-enabled;
-    in property <bool> storage-retry;
     in property <string> operation-details;
     in property <string> report-details;
     in property <PathView> saved-report-path;
-    callback new-request(); callback reveal-report(); callback allow-report-storage();
-    callback retry-report-storage();
     private property <bool> operation-details-expanded: false;
     private property <bool> report-details-expanded: false;
     changed selected-run => { root.report-details-expanded = false; }
@@ -138,10 +131,10 @@ export component MainWindow inherits Window {
     private property <string> selected-removals: root.selected-visible-row >= 0 && root.selected-visible-row < root.items.length ? root.items[root.selected-visible-row].removed : "";
     callback close-tasks();
     close-tasks => { tasks.close(); }
+    callback new-request(); callback reveal-report();
     callback open-destination();
     open-destination => { destination-menu.show(); }
-    callback show-storage-info();
-    show-storage-info => { storage-info.show(); }
+
     MenuBar {
         Menu { title: "File";
             MenuItem { title: "New request"; shortcut: @keys(Control + N); enabled: !root.closing && root.confirmation == Confirmation.none; activated => { root.new-request(); } }
@@ -192,10 +185,7 @@ export component MainWindow inherits Window {
         mode-changed(arg0) => { root.mode-changed(arg0); }
         open-destination() => { root.open-destination(); }
         remove-selection(arg0) => { root.remove-selection(arg0); }
-        report-storage-enabled : root.report-storage-enabled;
         selection : root.selection;
-        show-storage-confirmation() => { root.show-storage-confirmation(); }
-        show-storage-info() => { root.show-storage-info(); }
         start-label : root.start-label;
         start-reason : root.start-reason;
         start-selection() => { root.start-selection(); }
@@ -268,12 +258,9 @@ export component MainWindow inherits Window {
         Rectangle { height: 1px; background: Palette.border; opacity: 0.35; }
         HorizontalBox { padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: UiMetrics.gap; padding-bottom: UiMetrics.gap; spacing: UiMetrics.gap; vertical-stretch: 0;
             Label { text: "Original messages stay unchanged. Existing copies are never replaced."; wrap: word-wrap; font-size: max(12px, root.ui-size * 0.86); opacity: 0.75; horizontal-stretch: 1; }
-            if root.queue-notice != "": TextButton { text: "Queue paused"; accessible-description: root.queue-notice; clicked => { tasks.show(); } }
+            if root.queue-notice != "": Label { text: root.queue-notice; wrap: word-wrap; color: root.attention-color; }
         }
-        if root.storage-retry: HorizontalBox { padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: UiMetrics.gap; padding-bottom: UiMetrics.gap; spacing: UiMetrics.gap; vertical-stretch: 0;
-            Label { text: root.queue-notice; color: root.attention-color; wrap: word-wrap; horizontal-stretch: 1; }
-            ActionButton { text: "Retry storage"; clicked => { root.retry-report-storage(); } }
-        }
+
     }
     tasks := PopupWindow {
         x: root.width - self.width - UiMetrics.gutter; y: header.height;
@@ -285,16 +272,12 @@ export component MainWindow inherits Window {
         closing : root.closing;
         queue-notice : root.queue-notice;
         remove-waiting(arg0) => { root.remove-waiting(arg0); }
-        report-storage-enabled : root.report-storage-enabled;
-        retry-report-storage() => { root.retry-report-storage(); }
         review-selection() => { root.review-selection(); }
         reviewing : root.reviewing;
         runs : root.runs;
         select-run(arg0) => { root.select-run(arg0); }
         selected-run : root.selected-run;
         selection : root.selection;
-        show-storage-confirmation() => { root.show-storage-confirmation(); }
-        storage-retry : root.storage-retry;
         ui-size : root.ui-size;
         waiting : root.waiting;
     }
@@ -327,40 +310,8 @@ export component MainWindow inherits Window {
             }
         }
     }
-    storage-confirm := PopupWindow {
-        x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;
-        width: min(560px, root.width - UiMetrics.gutter * 2); height: max(300px, root.ui-size * 20); close-policy: PopupClosePolicy.no-auto-close;
-        Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border; border-radius: 6px;
-            FocusScope { forward-focus: storage-cancel;
-                init => { storage-cancel.focus(); }
-                key-pressed(event) => { if event.text == Key.Escape { storage-confirm.close(); return accept; } return reject; }
-                VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.inset;
-                    Label { text: "Allow temporary report storage?"; font-size: root.ui-size * 1.15; font-weight: 600; wrap: word-wrap; }
-                    Label { text: "Exact diagnostic reports may contain message filenames, paths and attachment metadata. They will be kept in private temporary files so accepted queued work can continue."; wrap: word-wrap; }
-                    Label { text: "Reports are removed when you close their results or quit. Up to 10 tasks may be retained, using at most 2.5 GiB for report streams. There is no persistent history."; wrap: word-wrap; }
-                    HorizontalBox { padding: 0px; spacing: UiMetrics.gap; alignment: end;
-                        storage-cancel := ActionButton { text: "Cancel"; clicked => { storage-confirm.close(); } }
-                        ActionButton { text: "Allow for this session"; primary: true; clicked => { storage-confirm.close(); root.allow-report-storage(); } }
-                    }
-                }
-            }
-        }
-    }
-    storage-info := PopupWindow {
-        x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;
-        width: min(520px, root.width - UiMetrics.gutter * 2); height: max(230px, root.ui-size * 16); close-policy: close-on-click-outside;
-        Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border; border-radius: 6px;
-            FocusScope { forward-focus: storage-info-close;
-                init => { storage-info-close.focus(); }
-                key-pressed(event) => { if event.text == Key.Escape { storage-info.close(); return accept; } return reject; }
-                VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.inset;
-                    Label { text: "Private session reports"; font-weight: 600; }
-                    Label { text: "Exact diagnostic reports are kept in private temporary storage until their results are closed or you quit. Up to 10 tasks may be retained, using at most 2.5 GiB for report streams. Storage failure pauses future work and preserves the current report."; wrap: word-wrap; }
-                    storage-info-close := ActionButton { text: "Close"; clicked => { storage-info.close(); } }
-                }
-            }
-        }
-    }
+
+
     changed confirmation => { decision.close(); if root.confirmation != Confirmation.none { decision.show(); } }
     decision := PopupWindow {
         x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;

@@ -38,6 +38,8 @@ Filesystem regression tests cover existing-winner preservation, links, aliases,
 changed sources, no-replace fallback and cleanup failures. Actual CLI subprocess
 tests check completed-copy and original preservation across forced termination.
 
+Settled session reports are kept automatically in private, unnamed temporary files; closing a result or quitting releases its backing file.
+
 ## Excluded threats and limitations
 
 Hostile concurrent local actors, other users changing the same folders, ACL
