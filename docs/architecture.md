@@ -10,7 +10,7 @@ and human outcome vocabulary. Frontends adapt inputs and render those facts.
 | `eml-protocol` | Strict protocol-1 request decoding, native path encoding, typed JSONL events and bounded checked output |
 | `emlattachmentremover` | Public CLI arguments, request transport, signals and human/JSON sinks |
 | `eml-app` | Immutable queued requests, bounded report reducer and std child-process supervision |
-| `eml-gui` | Slint view/controller, desktop ingress, configuration and the macOS About/Quit adapters |
+| `eml-gui` | Pure session state, Slint views and GUI wording, bounded report I/O, native ingress/preferences and macOS About/Quit adapters |
 | `xtask` | Distribution archives, notices and the local merge gate |
 
 `eml-message` has no filesystem or platform dependency. Fuzzing targets that crate;
@@ -72,52 +72,64 @@ See the [threat model](threat-model.md) for the supported environment.
 
 ## Desktop boundary
 
-The desktop runs the public CLI from `Contents/Helpers`, never PATH. Native ingress stages absolute paths without starting a worker. Explicit Start
-captures the reviewed selection, current destination and mode in a protocol request. At most eight
-requests wait. Admission reserves at most ten tasks/results and never evicts
-diagnostics. Without temporary-storage consent, two retained reports reserve
-memory capacity; closing a settled result releases it. With explicit session-only
-consent, settled exact streams are written to private files whose names are
-successfully unlinked before any diagnostic bytes are written. One background
-writer/loader replays the existing protocol reducer and checks accepted observations
-before eviction. Storage failure keeps the original completion and pauses launches.
-Between IO jobs only the active and inspected full reports remain resident;
-one immutable export stream may additionally be pinned by a naming draft or owned
-export job. Replay temporarily allocates one additional bounded parsed report.
-A serial worker runs one request at a time. Private backing handles are released
-on result close or session exit; they provide no durable history or crash recovery.
+The desktop runs the public CLI from `Contents/Helpers`, never PATH. Native ingress
+stages absolute paths without starting a worker. Explicit Start captures inputs,
+mode and destination in an immutable protocol request. The pure `state.rs` owns
+navigation, pending decisions and run-local filter, sort and selection; the runtime
+owns workers, preferences and report I/O. One worker runs at a time. Admission is
+bounded to 20 session runs, eight waiting requests and 2.5 GiB of stored stream bytes.
+
+Every settled report is automatically backed by a private temporary file whose
+name is unlinked before diagnostic bytes are written. One background writer/loader
+replays the existing protocol reducer and compares accepted observations before
+eviction. Loaded settled reports are bounded to three, including failed-storage
+fallbacks; the active and visible report remain loaded when possible. Storage
+failure retains the original completion and blocks further admission at the memory
+limit. Hidden backed reports unload; selected reports load lazily. Private handles
+are released on result close or exit, providing no durable history or crash recovery.
+An immutable stream may also be pinned by one pending save panel or owned export.
+Replay temporarily allocates one additional bounded parsed report.
 
 `WorkerRun` owns `std::process::Child`; background threads write/close stdin and
-drain stdout/stderr. The UI polls without blocking. Derived Slint rows update in place, preserving
-controls and keyboard focus across selection and append-only result updates. Stop sends SIGINT once; Force
-Stop kills the child; completion includes reaping and reader settlement. Partial
-accepted records survive malformed tails and worker failures. Exports write the
-exact retained stream in a background thread: a private same-folder staging file
-is written and file-synchronized before no-replace publication. Physical write
-failure exposes no partial final report. Directory-entry power-loss persistence
-is not promised, and a crash can leave a private staging file. An export draft owns
-captured immutable bytes independently of report navigation; its folder-picker
-lifetime token rejects callbacks for a cancelled/replaced draft. Name collisions
-stay in the application-owned naming window; the native folder chooser never
-offers an overwrite policy the backend cannot honor. Busy Quit waits for
-worker/export settlement or follows the user's confirmed stop choice.
+drain stdout/stderr. The UI polls without blocking. Stop sends SIGINT once; Force
+Stop becomes available after five seconds and requires a targeted confirmation.
+The busy Quit decision can force the active worker immediately, but still waits
+for reaping, reader settlement and owned report exports. Accepted records survive
+malformed tails and worker failures. Pending decisions and committed shutdown
+reject drops and late native-panel submissions. Confirmation targets cannot
+silently change when the next queued worker starts.
 
-Slint qualifications come from the shared vocabulary; desktop-only concise
-planning/conflict labels retain those facts. Filtered rows carry original report
-offsets (not potentially sparse wire indexes), so navigation and reveal keep the
-same item identity. Filtering never changes the retained stream used for export. Headless tests drive accessible
-actions through Slint's testing backend and mock time. Native ingress delivers
-launch arguments, batches window drops with a zero-delay timer, and parents rfd
-asynchronous dialogs to the retained window. Only the small macOS application-menu About and Quit adapters use
-unsafe Objective-C calls. The About adapter routes the focused window’s standard
-application-menu item to the application-owned Slint About window; it does not
-modify or fork the toolkit. The worker uses the public protocol-1 CLI. The software renderer is the default; Skia remains an
-explicit build feature for measurement. Builds use upstream crates without forks.
+Save Report captures exact immutable bytes and a run identity before opening the
+parented native save panel. A lifetime token rejects stale cancellation/submission.
+The target result cannot close while its panel or physical export is outstanding.
+The native panel owns replacement approval. A background writer writes and
+file-synchronizes a private same-folder staging file, then atomically renames it
+over the approved target. Write failure leaves the prior target intact, or no
+new target, and attempts cleanup. Directory-entry survival across power loss is
+not promised; a crash can leave a private staging file. Transient saved-report
+feedback retains the captured native path independently of later navigation.
 
-Draft settings and immutable result settings occupy separate workspaces. A compact
-task drawer navigates results/waiting work; the active strip owns Stop independently
-of selection. A shared Slint metrics/control module owns visual relationships.
-The result list has one keyboard focus scope and fixed-height virtualized rows;
-content-sized message details do not reserve an empty framed pane. Native open/reveal
-requests run off the UI thread, bounded to one per initiating view, with scoped
-feedback. Their acceptance is advisory, not proof of viewer contents or file identity.
+GUI wording belongs to `wording.rs`; core meaning/qualification and CLI vocabulary
+remain authoritative for processing facts. Interrupted items are not attention
+failures; missing results become Not processed only when an accepted summary
+establishes them. Unqualified publication remains attention-worthy. Natural sorting
+and filters affect presentation only; rows retain original report offsets, and
+exports retain original bytes. Native paths are never reparsed from display text.
+
+Slint views are split by responsibility, with shared theme/control tokens and
+Cupertino widgets on macOS, Fluent on Linux. A persistent session sidebar navigates
+runs and the draft without changing captured requests. Fixed-height virtual rows
+and a separately scrolling inspector adapt between side-by-side and stacked layouts.
+Buttons and menus share action predicates, rechecked at controller/native boundaries.
+Native open/reveal requests run off the UI thread, bounded to one per initiating
+view. Acceptance is advisory, not proof of viewer contents or file identity.
+
+Headless checks drive production views through Slint's testing backend and virtual
+time; OS panels and services are manual checks. Only the application-menu About
+and Quit adapters use macOS-specific unsafe Objective-C calls. About routes to
+the application-owned Slint window. The software renderer is the default; Skia is
+an explicit measurement feature. Builds pin upstream crates. A small [spin_on source patch](../crates/spin-on/README.md)
+uses standard Rust pinning and a no-op waker to remove archived `pin-utils` from
+Slint’s dependency graph; the audit policy is unchanged.
+The new preferences schema records three recent destinations, the last destination
+and last report folder; unavailable/old files are preserved with session-only defaults.

@@ -386,3 +386,63 @@ mod safety;
 fn select_run(ui: &MainWindow, index: usize) {
     ui.invoke_select_session(ui.get_runs().row_data(index).unwrap().token);
 }
+
+// Exercise our scrollable workspace and inspector, rather than requiring every
+// platform's font metrics to put technical content in the initial viewport.
+fn assert_inspector_text_reachable(ui: &MainWindow, text: &str) {
+    let viewport = ElementHandle::find_by_accessible_label(ui, "Message details")
+        .next()
+        .unwrap();
+    let window_height = ui.window().size().height as f32 / ui.window().scale_factor();
+    if viewport.absolute_position().y + viewport.size().height > window_height {
+        // The title has no nested scroller: this wheel gesture reaches the outer
+        // workspace at large text sizes, bringing the stacked inspector into view.
+        ElementHandle::find_by_accessible_label(ui, ui.get_run_title().as_str())
+            .next()
+            .unwrap()
+            .scroll(0.0, -window_height);
+        mock_elapsed_time(Duration::from_millis(180));
+    }
+    assert!(
+        viewport.absolute_position().y >= 0.0
+            && viewport.absolute_position().y + viewport.size().height <= window_height,
+        "Inspector viewport must be visible before reading: {:?} {:?}, window {window_height}",
+        viewport.absolute_position(),
+        viewport.size()
+    );
+    let visible = viewport
+        .query_descendants()
+        .match_type_name("Flickable")
+        .find_first()
+        .unwrap();
+    let mut reached = false;
+    for _ in 0..16 {
+        if let Some(line) = ElementHandle::find_by_accessible_label(ui, text).next() {
+            let top = line.absolute_position().y;
+            let bottom = top + line.size().height;
+            let start = visible.absolute_position().y;
+            let end = start + visible.size().height;
+            if top >= start - 0.1 && bottom <= end + 0.1 {
+                reached = true;
+                break;
+            }
+            viewport.scroll(
+                0.0,
+                if top < start {
+                    start - top
+                } else {
+                    end - bottom
+                },
+            );
+        } else {
+            viewport.scroll(0.0, -visible.size().height / 2.0);
+        }
+        // Slint 1.18.1 wheel animations use this exact virtual-clock duration.
+        mock_elapsed_time(Duration::from_millis(180));
+    }
+    assert!(
+        reached,
+        "Inspector text must remain fully reachable: {text}; scroll {}",
+        ui.get_details_scroll_y()
+    );
+}

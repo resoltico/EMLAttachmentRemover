@@ -96,6 +96,7 @@ fn s18_results_and_inspector_never_intersect_at_supported_sizes() {
         (1300.0, 800.0),
     ] {
         ui.window().set_size(slint::LogicalSize::new(width, height));
+        let mut collapsed_table_bounds = None;
         for expanded in [false, true] {
             ui.set_details_expanded(expanded);
             mock_elapsed_time(Duration::from_millis(5));
@@ -106,6 +107,17 @@ fn s18_results_and_inspector_never_intersect_at_supported_sizes() {
                 .next()
                 .unwrap();
             let (t, i) = (table.absolute_position(), inspector.absolute_position());
+            let bounds = (t, table.size());
+            if expanded {
+                assert_eq!(
+                    Some(bounds),
+                    collapsed_table_bounds,
+                    "Expanding technical details must not squeeze the message table"
+                );
+            } else {
+                collapsed_table_bounds = Some(bounds);
+            }
+
             assert!(
                 t.x + table.size().width <= i.x || t.y + table.size().height <= i.y,
                 "{width}x{height}, expanded={expanded}: table {t:?} {:?}, inspector {i:?} {:?}",
@@ -462,10 +474,7 @@ fn report_warnings_survive_switching_and_export_feedback() {
     assert!(ui.get_report_details().contains("earlier CLI diagnostic"));
     c.start_export(root.path().join("first.jsonl"));
     pump(&c, || !c.is_busy());
-    assert!(
-        ui.get_operation_feedback()
-            .contains(vocabulary::REPORT_SAVED)
-    );
+    assert!(ui.get_operation_feedback().contains("Report saved"));
     assert!(c.saved_report_path().unwrap().ends_with("first.jsonl"));
     assert!(
         ui.get_report_diagnostics()
@@ -489,7 +498,6 @@ fn report_warnings_survive_switching_and_export_feedback() {
             .iter()
             .any(|line| line.text == "Run error: INPUT_LIMIT_EXCEEDED")
     );
-    assert!(!has_label(&ui, vocabulary::NO_REPLACEMENT));
     assert!(!ui.get_report_details().contains("earlier CLI diagnostic"));
     assert_sidebar(&ui);
     choose_result(&c, 0);
@@ -834,10 +842,10 @@ fn attention_filter_preserves_publication_qualification_and_valid_sync_success()
             assert_eq!(ui.get_item_status(), "Created — check folder");
             ui.set_details_expanded(true);
             mock_elapsed_time(Duration::from_millis(1));
-            assert!(has_label(
+            assert_inspector_text_reachable(
                 &ui,
-                "A complete copy was published; qualification did not complete. Inspect the destination before retrying."
-            ));
+                "A complete copy was published; qualification did not complete. Inspect the destination before retrying.",
+            );
             assert!(
                 !ui.get_can_reveal(),
                 "Incomplete qualification must not grant Show Copy"
@@ -1355,6 +1363,21 @@ fn s13_buttons_are_named_chips_are_checkable_and_rows_never_announce_live() {
     };
     inspect(vec![]);
     c.stage(vec![root.path().join("message.eml")]).unwrap();
+    assert!(has_label(
+        &ui,
+        "1 item added · folders are searched when you start"
+    ));
+    for check in [false, true, false] {
+        ui.invoke_mode_changed(check);
+        for (label, expected) in [("Create copies", !check), ("Check only", check)] {
+            let tab = ElementHandle::find_by_accessible_label(&ui, label)
+                .find(|element| element.accessible_role() == Some(AccessibleRole::Tab))
+                .unwrap();
+            assert_eq!(tab.accessible_checked(), Some(expected));
+            assert_eq!(tab.accessible_item_selected(), Some(expected));
+        }
+    }
+
     inspect(vec![]);
     c.start_selection().unwrap();
     wait_started(&c);

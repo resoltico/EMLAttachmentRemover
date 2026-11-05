@@ -268,8 +268,6 @@ impl OutcomeMeaning {
         self.kind.label()
     }
 }
-/// Existing files are never replaced, including by report export.
-pub const NO_REPLACEMENT: &str = "Existing files are never replaced.";
 /// Related resources verified absent from an existing matching copy.
 pub const EXISTING_RELATED_RESOURCE_NOTICE: &str = "Inline images or other related resources are absent from the matching bytes. They may appear missing in the existing copy.";
 fn synced(file: Option<crate::SyncReceipt>, namespace: crate::NamespaceObservation) -> bool {
@@ -816,10 +814,6 @@ pub const SOURCE_BYTES_LABEL: &str = "Source bytes";
 /// Prepared-byte count heading.
 pub const COPY_BYTES_LABEL: &str = "Prepared copy bytes";
 
-/// Successful report export.
-pub const REPORT_SAVED: &str = "Report saved";
-/// Failed report export without a completion observation.
-pub const REPORT_EXPORT_FAILED: &str = "Report export did not complete";
 /// Recovery from a bundled CLI identity mismatch.
 pub const WORKER_IDENTITY_HINT: &str =
     "Install the app and its bundled CLI from the same download.";

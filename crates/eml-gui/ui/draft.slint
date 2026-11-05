@@ -27,7 +27,7 @@ export component DraftPane inherits ScrollView {
     HorizontalBox { padding: 0px; spacing: 8px; vertical-stretch: 0;
         VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;
             Label { text: "New Request"; font-size: 22px; font-weight: 700; }
-            if root.selection.length > 0: Label { text: root.selection.length + " items added · folders are searched when you start"; color: Theme.muted; wrap: word-wrap; }
+            if root.selection.length > 0: Label { text: root.selection.length + (root.selection.length == 1 ? " item added" : " items added") + " · folders are searched when you start"; color: Theme.muted; wrap: word-wrap; }
         }
         if root.selection.length > 0: ActionButton { text: "Add Files…"; enabled: root.can-edit; clicked => { root.choose-files(); } }
         if root.selection.length > 0: ActionButton { text: "Add Folder…"; enabled: root.can-edit; clicked => { root.choose-folder(); } }

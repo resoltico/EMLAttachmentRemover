@@ -2,14 +2,14 @@
 
 The supported user processes their own EML files in folders they own, with a
 stable ordinary filesystem namespace. The tool protects originals, existing
-outputs and complete-copy publication within that environment.
+email-copy outputs and complete-copy publication within that environment.
 
 ## Guarantees and mechanisms
 
 - Originals are opened read-only and never renamed, moved, deleted or written,
   including metadata writes. Tests compare bytes and mtime after creation,
   refusals, cooperative stop and forced termination.
-- Existing destinations are never replaced or modified. Identical bytes can be
+- Existing email-copy destinations are never replaced or modified. Identical bytes can be
   reported up to date after verification and synchronization. Different bytes,
   aliases and conflicting reservations are refused. Exclusive staging creation
   and no-replace publication protect a destination created by another normal run.
@@ -39,6 +39,13 @@ changed sources, no-replace fallback and cleanup failures. Actual CLI subprocess
 tests check completed-copy and original preservation across forced termination.
 
 Settled session reports are kept automatically in private, unnamed temporary files; closing a result or quitting releases its backing file.
+
+Report exports use a user-approved save path, including replacement approved by the
+native save panel. Complete bytes are staged privately in the same folder and
+file-synchronized before atomic rename. A failed write preserves any prior target;
+a crash can leave an owned staging file. Directory-entry survival across power
+loss is not promised. This report-save policy does not change the email processor’s collision
+or original-preservation guarantees.
 
 ## Excluded threats and limitations
 

@@ -232,41 +232,9 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
         for text in [
             "A different file already exists at the destination.",
             vocabulary::recovery_hint("DESTINATION_EXISTS").unwrap(),
+            "No new copy was published.",
         ] {
-            let visible = viewport
-                .query_descendants()
-                .match_type_name("Flickable")
-                .find_first()
-                .unwrap();
-            let mut reached = false;
-            // Scroll through our own bounded inspector content; each wheel gesture
-            // advances Slint's pinned 180ms animation on the virtual clock.
-            for _ in 0..16 {
-                if let Some(line) = ElementHandle::find_by_accessible_label(&ui, text).next() {
-                    let top = line.absolute_position().y;
-                    let bottom = top + line.size().height;
-                    let start = visible.absolute_position().y;
-                    let end = start + visible.size().height;
-                    if top >= start - 0.1 && bottom <= end + 0.1 {
-                        reached = true;
-                        break;
-                    }
-                    let delta = if top < start {
-                        start - top
-                    } else {
-                        end - bottom
-                    };
-                    viewport.scroll(0.0, delta);
-                } else {
-                    viewport.scroll(0.0, -visible.size().height / 2.0);
-                }
-                mock_elapsed_time(Duration::from_millis(180));
-            }
-            assert!(
-                reached,
-                "{width}/{font}: inspector text must remain reachable: {text}; scroll {}",
-                ui.get_details_scroll_y()
-            );
+            assert_inspector_text_reachable(&ui, text);
         }
         assert!(viewport.absolute_position().y + viewport.size().height < 600.0);
     }

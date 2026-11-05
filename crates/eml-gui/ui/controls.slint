@@ -172,12 +172,12 @@ export component Segmented inherits Rectangle {
     segments := HorizontalBox { width: parent.width; height: parent.height; padding: 2px; spacing: 2px;
         TextButton { text: "Create copies"; enabled: root.enabled; min-width: 0px; horizontal-stretch: 1;
             background: !root.check-only ? Theme.surface : transparent; border-radius: 6px;
-            accessible-role: tab; accessible-item-selected: !root.check-only;
+            accessible-role: tab; accessible-item-selected: !root.check-only; accessible-checkable: true; accessible-checked: !root.check-only;
             clicked => { root.changed(false); }
         }
         TextButton { text: "Check only"; enabled: root.enabled; min-width: 0px; horizontal-stretch: 1;
             background: root.check-only ? Theme.surface : transparent; border-radius: 6px;
-            accessible-role: tab; accessible-item-selected: root.check-only;
+            accessible-role: tab; accessible-item-selected: root.check-only; accessible-checkable: true; accessible-checked: root.check-only;
             clicked => { root.changed(true); }
         }
     }
