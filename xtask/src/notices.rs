@@ -64,6 +64,8 @@ pub(crate) fn write(app: bool, targets: &[String], out: &Path) -> Result<()> {
         // These upstream attribution files are absent from the registry packages
         // or cargo-about's selected text. Keep their complete terms with the app.
         for path in [
+            "legal/slint/graphics-notices.txt",
+            "legal/slint/CC-BY-ND-4.0.txt",
             "legal/upstream/accesskit/LICENSE-MIT-23f18e03dc49.txt",
             "legal/upstream/accesskit/LICENSE-APACHE-62c7a1e35f56.txt",
             "legal/upstream/objc2/LICENSE-e353f37b12ae.txt",
