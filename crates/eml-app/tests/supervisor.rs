@@ -237,7 +237,7 @@ fn identity_malformed_records_and_eof_without_summary_are_rejected_and_reaped() 
     }
 }
 #[test]
-fn checking_then_creating_sends_two_fresh_requests_and_export_never_replaces() {
+fn checking_then_creating_sends_two_fresh_requests_and_exports_exact_streams() {
     let root = tempfile::tempdir().unwrap();
     let capture = root.path().join("received-request.json");
     let cli = script(
@@ -263,11 +263,8 @@ fn checking_then_creating_sends_two_fresh_requests_and_export_never_replaces() {
         let export = root.path().join(format!("{name}.jsonl"));
         export_report(&export, &completion.jsonl).unwrap();
         assert_eq!(fs::read(&export).unwrap(), bytes.as_bytes());
-        assert_eq!(
-            export_report(&export, b"replacement").unwrap_err().kind(),
-            std::io::ErrorKind::AlreadyExists
-        );
-        assert_eq!(fs::read(&export).unwrap(), bytes.as_bytes());
+        export_report(&export, b"replacement").unwrap();
+        assert_eq!(fs::read(&export).unwrap(), b"replacement");
     }
     assert_eq!(
         bundled_cli(Path::new("/App/Contents/MacOS/EMLAttachmentRemover")).unwrap(),

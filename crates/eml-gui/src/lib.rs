@@ -1,18 +1,23 @@
 //! Platform-neutral Slint controller, structured views and native-path ingress.
 #![deny(unsafe_code)]
+mod actions;
+mod callbacks;
+mod feedback;
 pub mod ingress;
+mod navigation;
 pub mod platform;
 pub mod preferences;
+mod present;
+mod report_export;
+mod reports;
+mod state;
 mod view_model;
+mod wording;
 use eml_app::{
-    QueueError, RequestSnapshot, RunId, RunQueue, WorkerCompletion, WorkerFailure, WorkerRun,
-    WorkerState,
+    QueueError, RequestSnapshot, RunId, WorkerCompletion, WorkerFailure, WorkerRun, WorkerState,
 };
-use eml_core::{
-    RunMode,
-    vocabulary::{self, CountKind, RunStatus},
-};
-use slint::{ComponentHandle, Model, ModelRc, VecModel};
+use eml_core::{RunMode, vocabulary::RunStatus};
+use slint::{ComponentHandle, Model};
 use std::{
     cell::{Cell, RefCell},
     io,
@@ -36,9 +41,10 @@ struct Entry {
     completion: Option<WorkerCompletion>,
     launch_error: Option<String>,
     worker_error: Option<String>,
-    user_selected_item: bool,
+    presentation: state::RunPresentation,
+    storage_error: Option<String>,
+    load_error: Option<String>,
     stored: Option<eml_app::StoredReport>,
-    saved_report: Option<PathBuf>,
 }
 enum ReportTask {
     Store(RunId, JoinHandle<io::Result<eml_app::StoredReport>>),
@@ -55,8 +61,8 @@ impl ReportTask {
 struct Active {
     id: RunId,
     worker: WorkerRun,
-    stop_requested: bool,
-    force_requested: bool,
+    stop: state::Stop,
+    estimate: state::ProgressEstimate,
 }
 struct ExportJob {
     run: RunId,
@@ -82,6 +88,7 @@ struct OpenJob {
 pub struct ReportExport {
     run: RunId,
     jsonl: std::sync::Arc<[u8]>,
+    token: Rc<()>,
 }
 impl ReportExport {
     /// Captured run identity for the suggested filename and completion feedback.
@@ -89,47 +96,69 @@ impl ReportExport {
         self.run
     }
 }
-/// Opaque lifetime of one export draft's native folder request.
-pub struct ExportFolderRequest {
-    token: std::rc::Weak<()>,
-}
-struct ExportDraft {
-    token: Rc<()>,
-    source: ReportExport,
-    directory: PathBuf,
-}
-struct Session {
-    selection: Vec<PathBuf>,
-    reviewing: bool,
-    follow_run: Option<RunId>,
-    queue: RunQueue,
+struct SessionRuntime {
+    state: state::Session,
     entries: Vec<Entry>,
     active: Option<Active>,
     export: Option<ExportJob>,
-    selected: usize,
-    selected_item: usize,
-    mode: RunMode,
     preferences: preferences::Preferences,
     quit_when_idle: bool,
     force_quit: bool,
     should_exit: bool,
     report_task: Option<ReportTask>,
-    storage_error: Option<(RunId, String)>,
 }
-impl Session {
+impl SessionRuntime {
     fn is_closing(&self) -> bool {
         self.quit_when_idle || self.force_quit || self.should_exit
     }
+    fn memory_full(&self) -> bool {
+        self.entries
+            .iter()
+            .filter(|entry| entry.completion.is_some())
+            .count()
+            >= 3
+    }
+    fn admission_error(&self) -> Option<QueueError> {
+        if self.is_closing() {
+            Some(QueueError::ShuttingDown)
+        } else if self.state.confirmation.is_some() {
+            Some(QueueError::DecisionPending)
+        } else if self.memory_full() {
+            Some(QueueError::MemoryReportsFull)
+        } else if self
+            .preferences
+            .destination()
+            .is_some_and(|path| !path.is_dir())
+        {
+            Some(QueueError::DestinationUnavailable)
+        } else {
+            self.state.queue.capacity_error()
+        }
+    }
+    fn selected_index(&self) -> Option<usize> {
+        match self.state.view {
+            state::View::Run(id) => self.entries.iter().position(|entry| entry.id == id),
+            state::View::Draft | state::View::Waiting(_) => None,
+        }
+    }
+    fn selected_entry(&self) -> Option<&Entry> {
+        self.selected_index()
+            .and_then(|index| self.entries.get(index))
+    }
+    fn selected_entry_mut(&mut self) -> Option<&mut Entry> {
+        let index = self.selected_index()?;
+        self.entries.get_mut(index)
+    }
     fn needs_quit_confirmation(&self) -> bool {
-        self.active.is_some() || self.export.is_some() || self.queue.waiting() > 0
+        self.active.is_some() || self.export.is_some() || self.state.queue.waiting() > 0
     }
 }
-// Accepted records append; unchanged facts do not rebuild the Slint models.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct PresentationRevision {
     run: RunId,
-    item: usize,
-    attention_only: bool,
+    item: Option<usize>,
+    filter: state::Filter,
+    sort: state::Sort,
     started: bool,
     items: usize,
     summary: bool,
@@ -141,10 +170,9 @@ pub struct DesktopController {
     ui: MainWindow,
     about: AboutWindow,
     licenses: LicenseWindow,
-    export_ui: ExportWindow,
-    export_draft: RefCell<Option<ExportDraft>>,
-    export_directory: RefCell<PathBuf>,
-    session: RefCell<Session>,
+    pending_save: RefCell<Option<ReportExport>>,
+    feedback: RefCell<state::Feedback>,
+    session: RefCell<SessionRuntime>,
     drops: RefCell<ingress::DropBatch>,
     cli: PathBuf,
     home: PathBuf,
@@ -153,23 +181,6 @@ pub struct DesktopController {
 }
 // Update data in place: polling must not discard row controls, keyboard focus,
 // or accessibility nodes when accepted facts are unchanged or append-only.
-fn update_model<T: Clone + PartialEq + 'static>(current: ModelRc<T>, values: Vec<T>) -> ModelRc<T> {
-    let Some(rows) = current.as_any().downcast_ref::<VecModel<T>>() else {
-        return Rc::new(VecModel::from(values)).into();
-    };
-    for (index, value) in values.iter().take(rows.row_count()).enumerate() {
-        if rows.row_data(index).as_ref() != Some(value) {
-            rows.set_row_data(index, value.clone());
-        }
-    }
-    while rows.row_count() > values.len() {
-        rows.remove(values.len());
-    }
-    for value in values.into_iter().skip(rows.row_count()) {
-        rows.push(value);
-    }
-    current
-}
 
 impl DesktopController {
     /// Create the real UI around the bundled CLI and destination settings.
@@ -181,7 +192,6 @@ impl DesktopController {
         let ui = MainWindow::new()?;
         let about = AboutWindow::new()?;
         let licenses = LicenseWindow::new()?;
-        let export_ui = ExportWindow::new()?;
         licenses.set_licenses(include_str!("../../../LICENSE").into());
         about.set_copyright(
             include_str!("../../../LICENSE")
@@ -197,9 +207,8 @@ impl DesktopController {
         about.set_version(eml_core::product::ABOUT_VERSION.as_str().into());
         let controller = Rc::new(Self {
             last_view: RefCell::new(None),
-            export_ui,
-            export_draft: RefCell::new(None),
-            export_directory: RefCell::new(home.clone()),
+            pending_save: RefCell::new(None),
+            feedback: RefCell::new(state::Feedback::None),
             ui,
             about,
             licenses,
@@ -208,399 +217,23 @@ impl DesktopController {
             drops: RefCell::default(),
             open_jobs: RefCell::default(),
             operation_serial: Cell::new(0),
-            session: RefCell::new(Session {
-                selection: Vec::new(),
-                reviewing: false,
-                follow_run: None,
-                queue: RunQueue::default(),
+            session: RefCell::new(SessionRuntime {
+                state: state::Session::default(),
                 entries: Vec::new(),
                 active: None,
                 export: None,
-                selected: 0,
-                selected_item: 0,
-                mode: RunMode::Create,
                 preferences,
                 quit_when_idle: false,
                 force_quit: false,
                 should_exit: false,
                 report_task: None,
-                storage_error: None,
             }),
         });
         controller.bind();
         controller.refresh();
         Ok(controller)
     }
-    fn bind(self: &Rc<Self>) {
-        let weak = Rc::downgrade(self);
-        self.ui.on_allow_report_storage(move || {
-            if let Some(c) = weak.upgrade()
-                && !c.session.borrow().is_closing()
-            {
-                c.session.borrow_mut().queue.enable_report_storage();
-                c.maintain_reports();
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_retry_report_storage(move || {
-            if let Some(c) = weak.upgrade() {
-                c.session.borrow_mut().storage_error = None;
-                c.maintain_reports();
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_new_request(move || {
-            if let Some(c) = weak.upgrade() {
-                let mut s = c.session.borrow_mut();
-                if !s.is_closing() {
-                    s.reviewing = true;
-                    s.follow_run = None;
-                }
-                drop(s);
-                c.clear_operation();
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.export_ui.on_create_report(move || {
-            if let Some(c) = weak.upgrade() {
-                c.create_export();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.export_ui.on_cancel(move || {
-            if let Some(c) = weak.upgrade() {
-                c.cancel_export();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.export_ui.window().on_close_requested(move || {
-            if let Some(c) = weak.upgrade() {
-                if c.export_ui.get_busy() {
-                    return slint::CloseRequestResponse::KeepWindowShown;
-                }
-                c.cancel_export();
-            }
-            slint::CloseRequestResponse::HideWindow
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_start_selection(move || {
-            if let Some(c) = weak.upgrade()
-                && let Err(error) = c.start_selection()
-            {
-                c.message(&error.to_string());
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_clear_selection(move || {
-            if let Some(c) = weak.upgrade() {
-                let mut s = c.session.borrow_mut();
-                s.selection.clear();
-                s.reviewing = true;
-                drop(s);
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_review_selection(move || {
-            if let Some(c) = weak.upgrade() {
-                c.session.borrow_mut().reviewing = true;
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_remove_selection(move |index| {
-            if let Some(c) = weak.upgrade() {
-                let mut s = c.session.borrow_mut();
-                if let Ok(index) = usize::try_from(index)
-                    && index < s.selection.len()
-                {
-                    s.selection.remove(index);
-                }
-                s.reviewing = true;
-                drop(s);
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_mode_changed(move |check| {
-            if let Some(c) = weak.upgrade() {
-                c.clear_operation();
-                c.session.borrow_mut().mode = if check {
-                    RunMode::DryRun
-                } else {
-                    RunMode::Create
-                };
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_select_run(move |index| {
-            if let Some(c) = weak.upgrade() {
-                if let Ok(index) = usize::try_from(index)
-                    && index < c.session.borrow().entries.len()
-                {
-                    let mut s = c.session.borrow_mut();
-                    let same_context = s.selected == index;
-                    s.selected = index;
-                    s.reviewing = false;
-                    s.follow_run = None;
-                    // A report keeps its view state when reselected, including
-                    // after the draft temporarily hid that workspace.
-                    if !same_context {
-                        s.selected_item = 0;
-                        if let Some(entry) = s.entries.get_mut(index) {
-                            entry.user_selected_item = false;
-                            if let Some(handle) = &entry.report {
-                                // Refresh resets the previous report's filter.
-                                s.selected_item = default_item_selection(handle, false);
-                            }
-                        }
-                    }
-                    c.clear_operation();
-                }
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_select_item(move |index| {
-            if let Some(c) = weak.upgrade() {
-                if let Ok(index) = usize::try_from(index) {
-                    c.clear_operation();
-                    let mut s = c.session.borrow_mut();
-                    s.selected_item = index;
-                    s.follow_run = None;
-                    let selected = s.selected;
-                    if let Some(entry) = s.entries.get_mut(selected) {
-                        entry.user_selected_item = true;
-                    }
-                }
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_filter_attention(move |enabled| {
-            if let Some(c) = weak.upgrade() {
-                c.ui.set_messages_scroll_y(0.0);
-                c.ui.set_attention_only(enabled);
-                let mut s = c.session.borrow_mut();
-                if enabled
-                    && let Some(handle) = s
-                        .entries
-                        .get(s.selected)
-                        .and_then(|entry| entry.report.as_ref())
-                {
-                    let selected = s.selected_item;
-                    let first = handle.with_report(|report| {
-                        if report
-                            .items()
-                            .get(selected)
-                            .is_some_and(|item| view_model::item(item).attention)
-                        {
-                            Some(selected)
-                        } else {
-                            report
-                                .items()
-                                .iter()
-                                .position(|item| view_model::item(item).attention)
-                        }
-                    });
-                    // No selection when the failed-only view has no results.
-                    s.selected_item = first.flatten().unwrap_or(usize::MAX);
-                }
-                if !enabled && s.selected_item == usize::MAX {
-                    s.selected_item = 0;
-                }
-                s.follow_run = None;
-                drop(s);
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_navigate_message(move |direction| {
-            if let Some(c) = weak.upgrade() {
-                let rows = c.ui.get_items();
-                if rows.row_count() == 0 {
-                    return;
-                }
-                let selected = c.session.borrow().selected_item as i32;
-                let current = rows
-                    .iter()
-                    .position(|row| row.original_index == selected)
-                    .unwrap_or(0);
-                let next = match direction {
-                    -2 => 0,
-                    2 => rows.row_count() - 1,
-                    -1 => current.saturating_sub(1),
-                    _ => (current + 1).min(rows.row_count() - 1),
-                };
-                if let Some(row) = rows.row_data(next) {
-                    c.ui.invoke_select_item(row.original_index);
-                }
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_remove_waiting(move |index| {
-            if let Some(c) = weak.upgrade() {
-                let id = usize::try_from(index).ok().and_then(|index| {
-                    c.session
-                        .borrow()
-                        .queue
-                        .waiting_requests()
-                        .nth(index)
-                        .map(|(id, _)| id)
-                });
-                if let Some(id) = id {
-                    c.session.borrow_mut().queue.remove_waiting(id);
-                }
-                c.clear_operation();
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_beside_source(move || {
-            if let Some(c) = weak.upgrade() {
-                c.set_destination(None);
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_stop(move || {
-            if let Some(c) = weak.upgrade() {
-                c.stop();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_force_stop(move || {
-            if let Some(c) = weak.upgrade() {
-                if c.ui.get_confirmation() != Confirmation::None {
-                    return;
-                }
-                let notice = {
-                    let s = c.session.borrow();
-                    if s.is_closing() {
-                        return;
-                    }
-                    let Some(active) = &s.active else {
-                        return;
-                    };
-                    format!(
-                        "Run {}\n\nStops only this task immediately. Waiting requests are not cancelled. Any completed copies remain. The report may be incomplete, and the state of unreported work is unknown.\n\n{}",
-                        active.id,
-                        vocabulary::FORCE_STOP_NOTICE
-                    )
-                };
-                c.ui.set_force_notice(notice.into());
-                c.ui.set_confirmation(Confirmation::ForceStop);
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_confirm_force_stop(move || {
-            if let Some(c) = weak.upgrade() {
-                if c.ui.get_confirmation() != Confirmation::ForceStop {
-                    return;
-                }
-                c.ui.set_confirmation(Confirmation::None);
-                c.force_stop();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_review_request(move || {
-            if let Some(c) = weak.upgrade() {
-                c.review_request();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_dismiss(move || {
-            if let Some(c) = weak.upgrade() {
-                c.dismiss();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_about(move || {
-            if let Some(c) = weak.upgrade() {
-                c.about.set_ui_size(c.ui.get_ui_size());
-                match c.about.show() {
-                    Ok(()) => c.about.invoke_focus_website(),
-                    Err(error) => c.message(&error.to_string()),
-                }
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.about.on_dismiss(move || {
-            if let Some(c) = weak.upgrade() {
-                let _ = c.about.hide();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.about.on_licenses(move || {
-            if let Some(c) = weak.upgrade() {
-                c.licenses.set_ui_size(c.about.get_ui_size());
-                match c.licenses.show() {
-                    Ok(()) => c.licenses.invoke_focus_start(),
-                    Err(error) => c.message(&error.to_string()),
-                }
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.licenses.on_dismiss(move || {
-            if let Some(c) = weak.upgrade() {
-                let _ = c.licenses.hide();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_cancel_confirmation(move || {
-            if let Some(c) = weak.upgrade() {
-                let restore_export = c.ui.get_confirmation() == Confirmation::Quit;
-                c.ui.set_confirmation(Confirmation::None);
-                if restore_export && c.export_draft.borrow().is_some() {
-                    let _ = c.export_ui.show();
-                }
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_stop_and_quit(move || {
-            if let Some(c) = weak.upgrade() {
-                if c.ui.get_confirmation() != Confirmation::Quit {
-                    return;
-                }
-                {
-                    let mut s = c.session.borrow_mut();
-                    s.quit_when_idle = true;
-                    s.queue.cancel_waiting();
-                }
-                c.ui.set_confirmation(Confirmation::None);
-                c.stop();
-                c.tick();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.on_force_and_quit(move || {
-            if let Some(c) = weak.upgrade() {
-                if c.ui.get_confirmation() != Confirmation::Quit {
-                    return;
-                }
-                {
-                    let mut s = c.session.borrow_mut();
-                    s.force_quit = true;
-                    s.queue.cancel_waiting();
-                }
-                c.ui.set_confirmation(Confirmation::None);
-                c.force_stop();
-                c.tick();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.ui.window().on_close_requested(move || {
-            if let Some(c) = weak.upgrade()
-                && !c.request_quit()
-            {
-                return slint::CloseRequestResponse::KeepWindowShown;
-            }
-            slint::CloseRequestResponse::HideWindow
-        });
-    }
+
     /// The main component for native dialog parenting and toolkit-boundary tests.
     pub fn window(&self) -> MainWindow {
         self.ui.clone_strong()
@@ -615,16 +248,16 @@ impl DesktopController {
     }
     /// Apply a future-request destination; existing queue snapshots stay unchanged.
     pub fn set_destination(&self, destination: Option<PathBuf>) {
-        if self.session.borrow().is_closing() {
+        if !self.inputs_enabled() {
             return;
         }
         self.clear_operation();
-        if let Err(error) = self
+        let result = self
             .session
             .borrow_mut()
             .preferences
-            .set_destination(destination)
-        {
+            .set_destination(destination);
+        if let Err(error) = result {
             self.message(&error.to_string());
         }
         self.refresh();
@@ -636,13 +269,17 @@ impl DesktopController {
         if s.is_closing() {
             return Err(QueueError::ShuttingDown);
         }
+        if s.state.confirmation.is_some() {
+            return Err(QueueError::DecisionPending);
+        }
         // Preserve request admission's absolute-path error before limiting count.
         if paths.iter().any(|path| !path.is_absolute()) {
             return Err(QueueError::AbsoluteSelectionRequired);
         }
         let selection = {
             let mut seen = std::collections::HashSet::new();
-            s.selection
+            s.state
+                .selection
                 .iter()
                 .chain(&paths)
                 .filter(|path| seen.insert(*path))
@@ -654,13 +291,13 @@ impl DesktopController {
         RequestSnapshot::new(
             selection.clone(),
             s.preferences.destination().map(Path::to_owned),
-            s.mode,
+            s.state.mode,
         )?;
-        s.selection = selection;
-        s.reviewing = true;
-        s.follow_run = None;
+        s.state.selection = selection;
+        s.state.view = state::View::Draft;
         drop(s);
         self.clear_operation();
+        self.maintain_reports();
         self.refresh();
         Ok(())
     }
@@ -670,18 +307,17 @@ impl DesktopController {
         self.clear_operation();
         let id = {
             let mut s = self.session.borrow_mut();
-            if s.is_closing() {
-                return Err(QueueError::ShuttingDown);
+            if let Some(error) = s.admission_error() {
+                return Err(error);
             }
             let request = RequestSnapshot::new(
-                s.selection.clone(),
+                s.state.selection.clone(),
                 s.preferences.destination().map(Path::to_owned),
-                s.mode,
+                s.state.mode,
             )?;
-            let id = s.queue.enqueue(request)?;
-            s.follow_run = Some(id);
-            s.selection.clear();
-            s.reviewing = false;
+            let id = s.state.queue.enqueue(request)?;
+            s.state.view = state::View::Waiting(id);
+            s.state.selection.clear();
             id
         };
         self.start_next();
@@ -690,15 +326,20 @@ impl DesktopController {
     }
     /// Add one window-dropped path; a zero-delay timer commits the whole native drop.
     pub fn deliver_drop(self: &Rc<Self>, path: PathBuf) {
+        if !self.inputs_enabled() {
+            return;
+        }
+        self.hover_drop(false);
         if self.drops.borrow_mut().push(path) {
             let weak = Rc::downgrade(self);
             slint::Timer::single_shot(std::time::Duration::ZERO, move || {
                 if let Some(c) = weak.upgrade() {
                     let paths = c.drops.borrow_mut().commit();
                     if let Some(paths) = paths
+                        && c.inputs_enabled()
                         && let Err(error) = c.stage(paths)
                     {
-                        c.message(&error.to_string());
+                        c.message(&wording::queue_error(&error));
                     }
                 }
             });
@@ -706,157 +347,10 @@ impl DesktopController {
     }
     /// Cancel an uncommitted hover/drop batch.
     pub fn cancel_drop(&self) {
+        self.hover_drop(false);
         self.drops.borrow_mut().cancel();
     }
-    fn start_next(&self) {
-        let mut s = self.session.borrow_mut();
-        if s.is_closing()
-            || self.ui.get_confirmation() == Confirmation::Quit
-            || (s.queue.report_storage_enabled()
-                && (s.report_task.is_some()
-                    || s.storage_error.is_some()
-                    || s.entries
-                        .iter()
-                        .any(|entry| entry.completion.is_some() && entry.stored.is_none())))
-        {
-            return;
-        }
-        let next = match s.queue.start_next() {
-            Ok(value) => value,
-            Err(QueueError::ReportSpace) => return,
-            Err(error) => {
-                drop(s);
-                self.message(&error.to_string());
-                return;
-            }
-        };
-        let Some((id, request)) = next else {
-            return;
-        };
-        let mut entry = Entry {
-            id,
-            request,
-            report: None,
-            completion: None,
-            launch_error: None,
-            worker_error: None,
-            user_selected_item: false,
-            stored: None,
-            saved_report: None,
-        };
-        match WorkerRun::start(&self.cli, &entry.request, &self.home) {
-            Ok(worker) => {
-                entry.report = Some(worker.report().clone());
-                s.active = Some(Active {
-                    id,
-                    worker,
-                    stop_requested: false,
-                    force_requested: false,
-                });
-            }
-            Err(error) => {
-                entry.launch_error = Some(error.to_string());
-                let _ = s.queue.complete(id);
-            }
-        }
-        s.entries.push(entry);
-        if s.follow_run == Some(id) || s.entries.len() == 1 {
-            s.selected = s.entries.len() - 1;
-            s.selected_item = 0;
-            s.follow_run = None;
-        }
-        self.clear_operation();
-        platform::set_busy(s.needs_quit_confirmation());
-    }
-    // One bounded IO job. Keep originals until storage succeeds; only the active
-    // and inspected reports remain resident between jobs. Export owns at most one
-    // additional immutable stream, independently of navigation or dismissal.
-    fn maintain_reports(&self) {
-        let mut s = self.session.borrow_mut();
-        if s.is_closing() || !s.queue.report_storage_enabled() {
-            return;
-        }
-        if s.report_task.as_ref().is_some_and(ReportTask::is_finished) {
-            let task = s.report_task.take().expect("finished report task");
-            match task {
-                ReportTask::Store(id, task) => {
-                    let result = task.join().unwrap_or_else(|_| {
-                        Err(io::Error::other(
-                            "The session report writer did not complete.",
-                        ))
-                    });
-                    if let Some(entry) = s.entries.iter_mut().find(|entry| entry.id == id) {
-                        match result {
-                            Ok(stored) => entry.stored = Some(stored),
-                            Err(error) => s.storage_error = Some((id, error.to_string())),
-                        }
-                    }
-                }
-                ReportTask::Load(id, task) => {
-                    let result = task.join().unwrap_or_else(|_| {
-                        Err(io::Error::other(
-                            "The session report reader did not complete.",
-                        ))
-                    });
-                    let selected = s.selected;
-                    if let Some(entry) = s.entries.get_mut(selected).filter(|entry| entry.id == id)
-                    {
-                        match result {
-                            Ok(completion) => {
-                                entry.report = Some(completion.report.clone());
-                                entry.completion = Some(completion);
-                                s.selected_item = default_item_selection(
-                                    s.entries[selected].report.as_ref().expect("loaded report"),
-                                    self.ui.get_attention_only(),
-                                );
-                            }
-                            Err(error) => s.storage_error = Some((id, error.to_string())),
-                        }
-                    }
-                }
-            }
-        }
-        let selected = s.selected;
-        for (index, entry) in s.entries.iter_mut().enumerate() {
-            if index != selected && entry.stored.is_some() {
-                entry.completion = None;
-                entry.report = None;
-            }
-        }
-        if s.report_task.is_some() || s.storage_error.is_some() {
-            return;
-        }
-        if let Some(entry) = s
-            .entries
-            .iter()
-            .find(|entry| entry.completion.is_some() && entry.stored.is_none())
-        {
-            let id = entry.id;
-            let completion = entry.completion.as_ref().expect("settled report").clone();
-            let mode = entry.request.request().mode;
-            match std::thread::Builder::new()
-                .name("session-report-write".into())
-                .spawn(move || eml_app::StoredReport::write(&completion, mode))
-            {
-                Ok(task) => s.report_task = Some(ReportTask::Store(id, task)),
-                Err(error) => s.storage_error = Some((id, error.to_string())),
-            }
-        } else if let Some(entry) = s
-            .entries
-            .get(selected)
-            .filter(|entry| entry.report.is_none())
-            && let Some(stored) = entry.stored.clone()
-        {
-            let id = entry.id;
-            match std::thread::Builder::new()
-                .name("session-report-read".into())
-                .spawn(move || stored.load())
-            {
-                Ok(task) => s.report_task = Some(ReportTask::Load(id, task)),
-                Err(error) => s.storage_error = Some((id, error.to_string())),
-            }
-        }
-    }
+
     /// Poll actual child/pipe and export settlement without blocking the event loop.
     pub fn tick(&self) {
         platform::refresh_menu();
@@ -866,10 +360,16 @@ impl DesktopController {
         if platform::take_quit() {
             self.request_quit();
         }
+        let export_changed = self.poll_export();
+        self.expire_feedback();
+        self.update_text_actions();
         let refresh_needed;
         {
             let mut s = self.session.borrow_mut();
-            refresh_needed = s.active.is_some() || s.export.is_some() || s.report_task.is_some();
+            refresh_needed = export_changed
+                || s.active.is_some()
+                || s.export.is_some()
+                || s.report_task.is_some();
             let completed = if let Some(active) = &mut s.active {
                 match active.worker.poll() {
                     Ok(completion) => completion.map(|c| (active.id, c)),
@@ -885,71 +385,42 @@ impl DesktopController {
                 None
             };
             if let Some((id, completion)) = completed {
-                if self.ui.get_confirmation() == Confirmation::ForceStop {
+                if matches!(&s.state.confirmation, Some(state::PendingConfirmation::ForceStop(run)) if *run == id)
+                {
+                    s.state.confirmation = None;
                     self.ui.set_confirmation(Confirmation::None);
                 }
 
+                let visible = s.state.view == state::View::Run(id);
                 if let Some(entry) = s.entries.iter_mut().find(|entry| entry.id == id) {
+                    entry.presentation.settle(visible);
                     entry.completion = Some(completion);
                 }
-                if let Some(entry) = s.entries.get(s.selected)
-                    && entry.id == id
-                    && !entry.user_selected_item
-                    && let Some(handle) = &entry.report
-                {
-                    s.selected_item = default_item_selection(handle, self.ui.get_attention_only());
-                }
-                let _ = s.queue.complete(id);
+                let _ = s.state.queue.complete(id);
                 s.active = None;
             }
-            if s.export.as_ref().is_some_and(|job| job.task.is_finished()) {
-                let job = s.export.take().expect("finished export");
-                let result = job.task.join();
-                let saved = matches!(&result, Ok(Ok(())));
-                let message = match result {
-                    Ok(Ok(())) => {
-                        let retained = s.entries.iter_mut().find(|entry| entry.id == job.run);
-                        let display = if let Some(entry) = retained {
-                            entry.saved_report = Some(job.path.clone());
-                            job.path.file_name().map(Path::new).unwrap_or(&job.path)
-                        } else {
-                            &job.path
-                        };
-                        format!("Report saved: {}", eml_protocol::TerminalPath::new(display))
-                    }
-                    Ok(Err(error)) if error.kind() == io::ErrorKind::AlreadyExists => {
-                        vocabulary::NO_REPLACEMENT.into()
-                    }
-                    Ok(Err(error)) => error.to_string(),
-                    Err(_) => vocabulary::REPORT_EXPORT_FAILED.to_owned(),
-                };
-                if self
-                    .export_draft
-                    .borrow()
-                    .as_ref()
-                    .is_some_and(|draft| draft.source.run == job.run)
-                {
-                    self.export_ui.set_busy(false);
-                    if saved {
-                        self.export_draft.borrow_mut().take();
-                        let _ = self.export_ui.hide();
-                    } else {
-                        self.export_ui.set_notice(
-                            format!(
-                                "{message} Choose a different file name or folder, then try again."
-                            )
-                            .into(),
-                        );
-                    }
-                }
-                self.operation(&format!("Export for Run {}", job.run), &message);
+            let now = now_ms();
+            for entry in &mut s.entries {
+                reconcile_entry(entry);
             }
-
-            if self.ui.get_confirmation() == Confirmation::Quit
-                && s.active.is_none()
+            if let Some(id) = s.active.as_ref().map(|active| active.id) {
+                let completed = s
+                    .entries
+                    .iter()
+                    .find(|entry| entry.id == id)
+                    .map(|entry| entry.presentation.tally.processed);
+                if let (Some(completed), Some(active)) = (completed, s.active.as_mut()) {
+                    active.estimate.observe(now, completed);
+                }
+            }
+            if matches!(
+                &s.state.confirmation,
+                Some(state::PendingConfirmation::Quit)
+            ) && s.active.is_none()
                 && s.export.is_none()
-                && s.queue.waiting() == 0
+                && s.state.queue.waiting() == 0
             {
+                s.state.confirmation = None;
                 self.ui.set_confirmation(Confirmation::None);
                 s.should_exit = true;
             }
@@ -972,9 +443,9 @@ impl DesktopController {
             || s.export.is_some()
             || (!s.is_closing()
                 && (s.report_task.is_some()
-                    || (s.queue.report_storage_enabled()
-                        && s.storage_error.is_none()
-                        && s.queue.waiting() > 0)))
+                    || (!s.memory_full()
+                        && s.state.queue.stored_bytes() < eml_app::MAX_STORED_REPORT_BYTES
+                        && s.state.queue.waiting() > 0)))
     }
     /// Confirm owned tasks or waiting requests; repeated committed Quit stays closed.
     pub fn request_quit(&self) -> bool {
@@ -987,15 +458,14 @@ impl DesktopController {
         if needs_confirmation {
             let _ = self.about.hide();
             let _ = self.licenses.hide();
-            let _ = self.export_ui.hide();
             if let Err(error) = self.ui.show() {
                 self.message(&error.to_string());
             }
             self.ui.window().set_minimized(false);
-            self.ui.set_confirmation(Confirmation::Quit);
+            self.set_confirmation(Some(state::PendingConfirmation::Quit));
             false
         } else {
-            self.cancel_export();
+            self.pending_save.borrow_mut().take();
             self.session.borrow_mut().should_exit = true;
             true
         }
@@ -1010,7 +480,10 @@ impl DesktopController {
         let result = {
             let mut s = self.session.borrow_mut();
             s.active.as_mut().map(|active| {
-                active.stop_requested = true;
+                if active.stop != state::Stop::Running {
+                    return Ok(());
+                }
+                active.stop = state::Stop::Requested { at: now_ms() };
                 active.worker.stop()
             })
         };
@@ -1025,7 +498,7 @@ impl DesktopController {
         let result = {
             let mut s = self.session.borrow_mut();
             s.active.as_mut().map(|active| {
-                active.force_requested = true;
+                active.stop = state::Stop::Forced;
                 active.worker.force_stop()
             })
         };
@@ -1042,260 +515,131 @@ impl DesktopController {
             entry.worker_error.get_or_insert_with(|| error.to_string());
         }
     }
-    /// Review original roots again under current destination settings; never auto-run.
+    /// Load this run's captured inputs and settings into the draft.
     pub fn review_request(&self) {
-        {
+        if !self.can_review() {
+            return;
+        }
+        self.review_snapshot(false);
+    }
+    /// Load a settled Check run into the draft in Create mode.
+    pub fn create_from_check(&self) {
+        if !self.can_convert_check() {
+            return;
+        }
+        self.review_snapshot(true);
+    }
+    fn review_snapshot(&self, create: bool) {
+        let snapshot = {
             let s = self.session.borrow();
-            if s.is_closing() {
-                self.message(&QueueError::ShuttingDown.to_string());
+            if s.is_closing() || s.state.confirmation.is_some() {
                 return;
             }
-            if !s.selection.is_empty() {
-                self.message("A draft already contains selected paths. Finish or clear it before reviewing this request again; the draft was preserved.");
+            let Some(entry) = s
+                .selected_entry()
+                .filter(|entry| completion_state(entry).is_some() || entry.launch_error.is_some())
+            else {
+                return;
+            };
+            if create && !can_create(entry) {
                 return;
             }
-        }
-        let paths = {
-            let s = self.session.borrow();
-            s.entries
-                .get(s.selected)
-                .filter(|entry| {
-                    entry.completion.is_some()
-                        || entry.stored.is_some()
-                        || entry.launch_error.is_some()
-                })
-                .map(|entry| {
-                    (
-                        entry.request.request().paths.clone(),
-                        if can_create(entry) {
-                            RunMode::Create
-                        } else {
-                            entry.request.request().mode
-                        },
-                    )
-                })
+            let request = entry.request.request();
+            RequestSnapshot::new(
+                request.paths.clone(),
+                match &request.output {
+                    eml_core::OutputLocation::BesideSource => None,
+                    eml_core::OutputLocation::Directory(path) => Some(path.clone()),
+                },
+                if create {
+                    RunMode::Create
+                } else {
+                    request.mode
+                },
+            )
         };
-        if let Some((paths, mode)) = paths {
-            // Only the explicit completed-Check conversion changes operation.
-            // Generic recovery retains the request's mode for correction.
-            self.session.borrow_mut().mode = mode;
-            if let Err(error) = self.stage(paths) {
-                self.message(&error.to_string());
+        match snapshot {
+            Ok(snapshot) if !self.session.borrow().state.selection.is_empty() => {
+                self.set_confirmation(Some(state::PendingConfirmation::ReplaceDraft(snapshot)))
             }
+            Ok(snapshot) => self.apply_snapshot(snapshot),
+            Err(error) => self.message(&wording::queue_error(&error)),
         }
     }
-    /// The application-owned no-replace report naming window.
-    pub fn export_window(&self) -> ExportWindow {
-        self.export_ui.clone_strong()
-    }
-    /// Open a draft pinned to the exact current report, independently of navigation.
-    pub fn begin_export(&self) {
-        if self.session.borrow().is_closing() {
-            return;
-        }
-        if self.export_draft.borrow().is_some() {
-            let _ = self.export_ui.show();
-            return;
-        }
-        let Some(source) = self.capture_export() else {
-            return;
+    fn apply_snapshot(&self, snapshot: RequestSnapshot) {
+        self.clear_operation();
+        let mut s = self.session.borrow_mut();
+        let request = snapshot.request();
+        s.state.selection = request.paths.clone();
+        s.state.mode = request.mode;
+        s.state.view = state::View::Draft;
+        let destination = match &request.output {
+            eml_core::OutputLocation::BesideSource => None,
+            eml_core::OutputLocation::Directory(path) => Some(path.clone()),
         };
-        let directory = self.export_directory.borrow().clone();
-        self.export_ui
-            .set_run_label(format!("Run {}", source.run).into());
-        self.export_ui
-            .set_file_name(format!("eml-run-{}.jsonl", source.run).into());
-        self.export_ui.set_directory(
-            eml_protocol::TerminalPath::new(&directory)
-                .to_string()
-                .into(),
-        );
-        self.export_ui
-            .set_notice("Choose a new file name. Existing entries remain unchanged.".into());
-        self.export_ui.set_busy(false);
-        *self.export_draft.borrow_mut() = Some(ExportDraft {
-            token: Rc::new(()),
-            source,
-            directory,
-        });
-        if let Err(error) = self.export_ui.show() {
-            self.cancel_export();
+        let result = s.preferences.set_destination(destination);
+        drop(s);
+        if let Err(error) = result {
             self.message(&error.to_string());
         }
+        self.maintain_reports();
         self.refresh();
     }
-    /// Capture folder-dialog ownership before an asynchronous native call.
-    pub fn capture_export_folder(&self) -> Option<ExportFolderRequest> {
-        if self.session.borrow().is_closing() || self.export_ui.get_busy() {
-            return None;
-        }
-        self.export_draft
-            .borrow()
-            .as_ref()
-            .map(|draft| ExportFolderRequest {
-                token: Rc::downgrade(&draft.token),
-            })
-    }
-    fn export_folder_is_current(&self, request: &ExportFolderRequest) -> bool {
-        request.token.upgrade().is_some_and(|token| {
-            self.export_draft
-                .borrow()
-                .as_ref()
-                .is_some_and(|draft| Rc::ptr_eq(&token, &draft.token))
-        })
-    }
-    /// Apply a native folder choice only to the originating, still-open draft.
-    pub fn set_export_directory(&self, request: &ExportFolderRequest, directory: PathBuf) {
-        if self.session.borrow().is_closing()
-            || self.export_ui.get_busy()
-            || !directory.is_absolute()
-            || !self.export_folder_is_current(request)
-        {
-            return;
-        }
-        if let Some(draft) = self.export_draft.borrow_mut().as_mut() {
-            draft.directory = directory.clone();
-            *self.export_directory.borrow_mut() = directory.clone();
-            self.export_ui.set_directory(
-                eml_protocol::TerminalPath::new(&directory)
-                    .to_string()
-                    .into(),
-            );
+    fn confirmation(&self) -> Confirmation {
+        match &self.session.borrow().state.confirmation {
+            None => Confirmation::None,
+            Some(state::PendingConfirmation::Quit) => Confirmation::Quit,
+            Some(state::PendingConfirmation::ForceStop(_)) => Confirmation::ForceStop,
+            Some(state::PendingConfirmation::ReplaceDraft(_)) => Confirmation::ReplaceDraft,
         }
     }
-    /// Surface folder-dialog errors inside the export flow.
-    pub fn export_notice(&self, request: &ExportFolderRequest, notice: &str) {
-        if self.session.borrow().is_closing() || !self.export_folder_is_current(request) {
-            return;
+    fn set_confirmation(&self, pending: Option<state::PendingConfirmation>) {
+        if pending.is_some() {
+            self.ui.set_drop_hovered(false);
         }
-        self.export_ui
-            .set_notice(eml_protocol::DisplayText::new(notice).to_string().into());
-    }
-    /// Cancel a draft without cancelling an already-owned physical export.
-    pub fn cancel_export(&self) {
-        self.export_draft.borrow_mut().take();
-        let _ = self.export_ui.hide();
+        self.session.borrow_mut().state.confirmation = pending;
+        self.ui.set_confirmation(self.confirmation());
         self.refresh();
     }
-    fn create_export(&self) {
-        if self.session.borrow().is_closing() || self.session.borrow().export.is_some() {
-            return;
-        }
-        let name = self.export_ui.get_file_name();
-        let path = Path::new(name.as_str());
-        if name.contains('\0')
-            || path.components().count() != 1
-            || !matches!(
-                path.components().next(),
-                Some(std::path::Component::Normal(_))
-            )
-        {
-            self.export_ui
-                .set_notice("Enter one file name, without a folder or path separator.".into());
-            return;
-        }
-        let Some((source, target)) = self
-            .export_draft
-            .borrow()
-            .as_ref()
-            .map(|draft| (draft.source.clone(), draft.directory.join(path)))
-        else {
-            return;
-        };
-        self.export_ui.set_busy(true);
-        self.export_ui.set_notice("Creating the report…".into());
-        self.start_captured_export(source, target);
-        if self.session.borrow().export.is_none() {
-            self.export_ui.set_busy(false);
-        }
+    /// Whether native input and draft actions may proceed at this moment.
+    pub fn inputs_enabled(&self) -> bool {
+        let s = self.session.borrow();
+        !s.is_closing() && s.state.confirmation.is_none()
+    }
+    /// Highlight the draft drop target while native hover events are available.
+    pub fn hover_drop(&self, hovered: bool) {
+        self.ui.set_drop_hovered(hovered && self.inputs_enabled());
     }
     /// Native path for copying, without granting reveal qualification.
     pub fn selected_path(&self, destination: bool) -> Option<PathBuf> {
         let s = self.session.borrow();
-        s.entries
-            .get(s.selected)?
+        s.selected_entry()?
             .report
             .as_ref()?
             .with_report(|report| {
+                let index = s.selected_entry()?.presentation.selected?;
                 if destination {
-                    report.destination_path(s.selected_item)
+                    report.destination_path(index)
                 } else {
-                    report.source_path(s.selected_item)
+                    report.source_path(index)
                 }
             })
             .flatten()
     }
-    /// Capture the selected settled stream before presenting an export draft.
-    pub fn capture_export(&self) -> Option<ReportExport> {
-        let mut s = self.session.borrow_mut();
-        if s.export.is_some() || s.is_closing() {
-            return None;
-        }
-        let entry = s.entries.get(s.selected)?;
-        if entry.completion.as_ref()?.jsonl.is_empty() {
-            return None;
-        }
-        let source = ReportExport {
-            run: entry.id,
-            jsonl: entry.completion.as_ref()?.jsonl.clone(),
-        };
-        s.follow_run = None;
-        Some(source)
-    }
-    /// Save the currently selected settled stream without a file-dialog delay.
-    pub fn start_export(&self, path: PathBuf) {
-        if let Some(source) = self.capture_export() {
-            self.start_captured_export(source, path);
-        }
-    }
-    /// Write the exact captured report, even if selection changed during the dialog.
-    /// Existing files are never replaced.
-    pub fn start_captured_export(&self, source: ReportExport, path: PathBuf) {
-        self.clear_operation();
-        if self.session.borrow().is_closing() {
-            self.message(&QueueError::ShuttingDown.to_string());
-            return;
-        }
-        if self.session.borrow().export.is_some() {
-            self.message("A report export is already running. Wait for it to finish before saving another report.");
-            return;
-        }
-        let ReportExport { run, jsonl } = source;
-        let target = path.clone();
-        match std::thread::Builder::new()
-            .name("report-export".into())
-            .spawn(move || eml_app::export_report(&path, &jsonl))
-        {
-            Ok(job) => {
-                self.session.borrow_mut().export = Some(ExportJob {
-                    run,
-                    path: target,
-                    task: job,
-                });
-                platform::set_busy(true);
-            }
-            Err(error) => {
-                let message = format!("Could not start report export: {error}. Try again.");
-                self.export_ui.set_notice(message.clone().into());
-                self.message(&message);
-            }
-        }
-        self.refresh();
-    }
     /// Native destination from an earlier qualified copy receipt, for advisory reveal.
     pub fn selected_copy(&self) -> Option<PathBuf> {
         let s = self.session.borrow();
-        let entry = s.entries.get(s.selected)?;
+        let entry = s.selected_entry()?;
         entry
             .report
             .as_ref()?
-            .with_report(|report| report.reveal_path(s.selected_item))
+            .with_report(|report| {
+                entry
+                    .presentation
+                    .selected
+                    .and_then(|index| report.reveal_path(index))
+            })
             .flatten()
-    }
-    /// Last successfully saved report, kept as a native path for advisory reveal.
-    pub fn saved_report_path(&self) -> Option<PathBuf> {
-        let s = self.session.borrow();
-        s.entries.get(s.selected)?.saved_report.clone()
     }
     // At most one OS launch request per initiating view. Launch acceptance is
     // advisory: it neither verifies the viewer nor changes processing receipts.
@@ -1369,8 +713,16 @@ impl DesktopController {
         let detail = eml_protocol::DisplayText::new(detail).to_string();
         match target {
             OpenTarget::Main => {
-                self.message(message);
-                self.ui.set_operation_details(detail.into());
+                self.set_feedback(state::Feedback::Message {
+                    label: String::new(),
+                    text: message.into(),
+                    details: detail.clone(),
+                    tone: if detail.is_empty() {
+                        state::FeedbackTone::Info
+                    } else {
+                        state::FeedbackTone::Attention
+                    },
+                });
             }
             #[cfg(feature = "desktop")]
             OpenTarget::About => {
@@ -1384,469 +736,75 @@ impl DesktopController {
             }
         }
     }
-    /// Show transient feedback for the current user operation, separate from run facts.
-    pub fn message(&self, message: &str) {
-        self.operation("Operation status", message);
-    }
-    fn operation(&self, label: &str, message: &str) {
-        self.operation_serial
-            .set(self.operation_serial.get().wrapping_add(1));
-        self.ui.set_operation_details("".into());
-        self.ui.set_operation_label(label.into());
-        self.ui
-            .set_operation_feedback(eml_protocol::DisplayText::new(message).to_string().into());
-    }
-    fn clear_operation(&self) {
-        self.operation_serial
-            .set(self.operation_serial.get().wrapping_add(1));
-        self.ui.set_operation_label("".into());
-        self.ui.set_operation_feedback("".into());
-        self.ui.set_operation_details("".into());
-    }
     fn dismiss(&self) {
+        let index = self.session.borrow().selected_index();
+        if let Some(index) = index {
+            self.dismiss_run(index);
+        }
+    }
+    fn dismiss_run(&self, index: usize) {
         self.clear_operation();
-        {
-            let mut s = self.session.borrow_mut();
-            let selected = s.selected;
-            if let Some(entry) = s.entries.get(selected) {
-                let id = entry.id;
-                if s.queue.dismiss(id) {
-                    s.entries.remove(selected);
-                    s.selected = selected.min(s.entries.len().saturating_sub(1));
-                    s.selected_item = 0;
-                    if s.storage_error.as_ref().is_some_and(|(run, _)| *run == id) {
-                        s.storage_error = None;
-                    }
-                }
+        let mut s = self.session.borrow_mut();
+        let Some(entry) = s.entries.get(index) else {
+            return;
+        };
+        let id = entry.id;
+        if !self.can_close_run(&s, entry) {
+            return;
+        }
+        if s.state.queue.dismiss(id) {
+            s.entries.remove(index);
+            if s.state.view == state::View::Run(id) {
+                s.state.view = s
+                    .entries
+                    .get(index.min(s.entries.len().saturating_sub(1)))
+                    .map_or(state::View::Draft, |entry| state::View::Run(entry.id));
             }
         }
+        drop(s);
         self.maintain_reports();
         self.start_next();
         self.refresh();
     }
-    fn refresh(&self) {
-        let s = self.session.borrow();
-        let main_open_pending = self
-            .open_jobs
-            .borrow()
-            .iter()
-            .any(|job| job.target == OpenTarget::Main);
-        self.ui.set_native_open_pending(main_open_pending);
-        platform::set_busy(s.needs_quit_confirmation());
-        self.ui.set_closing(s.is_closing());
-        self.ui
-            .set_report_storage_enabled(s.queue.report_storage_enabled());
-        self.ui.set_storage_retry(s.storage_error.is_some());
-        if s.is_closing() {
-            self.export_draft.borrow_mut().take();
-            let _ = self.export_ui.hide();
-        }
-        self.ui.set_check_only(s.mode == RunMode::DryRun);
-        self.ui.set_selection(update_model(
-            self.ui.get_selection(),
-            s.selection
-                .iter()
-                .map(|path| view_model::path(&eml_protocol::TerminalPath::new(path).to_string()))
-                .collect(),
-        ));
-        self.ui.set_reviewing(s.reviewing || s.entries.is_empty());
-        self.ui.set_export_running(s.export.is_some());
-        self.ui.set_stop_requested(
-            s.active
-                .as_ref()
-                .is_some_and(|a| a.stop_requested || a.force_requested),
-        );
-        self.ui.set_selected_item(s.selected_item as i32);
-        self.ui.set_selected_run(s.selected as i32);
-        self.ui.set_has_reports(!s.entries.is_empty());
-        self.ui.set_worker_running(s.active.is_some());
-        self.ui.set_start_label(
-            if s.active.is_some()
-                || s.report_task.is_some()
-                || s.storage_error.is_some()
-                || s.queue.reports().len() >= s.queue.report_capacity()
-            {
-                "Queue request".into()
-            } else if s.mode == RunMode::DryRun {
-                "Start check".into()
-            } else {
-                "Create copies".into()
-            },
-        );
-        self.ui.set_can_start(
-            !s.selection.is_empty() && s.queue.capacity_error().is_none() && !s.is_closing(),
-        );
-        self.ui.set_start_reason(
-            if s.is_closing() {
-                QueueError::ShuttingDown.to_string()
-            } else if let Some(error) = s.queue.capacity_error() {
-                error.to_string()
-            } else {
-                format!(
-                    "{} using the reviewed paths and current destination",
-                    self.ui.get_start_label()
-                )
-            }
-            .into(),
-        );
-        let activity = s
-            .active
-            .as_ref()
-            .and_then(|active| s.entries.iter().find(|e| e.id == active.id))
-            .map(|entry| {
-                format!(
-                    "Run {} · {}",
-                    entry.id,
-                    status(entry, s.active.as_ref()).label()
-                )
-            })
-            .unwrap_or_else(|| {
-                s.export.as_ref().map_or_else(String::new, |job| {
-                    if s.quit_when_idle || s.force_quit {
-                        format!(
-                            "Finishing report export for Run {} before quitting",
-                            job.run
-                        )
-                    } else {
-                        format!("Saving report for Run {}", job.run)
-                    }
-                })
-            });
-        self.ui.set_activity_label(activity.into());
-        self.ui
-            .set_settings_warning(s.preferences.warning().unwrap_or_default().into());
-        self.ui
-            .set_queue_notice(if let Some((run, error)) = &s.storage_error {
-                format!("Session report storage for Run {run} is unavailable: {}. Its available report is preserved. Retry storage or close that result to continue.", eml_protocol::DisplayText::new(error)).into()
-            } else if s.queue.is_paused_for_report_space() {
-                "Queue paused: close a completed result, or allow temporary report storage from Tasks.".into()
-            } else {
-                "".into()
-            });
-        self.ui
-            .set_destination_beside(s.preferences.destination().is_none());
-        self.ui.set_destination_label(
-            s.preferences
-                .destination()
-                .map(|p| eml_protocol::TerminalPath::new(p).to_string())
-                .unwrap_or_else(|| "Beside originals".into())
-                .into(),
-        );
-        self.ui.set_runs(update_model(
-            self.ui.get_runs(),
-            s.entries
-                .iter()
-                .map(|entry| {
-                    run_view(
-                        entry.id,
-                        &entry.request,
-                        status(entry, s.active.as_ref()).label(),
-                    )
-                })
-                .collect(),
-        ));
-        self.ui.set_waiting(update_model(
-            self.ui.get_waiting(),
-            s.queue
-                .waiting_requests()
-                .map(|(id, request)| run_view(id, request, RunStatus::Queued.label()))
-                .collect(),
-        ));
-        let Some(entry) = s.entries.get(s.selected) else {
-            self.clear_report();
-            return;
-        };
-        self.ui
-            .set_report_loading(entry.stored.is_some() && entry.report.is_none());
-        self.ui.set_report_load_notice(if let Some((run, _)) = &s.storage_error {
-            format!("This report is not loaded because session storage for Run {run} is unavailable. Retry storage or close the affected result; retained reports have not been discarded.")
-        } else { "Loading report…".into() }.into());
-        self.ui.set_can_reveal_report(entry.saved_report.is_some());
-        self.ui.set_saved_report_path(
-            entry
-                .saved_report
-                .as_ref()
-                .map(|path| view_model::path(&eml_protocol::TerminalPath::new(path).to_string()))
-                .unwrap_or_default(),
-        );
-        self.ui.set_run_label(format!("Run {}", entry.id).into());
-        self.ui.set_run_context(
-            format!(
-                "{} · {}",
-                vocabulary::mode_label(entry.request.request().mode),
-                request_destination(&entry.request)
-            )
-            .into(),
-        );
-        let run_status = status(entry, s.active.as_ref());
-        self.ui.set_run_status(run_status.label().into());
-        self.ui.set_run_attention(matches!(
-            run_status,
-            RunStatus::CompletedWithFailures
-                | RunStatus::StartFailed
-                | RunStatus::IdentityFailure
-                | RunStatus::ForceStopped
-                | RunStatus::RequestRefused
-                | RunStatus::Incomplete
-        ));
-        self.ui.set_report_running(
-            s.active
-                .as_ref()
-                .is_some_and(|active| active.id == entry.id),
-        );
-        self.ui.set_can_export(
-            entry
-                .completion
-                .as_ref()
-                .is_some_and(|c| !c.jsonl.is_empty())
-                && s.export.is_none()
-                && self.export_draft.borrow().is_none(),
-        );
-        self.ui.set_can_dismiss(
-            entry.completion.is_some() || entry.stored.is_some() || entry.launch_error.is_some(),
-        );
-        self.ui.set_can_create(can_create(entry));
-        self.ui.set_can_review(
-            entry.completion.is_some() || entry.stored.is_some() || entry.launch_error.is_some(),
-        );
-        self.ui.set_review_label(
-            if can_create(entry) {
-                "Review for copy creation"
-            } else {
-                "Review inputs again"
-            }
-            .into(),
-        );
-        self.ui.set_report_details(
-            entry
-                .completion
-                .as_ref()
-                .map(|c| {
-                    eml_protocol::DisplayText::new(&String::from_utf8_lossy(&c.stderr)).to_string()
-                })
-                .unwrap_or_default()
-                .into(),
-        );
-        let mut diagnostics = entry
-            .completion
-            .as_ref()
-            .map(view_model::completion_diagnostics)
-            .unwrap_or_default();
-        for error in [&entry.launch_error, &entry.worker_error]
-            .into_iter()
-            .flatten()
-        {
-            diagnostics.push(DetailView { text: error.into() });
-        }
-        if let Some(handle) = &entry.report {
-            handle.with_report(|report| diagnostics.extend(view_model::report_diagnostics(report)));
-        }
-        self.ui.set_report_diagnostics(update_model(
-            self.ui.get_report_diagnostics(),
-            diagnostics
-                .into_iter()
-                .map(|row| DetailView {
-                    text: eml_protocol::DisplayText::new(row.text.as_str())
-                        .to_string()
-                        .into(),
-                })
-                .collect(),
-        ));
-        let previous = *self.last_view.borrow();
-        if let Some(previous) = previous
-            && (previous.run != entry.id || previous.item != s.selected_item)
-        {
-            self.ui.set_details_scroll_y(0.0);
-            self.ui.set_details_expanded(false);
-            if previous.run != entry.id {
-                self.clear_items();
-            }
-        }
-        let Some(handle) = &entry.report else {
-            self.clear_items();
-            return;
-        };
-        handle.with_report(|report| {
-            self.ui
-                .set_can_reveal(report.reveal_path(s.selected_item).is_some());
-            let revision = PresentationRevision {
-                run: entry.id,
-                item: s.selected_item,
-                attention_only: self.ui.get_attention_only(),
-                started: report.start().is_some(),
-                items: report.items().len(),
-                summary: report.summary().is_some(),
-                failure: report.failure(),
-            };
-            if *self.last_view.borrow() == Some(revision) {
-                return;
-            }
-            *self.last_view.borrow_mut() = Some(revision);
-            self.ui
-                .set_work_total(report.start().map_or(0, |s| s.total as i32));
-            self.ui.set_work_completed(report.items().len() as i32);
-
-            self.ui.set_items(update_model(
-                self.ui.get_items(),
-                report
-                    .items()
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, item)| {
-                        !self.ui.get_attention_only() || view_model::item(item).attention
-                    })
-                    .map(|(index, item)| {
-                        let mut row = view_model::item(item);
-                        row.original_index = index as i32;
-                        row
-                    })
-                    .collect(),
-            ));
-            self.ui.set_selected_visible_row(
-                self.ui
-                    .get_items()
-                    .iter()
-                    .position(|row| row.original_index == s.selected_item as i32)
-                    .map_or(-1, |index| index as i32),
-            );
-            self.ui.set_counts(update_model(
-                self.ui.get_counts(),
-                view_model::counts(report),
-            ));
-            let Some(item) = report.items().get(s.selected_item) else {
-                self.ui.set_can_copy_source(false);
-                self.ui.set_can_copy_destination(false);
-                self.ui.set_has_item(false);
-                return;
-            };
-            let view = view_model::item(item);
-            self.ui.set_has_item(true);
-            self.ui.set_can_copy_source(
-                report
-                    .source_path(s.selected_item)
-                    .and_then(|p| p.into_os_string().into_string().ok())
-                    .is_some(),
-            );
-            self.ui.set_can_copy_destination(
-                report
-                    .destination_path(s.selected_item)
-                    .and_then(|p| p.into_os_string().into_string().ok())
-                    .is_some(),
-            );
-            self.ui.set_item_source(view.source);
-            self.ui.set_item_source_path(view.path);
-            self.ui
-                .set_item_destination_path(view_model::path(view.destination.as_str()));
-            self.ui.set_item_destination(view.destination);
-            self.ui.set_item_status(view.status);
-            self.ui.set_item_attention(view.attention);
-            let (details, parts, fields) = view_model::details(item);
-            self.ui
-                .set_details(update_model(self.ui.get_details(), details));
-            self.ui.set_byte_counts(update_model(
-                self.ui.get_byte_counts(),
-                view_model::byte_counts(item),
-            ));
-            self.ui.set_removal_heading(parts.into());
-            self.ui.set_field_heading(fields.into());
-            self.ui.set_removals(update_model(
-                self.ui.get_removals(),
-                view_model::removals(item),
-            ));
-            self.ui.set_stripped(update_model(
-                self.ui.get_stripped(),
-                item.stripped_fields
-                    .iter()
-                    .map(|name| DetailView {
-                        text: name.clone().into(),
-                    })
-                    .collect(),
-            ));
-        });
-    }
-    fn clear_items(&self) {
-        self.ui.set_keyboard_navigation(false);
-        self.ui.set_messages_scroll_y(0.0);
-        self.ui.set_attention_only(false);
-        self.ui.set_selected_visible_row(-1);
-        self.ui.set_work_total(0);
-        self.ui.set_work_completed(0);
-        self.ui
-            .set_items(update_model(self.ui.get_items(), Vec::new()));
-        self.ui
-            .set_counts(update_model(self.ui.get_counts(), Vec::new()));
-        self.ui.set_can_copy_source(false);
-        self.ui.set_can_copy_destination(false);
-        self.ui.set_has_item(false);
-        self.ui.set_item_attention(false);
-        self.ui
-            .set_details(update_model(self.ui.get_details(), Vec::new()));
-        self.ui
-            .set_removals(update_model(self.ui.get_removals(), Vec::new()));
-        self.ui
-            .set_stripped(update_model(self.ui.get_stripped(), Vec::new()));
-        self.ui
-            .set_byte_counts(update_model(self.ui.get_byte_counts(), Vec::new()));
-        *self.last_view.borrow_mut() = None;
-        self.ui.set_can_reveal(false);
-    }
-    fn clear_report(&self) {
-        self.ui.set_can_reveal_report(false);
-        self.ui.set_saved_report_path(PathView::default());
-        self.ui.set_report_loading(false);
-        self.ui.set_report_details("".into());
-        self.ui
-            .set_report_diagnostics(update_model(self.ui.get_report_diagnostics(), Vec::new()));
-        self.clear_items();
-        self.ui
-            .set_run_label("Drop messages or choose files to begin".into());
-        self.ui.set_run_status("".into());
-        self.ui.set_run_attention(false);
-        self.ui.set_run_context("".into());
-        self.ui.set_report_running(false);
-        self.ui.set_can_export(false);
-        self.ui.set_can_dismiss(false);
-        self.ui.set_can_create(false);
-        self.ui.set_can_review(false);
-    }
-}
-fn first_attention(handle: &eml_app::ReportHandle) -> Option<usize> {
-    handle
-        .with_report(|report| {
-            report
-                .items()
-                .iter()
-                .position(|item| view_model::item(item).attention)
-        })
-        .flatten()
-}
-// Attention-only views have no healthy fallback message.
-fn default_item_selection(handle: &eml_app::ReportHandle, attention_only: bool) -> usize {
-    first_attention(handle).unwrap_or(if attention_only { usize::MAX } else { 0 })
 }
 fn request_destination(request: &RequestSnapshot) -> String {
     match &request.request().output {
-        eml_core::OutputLocation::BesideSource => "Beside originals".into(),
+        eml_core::OutputLocation::BesideSource => "Next to originals".into(),
         eml_core::OutputLocation::Directory(path) => {
             eml_protocol::TerminalPath::new(path).to_string()
         }
     }
 }
-fn run_view(id: RunId, request: &RequestSnapshot, status: &str) -> RunView {
+fn run_view(id: RunId, request: &RequestSnapshot, status: RunStatus) -> RunView {
     RunView {
+        token: id.to_string().into(),
+        waiting: status == RunStatus::Queued,
+        closable: false,
+        tone: match status {
+            RunStatus::Queued => Tone::Neutral,
+            RunStatus::Checking
+            | RunStatus::Creating
+            | RunStatus::StopRequested
+            | RunStatus::ForceStopRequested => Tone::Running,
+            RunStatus::Completed => Tone::Ok,
+            RunStatus::Stopped | RunStatus::StoppedBeforeStart | RunStatus::ForceStopped => {
+                Tone::Stopped
+            }
+            RunStatus::CompletedWithFailures
+            | RunStatus::RequestRefused
+            | RunStatus::Incomplete
+            | RunStatus::IdentityFailure
+            | RunStatus::StartFailed => Tone::Attention,
+        },
+        unseen: false,
         label: format!("Run {id}").into(),
-        status: status.into(),
-        mode: vocabulary::mode_label(request.request().mode).into(),
-        destination: request_destination(request).into(),
-        selection: view_model::path(
-            &request
-                .request()
-                .paths
-                .first()
-                .map(|p| eml_protocol::TerminalPath::new(p).to_string())
-                .unwrap_or_default(),
-        ),
-        selections: view_model::count(CountKind::Selections, request.request().paths.len() as u32),
+        status: wording::phase(status).into(),
+        mode: if request.request().mode == RunMode::Create {
+            "Create copies"
+        } else {
+            "Check"
+        }
+        .into(),
     }
 }
 fn status(entry: &Entry, active: Option<&Active>) -> RunStatus {
@@ -1868,10 +826,10 @@ fn status(entry: &Entry, active: Option<&Active>) -> RunStatus {
         };
     }
     if let Some(active) = active.filter(|active| active.id == entry.id) {
-        if active.force_requested {
+        if active.stop == state::Stop::Forced {
             return RunStatus::ForceStopRequested;
         }
-        if active.stop_requested {
+        if matches!(active.stop, state::Stop::Requested { .. }) {
             return RunStatus::StopRequested;
         }
         return if entry.request.request().mode == RunMode::DryRun {
@@ -1903,3 +861,32 @@ fn completion_state(entry: &Entry) -> Option<(WorkerState, Option<WorkerFailure>
 
 #[cfg(test)]
 mod tests;
+
+fn now_ms() -> u64 {
+    i_slint_core::animations::current_tick().as_millis()
+}
+
+fn reconcile_entry(entry: &mut Entry) {
+    let Some(handle) = entry.report.clone() else {
+        return;
+    };
+    handle.with_report(|report| {
+        let (categories, tally, total) = view_model::report_facts(report);
+        entry.presentation.tally = tally;
+        entry.presentation.total = total;
+        let default = entry.completion.is_some() && !entry.presentation.initialized;
+        entry
+            .presentation
+            .reconcile(&categories, entry.completion.is_some());
+        if default {
+            entry.presentation.selected = present::table_rows(
+                report,
+                &entry.request,
+                entry.presentation.filter,
+                entry.presentation.sort,
+            )
+            .first()
+            .map(|row| row.original_index as usize);
+        }
+    });
+}

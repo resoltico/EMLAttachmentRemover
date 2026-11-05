@@ -1,0 +1,98 @@
+// Copyright 2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
+import { HorizontalBox, VerticalBox, ListView, ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { SelectionView } from "models.slint";
+import { ActionButton, PrimaryButton, TextButton, IconButton, Icon, IconKind, Label, PathLabel, Segmented, PopupButton, UiMetrics } from "controls.slint";
+
+export component DraftPane inherits ScrollView {
+    in property <[SelectionView]> selection;
+    in property <bool> can-start;
+    in property <bool> can-edit;
+    in property <bool> check-only;
+    in property <bool> drop-hovered;
+    in property <string> destination-label;
+    in property <string> start-label;
+    in property <string> start-reason;
+    in property <string> starts-after;
+    in property <length> ui-size;
+    callback choose-files(); callback choose-folder(); callback clear-selection();
+    callback mode-changed(bool); callback open-destination();
+    callback remove-selection(int); callback start-selection();
+    content-width: self.visible-width;
+    content-height: content.height;
+    content := VerticalBox { width: parent.visible-width; height: max(parent.visible-height,max(self.min-height,self.preferred-height));
+    padding: 0px; spacing: 16px;
+
+    HorizontalBox { padding: 0px; spacing: 8px; vertical-stretch: 0;
+        VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;
+            Label { text: "New Request"; font-size: 22px; font-weight: 700; }
+            if root.selection.length > 0: Label { text: root.selection.length + (root.selection.length == 1 ? " item added" : " items added") + " · folders are searched when you start"; color: Theme.muted; wrap: word-wrap; }
+        }
+        if root.selection.length > 0: ActionButton { text: "Add Files…"; enabled: root.can-edit; clicked => { root.choose-files(); } }
+        if root.selection.length > 0: ActionButton { text: "Add Folder…"; enabled: root.can-edit; clicked => { root.choose-folder(); } }
+    }
+    if root.selection.length == 0: Rectangle {
+        min-height: 120px; vertical-stretch: 1; horizontal-stretch: 1;
+        border-width: 2px; border-radius: 12px;
+        border-color: root.drop-hovered ? Theme.accent : Theme.border;
+        background: root.drop-hovered ? Theme.accent-soft : Theme.surface;
+        accessible-role: groupbox; accessible-label: "Drop email files or folders";
+        VerticalBox { padding: 24px; spacing: 16px; alignment: center;
+            HorizontalBox { alignment: center; Icon { kind: IconKind.folder; width: 48px; height: 48px; stroke: Theme.accent; } }
+            Label { text: "Drop email files or folders here"; horizontal-alignment: center; font-size: 20px; font-weight: 600; wrap: word-wrap; }
+            Label { text: "Copies keep the message text and drop attachments. Your original .eml files are never changed."; horizontal-alignment: center; color: Theme.muted; wrap: word-wrap; }
+            HorizontalBox { padding: 0px; spacing: 8px; alignment: center;
+                ActionButton { text: "Add Files…"; enabled: root.can-edit; clicked => { root.choose-files(); } }
+                ActionButton { text: "Add Folder…"; enabled: root.can-edit; clicked => { root.choose-folder(); } }
+            }
+        }
+    }
+    if root.selection.length > 0: ListView {
+        accessible-role: list; accessible-label: "Inputs ready to start";
+        content-width: self.visible-width; min-height: max(64px, root.ui-size * 4 + UiMetrics.scroll-inset * 2); preferred-height: min(300px, root.selection.length * max(60px, root.ui-size * 4) + UiMetrics.scroll-inset * 2); vertical-stretch: 1;
+        for input[index] in root.selection: Rectangle {
+            height: max(60px, root.ui-size * 4);
+            border-radius: 6px; background: hover.has-hover ? Theme.raised : transparent;
+            hover := TouchArea { }
+            HorizontalBox { width: parent.width; height: parent.height; padding: 8px; spacing: 12px;
+                Icon { kind: input.folder ? IconKind.folder : IconKind.file; }
+                PathLabel { path: input.path; text-size: root.ui-size; }
+                remove := IconButton { icon: IconKind.remove; text: "Remove " + input.path.prefix + input.path.suffix; accessible-description: input.path.full; enabled: root.can-edit;
+                    opacity: hover.has-hover || self.has-focus ? 1 : 0;
+                    clicked => { root.remove-selection(index); }
+                }
+            }
+        }
+    }
+    if root.selection.length > 0: Label { text: "Drop more files or folders anywhere in this window."; color: Theme.muted; wrap: word-wrap; }
+    Rectangle {
+        private property <length> action-width: max(260px, root.ui-size * 20);
+        private property <length> control-height: max(32px, root.ui-size * 1.4 + 10px);
+        private property <length> group-height: root.ui-size * 1.4 + 6px + self.control-height;
+        private property <bool> stacked: self.width < self.action-width + 236px;
+        height: self.stacked ? self.group-height * 2 + 10px : self.group-height;
+        horizontal-stretch: 1;
+        VerticalBox { x: 0px; y: 0px; width: min(parent.width, parent.action-width); height: parent.group-height; padding: 0px; spacing: 6px;
+            Label { text: "Action"; color: Theme.muted; }
+            Segmented { check-only: root.check-only; enabled: root.can-edit; changed(value) => { root.mode-changed(value); } }
+        }
+        VerticalBox { x: parent.stacked ? 0px : parent.action-width + 16px;
+            y: parent.stacked ? parent.group-height + 10px : 0px;
+            width: min(max(220px, root.ui-size * 16), parent.width - self.x); height: parent.group-height;
+            padding: 0px; spacing: 6px;
+            Label { text: root.check-only ? "Check against" : "Save copies"; color: Theme.muted; }
+            PopupButton { text: root.destination-label; enabled: root.can-edit; accessible-label: "Copy destination: " + root.destination-label; clicked => { root.open-destination(); } }
+        }
+    }
+    if root.selection.length > 0 && !root.can-start: Label { text: root.start-reason; color: Theme.warn; wrap: word-wrap; accessible-live-region: polite; }
+    if root.selection.length > 0: HorizontalBox { padding: 0px; spacing: 12px; vertical-stretch: 0;
+        VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;
+            Label { text: root.check-only ? "Nothing is written. Each message and the destination are checked." : "Copies are named ‹name›.no-attachments.eml. Existing files are never overwritten."; color: Theme.muted; wrap: word-wrap; }
+            if root.starts-after != "": Label { text: root.starts-after; color: Theme.muted; }
+        }
+        TextButton { text: "Clear"; enabled: root.can-edit; clicked => { root.clear-selection(); } }
+        PrimaryButton { text: root.start-label; enabled: root.can-start; accessible-description: root.start-reason; clicked => { root.start-selection(); } }
+    }
+    }
+}

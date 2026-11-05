@@ -136,137 +136,61 @@ fn facts(item: &wire::ItemRecord) -> Option<OutcomeFacts> {
 fn meaning(item: &wire::ItemRecord) -> Option<vocabulary::OutcomeMeaning> {
     facts(item).map(|facts| vocabulary::classify(&facts))
 }
-// The core enum owns wire spellings; this match owns only concise desktop wording.
-fn failure_label(code: &str) -> Option<&'static str> {
-    use eml_core::ErrorCode::*;
-    Some(match eml_core::ErrorCode::from_wire_name(code)? {
-        ReadFailed => "Cannot read source",
-        SourceNotRegular => "Not a regular file",
-        SourceChanged => "Source changed",
-        Malformed => "Malformed message",
-        LimitExceeded => "Message limit",
-        Protected => "Protected content",
-        UnsupportedMime => "Unsupported content",
-        NoBody => "No supported body",
-        Internal => "Verification error",
-        InputAdmissionFailed => "Input unavailable",
-        InputLimitExceeded => "Input limit reached",
-        NoInputs => "No messages found",
-        OutputOverlap => "Output overlap",
-        DestinationCollision | DestinationExists => "Destination conflict",
-        SourceDestinationAlias => "Path alias",
-        DestinationUnsupported => "Unsupported target",
-        BindFailed => "Path unavailable",
-        StageFailed => "Cannot create copy",
-        WriteFailed => "Copy write failed",
-        FileSyncFailed => "Copy sync failed",
-        NamespaceSyncFailed => "Folder sync failed",
-        AddressChanged => "Path changed",
-        AddressUnverified => "Path unverified",
-        CleanupFailed => "Cleanup incomplete",
-        ExistingSyncFailed => "Existing sync failed",
-        Interrupted => "Interrupted",
-        OutputFailed => "Delivery failed",
-    })
+pub(super) fn item_words(item: &wire::ItemRecord) -> crate::wording::ItemWords {
+    crate::wording::outcome(
+        meaning(item).map_or(MeaningKind::Unestablished, |meaning| meaning.kind),
+        item.error
+            .value()
+            .and_then(|error| eml_core::ErrorCode::from_wire_name(&error.code)),
+        item.removed.len(),
+    )
 }
 /// Concise desktop labels preserve the core qualification and typed failure facts.
 pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
     ItemView {
+        folder: "—".into(),
+        tone: match category(item) {
+            crate::state::Category::Created | crate::state::Category::UpToDate => crate::Tone::Ok,
+            crate::state::Category::Checked => crate::Tone::Neutral,
+            crate::state::Category::Attention => crate::Tone::Attention,
+            crate::state::Category::NotProcessed => crate::Tone::Stopped,
+        },
         original_index: 0,
-        source: item.source.display.clone().into(),
         path: path(&item.source.display),
-        destination: item
-            .destination
-            .value()
-            .map(|p| p.display.clone())
-            .unwrap_or_default()
-            .into(),
-        status: if item.status == wire::ItemStatus::Failed
-            && item.publication.state == wire::Publication::NotPublished
-            && meaning(item).is_some_and(|value| matches!(value.kind, MeaningKind::NotPublished))
-        {
-            item.error
-                .value()
-                .and_then(|error| failure_label(&error.code))
-                .unwrap_or_else(|| {
-                    meaning(item).map_or(MeaningKind::Unestablished.label(), |value| value.label())
-                })
-        } else {
-            meaning(item).map_or(MeaningKind::Unestablished.label(), |value| {
-                match value.kind {
-                    MeaningKind::Prepared => "Copy planned",
-                    MeaningKind::Comparison => "Verification planned",
-                    _ => value.label(),
-                }
-            })
-        }
-        .into(),
-        attention: meaning(item)
-            .is_none_or(|value| value.severity == vocabulary::Severity::Attention),
-        removed: meaning(item)
-            .map_or_else(
-                || "—".into(),
-                |value| {
-                    let count = item.removed.len();
-                    let part = if count == 1 { "part" } else { "parts" };
-                    if matches!(value.kind, MeaningKind::Prepared | MeaningKind::Comparison) {
-                        format!("{count} {part} to remove")
-                    } else {
-                        match value.removal_mode {
-                            vocabulary::RemovalMode::Selected if count == 0 => {
-                                "No removal details reported".into()
-                            }
-                            vocabulary::RemovalMode::Selected => {
-                                format!("{count} {part} selected for removal")
-                            }
-                            vocabulary::RemovalMode::Removed => {
-                                format!("{count} {part} removed from copy")
-                            }
-                            vocabulary::RemovalMode::Absent => {
-                                format!("{count} {part} verified absent from existing copy")
-                            }
-                        }
-                    }
-                },
-            )
-            .into(),
+        status: item_words(item).verdict.into(),
+        attention: category(item) == crate::state::Category::Attention,
     }
 }
-/// Counts come from a summary or from individually accepted results while running.
-pub(crate) fn counts(report: &eml_app::RunReport) -> Vec<CountView> {
-    let Some(start) = report.start() else {
-        return Vec::new();
+pub(super) fn category(item: &wire::ItemRecord) -> crate::state::Category {
+    crate::state::category(
+        meaning(item).map(|value| (value.kind, value.severity)),
+        item.error
+            .value()
+            .and_then(|error| eml_core::ErrorCode::from_wire_name(&error.code)),
+    )
+}
+pub(super) fn report_facts(
+    report: &eml_app::RunReport,
+) -> (
+    Vec<crate::state::Category>,
+    crate::state::Tally,
+    Option<u32>,
+) {
+    let total = report.start().map(|start| start.total);
+    let categories: Vec<_> = report.items().iter().map(category).collect();
+    let mut tally = crate::state::Tally {
+        all: total.unwrap_or(categories.len() as u32),
+        ..Default::default()
     };
-    let mut values = [0u32; 4];
-    for item in report.items() {
-        values[match item.status {
-            wire::ItemStatus::Created => 0,
-            wire::ItemStatus::UpToDate => 1,
-            wire::ItemStatus::Planned => 2,
-            wire::ItemStatus::Failed => 3,
-        }] += 1;
+    for category in &categories {
+        tally.observe(*category);
     }
-    let kinds = [
-        CountKind::Created,
-        CountKind::UpToDate,
-        CountKind::Planned,
-        CountKind::Failed,
-    ];
-    let mut counts: Vec<_> = kinds
-        .into_iter()
-        .zip(values)
-        .filter(|(kind, value)| *value > 0 || matches!(kind, CountKind::Failed))
-        .map(|(kind, value)| count(kind, value))
-        .collect();
-    counts.insert(0, count(CountKind::KnownItems, start.total));
-    if let Some(summary) = report.summary() {
-        let kind = CountKind::NotProcessed;
-        let value = summary.counts.not_processed;
-        if value > 0 {
-            counts.push(count(kind, value));
-        }
-    }
-    counts
+    // Only an accepted summary establishes that missing messages were not processed.
+    // Missing results after a forced stop or transport failure remain unknown.
+    tally.not_processed += report
+        .summary()
+        .map_or(0, |summary| summary.counts.not_processed);
+    (categories, tally, total)
 }
 pub(crate) fn count(kind: CountKind, value: u32) -> CountView {
     CountView {
@@ -293,6 +217,12 @@ pub(crate) fn byte_counts(item: &wire::ItemRecord) -> Vec<CountView> {
 pub(crate) fn details(item: &wire::ItemRecord) -> (Vec<DetailView>, String, String) {
     let mut rows = Vec::new();
     if let Some(error) = item.error.value() {
+        rows.push(DetailView {
+            text: format!("Code: {}", error.code).into(),
+        });
+        rows.push(DetailView {
+            text: format!("Phase: {:?}", error.phase).into(),
+        });
         for line in error.detail.lines() {
             rows.push(DetailView { text: line.into() });
         }
@@ -301,6 +231,20 @@ pub(crate) fn details(item: &wire::ItemRecord) -> (Vec<DetailView>, String, Stri
         }
     }
     if let Some(value) = meaning(item) {
+        rows.push(DetailView {
+            text: format!("Engine outcome: {}", value.label()).into(),
+        });
+        if let Some(residue) =
+            cleanup(&item.publication.cleanup).and_then(|cleanup| cleanup.residual_name)
+        {
+            rows.push(DetailView {
+                text: format!(
+                    "Temporary file: {}",
+                    eml_protocol::TerminalPath::new(std::path::Path::new(&residue))
+                )
+                .into(),
+            });
+        }
         rows.extend(value.consequences.iter().map(|consequence| DetailView {
             text: consequence.text().into(),
         }));
@@ -311,7 +255,12 @@ pub(crate) fn details(item: &wire::ItemRecord) -> (Vec<DetailView>, String, Stri
         }
         (
             rows,
-            value.removal_mode.parts().into(),
+            match value.removal_mode {
+                vocabulary::RemovalMode::Removed => "Removed from copy",
+                vocabulary::RemovalMode::Absent => "Already absent from copy",
+                vocabulary::RemovalMode::Selected => "Would remove",
+            }
+            .into(),
             value.removal_mode.fields().into(),
         )
     } else {
@@ -378,7 +327,7 @@ pub(crate) fn completion_diagnostics(completion: &eml_app::WorkerCompletion) -> 
     }
     if completion.state == eml_app::WorkerState::RequestRefused {
         rows.push(DetailView {
-            text: "The request could not start. Check that the selected inputs still exist and choose an existing, writable destination. Use Review inputs again to correct the request.".into(),
+            text: "The request could not start. Check that the selected inputs still exist and choose an existing, writable destination. Use Run Again… to correct the files, folders or destination.".into(),
         });
     }
     if completion.failure == Some(eml_app::WorkerFailure::Identity) {

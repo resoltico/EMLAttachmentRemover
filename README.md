@@ -62,100 +62,33 @@ and reported cleanup failures before retrying. Recognizable staging files use
 
 ## Desktop app
 
-Add files or folders with the buttons, window drops or launch arguments. These
-paths enter a review selection; no worker starts until **Create copies** or
-**Start check** is pressed. Exact duplicate paths appear once.
-Collection coalesces proven native aliases of the same directory entry; distinct
-hard-link names remain separate. Folders are scanned only after Start, so selection counts are not message counts.
-Remove individual selections or Clear selection before starting.
+Add email files or folders with **Add Files…**, **Add Folder…**, a window drop, or
+launch arguments. Choose **Create copies** or **Check only** and a destination. Nothing runs until
+**Create Copies**, **Start Check**, or **Add to Queue** is pressed. Folder counts
+are discovered after Start. Each run keeps its captured inputs and settings.
 
-Choose Create copies or Check only and the destination in the request draft. Check
-also verifies the chosen destination without writing copies. **Change…** offers
-Beside originals or an existing output folder. Start captures the current paths,
-mode and destination; changes afterwards do not alter active or queued requests.
-Up to eight requests wait behind the active run. **Tasks** opens waiting requests
-and session results; **Remove from queue** cancels only the chosen waiting request.
-Queue refusals retain the draft. By default, two retained results pause further
-work until a result is closed. **Allow temporary storage…**, in a draft or the
-paused Tasks drawer, offers an explicit
-choice for this session: exact diagnostic reports are backed by private, unnamed
-temporary files so accepted queued work can continue without closing results.
-There are at most ten admitted tasks/results, with less than 256 MiB per report
-stream (at most 2.5 GiB of raw backing). Files disappear when their results close
-or the session exits; there is no persistent history. Storage failure preserves
-available reports and pauses new launches with **Retry storage** guidance.
-**Review inputs again** restores original selected file/folder roots under current
-settings for correction; a completed Check offers **Review for copy creation**.
-Both require explicit Start. Finish or clear an existing draft first; reviewing
-a previous request never silently merges or replaces its selected paths.
+The session sidebar appears after the first run. Up to eight requests wait behind
+one active run; the session holds up to 20 runs and 2.5 GiB of stored report bytes.
+Reports are stored automatically in private unnamed files and disappear on close
+or exit. There is no persistent history. Storage failure keeps the report in
+memory; close finished results if asked for space. **Close Result** removes only session information. **Run Again…** restores the captured draft; a finished
+Check offers **Create Copies…**. Replacing a non-empty draft requires confirmation.
 
-The empty window offers file/folder selection without inactive report controls.
-The compact task drawer keeps navigation separate from the workspace. Choosing a
-result keeps that view when queued work starts. A result shows its captured
-settings, counts and message outcomes. Initial completion selects a message that
-needs attention unless the user already selected one. Errors and recovery guidance
-appear in content-sized message details before optional technical provenance.
-Paths, removal metadata and byte counts expand under **Technical details**.
-**Needs attention only** filters the table without changing the full report or its export;
-toggle it off to restore the list. Up/Down/Home/End move through visible messages
-and reveal the selected row. **File → Open files…** uses Cmd-O on macOS (Ctrl-O
-on other desktops); **File → Add folder…** opens folder selection. Long filenames retain their distinguishing suffixes, with
-full paths in tooltips and accessibility text. Expanded metadata offers **Copy path**
-for the source and intended destination; it copies the native path, not escaped display text. Report-export feedback is separate
-from retained run warnings. **Close result** removes the report from this
-session, never the original messages or copies.
+Results show progress, outcome filters, naturally sorted messages and an inspector.
+Interrupted messages count as **Not processed**, not failures. Unknown results stay
+unknown. **Technical Details** exposes paths and processor diagnostics. **Show Copy**
+and output-folder actions require earlier verified copy receipts; opening a file
+manager is advisory. **Copy Path** copies the native original path when representable.
+**Stop** requests a cooperative stop; **Force Stop…** appears after five seconds and
+requires confirmation. Busy Quit offers cancellation or waits for owned work to settle.
 
-The active-task strip names the run addressed by **Stop**, independently of the
-inspected result or draft. **Force Stop…** requires confirmation. Completed copies remain after either Stop.
-Busy Quit offers Stop and wait, confirmed Force Stop and quit, or **Cancel quit**;
-Quit waits for worker and report-export settlement, including after a confirmed
-Force Stop. When only an export is active, Finish export and quit waits for it;
-Force Stop is unavailable.
-Waiting requests also require a Quit decision; they are not silently discarded.
-Decision dialogs start on Cancel and Escape cancels the decision. Cancelling a
-Force Stop decision does not undo a cooperative Stop already requested.
-Once shutdown is confirmed, further Quit requests do not reopen the decision,
-and new selections or late file-dialog submissions cannot start more work. **Save report…** writes
-the run's original protocol-1 stream captured when Save is clicked, including
-partial results after failure. **Export new report** captures that run, offers a native
-folder chooser and a file name, then **Save report** writes exclusively. Existing
-names are refused inline so you can correct the name without reopening the flow;
-there is no Replace action. Navigating between reports does not retarget this draft.
-Failed physical writes leave no partial final report; complete bytes are synchronized
-before publication. A crash can leave a private staging file, and directory-entry
-survival across power loss is not promised. A saved result retains its filename and
-location with **Show report**. Refusals before any protocol bytes have no JSONL to save;
-their available diagnostics remain under **Failure details**.
-**Show copy** is available only for a verified copy receipt.
-
-On macOS, open **EML Attachment Remover → About EML Attachment Remover** in the
-system menu bar. Other desktops use **Help → About**. The main window contains
-no duplicate product/version banner or About button. About uses a centered
-Slint layout with the application icon, release version and optional 12-character
-source revision, two purpose lines, copyright, Project website and Licenses, then
-AboutSlint. CLI and GUI `--version` (or `-V`) retain the full source revision.
-Project website receives keyboard focus when About opens. Licenses shows read-only
-software/artwork terms with a separate third-party notices action; reopening it
-focuses the text and resets selection and scrolling to the start.
-Escape closes either auxiliary window.
-
-A persistent **Settings unavailable** summary means destination changes are session-only.
-**Details…** opens the preserved cause, path and recovery in a bounded popup.
-The summary remains visible in review and report views.
-
-Saved destinations use the platform configuration folder's
-`EMLAttachmentRemover/preferences.json`. Unreadable or corrupt preferences are
-preserved. The app starts with defaults and shows the exact path and recovery guidance. Destination changes remain session-only
-until the settings problem is corrected and the app restarted.
-
-The app accepts launch arguments, for example:
-
-```sh
-open -n -a '/Applications/EML Attachment Remover.app' --args "$PWD/message.eml"
-```
-
-Dock-icon drop, Finder Services and Finder Open With are unsupported. File and
-folder selection uses parented native dialogs.
+**Save Report…** uses a native save panel, including its Replace confirmation, and
+saves the exact captured JSONL stream, including partial reports. Failed writes leave
+no partial target. The brief success banner offers **Show** for the saved report.
+The app remembers three destination folders and the last report folder. Unreadable,
+old-format or corrupt settings are preserved; defaults and **Settings unavailable**
+are shown. About and Licenses are available in the menus. Dock drops, Finder Services
+and Finder Open With are unsupported; file and folder panels are parented to the app.
 
 ## Limits and filesystem behavior
 

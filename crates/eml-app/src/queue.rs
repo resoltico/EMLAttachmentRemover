@@ -5,11 +5,10 @@ use serde::Serialize;
 use std::{collections::VecDeque, path::PathBuf};
 /// Maximum admitted waiting selections, excluding the one active run.
 pub const MAX_WAITING_REQUESTS: usize = 8;
-/// Maximum complete or active report reservations before temporary-storage consent.
-pub const MAX_RETAINED_REPORTS: usize = 2;
 /// Maximum admitted requests and retained results in one session.
-/// Temporary report storage changes residency, not this finite reservation budget.
-pub const MAX_SESSION_REQUESTS: usize = 10;
+pub const MAX_SESSION_REQUESTS: usize = 20;
+/// Maximum exact stream bytes retained in private session storage.
+pub const MAX_STORED_REPORT_BYTES: u64 = 5 * 1024 * 1024 * 1024 / 2;
 
 /// Session-local identity; never derived from a displayed filename or queue index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -31,8 +30,10 @@ pub enum QueueError {
     RequestEncoding,
     /// Eight waiting requests are already retained.
     Full,
-    /// Two full reports are reserved; explicit dismissal is needed.
-    ReportSpace,
+    /// The finite session report byte budget is occupied.
+    StoredBytesFull,
+    /// Session storage failed for three reports retained in memory.
+    MemoryReportsFull,
     /// All session result reservations are occupied, including waiting requests.
     SessionFull,
     /// Completion does not belong to the active run.
@@ -41,6 +42,10 @@ pub enum QueueError {
     IdentityLimit,
     /// The frontend has committed to closing and cannot admit more work.
     ShuttingDown,
+    /// A pending confirmation must settle before draft changes.
+    DecisionPending,
+    /// The chosen GUI destination folder no longer exists.
+    DestinationUnavailable,
 }
 impl std::fmt::Display for QueueError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -52,10 +57,13 @@ impl std::fmt::Display for QueueError {
             Self::AbsoluteSelectionRequired => f.write_str("Select at least one file or folder using absolute paths."),
             Self::InvalidRequest(error) => write!(f, "Cannot add this selection: {error}"),
             Self::RequestEncoding => f.write_str("Cannot encode this selection. Select fewer paths or shorten folder names and try again."),
-            Self::ReportSpace => f.write_str(&eml_core::vocabulary::report_space_notice(MAX_RETAINED_REPORTS)),
+            Self::MemoryReportsFull => f.write_str("Waiting for space — close a finished run"),
+            Self::StoredBytesFull => f.write_str("Close a finished run to add more"),
             Self::SessionFull => write!(f, "This session already holds {MAX_SESSION_REQUESTS} tasks and results. Close a result or remove a waiting task before adding another."),
             Self::InactiveRun => f.write_str("The completion does not belong to the active request."),
             Self::IdentityLimit => f.write_str("This session cannot start another request. Save needed reports and restart the application."),
+            Self::DestinationUnavailable => f.write_str("Choose an existing folder to save copies"),
+            Self::DecisionPending => f.write_str("Finish or cancel the current decision before changing the draft."),
             Self::ShuttingDown => f.write_str("The application is closing. Reopen it before starting another request."),
         }
     }
@@ -138,30 +146,36 @@ pub struct RunQueue {
     waiting: VecDeque<(RunId, RequestSnapshot)>,
     active: Option<RunId>,
     reports: Vec<RunId>,
-    report_storage: bool,
+    report_bytes: Vec<(RunId, u64)>,
+    stored_bytes: u64,
 }
 impl RunQueue {
-    /// Allow completed results to use private session-only backing after consent.
-    /// The owner must settle storage before launching work that would exceed its
-    /// in-memory residency budget; this queue owns reservations, not I/O.
-    pub fn enable_report_storage(&mut self) {
-        self.report_storage = true;
+    /// Stored bytes charged only after a successful write; closing releases them.
+    pub fn stored_bytes(&self) -> u64 {
+        self.stored_bytes
     }
-    /// Whether session-only report backing was authorized for this queue.
-    pub fn report_storage_enabled(&self) -> bool {
-        self.report_storage
-    }
-    /// Maximum report reservations with the current retention policy.
-    pub fn report_capacity(&self) -> usize {
-        if self.report_storage {
-            MAX_SESSION_REQUESTS
-        } else {
-            MAX_RETAINED_REPORTS
+    /// Charge one retained result without exceeding the session byte cap.
+    pub fn store_report(&mut self, id: RunId, bytes: u64) -> Result<(), QueueError> {
+        if !self.reports.contains(&id) || self.active == Some(id) {
+            return Err(QueueError::InactiveRun);
         }
+        if self.report_bytes.iter().any(|(run, _)| *run == id) {
+            return Err(QueueError::InactiveRun);
+        }
+        let total = self
+            .stored_bytes
+            .checked_add(bytes)
+            .filter(|n| *n <= MAX_STORED_REPORT_BYTES)
+            .ok_or(QueueError::StoredBytesFull)?;
+        self.stored_bytes = total;
+        self.report_bytes.push((id, bytes));
+        Ok(())
     }
     /// Current admission refusal without changing captured requests.
     pub fn capacity_error(&self) -> Option<QueueError> {
-        if self.waiting.len() >= MAX_WAITING_REQUESTS {
+        if self.stored_bytes >= MAX_STORED_REPORT_BYTES {
+            Some(QueueError::StoredBytesFull)
+        } else if self.waiting.len() >= MAX_WAITING_REQUESTS {
             Some(QueueError::Full)
         } else if self.reports.len() + self.waiting.len() >= MAX_SESSION_REQUESTS {
             Some(QueueError::SessionFull)
@@ -183,14 +197,13 @@ impl RunQueue {
         self.waiting.push_back((id, request));
         Ok(id)
     }
-    /// Reserve a report before removing the next request; pause without data loss.
-    /// With temporary storage enabled, admission already reserved every result.
+    /// Start the next admitted snapshot; retained results never pause idle work.
     pub fn start_next(&mut self) -> Result<Option<(RunId, RequestSnapshot)>, QueueError> {
         if self.active.is_some() || self.waiting.is_empty() {
             return Ok(None);
         }
-        if self.report_capacity_full() {
-            return Err(QueueError::ReportSpace);
+        if self.stored_bytes >= MAX_STORED_REPORT_BYTES {
+            return Err(QueueError::StoredBytesFull);
         }
         let Some(next) = self.waiting.pop_front() else {
             return Ok(None);
@@ -198,14 +211,6 @@ impl RunQueue {
         self.active = Some(next.0);
         self.reports.push(next.0);
         Ok(Some(next))
-    }
-    fn report_capacity_full(&self) -> bool {
-        self.reports.len() >= self.report_capacity()
-    }
-    /// Waiting work lacks a result reservation under the current retention policy.
-    /// This uses the same reservation rule as start_next, without mutating it.
-    pub fn is_paused_for_report_space(&self) -> bool {
-        self.active.is_none() && !self.waiting.is_empty() && self.report_capacity_full()
     }
     /// Complete only the exact active run, retaining its report reservation.
     pub fn complete(&mut self, id: RunId) -> Result<(), QueueError> {
@@ -219,6 +224,9 @@ impl RunQueue {
     pub fn dismiss(&mut self, id: RunId) -> bool {
         if self.active == Some(id) {
             return false;
+        }
+        if let Some(index) = self.report_bytes.iter().position(|(run, _)| *run == id) {
+            self.stored_bytes -= self.report_bytes.remove(index).1;
         }
         let before = self.reports.len();
         self.reports.retain(|report| *report != id);

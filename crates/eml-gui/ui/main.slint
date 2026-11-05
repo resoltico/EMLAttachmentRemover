@@ -1,87 +1,46 @@
+import { Theme } from "theme.slint";
+import { DecisionContent } from "dialogs.slint";
+import { Sidebar } from "sidebar.slint";
+import { RunPane } from "run.slint";
+import { DraftPane } from "draft.slint";
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { TextEdit, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette, RadioGroup, CheckBox } from "std-widgets.slint";
-import { ActionButton, TextButton, UiMetrics } from "controls.slint";
-export enum Confirmation { none, force-stop, quit }
-export struct CountView { label: string, value: int, accessible: string, attention: bool }
-export struct PathView { prefix: string, suffix: string, directory: string, full: string }
-export struct RunView { label: string, status: string, mode: string, destination: string, selection: PathView, selections: CountView }
-export struct ItemView { original-index: int, source: string, destination: string, status: string, removed: string, attention: bool, path: PathView }
-export struct DetailView { text: string }
-export struct RemovalView { section: string, filename: string, media: string, bytes: int, byte-label: string, byte-accessible: string, reason: string }
-component Label inherits Text { vertical-stretch: 0; min-width: 0px; vertical-alignment: center; color: Palette.foreground; accessible-role: text; accessible-label: self.text; }
-// Text measures its own glyphs; the suffix stays visible as the prefix elides.
-component FileName inherits Rectangle {
-    in property <PathView> path;
-    in property <length> text-size: 14px;
-    height: max(22px, root.text-size * 1.4);
-    horizontal-stretch: 1;
-    min-width: 0px;
-    accessible-role: text;
-    accessible-label: root.path.full;
-    prefix := Text {
-        x: 0px;
-        horizontal-alignment: left;
-        color: Palette.foreground;
-        font-size: root.text-size;
-        text: root.path.prefix;
-        width: min(self.preferred-width, max(0px, root.width - suffix.width));
-        height: parent.height;
-        overflow: elide;
-        vertical-alignment: center;
-    }
-    suffix := Text {
-        color: Palette.foreground;
-        font-size: root.text-size;
-        text: root.path.suffix;
-        x: prefix.width;
-        width: min(self.preferred-width, root.path.prefix == "" ? root.width : root.width * 0.6);
-        height: parent.height;
-        horizontal-alignment: right;
-        vertical-alignment: center;
-        overflow: clip;
-    }
-    Tooltip { text: @markdown("\{root.path.full}"); }
-}
-component PathLabel inherits VerticalBox {
-    in property <PathView> path;
-    in property <length> text-size: 14px;
-    padding: 0px; spacing: 0px;
-    FileName { path: root.path; text-size: root.text-size; }
-    Label { text: root.path.directory; font-size: max(12px, root.text-size * 0.9); opacity: 0.72; overflow: elide; min-width: 0px; Tooltip { text: @markdown("\{root.path.full}"); } }
-}
+import { TextEdit, HorizontalBox, VerticalBox, Palette } from "std-widgets.slint";
+import { ActionButton, TextButton, UiMetrics, Label } from "controls.slint";
+import { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, DetailView, RemovalView, Tone, ChipView } from "models.slint";
+export { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, DetailView, RemovalView, Tone, ChipView } from "models.slint";
+export { Palette } from "std-widgets.slint";
+export { Theme } from "theme.slint";
 export { AboutWindow, LicenseWindow } from "about.slint";
-export { ExportWindow } from "export.slint";
 export component MainWindow inherits Window {
     in property <string> product-name;
     title: root.product-name;
     icon: @image-url("eml-icon.png");
-    background: Palette.background;
-    in property <length> ui-size: 14px;
+    background: Theme.surface;
+    in property <length> ui-size: 13px;
     default-font-size: root.ui-size;
-    preferred-width: 960px; preferred-height: 680px;
-    min-width: 780px; min-height: 600px;
+    preferred-width: 1080px; preferred-height: 700px;
+    min-width: 760px; min-height: 520px;
     in property <bool> native-about;
     in property <bool> closing;
     in-out property <bool> check-only;
     in property <string> destination-label;
-    in property <[PathView]> selection;
+    in property <[SelectionView]> selection;
     in property <bool> reviewing;
     in property <bool> can-start;
     in property <string> start-label;
     in property <string> start-reason;
     in property <bool> has-reports;
     in property <bool> worker-running;
-    in property <string> activity-label;
     in property <string> run-label;
     in property <string> run-status;
     in property <string> run-context;
     in property <string> queue-notice;
     in-out property <length> details-scroll-y: 0px;
     in property <[RunView]> runs;
-    in property <[RunView]> waiting;
+    in property <int> waiting-count;
     in property <[ItemView]> items;
-    in property <[CountView]> counts;
+    in property <[ChipView]> chips;
     in property <[DetailView]> report-diagnostics;
     in property <string> settings-warning;
     in property <bool> can-copy-source;
@@ -97,47 +56,18 @@ export component MainWindow inherits Window {
     in property <[DetailView]> stripped;
     in property <string> removal-heading;
     in property <string> field-heading;
-    in property <string> item-source;
-    in property <string> item-destination;
     in property <string> item-status;
+    in property <string> item-headline;
+    in property <string> item-guidance;
     in property <bool> has-item;
     in property <bool> item-attention;
-    in property <bool> run-attention;
-    private property <brush> attention-color: UiMetrics.attention;
     in property <int> selected-item;
     in property <int> selected-visible-row: -1;
-    in-out property <bool> attention-only;
-    in-out property <bool> keyboard-navigation;
     in property <bool> destination-beside;
-    private property <length> message-row-height: max(56px, root.ui-size * 3.7);
-    callback filter-attention(bool); callback navigate-message(int);
+    callback navigate-message(int,int);
     in-out property <length> messages-scroll-y;
-    out property <length> messages-view-height;
-    function reveal-selected() {
-        if root.messages-view-height > 0px {
-            // Selection and viewport can arrive on different layout updates.
-            if root.selected-visible-row >= 0 && root.selected-visible-row < root.items.length {
-                if root.messages-scroll-y + root.selected-visible-row * root.message-row-height < 0px {
-                    root.messages-scroll-y = -root.selected-visible-row * root.message-row-height;
-                } else if root.messages-scroll-y + (root.selected-visible-row + 1) * root.message-row-height > root.messages-view-height {
-                    root.messages-scroll-y = max(-root.selected-visible-row * root.message-row-height,
-                        root.messages-view-height - (root.selected-visible-row + 1) * root.message-row-height);
-                }
-            }
-            // Revealing a row must never scroll past the current content extent.
-            root.messages-scroll-y = max(min(0px, root.messages-view-height - root.items.length * root.message-row-height),
-                min(0px, root.messages-scroll-y));
-        }
-    }
-    // MainWindow survives the task drawer that this transition closes.
-    function show-storage-confirmation() {
-        tasks.close();
-        storage-confirm.show();
-    }
-    changed selected-visible-row => { root.reveal-selected(); }
-    changed messages-view-height => { root.reveal-selected(); }
-    changed message-row-height => { root.reveal-selected(); }
-    changed keyboard-navigation => { if root.keyboard-navigation { root.reveal-selected(); } }
+
+
 
     in property <int> selected-run;
     in property <int> work-total;
@@ -152,13 +82,13 @@ export component MainWindow inherits Window {
     in-out property <Confirmation> confirmation;
     in property <string> force-notice;
     callback choose-files(); callback choose-folder(); callback choose-destination(); callback beside-source();
-    callback start-selection(); callback clear-selection(); callback review-selection(); callback remove-selection(int);
-    callback mode-changed(bool); callback select-run(int); callback select-item(int); callback remove-waiting(int);
+    callback start-selection(); callback clear-selection(); callback remove-selection(int);
+    callback mode-changed(bool); callback select-item(int);
     callback stop(); callback force-stop(); callback export-report(); callback reveal(); callback review-request(); callback dismiss();
     callback confirm-force-stop();
     callback about(); callback cancel-confirmation(); callback stop-and-quit(); callback force-and-quit();
     // Distinct task lifetimes and action targets are supplied by the controller.
-    in property <string> review-label;
+    in property <string> review-label: "Run Again…";
     in property <bool> can-review;
     in property <bool> stop-requested;
     in property <bool> export-running;
@@ -166,295 +96,237 @@ export component MainWindow inherits Window {
     in property <string> report-load-notice;
     in property <bool> can-reveal-report;
     in property <bool> native-open-pending;
-    in property <bool> report-storage-enabled;
-    in property <bool> storage-retry;
     in property <string> operation-details;
     in property <string> report-details;
-    in property <PathView> saved-report-path;
-    callback new-request(); callback reveal-report(); callback allow-report-storage();
-    callback retry-report-storage();
     private property <bool> operation-details-expanded: false;
     private property <bool> report-details-expanded: false;
     changed selected-run => { root.report-details-expanded = false; }
-    private property <length> outcome-width: max(160px, min(220px, root.ui-size * 12));
-    private property <string> selected-removals: root.selected-visible-row >= 0 && root.selected-visible-row < root.items.length ? root.items[root.selected-visible-row].removed : "";
+    callback new-request(); callback reveal-report();
+    callback open-destination();
+    open-destination => { destination-menu.show(); }
+
+    in property <bool> session-started;
+    in property <bool> can-edit;
+    in property <bool> drop-hovered;
+    in property <string> starts-after;
+    in property <[string]> recent-destinations;
+    callback recent-destination(int);
+    callback confirm-replace-draft(); callback create-from-check();
+    in property <string> run-title;
+    in property <string> run-notice;
+    in property <bool> can-stop;
+    in property <bool> can-force;
+    in property <bool> can-reveal-output;
+    in property <string> reveal-output-label: "Show Output Folder";
+    in property <[string]> output-roots;
+    in property <int> extra-output-roots;
+    in property <string> progress-label;
+    in property <string> estimate;
+    in property <int> filter;
+    in property <int> sort-column;
+    in property <bool> sort-descending;
+    in property <bool> can-reveal-original;
+    callback reveal-output(int);
+    callback filter-results(int);
+    callback sort-results(int);
+    callback type-select(string);
+    callback reveal-original();
+    in property <bool> waiting-view;
+    in property <string> waiting-title;
+    in property <string> waiting-context;
+    callback select-session(string); callback close-session(string);
+    in property <int> unseen-count;
+    in property <string> waiting-token;
+    in property <bool> can-filter;
+    in property <bool> can-sort;
+    in property <bool> can-show-copy;
+    in property <bool> can-details;
+    in property <bool> can-select-all;
+    in property <bool> can-copy-menu;
+    in property <bool> is-check-result;
+    in property <string> start-menu-label;
+    in property <Tone> operation-tone;
+    callback close-window(); callback minimize(); callback copy-context(); callback select-all-text();
+    callback website(); callback licenses(); callback show-output();
+    show-output => { if root.can-reveal-output { if root.output-roots.length == 1 && root.extra-output-roots == 0 { root.reveal-output(0); } else { outputs.show(); } } }
     MenuBar {
         Menu { title: "File";
-            MenuItem { title: "New request"; shortcut: @keys(Control + N); enabled: !root.closing && root.confirmation == Confirmation.none; activated => { root.new-request(); } }
-            MenuItem { title: "Open files…"; shortcut: @keys(Control + O); enabled: !root.closing && root.confirmation == Confirmation.none; activated => { root.choose-files(); } }
-            MenuItem { title: "Add folder…"; enabled: !root.closing && root.confirmation == Confirmation.none; activated => { root.choose-folder(); } }
+            MenuItem { title: "New Request"; shortcut: @keys(Control + N); enabled: root.can-edit; activated => { root.new-request(); } }
+            MenuItem { title: "Add Files…"; shortcut: @keys(Control + O); enabled: root.can-edit; activated => { root.choose-files(); } }
+            MenuItem { title: "Add Folder…"; shortcut: @keys(Control + Shift + O); enabled: root.can-edit; activated => { root.choose-folder(); } }
+            MenuItem { title: "Close Window"; shortcut: @keys(Control + W); activated => { root.close-window(); } }
         }
-        if !root.native-about: Menu { title: "Help";
-            MenuItem { title: "About"; activated => { root.about(); } }
-        }
+            Menu { title: "Edit";
+                MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: root.can-copy-menu; activated => { root.copy-context(); } }
+                MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: root.can-select-all; activated => { root.select-all-text(); } }
+            }
+            Menu { title: "Run";
+                MenuItem { title: root.start-menu-label; shortcut: @keys(Control + Return); enabled: root.can-start; activated => { root.start-selection(); } }
+                MenuItem { title: "Stop"; shortcut: @keys(Control + "."); enabled: root.can-stop; activated => { root.stop(); } }
+                if root.can-force: MenuItem { title: "Force Stop…"; enabled: root.can-force; activated => { root.force-stop(); } }
+                MenuItem { title: root.review-label; shortcut: @keys(Control + R); enabled: root.can-review; activated => { root.review-request(); } }
+                MenuItem { title: root.reveal-output-label; shortcut: @keys(Control + Shift + R); enabled: root.can-reveal-output; activated => { root.show-output(); } }
+                MenuItem { title: "Save Report…"; shortcut: @keys(Control + S); enabled: root.can-export; activated => { root.export-report(); } }
+                MenuItem { title: "Close Result"; shortcut: @keys(Control + Backspace); enabled: root.can-dismiss; activated => { root.dismiss(); } }
+            }
+            Menu { title: "View";
+                MenuItem { title: "All Messages"; shortcut: @keys(Control + "1"); enabled: root.can-filter; activated => { root.filter-results(0); } }
+                MenuItem { title: "Need Attention"; shortcut: @keys(Control + "2"); enabled: root.can-filter; activated => { root.filter-results(4); } }
+                MenuItem { title: root.technical-details-label; shortcut: @keys(Control + Alt + I); enabled: root.can-details; activated => { root.details-expanded = !root.details-expanded; } }
+            }
+            Menu { title: "Window"; MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimize(); } } }
+            Menu { title: "Help";
+                MenuItem { title: "Project Website"; activated => { root.website(); } }
+                MenuItem { title: "Licenses"; activated => { root.licenses(); } }
+                if !root.native-about: MenuItem { title: "About"; activated => { root.about(); } }
+            }
     }
-    VerticalBox { padding: 0px; spacing: 0px;
-        header := HorizontalBox { padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: 12px; padding-bottom: 12px; spacing: UiMetrics.gap; vertical-stretch: 0;
-            ActionButton { text: "Tasks" + (root.waiting.length > 0 ? " · " + root.waiting.length + " waiting" : ""); clicked => { tasks.show(); } }
-            Rectangle { horizontal-stretch: 1; }
-            ActionButton { text: "New request"; enabled: !root.closing; accessible-label: self.text; clicked => { root.new-request(); } }
+    HorizontalBox { padding: 0px; spacing: 0px;
+        sidebar := Sidebar {
+            visible: root.session-started; width: root.session-started ? 230px : 0px;
+            runs: root.runs; selected-index: root.selected-run; unseen-count: root.unseen-count;
+            can-edit: root.can-edit;
+            new-request() => { root.new-request(); }
+            select-session(token) => { root.select-session(token); }
+            close-session(token) => { root.close-session(token); }
+            switch-pane() => { main-scope.focus(); }
         }
-        Rectangle { height: 1px; background: Palette.border; opacity: 0.35; }
-        if root.worker-running || root.export-running: HorizontalBox {
-            padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: UiMetrics.gap; padding-bottom: UiMetrics.gap; spacing: UiMetrics.gap; vertical-stretch: 0;
-            Label { text: root.activity-label; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; accessible-label: "Active task: " + root.activity-label; }
-            if root.worker-running: TextButton { text: "Force stop…"; danger: true; enabled: !root.closing; clicked => { root.force-stop(); } }
-            if root.worker-running: ActionButton { text: root.stop-requested ? "Stopping…" : "Stop"; enabled: !root.stop-requested && !root.closing; clicked => { root.stop(); } }
-        }
-        if root.settings-warning != "": HorizontalBox {
-            padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: UiMetrics.label-gap; padding-bottom: UiMetrics.label-gap; spacing: UiMetrics.gap; vertical-stretch: 0;
-            Label { text: "Settings unavailable — destination changes won't be saved"; wrap: word-wrap; color: root.attention-color; horizontal-stretch: 1; }
-            TextButton { text: "Details…"; accessible-label: self.text + " — destination settings"; clicked => { settings-popup.show(); } }
-        }
-        if root.operation-feedback != "": VerticalBox {
-            padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: UiMetrics.label-gap; padding-bottom: UiMetrics.label-gap; spacing: UiMetrics.label-gap; vertical-stretch: 0;
-            HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
-                Label { text: root.operation-label + ": " + root.operation-feedback; wrap: word-wrap; horizontal-stretch: 1; accessible-live-region: polite; }
-                if root.operation-details != "": TextButton { text: root.operation-details-expanded ? "Hide details" : "Details…"; expandable: true; expanded: root.operation-details-expanded; clicked => { root.operation-details-expanded = !root.operation-details-expanded; } }
+
+        main-scope := FocusScope {
+            horizontal-stretch: 1; vertical-stretch: 1; min-width: 0px; focus-on-tab-navigation: false;
+            accessible-role: groupbox; accessible-label: "Main workspace";
+            key-pressed(event) => {
+                if root.session-started && root.can-edit && event.text == Key.Tab && (UiMetrics.macos ? event.modifiers.meta : event.modifiers.control) { sidebar.focus-navigation(); return accept; }
+                return reject;
             }
-            if root.operation-details-expanded && root.operation-details != "": TextEdit { text: root.operation-details; read-only: true; preferred-height: 72px; max-height: 72px; accessible-label: "Operation technical details"; }
-        }
-        workspace := VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.gap;
-            if root.reviewing || !root.has-reports: VerticalBox { padding: 0px; spacing: UiMetrics.inset;
-                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; horizontal-stretch: 1;
-                        Label { text: root.selection.length == 0 ? "Choose messages to begin" : "Review request"; font-size: root.ui-size * 1.4; font-weight: 600; }
-                        Label { text: root.selection.length == 0 ? "Drop .eml files or a folder here, or choose them below." : root.selection.length + (root.selection.length == 1 ? " selection · folders are scanned when started" : " selections · folders are scanned when started"); wrap: word-wrap; opacity: 0.75; }
-                    }
-                    ActionButton { text: "Add files…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-files(); } }
-                    ActionButton { text: "Add folder…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-folder(); } }
-                }
-                RadioGroup { title: "Operation"; orientation: horizontal; enabled: !root.closing;
-                    selected(value) => { if (value == "Check only") != root.check-only { root.mode-changed(value == "Check only"); } }
-                    RadioButton { text: "Create copies"; checked: !root.check-only; }
-                    RadioButton { text: "Check only"; checked: root.check-only; }
-                }
-                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; horizontal-stretch: 1;
-                        Label { text: root.check-only ? "Check destination" : "Save copies"; font-weight: 600; }
-                        Label { text: root.destination-label; overflow: elide; Tooltip { text: @markdown("\{root.destination-label}"); } }
-                    }
-                    ActionButton { text: "Change…"; enabled: !root.closing; accessible-description: "Choose the destination for this request."; clicked => { destination-menu.show(); } }
-                }
-                ListView { content-width: self.visible-width; accessible-role: list; accessible-label: "Selection ready to start";
-                    preferred-height: min(240px, root.selection.length * root.message-row-height); min-height: 0px; vertical-stretch: 1;
-                    for path[index] in root.selection: Rectangle { height: root.message-row-height;
-                        HorizontalBox { width: parent.width; height: parent.height; padding: UiMetrics.gap; padding-left: 12px; padding-right: 12px; spacing: UiMetrics.gap;
-                            PathLabel { path: path; text-size: root.ui-size; }
-                            TextButton { text: "Remove"; enabled: !root.closing; accessible-label: "Remove selection " + path.full; clicked => { root.remove-selection(index); } }
-                        }
-                        Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; opacity: 0.35; }
-                    }
-                }
-                if !root.report-storage-enabled: HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    Label { text: "Let queued work continue without closing results by keeping session reports in private temporary storage."; wrap: word-wrap; opacity: 0.75; horizontal-stretch: 1; }
-                    TextButton { text: "Allow temporary storage…"; enabled: !root.closing; clicked => { root.show-storage-confirmation(); } }
-                }
-                if root.report-storage-enabled: HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    Label { text: "Private temporary report storage is enabled for this session."; font-size: max(12px, root.ui-size * 0.86); opacity: 0.75; horizontal-stretch: 1; }
-                    TextButton { text: "Storage details"; clicked => { storage-info.show(); } }
-                }
-                if root.selection.length > 0 && !root.can-start: Label { text: root.start-reason; wrap: word-wrap; color: root.attention-color; }
-                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    Label { text: root.check-only ? "No copies will be written." : "Copies use name.no-attachments.eml."; wrap: word-wrap; opacity: 0.75; horizontal-stretch: 1; vertical-alignment: center; }
-                    if root.selection.length > 0: TextButton { text: "Clear selection"; enabled: !root.closing; accessible-label: self.text; clicked => { root.clear-selection(); } }
-                    ActionButton { text: root.start-label; enabled: root.can-start; primary: true; accessible-description: root.start-reason; clicked => { root.start-selection(); } }
-                }
+        VerticalBox { width: parent.width; height: parent.height; padding: Theme.pad; spacing: 12px;
+
+            if root.reviewing && root.settings-warning != "": HorizontalBox {
+                padding: 8px; spacing: 8px; vertical-stretch: 0;
+                Label { text: "Settings unavailable — changes won't be saved"; color: Theme.warn; wrap: word-wrap; accessible-live-region: polite; }
+                TextButton { text: "Details…"; accessible-label: "Details… — destination settings"; clicked => { settings-popup.show(); } }
             }
-            if root.has-reports && !root.reviewing: VerticalBox { padding: 0px; spacing: UiMetrics.gap; alignment: start;
-                VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; vertical-stretch: 0;
-                    Label { text: root.run-label + " · " + root.run-status; font-size: root.ui-size * 1.4; font-weight: 600; wrap: word-wrap; accessible-live-region: polite; }
-                    Label { text: root.run-context; overflow: elide; opacity: 0.75; Tooltip { text: @markdown("\{root.run-context}"); } }
-                }
-                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    ActionButton { text: "Save report…"; enabled: root.can-export && !root.closing; accessible-description: "Save the selected result's exact diagnostic JSONL."; clicked => { root.export-report(); } }
-                    if root.can-review: ActionButton { text: root.review-label; enabled: root.selection.length == 0 && !root.closing; primary: root.can-create; accessible-description: root.selection.length > 0 ? "Finish or clear the current reviewed selection first." : "Review the original selected roots and current settings before starting another request."; clicked => { root.review-request(); } }
-                    TextButton { text: "Close result"; enabled: root.can-dismiss; accessible-description: "Close this result. Original messages, created copies and saved reports stay unchanged."; clicked => { root.dismiss(); } }
-                }
-                if root.saved-report-path.full != "": HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    Label { text: "Saved report"; min-width: self.preferred-width; horizontal-stretch: 0; }
-                    PathLabel { path: root.saved-report-path; text-size: root.ui-size; }
-                    TextButton { text: "Show report"; enabled: root.can-reveal-report && !root.native-open-pending && !root.closing; accessible-description: "Reveal the saved diagnostic report in the file manager."; clicked => { root.reveal-report(); } }
-                }
-                if root.report-loading: Label { text: root.report-load-notice; wrap: word-wrap; accessible-live-region: polite; }
-                if !root.report-loading: HorizontalBox { padding: 0px; spacing: UiMetrics.inset; vertical-stretch: 0;
-                    for count in root.counts: Label { text: count.label + ": " + count.value; color: count.attention ? root.attention-color : Palette.foreground; accessible-label: count.accessible; wrap: word-wrap; min-width: 0px; }
-                }
-                if !root.report-loading && root.report-diagnostics.length > 0: ScrollView {
-                    preferred-height: min(96px, diagnostics.preferred-height); min-height: 0px; vertical-stretch: 0;
-                    content-width: self.visible-width; content-height: diagnostics.preferred-height;
-                    accessible-role: list; accessible-label: "Run diagnostics";
-                    diagnostics := VerticalBox { width: parent.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.label-gap;
-                        for row in root.report-diagnostics: Label { text: row.text; wrap: word-wrap; }
-                    }
-                }
-                if !root.report-loading && root.report-details != "": TextButton {
-                    text: root.report-details-expanded ? "Hide failure details" : "Failure details…"; expandable: true; expanded: root.report-details-expanded;
-                    clicked => { root.report-details-expanded = !root.report-details-expanded; }
-                }
-                if !root.report-loading && root.report-details-expanded && root.report-details != "": TextEdit {
-                    text: root.report-details; read-only: true; preferred-height: 96px; max-height: 96px; accessible-label: "Run failure technical details";
-                }
-                if root.report-running: ProgressIndicator {
-                    progress: root.work-total > 0 ? (root.work-completed * 1.0) / root.work-total : 0;
-                    indeterminate: root.work-total == 0;
-                    accessible-label: root.work-total > 0 ? root.work-completed + " of " + root.work-total + " messages processed" : "Discovering messages";
-                }
-                if !root.report-loading: HorizontalBox { padding: 0px; alignment: end; vertical-stretch: 0;
-                    CheckBox { text: "Needs attention only"; checked: root.attention-only; accessible-description: "Show only messages whose outcome needs attention."; toggled => { root.keyboard-navigation = false; root.filter-attention(self.checked); } }
-                }
-                if !root.report-loading && root.items.length > 0: HorizontalBox {
-                    padding: 0px; padding-left: 12px; padding-right: 12px; spacing: UiMetrics.inset; vertical-stretch: 0;
-                    Label { text: "Message"; font-size: max(12px, root.ui-size * 0.86); opacity: 0.75; horizontal-stretch: 1; }
-                    Label { text: "Outcome"; font-size: max(12px, root.ui-size * 0.86); opacity: 0.75; width: root.outcome-width; horizontal-stretch: 0; }
-                }
-                if !root.report-loading && root.items.length == 0: Label { text: root.attention-only ? "No reported messages need attention." : (root.report-running ? "No message results yet." : "No message results were reported."); wrap: word-wrap; opacity: 0.75; }
-                // One tab stop owns result navigation; rows expose selectable AX items.
-                message-keys := FocusScope {
-                    visible: !root.report-loading;
-                    enabled: !root.report-loading && root.items.length > 0;
-                    preferred-height: root.items.length > 0 && !root.report-loading ? min(280px, root.items.length * root.message-row-height) : 0px;
-                    min-height: root.items.length > 0 && !root.report-loading ? root.message-row-height : 0px;
-                    max-height: root.items.length > 0 && !root.report-loading ? root.items.length * root.message-row-height : 0px;
-                    vertical-stretch: 1;
-                    key-pressed(event) => {
-                        if event.text == Key.DownArrow { root.keyboard-navigation = true; root.navigate-message(1); root.reveal-selected(); return accept; }
-                        if event.text == Key.UpArrow { root.keyboard-navigation = true; root.navigate-message(-1); root.reveal-selected(); return accept; }
-                        if event.text == Key.Home { root.keyboard-navigation = true; root.navigate-message(-2); root.reveal-selected(); return accept; }
-                        if event.text == Key.End { root.keyboard-navigation = true; root.navigate-message(2); root.reveal-selected(); return accept; }
-                        return reject;
-                    }
-                    message-list := ListView {
-                        width: parent.width; height: parent.height;
-                        init => { root.messages-view-height = self.height; }
-                        content-y <=> root.messages-scroll-y; changed height => { root.messages-view-height = self.height; }
-                        content-width: self.visible-width; accessible-role: list; accessible-label: "Message results";
-                        for item[index] in root.items: Rectangle {
-                            height: root.message-row-height;
-                            background: item.original-index == root.selected-item ? Palette.alternate-background : transparent;
-                            border-radius: 4px;
-                            border-width: message-keys.has-focus && item.original-index == root.selected-item ? 1px : 0px;
-                            border-color: Palette.accent-background;
-                            accessible-role: list-item; accessible-label: item.path.full;
-                            accessible-description: item.status + "; " + item.removed;
-                            accessible-item-selectable: true; accessible-item-selected: item.original-index == root.selected-item;
-                            accessible-action-default => { message-keys.focus(); root.select-item(item.original-index); }
-                            TouchArea { clicked => { message-keys.focus(); root.keyboard-navigation = false; root.select-item(item.original-index); } }
-                            HorizontalBox { width: parent.width; height: parent.height; padding: UiMetrics.gap; padding-left: 12px; padding-right: 12px; spacing: UiMetrics.inset;
-                                PathLabel { path: item.path; text-size: root.ui-size; }
-                                Label { text: item.status; color: item.attention ? root.attention-color : Palette.foreground; width: root.outcome-width; horizontal-stretch: 0; wrap: word-wrap; vertical-alignment: center; }
-                            }
-                            Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; opacity: 0.35; }
-                        }
-                    }
-                }
-                if !root.report-loading && root.has-item: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; vertical-stretch: 0;
-                    HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                        Label { text: "Selected message"; font-weight: 600; horizontal-stretch: 0; vertical-alignment: center; }
-                        FileName { path: root.item-source-path; text-size: root.ui-size; }
-                        if root.can-reveal: TextButton { text: "Show copy"; enabled: !root.native-open-pending && !root.closing; accessible-label: self.text; clicked => { root.reveal(); } }
-                    }
-                    details-view := ScrollView {
-                        content-y <=> root.details-scroll-y; min-height: 0px; vertical-stretch: 0;
-                        preferred-height: min(root.details-expanded ? 240px : 144px, detail-content.preferred-height);
-                        accessible-role: list; accessible-label: "Message details";
-                        content-width: self.visible-width; content-height: detail-content.preferred-height;
-                        detail-content := VerticalBox { width: details-view.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.label-gap;
-                            if root.removals.length > 0: Label { text: root.selected-removals; color: root.item-attention ? root.attention-color : Palette.foreground; font-weight: 600; wrap: word-wrap; }
-                            for detail in root.details: Label { text: detail.text; wrap: word-wrap; }
-                            TextButton { text: (root.details-expanded ? "▾ " : "▸ ") + root.technical-details-label;
-                                accessible-label: root.technical-details-label; accessible-description: "Paths, byte counts and removal provenance for the selected message."; expandable: true; expanded: root.details-expanded;
-                                clicked => { root.details-expanded = !root.details-expanded; }
-                            }
-                            if root.details-expanded: VerticalBox { padding: 0px; spacing: UiMetrics.gap;
-                                Label { text: "Source"; font-weight: 600; }
-                                HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
-                                    PathLabel { path: root.item-source-path; text-size: root.ui-size; }
-                                    TextButton { text: "Copy path"; accessible-label: self.text + " — source"; enabled: root.can-copy-source; accessible-description: root.can-copy-source ? "Copy the source path as text." : "This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."; clicked => { root.copy-source-path(); }
-                                        Tooltip { text: root.can-copy-source ? @markdown("Copy the source path as text.") : @markdown("This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."); }
-                                    }
-                                }
-                                if root.item-destination != "": Label { text: root.can-reveal ? "Reported copy path" : "Intended destination path"; font-weight: 600; }
-                                if root.item-destination != "": HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
-                                    PathLabel { path: root.item-destination-path; text-size: root.ui-size; }
-                                    TextButton { text: "Copy path"; accessible-label: self.text + " — destination"; enabled: root.can-copy-destination; accessible-description: root.can-copy-destination ? "Copy the destination path as text." : "This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."; clicked => { root.copy-destination-path(); }
-                                        Tooltip { text: root.can-copy-destination ? @markdown("Copy the destination path as text.") : @markdown("This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."); }
-                                    }
-                                }
-                                for count in root.byte-counts: Label { text: count.label + ": " + count.value; accessible-label: count.accessible; }
-                                if root.removals.length > 0: Label { text: root.removal-heading; font-weight: 600; }
-                                for part in root.removals: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap;
-                                    Label { text: part.section + " · " + part.filename + " · " + part.media; wrap: word-wrap; }
-                                    Label { text: part.reason; wrap: word-wrap; }
-                                    Label { text: part.byte-accessible; }
-                                }
-                                if root.stripped.length > 0: Label { text: root.field-heading; font-weight: 600; }
-                                for field in root.stripped: Label { text: field.text; wrap: word-wrap; }
-                            }
-                        }
-                    }
-                }
+            if (root.reviewing || root.waiting-view) && root.operation-feedback != "": VerticalBox {
+                padding: 0px; spacing: 4px; vertical-stretch: 0;
+                Label { text: (root.operation-label != "" && root.operation-label != "Operation status" ? root.operation-label + ": " : "") + root.operation-feedback; wrap: word-wrap; color: root.operation-tone == Tone.attention ? Theme.warn : root.operation-tone == Tone.ok ? Theme.ok : Theme.text; accessible-live-region: polite; }
+                if root.can-reveal-report: TextButton { text: "Show"; clicked => { root.reveal-report(); } }
+                if root.operation-details != "": TextButton { text: root.operation-details-expanded ? "Hide details" : "Details…"; clicked => { root.operation-details-expanded = !root.operation-details-expanded; } }
+                if root.operation-details-expanded && root.operation-details != "": TextEdit { text: root.operation-details; read-only: true; preferred-height: 72px; max-height: 72px; accessible-label: "Operation technical details"; }
+            }
+            if root.reviewing: DraftPane {
+                selection: root.selection; check-only: root.check-only; can-start: root.can-start;
+                can-edit: root.can-edit; drop-hovered: root.drop-hovered; ui-size: root.ui-size;
+                destination-label: root.destination-label; start-label: root.start-label;
+                start-reason: root.start-reason; starts-after: root.starts-after;
+                choose-files() => { root.choose-files(); }
+                choose-folder() => { root.choose-folder(); }
+                clear-selection() => { root.clear-selection(); }
+                mode-changed(value) => { root.mode-changed(value); }
+                open-destination() => { root.open-destination(); }
+                remove-selection(index) => { root.remove-selection(index); }
+                start-selection() => { root.start-selection(); }
+            }
+if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
+                Label { text: root.waiting-title; font-size: 22px; font-weight: 700; accessible-live-region: polite; }
+                Label { text: root.waiting-context; color: Theme.muted; wrap: word-wrap; }
+                Label { text: root.queue-notice != "" ? root.queue-notice : root.starts-after; wrap: word-wrap; color: Theme.muted; }
+                TextButton { text: "Remove from Queue"; clicked => { root.close-session(root.waiting-token); } }
+                Rectangle { vertical-stretch: 1; }
+            }
+            if root.has-reports && !root.reviewing && !root.waiting-view: RunPane {
+        run-label : root.run-label;
+        run-status : root.run-status;
+        run-title : root.run-title;
+        run-context : root.run-context;
+        run-notice : root.run-notice;
+        operation-feedback : root.operation-feedback;
+        operation-label : root.operation-label;
+        operation-details : root.operation-details;
+        report-details : root.report-details;
+        report-diagnostics : root.report-diagnostics;
+        report-running : root.report-running;
+        report-loading : root.report-loading;
+        report-load-notice : root.report-load-notice;
+        closing : root.closing;
+        can-stop : root.can-stop;
+        can-force : root.can-force;
+        stop-requested : root.stop-requested;
+        can-export : root.can-export;
+        can-dismiss : root.can-dismiss;
+        can-review : root.can-review;
+        can-create : root.can-create;
+        is-check-result: root.is-check-result;
+        can-filter: root.can-filter;
+        can-sort: root.can-sort;
+        can-show-copy: root.can-show-copy;
+        can-details: root.can-details;
+        can-reveal-report: root.can-reveal-report;
+        operation-tone: root.operation-tone;
+        can-reveal-output : root.can-reveal-output;
+        reveal-output-label : root.reveal-output-label;
+        review-label : root.review-label;
+        work-total : root.work-total;
+        work-completed : root.work-completed;
+        progress-label : root.progress-label;
+        estimate : root.estimate;
+        chips : root.chips;
+        items : root.items;
+        filter : root.filter;
+        sort-column : root.sort-column;
+        sort-descending : root.sort-descending;
+        selected-item : root.selected-item;
+        selected-visible-row : root.selected-visible-row;
+        item-source-path : root.item-source-path;
+        item-destination-path : root.item-destination-path;
+        item-status : root.item-status;
+        item-headline: root.item-headline;
+        item-guidance: root.item-guidance;
+        item-attention : root.item-attention;
+        has-item : root.has-item;
+        can-reveal : root.can-reveal;
+        can-reveal-original : root.can-reveal-original;
+        can-copy-source : root.can-copy-source;
+        can-copy-destination : root.can-copy-destination;
+        native-open-pending : root.native-open-pending;
+        details : root.details;
+        byte-counts : root.byte-counts;
+        removals : root.removals;
+        stripped : root.stripped;
+        removal-heading : root.removal-heading;
+        field-heading : root.field-heading;
+        ui-size : root.ui-size;
+        window-width: root.width;
+        details-expanded <=> root.details-expanded;
+        details-scroll-y <=> root.details-scroll-y;
+        messages-scroll-y <=> root.messages-scroll-y;
+        stop() => { root.stop(); }
+        force-stop() => { root.force-stop(); }
+        review-request() => { root.review-request(); }
+        create-from-check() => { root.create-from-check(); }
+        export-report() => { root.export-report(); }
+        dismiss() => { root.dismiss(); }
+        show-output() => { root.show-output(); }
+        reveal-report() => { root.reveal-report(); }
+        filter-results(arg0) => { root.filter-results(arg0); }
+        sort-results(arg0) => { root.sort-results(arg0); }
+        select-item(arg0) => { root.select-item(arg0); }
+        navigate-message(arg0, arg1) => { root.navigate-message(arg0, arg1); }
+        type-select(arg0) => { root.type-select(arg0); }
+        reveal() => { root.reveal(); }
+        reveal-original() => { root.reveal-original(); }
+        copy-source-path() => { root.copy-source-path(); }
+        copy-destination-path() => { root.copy-destination-path(); }
             }
         }
-        Rectangle { height: 1px; background: Palette.border; opacity: 0.35; }
-        HorizontalBox { padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: UiMetrics.gap; padding-bottom: UiMetrics.gap; spacing: UiMetrics.gap; vertical-stretch: 0;
-            Label { text: "Original messages stay unchanged. Existing copies are never replaced."; wrap: word-wrap; font-size: max(12px, root.ui-size * 0.86); opacity: 0.75; horizontal-stretch: 1; }
-            if root.queue-notice != "": TextButton { text: "Queue paused"; accessible-description: root.queue-notice; clicked => { tasks.show(); } }
+            Rectangle { width: parent.width; height: parent.height; background: transparent; border-width: main-scope.has-focus ? 1px : 0px; border-color: Theme.accent; }
         }
-        if root.storage-retry: HorizontalBox { padding-left: UiMetrics.gutter; padding-right: UiMetrics.gutter; padding-top: UiMetrics.gap; padding-bottom: UiMetrics.gap; spacing: UiMetrics.gap; vertical-stretch: 0;
-            Label { text: root.queue-notice; color: root.attention-color; wrap: word-wrap; horizontal-stretch: 1; }
-            ActionButton { text: "Retry storage"; clicked => { root.retry-report-storage(); } }
-        }
+
     }
-    tasks := PopupWindow {
-        x: root.width - self.width - UiMetrics.gutter; y: header.height;
-        width: min(520px, root.width - UiMetrics.gutter * 2); height: min(560px, root.height - 96px);
-        close-policy: close-on-click-outside;
-        Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border; border-radius: 6px;
-            FocusScope { key-pressed(event) => { if event.text == Key.Escape { tasks.close(); return accept; } return reject; }
-                VerticalBox { padding: UiMetrics.inset; spacing: UiMetrics.gap;
-                    HorizontalBox { padding: 0px;
-                        Label { text: "Tasks"; font-size: root.ui-size * 1.15; font-weight: 600; horizontal-stretch: 1; }
-                        TextButton { text: "Close"; clicked => { tasks.close(); } }
-                    }
-                    if root.selection.length > 0: ActionButton { text: "Review selection (" + root.selection.length + ")"; accessible-description: "Return to the current input draft."; clicked => { tasks.close(); root.review-selection(); } }
-                    if root.queue-notice != "": Label { text: root.queue-notice; wrap: word-wrap; color: root.attention-color; }
-                    if root.queue-notice != "" && !root.report-storage-enabled: ActionButton {
-                        text: "Allow temporary storage…";
-                        enabled: !root.closing;
-                        clicked => { root.show-storage-confirmation(); }
-                    }
-                    if root.storage-retry: ActionButton { text: "Retry storage"; clicked => { root.retry-report-storage(); } }
-                    ScrollView { accessible-role: list; accessible-label: "Session tasks"; content-width: self.visible-width; content-height: task-content.preferred-height;
-                        task-content := VerticalBox { width: parent.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.inset;
-                            if root.runs.length > 0: Label { text: "Session results · " + root.runs.length; font-weight: 600; }
-                            VerticalBox { padding: 0px; spacing: UiMetrics.gap; accessible-role: list; accessible-label: "Retained reports";
-                                for run[index] in root.runs: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap;
-                                    TextButton { text: (index == root.selected-run && !root.reviewing ? "✓ " : "") + run.label + " · " + run.mode;
-                                        accessible-label: run.label + " · " + run.mode; accessible-description: run.status + "; " + run.selection.full + "; " + run.selections.accessible;
-                                        accessible-item-selectable: true; accessible-item-selected: index == root.selected-run && !root.reviewing;
-                                        clicked => { root.select-run(index); tasks.close(); }
-                                        Tooltip { text: @markdown("\{run.selection.full} · \{run.destination}"); }
-                                    }
-                                    Label { text: run.status; wrap: word-wrap; }
-                                    FileName { path: run.selection; text-size: root.ui-size; opacity: 0.75; }
-                                }
-                            }
-                            if root.waiting.length > 0: Label { text: "Waiting · " + root.waiting.length; font-weight: 600; }
-                            VerticalBox { padding: 0px; spacing: UiMetrics.inset; accessible-role: list; accessible-label: "Waiting selections";
-                                for run[index] in root.waiting: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap;
-                                    HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
-                                        Label { text: run.label + " · " + run.mode; horizontal-stretch: 1; wrap: word-wrap; }
-                                        TextButton { text: "Remove"; accessible-label: "Remove " + run.label; clicked => { root.remove-waiting(index); } }
-                                    }
-                                    FileName { path: run.selection; text-size: root.ui-size; }
-                                    Label { text: run.destination + " · " + run.selections.accessible; wrap: word-wrap; opacity: 0.75; }
-                                }
-                            }
-                            if root.runs.length == 0 && root.waiting.length == 0: Label { text: "No tasks have started in this session."; wrap: word-wrap; }
-                        }
-                    }
-                }
+    outputs := PopupWindow { x: max(0px,root.width - self.width - 20px); y: 84px; width: min(420px,root.width); height: min(400px,40px + root.output-roots.length * 40px + (root.extra-output-roots > 0 ? 40px : 0px));
+        Rectangle { background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 8px;
+            VerticalBox { padding: 8px; spacing: 8px;
+                for folder[index] in root.output-roots: TextButton { text: folder; min-width: 0px; horizontal-stretch: 1; clicked => { outputs.close(); root.reveal-output(index); } }
+                if root.extra-output-roots > 0: TextButton { text: "…and " + root.extra-output-roots + " more — Save Report…"; clicked => { outputs.close(); root.export-report(); } }
             }
         }
     }
@@ -474,48 +346,15 @@ export component MainWindow inherits Window {
         }
     }
     destination-menu := PopupWindow {
-        x: root.width - self.width - UiMetrics.gutter; y: header.height + 132px;
-        width: max(260px, root.ui-size * 18); height: max(124px, root.ui-size * 8); close-policy: close-on-click-outside;
-        Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border; border-radius: 6px;
-            FocusScope { key-pressed(event) => { if event.text == Key.Escape { destination-menu.close(); return accept; } return reject; }
-                VerticalBox { padding: UiMetrics.inset; spacing: UiMetrics.gap;
-                    Label { text: "Copy destination"; font-weight: 600; }
-                    TextButton { text: root.destination-beside ? "✓ Beside originals" : "Beside originals"; accessible-label: "Beside originals"; accessible-checkable: true; accessible-checked: root.destination-beside; clicked => { destination-menu.close(); root.beside-source(); } }
-                    ActionButton { text: "Choose folder…"; enabled: !root.closing; accessible-description: "Choose the copy destination folder."; clicked => { destination-menu.close(); root.choose-destination(); } }
-                }
-            }
-        }
-    }
-    storage-confirm := PopupWindow {
-        x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;
-        width: min(560px, root.width - UiMetrics.gutter * 2); height: max(300px, root.ui-size * 20); close-policy: PopupClosePolicy.no-auto-close;
-        Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border; border-radius: 6px;
-            FocusScope { forward-focus: storage-cancel;
-                init => { storage-cancel.focus(); }
-                key-pressed(event) => { if event.text == Key.Escape { storage-confirm.close(); return accept; } return reject; }
-                VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.inset;
-                    Label { text: "Allow temporary report storage?"; font-size: root.ui-size * 1.15; font-weight: 600; wrap: word-wrap; }
-                    Label { text: "Exact diagnostic reports may contain message filenames, paths and attachment metadata. They will be kept in private temporary files so accepted queued work can continue."; wrap: word-wrap; }
-                    Label { text: "Reports are removed when you close their results or quit. Up to 10 tasks may be retained, using at most 2.5 GiB for report streams. There is no persistent history."; wrap: word-wrap; }
-                    HorizontalBox { padding: 0px; spacing: UiMetrics.gap; alignment: end;
-                        storage-cancel := ActionButton { text: "Cancel"; clicked => { storage-confirm.close(); } }
-                        ActionButton { text: "Allow for this session"; primary: true; clicked => { storage-confirm.close(); root.allow-report-storage(); } }
-                    }
-                }
-            }
-        }
-    }
-    storage-info := PopupWindow {
-        x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;
-        width: min(520px, root.width - UiMetrics.gutter * 2); height: max(230px, root.ui-size * 16); close-policy: close-on-click-outside;
-        Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border; border-radius: 6px;
-            FocusScope { forward-focus: storage-info-close;
-                init => { storage-info-close.focus(); }
-                key-pressed(event) => { if event.text == Key.Escape { storage-info.close(); return accept; } return reject; }
-                VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.inset;
-                    Label { text: "Private session reports"; font-weight: 600; }
-                    Label { text: "Exact diagnostic reports are kept in private temporary storage until their results are closed or you quit. Up to 10 tasks may be retained, using at most 2.5 GiB for report streams. Storage failure pauses future work and preserves the current report."; wrap: word-wrap; }
-                    storage-info-close := ActionButton { text: "Close"; clicked => { storage-info.close(); } }
+        width: min(420px, root.width - 40px); height: 114px + root.recent-destinations.length * 40px;
+        x: root.width - self.width - 20px; y: max(20px, root.height - self.height - 80px);
+        Rectangle { background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 8px;
+            FocusScope {
+                key-pressed(event) => { if event.text == Key.Escape { destination-menu.close(); return accept; } return reject; }
+                VerticalBox { padding: 12px; spacing: 6px;
+                    TextButton { text: "Next to originals"; accessible-checkable: true; accessible-checked: root.destination-beside; clicked => { destination-menu.close(); root.beside-source(); } }
+                    for folder[index] in root.recent-destinations: TextButton { text: folder; min-width: 0px; horizontal-stretch: 1; clicked => { destination-menu.close(); root.recent-destination(index); } }
+                    ActionButton { text: "Choose Folder…"; enabled: root.can-edit; clicked => { destination-menu.close(); root.choose-destination(); } }
                 }
             }
         }
@@ -525,18 +364,19 @@ export component MainWindow inherits Window {
         x: (root.width - self.width) / 2; y: (root.height - self.height) / 2;
         width: min(max(500px, root.ui-size * 31), root.width - UiMetrics.gutter * 2); height: max(300px, root.ui-size * 21); close-policy: PopupClosePolicy.no-auto-close;
         accessible-role: groupbox; accessible-label: root.confirmation == Confirmation.quit ? "Quit confirmation" : "Force Stop confirmation";
-        Rectangle { background: Palette.background; border-width: 1px; border-color: Palette.border; border-radius: 6px;
-            FocusScope { forward-focus: cancel-decision;
-                init => { cancel-decision.focus(); }
-                key-pressed(event) => { if event.text == Key.Escape { root.cancel-confirmation(); return accept; } return reject; }
-                VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.inset;
-                    Label { text: root.confirmation == Confirmation.quit ? "Quit with unfinished work?" : "Force stop this task?"; font-size: root.ui-size * 1.15; font-weight: 600; wrap: word-wrap; }
-                    Label { text: root.confirmation == Confirmation.quit ? (root.worker-running || root.export-running ? "A task or report export is still in progress. Quitting cancels waiting requests; completed copies and original messages are retained." : root.waiting.length + (root.waiting.length == 1 ? " request is waiting." : " requests are waiting.") + " Quitting cancels this queued work; originals and completed copies are retained.") : root.force-notice; wrap: word-wrap; }
-                    if root.confirmation == Confirmation.quit: ActionButton { text: root.worker-running ? "Stop and wait" : (root.export-running ? "Finish export and quit" : "Cancel waiting and quit"); accessible-label: self.text; clicked => { root.stop-and-quit(); } }
-                    if root.worker-running: TextButton { text: root.confirmation == Confirmation.quit ? "Force stop and quit" : "Force stop now"; danger: true; accessible-description: "Stops the message worker abruptly. Any report export is allowed to finish."; clicked => { if root.confirmation == Confirmation.quit { root.force-and-quit(); } else { root.confirm-force-stop(); } } }
-                    cancel-decision := ActionButton { text: root.confirmation == Confirmation.quit ? "Cancel quit" : "Cancel force stop"; accessible-label: self.text; clicked => { root.cancel-confirmation(); } }
-                }
-            }
-        }
+        DecisionContent {
+        confirm-replace-draft() => { root.confirm-replace-draft(); }
+        replace-count: root.selection.length;
+        cancel-confirmation() => { root.cancel-confirmation(); }
+        confirm-force-stop() => { root.confirm-force-stop(); }
+        confirmation <=> root.confirmation;
+        export-running : root.export-running;
+        force-and-quit() => { root.force-and-quit(); }
+        force-notice : root.force-notice;
+        stop-and-quit() => { root.stop-and-quit(); }
+        ui-size : root.ui-size;
+        waiting-count : root.waiting-count;
+        worker-running : root.worker-running;
+    }
     }
 }

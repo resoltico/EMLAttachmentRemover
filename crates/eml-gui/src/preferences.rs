@@ -1,4 +1,4 @@
-//! Destination settings with preserved, visibly unavailable configuration states.
+//! Recent destination and report folders, preserving unavailable settings files.
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -8,7 +8,9 @@ use std::{
 #[derive(Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Settings {
-    destination: Option<PathBuf>,
+    recent_destinations: Vec<PathBuf>,
+    last_destination: Option<PathBuf>,
+    last_report_folder: Option<PathBuf>,
 }
 /// Session destination and its backing file, which is preserved when unavailable.
 pub struct Preferences {
@@ -23,14 +25,23 @@ impl Preferences {
             Ok(bytes) => serde_json::from_slice::<Settings>(&bytes)
                 .map_err(|error| error.to_string())
                 .and_then(|settings| {
-                    if settings
-                        .destination
-                        .as_ref()
-                        .is_none_or(|p| p.is_absolute())
+                    if settings.recent_destinations.len() <= 3
+                        && settings
+                            .recent_destinations
+                            .iter()
+                            .all(|path| path.is_absolute())
+                        && settings
+                            .last_destination
+                            .as_ref()
+                            .is_none_or(|p| p.is_absolute())
+                        && settings
+                            .last_report_folder
+                            .as_ref()
+                            .is_none_or(|p| p.is_absolute())
                     {
                         Ok(settings)
                     } else {
-                        Err("The saved destination is not an absolute path.".into())
+                        Err("Saved folders must use absolute paths; at most three recent destinations are supported.".into())
                     }
                 }),
             Err(error)
@@ -70,12 +81,12 @@ impl Preferences {
     }
     /// Destination applied to later requests in this session.
     pub fn destination(&self) -> Option<&Path> {
-        self.settings.destination.as_deref()
+        self.settings.last_destination.as_deref()
     }
     /// Persistent recovery guidance, including the exact affected path and reason.
     pub fn warning(&self) -> Option<String> {
         self.unavailable.as_ref().map(|reason| format!(
-            "Destination settings unavailable: {}\n{}\nDestination changes apply only to this session and will not be saved. The settings object was preserved. Correct its contents, path or read permissions, or move it aside, then restart to enable saving.",
+            "Settings unavailable: {}\n{}\nSettings changes apply only to this session and will not be saved. The settings object was preserved. Correct its contents, path or read permissions, or move it aside, then restart to enable saving.",
             eml_protocol::TerminalPath::new(&self.path), eml_protocol::DisplayText::new(reason)
         ))
     }
@@ -87,11 +98,40 @@ impl Preferences {
                 "Choose an absolute destination folder",
             ));
         }
-        self.settings.destination = destination;
+        if let Some(path) = &destination {
+            self.settings
+                .recent_destinations
+                .retain(|recent| recent != path);
+            self.settings.recent_destinations.insert(0, path.clone());
+            self.settings.recent_destinations.truncate(3);
+        }
+        self.settings.last_destination = destination;
+        self.save_if_available()
+    }
+    /// Recent destination folders in most-recent-first order.
+    pub fn recent_destinations(&self) -> &[PathBuf] {
+        &self.settings.recent_destinations
+    }
+    /// Most recently chosen report folder for the native save panel.
+    pub fn last_report_folder(&self) -> Option<&Path> {
+        self.settings.last_report_folder.as_deref()
+    }
+    /// Remember a native report folder without rewriting unavailable settings.
+    pub fn set_report_folder(&mut self, folder: PathBuf) -> io::Result<()> {
+        if !folder.is_absolute() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Choose an absolute report folder",
+            ));
+        }
+        self.settings.last_report_folder = Some(folder);
+        self.save_if_available()
+    }
+    fn save_if_available(&mut self) -> io::Result<()> {
         if self.unavailable.is_some() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Destination applies only to this session; settings remain unavailable.",
+                "Settings apply only to this session; settings remain unavailable.",
             ));
         }
         if let Err(error) = self.save() {

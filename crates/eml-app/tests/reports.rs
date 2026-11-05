@@ -314,7 +314,7 @@ fn desktop_worker_accepts_check_only_and_rejects_foreign_native_operands() {
 }
 
 #[test]
-fn report_export_preserves_exact_bytes_and_existing_entries_without_staging_residue() {
+fn report_export_preserves_exact_bytes_and_approved_replacement_without_staging_residue() {
     let root = tempfile::tempdir().unwrap();
     let output = root.path().join("report – Rīga.jsonl");
     // An incomplete worker stream is still valid export input: retain exactly
@@ -322,13 +322,8 @@ fn report_export_preserves_exact_bytes_and_existing_entries_without_staging_resi
     let received = b"{\"type\":\"start\"}\nunfinished";
     eml_app::export_report(&output, received).unwrap();
     assert_eq!(std::fs::read(&output).unwrap(), received);
-    assert_eq!(
-        eml_app::export_report(&output, b"replacement")
-            .unwrap_err()
-            .kind(),
-        std::io::ErrorKind::AlreadyExists
-    );
-    assert_eq!(std::fs::read(&output).unwrap(), received);
+    eml_app::export_report(&output, b"replacement").unwrap();
+    assert_eq!(std::fs::read(&output).unwrap(), b"replacement");
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
 
     #[cfg(unix)]
@@ -340,14 +335,15 @@ fn report_export_preserves_exact_bytes_and_existing_entries_without_staging_resi
         );
         let link = root.path().join("linked.jsonl");
         symlink(&output, &link).unwrap();
-        assert_eq!(
-            eml_app::export_report(&link, b"replacement")
-                .unwrap_err()
-                .kind(),
-            std::io::ErrorKind::AlreadyExists
+        eml_app::export_report(&link, received).unwrap();
+        assert!(
+            !std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
         );
-        assert_eq!(std::fs::read_link(&link).unwrap(), output);
-        assert_eq!(std::fs::read(&output).unwrap(), received);
+        assert_eq!(std::fs::read(&link).unwrap(), received);
+        assert_eq!(std::fs::read(&output).unwrap(), b"replacement");
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
     }
 }
@@ -362,7 +358,20 @@ fn report_export_write_failure_leaves_no_final_file_or_owned_staging() {
         let failure = eml_app::export_report(&output, &[b'x'; 8192]).unwrap_err();
         assert_eq!(failure.kind(), std::io::ErrorKind::FileTooLarge);
         assert!(!output.exists(), "a failed write published its final name");
-        assert_eq!(std::fs::read_dir(directory).unwrap().count(), 0);
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+        std::fs::write(&output, b"prior report").unwrap();
+        assert_eq!(
+            eml_app::export_report(&output, &[b'x'; 8192])
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::FileTooLarge
+        );
+        assert_eq!(
+            std::fs::read(&output).unwrap(),
+            b"prior report",
+            "failed replacement must preserve the complete prior target"
+        );
+        assert_eq!(std::fs::read_dir(directory).unwrap().count(), 1);
         return;
     }
 

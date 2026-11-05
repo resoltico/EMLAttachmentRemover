@@ -1,0 +1,12 @@
+// Copyright 2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
+export enum Confirmation { none, force-stop, quit, replace-draft }
+export struct CountView { label: string, value: int, accessible: string, attention: bool }
+export struct PathView { prefix: string, suffix: string, directory: string, full: string }
+export enum Tone { neutral, running, ok, attention, stopped }
+export struct RunView { token: string, waiting: bool, closable: bool, tone: Tone, unseen: bool, label: string, status: string, mode: string }
+export struct ItemView { folder: string, tone: Tone, original-index: int, status: string, attention: bool, path: PathView }
+export struct DetailView { text: string }
+export struct RemovalView { section: string, filename: string, media: string, bytes: int, byte-label: string, byte-accessible: string, reason: string }
+export struct SelectionView { path: PathView, folder: bool }
+export struct ChipView { filter: int, label: string, value: int, active: bool, tone: Tone }

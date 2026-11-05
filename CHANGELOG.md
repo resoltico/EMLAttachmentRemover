@@ -6,13 +6,15 @@ Use concise bullets without category labels or subheadings, grouping related cha
 
 ## [Unreleased]
 
-- Preserve message selection and attention filters when a task completes or its result is revisited.
-- Match desktop accessible action names to visible captions, including the current operation and state.
+- Start with defaults when desktop preferences use an old or unreadable format; preserve the file and show Settings unavailable. Remember three destination folders and the last report folder.
+- Add a persistent session sidebar, focused request draft, progress estimates, outcome filters, natural sorting and a responsive message inspector.
+- Retain reports automatically in private unnamed files, capped at 20 session runs, eight waiting requests and 2.5 GiB of stored bytes. Storage failures preserve reports in bounded memory.
+- Run Again restores captured inputs, mode and destination; finished Checks can prepare Create requests. Replacing a non-empty draft requires confirmation and every request requires Start.
+- Separate interrupted messages from attention failures, retain unknown outcomes, and preserve publication qualifications in plain GUI wording and technical details.
+- Save exact captured reports through native save panels, honoring approved replacement atomically. Failed writes preserve prior targets; the success banner offers Show.
+- Share menu and button action predicates, support text-context Copy/Select All and pane navigation, and offer Force Stop only after five seconds of cooperative stopping.
+- Preserve run-local message selection, filters and sort order across completion and navigation; background completion marks an unseen result without stealing the current view.
 - Resolve build commands from the invoking Cargo workspace, so a shared target cache cannot silently package a different worktree.
-- Rework desktop requests, results and task navigation with consistent spacing, aligned rows, compact details and separately scoped worker controls.
-- Allow private session-only report storage by consent so queued work continues without closing results; cap the session at ten tasks/results.
-- Recover refused requests by reviewing original roots under current settings; preserve operation for retries and require explicit Start.
-- Publish exported reports only after complete writes, preserve filename/location receipts, and keep existing files unchanged on failed saves.
 - Correct native-open feedback after retries, keep launcher work off the GUI thread, and support safe keyboard cancellation of Stop/Quit decisions.
 - Preserve literal punctuation in packaged plaintext license notices.
 - Ignore destination-dialog results after Quit is committed, preserving saved settings during shutdown.
@@ -23,6 +25,7 @@ Use concise bullets without category labels or subheadings, grouping related cha
 - Match Auditory Lab’s About focus, scaled buttons and license-view reset behavior while retaining EML content and licenses.
 - Optimize distribution builds with Thin LTO and stripped symbols, and honor Cargo-configured artifact directories.
 
+- Remove unmaintained pin-utils from Slint’s dependency graph using standard Rust pinning in a small, tested spin_on source patch.
 - Update runtime and developer dependencies, including encoding_rs, rustix, mail-parser, TOML, ZIP and cargo-about.
 - Restore nightly AddressSanitizer fuzzing on GNU Linux, include retained MIME seeds, save crash artifacts and fix its build cache.
 - Audit desktop features and the separate fuzz lockfile; accept four unmaintained Linux desktop dependencies pending upstream migration, with reasons in [dependency policy](deny.toml).
