@@ -1,0 +1,74 @@
+// Copyright 2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
+import { TextEdit, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette, RadioGroup, CheckBox } from "std-widgets.slint";
+import { ActionButton, TextButton, UiMetrics, Label, FileName, PathLabel } from "controls.slint";
+import { Confirmation, CountView, PathView, RunView, ItemView, DetailView, RemovalView } from "models.slint";
+
+export component DraftPane inherits VerticalBox {
+    in property <brush> attention-color;
+    in property <bool> can-start;
+    in-out property <bool> check-only;
+    callback choose-files();
+    callback choose-folder();
+    callback clear-selection();
+    in property <bool> closing;
+    in property <string> destination-label;
+    in property <length> message-row-height;
+    callback mode-changed(bool);
+    callback open-destination();
+    callback remove-selection(int);
+    in property <bool> report-storage-enabled;
+    in property <[PathView]> selection;
+    callback show-storage-confirmation();
+    callback show-storage-info();
+    in property <string> start-label;
+    in property <string> start-reason;
+    callback start-selection();
+    in property <length> ui-size;
+ padding: 0px; spacing: UiMetrics.inset;
+                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+                    VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; horizontal-stretch: 1;
+                        Label { text: root.selection.length == 0 ? "Choose messages to begin" : "Review request"; font-size: root.ui-size * 1.4; font-weight: 600; }
+                        Label { text: root.selection.length == 0 ? "Drop .eml files or a folder here, or choose them below." : root.selection.length + (root.selection.length == 1 ? " selection · folders are scanned when started" : " selections · folders are scanned when started"); wrap: word-wrap; opacity: 0.75; }
+                    }
+                    ActionButton { text: "Add files…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-files(); } }
+                    ActionButton { text: "Add folder…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-folder(); } }
+                }
+                RadioGroup { title: "Operation"; orientation: horizontal; enabled: !root.closing;
+                    selected(value) => { if (value == "Check only") != root.check-only { root.mode-changed(value == "Check only"); } }
+                    RadioButton { text: "Create copies"; checked: !root.check-only; }
+                    RadioButton { text: "Check only"; checked: root.check-only; }
+                }
+                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+                    VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; horizontal-stretch: 1;
+                        Label { text: root.check-only ? "Check destination" : "Save copies"; font-weight: 600; }
+                        Label { text: root.destination-label; overflow: elide; Tooltip { text: @markdown("\{root.destination-label}"); } }
+                    }
+                    ActionButton { text: "Change…"; enabled: !root.closing; accessible-description: "Choose the destination for this request."; clicked => { root.open-destination(); } }
+                }
+                ListView { content-width: self.visible-width; accessible-role: list; accessible-label: "Selection ready to start";
+                    preferred-height: min(240px, root.selection.length * root.message-row-height); min-height: 0px; vertical-stretch: 1;
+                    for path[index] in root.selection: Rectangle { height: root.message-row-height;
+                        HorizontalBox { width: parent.width; height: parent.height; padding: UiMetrics.gap; padding-left: 12px; padding-right: 12px; spacing: UiMetrics.gap;
+                            PathLabel { path: path; text-size: root.ui-size; }
+                            TextButton { text: "Remove"; enabled: !root.closing; accessible-label: "Remove selection " + path.full; clicked => { root.remove-selection(index); } }
+                        }
+                        Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; opacity: 0.35; }
+                    }
+                }
+                if !root.report-storage-enabled: HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+                    Label { text: "Let queued work continue without closing results by keeping session reports in private temporary storage."; wrap: word-wrap; opacity: 0.75; horizontal-stretch: 1; }
+                    TextButton { text: "Allow temporary storage…"; enabled: !root.closing; clicked => { root.show-storage-confirmation(); } }
+                }
+                if root.report-storage-enabled: HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+                    Label { text: "Private temporary report storage is enabled for this session."; font-size: max(12px, root.ui-size * 0.86); opacity: 0.75; horizontal-stretch: 1; }
+                    TextButton { text: "Storage details"; clicked => { root.show-storage-info(); } }
+                }
+                if root.selection.length > 0 && !root.can-start: Label { text: root.start-reason; wrap: word-wrap; color: root.attention-color; }
+                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+                    Label { text: root.check-only ? "No copies will be written." : "Copies use name.no-attachments.eml."; wrap: word-wrap; opacity: 0.75; horizontal-stretch: 1; vertical-alignment: center; }
+                    if root.selection.length > 0: TextButton { text: "Clear selection"; enabled: !root.closing; accessible-label: self.text; clicked => { root.clear-selection(); } }
+                    ActionButton { text: root.start-label; enabled: root.can-start; primary: true; accessible-description: root.start-reason; clicked => { root.start-selection(); } }
+                }
+
+}

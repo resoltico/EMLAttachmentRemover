@@ -106,7 +106,6 @@ fn s1_idle_session_starts_work_after_settled_reports() {
 }
 
 #[test]
-#[ignore = "WP0 repro"]
 fn s3_window_constraints_allow_resizing_in_every_view() {
     use i_slint_core::{item_tree::ItemTreeRc, layout::Orientation, window::WindowInner};
     init_no_event_loop();
@@ -2037,11 +2036,16 @@ fn initial_result_viewport_matches_layout_and_keeps_first_selection_visible() {
         .next()
         .unwrap();
     assert!(viewport.size().height > 0.0);
+    let visible = viewport
+        .query_descendants()
+        .match_type_name("Flickable")
+        .find_first()
+        .unwrap();
     assert!(
-        (ui.get_messages_view_height() - viewport.size().height).abs() < 0.1,
+        (ui.get_messages_view_height() - visible.size().height).abs() < 0.1,
         "Initial geometry mirror {} differs from real viewport {}",
         ui.get_messages_view_height(),
-        viewport.size().height
+        visible.size().height
     );
     let selected = ElementHandle::find_by_accessible_label(&ui, inputs[0].to_str().unwrap())
         .find(|e| e.accessible_role() == Some(AccessibleRole::ListItem))

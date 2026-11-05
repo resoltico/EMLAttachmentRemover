@@ -163,3 +163,67 @@ fn quitting_does_not_wait_for_private_report_cache_io() {
     );
     release.send(()).unwrap();
 }
+
+#[test]
+fn s14_theme_text_and_status_contrast_in_both_schemes() {
+    use std::collections::BTreeMap;
+    fn luminance(rgb: u32) -> f64 {
+        let channels = [rgb >> 16, rgb >> 8, rgb];
+        channels
+            .into_iter()
+            .zip([0.2126, 0.7152, 0.0722])
+            .map(|(v, weight)| {
+                let c = f64::from(v & 255) / 255.0;
+                weight
+                    * if c <= 0.04045 {
+                        c / 12.92
+                    } else {
+                        ((c + 0.055) / 1.055).powf(2.4)
+                    }
+            })
+            .sum()
+    }
+    fn ratio(a: u32, b: u32) -> f64 {
+        let (a, b) = (luminance(a), luminance(b));
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+    assert_eq!(ratio(0, 0xffffff), 21.0);
+    assert_eq!(ratio(0x777777, 0x777777), 1.0);
+    let tokens: BTreeMap<_, Vec<_>> = include_str!("../ui/theme.slint")
+        .lines()
+        .filter(|line| line.contains("<color>"))
+        .map(|line| {
+            let name = line
+                .split('>')
+                .nth(1)
+                .unwrap()
+                .split(':')
+                .next()
+                .unwrap()
+                .trim();
+            let colors = line
+                .split('#')
+                .skip(1)
+                .map(|s| u32::from_str_radix(&s[..6], 16).unwrap())
+                .collect();
+            (name, colors)
+        })
+        .collect();
+    for background in ["sidebar", "surface", "raised", "accent-soft"] {
+        for foreground in ["text", "muted", "accent", "ok", "warn", "bad", "idle"] {
+            assert_eq!(tokens[foreground].len(), 2);
+            assert_eq!(tokens[background].len(), 2);
+            for (scheme, (&front, &back)) in tokens[foreground]
+                .iter()
+                .zip(&tokens[background])
+                .enumerate()
+            {
+                let contrast = ratio(front, back);
+                assert!(
+                    contrast >= 4.5,
+                    "{foreground} on {background}, scheme {scheme}: {contrast}"
+                );
+            }
+        }
+    }
+}

@@ -1,20 +1,24 @@
+import { PathView } from "models.slint";
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { Button, Palette } from "std-widgets.slint";
+import { Button, Palette, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { WidgetMetrics } from "widget-metrics.slint";
 
 // Application relationships, rather than independent per-window magic numbers.
 export global UiMetrics {
+    out property <length> scroll-inset: WidgetMetrics.scroll-inset;
     out property <length> gutter: 24px;
     out property <length> inset: 16px;
     out property <length> gap: 8px;
     out property <length> label-gap: 4px;
-    out property <brush> attention: Palette.color-scheme == ColorScheme.dark ? #ffb4ab : #9f2424;
+    out property <brush> attention: Theme.bad;
 }
 export component ActionButton inherits Button {
+    min-height: 32px;
     horizontal-stretch: 0;
     vertical-stretch: 0;
     preferred-width: self.min-width;
-    max-width: self.min-width;
     preferred-height: self.min-height;
     max-height: self.min-height;
 }
@@ -22,6 +26,7 @@ export component ActionButton inherits Button {
 // separate from committing buttons, with the same keyboard and AX activation.
 export component TextButton inherits Rectangle {
     in property <string> text;
+    in property <bool> icon-only;
     in property <bool> enabled: true;
     in property <bool> expanded;
     in property <bool> expandable;
@@ -31,7 +36,6 @@ export component TextButton inherits Rectangle {
     min-width: caption.preferred-width + 16px;
     min-height: max(32px, caption.preferred-height + 10px);
     preferred-width: self.min-width;
-    max-width: self.min-width;
     preferred-height: self.min-height;
     max-height: self.min-height;
     horizontal-stretch: 0; vertical-stretch: 0;
@@ -56,6 +60,7 @@ export component TextButton inherits Rectangle {
         }
     }
     caption := Text {
+        visible: !root.icon-only;
         text: root.text; color: root.danger ? UiMetrics.attention : Palette.foreground;
         opacity: root.enabled ? 1 : 0.5;
         x: 8px; width: max(0px, parent.width - 16px); height: parent.height;
@@ -63,4 +68,99 @@ export component TextButton inherits Rectangle {
         accessible-role: none;
     }
     pointer := TouchArea { enabled: root.enabled; clicked => { keys.focus(); root.clicked(); } }
+}
+
+export component Label inherits Text { vertical-stretch: 0; min-width: 0px; vertical-alignment: center; color: Palette.foreground; accessible-role: text; accessible-label: self.text; }
+// Text measures its own glyphs; the suffix stays visible as the prefix elides.
+export component FileName inherits Rectangle {
+    in property <PathView> path;
+    in property <length> text-size: 14px;
+    height: max(22px, root.text-size * 1.4);
+    horizontal-stretch: 1;
+    min-width: 0px;
+    accessible-role: text;
+    accessible-label: root.path.full;
+    prefix := Text {
+        x: 0px;
+        horizontal-alignment: left;
+        color: Palette.foreground;
+        font-size: root.text-size;
+        text: root.path.prefix;
+        width: min(self.preferred-width, max(0px, root.width - suffix.width));
+        height: parent.height;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+    suffix := Text {
+        color: Palette.foreground;
+        font-size: root.text-size;
+        text: root.path.suffix;
+        x: prefix.width;
+        width: min(self.preferred-width, root.path.prefix == "" ? root.width : root.width * 0.6);
+        height: parent.height;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        overflow: clip;
+    }
+    Tooltip { text: @markdown("\{root.path.full}"); }
+}
+export component PathLabel inherits VerticalBox {
+    in property <PathView> path;
+    in property <length> text-size: 14px;
+    padding: 0px; spacing: 0px;
+    FileName { path: root.path; text-size: root.text-size; }
+    Label { text: root.path.directory; font-size: max(12px, root.text-size * 0.9); opacity: 0.72; overflow: elide; min-width: 0px; Tooltip { text: @markdown("\{root.path.full}"); } }
+}
+
+export enum IconKind { folder, file, remove, chevron, ellipsis, status, warning }
+export component Icon inherits Path {
+    in property <IconKind> kind;
+    width: 16px; height: 16px;
+    viewbox-width: 24; viewbox-height: 24;
+    stroke: Palette.foreground; stroke-width: 1.6px; fill: transparent;
+    commands: kind == IconKind.folder ? "M2 6 L9 6 L11 8 L22 8 L22 20 L2 20 Z"
+        : kind == IconKind.file ? "M5 2 L14 2 L20 8 L20 22 L5 22 Z M14 2 L14 8 L20 8"
+        : kind == IconKind.remove ? "M6 6 L18 18 M18 6 L6 18"
+        : kind == IconKind.chevron ? "M6 9 L12 15 L18 9"
+        : kind == IconKind.ellipsis ? "M4 12 L6 12 M11 12 L13 12 M18 12 L20 12"
+        : kind == IconKind.warning ? "M12 2 L23 22 L1 22 Z M12 8 L12 15 M12 18 L12 19"
+        : "M4 12 L10 18 L20 6";
+}
+export component IconButton inherits TextButton {
+    in property <IconKind> icon;
+    icon-only: true;
+    min-width: 32px; preferred-width: 32px;
+    // Label remains available to accessibility; the vector supplies the visual.
+    Icon { kind: root.icon; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+}
+export component Chip inherits TextButton {
+    in property <bool> selected;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    border-width: 1px;
+    border-color: root.selected ? Palette.accent-background : Palette.border;
+}
+export component PopupButton inherits ActionButton {
+    accessible-expandable: true;
+}
+export component ToneDot inherits Rectangle {
+    in property <color> tone;
+    width: 8px; height: 8px; border-radius: 4px;
+    background: root.tone;
+    accessible-role: none;
+}
+export component Segmented inherits HorizontalBox {
+    in property <bool> check-only;
+    in property <bool> enabled: true;
+    callback changed(bool);
+    spacing: 0px; padding: 0px;
+    accessible-role: tab-list; accessible-label: "Action";
+    ActionButton { text: "Create copies"; enabled: root.enabled;
+        accessible-role: tab; accessible-item-selected: !root.check-only;
+        clicked => { root.changed(false); }
+    }
+    ActionButton { text: "Check only"; enabled: root.enabled;
+        accessible-role: tab; accessible-item-selected: root.check-only;
+        clicked => { root.changed(true); }
+    }
 }

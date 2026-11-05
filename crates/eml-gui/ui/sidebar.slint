@@ -1,0 +1,72 @@
+// Copyright 2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
+import { TextEdit, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette, RadioGroup, CheckBox } from "std-widgets.slint";
+import { ActionButton, TextButton, UiMetrics, Label, FileName, PathLabel } from "controls.slint";
+import { Confirmation, CountView, PathView, RunView, ItemView, DetailView, RemovalView } from "models.slint";
+
+export component SessionTasks inherits Rectangle {
+    in property <brush> attention-color;
+    callback close-tasks();
+    in property <bool> closing;
+    in property <string> queue-notice;
+    callback remove-waiting(int);
+    in property <bool> report-storage-enabled;
+    callback retry-report-storage();
+    callback review-selection();
+    in property <bool> reviewing;
+    in property <[RunView]> runs;
+    callback select-run(int);
+    in property <int> selected-run;
+    in property <[PathView]> selection;
+    callback show-storage-confirmation();
+    in property <bool> storage-retry;
+    in property <length> ui-size;
+    in property <[RunView]> waiting;
+ background: Palette.background; border-width: 1px; border-color: Palette.border; border-radius: 6px;
+            FocusScope { key-pressed(event) => { if event.text == Key.Escape { root.close-tasks(); return accept; } return reject; }
+                VerticalBox { padding: UiMetrics.inset; spacing: UiMetrics.gap;
+                    HorizontalBox { padding: 0px;
+                        Label { text: "Tasks"; font-size: root.ui-size * 1.15; font-weight: 600; horizontal-stretch: 1; }
+                        TextButton { text: "Close"; clicked => { root.close-tasks(); } }
+                    }
+                    if root.selection.length > 0: ActionButton { text: "Review selection (" + root.selection.length + ")"; accessible-description: "Return to the current input draft."; clicked => { root.close-tasks(); root.review-selection(); } }
+                    if root.queue-notice != "": Label { text: root.queue-notice; wrap: word-wrap; color: root.attention-color; }
+                    if root.queue-notice != "" && !root.report-storage-enabled: ActionButton {
+                        text: "Allow temporary storage…";
+                        enabled: !root.closing;
+                        clicked => { root.show-storage-confirmation(); }
+                    }
+                    if root.storage-retry: ActionButton { text: "Retry storage"; clicked => { root.retry-report-storage(); } }
+                    ScrollView { accessible-role: list; accessible-label: "Session tasks"; content-width: self.visible-width; content-height: task-content.preferred-height;
+                        task-content := VerticalBox { width: parent.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.inset;
+                            if root.runs.length > 0: Label { text: "Session results · " + root.runs.length; font-weight: 600; }
+                            VerticalBox { padding: 0px; spacing: UiMetrics.gap; accessible-role: list; accessible-label: "Retained reports";
+                                for run[index] in root.runs: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap;
+                                    TextButton { text: (index == root.selected-run && !root.reviewing ? "✓ " : "") + run.label + " · " + run.mode;
+                                        accessible-label: run.label + " · " + run.mode; accessible-description: run.status + "; " + run.selection.full + "; " + run.selections.accessible;
+                                        accessible-item-selectable: true; accessible-item-selected: index == root.selected-run && !root.reviewing;
+                                        clicked => { root.select-run(index); root.close-tasks(); }
+                                        Tooltip { text: @markdown("\{run.selection.full} · \{run.destination}"); }
+                                    }
+                                    Label { text: run.status; wrap: word-wrap; }
+                                    FileName { path: run.selection; text-size: root.ui-size; opacity: 0.75; }
+                                }
+                            }
+                            if root.waiting.length > 0: Label { text: "Waiting · " + root.waiting.length; font-weight: 600; }
+                            VerticalBox { padding: 0px; spacing: UiMetrics.inset; accessible-role: list; accessible-label: "Waiting selections";
+                                for run[index] in root.waiting: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap;
+                                    HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
+                                        Label { text: run.label + " · " + run.mode; horizontal-stretch: 1; wrap: word-wrap; }
+                                        TextButton { text: "Remove"; accessible-label: "Remove " + run.label; clicked => { root.remove-waiting(index); } }
+                                    }
+                                    FileName { path: run.selection; text-size: root.ui-size; }
+                                    Label { text: run.destination + " · " + run.selections.accessible; wrap: word-wrap; opacity: 0.75; }
+                                }
+                            }
+                            if root.runs.length == 0 && root.waiting.length == 0: Label { text: "No tasks have started in this session."; wrap: word-wrap; }
+                        }
+                    }
+                }
+            }
+
+}

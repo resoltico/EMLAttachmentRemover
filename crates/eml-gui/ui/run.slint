@@ -1,0 +1,203 @@
+// Copyright 2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
+import { TextEdit, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette, RadioGroup, CheckBox } from "std-widgets.slint";
+import { ActionButton, TextButton, UiMetrics, Label, FileName, PathLabel } from "controls.slint";
+import { Confirmation, CountView, PathView, RunView, ItemView, DetailView, RemovalView } from "models.slint";
+
+export component RunPane inherits VerticalBox {
+    in property <brush> attention-color;
+    in-out property <bool> attention-only;
+    in property <[CountView]> byte-counts;
+    in property <bool> can-copy-destination;
+    in property <bool> can-copy-source;
+    in property <bool> can-create;
+    in property <bool> can-dismiss;
+    in property <bool> can-export;
+    in property <bool> can-reveal;
+    in property <bool> can-reveal-report;
+    in property <bool> can-review;
+    in property <bool> closing;
+    callback copy-destination-path();
+    callback copy-source-path();
+    in property <[CountView]> counts;
+    in property <[DetailView]> details;
+    in-out property <bool> details-expanded;
+    in-out property <length> details-scroll-y;
+    callback dismiss();
+    callback export-report();
+    in property <string> field-heading;
+    callback filter-attention(bool);
+    in property <bool> has-item;
+    in property <bool> item-attention;
+    in property <string> item-destination;
+    in property <PathView> item-destination-path;
+    in property <PathView> item-source-path;
+    in property <[ItemView]> items;
+    in-out property <bool> keyboard-navigation;
+    in property <length> message-row-height;
+    in-out property <length> messages-scroll-y;
+    in-out property <length> messages-view-height;
+    in property <bool> native-open-pending;
+    callback navigate-message(int);
+    in property <length> outcome-width;
+    in property <string> removal-heading;
+    in property <[RemovalView]> removals;
+    in property <string> report-details;
+    in-out property <bool> report-details-expanded;
+    in property <[DetailView]> report-diagnostics;
+    in property <string> report-load-notice;
+    in property <bool> report-loading;
+    in property <bool> report-running;
+    callback reveal();
+    callback reveal-report();
+    callback reveal-selected();
+    in property <string> review-label;
+    callback review-request();
+    in property <string> run-context;
+    in property <string> run-label;
+    in property <string> run-status;
+    in property <PathView> saved-report-path;
+    callback select-item(int);
+    in property <int> selected-item;
+    in property <string> selected-removals;
+    in property <[PathView]> selection;
+    in property <[DetailView]> stripped;
+    in property <string> technical-details-label;
+    in property <length> ui-size;
+    in property <int> work-completed;
+    in property <int> work-total;
+ padding: 0px; spacing: UiMetrics.gap; alignment: start;
+                VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; vertical-stretch: 0;
+                    Label { text: root.run-label + " · " + root.run-status; font-size: root.ui-size * 1.4; font-weight: 600; wrap: word-wrap; accessible-live-region: polite; }
+                    Label { text: root.run-context; overflow: elide; opacity: 0.75; Tooltip { text: @markdown("\{root.run-context}"); } }
+                }
+                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+                    ActionButton { text: "Save report…"; enabled: root.can-export && !root.closing; accessible-description: "Save the selected result's exact diagnostic JSONL."; clicked => { root.export-report(); } }
+                    if root.can-review: ActionButton { text: root.review-label; enabled: root.selection.length == 0 && !root.closing; primary: root.can-create; accessible-description: root.selection.length > 0 ? "Finish or clear the current reviewed selection first." : "Review the original selected roots and current settings before starting another request."; clicked => { root.review-request(); } }
+                    TextButton { text: "Close result"; enabled: root.can-dismiss; accessible-description: "Close this result. Original messages, created copies and saved reports stay unchanged."; clicked => { root.dismiss(); } }
+                }
+                if root.saved-report-path.full != "": HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+                    Label { text: "Saved report"; min-width: self.preferred-width; horizontal-stretch: 0; }
+                    PathLabel { path: root.saved-report-path; text-size: root.ui-size; }
+                    TextButton { text: "Show report"; enabled: root.can-reveal-report && !root.native-open-pending && !root.closing; accessible-description: "Reveal the saved diagnostic report in the file manager."; clicked => { root.reveal-report(); } }
+                }
+                if root.report-loading: Label { text: root.report-load-notice; wrap: word-wrap; accessible-live-region: polite; }
+                if !root.report-loading: HorizontalBox { padding: 0px; spacing: UiMetrics.inset; vertical-stretch: 0;
+                    for count in root.counts: Label { text: count.label + ": " + count.value; color: count.attention ? root.attention-color : Palette.foreground; accessible-label: count.accessible; wrap: word-wrap; min-width: 0px; }
+                }
+                if !root.report-loading && root.report-diagnostics.length > 0: ScrollView {
+                    preferred-height: min(96px, diagnostics.preferred-height); min-height: 0px; vertical-stretch: 0;
+                    content-width: self.visible-width; content-height: diagnostics.preferred-height;
+                    accessible-role: list; accessible-label: "Run diagnostics";
+                    diagnostics := VerticalBox { width: parent.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.label-gap;
+                        for row in root.report-diagnostics: Label { text: row.text; wrap: word-wrap; }
+                    }
+                }
+                if !root.report-loading && root.report-details != "": TextButton {
+                    text: root.report-details-expanded ? "Hide failure details" : "Failure details…"; expandable: true; expanded: root.report-details-expanded;
+                    clicked => { root.report-details-expanded = !root.report-details-expanded; }
+                }
+                if !root.report-loading && root.report-details-expanded && root.report-details != "": TextEdit {
+                    text: root.report-details; read-only: true; preferred-height: 96px; max-height: 96px; accessible-label: "Run failure technical details";
+                }
+                if root.report-running: ProgressIndicator {
+                    progress: root.work-total > 0 ? (root.work-completed * 1.0) / root.work-total : 0;
+                    indeterminate: root.work-total == 0;
+                    accessible-label: root.work-total > 0 ? root.work-completed + " of " + root.work-total + " messages processed" : "Discovering messages";
+                }
+                if !root.report-loading: HorizontalBox { padding: 0px; alignment: end; vertical-stretch: 0;
+                    CheckBox { text: "Needs attention only"; checked: root.attention-only; accessible-description: "Show only messages whose outcome needs attention."; toggled => { root.keyboard-navigation = false; root.filter-attention(self.checked); } }
+                }
+                if !root.report-loading && root.items.length > 0: HorizontalBox {
+                    padding: 0px; padding-left: 12px + UiMetrics.scroll-inset; padding-right: 12px + UiMetrics.scroll-inset; spacing: UiMetrics.inset; vertical-stretch: 0;
+                    Label { text: "Message"; font-size: max(12px, root.ui-size * 0.86); opacity: 0.75; horizontal-stretch: 1; }
+                    Label { text: "Outcome"; font-size: max(12px, root.ui-size * 0.86); opacity: 0.75; width: root.outcome-width; horizontal-stretch: 0; }
+                }
+                if !root.report-loading && root.items.length == 0: Label { text: root.attention-only ? "No reported messages need attention." : (root.report-running ? "No message results yet." : "No message results were reported."); wrap: word-wrap; opacity: 0.75; }
+                // One tab stop owns result navigation; rows expose selectable AX items.
+                message-keys := FocusScope {
+                    visible: !root.report-loading;
+                    enabled: !root.report-loading && root.items.length > 0;
+                    preferred-height: root.items.length > 0 && !root.report-loading ? min(280px, root.items.length * root.message-row-height + UiMetrics.scroll-inset * 2) : 0px;
+                    min-height: root.items.length > 0 && !root.report-loading ? root.message-row-height + UiMetrics.scroll-inset * 2 : 0px;
+                    max-height: root.items.length > 0 && !root.report-loading ? root.items.length * root.message-row-height + UiMetrics.scroll-inset * 2 : 0px;
+                    vertical-stretch: 1;
+                    key-pressed(event) => {
+                        if event.text == Key.DownArrow { root.keyboard-navigation = true; root.navigate-message(1); root.reveal-selected(); return accept; }
+                        if event.text == Key.UpArrow { root.keyboard-navigation = true; root.navigate-message(-1); root.reveal-selected(); return accept; }
+                        if event.text == Key.Home { root.keyboard-navigation = true; root.navigate-message(-2); root.reveal-selected(); return accept; }
+                        if event.text == Key.End { root.keyboard-navigation = true; root.navigate-message(2); root.reveal-selected(); return accept; }
+                        return reject;
+                    }
+                    message-list := ListView {
+                        width: parent.width; height: parent.height;
+                        init => { root.messages-view-height = self.visible-height; }
+                        content-y <=> root.messages-scroll-y; changed visible-height => { root.messages-view-height = self.visible-height; }
+                        content-width: self.visible-width; accessible-role: list; accessible-label: "Message results";
+                        for item[index] in root.items: Rectangle {
+                            height: root.message-row-height;
+                            background: item.original-index == root.selected-item ? Palette.alternate-background : transparent;
+                            border-radius: 4px;
+                            border-width: message-keys.has-focus && item.original-index == root.selected-item ? 1px : 0px;
+                            border-color: Palette.accent-background;
+                            accessible-role: list-item; accessible-label: item.path.full;
+                            accessible-description: item.status + "; " + item.removed;
+                            accessible-item-selectable: true; accessible-item-selected: item.original-index == root.selected-item;
+                            accessible-action-default => { message-keys.focus(); root.select-item(item.original-index); }
+                            TouchArea { clicked => { message-keys.focus(); root.keyboard-navigation = false; root.select-item(item.original-index); } }
+                            HorizontalBox { width: parent.width; height: parent.height; padding: UiMetrics.gap; padding-left: 12px; padding-right: 12px; spacing: UiMetrics.inset;
+                                PathLabel { path: item.path; text-size: root.ui-size; }
+                                Label { text: item.status; color: item.attention ? root.attention-color : Palette.foreground; width: root.outcome-width; horizontal-stretch: 0; wrap: word-wrap; vertical-alignment: center; }
+                            }
+                            Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; opacity: 0.35; }
+                        }
+                    }
+                }
+                if !root.report-loading && root.has-item: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; vertical-stretch: 0;
+                    HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+                        Label { text: "Selected message"; font-weight: 600; horizontal-stretch: 0; vertical-alignment: center; }
+                        FileName { path: root.item-source-path; text-size: root.ui-size; }
+                        if root.can-reveal: TextButton { text: "Show copy"; enabled: !root.native-open-pending && !root.closing; accessible-label: self.text; clicked => { root.reveal(); } }
+                    }
+                    details-view := ScrollView {
+                        content-y <=> root.details-scroll-y; min-height: 0px; vertical-stretch: 0;
+                        preferred-height: min(root.details-expanded ? 240px : 144px, detail-content.preferred-height);
+                        accessible-role: list; accessible-label: "Message details";
+                        content-width: self.visible-width; content-height: detail-content.preferred-height;
+                        detail-content := VerticalBox { width: details-view.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.label-gap;
+                            if root.removals.length > 0: Label { text: root.selected-removals; color: root.item-attention ? root.attention-color : Palette.foreground; font-weight: 600; wrap: word-wrap; }
+                            for detail in root.details: Label { text: detail.text; wrap: word-wrap; }
+                            TextButton { text: (root.details-expanded ? "▾ " : "▸ ") + root.technical-details-label;
+                                accessible-label: root.technical-details-label; accessible-description: "Paths, byte counts and removal provenance for the selected message."; expandable: true; expanded: root.details-expanded;
+                                clicked => { root.details-expanded = !root.details-expanded; }
+                            }
+                            if root.details-expanded: VerticalBox { padding: 0px; spacing: UiMetrics.gap;
+                                Label { text: "Source"; font-weight: 600; }
+                                HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
+                                    PathLabel { path: root.item-source-path; text-size: root.ui-size; }
+                                    TextButton { text: "Copy path"; accessible-label: self.text + " — source"; enabled: root.can-copy-source; accessible-description: root.can-copy-source ? "Copy the source path as text." : "This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."; clicked => { root.copy-source-path(); }
+                                        Tooltip { text: root.can-copy-source ? @markdown("Copy the source path as text.") : @markdown("This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."); }
+                                    }
+                                }
+                                if root.item-destination != "": Label { text: root.can-reveal ? "Reported copy path" : "Intended destination path"; font-weight: 600; }
+                                if root.item-destination != "": HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
+                                    PathLabel { path: root.item-destination-path; text-size: root.ui-size; }
+                                    TextButton { text: "Copy path"; accessible-label: self.text + " — destination"; enabled: root.can-copy-destination; accessible-description: root.can-copy-destination ? "Copy the destination path as text." : "This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."; clicked => { root.copy-destination-path(); }
+                                        Tooltip { text: root.can-copy-destination ? @markdown("Copy the destination path as text.") : @markdown("This native filename cannot be represented as clipboard text. The JSONL report retains its original encoding."); }
+                                    }
+                                }
+                                for count in root.byte-counts: Label { text: count.label + ": " + count.value; accessible-label: count.accessible; }
+                                if root.removals.length > 0: Label { text: root.removal-heading; font-weight: 600; }
+                                for part in root.removals: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap;
+                                    Label { text: part.section + " · " + part.filename + " · " + part.media; wrap: word-wrap; }
+                                    Label { text: part.reason; wrap: word-wrap; }
+                                    Label { text: part.byte-accessible; }
+                                }
+                                if root.stripped.length > 0: Label { text: root.field-heading; font-weight: 600; }
+                                for field in root.stripped: Label { text: field.text; wrap: word-wrap; }
+                            }
+                        }
+                    }
+                }
+
+}
