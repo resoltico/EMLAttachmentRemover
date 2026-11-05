@@ -1,7 +1,7 @@
 # Artwork sources and exports
 
 The macOS app bundles [EML.icns](app-icon/EML.icns). The Slint interface uses
-standard widgets and structured text; the envelope-and-badge drawings are design
+project-defined vector paths/status dots, standard widgets and structured text; the envelope-and-badge drawings are design
 references and are not loaded by the application.
 
 ## Application icon
@@ -59,3 +59,22 @@ variants. The SVGs define the coordinates, strokes and palettes.
 The root [LICENSE](../LICENSE) identifies the artwork covered by proprietary
 terms and the software and documentation covered by MPL-2.0. Preserve those
 terms when redistributing. This guide does not grant additional artwork rights.
+
+## Provenance and fonts
+
+The retained construction records describe geometry and record authorship claims;
+coordinates and copyright headers alone do not establish independent creation or
+worldwide rights clearance. Keep the original design/reference records with the
+creator when establishing provenance. The live Slint paths in
+`crates/eml-gui/ui/controls.slint` are software source under the root license's
+software terms; they are distinct from the proprietary reference drawings above.
+
+The native app's Slint build embeds image resources, without declaring custom
+font files or registering embedded fonts. Its pinned software renderer queries
+runtime-installed fonts; ordinary text rasterization is distinct from exporting
+glyph outlines as icon artwork or redistributing a font file. Slint can also load
+fonts supplied by its runtime environment. Font use remains subject to the
+applicable OS/font licence; do not copy Apple font files into a distribution or
+assume a font permitted on one platform is licensed for another. The reference
+preview helper uses `NSFont.systemFont` for its labels. Required Slint branding
+and toolkit graphics have their own [third-party terms](../legal/README.md).

@@ -1,0 +1,23 @@
+Slint 1.18.1 embedded widget graphics
+
+MadeWithSlint-logo-light.svg and MadeWithSlint-logo-dark.svg
+Copyright © SixtyFPS GmbH <info@slint.dev>
+Creative Commons Attribution-NoDerivatives 4.0 International (CC-BY-ND-4.0)
+License: https://creativecommons.org/licenses/by-nd/4.0/legalcode
+Source and attribution metadata:
+https://github.com/slint-ui/slint/blob/372cf0ee5577c3dfec309a45e7b778ba4e81b734/REUSE.toml
+Branding guidance:
+https://github.com/slint-ui/slint/blob/372cf0ee5577c3dfec309a45e7b778ba4e81b734/logo/README.md
+These badges are embedded unchanged through the upstream AboutSlint widget.
+The Slint Royalty-free license and its attribution requirement also accompany the app.
+
+Cupertino widget _arrow_forward.svg (submenu arrow)
+Material Icons <https://github.com/material-icons/material-icons/blob/master/LICENSE>
+Apache License 2.0 (Apache-2.0)
+License: https://www.apache.org/licenses/LICENSE-2.0
+Source and attribution metadata:
+https://github.com/slint-ui/slint/blob/372cf0ee5577c3dfec309a45e7b778ba4e81b734/REUSE.toml
+The arrow is embedded unchanged from Slint's Cupertino widgets.
+The complete Apache License 2.0 text is included in these third-party notices.
+
+These third-party graphics are separate from this project's artwork and its ownership claims.
