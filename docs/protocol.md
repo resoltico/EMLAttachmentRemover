@@ -50,6 +50,14 @@ when admission prevents known inputs from starting. A collection-limit refusal
 or collection stop can have no item events. Unknown folder contents are never
 invented as work items. `collection_complete` separately records discovery state.
 
+Raw `failed` counts started terminal failures, including an item with typed
+`INTERRUPTED`; `not_processed` counts known positions never started. Human CLI
+summaries and GUI categories group explicitly interrupted failed items as Not
+processed instead. This presentation does not imply that cleanup completed or
+that no existing copy was observed. Exit selection and JSON records stay raw.
+Only an accepted summary establishes never-started positions; missing results in
+an incomplete stream remain unknown.
+
 Each JSON line includes one LF and is bounded by 64 MiB; total framed run storage
 stays below 256 MiB. Only byte 0x0A delimits records. U+0085/U+2028/U+2029 can occur
 inside JSON strings. Native output paths carry both lossy display text and

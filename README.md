@@ -75,7 +75,7 @@ memory; close finished results if asked for space. **Close Result** removes only
 Check offers **Create Copies…**. Replacing a non-empty draft requires confirmation.
 
 Results show progress, outcome filters, naturally sorted messages and an inspector.
-Interrupted messages count as **Not processed**, not failures. Unknown results stay
+Explicitly interrupted messages count as **Not processed** in the GUI and human CLI summary. Genuine processing failures still count as failures. JSON reports retain raw started-failure accounting. Unknown results stay
 unknown. **Technical Details** exposes paths and processor diagnostics. **Show Copy**
 and output-folder actions require earlier verified copy receipts; opening a file
 manager is advisory. **Copy Path** copies the native original path when representable.

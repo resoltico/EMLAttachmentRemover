@@ -6,11 +6,15 @@ Use concise bullets without category labels or subheadings, grouping related cha
 
 ## [Unreleased]
 
+- Explain body-only copies and inline-resource loss before Start and in the ordinary inspector; add an inline policy disclosure, including retained HTML limitations.
+- Close About and Licenses with Command-W; use singular wording when confirming replacement of a one-item draft.
+- Reclaim the Folder column for complete single-folder results when native paths and sort keys establish that it is redundant; keep uncertain and multi-folder runs conservative.
+
 - Start with defaults when desktop preferences use an old or unreadable format; preserve the file and show Settings unavailable. Remember three destination folders and the last report folder.
 - Add a persistent session sidebar, focused request draft, progress estimates, outcome filters, natural sorting and a responsive message inspector.
 - Retain reports automatically in private unnamed files, capped at 20 session runs, eight waiting requests and 2.5 GiB of stored bytes. Storage failures preserve reports in bounded memory.
 - Run Again restores captured inputs, mode and destination; finished Checks can prepare Create requests. Replacing a non-empty draft requires confirmation and every request requires Start.
-- Separate interrupted messages from attention failures, retain unknown outcomes, and preserve publication qualifications in plain GUI wording and technical details.
+- Group explicitly interrupted items as Not processed in the GUI and human CLI summary; preserve raw JSON counts, unknown outcomes, publication qualifications and cleanup warnings.
 - Save exact captured reports through native save panels, honoring approved replacement atomically. Failed writes preserve prior targets; the success banner offers Show.
 - Share menu and button action predicates, support text-context Copy/Select All and pane navigation, and offer Force Stop only after five seconds of cooperative stopping.
 - Preserve run-local message selection, filters and sort order across completion and navigation; background completion marks an unseen result without stealing the current view.

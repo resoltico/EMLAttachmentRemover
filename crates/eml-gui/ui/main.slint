@@ -58,7 +58,10 @@ export component MainWindow inherits Window {
     in property <string> field-heading;
     in property <string> item-status;
     in property <string> item-headline;
+    in-out property <bool> draft-policy-expanded: false;
     in property <string> item-guidance;
+    in property <string> item-policy-notice;
+    in property <bool> folder-column-needed: true;
     in property <bool> has-item;
     in property <bool> item-attention;
     in property <int> selected-item;
@@ -214,6 +217,7 @@ export component MainWindow inherits Window {
                 if root.operation-details-expanded && root.operation-details != "": TextEdit { text: root.operation-details; read-only: true; preferred-height: 72px; max-height: 72px; accessible-label: "Operation technical details"; }
             }
             if root.reviewing: DraftPane {
+                policy-expanded <=> root.draft-policy-expanded;
                 selection: root.selection; check-only: root.check-only; can-start: root.can-start;
                 can-edit: root.can-edit; drop-hovered: root.drop-hovered; ui-size: root.ui-size;
                 destination-label: root.destination-label; start-label: root.start-label;
@@ -281,6 +285,8 @@ if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
         item-status : root.item-status;
         item-headline: root.item-headline;
         item-guidance: root.item-guidance;
+        item-policy-notice: root.item-policy-notice;
+        folder-column-needed: root.folder-column-needed;
         item-attention : root.item-attention;
         has-item : root.has-item;
         can-reveal : root.can-reveal;

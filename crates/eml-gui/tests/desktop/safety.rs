@@ -323,8 +323,9 @@ fn about_and_licenses_restore_focus_selection_and_scroll_on_reopen() {
             focused.downcast::<TextInput>().is_some(),
             "Move focus away before reopening"
         );
-        about.invoke_dismiss();
+        close_shortcut(about.window());
         assert!(!about.window().is_visible());
+        assert!(c.window().window().is_visible());
     }
     c.window().invoke_about();
     about.invoke_licenses();
@@ -356,8 +357,9 @@ fn about_and_licenses_restore_focus_selection_and_scroll_on_reopen() {
         input_item.map_to_window(input_item.geometry().origin).y < initial_y - 1.0,
         "Move the license viewport away from the start before reopening"
     );
-    licenses.invoke_dismiss();
+    close_shortcut(licenses.window());
     assert!(!licenses.window().is_visible());
+    assert!(about.window().is_visible());
     about.invoke_licenses();
     mock_elapsed_time(Duration::from_millis(5));
     assert_eq!(input.as_pin_ref().anchor_position_byte_offset(), 0);
@@ -528,5 +530,53 @@ fn s15_pending_confirmation_ignores_new_and_previously_batched_drops() {
     ));
     c.window().invoke_cancel_confirmation();
     c.force_stop();
+    pump(&c, || !c.is_busy());
+}
+
+fn close_shortcut(window: &slint::Window) {
+    use slint::platform::{Key, WindowEvent};
+    // Testing dispatch uses toolkit modifiers; winit maps macOS Command to Control.
+    let modifier = Key::Control;
+    window.dispatch_event(WindowEvent::KeyPressed {
+        text: modifier.into(),
+    });
+    window.dispatch_event(WindowEvent::KeyPressed { text: "w".into() });
+    window.dispatch_event(WindowEvent::KeyReleased { text: "w".into() });
+    window.dispatch_event(WindowEvent::KeyReleased {
+        text: modifier.into(),
+    });
+    mock_elapsed_time(Duration::from_millis(5));
+}
+
+#[test]
+fn secondary_close_shortcuts_leave_active_worker_and_selection_intact() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), controlled(root.path(), false));
+    c.submit(vec![root.path().join("source.eml")]).unwrap();
+    wait_started(&c);
+    let ui = c.window();
+    let selection = (
+        ui.get_selected_run(),
+        ui.get_filter(),
+        ui.get_selected_item(),
+    );
+    ui.invoke_about();
+    c.about_window().invoke_licenses();
+    close_shortcut(c.license_window().window());
+    assert!(!c.license_window().window().is_visible());
+    assert!(c.about_window().window().is_visible());
+    close_shortcut(c.about_window().window());
+    assert!(!c.about_window().window().is_visible());
+    assert!(c.is_busy());
+    assert_eq!(
+        (
+            ui.get_selected_run(),
+            ui.get_filter(),
+            ui.get_selected_item()
+        ),
+        selection
+    );
+    c.stop();
     pump(&c, || !c.is_busy());
 }

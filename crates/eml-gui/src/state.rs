@@ -165,10 +165,10 @@ pub(super) fn category(
         eml_core::vocabulary::MeaningKind,
         eml_core::vocabulary::Severity,
     )>,
-    error: Option<eml_core::ErrorCode>,
+    interrupted: bool,
 ) -> Category {
     use eml_core::vocabulary::{MeaningKind, Severity};
-    if error == Some(eml_core::ErrorCode::Interrupted) {
+    if interrupted {
         return Category::NotProcessed;
     }
     match meaning {
@@ -288,21 +288,15 @@ mod contracts {
     }
     #[test]
     fn s4_interruption_is_not_attention_and_unqualified_copies_still_are() {
-        use eml_core::{
-            ErrorCode,
-            vocabulary::{MeaningKind, Severity},
-        };
+        use eml_core::vocabulary::{MeaningKind, Severity};
         assert_eq!(
-            category(
-                Some((MeaningKind::NotPublished, Severity::Attention)),
-                Some(ErrorCode::Interrupted)
-            ),
+            category(Some((MeaningKind::NotPublished, Severity::Attention)), true),
             Category::NotProcessed
         );
         assert_eq!(
             category(
                 Some((MeaningKind::ExistingMatched, Severity::Attention)),
-                Some(ErrorCode::ExistingSyncFailed)
+                false
             ),
             Category::Attention
         );

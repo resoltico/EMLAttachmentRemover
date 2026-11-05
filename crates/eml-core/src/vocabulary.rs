@@ -114,6 +114,10 @@ pub struct OutcomeFacts {
     /// Whether the accepted metadata selected related resources.
     pub related_resources: bool,
 }
+/// A deliberate per-item stop, independent of run-wide interruption and side effects.
+pub fn explicitly_interrupted(facts: &OutcomeFacts) -> bool {
+    facts.result == ResultKind::Failed && facts.error == Some(crate::ErrorCode::Interrupted)
+}
 /// Conservative semantic result shared by renderers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeaningKind {
@@ -534,6 +538,52 @@ mod tests {
         }
     }
     #[test]
+    fn explicit_stop_requires_both_failed_result_and_typed_interrupted_error() {
+        let mut f = facts();
+        for result in [
+            ResultKind::Created,
+            ResultKind::Existing,
+            ResultKind::Planned,
+            ResultKind::Failed,
+        ] {
+            for error in [
+                None,
+                Some(crate::ErrorCode::Interrupted),
+                Some(crate::ErrorCode::Malformed),
+                Some(crate::ErrorCode::FileSyncFailed),
+            ] {
+                f.result = result;
+                f.error = error;
+                assert_eq!(
+                    explicitly_interrupted(&f),
+                    result == ResultKind::Failed && error == Some(crate::ErrorCode::Interrupted)
+                );
+            }
+        }
+    }
+    #[test]
+    fn human_summary_adjusts_only_explicit_items_and_rejects_impossible_counts() {
+        let counts = crate::Counts {
+            created: 1,
+            up_to_date: 2,
+            planned: 3,
+            failed: 2,
+            not_processed: 4,
+        };
+        assert_eq!(
+            summary(&counts, crate::ExitClass::Interrupted, true, 1).unwrap(),
+            "Created 1; Up to date 2; Planned 3; Failed 1; Not processed 5. Exit 130; interrupted"
+        );
+        assert!(summary(&counts, crate::ExitClass::Interrupted, true, 3).is_err());
+        let overflow = crate::Counts {
+            failed: 1,
+            not_processed: usize::MAX,
+            ..Default::default()
+        };
+        assert!(summary(&overflow, crate::ExitClass::Interrupted, true, 1).is_err());
+        assert_eq!(counts.failed(), 2);
+    }
+    #[test]
     fn missing_or_contradictory_success_facts_never_become_success() {
         assert_eq!(classify(&facts()).kind, MeaningKind::Created);
         for index in 0..8 {
@@ -713,8 +763,21 @@ impl CountKind {
     }
 }
 /// Complete human summary using the same labels consumed by GUI count models.
-pub fn summary(counts: &crate::Counts, exit: crate::ExitClass, interrupted: bool) -> String {
-    format!(
+pub fn summary(
+    counts: &crate::Counts,
+    exit: crate::ExitClass,
+    interrupted: bool,
+    interrupted_items: usize,
+) -> Result<String, &'static str> {
+    let failed = counts
+        .failed()
+        .checked_sub(interrupted_items)
+        .ok_or("Interrupted item count exceeds failed items")?;
+    let not_processed = counts
+        .not_processed()
+        .checked_add(interrupted_items)
+        .ok_or("Human not-processed count overflow")?;
+    Ok(format!(
         "{} {}; {} {}; {} {}; {} {}; {} {}. Exit {}{}",
         CountKind::Created.label(),
         counts.created(),
@@ -723,12 +786,12 @@ pub fn summary(counts: &crate::Counts, exit: crate::ExitClass, interrupted: bool
         CountKind::Planned.label(),
         counts.planned(),
         CountKind::Failed.label(),
-        counts.failed(),
+        failed,
         CountKind::NotProcessed.label(),
-        counts.not_processed(),
+        not_processed,
         exit.code(),
         if interrupted { "; interrupted" } else { "" }
-    )
+    ))
 }
 /// User-facing removal category; the MIME crate owns the decision itself.
 pub const fn removal_reason(reason: crate::RemovalReason) -> &'static str {

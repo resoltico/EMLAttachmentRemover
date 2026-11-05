@@ -269,7 +269,8 @@ fn capture_window(ui: &MainWindow, directory: &Path, name: &str) {
     use std::io::Write;
     let pixels = ui.window().take_snapshot().unwrap();
     fs::create_dir_all(directory).unwrap();
-    let mut file = fs::File::create(directory.join(format!("{name}.ppm"))).unwrap();
+    let mut file =
+        std::io::BufWriter::new(fs::File::create(directory.join(format!("{name}.ppm"))).unwrap());
     writeln!(file, "P6\n{} {}\n255", pixels.width(), pixels.height()).unwrap();
     for pixel in pixels.as_slice() {
         file.write_all(&[pixel.r, pixel.g, pixel.b]).unwrap();

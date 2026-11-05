@@ -7,6 +7,8 @@ import { ActionButton, PrimaryButton, TextButton, IconButton, Icon, IconKind, La
 
 export component DraftPane inherits ScrollView {
     in property <[SelectionView]> selection;
+    in-out property <bool> policy-expanded: false;
+    private property <string> scope: "Copies keep plain-text and HTML message bodies. Attachments, inline images and other non-body content are removed. Originals stay unchanged.";
     in property <bool> can-start;
     in property <bool> can-edit;
     in property <bool> check-only;
@@ -41,7 +43,7 @@ export component DraftPane inherits ScrollView {
         VerticalBox { padding: 24px; spacing: 16px; alignment: center;
             HorizontalBox { alignment: center; Icon { kind: IconKind.folder; width: 48px; height: 48px; stroke: Theme.accent; } }
             Label { text: "Drop email files or folders here"; horizontal-alignment: center; font-size: 20px; font-weight: 600; wrap: word-wrap; }
-            Label { text: "Copies keep the message text and drop attachments. Your original .eml files are never changed."; horizontal-alignment: center; color: Theme.muted; wrap: word-wrap; }
+            Label { text: root.scope; horizontal-alignment: center; color: Theme.muted; wrap: word-wrap; }
             HorizontalBox { padding: 0px; spacing: 8px; alignment: center;
                 ActionButton { text: "Add Files…"; enabled: root.can-edit; clicked => { root.choose-files(); } }
                 ActionButton { text: "Add Folder…"; enabled: root.can-edit; clicked => { root.choose-folder(); } }
@@ -85,10 +87,13 @@ export component DraftPane inherits ScrollView {
             PopupButton { text: root.destination-label; enabled: root.can-edit; accessible-label: "Copy destination: " + root.destination-label; clicked => { root.open-destination(); } }
         }
     }
+    if root.selection.length > 0: Label { text: root.scope; color: Theme.muted; wrap: word-wrap; }
+    TextButton { text: "What copies keep"; expandable: true; expanded: root.policy-expanded; clicked => { root.policy-expanded = !root.policy-expanded; } }
+    if root.policy-expanded: Label { text: "Copies retain supported plain-text and HTML message bodies. Attachments, inline images and resources, calendar parts and other non-body content are omitted. No copy is made when no supported body remains. Protected or unsupported structures may be refused. HTML is retained as-is: remote references and unsafe content are not sanitized. Check only plans the same omissions and writes nothing."; wrap: word-wrap; }
     if root.selection.length > 0 && !root.can-start: Label { text: root.start-reason; color: Theme.warn; wrap: word-wrap; accessible-live-region: polite; }
     if root.selection.length > 0: HorizontalBox { padding: 0px; spacing: 12px; vertical-stretch: 0;
         VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;
-            Label { text: root.check-only ? "Nothing is written. Each message and the destination are checked." : "Copies are named ‹name›.no-attachments.eml. Existing files are never overwritten."; color: Theme.muted; wrap: word-wrap; }
+            Label { height: self.preferred-height; text: root.check-only ? "Nothing is written. Each message and the destination are checked." : "Copies are named ‹name›.no-attachments.eml. Existing files are never overwritten."; color: Theme.muted; wrap: word-wrap; }
             if root.starts-after != "": Label { text: root.starts-after; color: Theme.muted; }
         }
         TextButton { text: "Clear"; enabled: root.can-edit; clicked => { root.clear-selection(); } }
